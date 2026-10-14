@@ -59,10 +59,33 @@ pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), 
     Ok(())
 }
 
+/// Minimal seam `fetch_all_messages`/`fallback_to_get_messages` need to be unit-tested against a
+/// plain fake instead of a real spawned `omp` process -- port of `fetchAllMessages.ts`'s own
+/// `MessagesPageRequester` interface, and mirrors this lane's own earlier `ResumableAgent`/
+/// `AttachableAgent` trait-extraction in `ipc/sessions_agent.rs`. `fetch_all_messages`'s public,
+/// `&OmpProcess`-typed signature (every existing call site in `launch.rs`/`conversations.rs`) is
+/// unchanged -- it is now a one-line adapter over the `_core` functions below, which take any
+/// `R: MessagesPageRequester` and are what `launch_support.test.rs` exercises directly.
+trait MessagesPageRequester {
+    async fn request_frame(&self, cmd: Value, timeout_ms: u64) -> Result<Value, String>;
+}
+
+impl MessagesPageRequester for OmpProcess {
+    async fn request_frame(&self, cmd: Value, timeout_ms: u64) -> Result<Value, String> {
+        self.request(cmd, timeout_ms)
+            .await
+            .map_err(|err| err.to_string())
+    }
+}
+
 /// Port of `fetchAllMessages.ts`: bounded `get_messages_page` pagination, falling back to a
 /// single plain `get_messages` call if the very first page fails. Never fails outright -- an
 /// incomplete fetch (`complete: false`) returns whatever was already accumulated.
 pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
+    fetch_all_messages_core(proc).await
+}
+
+async fn fetch_all_messages_core<R: MessagesPageRequester>(proc: &R) -> (Vec<Value>, bool) {
     let mut all: Vec<Value> = Vec::new();
     let mut cursor: Option<String> = None;
     for page in 0..MAX_MESSAGE_PAGES {
@@ -70,14 +93,14 @@ pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) 
         if let Some(cursor) = &cursor {
             cmd["cursor"] = Value::String(cursor.clone());
         }
-        let res = match proc.request(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await {
+        let res = match proc.request_frame(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await {
             Ok(res) => res,
-            Err(_) if page == 0 => return fallback_to_get_messages(proc).await,
+            Err(_) if page == 0 => return fallback_to_get_messages_core(proc).await,
             Err(_) => return (all, false),
         };
         if res.get("success").and_then(Value::as_bool) != Some(true) {
             if page == 0 {
-                return fallback_to_get_messages(proc).await;
+                return fallback_to_get_messages_core(proc).await;
             }
             return (all, false);
         }
@@ -90,7 +113,7 @@ pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) 
             .and_then(Value::as_u64);
         let (Some(messages), Some(total_messages)) = (messages, total_messages) else {
             if page == 0 {
-                return fallback_to_get_messages(proc).await;
+                return fallback_to_get_messages_core(proc).await;
             }
             return (all, false);
         };
@@ -113,9 +136,9 @@ pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) 
     (all, false)
 }
 
-async fn fallback_to_get_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
+async fn fallback_to_get_messages_core<R: MessagesPageRequester>(proc: &R) -> (Vec<Value>, bool) {
     let res = match proc
-        .request(
+        .request_frame(
             json!({ "type": "get_messages" }),
             DEFAULT_REQUEST_TIMEOUT_MS,
         )
@@ -133,3 +156,7 @@ async fn fallback_to_get_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
     }
     (messages.unwrap().clone(), true)
 }
+
+#[cfg(test)]
+#[path = "launch_support.test.rs"]
+mod tests;
