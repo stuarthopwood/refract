@@ -445,7 +445,16 @@ async fn check_github_cli() -> Check {
         },
         GithubCliStatus::NotSignedIn => Check {
             ok: false,
-            hint: Some("gh is installed but not signed in. Run gh auth login, then Re-check.".to_string()),
+            // Gate finding (round 2, Medium): this `gh` may have just been installed via the
+            // portable-zip Install action (`dependency_install::install_github_cli`), not onto
+            // PATH a user's own terminal resolves to -- "Run gh auth login" could sign a
+            // DIFFERENT `gh` in, or fail to find a terminal at all. Refract already has its own
+            // sign-in flow (Manage accounts' "Sign in to GitHub…"), which always drives this
+            // exact binary -- point there instead.
+            hint: Some(
+                "gh is installed but not signed in. Sign in via Manage accounts, then Re-check."
+                    .to_string(),
+            ),
             ..Default::default()
         },
         GithubCliStatus::Offline => Check {

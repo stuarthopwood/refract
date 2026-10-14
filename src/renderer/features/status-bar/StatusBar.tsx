@@ -16,10 +16,12 @@ function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`
 }
 
-/** FR-017/data-model.md "unavailableReason": the one case `checker.rs` can leave on a `'failed'`
- * badge alongside (or instead of) `lastError` -- a plain-words explanation, never the raw enum
- * value, matching the Electron reference's `updateStatusText` (src/renderer/lib/updateActions.ts
- * on `origin/spec-006-impl`, mined/unfinished). */
+/** FR-017/data-model.md "unavailableReason": `checker.rs`'s `Outcome::Unavailable` always
+ * commits this alongside `phase: 'idle'`, never `'failed'` -- a GitHub-unreachable check is
+ * "nothing new to report", not a failure, so it renders as its own idle-with-a-note badge below,
+ * separate from the `'failed'` one. Plain-words explanation, never the raw enum value, matching
+ * the Electron reference's `updateStatusText` (src/renderer/lib/updateActions.ts on
+ * `origin/spec-006-impl`, mined/unfinished). */
 function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailableReason']>): string {
   switch (reason) {
     case 'not-installed':
@@ -31,13 +33,15 @@ function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailabl
   }
 }
 
-/** Gate finding (PR #829 round 1, HIGH): the status bar's own `'failed'` badge/popover text --
- * `lastError` first (set by every download/checksum/install-on-quit failure, checker.rs), else
- * `unavailableReason`'s own explanation, else a generic fallback. */
-function updateFailureMessage(state: UpdateState): string {
-  if (state.lastError) return state.lastError
-  if (state.unavailableReason) return updateUnavailableReasonText(state.unavailableReason)
-  return 'Update failed for an unknown reason.'
+/** Gate finding (round 2, Medium): the footer's own badge TEXT must stay short -- `lastError`
+ * can be an arbitrary, sometimes-long capped string (a process failure detail); the full text
+ * belongs in the popover row below, not inlined into the always-visible footer. */
+function updateBadgeShortLabel(state: UpdateState, unavailable: boolean): string {
+  if (state.phase === 'failed') return 'Update failed'
+  if (unavailable) return 'Update check unavailable'
+  if (state.phase === 'downloading') return 'Downloading update'
+  if (state.phase === 'downloaded') return 'Update ready: installs on quit'
+  return `Update available: v${state.availableVersion}`
 }
 
 export function StatusBar() {
@@ -53,6 +57,10 @@ export function StatusBar() {
   // mutually exclusive phases, so one busy flag never collides between the two actions.
   const [actionBusy, setActionBusy] = useState(false)
   const liveSessions = sessions.filter((session) => session.status !== 'stopped')
+  // FR-017: the one other reachable "something's off" update state besides `'failed'` --
+  // see `updateUnavailableReasonText`'s own doc comment for why this is `'idle'`, not `'failed'`.
+  const updateUnavailable = updateState?.phase === 'idle' && updateState.unavailableReason !== undefined
+  const updateTroubled = updateState?.phase === 'failed' || updateUnavailable
 
   return (
     <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-divider bg-card px-3 text-xs text-muted-foreground">
@@ -117,44 +125,49 @@ export function StatusBar() {
           (updateState.phase === 'available' ||
             updateState.phase === 'downloading' ||
             updateState.phase === 'downloaded' ||
-            updateState.phase === 'failed') && (
+            updateState.phase === 'failed' ||
+            updateUnavailable) && (
             <Popover open={updateOpen} onOpenChange={setUpdateOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
                   className={cn(
                     badgeVariants({ variant: 'outline' }),
-                    updateState.phase === 'failed'
+                    updateTroubled
                       ? 'h-6 gap-1.5 border-state-needs-you/50 bg-state-needs-you/10 px-2.5 text-state-needs-you hover:bg-state-needs-you/20'
                       : 'h-6 gap-1.5 px-2.5 hover:bg-accent'
                   )}
                 >
-                  {updateState.phase === 'failed' ? (
+                  {updateTroubled ? (
                     <AlertTriangleIcon aria-hidden className="size-3" />
                   ) : (
                     <DownloadIcon aria-hidden className="size-3" />
                   )}
-                  {updateState.phase === 'failed'
-                    ? `Update failed: ${updateFailureMessage(updateState)}`
-                    : updateState.phase === 'downloaded'
-                      ? 'Update ready: installs on quit'
-                      : `Update available: v${updateState.availableVersion}`}
+                  {updateBadgeShortLabel(updateState, updateUnavailable)}
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end">
                 <p className="font-medium text-foreground">
                   {updateState.phase === 'failed'
                     ? 'Update failed'
-                    : updateState.phase === 'downloaded'
-                      ? 'Update downloaded'
-                      : `Refract v${updateState.availableVersion} is available`}
+                    : updateUnavailable
+                      ? 'Update check unavailable'
+                      : updateState.phase === 'downloaded'
+                        ? 'Update downloaded'
+                        : updateState.phase === 'downloading'
+                          ? 'Downloading update'
+                          : `Refract v${updateState.availableVersion} is available`}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {updateState.phase === 'failed'
-                    ? updateFailureMessage(updateState)
-                    : updateState.phase === 'downloaded'
-                      ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
-                      : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
+                    ? (updateState.lastError ?? 'Update failed for an unknown reason.')
+                    : updateUnavailable
+                      ? updateUnavailableReasonText(updateState.unavailableReason!)
+                      : updateState.phase === 'downloaded'
+                        ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
+                        : updateState.phase === 'downloading'
+                          ? 'Downloading the update now; it installs the next time you quit, never interrupting a running agent.'
+                          : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
                 </p>
                 <div className="mt-3 flex items-center gap-2">
                   {updateState.phase === 'available' && (
@@ -175,7 +188,7 @@ export function StatusBar() {
                       {actionBusy ? 'Downloading…' : 'Download update'}
                     </Button>
                   )}
-                  {updateState.phase === 'failed' && (
+                  {(updateState.phase === 'failed' || updateUnavailable) && (
                     <Button
                       size="xs"
                       variant="outline"
@@ -185,7 +198,7 @@ export function StatusBar() {
                         void window.refract.updates.check().finally(() => setActionBusy(false))
                       }}
                     >
-                      {actionBusy ? 'Checking…' : 'Try again'}
+                      {actionBusy ? 'Checking…' : 'Check again'}
                     </Button>
                   )}
                   {updateState.notesUrl && (

@@ -23,6 +23,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::checksum::{checksum_matches, hex_digest_file};
+use super::dependency_install_http::safe_file_name;
 use super::gh_client::{capped_failure_text, gh_json, gh_raw};
 use super::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
@@ -167,13 +168,27 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         METADATA_TIMEOUT,
     )
     .await?;
-    let installer_name = assets
+    // Gate finding (round 2, Medium): this header comment already claimed a release with more
+    // than one `.exe` asset is rejected, but the code only ever `.find()`-picked the first match
+    // silently -- fixed for real here: `.filter()` collects every `.exe` asset, and anything
+    // other than exactly one is an error (zero: "missing an installer"; two or more: ambiguous,
+    // never silently pick one).
+    let exe_assets: Vec<&str> = assets
         .assets
         .iter()
         .map(|a| a.name.as_str())
-        .find(|name| name.to_lowercase().ends_with(".exe"))
-        .ok_or_else(|| "The release is missing an installer (.exe) asset.".to_string())?
-        .to_string();
+        .filter(|name| name.to_lowercase().ends_with(".exe"))
+        .collect();
+    let installer_name = match exe_assets.as_slice() {
+        [] => return Err("The release is missing an installer (.exe) asset.".to_string()),
+        [single] => single.to_string(),
+        _ => {
+            return Err(format!(
+                "The release has {} installer (.exe) assets; expected exactly one.",
+                exe_assets.len()
+            ))
+        }
+    };
     let checksum_name = format!("{installer_name}.sha256");
     if !assets
         .assets
@@ -211,8 +226,14 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         ));
     }
 
-    let installer_path = updates_dir.join(&installer_name);
-    let checksum_path = updates_dir.join(&checksum_name);
+    // Gate finding (round 2, Medium): `installer_name`/`checksum_name` are release-asset names
+    // sourced from `gh`'s own JSON (not a caller-supplied value, but still worth a defensive
+    // strip) -- `safe_file_name` only at this LOCAL path-join point, matching
+    // `dependency_install.rs`'s own `install_git`/`install_github_cli` convention; the `--pattern`
+    // arguments above intentionally stay the raw API names so they still match the real remote
+    // asset.
+    let installer_path = updates_dir.join(safe_file_name(&installer_name));
+    let checksum_path = updates_dir.join(safe_file_name(&checksum_name));
     if !tokio::fs::try_exists(&installer_path)
         .await
         .unwrap_or(false)

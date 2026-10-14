@@ -45,8 +45,20 @@ const GITHUB_CLI_ASSET_SUFFIX: &str = "_windows_amd64.zip";
 
 /// Point-in-time pin, confirmed current against this issue's own probe machine
 /// (specs/016-tauri-rust-build/installer-probes.md). Passed to the install script's own `-Ref`
-/// parameter (the omp version to install) -- this is a version identifier the script's API
-/// expects, not a trust boundary. If a different version is needed, update this one constant.
+/// parameter (the omp version to install).
+///
+/// Gate finding (round 2, Medium "correct the trust-boundary claim or verify the binary"): an
+/// earlier version of this comment claimed `-Ref` "is not a trust boundary" -- true only in the
+/// narrow sense that THIS code never lets a caller influence it (it is always this one hard-coded
+/// constant). It is not a claim that the downloaded omp BINARY is independently verified by this
+/// Rust code: it is not. The install SCRIPT itself is commit-pinned and SHA-256-verified before
+/// execution (`OMP_INSTALL_SCRIPT_COMMIT`/`OMP_INSTALL_SCRIPT_SHA256` below), and
+/// `installer-probes.md`'s own reverse-engineering of that script's `Install-Binary` function
+/// found that it downloads `$BuildUrl/api/products/omp/versions/<version>/windows-x86_64` and
+/// verifies the returned `sha256` field against the binary it writes -- but this build trusts
+/// that description rather than re-implementing or re-checking it in Rust. See the PR's own Open
+/// problems: the residual risk is trusting that description, not a code gap the hash pin leaves
+/// open -- the commit pin already makes the script's own content immutable and verified.
 const OMP_PINNED_TAG: &str = "v18.10.1";
 
 /// Gate hardening (security, supply-chain): the install SCRIPT itself is fetched from this exact
@@ -63,6 +75,10 @@ const OMP_INSTALL_SCRIPT_COMMIT: &str = "5d0aaffaf1f987503ce129a642fb6e30339615a
 /// in normal operation, but defence in depth costs nothing here.
 const OMP_INSTALL_SCRIPT_SHA256: &str =
     "86e91d6bac0e66c700662757c71e54cf551fa8c8a82fdd370043348b1d8df1fb";
+/// Gate finding (round 2, Medium): the real script is under 10 KiB; this is a generous cap
+/// against an unbounded response, not a precise size check (the hash above is what actually
+/// proves the content is right).
+const OMP_INSTALL_SCRIPT_MAX_BYTES: usize = 256 * 1024;
 
 const GIT_MANUAL_HINT: &str =
     "If this keeps failing, install Git for Windows yourself from git-scm.com and choose Re-check.";
@@ -228,7 +244,21 @@ async fn install_omp_inner(on_progress: &impl Fn(DependencyInstallProgress)) -> 
         .await
         .map_err(|err| fail_detail(&err, OMP_MANUAL_HINT))?;
     let script_path = dir.join("install.ps1");
-    tokio::fs::write(&script_path, &script_bytes)
+    // Gate finding (round 2, Medium): refuses to overwrite, matching `download_to_file`'s own
+    // `create_new` semantics -- this path lives inside a fresh, uuid-named `scratch_dir()`, so a
+    // collision here would only ever mean a real bug, not routine contention.
+    let mut script_file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&script_path)
+        .await
+        .map_err(|err| {
+            fail_detail(
+                &format!("could not create the omp install script file: {err}"),
+                OMP_MANUAL_HINT,
+            )
+        })?;
+    tokio::io::AsyncWriteExt::write_all(&mut script_file, &script_bytes)
         .await
         .map_err(|err| {
             fail_detail(
@@ -236,6 +266,7 @@ async fn install_omp_inner(on_progress: &impl Fn(DependencyInstallProgress)) -> 
                 OMP_MANUAL_HINT,
             )
         })?;
+    drop(script_file);
     let script_path_str = script_path.to_string_lossy().into_owned();
 
     let (code, message) = run_process(
@@ -306,11 +337,26 @@ async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
             response.status()
         ));
     }
+    // Gate finding (round 2, Medium): this is a single small PowerShell script (the real one is
+    // under 10 KiB), never a reason to buffer an unbounded response -- checked against the
+    // server's own `Content-Length` up front (cheap, fails fast on an obviously-wrong response)
+    // AND against the actual buffered length below (a dishonest/missing header must not bypass
+    // the cap).
+    if response.content_length().is_some_and(|len| len > OMP_INSTALL_SCRIPT_MAX_BYTES as u64) {
+        return Err(format!(
+            "omp install script response is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
+        ));
+    }
     let bytes = response
         .bytes()
         .await
         .map_err(|err| format!("omp install script download failed: {err}"))?
         .to_vec();
+    if bytes.len() > OMP_INSTALL_SCRIPT_MAX_BYTES {
+        return Err(format!(
+            "omp install script body is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
+        ));
+    }
     let actual: String = Sha256::digest(&bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))

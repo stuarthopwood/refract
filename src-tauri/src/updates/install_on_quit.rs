@@ -161,55 +161,80 @@ pub async fn schedule_install_on_quit(
     }
 }
 
-/// Resolves a persisted `Installing` phase left over from the previous run (FR-018); called once
-/// at startup before the automatic update check. A phase other than `Installing` means the
-/// install-on-quit helper never got to run (or there was nothing to resolve) and is reported as a
-/// failure rather than ever leaving an unfinished update looking like success -- this only ever
-/// resolves that one specific leftover state, and is left untouched (no write) otherwise.
-pub async fn resolve_installing_state(
+/// Resolves any phase left over from a run that quit (or crashed) before it finished -- called
+/// once at startup before the automatic update check:
+/// - `Installing` (FR-018): the install-on-quit helper either succeeded (`installed_version`
+///   matches `available_version`, resolved to `Idle`) or never finished/ran (resolved to
+///   `Failed`) -- unchanged from this function's original, narrower scope.
+/// - `Downloading` (gate finding, HIGH "a quit during download leaves the phase stuck"): nothing
+///   persists a partial download to resume, and `checker::check_for_updates`'s own busy-guard
+///   would otherwise refuse to ever check again from this phase -- resolved to `Failed` with an
+///   actionable message, so the status bar's Retry action appears instead of a permanently inert
+///   badge.
+/// - `Checking`: a quit mid-check never promised the user anything for this phase -- resolved to
+///   `Idle`, not `Failed` (nothing to retry, nothing went wrong).
+///
+/// Every other phase (`Idle`, `Available`, `Downloaded`, `Failed`) is left untouched (no write).
+pub async fn resolve_startup_state(
     store: &mut UpdateStateStore,
     installed_version: &str,
 ) -> UpdateState {
     let state = store.get();
-    if state.phase != UpdatePhase::Installing {
-        return state;
-    }
+    match state.phase {
+        UpdatePhase::Installing => {
+            // A version match means the install-on-quit helper succeeded, a mismatch (or the
+            // helper never got to run) is reported as a failure.
+            let version_matches = state
+                .available_version
+                .as_deref()
+                .is_some_and(|available| available == installed_version);
 
-    // A version match means the install-on-quit helper succeeded, a mismatch (or the helper
-    // never got to run) is reported as a failure.
-    let version_matches = state
-        .available_version
-        .as_deref()
-        .is_some_and(|available| available == installed_version);
+            if version_matches {
+                // Quality-gate remediation (LOW "a successful install leaves the old installer
+                // on disk"): on a version match, the installer and its `.sha256` sibling (about
+                // 146MB together) are deleted -- they already did their job and are never needed
+                // again. Two individual file deletes, only ever the exact paths this same
+                // `state.installerPath` already names, never a directory.
+                if let Some(installer_path) = state.installer_path.as_deref() {
+                    let _ = tokio::fs::remove_file(installer_path).await;
+                    let _ = tokio::fs::remove_file(sha256_sibling(Path::new(installer_path))).await;
+                }
+                return store
+                    .update(|s| {
+                        s.phase = UpdatePhase::Idle;
+                        s.installer_path = None;
+                        s.last_error = None;
+                    })
+                    .await;
+            }
 
-    if version_matches {
-        // Quality-gate remediation (LOW "a successful install leaves the old installer on
-        // disk"): on a version match, the installer and its `.sha256` sibling (about 146MB
-        // together) are deleted -- they already did their job and are never needed again. Two
-        // individual file deletes, only ever the exact paths this same `state.installerPath`
-        // already names, never a directory.
-        if let Some(installer_path) = state.installer_path.as_deref() {
-            let _ = tokio::fs::remove_file(installer_path).await;
-            let _ = tokio::fs::remove_file(sha256_sibling(Path::new(installer_path))).await;
+            store
+                .update(|s| {
+                    s.phase = UpdatePhase::Failed;
+                    s.last_error = Some(
+                        "The update did not finish installing. The previous version is still running."
+                            .to_string(),
+                    );
+                })
+                .await
         }
-        return store
-            .update(|s| {
-                s.phase = UpdatePhase::Idle;
-                s.installer_path = None;
-                s.last_error = None;
-            })
-            .await;
+        UpdatePhase::Downloading => {
+            store
+                .update(|s| {
+                    s.phase = UpdatePhase::Failed;
+                    s.last_error = Some("Download was interrupted.".to_string());
+                })
+                .await
+        }
+        UpdatePhase::Checking => {
+            store
+                .update(|s| {
+                    s.phase = UpdatePhase::Idle;
+                })
+                .await
+        }
+        _ => state,
     }
-
-    store
-        .update(|s| {
-            s.phase = UpdatePhase::Failed;
-            s.last_error = Some(
-                "The update did not finish installing. The previous version is still running."
-                    .to_string(),
-            );
-        })
-        .await
 }
 
 /// Resolves PowerShell: `pwsh` (PowerShell 7+) if it is on `PATH`, else the fixed, always-present
@@ -255,7 +280,50 @@ fn escape_single_quoted(value: &str) -> String {
 mod tests {
     use std::path::Path;
 
-    use super::{escape_single_quoted, installer_is_directly_inside};
+    use super::{escape_single_quoted, installer_is_directly_inside, resolve_startup_state};
+    use crate::updates::state::{UpdatePhase, UpdateStateStore};
+
+    async fn store_with_phase(phase: UpdatePhase) -> (UpdateStateStore, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "refract-tauri-installonquit-test-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("create temp dir");
+        let mut store = UpdateStateStore::open(&dir).await;
+        store.update(|s| s.phase = phase).await;
+        (store, dir)
+    }
+
+    #[tokio::test]
+    async fn resolve_startup_state_maps_a_leftover_downloading_phase_to_failed() {
+        let (mut store, dir) = store_with_phase(UpdatePhase::Downloading).await;
+        let resolved = resolve_startup_state(&mut store, "1.0.0").await;
+        assert_eq!(resolved.phase, UpdatePhase::Failed);
+        assert_eq!(
+            resolved.last_error.as_deref(),
+            Some("Download was interrupted.")
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn resolve_startup_state_maps_a_leftover_checking_phase_to_idle() {
+        let (mut store, dir) = store_with_phase(UpdatePhase::Checking).await;
+        let resolved = resolve_startup_state(&mut store, "1.0.0").await;
+        assert_eq!(resolved.phase, UpdatePhase::Idle);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn resolve_startup_state_leaves_idle_untouched() {
+        let (mut store, dir) = store_with_phase(UpdatePhase::Idle).await;
+        let resolved = resolve_startup_state(&mut store, "1.0.0").await;
+        assert_eq!(resolved.phase, UpdatePhase::Idle);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
 
     #[test]
     fn escapes_every_embedded_single_quote() {

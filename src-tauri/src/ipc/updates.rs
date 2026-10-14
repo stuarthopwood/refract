@@ -36,7 +36,7 @@ fn store_handle(state: &AppState) -> Result<SharedUpdateState, IpcError> {
         .ok_or_else(|| IpcError::new("unsupported", "Update state not initialised yet"))
 }
 
-/// `installerPath` is main-only state (`install_on_quit`/`resolve_installing_state` both need
+/// `installerPath` is main-only state (`install_on_quit`/`resolve_startup_state` both need
 /// it); every renderer-facing copy of `UpdateState` -- this function's return value, used by
 /// every handler below and by `lib.rs`'s own broadcast call sites -- has it stripped before it
 /// ever crosses the IPC boundary (plan.md "never a ... file path").

@@ -30,15 +30,16 @@ use std::path::Path;
 use state::{SharedUpdateState, UpdateState};
 
 /// `lib.rs`'s own `setup` closure hook (contracts/ipc.md "Startup behaviour", FR-020/SC-010):
-/// kicked off after the window is shown. Resolves a leftover `installing` phase from the
-/// previous run (FR-018) before the automatic check, which must never clobber what that
-/// resolution just decided -- these two steps still run back-to-back so the automatic check
-/// always sees the just-resolved phase, but `resolve_installing_state` now only holds the lock
-/// for its own (local-disk-only, no network) body; `check_for_updates` manages its own
-/// lock/unlock around the network calls it makes (gate finding, PR #829 round 1, perf HIGH: the
-/// lock used to be held by this caller across the WHOLE check, including every `gh` call).
-/// Returns the renderer-safe final state for the caller to broadcast; factored out of `lib.rs`
-/// itself (`AGENTS.md` "No god files") rather than inlined in its `setup` closure.
+/// kicked off after the window is shown. Resolves any phase left over from a run that quit
+/// before it finished (FR-018, and the `Downloading`/`Checking` gate hardening --
+/// `install_on_quit::resolve_startup_state`'s own doc comment) before the automatic check, which
+/// must never clobber what that resolution just decided -- these two steps still run back-to-
+/// back so the automatic check always sees the just-resolved phase, but `resolve_startup_state`
+/// now only holds the lock for its own (local-disk-only, no network) body; `check_for_updates`
+/// manages its own lock/unlock around the network calls it makes (gate finding, PR #829 round 1,
+/// perf HIGH: the lock used to be held by this caller across the WHOLE check, including every
+/// `gh` call). Returns the renderer-safe final state for the caller to broadcast; factored out of
+/// `lib.rs` itself (`AGENTS.md` "No god files") rather than inlined in its `setup` closure.
 pub async fn run_startup_update_check(
     store: &SharedUpdateState,
     current_version: &str,
@@ -46,7 +47,7 @@ pub async fn run_startup_update_check(
 ) -> UpdateState {
     {
         let mut guard = store.lock().await;
-        install_on_quit::resolve_installing_state(&mut guard, current_version).await;
+        install_on_quit::resolve_startup_state(&mut guard, current_version).await;
     }
     checker::check_for_updates(store, true, current_version, on_state).await
 }
@@ -59,36 +60,65 @@ pub async fn run_startup_update_check(
 /// already quitting either way, so there is nothing further for the caller to branch on.
 ///
 /// Gate finding (PR #829 round 1, perf HIGH, "bound the quit hook's lock wait"): the lock
-/// acquisition itself is bounded -- with the lock-holding fixes above, nothing should ever hold
-/// this lock for more than a moment, but quitting must never hang indefinitely even if some
-/// future caller regresses that. A timed-out acquisition skips the hook entirely (logged): the
-/// app still quits, and the next launch's own `resolve_installing_state`/automatic check settle
+/// acquisition itself is bounded -- a timed-out acquisition skips the hook entirely (logged): the
+/// app still quits, and the next launch's own `resolve_startup_state`/automatic check settle
 /// whatever `updateState.json` was left with.
+///
+/// Gate finding (round 2, HIGH "bound the quit hook's verify-and-schedule step"): the lock is
+/// read once to decide whether there is anything to do, then DROPPED before the re-hash (a
+/// ~146MB streamed read) and the WMI hand-off run -- neither is network I/O, but both are
+/// filesystem/process work this function must not make every other `updates::` caller
+/// (`updates.getState`/a concurrent `updates.check`) wait on, matching every other lock/await
+/// split this module already makes (`checker::check_for_updates`, `installer::download_update`).
+/// The combined verify+schedule step is additionally bounded by its own timeout: quitting must
+/// never hang indefinitely even if a hash read stalls on a failing disk or the WMI call never
+/// returns.
+const VERIFY_AND_SCHEDULE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &Path) {
+    let installer_path = {
+        let guard = match tokio::time::timeout(std::time::Duration::from_secs(5), store.lock())
+            .await
+        {
+            Ok(guard) => guard,
+            Err(_) => {
+                log::error!(
+                    "install-on-quit: timed out waiting for the update-state lock; skipping"
+                );
+                return;
+            }
+        };
+        let current = guard.get();
+        if current.phase != state::UpdatePhase::Downloaded {
+            return;
+        }
+        let Some(installer_path) = current.installer_path.clone() else {
+            return;
+        };
+        std::path::PathBuf::from(installer_path)
+    };
+
+    let outcome = match tokio::time::timeout(
+        VERIFY_AND_SCHEDULE_TIMEOUT,
+        verify_and_schedule(&installer_path, updates_dir),
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(_) => Err("verifying and scheduling the install timed out".to_string()),
+    };
+
     let mut guard = match tokio::time::timeout(std::time::Duration::from_secs(5), store.lock())
         .await
     {
         Ok(guard) => guard,
         Err(_) => {
-            log::error!("install-on-quit: timed out waiting for the update-state lock; skipping");
+            log::error!(
+                "install-on-quit: timed out waiting for the update-state lock to commit the outcome; skipping"
+            );
             return;
         }
     };
-    let current = guard.get();
-    if current.phase != state::UpdatePhase::Downloaded {
-        return;
-    }
-    let Some(installer_path) = current.installer_path.clone() else {
-        return;
-    };
-    let installer_path = std::path::PathBuf::from(installer_path);
-    let outcome =
-        match install_on_quit::verify_installer_before_quit(&installer_path, updates_dir).await {
-            Ok(()) => {
-                install_on_quit::schedule_install_on_quit(&installer_path, std::process::id()).await
-            }
-            Err(reason) => Err(reason),
-        };
     match outcome {
         Ok(()) => {
             guard
@@ -105,4 +135,9 @@ pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &P
                 .await;
         }
     }
+}
+
+async fn verify_and_schedule(installer_path: &Path, updates_dir: &Path) -> Result<(), String> {
+    install_on_quit::verify_installer_before_quit(installer_path, updates_dir).await?;
+    install_on_quit::schedule_install_on_quit(installer_path, std::process::id()).await
 }
