@@ -67,6 +67,26 @@ const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
 /// `SUPPORTED_OMP_COMMANDS` (built-ins only, FR-032) does not apply. A builtin-sourced command
 /// keeps today's rule: hidden entirely unless verified, then pruned to its verified subcommands.
 pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
+    // Gate-fix (Medium, security): collected from the RAW list, before any allow-list pruning
+    // below drops a builtin that was never verified (e.g. `model`, `login`) -- the bug this
+    // closes let a file/skill command assume the identity of exactly that class of builtin,
+    // because a downstream anti-shadow check that only sees the ALREADY-FILTERED list has no
+    // trace left of a builtin this same function already dropped to compare against.
+    let mut builtin_claimed: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for command in raw {
+        if !is_builtin_source(command.get("source").and_then(Value::as_str)) {
+            continue;
+        }
+        if let Some(name) = command.get("name").and_then(Value::as_str) {
+            builtin_claimed.insert(name);
+        }
+        if let Some(aliases) = command.get("aliases").and_then(Value::as_array) {
+            for alias in aliases.iter().filter_map(Value::as_str) {
+                builtin_claimed.insert(alias);
+            }
+        }
+    }
+
     let mut out: Vec<Value> = NATIVE_BUILT_COMMANDS
         .iter()
         .map(|(name, description)| json!({ "name": name, "description": description, "source": "native" }))
@@ -77,6 +97,22 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
         };
         let source = command.get("source").and_then(Value::as_str);
         if !is_builtin_source(source) {
+            // Gate-fix: a file/skill command whose name or alias is claimed by ANY raw
+            // builtin-sourced entry -- allow-listed or not -- is dropped entirely: never
+            // listed, never runnable. It must never be able to assume a builtin's identity.
+            let shadows_a_builtin = builtin_claimed.contains(name)
+                || command
+                    .get("aliases")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .any(|alias| builtin_claimed.contains(alias))
+                    })
+                    .unwrap_or(false);
+            if shadows_a_builtin {
+                continue;
+            }
             out.push(command.clone());
             continue;
         }

@@ -260,3 +260,84 @@ fn classify_a_file_command_shadowing_a_builtin_via_alias_stays_builtin_restricte
         SlashInvocationClassification::UnsupportedArguments
     ));
 }
+
+#[test]
+fn classify_a_skill_sourced_command_runs_with_free_form_arguments() {
+    let commands = vec![json!({ "name": "skill:my-skill", "source": "skill" })];
+    assert!(matches!(
+        classify_slash_invocation("skill:my-skill", "arg1 arg2", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_a_descriptor_with_no_source_field_fails_closed_to_builtin_restricted() {
+    // No `source` key at all (not even `null`) -- must be treated exactly like `source:"builtin"`
+    // with no verified subcommands: bare name supported, any argument refused.
+    let commands = vec![json!({ "name": "mystery" })];
+    assert!(matches!(
+        classify_slash_invocation("mystery", "", &commands),
+        SlashInvocationClassification::Supported
+    ));
+    assert!(matches!(
+        classify_slash_invocation("mystery", "anything", &commands),
+        SlashInvocationClassification::UnsupportedArguments
+    ));
+}
+
+/// Gate-fix regression test (High, security): the REAL shape production actually produces --
+/// `filter_supported_commands` already drops a non-allow-listed builtin entirely (e.g. `model`,
+/// `ratchet`), so a downstream shadow check that only ever sees the FILTERED list has no trace
+/// of that builtin left to compare against. This runs the real pipeline, raw list -> filter ->
+/// classify, with a HIDDEN (never allow-listed) builtin colliding with a file command by name
+/// and, separately, by alias -- both must come out refused/absent, never free-form.
+#[test]
+fn raw_to_filter_to_classify_a_file_command_cannot_assume_a_hidden_builtins_name() {
+    let raw = vec![
+        json!({ "name": "model", "source": "builtin" }), // never allow-listed (not in SUPPORTED_OMP_COMMANDS)
+        json!({ "name": "model", "source": "file", "description": "a user command named model" }),
+    ];
+    let filtered = filter_supported_commands(&raw);
+    // The hidden builtin itself is correctly absent (today's pre-existing rule); the critical
+    // assertion is that the FILE command sharing its name is ALSO absent, not silently promoted
+    // to free-form just because the builtin that would have blocked it got filtered out first.
+    assert!(
+        !filtered
+            .iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("model")),
+        "a file command sharing a hidden builtin's name must never survive filtering: {filtered:?}"
+    );
+    assert!(matches!(
+        classify_slash_invocation("model", "anything", &filtered),
+        SlashInvocationClassification::UnknownCommand
+    ));
+}
+
+#[test]
+fn raw_to_filter_to_classify_a_file_command_cannot_assume_a_hidden_builtins_alias() {
+    let raw = vec![
+        json!({ "name": "ratchet", "aliases": ["rt"], "source": "builtin" }), // hidden (starts-agent-turn class, never allow-listed)
+        json!({ "name": "rt", "source": "file", "description": "a user command aliased to rt" }),
+    ];
+    let filtered = filter_supported_commands(&raw);
+    assert!(
+        !filtered.iter().any(|c| c.get("name").and_then(Value::as_str) == Some("rt")),
+        "a file command colliding with a hidden builtin's ALIAS must never survive filtering: {filtered:?}"
+    );
+    assert!(matches!(
+        classify_slash_invocation("rt", "anything", &filtered),
+        SlashInvocationClassification::UnknownCommand
+    ));
+}
+
+#[test]
+fn filter_supported_commands_keeps_a_file_command_with_no_real_collision() {
+    let raw = vec![
+        json!({ "name": "model", "source": "builtin" }),
+        json!({ "name": "check-build", "source": "file" }), // a genuinely different name
+    ];
+    let filtered = filter_supported_commands(&raw);
+    assert!(filtered
+        .iter()
+        .any(|c| c.get("name").and_then(Value::as_str) == Some("check-build")));
+}

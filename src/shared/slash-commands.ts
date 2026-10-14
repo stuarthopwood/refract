@@ -99,8 +99,8 @@ export const NATIVE_RESERVED_COMMANDS: Readonly<Record<string, true>> = {
  * 014 FR-007: opens the Side chat panel and issues a `btw` request with the text after it).
  * Listed here, not just handled in `chat.send`, so the menu shows both (FR-032). */
 export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
-  { name: 'new', description: 'Start a new Conversation in this Session' },
-  { name: 'btw', description: 'Ask the agent a side question' },
+  { name: 'new', description: 'Start a new Conversation in this Session', source: 'native' },
+  { name: 'btw', description: 'Ask the agent a side question', source: 'native' },
 ];
 
 /** Issue #760 probe (FINDINGS item 57): OMP's own `source` field is `'builtin'` for its native
@@ -132,12 +132,25 @@ function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescript
  * own built native commands so both show up in the same menu and the same `chat.send`
  * validation. Issue #760: a raw command whose `source` is NOT builtin (a project/user `'file'`
  * command, or a `'skill'`) is listed exactly as OMP reports it, with no allowlist pruning -- the
- * user wrote it, so `SUPPORTED_OMP_COMMANDS` does not apply. */
+ * user wrote it, so `SUPPORTED_OMP_COMMANDS` does not apply. Gate-fix (High, security): a
+ * file/skill entry whose name or alias collides with ANY raw builtin-sourced entry -- allow-
+ * listed or not -- is dropped entirely here, before the allow-list pruning below ever has a
+ * chance to remove the builtin's own trace from the list a downstream shadow check might see. */
 export function filterSupportedCommands(commands: readonly SlashCommandDescriptor[]): SlashCommandDescriptor[] {
+  const builtinClaimed = new Set<string>();
+  for (const command of commands) {
+    if (!isBuiltinSource(command.source)) continue;
+    builtinClaimed.add(command.name);
+    for (const alias of command.aliases ?? []) builtinClaimed.add(alias);
+  }
   return [
     ...NATIVE_BUILT_COMMANDS,
     ...commands.flatMap((command) => {
-      if (!isBuiltinSource(command.source)) return [command];
+      if (!isBuiltinSource(command.source)) {
+        const shadowsABuiltin =
+          builtinClaimed.has(command.name) || (command.aliases ?? []).some((alias) => builtinClaimed.has(alias));
+        return shadowsABuiltin ? [] : [command];
+      }
       return Object.prototype.hasOwnProperty.call(SUPPORTED_OMP_COMMANDS, command.name)
         ? [pruneSubcommands(command)]
         : [];

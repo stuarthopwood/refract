@@ -7,7 +7,9 @@
 
 use serde_json::{json, Value};
 
-use crate::omp::images::{validate_image_attachment, ImageValidationError};
+use crate::omp::images::{
+    validate_image_attachment_decoded, validate_image_attachment_shape, ImageValidationError,
+};
 use crate::session::agent::{
     classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
 };
@@ -38,6 +40,25 @@ const NATIVE_RESERVED_COMMANDS: &[&str] = &[
     "btw",
 ];
 
+/// Pure (gate-fix, testability): `name` is one of Refract's own native/reserved commands.
+fn is_native_reserved(name: &str) -> bool {
+    NATIVE_RESERVED_COMMANDS.contains(&name)
+}
+
+/// Pure (gate-fix, testability): the only two queue values OMP's `remove_queued_message`/the
+/// chip model recognise.
+fn is_valid_queue_kind(queue: &str) -> bool {
+    queue == "followUp" || queue == "steering"
+}
+
+/// Pure (gate-fix, testability): the `(sessionId, text)` positional pair every `chat.send`/
+/// `.sendNow` call needs, or `None` if either is missing or not a string.
+fn parse_session_id_and_text(args: &[Value]) -> Option<(&str, &str)> {
+    let session_id = args.first()?.as_str()?;
+    let text = args.get(1)?.as_str()?;
+    Some((session_id, text))
+}
+
 fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
     &state.session_manager
 }
@@ -49,18 +70,40 @@ fn map_chat_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(err.code, err.message)
 }
 
+/// Maps the omp::images classification to the exact message each reason gets at this call site
+/// (shared by both the shape and the decoded validation failures below).
+fn image_validation_ipc_error(err: ImageValidationError, mime_type: &str) -> IpcError {
+    match err {
+        ImageValidationError::UnsupportedImageType => IpcError::new(
+            "unsupported-image-type",
+            format!("Unsupported image type: {mime_type}"),
+        ),
+        ImageValidationError::ByteSizeTooLarge => {
+            IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
+        }
+        // #771: a distinct message from the byte-size cap above -- a tiny file can still
+        // declare an enormous pixel count in its header.
+        ImageValidationError::PixelCountTooLarge => {
+            IpcError::new("image-too-large", "Image exceeds the maximum pixel count")
+        }
+    }
+}
+
 /// Port of `chat.ts`'s own `parseImagesArgument`: shape-checks, then independently re-validates
 /// every entry (FR-018) before ever building the outgoing `prompt` command. Gate-fix (Critical,
 /// security): builds a FRESH `{ type: "image", data, mimeType }` object containing ONLY the
 /// three validated fields, never the caller's whole object -- a compromised/buggy renderer could
 /// otherwise attach extra fields (`providerFile`, `url`, `detail`) that OMP's own real handling
 /// acts on, reaching a privileged provider-file/remote-URL fetch despite every shape/mime/size
-/// check here passing (mirrors `chat.ts`'s own `parseImagesArgument`, lines 57-81). Runs each
-/// entry's validation on a blocking-pool thread (perf gate-fix): the full base64 decode plus
-/// header walk is CPU work, not I/O, and a 20 MiB image's worth of it should never run on an
-/// async executor thread; ownership of `data`/`mimeType` moves in before validating (gate-fix:
-/// validate before cloning, never clone the untrusted object's other fields at all) and comes
-/// back out to build the fresh entry above, so each image's text is only ever copied once.
+/// check here passing (mirrors `chat.ts`'s own `parseImagesArgument`, lines 57-81). Gate-fix
+/// (perf): `validate_image_attachment_shape` runs on the BORROWED `&str` first -- a mime-type or
+/// over-declared-size rejection never pays for the clone the blocking-pool call below needs.
+/// Only once shape passes does ownership of `data`/`mimeType` move into `spawn_blocking` (the
+/// full base64 decode plus header walk is CPU work, not I/O, and a 20 MiB image's worth of it
+/// should never run on an async executor thread); the same owned Strings come back out to build
+/// the fresh entry above, so each image's text is copied exactly once. A `JoinError` (the
+/// blocking task panicking on some input this parser itself cannot anticipate) is mapped to a
+/// fail-closed `unsupported-image-type`, never an `.expect()` panic reaching the IPC caller.
 async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
     let Some(images) = images else {
         return Ok(None);
@@ -94,29 +137,24 @@ async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Valu
                 "chat.send: image mimeType must be a string",
             ));
         };
+        if let Err(err) = validate_image_attachment_shape(data, mime_type) {
+            return Err(image_validation_ipc_error(err, mime_type));
+        }
         let data_owned = data.to_string();
         let mime_owned = mime_type.to_string();
         let (data_owned, mime_owned, validation) = tokio::task::spawn_blocking(move || {
-            let result = validate_image_attachment(&data_owned, &mime_owned);
+            let result = validate_image_attachment_decoded(&data_owned, &mime_owned);
             (data_owned, mime_owned, result)
         })
         .await
-        .expect("image validation task panicked");
+        .map_err(|_join_err| {
+            IpcError::new(
+                "unsupported-image-type",
+                "That image could not be validated; nothing was attached.",
+            )
+        })?;
         if let Err(err) = validation {
-            return Err(match err {
-                ImageValidationError::UnsupportedImageType => IpcError::new(
-                    "unsupported-image-type",
-                    format!("Unsupported image type: {mime_owned}"),
-                ),
-                ImageValidationError::ByteSizeTooLarge => {
-                    IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
-                }
-                // #771: a distinct message from the byte-size cap above -- a tiny file can still
-                // declare an enormous pixel count in its header.
-                ImageValidationError::PixelCountTooLarge => {
-                    IpcError::new("image-too-large", "Image exceeds the maximum pixel count")
-                }
-            });
+            return Err(image_validation_ipc_error(err, &mime_owned));
         }
         // Built fresh from only the three validated, owned fields -- see this function's own
         // doc comment; never the caller's original `entry`.
@@ -127,12 +165,7 @@ async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Valu
 
 pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let Some(session_id) = args.first().and_then(Value::as_str) else {
-            return Err(invalid_argument(
-                "chat.send expects (sessionId, text) strings",
-            ));
-        };
-        let Some(text) = args.get(1).and_then(Value::as_str) else {
+        let Some((session_id, text)) = parse_session_id_and_text(&args) else {
             return Err(invalid_argument(
                 "chat.send expects (sessionId, text) strings",
             ));
@@ -160,7 +193,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
             // Port of `slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS` (chat.ts:125-130):
             // refused locally before classification, never forwarded to OMP even if a future
             // OMP version later recognizes one of these names as a real command.
-            if NATIVE_RESERVED_COMMANDS.contains(&name.as_str()) {
+            if is_native_reserved(name.as_str()) {
                 let suffix = if rest.is_empty() {
                     String::new()
                 } else {
@@ -185,16 +218,9 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
-                    let suffix = if rest.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {rest}")
-                    };
                     return Err(IpcError::new(
                         "unsupported-arguments",
-                        format!(
-                            "/{name}{suffix} doesn't support arguments yet. Try /{name} on its own."
-                        ),
+                        format!("/{name} doesn't support arguments yet. Try /{name} on its own."),
                     ));
                 }
                 SlashInvocationClassification::Supported => {
@@ -244,7 +270,7 @@ pub fn chat_remove_queued(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(invalid_argument("chat.removeQueued expects (sessionId, text, queue) with queue 'followUp' or 'steering'"));
         };
         let queue = args.get(2).and_then(Value::as_str).unwrap_or("");
-        if queue != "followUp" && queue != "steering" {
+        if !is_valid_queue_kind(queue) {
             return Err(invalid_argument("chat.removeQueued expects (sessionId, text, queue) with queue 'followUp' or 'steering'"));
         }
         if state
@@ -332,12 +358,7 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
 // than reprocessing it, so a resend never needs images supplied by the caller).
 pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let Some(session_id) = args.first().and_then(Value::as_str) else {
-            return Err(invalid_argument(
-                "chat.sendNow expects (sessionId, text) strings",
-            ));
-        };
-        let Some(text) = args.get(1).and_then(Value::as_str) else {
+        let Some((session_id, text)) = parse_session_id_and_text(&args) else {
             return Err(invalid_argument(
                 "chat.sendNow expects (sessionId, text) strings",
             ));

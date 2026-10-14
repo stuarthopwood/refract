@@ -140,18 +140,28 @@ fn lexical_normalize(p: &Path) -> PathBuf {
 /// Strips Windows' `\\?\` canonical-path prefix (and its UNC variant `\\?\UNC\`) so a
 /// canonicalised path compares lexically the same way Node's `fs.realpath` output already does --
 /// Rust's `std::fs::canonicalize` prepends this verbatim-path marker on Windows; Node never does.
-/// Gate-fix (Low): the prefix match is case-insensitive (`\\?\unc\` would otherwise slip past),
-/// even though `canonicalize` itself only ever emits the upper-case form in practice.
+/// Gate-fix (Low): rebuilt from the parsed `Component::Prefix` kind rather than manual string
+/// slicing -- `Path`'s own component parser already recognises `Prefix::VerbatimDisk`/
+/// `Prefix::VerbatimUNC` regardless of casing, so there is no separate case-fold step to get
+/// wrong, and a path with any other (non-verbatim) prefix or no prefix at all passes through
+/// unchanged by construction.
 fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
-    let s = path.to_string_lossy().into_owned();
-    let lower = s.to_ascii_lowercase();
-    if lower.starts_with(r"\\?\unc\") {
-        PathBuf::from(format!(r"\\{}", &s[8..]))
-    } else if lower.starts_with(r"\\?\") {
-        PathBuf::from(&s[4..])
-    } else {
-        path
-    }
+    use std::path::{Component, Prefix};
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path;
+    };
+    let mut out = match prefix.kind() {
+        Prefix::VerbatimDisk(disk) => PathBuf::from(format!("{}:", disk as char)),
+        Prefix::VerbatimUNC(server, share) => PathBuf::from(format!(
+            r"\\{}\{}",
+            server.to_string_lossy(),
+            share.to_string_lossy()
+        )),
+        _ => return path,
+    };
+    out.extend(components);
+    out
 }
 
 async fn realpath(p: &Path) -> std::io::Result<PathBuf> {

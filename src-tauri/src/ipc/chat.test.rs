@@ -149,3 +149,54 @@ fn map_chat_error_passes_code_and_message_through() {
     assert_eq!(ipc_err.code, "agent-not-running");
     assert_eq!(ipc_err.message, "no live process");
 }
+
+// ---------------------------------------------------------------------------
+// is_native_reserved / is_valid_queue_kind / parse_session_id_and_text
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_native_reserved_table() {
+    for name in [
+        "new",
+        "resume",
+        "plan",
+        "fork",
+        "settings",
+        "pause",
+        "plan-review",
+        "btw",
+    ] {
+        assert!(is_native_reserved(name), "{name} must be reserved");
+    }
+    assert!(!is_native_reserved("usage"));
+    assert!(!is_native_reserved("check-build"));
+}
+
+#[test]
+fn is_valid_queue_kind_table() {
+    assert!(is_valid_queue_kind("followUp"));
+    assert!(is_valid_queue_kind("steering"));
+    assert!(!is_valid_queue_kind(""));
+    assert!(!is_valid_queue_kind("FollowUp"));
+    assert!(!is_valid_queue_kind("both"));
+}
+
+#[test]
+fn parse_session_id_and_text_valid() {
+    let args = vec![json!("session-1"), json!("hello")];
+    assert_eq!(
+        parse_session_id_and_text(&args),
+        Some(("session-1", "hello"))
+    );
+}
+
+#[test]
+fn parse_session_id_and_text_rejects_missing_or_non_string() {
+    assert_eq!(parse_session_id_and_text(&[]), None);
+    assert_eq!(parse_session_id_and_text(&[json!("only-one")]), None);
+    assert_eq!(parse_session_id_and_text(&[json!(1), json!("text")]), None);
+    assert_eq!(
+        parse_session_id_and_text(&[json!("session-1"), json!(2)]),
+        None
+    );
+}

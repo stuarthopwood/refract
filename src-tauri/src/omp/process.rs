@@ -750,53 +750,12 @@ fn try_handle_chunk(frame: &Value, inner: &Arc<Inner>) -> Result<(), String> {
     Ok(())
 }
 
-/// Standard (RFC 4648) base64 decoder. No `base64` crate is a declared dependency of this crate;
-/// this hand-rolled decoder replaces `Buffer.from(data, 'base64')` for `rpc_chunk` reassembly
-/// (see this file's own header note and the final report for the stated need).
+/// Delegates to `omp::images::base64_decode` -- the ONE strict (RFC 4648) base64 decoder this
+/// crate keeps (gate-fix, consolidation: this file used to carry a second, independently
+/// written and more lenient copy for `rpc_chunk` reassembly; no `base64` crate is a declared
+/// dependency of this crate, so one hand-rolled decoder, not two, is the shared implementation).
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    fn value(byte: u8) -> Option<u8> {
-        match byte {
-            b'A'..=b'Z' => Some(byte - b'A'),
-            b'a'..=b'z' => Some(byte - b'a' + 26),
-            b'0'..=b'9' => Some(byte - b'0' + 52),
-            b'+' => Some(62),
-            b'/' => Some(63),
-            _ => None,
-        }
-    }
-
-    let stripped: Vec<u8> = input
-        .bytes()
-        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
-        .collect();
-    if stripped.len() % 4 == 1 {
-        return Err("invalid length".to_string());
-    }
-
-    let mut out = Vec::with_capacity(stripped.len() * 3 / 4 + 3);
-    let mut group = [0u8; 4];
-    let mut group_len = 0usize;
-    for byte in stripped {
-        let v = value(byte).ok_or_else(|| "invalid character".to_string())?;
-        group[group_len] = v;
-        group_len += 1;
-        if group_len == 4 {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-            out.push((group[2] << 6) | group[3]);
-            group_len = 0;
-        }
-    }
-    match group_len {
-        0 => {}
-        2 => out.push((group[0] << 2) | (group[1] >> 4)),
-        3 => {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-        }
-        _ => return Err("invalid length".to_string()),
-    }
-    Ok(out)
+    crate::omp::images::base64_decode(input).ok_or_else(|| "invalid base64".to_string())
 }
 
 async fn finish_ready(process: &OmpProcess, ready_frame: &Value) -> Result<(), ProcessError> {

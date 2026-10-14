@@ -57,20 +57,6 @@ pub fn decoded_base64_byte_length(data: &str) -> u64 {
 /// group -- so what this module checks is always exactly the bytes a well-formed, non-lenient
 /// decoder would also produce from the same string.
 pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
-    let clean: Vec<u8> = data.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
-    if clean.is_empty() {
-        return Some(Vec::new());
-    }
-    if !clean.len().is_multiple_of(4) {
-        return None;
-    }
-    let pad_count = clean.iter().rev().take_while(|&&b| b == b'=').count();
-    if pad_count > 2 {
-        return None;
-    }
-    if clean[..clean.len() - pad_count].contains(&b'=') {
-        return None; // a stray '=' outside the final padding run
-    }
     fn value(byte: u8) -> Option<u8> {
         match byte {
             b'A'..=b'Z' => Some(byte - b'A'),
@@ -81,33 +67,60 @@ pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
             _ => None,
         }
     }
-    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
-    for chunk in clean.chunks(4) {
-        let mut vals = [0u8; 4];
-        let mut real = 0usize;
-        for &b in chunk {
-            if b == b'=' {
-                break;
-            }
-            let v = value(b)?;
-            vals[real] = v;
-            real += 1;
+    // Gate-fix (perf): a single pass over `data`'s own bytes, no intermediate whitespace-
+    // stripped copy -- `group`/`pad_in_group` track the current (at most 4-wide) group as we
+    // go; padding is only ever valid as the last 1-2 characters of the LAST group (tracked via
+    // `seen_any_padding`: once a padded group closes, no further non-whitespace byte of any
+    // kind may follow).
+    let mut out = Vec::with_capacity(data.len() / 4 * 3 + 3);
+    let mut group = [0u8; 4];
+    let mut group_len = 0usize; // real (non-padding) characters filled so far
+    let mut pad_in_group = 0usize; // padding characters filled so far
+    let mut seen_any_padding = false;
+
+    for byte in data.bytes() {
+        if byte.is_ascii_whitespace() {
+            continue;
         }
-        match real {
-            4 => {
-                out.push((vals[0] << 2) | (vals[1] >> 4));
-                out.push((vals[1] << 4) | (vals[2] >> 2));
-                out.push((vals[2] << 6) | vals[3]);
-            }
-            3 => {
-                out.push((vals[0] << 2) | (vals[1] >> 4));
-                out.push((vals[1] << 4) | (vals[2] >> 2));
-            }
-            2 => {
-                out.push((vals[0] << 2) | (vals[1] >> 4));
-            }
-            _ => return None, // 0 or 1 real chars in a 4-byte group is never valid base64
+        if seen_any_padding {
+            return None; // padding must be the very last thing in the string
         }
+        if byte == b'=' {
+            pad_in_group += 1;
+            if group_len + pad_in_group > 4 {
+                return None;
+            }
+            if group_len + pad_in_group == 4 {
+                match group_len {
+                    2 => out.push((group[0] << 2) | (group[1] >> 4)),
+                    3 => {
+                        out.push((group[0] << 2) | (group[1] >> 4));
+                        out.push((group[1] << 4) | (group[2] >> 2));
+                    }
+                    _ => return None, // 0 or 1 real chars before padding closes a group: invalid
+                }
+                seen_any_padding = true;
+                group_len = 0;
+                pad_in_group = 0;
+            }
+            continue;
+        }
+        if pad_in_group > 0 {
+            return None; // a real character can never follow padding within the same group
+        }
+        let v = value(byte)?;
+        group[group_len] = v;
+        group_len += 1;
+        if group_len == 4 {
+            out.push((group[0] << 2) | (group[1] >> 4));
+            out.push((group[1] << 4) | (group[2] >> 2));
+            out.push((group[2] << 6) | group[3]);
+            group_len = 0;
+        }
+    }
+    // A trailing incomplete, unpadded group (anything but a clean end) is invalid.
+    if group_len != 0 || pad_in_group != 0 {
+        return None;
     }
     Some(out)
 }
@@ -397,22 +410,33 @@ pub enum ImageValidationError {
     PixelCountTooLarge,
 }
 
-/// Port of `omp/images.ts`'s own `validateImageAttachment` (FR-018, constitution Principle V):
-/// re-validates every `chat.send` `images` entry independently of the renderer's own paste-time
-/// check. See this file's own header for the #771 pixel-cap extension beyond the Electron
-/// build. Takes borrowed `data`/`mime_type` (gate-fix, perf: the caller validates before ever
-/// cloning or taking ownership of the untrusted entry, and runs this on a blocking-pool thread
-/// since the full base64 decode plus header walk is CPU, not I/O, work).
-pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), ImageValidationError> {
+/// Port of `omp/images.ts`'s own `validateImageAttachment` cheap half (FR-018, constitution
+/// Principle V): mime-type and declared-byte-length only, no decode -- gate-fix (perf): callers
+/// run this on the BORROWED `&str` before ever cloning into an owned `String` for
+/// `validate_image_attachment_decoded`'s spawn_blocking call, so a mime-type or over-declared
+/// size rejection never pays for an allocation it doesn't need.
+pub fn validate_image_attachment_shape(
+    data: &str,
+    mime_type: &str,
+) -> Result<(), ImageValidationError> {
     if !is_supported_mime_type(mime_type) {
         return Err(ImageValidationError::UnsupportedImageType);
     }
     if decoded_base64_byte_length(data) > MAX_IMAGE_INPUT_BYTES {
         return Err(ImageValidationError::ByteSizeTooLarge);
     }
-    // Safe to decode the FULL payload now: the byte-length check above already bounds it to
-    // MAX_IMAGE_INPUT_BYTES (20 MiB) from the string's own length, never a live decode. A
-    // strict-decode failure (gate-fix: invalid characters or misplaced padding) is refused the
+    Ok(())
+}
+
+/// The expensive half: full decode plus the magic-byte/header/pixel-cap walk. MUST only be
+/// called once `validate_image_attachment_shape` has already passed (bounds the decode to
+/// `MAX_IMAGE_INPUT_BYTES`); run this on a blocking-pool thread since it is CPU, not I/O, work.
+/// See this file's own header for the #771 pixel-cap extension beyond the Electron build.
+pub fn validate_image_attachment_decoded(
+    data: &str,
+    mime_type: &str,
+) -> Result<(), ImageValidationError> {
+    // A strict-decode failure (gate-fix: invalid characters or misplaced padding) is refused the
     // same way an unsupported type is -- malformed base64 is never a valid image either way.
     let Some(bytes) = base64_decode(data) else {
         return Err(ImageValidationError::UnsupportedImageType);
@@ -427,6 +451,14 @@ pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), Imag
         return Err(ImageValidationError::PixelCountTooLarge);
     }
     Ok(())
+}
+
+/// Convenience wrapper running both halves in sequence; kept for callers (and this file's own
+/// tests) that do not need the shape/decoded split itself. `ipc::chat`'s `parse_images_argument`
+/// calls the two halves separately instead (see their own doc comments for why).
+pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), ImageValidationError> {
+    validate_image_attachment_shape(data, mime_type)?;
+    validate_image_attachment_decoded(data, mime_type)
 }
 
 #[cfg(test)]
