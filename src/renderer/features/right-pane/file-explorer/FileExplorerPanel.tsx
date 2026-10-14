@@ -6,6 +6,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
+  AlertCircleIcon,
+  ArrowRightLeftIcon,
+  CheckCircle2Icon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleDashedIcon,
@@ -44,20 +47,17 @@ interface FileExplorerPanelProps {
   sessionId: string | null
 }
 
-/** FR-010/FR-024: icon-plus-text-equivalent for each git status mark, never colour alone.
- * Reuses already-themed, already-gated tokens (`check:theme-contrast`'s own PAIRS list) instead
- * of a raw Tailwind palette colour or a brand-new CSS custom property -- `--state-working`/
- * `--state-needs-you`/`--destructive` are each already checked at 4.5:1 (or the 3:1 icon floor)
- * against `--background`, the surface every tree row renders on at rest. `added`/`untracked`
- * share `state-working`'s own green-adjacent token (both are "new to git" states); their icon,
- * not colour, is what tells them apart -- `modified` and `added`/`untracked`/`deleted` all still
- * carry their own distinct `sr-only` label regardless. */
+/** FR-010/FR-024: icon-plus-text-equivalent per status mark, never colour alone (reuses already-
+ * gated tokens); `renamed`/`conflicted`/`staged` (R7 #790/#768) keep this exhaustive, #768 designs them. */
 const STATUS_MARKS: Record<GitStatusMark, { Icon: LucideIcon; className: string; label: string }> = {
   modified: { Icon: PencilIcon, className: 'text-state-needs-you', label: 'Modified' },
   added: { Icon: FilePlus2Icon, className: 'text-state-working', label: 'Added' },
   untracked: { Icon: CircleDashedIcon, className: 'text-state-working', label: 'Untracked' },
   deleted: { Icon: FileX2Icon, className: 'text-destructive', label: 'Deleted' },
-  ignored: { Icon: EyeOffIcon, className: 'text-muted-foreground', label: 'Ignored' }
+  ignored: { Icon: EyeOffIcon, className: 'text-muted-foreground', label: 'Ignored' },
+  renamed: { Icon: ArrowRightLeftIcon, className: 'text-state-needs-you', label: 'Renamed' },
+  conflicted: { Icon: AlertCircleIcon, className: 'text-destructive', label: 'Conflicted' },
+  staged: { Icon: CheckCircle2Icon, className: 'text-state-working', label: 'Staged' }
 }
 
 interface NodeRow {
