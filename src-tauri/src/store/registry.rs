@@ -68,11 +68,12 @@ pub struct LastModel {
 
 /// A partial update to one `Session` (port of `registry.ts`'s own `updateSession(id, patch:
 /// Partial<Session>)`, used by `session::agent`'s `syncFromState`/`startNewConversation`/the
-/// stopped-Session Conversation switch, Phase 3). `current_conversation`/`last_message_count`
-/// are tri-state (`None` = leave unchanged, `Some(None)` = clear to `null`, `Some(Some(v))` =
-/// set) since both callers above need to explicitly clear them (a brand new Conversation); every
-/// other field here is only ever set, never cleared, by its callers, so a plain `Option<T>`
-/// (`None` = leave unchanged) is enough.
+/// stopped-Session Conversation switch, Phase 3). `current_conversation`/`last_message_count`/
+/// `archived_at` are tri-state (`None` = leave unchanged, `Some(None)` = clear to `null`,
+/// `Some(Some(v))` = set) since their callers need to explicitly clear them (a brand new
+/// Conversation, or `sessions.restore` un-archiving a Session, lane R2 #785); every other field
+/// here is only ever set, never cleared, by its callers, so a plain `Option<T>` (`None` = leave
+/// unchanged) is enough.
 #[derive(Debug, Clone, Default)]
 pub struct SessionPatch {
     pub last_activity_at: Option<String>,
@@ -81,6 +82,7 @@ pub struct SessionPatch {
     pub last_message_count: Option<Option<i64>>,
     pub last_model: Option<LastModel>,
     pub last_thinking_level: Option<Option<String>>,
+    pub archived_at: Option<Option<String>>,
 }
 
 /// The full contents of `registry.json`.
@@ -391,6 +393,9 @@ impl RegistryStore {
             if let Some(value) = patch.last_thinking_level {
                 session.last_thinking_level = value;
             }
+            if let Some(value) = patch.archived_at {
+                session.archived_at = value;
+            }
         }
         if let Err(err) = self.persist().await {
             self.data.sessions[index] = previous;
@@ -398,6 +403,37 @@ impl RegistryStore {
             return Err(err.into());
         }
         Ok(self.data.sessions[index].clone())
+    }
+
+    /// Removes the Session with `id` from the registry (`registry.ts`'s own `removeSession`,
+    /// lane R2 #785's `sessions.delete`). Follows the exact same rollback-on-failed-write
+    /// discipline as `remove_repository` above, adapted to Sessions and returning the removed
+    /// `Session` by value (the caller still needs it -- `session_dir` -- after this call).
+    pub async fn remove_session(&mut self, id: &str) -> Result<Session, RegistryStoreError> {
+        let index = self
+            .data
+            .sessions
+            .iter()
+            .position(|s| s.id == id)
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Session not found: {id}"),
+                )
+            })?;
+        let removed = self.data.sessions.remove(index);
+        if let Err(err) = self.persist().await {
+            // Put the Session back if nothing else removed it meanwhile (a concurrent write
+            // this call did not expect), then make one best-effort attempt to save the restored
+            // data -- a write queued earlier may already have saved the removal.
+            if !self.data.sessions.iter().any(|s| s.id == removed.id) {
+                let insert_at = index.min(self.data.sessions.len());
+                self.data.sessions.insert(insert_at, removed.clone());
+            }
+            let _ = self.persist().await;
+            return Err(err.into());
+        }
+        Ok(removed)
     }
 
     pub fn get_session(&self, id: &str) -> Option<&Session> {
@@ -441,3 +477,7 @@ fn resolve_path_lexical(p: &str) -> String {
     }
     collapsed.to_string_lossy().into_owned()
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

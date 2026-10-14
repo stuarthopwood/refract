@@ -64,6 +64,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 # transitively) does not support by design -- `regex`'s own docs point to `fancy-regex` as the
 # crate to reach for when lookaround is unavoidable.
 fancy-regex = "0.19.2"
+dunce = "1.0.5"
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
