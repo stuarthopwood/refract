@@ -125,6 +125,7 @@ async fn get_config_rejects_an_invalid_key_before_ever_calling_the_executor() {
 /// test-local timeout so a regression fails fast instead of hanging the whole suite for the
 /// production 1 MiB/15 s limits.
 #[tokio::test]
+#[ignore = "DIAGNOSTIC ONLY, round-tripping to isolate a CI-only entrypoint failure -- remove before merge"]
 async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_exceeds_the_cap() {
     let mut command = Command::new("cmd");
     command
