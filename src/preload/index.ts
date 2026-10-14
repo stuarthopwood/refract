@@ -63,9 +63,25 @@ function on<T>(channel: string, handler: (payload: T) => void): Unsubscribe {
   }
 }
 
+// Lane R11b (issue #794): `readiness.installDependency`, `updates.*` and `app.getVersion` are
+// new main-process features -- per epic #797's own rule ("Electron main-process features are
+// frozen; new main-process features are built in Rust"), Electron never gains a real
+// implementation of any of these. These three inert stubs exist ONLY so this object still
+// satisfies the shared `RefractApi` type (which both this file and `src/tauri-bridge/index.ts`
+// implement); they never touch `ipcRenderer.invoke` at all (an invoke to an unregistered
+// channel would reject with a raw Electron error, not resolve to a clean `Result`, so routing
+// through the normal `request()` helper here would be actively wrong, not merely inert). Always
+// resolves `{ ok: false, error: { code: 'unsupported', ... } }`, the same `FR-007` envelope
+// shape the Rust build itself returns for any channel it has not registered yet.
+const UNSUPPORTED_IN_ELECTRON = {
+  ok: false as const,
+  error: { code: 'unsupported' as const, message: 'Not available in the Electron build.' }
+}
+
 const refract: RefractApi = {
   readiness: {
-    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK)
+    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    installDependency: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON)
   },
 
   repositories: {
@@ -230,7 +246,16 @@ const refract: RefractApi = {
   },
 
   app: {
-    openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES)
+    openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES),
+    getVersion: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON)
+  },
+
+  // Lane R11b (issue #794): see this file's own header comment above `UNSUPPORTED_IN_ELECTRON`
+  // -- `updates.*` is a Rust-only, new main-process feature, never implemented on Electron.
+  updates: {
+    check: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON),
+    getState: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON),
+    install: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON)
   },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
@@ -258,7 +283,13 @@ const refract: RefractApi = {
     on<{ sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
   onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
-  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
+  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
+  // Lane R11b (issue #794): never fired on Electron (see this file's header comment); a no-op
+  // unsubscribe is a faithful, harmless implementation since there is never anything to
+  // unsubscribe from.
+  onReadinessInstallProgress: () => () => undefined,
+  onReadinessChanged: () => () => undefined,
+  onUpdatesStateChanged: () => () => undefined
 }
 
 contextBridge.exposeInMainWorld('refract', refract)

@@ -13,6 +13,7 @@ pub mod process;
 pub mod session;
 pub mod shell;
 pub mod store;
+pub mod updates;
 
 use std::path::PathBuf;
 
@@ -205,14 +206,18 @@ pub fn run() {
     // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
     // writes anything to disk until an explicit mutation calls its own `persist()`, so two
     // instances racing this same read is never a corruption risk, only a redundant one.
-    let (registry, settings) = tauri::async_runtime::block_on(async {
+    let (registry, settings, update_state) = tauri::async_runtime::block_on(async {
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
             .unwrap_or_else(|err| panic!("refract-tauri: failed to open registry.json: {err}"));
         let settings = store::settings::SettingsStore::open(&data_dir)
             .await
             .unwrap_or_else(|err| panic!("refract-tauri: failed to open settings.json: {err}"));
-        (registry, settings)
+        // Lane R11b (issue #794): `UpdateStateStore::open` never fails (falls back to
+        // `UpdateState::default()` on any read/parse problem, same as `registry`/`settings`'s
+        // own corrected-default-in-memory stance) -- no `unwrap_or_else`/`panic!` needed here.
+        let update_state = updates::state::UpdateStateStore::open(&data_dir).await;
+        (registry, settings, update_state)
     });
 
     // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already
@@ -233,10 +238,23 @@ pub fn run() {
     let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     let session_manager_for_exit = session_manager.clone();
+    // Lane R11b (issue #794): the startup resolve-installing-state-then-check runs inside the
+    // `setup` closure below (after the window is shown, contracts/ipc.md "Startup behaviour");
+    // the install-on-quit hook runs in the `ExitRequested` handler further down. Neither is
+    // `AppState::session_manager`'s own agent-backed path, so a dedicated clone each, same
+    // reasoning as `session_manager_for_exit`/`data_dir_for_setup` just above/below.
+    let session_manager_for_updates_startup = session_manager.clone();
+    let update_state = std::sync::Arc::new(tokio::sync::Mutex::new(update_state));
+    let update_state_for_setup = update_state.clone();
+    let update_state_for_exit = update_state.clone();
     // Issue #623: cloned before `data_dir` moves into `AppState` below -- the setup closure
     // applies the saved window state (`shell::window_state::Tracker` keeps its own copy for
     // the final write at quit, so only one clone is needed here).
     let data_dir_for_setup = data_dir.clone();
+    // Lane R11b (issue #794): the install-on-quit hook needs `<data_dir>/updates` to re-verify
+    // a `Downloaded` installer before scheduling it (`install_on_quit::verify_installer_before_
+    // quit`), after `data_dir` itself has moved into `AppState` below.
+    let data_dir_for_exit = data_dir.clone();
 
     let app_state = AppState {
         data_dir,
@@ -358,12 +376,35 @@ pub fn run() {
                 });
             }
             app.manage(window_state_tracker);
+            // Lane R11b (issue #794): managed Tauri state (not an `AppState` field, see
+            // `ipc::updates`'s own header comment) so `ipc::updates`/`ipc::readiness`'s handlers
+            // can reach it through the live `AppHandle` `AppState::app_handle` already carries.
+            app.manage(update_state_for_setup.clone());
 
             // Issue #793: the one global notification click handler, registered before any
             // notification is ever shown (`shell::notifications::init`'s own doc comment).
             shell::notifications::init(app.handle());
 
             window.show()?;
+
+            // contracts/ipc.md "Startup behaviour" (FR-020, SC-010): kicked off after the
+            // window is shown, never awaited before `window.show()` above -- the same
+            // fire-and-forget stance `shell::memory`'s own sampler timer already takes rather
+            // than blocking startup on it. Logic lives in `updates::run_startup_update_check`
+            // (`AGENTS.md` "No god files").
+            {
+                let update_state = update_state_for_setup.clone();
+                let session_manager = session_manager_for_updates_startup.clone();
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let current_version = app_handle.package_info().version.to_string();
+                    let result =
+                        updates::run_startup_update_check(&update_state, &current_version).await;
+                    let payload = serde_json::to_value(ipc::updates::to_renderer_state(&result))
+                        .expect("UpdateState is always JSON-serialisable");
+                    session_manager.emit_updates_state_changed(&payload);
+                });
+            }
 
             Ok(())
         })
@@ -381,12 +422,19 @@ pub fn run() {
             api.prevent_exit();
             let session_manager = session_manager_for_exit.clone();
             let app_handle = app_handle.clone();
+            let update_state = update_state_for_exit.clone();
+            let updates_dir = data_dir_for_exit.join("updates");
             tauri::async_runtime::spawn(async move {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     session_manager.stop_all(),
                 )
                 .await;
+                // Lane R11b (issue #794), FR-015/FR-016: runs after every live agent has
+                // already been asked to stop above, so install-on-quit never interrupts a
+                // running agent. Logic lives in `updates::run_install_on_quit_hook` (`AGENTS.md`
+                // "No god files").
+                updates::run_install_on_quit_hook(&update_state, &updates_dir).await;
                 // Issue #623: the final, awaited window-state write. The maximised flag was
                 // already captured fresh at `WindowEvent::CloseRequested` time (gate fix: the
                 // window itself may already be destroyed by now for a user-initiated close/

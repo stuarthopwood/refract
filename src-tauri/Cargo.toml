@@ -40,6 +40,17 @@ dirs = "7.0.0"
 which = "8.0.6"
 dunce = "1.0.5"
 
+# Lane R11b (issue #794): HTTPS fetches for dependency-install vendor installers (Git for
+# Windows, the GitHub CLI's portable zip) and SHA-256 verification of a downloaded Refract
+# update installer against its published `.sha256` asset (research.md decision 4, spec 006).
+# `default-features = false` drops reqwest's default `native-tls` (which would pull in a system
+# OpenSSL/Schannel dependency this Windows-only build does not need) in favour of `rustls-tls`
+# (a pure-Rust TLS stack, no extra system dependency); `json` is used for the GitHub Releases API
+# response, `stream` for streaming a downloaded installer straight to disk instead of buffering
+# a ~150MB body in memory first.
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "json", "stream"] }
+sha2 = "0.10.8"
+
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
 # Windows-only anyway (spec.md Assumptions), but there is no reason to pull Win32 bindings into a

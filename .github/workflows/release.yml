@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least privilege by default, matching this repo's other workflows; the release job below
+# grants only the `contents: write` it actually needs to create a GitHub Release.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build installer and publish release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      # Workflow-local, NOT the shared dev machine's `C:/Users/shopwood/code-target/refract`
+      # convention (scripts/verify-tauri.mjs, CONTEXT.md) -- a CI runner has no other lane
+      # contending for the same disk, so there is nothing to coordinate here. CARGO_INCREMENTAL=0
+      # still travels with it: a one-shot release build gains nothing from incremental artefacts
+      # and they only cost disk/IO on a fresh runner.
+      CARGO_TARGET_DIR: ${{ github.workspace }}\cargo-target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-workspaces: "src-tauri -> target"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Full release bundle, NSIS only (tauri.conf.json's bundle.targets no longer lists msi --
+      # see specs/016-tauri-rust-build/installer-probes.md's Recommended design for R11b).
+      - name: Build Tauri release bundle
+        run: pnpm tauri build
+
+      - name: Locate built installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "$env:CARGO_TARGET_DIR\release\bundle\nsis" -Filter "*-setup.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) {
+            throw "No NSIS installer .exe found under $env:CARGO_TARGET_DIR\release\bundle\nsis"
+          }
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Checksum installer
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash -Algorithm SHA256 -Path "${{ steps.installer.outputs.path }}"
+          # Sibling `.sha256` file next to the `.exe` in the same release, matching the asset-name
+          # pattern the Rust update checker/installer expect (specs/006-installer-and-updates's
+          # research.md decision 4: checksum-verify a downloaded update installer before running
+          # it).
+          "$($hash.Hash.ToLower())  ${{ steps.installer.outputs.name }}" | Out-File -FilePath "${{ steps.installer.outputs.path }}.sha256" -Encoding ascii -NoNewline
+
+      # Code signing is explicitly Stuart's own not-yet-made decision
+      # (specs/016-tauri-rust-build/installer-probes.md's "Code signing" section, issue #794) --
+      # there is no signing certificate/secret configured in this repo yet, so this step stays
+      # commented out and inert rather than inventing a call against a secret that does not
+      # exist. When a certificate/secret is chosen, this is where a signing pass over the built
+      # installer would go, before the release step below picks it up.
+      # - name: Sign installer
+      #   shell: pwsh
+      #   env:
+      #     SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
+      #     SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+      #   run: |
+      #     signtool sign /f cert.pfx /p $env:SIGNING_CERTIFICATE_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "${{ steps.installer.outputs.path }}"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          files: |
+            ${{ steps.installer.outputs.path }}
+            ${{ steps.installer.outputs.path }}.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -15,6 +15,7 @@ import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
+import { useUpdateStore } from './update-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
 // value instead of a toast on every cold start. `ok` reports whether the real value loaded
@@ -144,6 +145,12 @@ export function initStores(): void {
   })
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
+  })
+  // Lane R11b (issue #794): drives the status bar's update badge (`StatusBar.tsx`); the initial
+  // `updates.getState()` load below covers the window between app start and the first of
+  // these, same reasoning as every other broadcast-plus-initial-load pair in this function.
+  window.refract.onUpdatesStateChanged((state) => {
+    useUpdateStore.getState().setState(state)
   })
   // `accounts:github-changed` can arrive before the initial `accounts.github.list()` load below
   // resolves (another window switching/signing out/adding an account); once it has, the initial
@@ -280,5 +287,10 @@ export function initStores(): void {
     const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
     if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes(true)
+  })()
+
+  void (async () => {
+    const result = await window.refract.updates.getState()
+    if (result.ok) useUpdateStore.getState().setState(result.value)
   })()
 }

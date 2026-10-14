@@ -91,7 +91,11 @@ export type IpcErrorCode =
   | 'not-mergeable'
   | 'checkout-failed'
   | 'disabled'
-  | 'session-archived';
+  | 'session-archived'
+  // Lane R11b (issue #794, spec 006 contracts/ipc.md "New error codes").
+  | 'dependency-install-failed'
+  | 'update-unavailable'
+  | 'checksum-mismatch';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -127,7 +131,14 @@ export interface Readiness {
   git: Check;
   omp: Check;
   ompSignedIn: Check;
+  /** Lane R11b (issue #794): optional (never affects `allPass`, FR-008); also optional on this
+   * type since Electron's frozen `readiness.ts` never implements this new, Rust-only check. */
+  github?: Check;
 }
+
+// Types live in `./updates` (issue #806 "No god files"); re-exported so every existing
+// `from '../shared/ipc'` import site keeps working unchanged.
+export type { InstallableDependency, DependencyInstallProgress, UpdateState };
 
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
  * (T062) come straight through from `Session`: the last known provider/model/thinking level,
@@ -412,6 +423,12 @@ export const IPC_REQUESTS = {
   ACCOUNTS_OMP_SIGN_OUT: 'accounts.omp.signOut',
   ACCOUNTS_OMP_ANSWER: 'accounts.omp.answer',
   APP_OPEN_RELEASE_NOTES: 'app.openReleaseNotes',
+  // Lane R11b (issue #794, spec 006 "Installer and updates" contracts/ipc.md).
+  READINESS_INSTALL_DEPENDENCY: 'readiness.installDependency',
+  UPDATES_CHECK: 'updates.check',
+  UPDATES_GET_STATE: 'updates.getState',
+  UPDATES_INSTALL: 'updates.install',
+  APP_GET_VERSION: 'app.getVersion',
 } as const;
 
 export const IPC_EVENTS = {
@@ -435,6 +452,10 @@ export const IPC_EVENTS = {
   FILE_EXPLORER_RESET: 'file-explorer:reset',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
+  // Lane R11b (issue #794, spec 006 "Installer and updates" contracts/ipc.md).
+  READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
+  READINESS_CHANGED: 'readiness:changed',
+  UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
@@ -455,6 +476,8 @@ export type Unsubscribe = () => void;
 export interface RefractApi {
   readiness: {
     check(): Promise<Result<Readiness>>;
+    /** Lane R11b (issue #794): awaits the vendor install; progress on `onReadinessInstallProgress`, then `onReadinessChanged`. */
+    installDependency(dependency: InstallableDependency): Promise<Result<void>>;
   };
 
   repositories: {
@@ -849,6 +872,17 @@ export interface RefractApi {
    * link already uses (constitution V); never opened inside an app window. */
   app: {
     openReleaseNotes(): Promise<Result<void>>;
+    /** Lane R11b (issue #794): the running build's own version, for the update badge. */
+    getVersion(): Promise<Result<string>>;
+  };
+
+  /** Lane R11b (issue #794): updates from private GitHub Releases via the developer's signed-in `gh` CLI, never a stored token. */
+  updates: {
+    /** User-initiated; re-checks even from `'failed'`, unlike the automatic startup check. */
+    check(): Promise<Result<UpdateState>>;
+    getState(): Promise<Result<UpdateState>>;
+    /** Downloads and checksum-verifies; `onUpdatesStateChanged` drives a progress indicator. */
+    install(): Promise<Result<void>>;
   };
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionListChanged(handler: () => void): Unsubscribe;
@@ -897,6 +931,12 @@ export interface RefractApi {
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
+  /** Lane R11b (issue #794): drives the first-run readiness screen's Install progress text. */
+  onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
+  /** Lane R11b (issue #794): pushed after `readiness.installDependency`'s own automatic re-check. */
+  onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
+  /** Lane R11b (issue #794): drives the update badge in the status bar. */
+  onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
 }
 
 declare global {

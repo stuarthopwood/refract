@@ -14,6 +14,7 @@ import type {
   AttachmentImageFile,
   BranchEntry,
   ChatAnswer,
+  DependencyInstallProgress,
   DiffStat,
   FilePreview,
   FileTreeNode,
@@ -33,6 +34,7 @@ import type {
   SlashCommand,
   SubmitReviewInput,
   TranscriptOp,
+  UpdateState,
   Unsubscribe
 } from '../shared/ipc'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
@@ -110,7 +112,8 @@ function onFileDrop(handler: (event: { paths: string[]; position: { x: number; y
 
 const refract: RefractApi = {
   readiness: {
-    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK)
+    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    installDependency: (dependency) => request<void>(IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY, dependency)
   },
 
   repositories: {
@@ -281,7 +284,14 @@ const refract: RefractApi = {
   },
 
   app: {
-    openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES)
+    openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES),
+    getVersion: () => request<string>(IPC_REQUESTS.APP_GET_VERSION)
+  },
+
+  updates: {
+    check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),
+    getState: () => request<UpdateState>(IPC_REQUESTS.UPDATES_GET_STATE),
+    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL)
   },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
@@ -309,7 +319,11 @@ const refract: RefractApi = {
     on<{ sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
   onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
-  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
+  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
+  onReadinessInstallProgress: (handler) =>
+    on<DependencyInstallProgress>(IPC_EVENTS.READINESS_INSTALL_PROGRESS, handler),
+  onReadinessChanged: (handler) => on<Readiness>(IPC_EVENTS.READINESS_CHANGED, handler),
+  onUpdatesStateChanged: (handler) => on<UpdateState>(IPC_EVENTS.UPDATES_STATE_CHANGED, handler)
 }
 
 // Set by `lib.rs`'s `setup` hook via a `WebviewWindowBuilder` initialization script (FR-010),

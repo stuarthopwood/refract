@@ -25,6 +25,7 @@ use crate::store::registry::{RegistryStore, RegistryStoreError};
 use crate::store::settings::SettingsStore;
 
 pub mod accounts;
+pub mod app;
 pub mod attachments;
 pub mod chat;
 pub mod clipboard;
@@ -39,6 +40,7 @@ pub mod sessions_lifecycle;
 pub mod settings;
 pub mod side_chat;
 pub mod theme;
+pub mod updates;
 
 /// Shared state every registered handler receives. `registry`/`settings` are each behind their
 /// own `Arc<tokio::sync::Mutex<_>>` -- one lock per store, not one lock for both, so a slow
@@ -171,6 +173,8 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
+    app::register(dispatcher);
+    updates::register(dispatcher);
 }
 
 // ---------------------------------------------------------------------------

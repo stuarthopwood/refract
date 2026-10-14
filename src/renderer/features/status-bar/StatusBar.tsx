@@ -4,12 +4,12 @@
 // moved to the ApprovalModePill above the message box (MessageInput.tsx, T098, FR-056):
 // Refract's Approval mode control lives there now, not here.
 import { useState } from 'react'
-import { AlertTriangleIcon } from 'lucide-react'
+import { AlertTriangleIcon, DownloadIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { useHealthStore, useMemoryStore, useSessionsStore } from '@/state'
+import { useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
 
 function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`
@@ -20,9 +20,11 @@ export function StatusBar() {
   const ompVersionWarning = useHealthStore((state) => state.ompVersionWarning)
   const sessions = useSessionsStore((state) => state.sessions)
   const stopAgent = useSessionsStore((state) => state.stopAgent)
+  const updateState = useUpdateStore((state) => state.state)
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [ompOpen, setOmpOpen] = useState(false)
-
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [installing, setInstalling] = useState(false)
   const liveSessions = sessions.filter((session) => session.status !== 'stopped')
 
   return (
@@ -81,6 +83,55 @@ export function StatusBar() {
             <PopoverContent align="end">
               <p className="font-medium text-foreground">Unverified omp version</p>
               <p className="mt-1 text-xs text-muted-foreground">{ompVersionWarning.hint}</p>
+            </PopoverContent>
+          </Popover>
+        )}
+        {updateState && (updateState.phase === 'available' || updateState.phase === 'downloading' || updateState.phase === 'downloaded') && (
+          <Popover open={updateOpen} onOpenChange={setUpdateOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(badgeVariants({ variant: 'outline' }), 'h-6 gap-1.5 px-2.5 hover:bg-accent')}
+              >
+                <DownloadIcon aria-hidden className="size-3" />
+                {updateState.phase === 'downloaded' ? 'Update ready: installs on quit' : `Update available: v${updateState.availableVersion}`}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end">
+              <p className="font-medium text-foreground">
+                {updateState.phase === 'downloaded' ? 'Update downloaded' : `Refract v${updateState.availableVersion} is available`}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {updateState.phase === 'downloaded'
+                  ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
+                  : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                {updateState.phase === 'available' && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={installing}
+                    onClick={() => {
+                      setInstalling(true)
+                      void window.refract.updates.install().finally(() => setInstalling(false))
+                    }}
+                  >
+                    {installing ? 'Downloading…' : 'Download update'}
+                  </Button>
+                )}
+                {updateState.notesUrl && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      void window.refract.app.openReleaseNotes()
+                    }}
+                  >
+                    Release notes
+                  </Button>
+                )}
+              </div>
             </PopoverContent>
           </Popover>
         )}
