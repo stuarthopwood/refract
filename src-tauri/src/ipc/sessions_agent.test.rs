@@ -185,6 +185,13 @@ struct FakeResumableAgent {
     terminated_unexpectedly: bool,
     send_fails: bool,
     start_fails: bool,
+    /// Gate-fix (round 3, test review HIGH): simulates a concurrent archive landing WHILE
+    /// `resolve_termination`'s own tail read is in flight (`resumeSession.test.ts`'s own
+    /// "archived during the tail read" case) -- flipped by `resolve_termination` itself below,
+    /// read by `is_archived`, so a caller that checks `is_archived` BEFORE calling
+    /// `resolve_termination` would wrongly see `false` here too.
+    archived_during_resolve: bool,
+    archived: StdMutex<bool>,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
     send_called: StdMutex<bool>,
@@ -204,10 +211,17 @@ impl ResumableAgent for FakeResumableAgent {
     }
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
+        if self.archived_during_resolve {
+            *self.archived.lock().unwrap() = true;
+        }
         TerminationDetectionResult {
             terminated_unexpectedly: self.terminated_unexpectedly,
             ..Default::default()
         }
+    }
+
+    async fn is_archived(&self) -> bool {
+        *self.archived.lock().unwrap()
     }
 
     async fn start(&self) -> Result<(), AgentError> {
@@ -237,7 +251,6 @@ impl ResumableAgent for FakeResumableAgent {
         }
     }
 }
-
 fn fake_resumable(
     status: SessionStatus,
     status_after_start: Option<SessionStatus>,
@@ -246,6 +259,27 @@ fn fake_resumable(
     send_fails: bool,
     start_fails: bool,
 ) -> FakeResumableAgent {
+    fake_resumable_with_archive_race(
+        status,
+        status_after_start,
+        stop_reason,
+        terminated_unexpectedly,
+        send_fails,
+        start_fails,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fake_resumable_with_archive_race(
+    status: SessionStatus,
+    status_after_start: Option<SessionStatus>,
+    stop_reason: Option<&str>,
+    terminated_unexpectedly: bool,
+    send_fails: bool,
+    start_fails: bool,
+    archived_during_resolve: bool,
+) -> FakeResumableAgent {
     FakeResumableAgent {
         status,
         status_after_start,
@@ -253,6 +287,8 @@ fn fake_resumable(
         terminated_unexpectedly,
         send_fails,
         start_fails,
+        archived_during_resolve,
+        archived: StdMutex::new(false),
         start_called: StdMutex::new(false),
         notify_called: StdMutex::new(false),
         send_called: StdMutex::new(false),
@@ -353,6 +389,35 @@ async fn resume_session_core_refuses_an_archived_session() {
         Err(ResumeCoreError::Refused("not-eligible"))
     ));
     assert!(!*agent.start_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn resume_session_core_refuses_when_archived_during_the_tail_read() {
+    // Gate-fix (round 3, test review HIGH): the sibling test above passes `archived=true` as a
+    // snapshot from BEFORE `resolve_termination`'s own tail read starts -- it cannot prove the
+    // race where the archive instead lands DURING that await. `archived_during_resolve` flips
+    // `FakeResumableAgent`'s own `is_archived` flag from inside `resolve_termination` itself, so
+    // this proves `resume_session_core`'s own fresh `is_archived().await` re-check (not the
+    // stale `archived` snapshot parameter) is what catches it.
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable_with_archive_race(
+        SessionStatus::Stopped,
+        Some(SessionStatus::Working),
+        Some("agent-exited"),
+        false,
+        false,
+        false,
+        true,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    assert!(matches!(
+        result,
+        Err(ResumeCoreError::Refused("not-eligible"))
+    ));
+    assert!(
+        !*agent.start_called.lock().unwrap(),
+        "must never start the agent for a Session it is about to report as ineligible"
+    );
 }
 
 #[tokio::test]
@@ -636,12 +701,16 @@ async fn attach_snapshot_core_returns_not_found_for_an_unknown_session_id() {
 //
 // Genuinely out of reach (documented, not invented around):
 // - `resumeSession.test.ts`'s "refuses a resume when the Session is archived by a concurrent
-//   call during the tail read": in this port the belt-and-braces re-check lives in
-//   `ResumeAgentAdapter::send_resume_instruction` itself, which re-reads `state.registry` right
-//   before the one irreversible `send()` call -- code `FakeResumableAgent` never touches (its own
-//   `send_resume_instruction` has no registry at all). Proving the race needs a second task
-//   actually mutating a LIVE registry during that adapter's own await, which this port exposes no
-//   deterministic seam to control; out of reach without a dedicated process-level integration
+//   call during the tail read": covered now by `resume_session_core_refuses_when_archived_
+//   during_the_tail_read` above via `ResumableAgent::is_archived`'s own fresh re-check inside
+//   `resume_session_core` (added round 3, test review HIGH -- the race is caught before
+//   `start()` even runs, not only by the belt-and-braces re-check described below). The
+//   SEPARATE, later window this bullet used to also cover -- archive landing AFTER
+//   `resume_session_core` already returned `Ok` but before `ResumeAgentAdapter::send_resume_
+//   instruction`'s own `send()` -- remains out of reach from here: that re-check reads a LIVE
+//   `state.registry` which `FakeResumableAgent` never touches (its own `send_resume_instruction`
+//   has no registry at all), and proving it needs a second task actually mutating that registry
+//   during the adapter's own await; out of reach without a dedicated process-level integration
 //   harness.
 // - `resumeSession.test.ts`'s "returns the snapshot built AFTER agent.send resolves, not the
 //   pre-send one": N/A in this port's split, not merely untested -- `resume_session_core` never

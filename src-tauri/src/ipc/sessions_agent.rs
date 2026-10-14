@@ -175,6 +175,14 @@ pub(crate) trait ResumableAgent {
     async fn status(&self) -> SessionStatus;
     async fn stop_reason(&self) -> Option<String>;
     async fn resolve_termination(&self) -> TerminationDetectionResult;
+    /// Gate-fix (round 3, test review HIGH): a FRESH re-check, called again right before
+    /// `start()` -- the `archived` bool `resume_session_core` is given is a snapshot from
+    /// BEFORE `resolve_termination`'s own tail read; a concurrent archive landing DURING that
+    /// await was previously invisible until `send_resume_instruction`'s own later re-check,
+    /// which only runs AFTER `start()` already spawned a brand-new process for a Session this
+    /// call is about to report as ineligible. TS's own equivalent never calls `start()` at all
+    /// for this race.
+    async fn is_archived(&self) -> bool;
     async fn start(&self) -> Result<(), AgentError>;
     async fn notify_list_changed(&self);
     /// Sends the configured resume instruction as a real turn. The real adapter also re-checks
@@ -218,6 +226,9 @@ pub(crate) async fn resume_session_core<A: ResumableAgent>(
     ) {
         return Err(ResumeCoreError::Refused(code));
     }
+    if agent.is_archived().await {
+        return Err(ResumeCoreError::Refused("not-eligible"));
+    }
     let _ = agent.start().await;
     agent.notify_list_changed().await;
     if agent.status().await == SessionStatus::Stopped {
@@ -248,6 +259,18 @@ impl ResumableAgent for ResumeAgentAdapter<'_> {
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
         self.agent.resolve_termination().await
+    }
+
+    async fn is_archived(&self) -> bool {
+        // Treats a Session no longer found in the registry as archived too -- a deleted
+        // Session must never be read as "not archived" just because it is gone, same stance
+        // `send_resume_instruction`'s own re-check already takes.
+        self.state
+            .registry
+            .lock()
+            .await
+            .get_session(&self.id)
+            .is_none_or(|session| session.archived_at.is_some())
     }
 
     async fn start(&self) -> Result<(), AgentError> {

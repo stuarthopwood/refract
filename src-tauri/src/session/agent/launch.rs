@@ -549,8 +549,34 @@ impl SessionAgent {
         // `proc.stop()` below to find) -- a no-op if nothing is currently starting.
         self.cancel_start().await;
         let proc = { self.state.lock().await.process.clone() };
-        if let Some(proc) = proc {
+        if let Some(proc) = &proc {
             proc.stop().await;
+        }
+        // Gate-fix (round 3, code review HIGH): the two steps above cover a start that is
+        // already queued, memory-deferring, or has a live process recorded -- but a start
+        // still inside `OmpProcess::connect` (the raw spawn, before `acquire_slot` even grants
+        // a slot) or anywhere up to `watch_for_cancel` first arming has NO `state.process` yet
+        // for either to find, and its own `launch()` call is still running. Without this,
+        // `sessions.delete`/`.archive` (which call this, then immediately remove the pid
+        // record and the worktree) could run while `omp` was still alive with its cwd inside
+        // that same worktree, racing a Windows EBUSY/EPERM removal failure -- exactly the class
+        // `sessions_delete`'s own "CRITICAL fix" ordering comment exists to prevent. TS's own
+        // `shutdown()` awaits `startingProcess`'s/`startPromise`'s settling before doing
+        // anything destructive past this point (`SessionAgent.ts`: `this.startingProcess?.
+        // cancelStart(); while (this.startPromise...) await ...`). Acquiring `start_lock` here
+        // blocks until whichever `start()`/`launch()` call currently holds it (if any) returns
+        // -- `stop_requested` is already `true` by the time that happens, so every
+        // `bail_if_stop_requested`/inline `stop_requested` check inside `acquire_slot`/
+        // `launch()` makes that attempt end quickly rather than run out its own ceiling.
+        drop(self.start_lock.lock().await);
+        // A start could have completed and recorded a fresh `state.process` in the narrow
+        // window between the checks above and this lock acquisition -- stop it too, unless it
+        // is the exact same process already stopped above.
+        let proc_after = { self.state.lock().await.process.clone() };
+        if let Some(proc_after) = &proc_after {
+            if !proc.as_ref().is_some_and(|p| Arc::ptr_eq(p, proc_after)) {
+                proc_after.stop().await;
+            }
         }
     }
 }

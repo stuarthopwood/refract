@@ -476,7 +476,15 @@ async fn marker_invalid_with_no_marker_at_all() {
 
 #[tokio::test]
 async fn resolve_termination_is_clean_when_stopped_on_request_flag_is_set() {
-    let session = make_session(Some("C:/does-not-matter.jsonl"), None, None);
+    // Gate-fix (round 3, test review HIGH): the file now carries an UNMATCHED tool call -- if
+    // the `stopped_on_request` short-circuit were ever removed, `detect_unexpected_termination`
+    // reading this SAME file would report `terminated_unexpectedly: true` (see
+    // `no_exit_record_an_unmatched_tool_call_names_the_pending_tool`), so this test only stays
+    // green while the short-circuit genuinely skips the tail read. The previous version pointed
+    // at a nonexistent file, which reads as clean either way (a missing file is always clean),
+    // so it passed regardless of whether the short-circuit existed at all.
+    let file = write_scratch(&assistant_tool_call("call-1", "bash")).await;
+    let session = make_session(Some(&file), None, None);
     let result = resolve_termination_for(&session, true).await;
     assert!(is_clean(&result));
 }
@@ -598,6 +606,35 @@ async fn record_marker_skips_the_write_once_a_newer_life_has_started() {
         .unwrap();
     assert!(session.stopped_on_request_conversation.is_none());
     assert!(session.stopped_on_request_at_size.is_none());
+}
+
+#[tokio::test]
+async fn record_marker_checks_still_current_after_the_stat_not_before() {
+    // Gate-fix (round 3, test review HIGH): the sibling test above bumps the epoch BEFORE
+    // calling `record_stopped_on_request_marker` at all, so it cannot distinguish a check done
+    // before the stat from one done after it -- the mismatch already exists either way. Races
+    // the two calls for real via `tokio::join!` so the epoch bump genuinely lands WHILE
+    // `record`'s own `fs::metadata` await is still pending, proving the `still_current` check
+    // runs AFTER the stat resolves (a check done before the stat would read the old epoch and
+    // wrongly let the write through).
+    let file = write_scratch("hello").await;
+    let agent = make_marker_test_agent("race-after-stat", None, None).await;
+    let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
+    tokio::join!(
+        record_stopped_on_request_marker(&agent, Some(&file), epoch_at_exit),
+        agent.clear_stopped_on_request_marker(),
+    );
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert!(
+        session.stopped_on_request_conversation.is_none(),
+        "epoch bump during the stat must still block the write"
+    );
 }
 
 #[tokio::test]
