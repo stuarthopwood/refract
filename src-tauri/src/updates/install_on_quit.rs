@@ -31,9 +31,9 @@
 
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
+use super::checksum::{checksum_matches, hex_digest_file};
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
 
 /// Windows-only: `CREATE_NO_WINDOW`, the same flag `git/git.rs` uses -- no console window flashes
@@ -67,10 +67,7 @@ pub async fn verify_installer_before_quit(
         .unwrap_or("")
         .to_lowercase();
 
-    let installer_bytes = tokio::fs::read(installer_path)
-        .await
-        .map_err(|err| format!("could not re-hash {}: {err}", installer_path.display()))?;
-    let actual = hex_digest(&installer_bytes);
+    let actual = hex_digest_file(installer_path).await?;
 
     if !checksum_matches(&actual, &expected) {
         return Err(format!(
@@ -105,8 +102,12 @@ pub async fn schedule_install_on_quit(
     // input) and `pwsh` (a `which`/fixed-path-resolved, equally trusted system path) are
     // interpolated directly -- neither is a shell-injection boundary, and `pwsh` is still
     // defensively single-quote-escaped below along with everything else in `inner_command_line`.
+    // Gate finding (PR #829 round 1, Medium): `/UPDATE` tells the generated installer this is an
+    // upgrade over an existing install (`installer.nsi`'s own `PageLeaveReinstall`/`UpdateMode`
+    // handling) -- without it, every update silently re-creates the Desktop/Start-menu shortcuts
+    // and re-runs the WebView2 bootstrapper step on each quit-then-install cycle.
     let inner_command = format!(
-        "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S'"
+        "Wait-Process -Id {refract_pid} -ErrorAction SilentlyContinue; Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE'"
     );
     let inner_command_line =
         format!("\"{pwsh_str}\" -NoProfile -NonInteractive -WindowStyle Hidden -Command \"{inner_command}\"");
@@ -244,22 +245,6 @@ fn installer_is_directly_inside(installer_path: &Path, updates_dir: &Path) -> bo
     installer_path.parent() == Some(updates_dir)
 }
 
-/// Lower-case hex SHA-256 of `bytes`. A plain byte-to-hex fold rather than relying on
-/// `GenericArray`'s own `LowerHex` impl, so this has no dependency on an undocumented trait bound
-/// holding across `sha2` versions.
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-/// Case-insensitive comparison, treating an empty/missing `expected` value as never-matching --
-/// same helper `installer.rs` factors out for its own download-then-verify path.
-fn checksum_matches(actual_hex: &str, expected: &str) -> bool {
-    !expected.is_empty() && actual_hex.eq_ignore_ascii_case(expected)
-}
-
 /// PowerShell single-quoted strings escape an embedded `'` by doubling it. Port of
 /// `installOnQuit.ts`'s own `escapeSingleQuoted`.
 fn escape_single_quoted(value: &str) -> String {
@@ -270,7 +255,7 @@ fn escape_single_quoted(value: &str) -> String {
 mod tests {
     use std::path::Path;
 
-    use super::{checksum_matches, escape_single_quoted, installer_is_directly_inside};
+    use super::{escape_single_quoted, installer_is_directly_inside};
 
     #[test]
     fn escapes_every_embedded_single_quote() {
@@ -296,12 +281,5 @@ mod tests {
             Path::new("C:/Users/dev/AppData/Roaming/Refract/updates/nested/Refract-setup.exe"),
             Path::new("C:/Users/dev/AppData/Roaming/Refract/updates"),
         ));
-    }
-
-    #[test]
-    fn checksum_matches_case_insensitively_and_rejects_empty_expected() {
-        assert!(checksum_matches("abc123", "ABC123"));
-        assert!(!checksum_matches("abc123", "def456"));
-        assert!(!checksum_matches("abc123", ""));
     }
 }

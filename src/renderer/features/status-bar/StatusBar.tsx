@@ -9,10 +9,35 @@ import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
+import { notify, useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
+import type { UpdateState } from '../../../shared/ipc'
 
 function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`
+}
+
+/** FR-017/data-model.md "unavailableReason": the one case `checker.rs` can leave on a `'failed'`
+ * badge alongside (or instead of) `lastError` -- a plain-words explanation, never the raw enum
+ * value, matching the Electron reference's `updateStatusText` (src/renderer/lib/updateActions.ts
+ * on `origin/spec-006-impl`, mined/unfinished). */
+function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailableReason']>): string {
+  switch (reason) {
+    case 'not-installed':
+      return 'GitHub CLI is not installed.'
+    case 'not-signed-in':
+      return 'GitHub CLI is not signed in. Run gh auth login.'
+    case 'offline':
+      return 'Could not reach GitHub.'
+  }
+}
+
+/** Gate finding (PR #829 round 1, HIGH): the status bar's own `'failed'` badge/popover text --
+ * `lastError` first (set by every download/checksum/install-on-quit failure, checker.rs), else
+ * `unavailableReason`'s own explanation, else a generic fallback. */
+function updateFailureMessage(state: UpdateState): string {
+  if (state.lastError) return state.lastError
+  if (state.unavailableReason) return updateUnavailableReasonText(state.unavailableReason)
+  return 'Update failed for an unknown reason.'
 }
 
 export function StatusBar() {
@@ -24,7 +49,9 @@ export function StatusBar() {
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [ompOpen, setOmpOpen] = useState(false)
   const [updateOpen, setUpdateOpen] = useState(false)
-  const [installing, setInstalling] = useState(false)
+  // Shared by the Download button (available phase) and the Retry button (failed phase) --
+  // mutually exclusive phases, so one busy flag never collides between the two actions.
+  const [actionBusy, setActionBusy] = useState(false)
   const liveSessions = sessions.filter((session) => session.status !== 'stopped')
 
   return (
@@ -86,55 +113,96 @@ export function StatusBar() {
             </PopoverContent>
           </Popover>
         )}
-        {updateState && (updateState.phase === 'available' || updateState.phase === 'downloading' || updateState.phase === 'downloaded') && (
-          <Popover open={updateOpen} onOpenChange={setUpdateOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(badgeVariants({ variant: 'outline' }), 'h-6 gap-1.5 px-2.5 hover:bg-accent')}
-              >
-                <DownloadIcon aria-hidden className="size-3" />
-                {updateState.phase === 'downloaded' ? 'Update ready: installs on quit' : `Update available: v${updateState.availableVersion}`}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end">
-              <p className="font-medium text-foreground">
-                {updateState.phase === 'downloaded' ? 'Update downloaded' : `Refract v${updateState.availableVersion} is available`}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {updateState.phase === 'downloaded'
-                  ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
-                  : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                {updateState.phase === 'available' && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={installing}
-                    onClick={() => {
-                      setInstalling(true)
-                      void window.refract.updates.install().finally(() => setInstalling(false))
-                    }}
-                  >
-                    {installing ? 'Downloading…' : 'Download update'}
-                  </Button>
-                )}
-                {updateState.notesUrl && (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => {
-                      void window.refract.app.openReleaseNotes()
-                    }}
-                  >
-                    Release notes
-                  </Button>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
+        {updateState &&
+          (updateState.phase === 'available' ||
+            updateState.phase === 'downloading' ||
+            updateState.phase === 'downloaded' ||
+            updateState.phase === 'failed') && (
+            <Popover open={updateOpen} onOpenChange={setUpdateOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    badgeVariants({ variant: 'outline' }),
+                    updateState.phase === 'failed'
+                      ? 'h-6 gap-1.5 border-state-needs-you/50 bg-state-needs-you/10 px-2.5 text-state-needs-you hover:bg-state-needs-you/20'
+                      : 'h-6 gap-1.5 px-2.5 hover:bg-accent'
+                  )}
+                >
+                  {updateState.phase === 'failed' ? (
+                    <AlertTriangleIcon aria-hidden className="size-3" />
+                  ) : (
+                    <DownloadIcon aria-hidden className="size-3" />
+                  )}
+                  {updateState.phase === 'failed'
+                    ? `Update failed: ${updateFailureMessage(updateState)}`
+                    : updateState.phase === 'downloaded'
+                      ? 'Update ready: installs on quit'
+                      : `Update available: v${updateState.availableVersion}`}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end">
+                <p className="font-medium text-foreground">
+                  {updateState.phase === 'failed'
+                    ? 'Update failed'
+                    : updateState.phase === 'downloaded'
+                      ? 'Update downloaded'
+                      : `Refract v${updateState.availableVersion} is available`}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {updateState.phase === 'failed'
+                    ? updateFailureMessage(updateState)
+                    : updateState.phase === 'downloaded'
+                      ? 'Installs automatically the next time you quit Refract; a running agent is never interrupted.'
+                      : 'Downloads and verifies the installer now; it installs the next time you quit, never interrupting a running agent.'}
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  {updateState.phase === 'available' && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={actionBusy}
+                      onClick={() => {
+                        setActionBusy(true)
+                        void window.refract.updates
+                          .install()
+                          .then((result) => {
+                            if (!result.ok) notify(result.error)
+                          })
+                          .finally(() => setActionBusy(false))
+                      }}
+                    >
+                      {actionBusy ? 'Downloading…' : 'Download update'}
+                    </Button>
+                  )}
+                  {updateState.phase === 'failed' && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={actionBusy}
+                      onClick={() => {
+                        setActionBusy(true)
+                        void window.refract.updates.check().finally(() => setActionBusy(false))
+                      }}
+                    >
+                      {actionBusy ? 'Checking…' : 'Try again'}
+                    </Button>
+                  )}
+                  {updateState.notesUrl && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        void window.refract.app.openReleaseNotes()
+                      }}
+                    >
+                      Release notes
+                    </Button>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
       </div>
     </footer>
   )

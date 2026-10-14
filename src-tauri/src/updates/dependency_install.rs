@@ -26,11 +26,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
+use super::checksum::checksum_matches;
 use super::dependency_install_http::{
-    allowlisted_client, download_to_file, exit_detail, fail_detail, fetch_json,
+    allowlisted_client, assert_allowed_url, download_to_file, exit_detail, fail_detail, fetch_json,
     find_asset_by_suffix, find_file_named, resolve_powershell, run_process, safe_file_name,
-    scratch_dir, GhLatestRelease,
+    scratch_dir, GhLatestRelease, FETCH_JSON_TIMEOUT,
 };
 use crate::process::executables::{prime_omp_cache, tar_exe_path};
 
@@ -42,9 +44,25 @@ const GIT_ASSET_SUFFIX: &str = "-64-bit.exe";
 const GITHUB_CLI_ASSET_SUFFIX: &str = "_windows_amd64.zip";
 
 /// Point-in-time pin, confirmed current against this issue's own probe machine
-/// (specs/016-tauri-rust-build/installer-probes.md). If a different tag is needed, update this
-/// one constant -- never let the install URL below silently track a moving branch instead.
+/// (specs/016-tauri-rust-build/installer-probes.md). Passed to the install script's own `-Ref`
+/// parameter (the omp version to install) -- this is a version identifier the script's API
+/// expects, not a trust boundary. If a different version is needed, update this one constant.
 const OMP_PINNED_TAG: &str = "v18.10.1";
+
+/// Gate hardening (security, supply-chain): the install SCRIPT itself is fetched from this exact
+/// commit, never the `v18.10.1` tag ref -- a git tag can be force-moved by whoever controls the
+/// upstream repo, silently changing what this already-reviewed script does on every Refract
+/// install from then on; a commit sha is content-addressed and cannot be redefined. Resolved once
+/// via `gh api repos/can1357/oh-my-pi/git/refs/tags/v18.10.1` (confirmed byte-identical to the
+/// tag URL at resolution time); update both this and `OMP_INSTALL_SCRIPT_SHA256` together if the
+/// pinned omp version above ever changes.
+const OMP_INSTALL_SCRIPT_COMMIT: &str = "5d0aaffaf1f987503ce129a642fb6e30339615af";
+/// SHA-256 of the script at the commit above, computed once at pin time. `install_omp_inner`
+/// verifies every fetch against this before ever handing the content to PowerShell -- the first,
+/// not the last, line of defence; the commit pin above should already make a mismatch impossible
+/// in normal operation, but defence in depth costs nothing here.
+const OMP_INSTALL_SCRIPT_SHA256: &str =
+    "86e91d6bac0e66c700662757c71e54cf551fa8c8a82fdd370043348b1d8df1fb";
 
 const GIT_MANUAL_HINT: &str =
     "If this keeps failing, install Git for Windows yourself from git-scm.com and choose Re-check.";
@@ -195,15 +213,44 @@ async fn install_omp_inner(on_progress: &impl Fn(DependencyInstallProgress)) -> 
     let pwsh = resolve_powershell();
     // Built from ONLY this module's own fixed constants -- never any caller-supplied value
     // (constitution V / security: a moving `-Ref` or an injected script URL would be a
-    // supply-chain risk).
+    // supply-chain risk). The script is fetched by COMMIT, not tag (`OMP_INSTALL_SCRIPT_COMMIT`'s
+    // own doc comment), and its content is verified against a pinned SHA-256 before it is ever
+    // written to disk or handed to PowerShell -- unlike the old inline `irm {url} | iex` shape,
+    // nothing here executes unverified bytes.
     let script_url = format!(
-        "https://raw.githubusercontent.com/can1357/oh-my-pi/{OMP_PINNED_TAG}/scripts/install.ps1"
+        "https://raw.githubusercontent.com/can1357/oh-my-pi/{OMP_INSTALL_SCRIPT_COMMIT}/scripts/install.ps1"
     );
-    let script =
-        format!("& ([scriptblock]::Create((irm {script_url}))) -Binary -Ref {OMP_PINNED_TAG}");
+    let script_bytes = fetch_omp_install_script(&script_url)
+        .await
+        .map_err(|err| fail_detail(&err, OMP_MANUAL_HINT))?;
+
+    let dir = scratch_dir()
+        .await
+        .map_err(|err| fail_detail(&err, OMP_MANUAL_HINT))?;
+    let script_path = dir.join("install.ps1");
+    tokio::fs::write(&script_path, &script_bytes)
+        .await
+        .map_err(|err| {
+            fail_detail(
+                &format!("could not write omp install script: {err}"),
+                OMP_MANUAL_HINT,
+            )
+        })?;
+    let script_path_str = script_path.to_string_lossy().into_owned();
+
     let (code, message) = run_process(
         &pwsh,
-        &["-NoProfile", "-NonInteractive", "-Command", &script],
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path_str,
+            "-Binary",
+            "-Ref",
+            OMP_PINNED_TAG,
+        ],
         PROCESS_TIMEOUT,
     )
     .await
@@ -234,6 +281,46 @@ async fn install_omp_inner(on_progress: &impl Fn(DependencyInstallProgress)) -> 
         ));
     }
     Ok(())
+}
+
+/// Fetches `script_url` (already validated as commit-addressed `raw.githubusercontent.com`) and
+/// verifies its content against `OMP_INSTALL_SCRIPT_SHA256` before returning it -- the caller
+/// never writes or executes a byte of this response until it has passed this check.
+async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
+    let url = assert_allowed_url(
+        script_url,
+        &["raw.githubusercontent.com"],
+        "omp install script",
+    )?;
+    let client = allowlisted_client()?;
+    let response = client
+        .get(url)
+        .header("User-Agent", "refract-dependency-install")
+        .timeout(FETCH_JSON_TIMEOUT)
+        .send()
+        .await
+        .map_err(|err| format!("omp install script request failed: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "omp install script responded with HTTP {}",
+            response.status()
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|err| format!("omp install script download failed: {err}"))?
+        .to_vec();
+    let actual: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if !checksum_matches(&actual, OMP_INSTALL_SCRIPT_SHA256) {
+        return Err(format!(
+            "omp install script checksum mismatch: expected {OMP_INSTALL_SCRIPT_SHA256}, got {actual}"
+        ));
+    }
+    Ok(bytes)
 }
 
 /// Fetches the latest GitHub CLI release, downloads its Windows amd64 **portable zip** (never the

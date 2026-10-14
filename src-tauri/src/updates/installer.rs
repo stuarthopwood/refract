@@ -1,20 +1,50 @@
 // Update download, checksum verification (spec 006 FR-014, research.md decision 4): downloads
 // the available release's installer and checksum assets via `gh release download` (the
 // developer's own signed-in credential, never a stored token), recomputes the installer's
-// SHA-256 with the `sha2` crate, and only persists `phase: Downloaded` on a match. Ported from
+// SHA-256, and only persists `phase: Downloaded` on a match. Ported from
 // `src/main/update/UpdateInstaller.ts`'s `downloadUpdate`/`UpdateError` (git show
 // origin/spec-006-impl:src/main/update/UpdateInstaller.ts).
+//
+// Gate findings (PR #829 round 1):
+// - (perf HIGH) The store lock used to be held by the caller across the whole download (up to
+//   5 minutes). Fixed the same way as `checker::check_for_updates`: takes the shared
+//   `Arc<Mutex<_>>`, locks only to read the precondition and persist `Downloading` (broadcast via
+//   `on_state`), downloads and hashes with NO lock held, then re-locks once to commit.
+// - (security LOW) Downloaded only `*.exe`/`*.sha256` by glob, so a release with more than one
+//   `.exe` asset would silently keep "whichever is listed last". Now looks up the release's own
+//   asset list first, downloads the exact installer asset name and its exact `<name>.sha256`
+//   sibling (matching `install_on_quit.rs`'s own `sha256_sibling` naming), never a glob.
+// - (security LOW) Raw, uncapped `gh` stderr used to be saved to `last_error` as-is; now capped
+//   through `gh_client::capped_failure_text`, same as every other `gh` failure path.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
 
-use super::gh_client::gh_raw;
-use super::state::{UpdatePhase, UpdateStateStore};
+use super::checksum::{checksum_matches, hex_digest_file};
+use super::gh_client::{capped_failure_text, gh_json, gh_raw};
+use super::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
 /// research.md decision 8: the same private repository `UpdateChecker`/`gh_client` reads from.
 const REPO: &str = "stuarthopwood/refract";
+
+const METADATA_TIMEOUT: Duration = Duration::from_secs(15);
+/// Quality-gate remediation (HIGH, ported verbatim): the default metadata timeout exists for
+/// ordinary small calls -- the installer this downloads is ~146MB, which needs far longer than
+/// that on anything but a very fast connection; this is the one caller that opts into several
+/// minutes instead.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Deserialize)]
+struct GhReleaseAsset {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct GhReleaseAssets {
+    assets: Vec<GhReleaseAsset>,
+}
 
 /// `updates.install()`'s two documented errors (contracts/ipc.md): any failure past the
 /// `Available` precondition check (a network failure, a missing asset, or a real digest
@@ -52,52 +82,66 @@ impl std::error::Error for UpdateError {}
 
 /// `updates.install()` (contracts/ipc.md): awaits the whole download and checksum verification
 /// for the release named by the current `Available` state before resolving; persists
-/// `Downloading` immediately (so `updates:state-changed` can drive a progress indicator before
-/// this future ever resolves), then `Downloaded` with `installer_path` set on a verified match,
-/// or `Failed` with `last_error` otherwise (FR-014).
+/// `Downloading` immediately (so `updates:state-changed`, broadcast via `on_state`, can drive a
+/// progress indicator before this future ever resolves), then `Downloaded` with
+/// `installer_path` set on a verified match, or `Failed` with `last_error` otherwise (FR-014).
 pub async fn download_update(
-    store: &mut UpdateStateStore,
+    store: &SharedUpdateState,
     data_dir: &Path,
+    on_state: &(dyn Fn(&UpdateState) + Send + Sync),
 ) -> Result<(), UpdateError> {
-    let state = store.get();
-    if state.phase != UpdatePhase::Available || state.available_version.is_none() {
-        return Err(UpdateError::new(
-            UpdateErrorCode::UpdateUnavailable,
-            "No update is available to install.",
-        ));
-    }
-    // Safe: checked non-None immediately above.
-    let tag_name = format!("v{}", state.available_version.unwrap());
+    let tag_name = {
+        let mut guard = store.lock().await;
+        let state = guard.get();
+        if state.phase != UpdatePhase::Available || state.available_version.is_none() {
+            return Err(UpdateError::new(
+                UpdateErrorCode::UpdateUnavailable,
+                "No update is available to install.",
+            ));
+        }
+        // Safe: checked non-None immediately above.
+        let tag_name = format!("v{}", state.available_version.unwrap());
+        let downloading = guard.update(|s| s.phase = UpdatePhase::Downloading).await;
+        drop(guard);
+        on_state(&downloading);
+        tag_name
+    };
 
-    store.update(|s| s.phase = UpdatePhase::Downloading).await;
+    let outcome = try_download(data_dir, &tag_name).await;
 
-    match try_download(data_dir, &tag_name).await {
+    let mut guard = store.lock().await;
+    let committed = match &outcome {
         Ok(installer_path) => {
-            store
+            guard
                 .update(|s| {
                     s.phase = UpdatePhase::Downloaded;
-                    s.installer_path = Some(installer_path);
+                    s.installer_path = Some(installer_path.clone());
                     s.last_error = None;
                 })
-                .await;
-            Ok(())
+                .await
         }
         Err(detail) => {
-            store
+            guard
                 .update(|s| {
                     s.phase = UpdatePhase::Failed;
                     s.last_error = Some(detail.clone());
                 })
-                .await;
-            Err(UpdateError::new(UpdateErrorCode::ChecksumMismatch, detail))
+                .await
         }
+    };
+    drop(guard);
+    on_state(&committed);
+
+    match outcome {
+        Ok(_) => Ok(()),
+        Err(detail) => Err(UpdateError::new(UpdateErrorCode::ChecksumMismatch, detail)),
     }
 }
 
 /// The whole download-and-verify body, factored out of `download_update` so every exit path
 /// (missing asset, `gh` failure, a real digest mismatch) collapses to the single `Err(String)`
 /// `download_update` reports as `ChecksumMismatch`, matching `UpdateInstaller.ts`'s own single
-/// `catch` block.
+/// `catch` block. Runs with NO store lock held.
 async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String> {
     let updates_dir = data_dir.join("updates");
     // A previous failed attempt's leftovers are never mistaken for this one's fresh pair --
@@ -111,44 +155,73 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         .await
         .map_err(|err| err.to_string())?;
 
-    // Quality-gate remediation (HIGH, ported verbatim): `gh_raw`'s default timeout exists for
-    // ordinary metadata calls -- the installer this downloads is ~146MB, which needs far longer
-    // than that on anything but a very fast connection; this is the one caller that opts into
-    // several minutes instead.
-    const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-    let updates_dir_str = updates_dir.to_string_lossy().into_owned();
-    let result = gh_raw(
+    // Security fix (gate round 1, LOW): look up the release's own asset list first and download
+    // the EXACT installer asset name plus its exact `<name>.sha256` sibling, never a `*.exe`
+    // glob -- a release with more than one `.exe` asset used to silently keep "whichever is
+    // listed last" instead of failing loudly.
+    let assets: GhReleaseAssets = gh_json(
         data_dir,
         &[
-            "release",
-            "download",
-            tag_name,
-            "--repo",
-            REPO,
-            "--pattern",
-            "*.exe",
-            "--pattern",
-            "*.sha256",
-            "--dir",
-            &updates_dir_str,
-            "--clobber",
+            "release", "view", tag_name, "--repo", REPO, "--json", "assets",
         ],
-        DOWNLOAD_TIMEOUT,
+        METADATA_TIMEOUT,
     )
     .await?;
-
-    if result.code != 0 {
-        let detail = if !result.stderr.trim().is_empty() {
-            result.stderr.trim()
-        } else if !result.stdout.trim().is_empty() {
-            result.stdout.trim()
-        } else {
-            "gh release download failed."
-        };
-        return Err(detail.to_string());
+    let installer_name = assets
+        .assets
+        .iter()
+        .map(|a| a.name.as_str())
+        .find(|name| name.to_lowercase().ends_with(".exe"))
+        .ok_or_else(|| "The release is missing an installer (.exe) asset.".to_string())?
+        .to_string();
+    let checksum_name = format!("{installer_name}.sha256");
+    if !assets
+        .assets
+        .iter()
+        .any(|a| a.name.eq_ignore_ascii_case(&checksum_name))
+    {
+        return Err(format!(
+            "The release is missing its checksum asset ({checksum_name})."
+        ));
     }
 
-    let (installer_path, checksum_path) = find_downloaded_pair(&updates_dir).await?;
+    let updates_dir_str = updates_dir.to_string_lossy().into_owned();
+    let download_args = [
+        "release",
+        "download",
+        tag_name,
+        "--repo",
+        REPO,
+        "--pattern",
+        &installer_name,
+        "--pattern",
+        &checksum_name,
+        "--dir",
+        &updates_dir_str,
+        "--clobber",
+    ];
+    let args_joined = download_args.join(" ");
+    let result = gh_raw(data_dir, &download_args, DOWNLOAD_TIMEOUT).await?;
+
+    if result.code != 0 {
+        return Err(capped_failure_text(
+            &result.stderr,
+            &result.stdout,
+            &args_joined,
+        ));
+    }
+
+    let installer_path = updates_dir.join(&installer_name);
+    let checksum_path = updates_dir.join(&checksum_name);
+    if !tokio::fs::try_exists(&installer_path)
+        .await
+        .unwrap_or(false)
+        || !tokio::fs::try_exists(&checksum_path).await.unwrap_or(false)
+    {
+        return Err(
+            "The downloaded release is missing its installer or checksum file.".to_string(),
+        );
+    }
 
     let expected = tokio::fs::read_to_string(&checksum_path)
         .await
@@ -158,10 +231,7 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         .unwrap_or("")
         .to_lowercase();
 
-    let installer_bytes = tokio::fs::read(&installer_path)
-        .await
-        .map_err(|err| err.to_string())?;
-    let actual = hex_digest(&installer_bytes);
+    let actual = hex_digest_file(&installer_path).await?;
 
     if !checksum_matches(&actual, &expected) {
         // Both paths are always children of `updates_dir` (`<data_dir>/updates`), never derived
@@ -174,67 +244,14 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
     Ok(installer_path.to_string_lossy().into_owned())
 }
 
-/// Scans `updates_dir` (just populated by `gh release download --clobber`) for its one `.exe`
-/// and one `.sha256` entry, case-insensitively, matching `UpdateInstaller.ts`'s own
-/// `entries.find(...)` pair lookup.
-async fn find_downloaded_pair(updates_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let mut installer_path: Option<PathBuf> = None;
-    let mut checksum_path: Option<PathBuf> = None;
-
-    let mut entries = tokio::fs::read_dir(updates_dir)
-        .await
-        .map_err(|err| err.to_string())?;
-    while let Some(entry) = entries.next_entry().await.map_err(|err| err.to_string())? {
-        let path = entry.path();
-        let lower = path.to_string_lossy().to_lowercase();
-        if lower.ends_with(".exe") {
-            installer_path = Some(path);
-        } else if lower.ends_with(".sha256") {
-            checksum_path = Some(path);
-        }
-    }
-
-    match (installer_path, checksum_path) {
-        (Some(installer), Some(checksum)) => Ok((installer, checksum)),
-        _ => Err("The downloaded release is missing its installer or checksum file.".to_string()),
-    }
-}
-
-/// Lower-case hex SHA-256 of `bytes`. A plain byte-to-hex fold rather than relying on
-/// `GenericArray`'s own `LowerHex` impl, so this has no dependency on an undocumented trait bound
-/// holding across `sha2` versions.
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-/// Factored out so it can be unit-tested without touching the filesystem: case-insensitive
-/// comparison, treating an empty/missing `expected` value as never-matching (mirrors
-/// `UpdateInstaller.ts`'s own `!expected || actual !== expected` check -- `actual` here is always
-/// already-lower-case hex from `hex_digest`, so only `expected` needs case-insensitive handling).
-fn checksum_matches(actual_hex: &str, expected: &str) -> bool {
-    !expected.is_empty() && actual_hex.eq_ignore_ascii_case(expected)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::checksum_matches;
+    use super::*;
 
     #[test]
-    fn matches_case_insensitively() {
-        assert!(checksum_matches("abc123", "ABC123"));
-        assert!(checksum_matches("abc123", "abc123"));
-    }
-
-    #[test]
-    fn rejects_digest_mismatch() {
-        assert!(!checksum_matches("abc123", "def456"));
-    }
-
-    #[test]
-    fn rejects_empty_expected() {
-        assert!(!checksum_matches("abc123", ""));
+    fn update_error_code_matches_contract() {
+        let err = UpdateError::new(UpdateErrorCode::UpdateUnavailable, "no update");
+        assert_eq!(err.code, UpdateErrorCode::UpdateUnavailable);
+        assert_eq!(err.to_string(), "no update");
     }
 }

@@ -1,17 +1,19 @@
-// Minimal, independent `gh` CLI wrapper for `updates::checker` (lane R11b, issue #794). Deliberately
-// NOT a port of `src/main/github/gh.ts` in full -- that file's PR-management surface
-// (ghGraphql/ownerRepoFor/search/the GhErrorCode-typed GhError, ...) belongs to spec 003/004, not
-// this spec's update-availability check. Only the `githubCliStatus`/`timeoutMs` diff that
-// `origin/spec-006-impl` added on top of `origin/main`'s `gh.ts` is ported here. Deliberately
-// independent of `src-tauri/src/github/` (that tree is pre-declared for a different, still
-// in-flight lane) -- this module has no dependency on it and must not gain one.
+// Minimal `gh` CLI wrapper for `updates::checker`/`updates::installer` (lane R11b, issue #794).
+// Deliberately NOT a port of `src/main/github/gh.ts` in full -- that file's PR-management
+// surface (ghGraphql/ownerRepoFor/search/the GhErrorCode-typed GhError, ...) belongs to spec
+// 003/004, not this spec's update-availability check, and its own `gh_raw` has a single fixed
+// 15s timeout with no way to opt into the several minutes `updates::installer::download_update`
+// needs for a ~146MB release-asset download. Shares exactly one thing with it rather than a
+// second copy (gate finding, PR #829 round 1): `resolve_gh` -- both modules' own callers need
+// the SAME fixed-portable-install-path-then-PATH resolution, and two independent resolvers that
+// both only checked PATH meant a fresh portable install (`updates::dependency_install::
+// install_github_cli`) was never found by either.
 //
 // `git::git`'s shell-free `tokio::process::Command` wrapper pattern (no shell, `CREATE_NO_WINDOW`
 // on Windows, `kill_on_drop(true)`, a bounded `tokio::time::timeout`) is reused here rather than
-// re-derived; the absolute-path-via-`which` reasoning in that module's own `GIT_PATH` doc comment
-// applies identically to `gh`.
+// re-derived.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -21,8 +23,8 @@ use tokio::process::Command;
 /// own `CREATE_NO_WINDOW`; Node's `execFile({ windowsHide: true })` sets this under the hood).
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// A `gh <args>` invocation's raw result. Never constructed for a "gh not found on PATH"
-/// failure -- that case is a `Result::Err(String)` from `gh_raw`/`gh_json` instead.
+/// A `gh <args>` invocation's raw result. Never constructed for a "gh not found" failure --
+/// that case is a `Result::Err(String)` from `gh_raw`/`gh_json` instead.
 pub struct GhRawResult {
     pub stdout: String,
     pub stderr: String,
@@ -46,26 +48,16 @@ const AUTH_STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 /// full.
 const MAX_ERROR_LEN: usize = 500;
 
-/// Resolves `gh` on PATH via `which` (security: Windows' `CreateProcess` searches `cwd` before
-/// `PATH` for a bare name, so a worktree that happened to contain e.g. `gh.exe` at its root could
-/// otherwise run instead of the real one). Deliberately NOT cached like
-/// `process::executables::resolve_omp`'s `OMP_CACHE`: every call through this module is
-/// infrequent (an update check on startup, an occasional user-initiated retry), so re-resolving
-/// on PATH each time is cheap and always correct -- unlike a process-lifetime cache, it never
-/// goes stale after the developer installs `gh` mid-session and retries without relaunching
-/// Refract.
-pub fn resolve_gh() -> Result<PathBuf, String> {
-    which::which_global("gh").map_err(|err| err.to_string())
-}
-
 /// Runs `gh <args>` with no shell in `cwd`, bounded by `timeout`. Never fails for an ordinary
 /// non-zero exit (a rate limit, an unauthenticated call, ...); callers branch on `.code`. Only
-/// fails, returning `Err`, when `gh` itself cannot be resolved on PATH at all (`resolve_gh`'s own
-/// failure) -- a timeout or a spawn error both still produce an `Ok(GhRawResult)` with a
+/// fails, returning `Err`, when `gh` itself cannot be resolved at all (`github::gh::resolve_gh`'s
+/// own failure) -- a timeout or a spawn error both still produce an `Ok(GhRawResult)` with a
 /// synthesised non-zero `code` instead, so every caller has exactly one place (`.code`) to branch
 /// on for "did the command itself succeed".
 pub async fn gh_raw(cwd: &Path, args: &[&str], timeout: Duration) -> Result<GhRawResult, String> {
-    let gh_path = resolve_gh()?;
+    let gh_path = crate::github::gh::resolve_gh().map_err(|_| {
+        "Could not resolve \"gh\" on PATH or at its known portable-install location. Install it and make sure it is on PATH, then relaunch Refract.".to_string()
+    })?;
 
     let mut command = Command::new(&gh_path);
     command
@@ -102,7 +94,7 @@ pub async fn gh_raw(cwd: &Path, args: &[&str], timeout: Duration) -> Result<GhRa
 /// Trims, picks the non-empty one of stderr/stdout (stderr preferred, matching `gh.ts`'s own
 /// `mapGhFailure`), and caps the result so a `gh`-reported failure never persists or logs an
 /// unbounded blob.
-fn capped_failure_text(stderr: &str, stdout: &str, args_joined: &str) -> String {
+pub(super) fn capped_failure_text(stderr: &str, stdout: &str, args_joined: &str) -> String {
     let stderr = stderr.trim();
     let stdout = stdout.trim();
     let text = if !stderr.is_empty() {
@@ -163,7 +155,7 @@ fn looks_offline(text: &str) -> bool {
 
 /// Spec 006 shared "is gh signed in" check (port of `gh.ts`'s `githubCliStatus`, used by
 /// `updates::checker::check_for_updates`). Never panics. An `Err` from `gh_raw` -- meaning `gh`
-/// itself could not be resolved on PATH -- maps to `NotInstalled`; `gh_raw` never fails for a
+/// itself could not be resolved -- maps to `NotInstalled`; `gh_raw` never fails for a
 /// network/auth failure, only for a missing `gh` (those surface as a non-zero `.code` instead).
 pub async fn github_cli_status(cwd: &Path) -> GithubCliStatus {
     let auth = match gh_raw(cwd, &["auth", "status"], AUTH_STATUS_TIMEOUT).await {

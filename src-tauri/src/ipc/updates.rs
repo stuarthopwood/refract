@@ -1,30 +1,19 @@
 // IPC handlers for `updates.*` (contracts/ipc.md "Updates", spec 006 re-scoped onto the Tauri
-// bundler -- lane R11b, issue #794). Broadcasts `updates:state-changed` on every mutating call
-// here, the same "the handler that caused the transition also fires the broadcast" convention
-// `ipc::settings::settings_set_approval_mode` already establishes for `settings:changed` --
-// unlike the mined Electron prototype's own `UpdateStateStore.onChange` listener/pub-sub design
-// (this build's `UpdateStateStore` has no listener registry at all; see `updates::state`'s own
-// header), since every caller of `.update()` in this Rust port is already known and finite.
-
-use std::sync::Arc;
+// bundler -- lane R11b, issue #794). Broadcasts `updates:state-changed` via `on_state` callbacks
+// threaded into `checker::check_for_updates`/`installer::download_update` themselves, so an
+// intermediate `Checking`/`Downloading` transition is broadcast the moment it is persisted, not
+// only once the whole (possibly multi-minute) call finally resolves (gate finding, PR #829
+// round 1, perf HIGH: the store lock -- and so every broadcast -- used to be held by this file
+// across the whole network call).
 
 use serde_json::Value;
 use tauri::Manager;
-use tokio::sync::Mutex as AsyncMutex;
 
 use crate::updates::checker;
 use crate::updates::installer::{self, UpdateErrorCode};
-use crate::updates::state::UpdateState;
+use crate::updates::state::{SharedUpdateState, UpdateState};
 
 use super::{AppState, Dispatcher, HandlerFuture, IpcError};
-
-/// The one `UpdateStateStore` instance for the process lifetime, `.manage()`d by `lib.rs`'s
-/// `setup` closure (the same "managed Tauri state, not `AppState`" pattern
-/// `shell::window_state::Tracker` already uses) -- `Handler`'s fixed `fn(AppState, Vec<Value>)`
-/// signature has no slot for a second store, so this is reached through the live `AppHandle`
-/// `AppState::app_handle` already carries, not a new `AppState` field (which would force every
-/// OTHER lane's test helper that hand-builds an `AppState` to learn about this one's state too).
-pub type SharedUpdateState = Arc<AsyncMutex<crate::updates::state::UpdateStateStore>>;
 
 pub fn register(d: &mut Dispatcher) {
     d.register("updates.check", updates_check);
@@ -73,6 +62,16 @@ fn current_version(state: &AppState) -> Result<String, IpcError> {
     Ok(app_handle.package_info().version.to_string())
 }
 
+/// Builds the `on_state` broadcaster `checker`/`installer` call at each persisted transition,
+/// wrapping `session_manager.emit_updates_state_changed` (the only thing those lower modules
+/// cannot reach directly without depending on `session`/IPC machinery themselves).
+fn broadcaster(state: &AppState) -> impl Fn(&UpdateState) + Send + Sync {
+    let session_manager = state.session_manager.clone();
+    move |update_state: &UpdateState| {
+        session_manager.emit_updates_state_changed(&to_value(update_state));
+    }
+}
+
 /// User-initiated (contracts/ipc.md): `automatic: false` lets `check_for_updates` re-check even
 /// from a persisted `Failed` phase (the status bar's own "Try again"), unlike `lib.rs`'s own
 /// automatic startup call.
@@ -80,12 +79,8 @@ fn updates_check(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let version = current_version(&state)?;
         let store_handle = store_handle(&state)?;
-        let mut store = store_handle.lock().await;
-        let result = checker::check_for_updates(&mut store, false, &version).await;
-        drop(store);
-        state
-            .session_manager
-            .emit_updates_state_changed(&to_value(&result));
+        let on_state = broadcaster(&state);
+        let result = checker::check_for_updates(&store_handle, false, &version, &on_state).await;
         Ok(to_value(&result))
     })
 }
@@ -101,19 +96,8 @@ fn updates_get_state(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 fn updates_install(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let store_handle = store_handle(&state)?;
-        let mut store = store_handle.lock().await;
-        // `download_update` persists `Downloading` itself, immediately, before the (possibly
-        // long) download even starts -- broadcasting the post-call state below therefore covers
-        // both the immediate `Downloading` transition's own effect (visible once this task is
-        // next polled) and the final `Downloaded`/`Failed` outcome. A finer-grained
-        // "broadcast every intermediate persisted state" would need `updates::state`'s own
-        // listener registry back, which this port deliberately does not carry (see this file's
-        // own header) -- this one broadcast after the call still reports the FINAL `UpdateState`
-        // faithfully, which is all `updates:state-changed`'s documented purpose requires.
-        let result = installer::download_update(&mut store, &state.data_dir).await;
-        let rendered = to_value(&store.get());
-        drop(store);
-        state.session_manager.emit_updates_state_changed(&rendered);
+        let on_state = broadcaster(&state);
+        let result = installer::download_update(&store_handle, &state.data_dir, &on_state).await;
         match result {
             Ok(()) => Ok(Value::Null),
             Err(err) => {

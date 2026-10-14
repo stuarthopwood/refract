@@ -34,6 +34,25 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards against tag/manifest drift: if a tag is ever pushed whose version doesn't match
+      # tauri.conf.json, the persisted `availableVersion` (sourced from the tag, via this same
+      # release) would never again equal the running binary's own `package_info().version`
+      # (sourced from tauri.conf.json) -- src-tauri/src/updates/install_on_quit.rs's
+      # resolve_installing_state version-match check would then report every install as failed,
+      # forever. Catching the mismatch here, before any build work happens, is cheap and final.
+      - name: Verify tag matches tauri.conf.json version
+        shell: pwsh
+        env:
+          TAG_REF: ${{ github.ref_name }}
+        run: |
+          $tagVersion = $env:TAG_REF -replace '^v', ''
+          $confVersion = (Get-Content -Raw -Path "src-tauri\tauri.conf.json" | ConvertFrom-Json).version
+          if ($tagVersion -ne $confVersion) {
+            Write-Error "Pushed tag '$env:TAG_REF' resolves to version '$tagVersion', but src-tauri/tauri.conf.json's version field is '$confVersion'. Update tauri.conf.json's version to match the tag (or push the correct tag) before releasing."
+            exit 1
+          }
+          Write-Host "Tag version '$tagVersion' matches src-tauri/tauri.conf.json version '$confVersion'."
+
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
@@ -69,13 +88,16 @@ jobs:
 
       - name: Checksum installer
         shell: pwsh
+        env:
+          INSTALLER_PATH: ${{ steps.installer.outputs.path }}
+          INSTALLER_NAME: ${{ steps.installer.outputs.name }}
         run: |
-          $hash = Get-FileHash -Algorithm SHA256 -Path "${{ steps.installer.outputs.path }}"
+          $hash = Get-FileHash -Algorithm SHA256 -Path $env:INSTALLER_PATH
           # Sibling `.sha256` file next to the `.exe` in the same release, matching the asset-name
           # pattern the Rust update checker/installer expect (specs/006-installer-and-updates's
           # research.md decision 4: checksum-verify a downloaded update installer before running
           # it).
-          "$($hash.Hash.ToLower())  ${{ steps.installer.outputs.name }}" | Out-File -FilePath "${{ steps.installer.outputs.path }}.sha256" -Encoding ascii -NoNewline
+          "$($hash.Hash.ToLower())  $env:INSTALLER_NAME" | Out-File -FilePath "$env:INSTALLER_PATH.sha256" -Encoding ascii -NoNewline
 
       # Code signing is explicitly Stuart's own not-yet-made decision
       # (specs/016-tauri-rust-build/installer-probes.md's "Code signing" section, issue #794) --

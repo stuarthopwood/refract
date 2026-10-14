@@ -30,7 +30,14 @@ pub(super) const ALLOWED_REDIRECT_HOSTS: &[&str] = &[
 const MAX_REDIRECTS: u32 = 5;
 
 pub(super) const FETCH_JSON_TIMEOUT: Duration = Duration::from_secs(15);
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+/// Perf/security remediation (gate round 1, issue #794): bounds only the connect phase of a
+/// download request, never the body transfer -- see `allowlisted_client`'s own doc comment for
+/// why a flat total-request timeout was replaced with this plus `DOWNLOAD_READ_TIMEOUT`.
+const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// Bounds a single body read/chunk, resetting after every successful read
+/// (`reqwest::ClientBuilder::read_timeout`'s own semantics) -- a multi-minute transfer at a
+/// trickle still succeeds as long as no individual read ever stalls this long.
+const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const MAX_DETAIL_LENGTH: usize = 200;
 
 #[derive(Debug, Deserialize)]
@@ -88,8 +95,20 @@ pub(super) fn allowlisted_client() -> Result<Client, String> {
     // `redirect(Policy::none())`: every hop is inspected and allowlisted manually below, rather
     // than letting `reqwest` silently follow a response wherever it points -- `fetch_from_
     // allowed_host`'s whole reason to exist.
+    //
+    // `connect_timeout`/`read_timeout` (perf/security remediation, gate round 1): a download
+    // used to carry a single flat 120s *total* request timeout covering the whole body transfer,
+    // which doesn't reset as bytes keep arriving -- a ~65MB Git for Windows installer fails
+    // below roughly 4.5 Mbit/s even on an otherwise-healthy slow connection. `connect_timeout`
+    // bounds only the initial connect/response-headers phase; `read_timeout` bounds each
+    // individual body read and resets after every successful one, so a multi-minute transfer at
+    // a trickle still succeeds as long as no single read ever stalls this long. `fetch_json`
+    // still layers its own short per-request `.timeout(FETCH_JSON_TIMEOUT)` total-timeout
+    // override on top of this same client for the small, fast GitHub API JSON calls.
     Client::builder()
         .redirect(Policy::none())
+        .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
+        .read_timeout(DOWNLOAD_READ_TIMEOUT)
         .build()
         .map_err(|err| format!("failed to build HTTP client: {err}"))
 }
@@ -131,7 +150,6 @@ pub(super) async fn fetch_from_allowed_host(
         let response = client
             .get(current.clone())
             .header("User-Agent", "refract-dependency-install")
-            .timeout(DOWNLOAD_TIMEOUT)
             .send()
             .await
             .map_err(|err| format!("{label} request failed: {err}"))?;
@@ -158,13 +176,38 @@ pub(super) async fn fetch_from_allowed_host(
 }
 
 /// A fresh, uuid-named scratch directory under the OS temp root, so two concurrent installs of
-/// the same dependency can never collide on the same download/extraction path.
-pub(super) async fn scratch_dir() -> Result<PathBuf, String> {
+/// the same dependency can never collide on the same download/extraction path. Returns an RAII
+/// guard (`ScratchDir`, derefs to `Path`) rather than a bare `PathBuf`: every caller's directory
+/// otherwise stuck around in `%TEMP%` forever, since nothing previously removed it after a
+/// dependency install finished -- success or failure.
+pub(super) async fn scratch_dir() -> Result<ScratchDir, String> {
     let dir = env::temp_dir().join(format!("refract-dep-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|err| format!("failed to create a scratch directory: {err}"))?;
-    Ok(dir)
+    Ok(ScratchDir(dir))
+}
+
+/// RAII guard returned by `scratch_dir`: best-effort deletes its directory tree on `Drop`, so a
+/// dependency install never leaks its scratch folder regardless of which `?` return path a
+/// caller takes. Uses `std::fs::remove_dir_all` rather than the `tokio::fs` version -- `Drop`
+/// cannot run async code, and this brief synchronous blocking is acceptable for a small, bounded
+/// cleanup, not a hot path. Errors are swallowed: a failed best-effort cleanup must never panic
+/// or fail a caller that may already be unwinding.
+pub(super) struct ScratchDir(PathBuf);
+
+impl std::ops::Deref for ScratchDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Strips any directory component a GitHub-API-sourced asset name might contain, so only the
@@ -188,20 +231,27 @@ pub(super) async fn download_to_file(
     dest_path: &Path,
     label: &str,
 ) -> Result<(), String> {
-    let response = fetch_from_allowed_host(client, url, label).await?;
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|err| format!("{label} download failed: {err}"))?;
+    let mut response = fetch_from_allowed_host(client, url, label).await?;
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(dest_path)
         .await
         .map_err(|err| format!("{label} failed to create destination file: {err}"))?;
-    file.write_all(&bytes)
+    // Streamed chunk-by-chunk (perf remediation, gate round 1): the Git for Windows installer is
+    // roughly 60-70MB and the GitHub CLI zip roughly 15MB -- buffering the whole response with
+    // `response.bytes()` before a single `write_all` held the entire asset in memory at once.
+    // `Response::chunk` (no extra `reqwest` feature needed) keeps memory flat at one chunk
+    // regardless of asset size.
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|err| format!("{label} failed to write destination file: {err}"))?;
+        .map_err(|err| format!("{label} download failed: {err}"))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|err| format!("{label} failed to write destination file: {err}"))?;
+    }
     Ok(())
 }
 

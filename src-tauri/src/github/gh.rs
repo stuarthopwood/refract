@@ -84,9 +84,24 @@ pub struct GhRawResult {
     pub timed_out: bool,
 }
 
-/// Resolves `gh` on PATH, honouring `PATHEXT`, caching the first successful resolution for the
-/// process lifetime (same rationale as `process::executables::resolve_omp`).
-pub(super) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
+/// Resolves `gh`: checks the fixed per-user portable-install path
+/// (`%LOCALAPPDATA%\refract\tools\gh\gh.exe`, where lane R11b's `updates::dependency_install::
+/// install_github_cli` copies the portable zip's `gh.exe`) FIRST, every call -- a plain
+/// `Path::is_file` check, cheap enough to never cache, so an install that just completed is
+/// found immediately with no relaunch needed and no stale-cache problem to reason about. Falls
+/// back to `PATH` (honouring `PATHEXT`), cached for the process lifetime like
+/// `process::executables::resolve_omp` (that branch alone is safe to cache: a system-wide PATH
+/// install already needs a relaunch for this process to see it, same as `resolve_omp`).
+/// `pub(crate)`: lane R11b's `updates::gh_client` shares this one resolver (gate finding, PR
+/// #829 round 1: two independent resolvers that both only checked PATH meant a fresh portable
+/// install was never found by either).
+pub(crate) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
+    if let Some(dir) = dirs::data_local_dir() {
+        let candidate = dir.join("refract").join("tools").join("gh").join("gh.exe");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
     static CACHE: std::sync::LazyLock<Result<std::path::PathBuf, ()>> =
         std::sync::LazyLock::new(|| which::which_global("gh").map_err(|_| ()));
     CACHE.clone()

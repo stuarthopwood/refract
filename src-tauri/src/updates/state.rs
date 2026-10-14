@@ -30,10 +30,22 @@
 // parse failure -- so this port has no second manual validator to write or keep in sync.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::store::atomic_json::{read_json_file, write_json_file};
+
+/// The one `UpdateStateStore` instance for the process lifetime (lane R11b, issue #794):
+/// `.manage()`d by `lib.rs`'s `setup` closure, reached through the live `AppHandle` from an IPC
+/// handler (`ipc::updates::store_handle`) or held directly by `lib.rs`'s own startup/exit hooks.
+/// Every function that mutates the store (`checker::check_for_updates`, `installer::
+/// download_update`, `install_on_quit::resolve_installing_state`) takes this shared handle, not
+/// an already-locked `&mut UpdateStateStore`, and locks/unlocks internally around each
+/// persisted transition -- never holding the lock across a `gh`/network call (gate finding, PR
+/// #829 round 1, perf HIGH: the lock used to be held by the caller across the whole call).
+pub type SharedUpdateState = Arc<AsyncMutex<UpdateStateStore>>;
 
 /// data-model.md's `phase` column (default `'idle'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,10 +1,22 @@
 // Update availability check (spec 006 FR-012 to FR-019, FR-026; specs/006-installer-and-updates/
 // research.md decision 3; lane R11b, issue #794): a hand-rolled checker that only ever shells out
-// to the developer's own already-signed-in `gh` CLI (`updates::gh_client`, resolved via PATH) --
-// never a stored token (spec 003 FR-027's same stance). Port of `UpdateChecker.ts`'s
-// `checkForUpdates`/`compareVersions`/its tag-shape guard/its busy-phases no-clobber guard/its
-// best-candidate-over-the-whole-list scan; every fix below is ported from that file's own
-// quality-gate-remediation comments, not re-derived.
+// to the developer's own already-signed-in `gh` CLI (`updates::gh_client`) -- never a stored
+// token (spec 003 FR-027's same stance). Port of `UpdateChecker.ts`'s `checkForUpdates`/
+// `compareVersions`/its tag-shape guard/its busy-phases no-clobber guard/its best-candidate-
+// over-the-whole-list scan; every fix below is ported from that file's own quality-gate-
+// remediation comments, not re-derived.
+//
+// Gate finding (PR #829 round 1, perf HIGH): the store lock used to be held by the CALLER across
+// this whole function, including every `gh` network call -- up to several seconds per call,
+// blocking `updates.getState`/a concurrent `updates.check`/the quit hook the whole time. Fixed by
+// taking the shared `Arc<Mutex<_>>` directly instead of an already-locked `&mut
+// UpdateStateStore`: lock only for the brief `Idle/Failed`-guard-then-`Checking` transition
+// (persisted and broadcast via `on_state`), run every `gh` call with NO lock held, then re-lock
+// only to commit the final outcome. "Guard re-entry with the phase, not the mutex" (gate
+// instruction): the final commit re-reads the CURRENT phase right before writing and abandons
+// this check's own result (returning whatever is current instead) if something else -- a
+// download/install that started while this scan was running -- made the store busy in the
+// meantime, rather than trusting that the busy-check done at the very start is still valid.
 
 use std::path::Path;
 use std::time::Duration;
@@ -12,7 +24,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::gh_client::{self, GithubCliStatus};
-use super::state::{UnavailableReason, UpdatePhase, UpdateState, UpdateStateStore};
+use super::state::{SharedUpdateState, UnavailableReason, UpdatePhase, UpdateState};
 
 /// research.md decision 8: the private repository every release is published to.
 pub const REPO: &str = "stuarthopwood/refract";
@@ -43,9 +55,11 @@ struct GhReleaseAssets {
 /// crate -- FR-019/FR-026 already filter out every pre-release/draft/malformed tag before a
 /// version ever reaches this comparison (via `is_release_tag`), so every version compared here is
 /// a plain `X.Y.Z` string with no suffix to parse. Positive when `a` is newer than `b`, negative
-/// when older, `0` when equal. An unparseable segment reads as `0`, matching the TS port's own
-/// `Number.parseInt(part, 10) || 0` (never an error -- the tag-shape guard is what keeps a
-/// genuinely malformed version out of this comparison in the first place).
+/// when older, `0` when equal. An unparseable segment reads as `0`, matching the ported
+/// `UpdateChecker.ts`'s own `Number.parseInt(...) || 0` fallback (never an error -- the tag-shape
+/// guard is what keeps a genuinely malformed version out of this comparison in the first place).
+/// Each segment compares as a parsed integer, not lexicographically, so `1.10.0` correctly
+/// outranks `1.9.0`.
 pub fn compare_versions(a: &str, b: &str) -> i64 {
     let parts_a = parse_version_parts(a);
     let parts_b = parse_version_parts(b);
@@ -95,15 +109,26 @@ fn is_busy(phase: UpdatePhase) -> bool {
     )
 }
 
+/// The three possible answers a `gh`-calling scan can settle on, decided with NO store lock
+/// held; committed by the caller afterward in one brief re-lock.
+enum Outcome {
+    Available { version: String, notes_url: String },
+    Idle,
+    Unavailable(UnavailableReason),
+}
+
 /// `updates.check()` (contracts/ipc.md): never panics, never returns an IPC error -- the caller
-/// always gets a fresh/updated `UpdateState` back.
+/// always gets a fresh/updated `UpdateState` back. `on_state` is called once after the initial
+/// `Checking` transition (if it happens) and once more after the final commit, each time with
+/// the already-persisted, renderer-safe state -- the caller (`ipc::updates`/`lib.rs`) wires this
+/// to `updates:state-changed` so the badge sees `Checking` rather than only ever the end result.
 ///
 /// Quality-gate remediation (HIGH "checkForUpdates overwrites whatever phase is current", ported):
 /// `automatic` distinguishes the startup call from the user-initiated `updates.check` IPC
 /// request:
-/// - Both are a no-op (return the current state unchanged) while `downloading`, `downloaded`, or
-///   `installing` -- a check must never clobber a download in flight or a verified installer
-///   already waiting for the next quit.
+/// - Both are a no-op (return the current state unchanged, no `Checking` transition, no `gh`
+///   call) while `downloading`, `downloaded`, or `installing` -- a check must never clobber a
+///   download in flight or a verified installer already waiting for the next quit.
 /// - Only the automatic one is ALSO a no-op on `failed` -- the previous check's own `lastError`
 ///   (FR-018) must survive the startup check that runs right after it; the user-initiated call
 ///   (the status bar's own "Try again") still re-checks from `failed`.
@@ -112,42 +137,70 @@ fn is_busy(phase: UpdatePhase) -> bool {
 /// read from `tauri::Config` here, for testability. `cwd` for every `gh` call is
 /// `std::env::temp_dir()`: this module has no repository context of its own.
 pub async fn check_for_updates(
-    store: &mut UpdateStateStore,
+    store: &SharedUpdateState,
     automatic: bool,
     current_version: &str,
+    on_state: &(dyn Fn(&UpdateState) + Send + Sync),
 ) -> UpdateState {
-    let state = store.get();
-    if is_busy(state.phase) {
-        return state;
-    }
-    if automatic && matches!(state.phase, UpdatePhase::Failed) {
-        return state;
-    }
+    let checking_state = {
+        let mut guard = store.lock().await;
+        let state = guard.get();
+        if is_busy(state.phase) {
+            return state;
+        }
+        if automatic && matches!(state.phase, UpdatePhase::Failed) {
+            return state;
+        }
+        guard.update(|s| s.phase = UpdatePhase::Checking).await
+    };
+    on_state(&checking_state);
 
     let cwd = std::env::temp_dir();
     let now = crate::ipc::now_iso8601();
 
     let access = gh_client::github_cli_status(&cwd).await;
-    let unavailable = match access {
-        GithubCliStatus::Ok => None,
-        GithubCliStatus::NotInstalled => Some(UnavailableReason::NotInstalled),
-        GithubCliStatus::NotSignedIn => Some(UnavailableReason::NotSignedIn),
-        GithubCliStatus::Offline => Some(UnavailableReason::Offline),
+    let outcome = match access {
+        GithubCliStatus::NotInstalled => Outcome::Unavailable(UnavailableReason::NotInstalled),
+        GithubCliStatus::NotSignedIn => Outcome::Unavailable(UnavailableReason::NotSignedIn),
+        GithubCliStatus::Offline => Outcome::Unavailable(UnavailableReason::Offline),
+        GithubCliStatus::Ok => match scan_releases(&cwd, current_version).await {
+            Ok(Some((version, tag_name))) => Outcome::Available {
+                version,
+                notes_url: format!("https://github.com/{REPO}/releases/tag/{tag_name}"),
+            },
+            Ok(None) => Outcome::Idle,
+            Err(()) => {
+                // Quality-gate remediation (LOW "every release list/view failure is reported as
+                // offline", ported): `github_cli_status` above already confirmed `gh` is
+                // installed and reachable, so a failure here (rate limiting, a 404/no-access
+                // response, invalid JSON) is a `gh`-reported failure, not necessarily the
+                // network -- `NotInstalled` is reserved for the rare case `gh` itself became
+                // unresolvable between the two calls (checked directly via `resolve_gh`, since
+                // this module's simplified `gh_client::gh_json` does not carry a typed error
+                // code the way `gh.ts`'s `GhError` does); every other `gh` failure maps to
+                // `Offline`, the closest remaining fit in `UnavailableReason`'s fixed
+                // three-value enum.
+                let reason = match crate::github::gh::resolve_gh() {
+                    Ok(_) => UnavailableReason::Offline,
+                    Err(_) => UnavailableReason::NotInstalled,
+                };
+                Outcome::Unavailable(reason)
+            }
+        },
     };
-    if let Some(reason) = unavailable {
-        return store
-            .update(|s| {
-                s.phase = UpdatePhase::Idle;
-                s.unavailable_reason = Some(reason);
-                s.last_checked_at = Some(now);
-            })
-            .await;
-    }
 
-    match scan_releases(&cwd, current_version).await {
-        Ok(Some((version, tag_name))) => {
-            let notes_url = format!("https://github.com/{REPO}/releases/tag/{tag_name}");
-            store
+    let mut guard = store.lock().await;
+    let current = guard.get();
+    if is_busy(current.phase) {
+        // Gate instruction "guard re-entry with the phase, not the mutex": something else (an
+        // install that started while the scan above was running) made the store busy in the
+        // meantime -- abandon this scan's own outcome and report the now-current state instead
+        // of clobbering a download/install in flight.
+        return current;
+    }
+    let committed = match outcome {
+        Outcome::Available { version, notes_url } => {
+            guard
                 .update(|s| {
                     s.phase = UpdatePhase::Available;
                     s.available_version = Some(version);
@@ -158,38 +211,34 @@ pub async fn check_for_updates(
                 })
                 .await
         }
-        Ok(None) => {
-            store
+        Outcome::Idle => {
+            guard
                 .update(|s| {
                     s.phase = UpdatePhase::Idle;
                     s.last_checked_at = Some(now);
                     s.unavailable_reason = None;
+                    s.available_version = None;
+                    s.notes_url = None;
+                    s.last_error = None;
                 })
                 .await
         }
-        Err(()) => {
-            // Quality-gate remediation (LOW "every release list/view failure is reported as
-            // offline", ported): `github_cli_status` above already confirmed `gh` is installed
-            // and reachable, so a failure here (rate limiting, a 404/no-access response, invalid
-            // JSON) is a `gh`-reported failure, not necessarily the network -- `NotInstalled` is
-            // reserved for the rare case `gh` itself became unresolvable on PATH between the two
-            // calls (checked directly via `resolve_gh`, since this module's simplified
-            // `gh_client::gh_json` does not carry a typed error code the way `gh.ts`'s `GhError`
-            // does); every other `gh` failure maps to `Offline`, the closest remaining fit in
-            // `UnavailableReason`'s fixed three-value enum.
-            let reason = match gh_client::resolve_gh() {
-                Ok(_) => UnavailableReason::Offline,
-                Err(_) => UnavailableReason::NotInstalled,
-            };
-            store
+        Outcome::Unavailable(reason) => {
+            guard
                 .update(|s| {
                     s.phase = UpdatePhase::Idle;
                     s.unavailable_reason = Some(reason);
                     s.last_checked_at = Some(now);
+                    s.available_version = None;
+                    s.notes_url = None;
+                    s.last_error = None;
                 })
                 .await
         }
-    }
+    };
+    drop(guard);
+    on_state(&committed);
+    committed
 }
 
 /// Scans `gh release list` (ordered by creation date, not version) for the highest qualifying
@@ -292,9 +341,15 @@ mod tests {
     fn compare_versions_treats_malformed_segment_as_zero() {
         // Not a real-world input (the tag-shape guard filters this out before comparison), but
         // `compare_versions` itself must never panic or error on one -- ported directly from
-        // `compareVersions.ts`'s own `Number.parseInt(...) || 0` fallback.
+        // `UpdateChecker.ts`'s own `Number.parseInt(...) || 0` fallback.
         assert!(compare_versions("1.x.0", "1.0.0") == 0);
         assert!(compare_versions("1.2.0", "1.x.0") > 0);
+    }
+
+    #[test]
+    fn compare_versions_compares_multi_digit_segments_numerically_not_lexicographically() {
+        assert!(compare_versions("1.10.0", "1.9.0") > 0);
+        assert!(compare_versions("1.9.0", "1.10.0") < 0);
     }
 
     #[test]

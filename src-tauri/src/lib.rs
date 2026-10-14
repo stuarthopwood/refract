@@ -398,11 +398,17 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let current_version = app_handle.package_info().version.to_string();
-                    let result =
-                        updates::run_startup_update_check(&update_state, &current_version).await;
-                    let payload = serde_json::to_value(ipc::updates::to_renderer_state(&result))
-                        .expect("UpdateState is always JSON-serialisable");
-                    session_manager.emit_updates_state_changed(&payload);
+                    let on_state = {
+                        let session_manager = session_manager.clone();
+                        move |state: &updates::state::UpdateState| {
+                            let payload =
+                                serde_json::to_value(ipc::updates::to_renderer_state(state))
+                                    .expect("UpdateState is always JSON-serialisable");
+                            session_manager.emit_updates_state_changed(&payload);
+                        }
+                    };
+                    updates::run_startup_update_check(&update_state, &current_version, &on_state)
+                        .await;
                 });
             }
 
