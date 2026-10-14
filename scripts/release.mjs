@@ -168,7 +168,7 @@ function buildChangelogPreview(nextVersion, tag) {
 }
 
 function runCiLocal() {
-  const result = spawnSync('pnpm', ['ci:local'], { cwd: repoRoot, stdio: 'inherit', shell: true });
+  const result = spawnSync('pnpm ci:local', { cwd: repoRoot, stdio: 'inherit', shell: true });
   if (result.status !== 0) fail('pnpm ci:local failed');
 }
 
