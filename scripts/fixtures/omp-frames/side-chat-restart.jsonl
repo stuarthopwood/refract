@@ -1,0 +1,21 @@
+// SYNTHESIZED (issue #789, lane R6): restart-survival check for side chat history. Used by
+// scripts/verify-tauri-side-chat.mjs's second launch, which relaunches the built exe against the
+// SAME `REFRACT_DATA_DIR` side-chat-live.jsonl's own run used (so the Session/repository registry
+// persists across the relaunch, the one piece of real on-disk state this harness has). This fake
+// `omp` process is a brand-new process with no memory of the earlier run, so it always answers
+// `get_btw_history` with the topic that earlier run asked, regardless of what a real `omp` would
+// have actually written to its own session file -- this proves ONLY that `sideChat.getHistory`
+// reattaches, requests `get_btw_history`, and flattens the result correctly after a restart, not
+// that OMP itself genuinely persisted the thread across the process boundary (no live `omp` ran
+// in this harness to persist against; see README.md's own provenance table for every fixture's
+// disclosed scope).
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\side-chat\\conversation.json","sessionId":"sess-r6","messageCount":2,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["get_btw_history"]}
+{"id":"$lastId","type":"response","command":"get_btw_history","success":true,"data":{"records":[{"id":"topic-1","leafId":"leaf-1","question":"Is this safe to run concurrently?","answer":"It stays internal to this module.","status":"complete","createdAt":1,"updatedAt":2,"followUps":[]}]}}

@@ -452,7 +452,7 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 
-    /// `chat.setPredictWordEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
+    /// `settings.setWordPredictionEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
     /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
     /// above uses.
     pub async fn set_word_prediction_enabled(

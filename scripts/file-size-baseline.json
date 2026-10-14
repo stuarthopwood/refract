@@ -11,7 +11,7 @@
   "src/renderer/App.tsx": 735,
   "src/renderer/features/chat/ChatPane.tsx": 1445,
   "src/renderer/features/chat/Markdown.tsx": 997,
-  "src/renderer/features/chat/MessageInput.tsx": 1632,
+  "src/renderer/features/chat/MessageInput.tsx": 1636,
   "src/renderer/features/chat/Transcript.tsx": 1179,
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
@@ -19,7 +19,7 @@
   "src/renderer/features/sessions/SessionList.tsx": 1393,
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 718,
-  "src/shared/ipc.ts": 900,
+  "src/shared/ipc.ts": 910,
   "src/shared/mermaidTheme.ts": 844,
-  "src/shared/model.ts": 657
+  "src/shared/model.ts": 668
 }

@@ -31,7 +31,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sideChat.getHistory", side_chat_get_history);
     d.register("chat.predictWord", chat_predict_word);
     d.register("chat.predictWordFeedback", chat_predict_word_feedback);
-    d.register("settings.setWordPredictionEnabled", settings_set_word_prediction_enabled);
+    d.register(
+        "settings.setWordPredictionEnabled",
+        settings_set_word_prediction_enabled,
+    );
 }
 
 async fn session_exists(state: &AppState, session_id: &str) -> bool {
