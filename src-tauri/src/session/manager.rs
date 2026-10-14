@@ -128,7 +128,11 @@ impl SessionManager {
     /// agent entry (e.g. a prior open, or a `model.listRoles` probe) but whose live status is
     /// `Stopped` lands in `skipped_stopped` instead, rather than being counted as failed
     /// (gate-fix, HIGH/tests).
-    pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
+    pub async fn apply_role_change(
+        &self,
+        role: &str,
+        model_roles: std::collections::HashMap<String, String>,
+    ) -> crate::session::model::RoleChangeSummary {
         use crate::session::model::{apply_role_now, current_selection, RoleChangeSummary};
         use crate::session::SessionStatus;
 
@@ -139,17 +143,14 @@ impl SessionManager {
         }
 
         let mut summary = RoleChangeSummary::default();
-        // Gate-fix (round 7, perf, MEDIUM): fetch `modelRoles` ONCE for the sweep, not once per
-        // Session -- every task needs the SAME record, and reads now queue on
-        // `OMP_INVOCATION_LOCK`. A failed fetch falls back to `None` (each task fetches its own).
-        let shared_model_roles = crate::ipc::model_roles::get_model_roles_reliable()
-            .await
-            .map(Arc::new)
-            .ok();
+        // Gate-fix (round 10, MEDIUM): the caller already read this map in its own
+        // `set_model_role` write -- re-reading raced a second `modelRoles.set` mid-sweep
+        // (`apply_role_now`'s own check re-reads fresh once on a mismatch, see there). Shared
+        // via `Arc` for cheap cloning across every spawned task below.
+        let shared_model_roles = Arc::new(model_roles);
         // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
-        // one at a time -- each makes up to three RPCs (a `get_state` before, the `/switch
-        // @role` send, a `get_state` after), so a serial sweep's worst case grows with the
-        // Session count.
+        // one at a time -- each makes up to three RPCs, so a serial sweep's worst case grows
+        // with the Session count.
         const CONCURRENCY: usize = 4;
         let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
         let mut idle_tasks = Vec::new();
@@ -194,7 +195,7 @@ impl SessionManager {
                     .acquire_owned()
                     .await
                     .expect("semaphore never closed");
-                let model_roles_ref = shared_model_roles.as_deref();
+                let model_roles_ref = Some(shared_model_roles.as_ref());
                 let outcome = match apply_role_now(&agent, &role, true, model_roles_ref).await {
                     Ok(_) => RoleApplyOutcome::Moved,
                     Err(err) if err.code == "not-idle" => {
@@ -210,17 +211,14 @@ impl SessionManager {
                             match apply_role_now(&agent, &role, true, model_roles_ref).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
-                                    // Gate-fix (round 6, HIGH): became working again between
-                                    // the ready-check just above and this retry's own send --
-                                    // OMP itself is still mid-turn even though Refract's OWN
-                                    // status already looked idle (the narrower race
-                                    // `apply_role_now`'s own `isStreaming` check targets
-                                    // elsewhere). `queue_role_reapply_or_ready` does NOT set
-                                    // `pending_role_reapply` for a `false` result (it means
-                                    // "apply now yourself"), so if THIS retry also failed
-                                    // not-idle, set it directly ourselves (same pattern
-                                    // `on_frame`'s own fallback uses, `model.rs`) -- never
-                                    // report `Queued` unless something is actually queued.
+                                    // Gate-fix (round 6, HIGH): became working again between the
+                                    // ready-check above and this retry's own send -- OMP is
+                                    // still mid-turn even though Refract's OWN status already
+                                    // looked idle. `queue_role_reapply_or_ready` does NOT set
+                                    // `pending_role_reapply` for a `false` result ("apply now
+                                    // yourself"), so if THIS retry also failed not-idle, set it
+                                    // directly ourselves -- never report `Queued` unless
+                                    // something is actually queued.
                                     if !agent.queue_role_reapply_or_ready(&role).await {
                                         agent
                                             .with_model_state(|s| {

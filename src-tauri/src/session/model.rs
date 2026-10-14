@@ -286,11 +286,10 @@ pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
 /// `is_switch_argument_token`'s own charset validates here but is refused by `/switch @<name>`
 /// (whose charset check covers the whole token) -- a real asymmetry, not a bug.
 /// The two `omp` reads run SEQUENTIALLY (`try_join!` intermittently excluded a role) and go
-/// through `OMP_INVOCATION_LOCK` (process-wide). Round 7: an empty `modelRoles` read is
-/// retried once (`get_model_roles_reliable`); if still empty, accepted as genuine (a real
-/// unconfigured profile) rather than guessed at -- `cycleOrder` always has a non-empty default
-/// regardless of `modelRoles`, so its presence is not a usable "this profile is configured"
-/// signal (round 7 follow-up, caught in review).
+/// through `OMP_INVOCATION_LOCK` (every config get/set, process-wide). An empty `modelRoles`
+/// read is retried once (`get_model_roles_reliable`); if still empty, accepted as genuine --
+/// `cycleOrder` always has a non-empty default, so its presence isn't a usable "configured"
+/// signal (round 7, caught in review).
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
     let roles = known_role_list().await?;
     let model_roles = crate::ipc::model_roles::get_model_roles_reliable()
@@ -460,11 +459,9 @@ pub async fn apply_role_now(
     if before_model.as_ref() == Some(&after_model) {
         // Gate-fix (HIGH): a role whose own model is already live (Ctrl+R onto the current
         // role, two roles mapped to one selector) is a valid no-op, not a failure; #766's
-        // "choosing a role again un-pins" must still succeed for it. Only fails when the role's
-        // own selector (`model_support::resolve_role_selector`, below) does NOT match the live
-        // model (FINDINGS item 53). Gate-fix (round 7): a FAILED read no longer swallows into
-        // that message, surfacing via `?`. `cached_model_roles` (the #740 sweep's single fetch)
-        // is used when present.
+        // "choosing a role again un-pins" must still succeed for it. Fails only when the
+        // role's own selector (`resolve_role_selector`, below) does NOT match the live model
+        // (FINDINGS item 53); a FAILED read surfaces via `?` (round 7), never swallowed.
         let fetched;
         let model_roles = match cached_model_roles {
             Some(map) => map,
@@ -475,8 +472,16 @@ pub async fn apply_role_now(
                 &fetched
             }
         };
-        let role_resolves_to_current = model_support::resolve_role_selector(model_roles, role)
+        let mut role_resolves_to_current = model_support::resolve_role_selector(model_roles, role)
             .is_some_and(|selector| selector_matches_model(selector, &after_model));
+        if !role_resolves_to_current {
+            // Gate-fix (round 10, MEDIUM): `model_roles` can be the sweep's own stale cached
+            // map (a second `modelRoles.set` mid-sweep) -- re-read fresh once before failing.
+            if let Ok(fresh) = crate::ipc::model_roles::get_model_roles_reliable().await {
+                role_resolves_to_current = model_support::resolve_role_selector(&fresh, role)
+                    .is_some_and(|selector| selector_matches_model(selector, &after_model));
+            }
+        }
         if !role_resolves_to_current {
             let message = format!(
                 "Role \"{role}\" could not be applied: the model is still {}.",
@@ -533,19 +538,14 @@ pub async fn apply_role(
 
 /// `/switch <arg>` and its `/model <arg>` alias (`ipc::chat` rewrites `/model` to `/switch`
 /// before this ever runs). Gate-fix (HIGH/MEDIUM, security): the charset/length token check runs
-/// INSIDE this function (not only `session::agent::commands`'s own `classify_against_builtin`),
-/// so a repo-supplied custom command that somehow claimed the name `switch` (defence in depth:
-/// `commands.rs`'s own `filter_supported_commands` now also seeds `"switch"` into its
-/// builtin-claimed set so that can never happen through the menu/classification path either)
-/// still cannot forward unchecked text through this lane's own pin/role bookkeeping. `arg` is
-/// empty for a bare, read-only `/switch` (FINDINGS item 53: always just echoes the current
-/// model); a `@role` alias routes through the exact same validated path `apply_role` uses
-/// (gate-fix, HIGH: this used to record `current_role` from the raw stripped text with no
-/// validation at all); anything else is a direct model token, verified via the same
-/// before/after `get_state` comparison `apply_role_now` uses, and pins the Session on success.
-/// Always returns `{queued: false}` (gate-fix, HIGH: `chat.send`'s own wire type is
-/// `Result<{queued: boolean}>`; the richer `{model, role}` shape is for `ipc::model`'s own
-/// direct `applyRole`/`setModel` callers only, never this text-command path).
+/// INSIDE this function, so a repo-supplied command claiming the name `switch` still cannot
+/// forward unchecked text through this lane's own pin/role bookkeeping.
+/// `arg` is empty for a bare, read-only `/switch` (FINDINGS item 53: always just echoes the
+/// current model); a `@role` alias routes through the exact same validated path `apply_role`
+/// uses; anything else is a direct model token, verified via the same before/after `get_state`
+/// comparison `apply_role_now` uses, and pins the Session on success. Always returns
+/// `{queued: false}` (`chat.send`'s own wire type is `Result<{queued: boolean}>`; the richer
+/// `{model, role}` shape is for `ipc::model`'s own direct callers only, never this path).
 pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value, AgentError> {
     if !arg.is_empty() && !is_switch_argument_token(arg) {
         return Err(AgentError::new(

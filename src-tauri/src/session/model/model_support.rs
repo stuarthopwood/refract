@@ -181,11 +181,12 @@ const NON_CHAT_ROLE_IDS: [&str; 11] = [
 /// Pure merge step for `model.rs`'s own `known_chat_role_list`: `roles` (already `cycleOrder` +
 /// `plan`) plus the three CORE chat roles (gate-fix, round 6, MEDIUM: ONLY when actually
 /// configured in `modelRoles` -- an UNSET core role, e.g. `smol` with no `modelRoles.smol`
-/// entry, is never added here, so it is refused as `Unknown role` at validation time rather
-/// than reaching `apply_role_now`'s own same-model check and wrongly reporting "could not be
-/// applied" for a role this lane has no selector to compare against) plus every `modelRoles`
-/// key that is not a model-kind or workload role. `pub(super)`: only `known_chat_role_list`
-/// calls this.
+/// entry, is never added HERE, so it is refused as `Unknown role` at validation time UNLESS it
+/// is also listed in `cycleOrder` (which includes `smol`/`default`/`slow` by its own built-in
+/// default, `omp://settings.md`) -- rather than reaching `apply_role_now`'s own same-model check
+/// and wrongly reporting "could not be applied" for a role this lane has no selector to compare
+/// against) plus every `modelRoles` key that is not a model-kind or workload role. `pub(super)`:
+/// only `known_chat_role_list` calls this.
 pub(super) fn merge_chat_roles(
     mut roles: Vec<String>,
     model_roles: &std::collections::HashMap<String, String>,
@@ -235,11 +236,28 @@ pub(super) fn resolve_role_selector<'a>(
     model_roles: &'a std::collections::HashMap<String, String>,
     role: &str,
 ) -> Option<&'a str> {
-    model_roles.get(role).map(String::as_str).or_else(|| {
+    let direct = model_roles.get(role).map(String::as_str).or_else(|| {
         if role == "smol" || role == "slow" {
             model_roles.get("default").map(String::as_str)
         } else {
             None
         }
-    })
+    })?;
+    // `omp://models.md`: "Role aliases like `@smol` expand through `settings.modelRoles`; `*`
+    // selects `@default`." Resolves ONE hop only -- a self-referential alias (`@<role>` itself)
+    // or a hop target that is ALSO an alias (a deeper chain) is the cycle guard: never followed,
+    // treated as unresolved rather than guessed at (same as any other unresolved selector).
+    if direct == "*" {
+        return model_roles.get("default").map(String::as_str);
+    }
+    if let Some(target) = direct.strip_prefix('@') {
+        if target == role {
+            return None;
+        }
+        return model_roles
+            .get(target)
+            .map(String::as_str)
+            .filter(|hop| !hop.starts_with('@') && *hop != "*");
+    }
+    Some(direct)
 }

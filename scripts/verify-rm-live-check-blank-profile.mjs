@@ -118,8 +118,17 @@ async function main() {
     console.log(`${ok ? 'PASS' : 'FAIL'}: ${name}${detail ? ' -- ' + JSON.stringify(detail) : ''}`);
   }
 
+  // Gate-fix (round 10, LOW, security): strip every `PI_*`/`OMP_*` key from the copied parent
+  // environment before spawning -- an ambient override already set in the invoking shell (for
+  // example `PI_SMOL_MODEL`) could silently supply a role selector this script's own sparse
+  // `modelRoles` record is specifically testing the ABSENCE of, making a check pass for the
+  // wrong reason. `OMP_PROFILE` is re-added explicitly afterward, the one override this script
+  // itself needs.
+  const filteredParentEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('PI_') && !key.startsWith('OMP_')),
+  );
   const env = {
-    ...process.env,
+    ...filteredParentEnv,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}`,
     WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
@@ -181,6 +190,11 @@ async function main() {
   console.log(`\n${results.filter((r) => r.ok).length} of ${results.length} passed`);
   console.log(`scratch dir (left on disk, not deleted): ${scratchRoot}`);
   console.log(`isolated profile (left on disk, not deleted): ${path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile)}`);
+  console.log(
+    `cleanup hint: every run of this script shares the fixed "refract-rm-blank-profile-*" ` +
+      `prefix under both %TEMP% and ~/${CONFIG_DIR_NAME}/profiles -- sweep accumulated runs by ` +
+      'that literal glob, never a computed single path.',
+  );
   console.log('\n--- app stdout/stderr (tail) ---');
   console.log(logLines.join('').split('\n').slice(-80).join('\n'));
   if (results.some((r) => !r.ok)) process.exitCode = 1;
