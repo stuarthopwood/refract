@@ -230,11 +230,11 @@ pub fn run() {
     // writes anything to disk until an explicit mutation calls its own `persist()`, so two
     // instances racing this same read is never a corruption risk, only a redundant one.
     // `store::import::import_once` immediately below DOES write (the one-time Electron import,
-    // issue #796 acceptance item 6, lane R13a) -- but only before its own marker file exists,
-    // and every step it takes (the registry merge, the settings/profile-cache copy-if-absent)
-    // is additive/idempotent, so two launches racing this is, at worst, redundant work, never
-    // data loss or corruption; the marker write itself lands via the same atomic
-    // temp-then-rename every other store write here already uses.
+    // issue #796 acceptance item 6, lane R13a) -- it takes its OWN exclusive lock file for the
+    // duration of the attempt (`store::import::ImportLock`), closing the race this comment used
+    // to wave off as merely redundant: a second launch that loses the lock gets
+    // `ImportOutcome::AlreadyRunning` and makes no write of its own this launch, so the two
+    // reads immediately below never race a concurrent import write.
     let (registry, settings, update_state) = tauri::async_runtime::block_on(async {
         store::import::log_outcome(
             store::import::import_once(&data_dir, &electron_source_dir()).await,
