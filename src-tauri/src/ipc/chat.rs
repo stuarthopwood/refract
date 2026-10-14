@@ -1,12 +1,13 @@
 // IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T026). Ports `chat.send`
 // (including the native `/new` slash-command routing and the allowlisted-commands validation,
-// `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, and `.commands`. `.sendNow`,
-// `.predictWord`, `.predictWordFeedback`, `.setVisibleSubagent`, and `.subagentSnapshot` are not
-// ported (model roles/subagents/predict-word are out of this slice's scope, `session::agent`'s
-// own header).
+// `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, `.commands`, and `.sendNow`
+// (issue #540, lane R4). `.predictWord`, `.predictWordFeedback`, `.setVisibleSubagent`, and
+// `.subagentSnapshot` are not ported (model roles/subagents/predict-word are out of this
+// slice's scope, `session::agent`'s own header).
 
 use serde_json::Value;
 
+use crate::omp::images::{validate_image_attachment, ImageValidationError};
 use crate::session::agent::{
     classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
 };
@@ -18,14 +19,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("chat.send", chat_send);
     d.register("chat.stop", chat_stop);
     d.register("chat.removeQueued", chat_remove_queued);
+    d.register("chat.sendNow", chat_send_now);
     d.register("chat.answer", chat_answer);
     d.register("chat.commands", chat_commands);
 }
-
-/// Maximum accepted decoded image size (spec 009 research.md Decision 3), mirrored from
-/// `src/shared/images.ts`'s own `MAX_IMAGE_INPUT_BYTES` (20 MiB) -- not a declared dependency of
-/// this crate's `shared/` tree, so re-declared here.
-const MAX_IMAGE_INPUT_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
 /// native/reserved command names (constitution I), refused locally even if OMP later recognizes
@@ -50,118 +47,6 @@ fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
 /// `IpcErrorCode` values, same as `AgentNotRunningError`/`PromptFailedError`'s own `code` field).
 fn map_chat_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(err.code, err.message)
-}
-
-/// Decoded byte length of a base64 string, computed from the string's own length (never a live
-/// decode), port of `images.ts`'s own `decodedBase64ByteLength`.
-fn decoded_base64_byte_length(data: &str) -> u64 {
-    let len = data.len() as u64;
-    if len == 0 {
-        return 0;
-    }
-    let padding = if data.ends_with("==") {
-        2
-    } else if data.ends_with('=') {
-        1
-    } else {
-        0
-    };
-    (len * 3 / 4).saturating_sub(padding)
-}
-
-/// Decodes the first 24 base64 characters (18 bytes) of `data` -- enough to cover every
-/// supported format's magic-byte signature with headroom (port of `validateImageAttachment`'s
-/// own prefix decode).
-fn decode_base64_prefix(data: &str) -> Vec<u8> {
-    let prefix: String = data.chars().take(24).collect();
-    let stripped: Vec<u8> = prefix
-        .bytes()
-        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
-        .collect();
-    let value = |byte: u8| -> Option<u8> {
-        match byte {
-            b'A'..=b'Z' => Some(byte - b'A'),
-            b'a'..=b'z' => Some(byte - b'a' + 26),
-            b'0'..=b'9' => Some(byte - b'0' + 52),
-            b'+' => Some(62),
-            b'/' => Some(63),
-            _ => None,
-        }
-    };
-    let mut out = Vec::with_capacity(stripped.len() * 3 / 4 + 3);
-    let mut group = [0u8; 4];
-    let mut group_len = 0usize;
-    for byte in stripped {
-        let Some(v) = value(byte) else { break };
-        group[group_len] = v;
-        group_len += 1;
-        if group_len == 4 {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-            out.push((group[2] << 6) | group[3]);
-            group_len = 0;
-        }
-    }
-    match group_len {
-        2 => out.push((group[0] << 2) | (group[1] >> 4)),
-        3 => {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-        }
-        _ => {}
-    }
-    out
-}
-
-/// Port of `shared/images.ts`'s own `matchesImageSignature`.
-fn matches_image_signature(bytes: &[u8], mime_type: &str) -> bool {
-    match mime_type {
-        "image/png" => {
-            bytes.len() >= 16
-                && bytes[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-                && bytes[12..16] == [0x49, 0x48, 0x44, 0x52]
-        }
-        "image/jpeg" => {
-            bytes.len() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff
-        }
-        "image/gif" => {
-            bytes.len() >= 6
-                && bytes[0..4] == *b"GIF8"
-                && (bytes[4] == 0x37 || bytes[4] == 0x39)
-                && bytes[5] == 0x61
-        }
-        "image/webp" => bytes.len() >= 12 && bytes[0..4] == *b"RIFF" && bytes[8..12] == *b"WEBP",
-        _ => false,
-    }
-}
-
-const SUPPORTED_IMAGE_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-/// Port of `omp/images.ts`'s own `validateImageAttachment` (FR-018, constitution Principle V):
-/// re-validates every `images` entry independently of the renderer's own paste-time check.
-fn validate_image_attachment(image: &Value) -> Result<(), IpcError> {
-    let mime_type = image.get("mimeType").and_then(Value::as_str).unwrap_or("");
-    if !SUPPORTED_IMAGE_MIME_TYPES.contains(&mime_type) {
-        return Err(IpcError::new(
-            "unsupported-image-type",
-            format!("Unsupported image type: {mime_type}"),
-        ));
-    }
-    let data = image.get("data").and_then(Value::as_str).unwrap_or("");
-    if decoded_base64_byte_length(data) > MAX_IMAGE_INPUT_BYTES {
-        return Err(IpcError::new(
-            "image-too-large",
-            "Image exceeds the 20 MiB limit",
-        ));
-    }
-    let prefix = decode_base64_prefix(data);
-    if !matches_image_signature(&prefix, mime_type) {
-        return Err(IpcError::new(
-            "unsupported-image-type",
-            format!("Unsupported image type: {mime_type}"),
-        ));
-    }
-    Ok(())
 }
 
 /// Port of `chat.ts`'s own `parseImagesArgument`: shape-checks, then independently re-validates
@@ -195,7 +80,23 @@ fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, I
             return Err(invalid_argument("chat.send: image data must not be empty"));
         }
         let image = entry.clone();
-        validate_image_attachment(&image)?;
+        if let Err(err) = validate_image_attachment(&image) {
+            let mime_type = image.get("mimeType").and_then(Value::as_str).unwrap_or("");
+            return Err(match err {
+                ImageValidationError::UnsupportedImageType => IpcError::new(
+                    "unsupported-image-type",
+                    format!("Unsupported image type: {mime_type}"),
+                ),
+                ImageValidationError::ByteSizeTooLarge => {
+                    IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
+                }
+                // #771: a distinct message from the byte-size cap above -- a tiny file can still
+                // declare an enormous pixel count in its header.
+                ImageValidationError::PixelCountTooLarge => {
+                    IpcError::new("image-too-large", "Image exceeds the maximum pixel count")
+                }
+            });
+        }
         parsed.push(image);
     }
     Ok(Some(parsed))
@@ -398,5 +299,38 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .available_commands()
             .await;
         Ok(Value::Array(commands))
+    })
+}
+
+// Issue #540: no `images` argument here at all -- OMP keeps the queued message's own images
+// with it (`promote_queued_message` moves the existing message, attachments included, rather
+// than reprocessing it, so a resend never needs images supplied by the caller).
+pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(session_id) = args.first().and_then(Value::as_str) else {
+            return Err(invalid_argument(
+                "chat.sendNow expects (sessionId, text) strings",
+            ));
+        };
+        let Some(text) = args.get(1).and_then(Value::as_str) else {
+            return Err(invalid_argument(
+                "chat.sendNow expects (sessionId, text) strings",
+            ));
+        };
+        if state
+            .registry
+            .lock()
+            .await
+            .get_session(session_id)
+            .is_none()
+        {
+            return Err(not_found(format!("Session not found: {session_id}")));
+        }
+        let result = manager(&state)
+            .get_or_create_agent(session_id)
+            .send_now(text.to_string())
+            .await
+            .map_err(map_chat_error)?;
+        Ok(result)
     })
 }

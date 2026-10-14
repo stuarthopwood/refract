@@ -1,5 +1,6 @@
-// Slash-command filtering/classification tables (port of `slash-commands.ts`). See `mod.rs`'s
-// own header for this module's place in the `agent/` split and the lane extension contract.
+// Slash-command filtering/classification tables (port of `slash-commands.ts`, plus the #760
+// source-aware policy this build adds on top, lane R4 issue #787). See `mod.rs`'s own header
+// for this module's place in the `agent/` split and the lane extension contract.
 
 use serde_json::{json, Value};
 
@@ -37,26 +38,48 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
     }
 }
 
+/// Issue #760 probe (FINDINGS item 57): OMP's own `source` field is `"builtin"` for its native
+/// commands, `"file"` for a project/user command (the same value for both -- OMP does not
+/// distinguish them further), and `"skill"` for a `/skill:<name>` entry. A command whose
+/// `source` is anything OTHER than one of the two confirmed non-builtin values ("file"/"skill")
+/// -- including a missing field entirely -- is treated as builtin-restricted: fail closed
+/// towards the stricter, already-verified policy rather than trusting an unprobed future
+/// `source` value with free-form arguments.
+fn is_builtin_source(source: Option<&str>) -> bool {
+    !matches!(source, Some("file") | Some("skill"))
+}
+
 /// Refract's own native commands (`NATIVE_BUILT_COMMANDS`): `/new` has a working implementation
 /// (`start_new_conversation`); `/btw` is listed for menu parity with the Electron build but has
 /// no implementation here (side chat out of scope, see `mod.rs`'s own header) -- `ipc::chat`'s
 /// own `NATIVE_RESERVED_COMMANDS` check refuses it with `unknown-command` before classification
 /// ever reaches `chat.send`, so this module never sees a `/btw` invocation to special-case.
+/// Tagged `source: "native"` (issue #760's own `SlashCommandDescriptor.source` field) so the
+/// menu can tell these apart from anything OMP itself reports.
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new Conversation in this Session"),
     ("btw", "Ask the agent a side question"),
 ];
 
-/// Port of `slash-commands.ts`'s own `filterSupportedCommands`.
+/// Port of `slash-commands.ts`'s own `filterSupportedCommands`, extended per issue #760: a
+/// raw command whose `source` is NOT builtin (a project/user `"file"` command, or a `"skill"`)
+/// is listed exactly as OMP reports it, with no allowlist pruning -- the user wrote it, so
+/// `SUPPORTED_OMP_COMMANDS` (built-ins only, FR-032) does not apply. A builtin-sourced command
+/// keeps today's rule: hidden entirely unless verified, then pruned to its verified subcommands.
 pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
     let mut out: Vec<Value> = NATIVE_BUILT_COMMANDS
         .iter()
-        .map(|(name, description)| json!({ "name": name, "description": description }))
+        .map(|(name, description)| json!({ "name": name, "description": description, "source": "native" }))
         .collect();
     for command in raw {
         let Some(name) = command.get("name").and_then(Value::as_str) else {
             continue;
         };
+        let source = command.get("source").and_then(Value::as_str);
+        if !is_builtin_source(source) {
+            out.push(command.clone());
+            continue;
+        }
         let Some(allowed) = supported_omp_subcommands(name) else {
             continue;
         };
@@ -98,7 +121,10 @@ pub fn parse_slash_command(text: &str) -> Option<(String, String)> {
     Some((name.to_string(), rest))
 }
 
-/// Port of `slash-commands.ts`'s own `SlashInvocationClassification`/`classifySlashInvocation`.
+/// Port of `slash-commands.ts`'s own `SlashInvocationClassification`/`classifySlashInvocation`,
+/// extended per issue #760: a non-builtin-sourced descriptor (project/user `"file"`, or
+/// `"skill"`) runs with free-form arguments once its bare name is recognized -- only a builtin
+/// descriptor stays restricted to its own verified subcommand table.
 pub enum SlashInvocationClassification {
     Supported,
     UnknownCommand,
@@ -121,6 +147,9 @@ pub fn classify_slash_invocation(
         return SlashInvocationClassification::UnknownCommand;
     };
     if rest.is_empty() {
+        return SlashInvocationClassification::Supported;
+    }
+    if !is_builtin_source(descriptor.get("source").and_then(Value::as_str)) {
         return SlashInvocationClassification::Supported;
     }
     let space_idx = rest.find(' ');

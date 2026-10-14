@@ -100,8 +100,8 @@ export interface SlashCommandDescriptor {
   aliases?: string[];
   input?: { hint: string };
   subcommands?: SlashCommandDescriptor[];
+  source?: string; // Issue #760: 'builtin' | 'file' | 'skill' (OMP's own field) or 'native' (a locally-supplied descriptor, `/new`/`/btw`); absent = 'builtin', the fail-closed default (`session::agent::commands.rs`).
 }
-
 // ---------------------------------------------------------------------------
 // Dialogs (extension_ui_request / extension_ui_response), per "Dialogs"
 // ---------------------------------------------------------------------------

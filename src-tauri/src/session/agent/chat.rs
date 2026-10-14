@@ -157,4 +157,50 @@ impl SessionAgent {
             .unwrap_or(false);
         Ok(json!({ "removed": removed }))
     }
+
+    /// `chat.sendNow` (contracts/omp-usage.md "Send now (steer)", issue #540): a single atomic
+    /// `promote_queued_message` call -- OMP moves the existing queued follow-up (attachments and
+    /// any contiguous hidden companions included) to the end of the steering queue, with no
+    /// reprocessing and no duplicate, replacing a hand-made remove-then-steer that could leave a
+    /// message removed from the queue but never steered if the steer half failed. Only ever
+    /// called for a follow-up chip (the renderer offers "Send now" on follow-up chips only,
+    /// matching `promote_queued_message`'s own semantics: it never matches a steering-queue
+    /// message). `promoted: false` means it was no longer pending at dispatch time (e.g.
+    /// already delivered).
+    pub async fn send_now(&self, text: String) -> Result<Value, AgentError> {
+        let proc = {
+            self.state.lock().await.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot send now, no live process",
+                        self.session_id
+                    ),
+                )
+            })?
+        };
+        let res = proc
+            .request(
+                json!({ "type": "promote_queued_message", "message": text }),
+                DEFAULT_REQUEST_TIMEOUT_MS,
+            )
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        if res.get("success").and_then(Value::as_bool) != Some(true) {
+            let err_message = res
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string();
+            let detail = format!("promote_queued_message failed: {err_message}");
+            self.append_notice(detail.clone(), "error").await;
+            return Err(AgentError::new("prompt-failed", detail));
+        }
+        let promoted = res
+            .get("data")
+            .and_then(|d| d.get("promoted"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        Ok(json!({ "promoted": promoted }))
+    }
 }
