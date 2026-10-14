@@ -39,12 +39,10 @@ fn is_valid_queue_kind(queue: &str) -> bool {
     queue == "followUp" || queue == "steering"
 }
 
-/// Pure (gate-fix, HIGH/tests, #762): `/model` is rewritten to `/switch` before classification
-/// or forwarding; everything else passes through unchanged. Returns `(name, rest,
-/// original_name)` -- `original_name` is always what the user actually typed, kept for every
-/// error message downstream (a user who typed `/model` must see "/model", never the internal
-/// rewrite target "/switch"). Extracted so "a typed `/model ...` becomes `/switch ...`, never
-/// `/model ...`" (#762's own acceptance wording) is provable without a live agent.
+/// `/model` is rewritten to `/switch` before classification or forwarding; everything else
+/// passes through unchanged. Returns `(name, rest, original_name)` -- `original_name` is always
+/// what the user actually typed, kept for every error message downstream (a user who typed
+/// `/model` must see "/model", never the internal rewrite target "/switch").
 fn rewrite_model_to_switch(name: String, rest: String) -> (String, String, String) {
     let original_name = name.clone();
     let name = if name == "model" {
@@ -202,9 +200,13 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
             // Issue #766: `/role <role>` applies directly (Refract-native; no OMP command
             // exists for this). Bare `/role` has no server-side action (the renderer opens the
             // Ctrl+R selector) and falls through to the reserved-command refusal below, same as
-            // `/btw`/`/models`.
+            // `/btw`/`/models`. Validates against the WIDER chat-role set (gate-fix, round 4):
+            // `cycleOrder` + `plan` + every other configured chat role, not only Ctrl+R's own
+            // narrower cycling list (`model::known_role_list`, Stuart's own decided design).
             if name == "role" && !rest.is_empty() {
-                let known_roles = model::known_role_list().await.map_err(map_chat_error)?;
+                let known_roles = model::known_chat_role_list()
+                    .await
+                    .map_err(map_chat_error)?;
                 // Gate-fix (HIGH): `chat.send`'s own wire type is `Result<{ queued: boolean }>`
                 // (ipc.ts); the richer `{model, role}` shape is for `ipc::model`'s own direct
                 // `applyRole` caller only, never this text-command path.

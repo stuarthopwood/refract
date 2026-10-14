@@ -1,17 +1,20 @@
-// Model-role pure helpers and the Conversation-file role lookup (lane RM, issues #454, #740,
-// #741, #762, #766, #760): split out of `model.rs` itself (gate-fix: pushed `model.rs` over this
-// build's 600-line cap) into its own file, the same pattern `agent/lane_support.rs` already uses
-// for `agent/mod.rs`. Everything here backs the user-initiated actions that stay in `model.rs`
-// (`set_model`, `cycle_model`, `apply_role_now`, `handle_switch_text`); `current_selection` and
-// `known_role_list` are also called directly from outside this module's own tree (`ipc::model`,
-// `ipc::chat`, `session::manager`, `session::agent::commands`/`agent::mod`), so `model.rs`
-// re-exports them at its own path unchanged rather than every caller switching to a new one.
+// Model-role pure helpers (lane RM, issues #454, #740, #741, #762, #766, #760): split out of
+// `model.rs` itself (gate-fix: pushed `model.rs` over this build's 600-line cap) into its own
+// sibling file. `current_selection` and `known_role_list` stay in `model.rs` itself (gate-fix,
+// round 4: they are called directly from outside this module's own tree -- `ipc::model`,
+// `ipc::chat`, `session::manager`, `session::agent::commands`/`agent::mod` -- so re-exporting
+// them from here under `model.rs`'s own path added a layer of indirection with no benefit; only
+// genuinely private/narrowly-scoped formatting and validation helpers live here).
+//
+// (Earlier revision wrongly compared this split to `agent/lane_support.rs`'s own: that file
+// extends `SessionAgent` with inherent methods everything still calls through the SAME type, no
+// re-export involved at all -- a different mechanism, not "the same pattern".)
 
 use serde_json::Value;
 
 use crate::omp::transcript::{NoticeLevel, TranscriptItem};
 
-use super::super::agent::{AgentError, SessionAgent};
+use super::super::agent::SessionAgent;
 
 /// Gate-fix (HIGH, #762): `/switch`'s own verified argument shape is a single TOKEN, not an
 /// arbitrary string -- caps length the same way `agent::mod`'s own `MAX_MODEL_FIELD_LENGTH`
@@ -19,8 +22,9 @@ use super::super::agent::{AgentError, SessionAgent};
 const MAX_SWITCH_ARGUMENT_LENGTH: usize = 256;
 
 /// Issue #766, decided by Stuart 2026-10-13: Ctrl+R (and `/role` bare) cycles `cycleOrder`'s
-/// roles plus the literal `"plan"` role, deduplicated, `cycleOrder`'s own order preserved.
-fn build_role_list(cycle_order: &[String]) -> Vec<String> {
+/// roles plus the literal `"plan"` role, deduplicated, `cycleOrder`'s own order preserved. Only
+/// `model.rs`'s own `known_role_list` calls this, hence `pub(super)` rather than wider.
+pub(super) fn build_role_list(cycle_order: &[String]) -> Vec<String> {
     let mut out: Vec<String> = cycle_order.to_vec();
     if !out.iter().any(|r| r == "plan") {
         out.push("plan".to_string());
@@ -71,13 +75,39 @@ pub(in crate::session) fn model_value(get_state_data: &Value) -> Option<Value> {
 
 /// The `provider/id` form `modelRoles`' own selector strings use (confirmed live: `listRoles`'
 /// own `model` field for a configured role, e.g. `"probe-fake/probe-fake-model"`). `None` when
-/// either field is missing -- a get_state `model` object this lane cannot resolve to a selector
-/// is never treated as matching one (gate-fix, HIGH): see `apply_role_now`/`handle_switch_text`'s
-/// own same-model check in `model.rs`.
+/// either field is missing. Exported so `selector_matches_model` below and `model.rs`'s own
+/// same-model checks share one definition of "what the live model's own selector form is".
 pub(in crate::session) fn model_selector_string(model: &Value) -> Option<String> {
     let provider = model.get("provider").and_then(Value::as_str)?;
     let id = model.get("id").and_then(Value::as_str)?;
     Some(format!("{provider}/{id}"))
+}
+
+/// Gate-fix (round 4): does `selector` (a `modelRoles` value, OR a user-typed `/switch` token --
+/// both share the same `provider/id[:thinking]` grammar, `omp://models.md` "Role aliases and
+/// settings") already name the model actually live? Used when a switch's own before/after
+/// `get_state` comparison shows no change, to tell a VALID no-op (the role/token already points
+/// at the live model) from OMP's native `/switch` silently doing nothing on something it could
+/// not resolve (FINDINGS item 53).
+/// - Strips an optional `:thinkingLevel` suffix first (`omp://models.md`: "Chat-role values can
+///   append a thinking selector such as `:minimal`, `:low`, `:medium`, or `:high`").
+/// - Matches a bare `id` (no `provider/` prefix) against the live model's own `id` alone
+///   (`omp://models.md`'s own resolution order: "exact bare id ... provider inferred").
+/// - A role ALIAS (`@other-role`) or a comma-separated CANDIDATE LIST (`omp://models.md`: "Role
+///   values can contain comma-separated selectors; selection uses the first available match")
+///   would need a real `omp` catalog/config resolution this lane does not have here -- never
+///   guessed as a match (that would wrongly accept a genuine failure) or a mismatch (that would
+///   wrongly fail a genuine no-op); the caller's own unresolved-argument error path applies
+///   unchanged, and this is recorded as an open problem in the PR body, not silently resolved.
+pub(in crate::session) fn selector_matches_model(selector: &str, model: &Value) -> bool {
+    let base = selector.split(':').next().unwrap_or(selector);
+    if base.starts_with('@') || base.contains(',') {
+        return false;
+    }
+    if Some(base) == model_selector_string(model).as_deref() {
+        return true;
+    }
+    !base.contains('/') && Some(base) == model.get("id").and_then(Value::as_str)
 }
 
 async fn next_notice_id(agent: &SessionAgent) -> String {
@@ -99,106 +129,4 @@ pub(in crate::session) async fn post_notice(
     agent
         .upsert_transcript_item(TranscriptItem::Notice { id, level, text })
         .await;
-}
-
-/// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`
-/// entry's `role` (FINDINGS item 51: `set_model`/`open_session`-override always write an
-/// explicit `role:"default"`; `cycle_model` omits `role` entirely -- both reconstruct to
-/// `"default"` per the same finding). `None` when the file has no `model_change` entry at all
-/// (nothing has ever touched this Session's model this Conversation) or cannot be read --
-/// callers must not guess `"default"` for that case (#741: "if the role cannot be established,
-/// show nothing rather than a guess"). Reads the whole file once (gate-fix note: cached by the
-/// caller into `State.current_role` so this never repeats for the same Session/Conversation; a
-/// NOT-found result is cached too, by path, in `State.role_probed_path` -- gate-fix HIGH/perf).
-async fn read_role_from_session_file(conversation_path: &str) -> Option<String> {
-    let content = tokio::fs::read_to_string(conversation_path).await.ok()?;
-    let mut latest: Option<String> = None;
-    for line in content.lines() {
-        let line = line.trim();
-        // Gate-fix (HIGH, perf): skip the `serde_json::from_str` parse entirely for the common
-        // case -- most lines in a long-running Conversation are not `model_change` entries, and
-        // a plain substring scan is far cheaper than parsing JSON just to discard it.
-        if line.is_empty() || !line.contains("model_change") {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(Value::as_str) == Some("model_change") {
-            latest = Some(
-                value
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .unwrap_or("default")
-                    .to_string(),
-            );
-        }
-    }
-    latest
-}
-
-/// Read access to this lane's own per-Session state, for `ipc::model` (the role selector's
-/// listing), `session::manager` (the #740 propagation sweep), and `ipc::chat` (the `/role`
-/// interception) -- all outside this module's own tree, so this wraps `with_model_state` in a
-/// `pub` function rather than widening the `State` struct's own fields to `pub`. Lazily seeds
-/// `current_role` from the Session's own Conversation file on the first call this run (gate-fix,
-/// HIGH, #741: never a guessed `"default"`), then returns the cached value on every later call.
-/// Gate-fix (HIGH, perf): a Session whose Conversation has no `model_change` entry at all (the
-/// common case -- nobody has ever touched its model/role) used to re-read and re-parse the WHOLE
-/// file on every call (every `sessions.list()` poll, one Session at a time); the negative result
-/// is now cached too, keyed by the probed path, so a later call for the SAME Conversation returns
-/// immediately, while a genuinely new Conversation (a different path) is still probed fresh.
-pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
-    let (pinned, cached_role) = agent
-        .with_model_state(|s| (s.pinned, s.current_role.clone()))
-        .await;
-    if pinned || cached_role.is_some() {
-        return (pinned, cached_role);
-    }
-    let Some(path) = agent.current_conversation_path().await else {
-        return (pinned, None);
-    };
-    let already_probed = agent
-        .with_model_state(|s| s.role_probed_path.as_deref() == Some(path.as_str()))
-        .await;
-    if already_probed {
-        return (pinned, None);
-    }
-    let role = read_role_from_session_file(&path).await;
-    if let Some(role) = role.clone() {
-        agent
-            .with_model_state(|s| {
-                if s.current_role.is_none() {
-                    s.current_role = Some(role);
-                }
-            })
-            .await;
-    } else {
-        agent
-            .with_model_state(|s| s.role_probed_path = Some(path.clone()))
-            .await;
-    }
-    (pinned, role)
-}
-
-/// `cycleOrder` (read fresh every call -- it is a small, infrequently-changed config array, not
-/// worth caching) plus `"plan"` (#766). Used by `/role <role>`'s own validation (FINDINGS item
-/// 53's own documented gap: OMP's native `/switch @<role>` silently no-ops on an unresolvable
-/// argument rather than erroring, so Refract must validate client-side first) and by the Ctrl+R
-/// selector's listing.
-pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
-    let response = crate::omp::config::get_config("cycleOrder", &[])
-        .await
-        .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    let cycle_order: Vec<String> = response
-        .get("value")
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(build_role_list(&cycle_order))
 }
