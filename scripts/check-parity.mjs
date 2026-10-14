@@ -353,8 +353,8 @@ const REQUEST_LANES = {
   CHAT_COMMANDS: 'R4',
   CHAT_PREDICT_WORD: 'R6', // #789, word prediction is R6's work, despite chat.ts housing it
   CHAT_PREDICT_WORD_FEEDBACK: 'R6',
-  CHAT_SET_VISIBLE_SUBAGENT: 'R4',
-  CHAT_SUBAGENT_SNAPSHOT: 'R4',
+  CHAT_SET_VISIBLE_SUBAGENT: 'R5', // #788, subagents own setVisibleSubagent/subagentSnapshot despite chat.ts housing them
+  CHAT_SUBAGENT_SNAPSHOT: 'R5',
   SIDE_CHAT_ASK: 'R6', // #789, ipc/side_chat.rs
   SIDE_CHAT_CANCEL: 'R6',
   SIDE_CHAT_GET_HISTORY: 'R6',
