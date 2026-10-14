@@ -68,6 +68,13 @@ jobs:
       - name: Check file size
         run: pnpm check:file-size
 
+      # Release pipeline (scripts/release.mjs is the only thing allowed to bump these): fails
+      # unless package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml ([package]
+      # refract-tauri), and src-tauri/Cargo.lock (the refract-tauri entry) all name the same
+      # version.
+      - name: Check version consistency
+        run: pnpm check:versions
+
       # Issue #519/#795 (R12b): flags an OMP wire command/frame-type string literal Refract
       # reads or writes that the vendored rpc-wire schema (scripts/fixtures/omp-schema/) doesn't
       # know about (this fails the step). `--check-pin` additionally reports, non-fatally, when

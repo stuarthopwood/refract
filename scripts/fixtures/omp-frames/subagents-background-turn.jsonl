@@ -1,0 +1,42 @@
+// SYNTHESIZED, not captured live: a true async `task()` batch needs `async.enabled` plus a real
+// multi-turn model conversation, out of scope for the one tiny real capture this harness is built
+// from (issue #795 part 2's "tiny prompts only" budget). Built directly from the documented wire
+// contract (`src/shared/frames.ts`'s `ToolExecutionEndFrame`, `transcript.ts`'s own
+// `jobsFromDetails`/`applyAsyncResultJobs`, and the vendored `rpc-wire.schema.json`'s
+// `SubagentStatus`/`GetSubagentsResult` defs), for the R5 lane (#788, #712) to confirm a subagent
+// spawned in turn 1 that is STILL running when turn 1 settles stays visible as `running` into
+// turn 2, then settles to `finished` once a later `wait` tool call's own `tool_execution_end`
+// delivers `result.details.jobs[]` -- the one background-completion path #788's own subagents.rs
+// already implements (`apply_jobs`, matched by `label === name_or_task`). See README.md's
+// provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\subagents-bg\\conversation.json","sessionId":"sess-subagents-bg-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"tool_execution_start","toolCallId":"task-bg-1","toolName":"task","args":{"tasks":[{"name":"gamma","task":"Investigate gamma in the background"}]},"intent":"Starting a background subagent"}
+{"type":"tool_execution_end","toolCallId":"task-bg-1","toolName":"task","result":{"content":[{"type":"text","text":"Spawned 1 background agent (async)"}],"details":{"progress":[{"index":0,"id":"gamma","status":"running","task":"Investigate gamma in the background"}]}},"isError":false}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Started gamma in the background; I'll report back."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Started gamma in the background; I'll report back."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"tool_execution_start","toolCallId":"wait-1","toolName":"wait","args":{},"intent":"Checking on the background job"}
+{"type":"tool_execution_end","toolCallId":"wait-1","toolName":"wait","result":{"content":[{"type":"text","text":"1 job finished"}],"details":{"jobs":[{"id":"gamma","label":"gamma","status":"completed","durationMs":4200}]}},"isError":false}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a2","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"gamma finished investigating."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":"gamma finished investigating."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}

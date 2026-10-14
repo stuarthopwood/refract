@@ -217,7 +217,7 @@ impl SessionAgent {
             .expect("SessionAgent dropped while a background task still referenced it")
     }
 
-    fn is_visible(&self) -> bool {
+    pub(super) fn is_visible(&self) -> bool {
         self.visible_ids
             .lock()
             .expect("visible_ids mutex poisoned")

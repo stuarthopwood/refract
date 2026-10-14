@@ -34,8 +34,8 @@ use super::agent::{AgentError, SessionAgent};
 /// typical session's worth of concurrent starts does not queue needlessly, small enough that a
 /// burst of starts cannot itself exhaust memory before the defer below ever gets a chance to act.
 const MAX_CONCURRENT_STARTS: usize = 2;
-/// Mirrors `memory.ts`'s own `LOW_MEMORY_BYTES`.
-const LOW_MEMORY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+// Issue #788 (lane R5): the low-memory threshold moved to `shell::memory::LOW_MEMORY_BYTES`
+// (the one canonical copy `is_memory_low()` below now reads) instead of staying duplicated here.
 /// Mirrors `OmpProcess.ts`'s own `MEMORY_DEFER_CEILING_MS`: gives up deferring and lets the start
 /// proceed regardless once this much time has passed -- a start that is merely slow is still
 /// better than one that never happens.
@@ -266,27 +266,12 @@ pub(super) fn guard_stage_for_attempt(agent: &SessionAgent) -> StageGuard {
     StageGuard { agent: agent.arc() }
 }
 
-fn is_memory_low() -> bool {
-    free_memory_bytes().is_some_and(|free| free < LOW_MEMORY_BYTES)
-}
-
-#[cfg(target_os = "windows")]
-fn free_memory_bytes() -> Option<u64> {
-    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-    let mut status = MEMORYSTATUSEX {
-        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
-        ..Default::default()
-    };
-    // Safety: `status` is sized and `dwLength`-stamped exactly as the API requires, a local on
-    // this function's own stack that outlives the call.
-    unsafe { GlobalMemoryStatusEx(&mut status).ok()? };
-    Some(status.ullAvailPhys)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn free_memory_bytes() -> Option<u64> {
-    None
-}
+// Issue #788 (lane R5): `shell::memory` is now the one canonical low-memory check (its own
+// sampler timer's threshold/`GlobalMemoryStatusEx` call) -- this lane's own private duplicate of
+// both used to live here (`memory.ts`'s doc comment pointed the other way, "the start-queue
+// memory defer reuses `isMemoryLow()`", before `shell/memory.rs` existed to reuse FROM). A plain
+// re-export keeps this call site unchanged below.
+use crate::shell::memory::is_memory_low;
 
 pub(super) fn mark_spawned() -> SpawnedGuard {
     SPAWNED_COUNT.fetch_add(1, Ordering::SeqCst);
