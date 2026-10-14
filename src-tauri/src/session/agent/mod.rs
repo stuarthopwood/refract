@@ -99,12 +99,6 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    turn_settle_handled: bool,
-    // Gate-fix (#856): bumped on every `agent_start` (`agent::frame`'s own `handle_frame`),
-    // read by `handle_turn_settled` before it spawns `on_session_settled`'s own `get_state`
-    // round trip, and re-checked by that spawned call before it applies anything -- so a reply
-    // that lands after a newer turn has already started is recognised as stale and dropped
-    // instead of clobbering that newer turn's registry/readout state.
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
@@ -199,7 +193,6 @@ impl SessionAgent {
                 pending: Vec::new(),
                 commands: Vec::new(),
                 process: None,
-                turn_settle_handled: false,
                 turn_generation: 0,
                 stop_requested: false,
                 shutdown_generation: 0,

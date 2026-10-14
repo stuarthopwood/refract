@@ -22,13 +22,16 @@ impl SessionAgent {
             "agent_start" => {
                 {
                     let mut state = self.state.lock().await;
-                    state.turn_settle_handled = false;
-                    // Gate-fix (#856): a new turn starting invalidates any `on_session_settled`
-                    // `get_state` round trip still in flight from the PREVIOUS turn's settle --
-                    // that round trip now runs on a spawned task (see `handle_turn_settled`), so
-                    // its reply can land after this point. Bumping here lets it recognise itself
-                    // as stale and drop its own reply instead of clobbering this turn's state.
-                    state.turn_generation = state.turn_generation.wrapping_add(1);
+                    // Gate-fix (#856): `turn_generation` replaces the old `turn_settle_handled`
+                    // bool via parity -- odd means "mid-turn, not yet settled", even means
+                    // "settled" (see `handle_turn_settled`'s own doc comment). `| 1` forces the
+                    // result odd regardless of the value coming in (robust even against a
+                    // defensive double `agent_start` with no intervening settle), so this both
+                    // starts a fresh turn and invalidates any `on_session_settled` reply still
+                    // in flight from the previous turn's settle -- that round trip now runs on a
+                    // spawned task (see `handle_turn_settled`), so its reply can land after this
+                    // point; the generation no longer matching lets it recognise itself as stale.
+                    state.turn_generation = state.turn_generation.wrapping_add(1) | 1;
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
@@ -152,10 +155,13 @@ impl SessionAgent {
     async fn handle_turn_settled(&self) {
         let generation = {
             let mut state = self.state.lock().await;
-            if state.turn_settle_handled {
+            // Even `turn_generation` means this turn is already settled (see the `agent_start`
+            // arm's own doc comment for the odd/even encoding) -- a duplicate `session_settled`/
+            // `prompt_result.sessionSettled` frame for the same turn, so this is a no-op.
+            if state.turn_generation % 2 == 0 {
                 return;
             }
-            state.turn_settle_handled = true;
+            state.turn_generation = state.turn_generation.wrapping_add(1);
             state.turn_generation
         };
         self.settle_turn_pending().await;
