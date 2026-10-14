@@ -11,12 +11,12 @@ use serde_json::{json, Value};
 
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
+use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
     assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
-    registry_store_error_message, settle_merged_transcript, terminated_unexpectedly_for_transcript,
-    to_process_mode, truncate, verify_reattach,
+    registry_store_error_message, to_process_mode, truncate, verify_reattach,
 };
 use super::{
     AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
@@ -286,14 +286,14 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
+        let conv = session.current_conversation.as_deref();
+        let terminated_unexpectedly =
+            complete && termination::detect_unexpected_termination_for_transcript(conv).await;
 
         // Port of `exitedDuringStart`: a concurrent `onExit` may have cleared `process` while the
         // history fetch above was in flight.
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
-        // Issue #786 follow-up: fresh tail read for `settle_merged_transcript` below.
-        let terminated_unexpectedly =
-            terminated_unexpectedly_for_transcript(session.current_conversation.as_deref()).await;
         let current_mode = self.settings.lock().await.get().approval_mode;
         {
             let mut state = self.state.lock().await;
@@ -307,8 +307,8 @@ impl SessionAgent {
                 Some(current_mode)
             };
             if complete {
-                // Merges/settles the transcript (see `settle_merged_transcript`'s doc comment).
-                settle_merged_transcript(&mut state.transcript, &messages, terminated_unexpectedly);
+                let transcript = &mut state.transcript;
+                transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
         // Told once here (after the merge above so it isn't dropped as an unpersisted notice),

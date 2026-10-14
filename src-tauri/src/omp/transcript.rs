@@ -2022,15 +2022,15 @@ impl TranscriptState {
         self.items = finalize_live_transcript(items);
     }
 
-    /// Builds history-based items, then merges the Session's current (still-live) items on top
-    /// via `diff::merge_history_with_live`, keeping `has_user_acted`/`terminated_unexpectedly`
-    /// unchanged across the swap. Port of `mergeLiveTranscript` (code-review finding,
-    /// 2026-10-13: `launch()` used to replace the transcript outright instead of merging,
-    /// silently dropping any notice/request/in-flight item a live frame appended while the
-    /// history fetch was in flight).
-    pub fn merge_from_history(&mut self, messages: &[Value]) {
+    /// Builds history items and settles them BEFORE merging onto the live ones (never after --
+    /// code review finding, 2026-10-14: post-merge settling could mark a genuinely still-running
+    /// LIVE row `interrupted`). `terminated_unexpectedly` is one-shot, never written to `self`.
+    /// Port of `fromHistory(...)` (settles history) then `mergeLiveTranscript`.
+    pub fn merge_from_history(&mut self, messages: &[Value], terminated_unexpectedly: bool) {
         let history_items = items_from_history(messages);
-        self.items = merge_history_with_live(&history_items, &self.items);
+        let (settled, _) =
+            settle_interrupted_tool_rows_items(history_items, terminated_unexpectedly);
+        self.items = merge_history_with_live(&settled, &self.items);
     }
 
     /// Applies one live rpc-ui frame (port of `applyFrame`), mutating `self.items` in place so
@@ -2063,7 +2063,7 @@ impl TranscriptState {
         self.has_user_acted = true;
     }
     /// Sets the flag `settle_interrupted_tool_rows` reads; port of `fromHistory`'s `terminatedUnexpectedly` param.
-    /// Called by `session::agent::launch`/`conversations`'s `open_conversation()` via `session::termination::detect_unexpected_termination_for_transcript`.
+    /// Called by `session::agent::conversations`'s `open_conversation()` via `session::termination::detect_unexpected_termination_for_transcript` (a full rebuild, never merged with the live transcript -- `launch()`'s own merge path settles via `merge_from_history`'s own parameter instead, see its doc comment).
     pub fn set_terminated_unexpectedly(&mut self, value: bool) {
         self.terminated_unexpectedly = value;
     }

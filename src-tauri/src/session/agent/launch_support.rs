@@ -9,7 +9,6 @@
 use serde_json::{json, Value};
 
 use crate::omp::process::{ApprovalMode as ProcApprovalMode, OmpProcess};
-use crate::omp::transcript::TranscriptState;
 use crate::store::registry::Session;
 use crate::store::settings::ApprovalMode;
 
@@ -190,31 +189,6 @@ async fn fallback_to_get_messages_core<R: MessagesPageRequester>(proc: &R) -> (V
         return (Vec::new(), false);
     }
     (messages.unwrap().clone(), true)
-}
-
-/// Issue #786 follow-up: fresh, ungated tail read against `file`, feeding
-/// `TranscriptState::set_terminated_unexpectedly` so `settle_interrupted_tool_rows` settles a
-/// `tool` row a crashed previous life left `running`. Port of `SessionAgent.ts` calling
-/// `detectUnexpectedTermination(file)` directly at both its own `fromHistory` call sites
-/// (`launch()`, `switchConversation`) -- never through `resolve_termination`'s own
-/// `stoppedOnRequest` gate, which answers a different question (see
-/// `termination::detect_unexpected_termination_for_transcript`'s own doc comment). Called
-/// unconditionally by `launch()` (its result is only applied when `complete`, below).
-pub(super) async fn terminated_unexpectedly_for_transcript(file: Option<&str>) -> bool {
-    crate::session::termination::detect_unexpected_termination_for_transcript(file).await
-}
-
-/// `launch()`'s own merge-then-settle step, bundled here so that single call site stays a single
-/// line (issue #806 600-line cap: `launch.rs` has no headroom left for a multi-statement block).
-/// Port of `mergeLiveTranscript` + `fromHistory`'s own trailing `settleInterruptedToolRows` pass.
-pub(super) fn settle_merged_transcript(
-    transcript: &mut TranscriptState,
-    messages: &[Value],
-    terminated_unexpectedly: bool,
-) {
-    transcript.merge_from_history(messages);
-    transcript.set_terminated_unexpectedly(terminated_unexpectedly);
-    let _ = transcript.settle_interrupted_tool_rows();
 }
 
 #[cfg(test)]

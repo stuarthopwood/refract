@@ -4,11 +4,10 @@
 use serde_json::{json, Value};
 
 use crate::omp::transcript::TranscriptState;
+use crate::session::termination;
 use crate::store::registry::SessionPatch;
 
-use super::launch_support::{
-    fetch_all_messages, terminated_unexpectedly_for_transcript, verify_reattach,
-};
+use super::launch_support::{fetch_all_messages, verify_reattach};
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
@@ -151,9 +150,14 @@ impl SessionAgent {
         // Issue #786 follow-up: `file` is the historical Conversation just switched to -- if
         // ITS tail shows it was abandoned mid tool-call, the row `settle_interrupted_tool_rows`
         // below settles to `interrupted` rather than leaving it `running` forever once rendered
-        // as history. Port of `SessionAgent.ts`'s `switchConversation` calling
-        // `detectUnexpectedTermination(file)` at this exact point (applied only if `complete`).
-        let terminated_unexpectedly = terminated_unexpectedly_for_transcript(Some(&file)).await;
+        // as history. Port of `SessionAgent.ts`'s `openConversation` calling
+        // `detectUnexpectedTermination(file)` at this exact point, read only when `complete`
+        // (matching TS's own `if (complete) { ... }` gating).
+        let terminated_unexpectedly = if complete {
+            termination::detect_unexpected_termination_for_transcript(Some(&file)).await
+        } else {
+            false
+        };
         {
             let mut state = self.state.lock().await;
             state.transcript = if complete {

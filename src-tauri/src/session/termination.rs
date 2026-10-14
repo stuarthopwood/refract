@@ -166,10 +166,13 @@ pub(super) async fn resolve_termination_for(
 /// Lane R3/#786 follow-up: the raw, UNGATED tail read `session::agent::launch`'s `launch()` and
 /// `session::agent::conversations`'s `open_conversation()` call right before building/merging
 /// the transcript, so an unresolved `tool` row left by a crashed previous life settles to
-/// `interrupted` (`omp::transcript::TranscriptState::set_terminated_unexpectedly` +
-/// `settle_interrupted_tool_rows`) instead of spinning `running` forever. Port of
-/// `SessionAgent.ts` calling `detectUnexpectedTermination(file)` directly at both its own
-/// `fromHistory` call sites (`launch()`, `switchConversation`) -- deliberately NOT routed
+/// `interrupted` (`omp::transcript::TranscriptState::merge_from_history`/
+/// `set_terminated_unexpectedly` + `settle_interrupted_tool_rows`) instead of spinning `running`
+/// forever. Port of `SessionAgent.ts` calling `detectUnexpectedTermination(file)` directly at
+/// its own `fromHistory` call sites -- 3 in TS (`launch()` line 626, `openConversation()` line
+/// 1221, and `switchRecovery.ts`'s own recovery path line 50); only the first two have a Rust
+/// equivalent (this file's own header: #515's reattach-retry recovery is out of scope for this
+/// PR, so Rust just stops the process there instead of recovering it). Deliberately NOT routed
 /// through `resolve_termination_for`'s `stoppedOnRequest`/marker gate above: that gate answers a
 /// different question ("was this exit a deliberate stop, so skip showing a crash banner"),
 /// while the transcript only needs "does the tail show an unresolved tool call right now",
