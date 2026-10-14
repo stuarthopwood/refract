@@ -180,7 +180,8 @@
     "channel": "chat.answer",
     "kind": "ipc",
     "response": {
-      "ok": true
+      "ok": true,
+      "value": null
     }
   },
   {

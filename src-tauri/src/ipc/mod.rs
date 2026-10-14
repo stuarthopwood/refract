@@ -113,15 +113,21 @@ impl Dispatcher {
     /// does for `src/preload/index.ts`'s `request<T>` helper.
     pub async fn dispatch(&self, channel: &str, state: AppState, args: Vec<Value>) -> Value {
         let envelope = match self.handlers.get(channel) {
-            // Gate-round-1 remediation (HIGH #3, issue #795 R12b): a handler with no real
-            // return data resolves `Ok(Value::Null)` (see e.g. `chat.rs`'s `chat_answer`) --
-            // omit the `value` key entirely in that case, the same way `JSON.stringify` drops
-            // an `undefined` field on the Electron side (`transcript.rs`'s own header comment
-            // documents the identical convention for the `args` field). Verified safe: no
-            // channel's handler ever relies on a literal `"value": null` envelope shape (the
-            // full `cargo test` suite passed with this change).
+            // Gate-round-2 remediation (CRITICAL #1, issue #795 R12b, 2026-10-14): the
+            // round-1 "omit `value` for `Ok(Value::Null)`" change was REVERTED here -- it is
+            // global to every registered handler, not scoped to `chat.answer`, and several
+            // channels (`sessions.diffStat`, `repositories.pickFolder`, `chat.predictWord`)
+            // return a MEANINGFUL `null` that the renderer destructures as `value` directly
+            // (`SessionDetailsCard`'s `formatDiffStat`, `AddRepositoryDialog`'s cancel path).
+            // Omitting the key there made `value` arrive `undefined` instead of `null`, and the
+            // renderer crashes on the `undefined` case in both of those (confirmed by code
+            // review, not by any Rust test -- nothing in `cargo test` exercises the renderer).
+            // The one real cross-shell difference this was trying to fix (`chat.answer`'s
+            // envelope is `{ok:true}` in Electron vs `{ok:true,value:null}` here) is handled
+            // entirely inside `contract_replay.rs`'s own divergence scrub now: the comparison
+            // treats an explicit `value:null` as equivalent to an absent `value` key, so the
+            // wire contract for every OTHER channel stays exactly what it was before round 1.
             Some(handler) => match handler(state, args).await {
-                Ok(Value::Null) => serde_json::json!({ "ok": true }),
                 Ok(value) => serde_json::json!({ "ok": true, "value": value }),
                 Err(err) => {
                     serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } })
