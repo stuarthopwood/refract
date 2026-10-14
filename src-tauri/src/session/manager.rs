@@ -518,7 +518,3 @@ mod tests {
         assert_eq!(find("removed")["stopReason"], "worktree-missing");
     }
 }
-
-#[cfg(test)]
-#[path = "manager.test.rs"]
-mod role_change_sweep_tests;

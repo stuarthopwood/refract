@@ -241,6 +241,95 @@ async function main() {
     const cycleRes = await cdp.evaluate(`window.refract.model.cycleModel(${JSON.stringify(sessionId)})`);
     record('model.cycleModel on a live agent (well-shaped response)', typeof cycleRes === 'object' && cycleRes !== null, cycleRes);
 
+    // --- #740 sweep: build four more Sessions in the four distinct states the sweep must
+    // treat differently, then change the "default" role to the OTHER seeded fake model and
+    // inspect which bucket each Session landed in. (`sessionId` above is already pinned by the
+    // `model.setModel` call a few lines up, so it is reused as the fifth, skippedPinned,
+    // case instead of creating a spare Session for it.) ---
+    async function createSweepSession(label) {
+      const createRes = await cdp.evaluate(`window.refract.sessions.create({ repositoryId: ${JSON.stringify(repositoryId)}, baseBranch: 'main' })`);
+      if (!createRes.ok) {
+        record(`sweep: create (${label})`, false, createRes);
+        return null;
+      }
+      return createRes.value.id;
+    }
+    async function openAndWaitIdle(id, label) {
+      await cdp.evaluate(`window.refract.sessions.open(${JSON.stringify(id)})`);
+      try {
+        await cdp.waitFor(
+          `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(id)})?.status === 'idle')`,
+          { timeoutMs: 60_000, label: `sweep ${label} idle` },
+        );
+      } catch (err) {
+        record(`sweep: ${label} reached idle`, false, String(err));
+      }
+    }
+
+    const movedId = await createSweepSession('moved candidate');
+    if (movedId) await openAndWaitIdle(movedId, 'moved candidate');
+
+    const otherRoleId = await createSweepSession('other-role candidate');
+    if (otherRoleId) {
+      await openAndWaitIdle(otherRoleId, 'other-role candidate');
+      const applyOtherRole = await cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(otherRoleId)}, 'smol')`);
+      record('sweep: other-role candidate moved to smol', applyOtherRole.ok === true, applyOtherRole.ok ? undefined : applyOtherRole);
+    }
+
+    const stoppedId = await createSweepSession('stopped candidate');
+    // Deliberately never `.open()`ed (which would auto-start it): `model.listRoles` still
+    // calls `get_or_create_agent`, registering a genuine Stopped-status agent entry the sweep
+    // can see, without starting a real omp process -- the actual `skippedStopped` case, not
+    // merely a Session absent from the agents map entirely (that is the other-role case above).
+    if (stoppedId) await cdp.evaluate(`window.refract.model.listRoles(${JSON.stringify(stoppedId)})`);
+
+    const workingId = await createSweepSession('working candidate');
+    if (workingId) await openAndWaitIdle(workingId, 'working candidate');
+
+    const namesRes = await cdp.evaluate(`window.refract.sessions.list()`);
+    const nameOf = (id) => (namesRes.ok ? namesRes.value.find((s) => s.id === id)?.name : undefined);
+    const pinnedName = nameOf(sessionId);
+    const movedName = nameOf(movedId);
+    const otherRoleName = nameOf(otherRoleId);
+    const stoppedName = nameOf(stoppedId);
+    const workingName = nameOf(workingId);
+
+    // Fire a chat turn on the "working" candidate without awaiting it, racing the role-change
+    // propagation below against a Session genuinely mid-turn (the seeded fake model's endpoint
+    // is unreachable, so the turn stays in-flight for several seconds -- long enough to land the
+    // race the same way every run instead of flaking on timing).
+    const workingTurn = workingId
+      ? cdp.evaluate(`window.refract.chat.send(${JSON.stringify(workingId)}, 'hello')`).catch((err) => ({ ok: false, error: String(err) }))
+      : null;
+
+    const roleSetRes = await cdp.evaluate(
+      `window.refract.modelRoles.set('default', 'probe-fake/probe-fake-model-2')`,
+    );
+    record('modelRoles.set(default -> probe-fake-model-2) triggers the sweep', roleSetRes.ok === true, roleSetRes.ok ? undefined : roleSetRes);
+
+    if (workingTurn) await workingTurn;
+
+    if (roleSetRes.ok) {
+      const p = roleSetRes.value.propagation;
+      record('sweep propagation returned', p !== undefined, roleSetRes.value);
+      if (p) {
+        record(`sweep: moved candidate ('${movedName}') landed in moved`, !!movedName && p.moved.includes(movedName), p);
+        record(`sweep: pinned candidate ('${pinnedName}') landed in skippedPinned`, !!pinnedName && p.skippedPinned.includes(pinnedName), p);
+        record(
+          `sweep: other-role candidate ('${otherRoleName}') is absent from every bucket`,
+          !!otherRoleName && !p.moved.includes(otherRoleName) && !p.queued.includes(otherRoleName)
+            && !p.skippedPinned.includes(otherRoleName) && !p.skippedStopped.includes(otherRoleName) && !p.failed.includes(otherRoleName),
+          p,
+        );
+        record(`sweep: stopped candidate ('${stoppedName}') landed in skippedStopped`, !!stoppedName && p.skippedStopped.includes(stoppedName), p);
+        record(
+          `sweep: working candidate ('${workingName}') landed in queued (not failed)`,
+          !!workingName && p.queued.includes(workingName) && !p.failed.includes(workingName),
+          p,
+        );
+      }
+    }
+
     // --- model.setModel with a made-up, unresolvable provider/id: the failure path ---
     const badSetModelRes = await cdp.evaluate(
       `window.refract.model.setModel(${JSON.stringify(sessionId)}, 'no-such-provider', 'no-such-model-xyz')`,
