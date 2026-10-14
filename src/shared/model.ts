@@ -347,7 +347,7 @@ export interface SessionReadout {
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
   // "0 finished" (SubagentsChip, ReadoutChips.tsx).
   subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden)
-  todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
+  todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
 }
 
 /** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */

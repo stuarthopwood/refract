@@ -77,21 +77,11 @@ pub(crate) async fn build_snapshot(
     serde_json::json!({
         "runtime": runtime,
         "conversations": conversations,
-        "readout": empty_readout(),
-        "subagents": Value::Array(Vec::<Value>::new()),
-    })
-}
-
-/// Port of `SessionAgent.ts`'s own `EMPTY_READOUT` (data-model.md: every field `null` means
-/// "not yet read" / "chip hidden").
-fn empty_readout() -> Value {
-    serde_json::json!({
-        "changes": Value::Null,
-        "contextUsage": Value::Null,
-        "turnTime": Value::Null,
-        "pullRequest": Value::Null,
-        "subagentCount": Value::Null,
-        "todoProgress": Value::Null,
+        // Lane R5 (issue #788, code-review round 1): the LIVE readout/subagent list, not the
+        // permanent "nothing read yet" shape -- `session::readout`/`session::subagents` each
+        // retain their own last-computed value precisely so this snapshot can return it.
+        "readout": crate::session::readout::current_readout_value(agent).await,
+        "subagents": crate::session::subagents::current_summaries_value(agent).await,
     })
 }
 

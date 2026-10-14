@@ -167,6 +167,45 @@ impl EventSink {
     pub fn emit_updates_state_changed(&self, state: &serde_json::Value) {
         self.send(UPDATES_STATE_CHANGED, state.clone());
     }
+
+    /// `memory:warning` (lane R5, issue #788): `shell::memory`'s own low-memory sampler, pushed
+    /// only on a low/not-low state change or once a minute while it stays low (never every
+    /// sample). Mirrors `memory.ts`'s own `window.webContents.send(IPC_EVENTS.MEMORY_WARNING, ...)`.
+    pub fn emit_memory_warning(&self, low: bool, free_bytes: u64, live_agents: usize) {
+        self.send(
+            MEMORY_WARNING,
+            serde_json::json!({ "low": low, "freeBytes": free_bytes, "liveAgents": live_agents }),
+        );
+    }
+
+    /// `readout:update` (lane R5, issue #788): the chip row's live `SessionReadout` bundle
+    /// (`session::readout`'s own `assemble_readout`), debounced/single-flight there.
+    pub fn emit_readout_update(&self, session_id: &str, readout: serde_json::Value) {
+        self.send(
+            READOUT_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "readout": readout }),
+        );
+    }
+
+    /// `subagents:update` (lane R5, issue #788): the Session's current `SubagentSummary[]`
+    /// (`session::subagents`'s own list, which -- unlike the ported-fixed-not-the-bug Electron
+    /// heuristic, issue #712 -- persists across turns until a new Conversation starts).
+    pub fn emit_subagents_update(&self, session_id: &str, subagents: serde_json::Value) {
+        self.send(
+            SUBAGENTS_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "subagents": subagents }),
+        );
+    }
+
+    /// `subagent:patch` (lane R5, issue #788): live `TranscriptOp[]` for the ONE subagent
+    /// `chat.setVisibleSubagent` currently selects (`session::subagents`'s own per-id stream
+    /// diff), mirroring `transcript:patch`'s own `{ sessionId, ops }` shape plus the subagent id.
+    pub fn emit_subagent_patch(&self, session_id: &str, subagent_id: &str, ops: serde_json::Value) {
+        self.send(
+            SUBAGENT_PATCH,
+            serde_json::json!({ "sessionId": session_id, "subagentId": subagent_id, "ops": ops }),
+        );
+    }
 }
 
 /// Emits `event` with `payload` to every window, mirroring the Electron build's own
