@@ -314,6 +314,18 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
     Ok(owner_repo)
 }
 
+/// `owner`/`repo` segments only ever contain what GitHub itself allows in a repository's
+/// owner/name (LOW finding, code review 2026-10-14): rejects `.`/`..` outright (which would
+/// otherwise build a path-traversal-shaped `gh api repos/../x/...` argument) and anything
+/// outside `[A-Za-z0-9._-]`. The request this builds still only ever reaches `api.github.com`
+/// with the developer's own `gh` session, so this is defence in depth, not a live exploit.
+fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+}
+
 /// Parses `owner/repo` out of a `github.com` HTTPS or SSH remote URL, case-insensitively on the
 /// host, anchored (no extra path segments, query string, or fragment) the same way the ported
 /// TS regexes were.
@@ -340,7 +352,7 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
             if segments.len() == 2 {
                 let owner = segments[0];
                 let repo = segments[1].strip_suffix(".git").unwrap_or(segments[1]);
-                if !owner.is_empty() && !repo.is_empty() {
+                if is_valid_owner_or_repo_segment(owner) && is_valid_owner_or_repo_segment(repo) {
                     return Some((owner.to_string(), repo.to_string()));
                 }
             }
@@ -348,15 +360,19 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         return None;
     }
     const SSH_PREFIX: &str = "git@github.com:";
-    if remote_url.len() > SSH_PREFIX.len()
-        && remote_url[..SSH_PREFIX.len()].eq_ignore_ascii_case(SSH_PREFIX)
-    {
+    // `.get(..)` rather than `remote_url[..]` indexing (LOW finding, code review 2026-10-14): a
+    // crafted remote with non-ASCII text at exactly byte 15 would otherwise panic by slicing
+    // inside a multi-byte character instead of simply failing this prefix match.
+    let Some(prefix) = remote_url.get(..SSH_PREFIX.len()) else {
+        return None;
+    };
+    if prefix.eq_ignore_ascii_case(SSH_PREFIX) {
         let rest = remote_url[SSH_PREFIX.len()..].trim_end_matches('/');
         let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
         if segments.len() == 2 {
             let owner = segments[0];
             let repo = segments[1].strip_suffix(".git").unwrap_or(segments[1]);
-            if !owner.is_empty() && !repo.is_empty() {
+            if is_valid_owner_or_repo_segment(owner) && is_valid_owner_or_repo_segment(repo) {
                 return Some((owner.to_string(), repo.to_string()));
             }
         }
@@ -451,6 +467,26 @@ mod tests {
     #[test]
     fn rejects_garbage_string() {
         assert_eq!(parse_owner_repo("not a url at all"), None);
+    }
+
+    #[test]
+    fn rejects_dot_and_dotdot_owner_or_repo_segments() {
+        assert_eq!(parse_owner_repo("https://github.com/owner/.."), None);
+        assert_eq!(parse_owner_repo("https://github.com/../repo"), None);
+        assert_eq!(parse_owner_repo("git@github.com:owner/.."), None);
+    }
+
+    #[test]
+    fn rejects_disallowed_characters_in_owner_or_repo() {
+        assert_eq!(parse_owner_repo("https://github.com/own er/repo"), None);
+        assert_eq!(parse_owner_repo("https://github.com/owner/re/po"), None);
+    }
+
+    #[test]
+    fn ssh_prefix_check_never_panics_on_non_ascii_boundary() {
+        // Byte 15 (`SSH_PREFIX.len()`) falls inside this multi-byte character; `.get(..)` must
+        // return `None` instead of panicking on a non-char-boundary slice.
+        assert_eq!(parse_owner_repo("git@github.co\u{1F600}wner/repo"), None);
     }
 
     // --- map_gh_failure ---
