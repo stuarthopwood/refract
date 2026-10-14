@@ -10,12 +10,14 @@ import type {
   FilePreview,
   FileTreeNode,
   GitStatusMap,
+  Model,
   ModelCatalogEntry,
   ModelRoleId,
   PendingRequest,
   ReadoutKind,
   Repository,
   RepositoryRemote,
+  RoleChangeSummary,
   Session,
   SessionReadout,
   SessionStartProgress,
@@ -151,6 +153,17 @@ export interface SessionSummary extends Session {
    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
+  /** Lane RM (#740, #741): `true` once the Session's model was chosen directly (the composer
+   * picker, `/switch <model>`, `/model <model>`, or the cycle button) rather than via a role --
+   * a later Settings role change skips a pinned Session entirely. Optional: `src/main`
+   * (Electron, frozen) never ports lane RM's model/role family, so its own `SessionSummary`
+   * rows never carry this field -- the Rust build always populates it. */
+  pinned?: boolean;
+  /** Lane RM (#741's composer chip, #740's "is this Session following role X" test): the role
+   * the Session is currently on, `null` while pinned. Refract's own record (OMP's RPC surface
+   * carries no role field anywhere, FINDINGS item 21/51) -- `'default'` until explicitly
+   * switched, never a guess. Optional for the same Electron-freeze reason as `pinned` above. */
+  currentRole?: string | null;
 }
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
@@ -390,6 +403,12 @@ export const IPC_REQUESTS = {
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
+  // Lane RM (#454, #740, #741, #762, #766): the composer picker's `set_model`/`cycle_model`
+  // and the role selector (`/role`, Ctrl+R)'s `applyRole`/`listRoles`.
+  MODEL_SET_MODEL: 'model.setModel',
+  MODEL_CYCLE_MODEL: 'model.cycleModel',
+  MODEL_APPLY_ROLE: 'model.applyRole',
+  MODEL_LIST_ROLES: 'model.listRoles',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -762,12 +781,46 @@ export interface RefractApi {
      * content can ever exist" claim -- any same-user process COULD in principle list the OS temp
      * root, find this directory by its fixed name prefix, and plant something there between calls
      * within the same session, same as it could already edit the real global `config.yml`
-     * directly; this crosses no privilege boundary and is accepted, not claimed impossible). */
-    set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
+     * directly; this crosses no privilege boundary and is accepted, not claimed impossible).
+     * Lane RM (#740): a role change reaches every open Session already on that role --
+     * `propagation` summarises the sweep ("Moved N Sessions..., left M pinned, K waiting for
+     * their turn to finish"). A pinned Session (`SessionSummary.pinned`) is always skipped; a
+     * working Session is queued for its own next settle, never refused. Optional: `src/main`
+     * (Electron, frozen) never ports lane RM's propagation sweep -- the Rust build always
+     * populates it. */
+    set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string; propagation?: RoleChangeSummary }>>;
     /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
      * role's model picker (the RPC `get_available_models` surface carries no role field and
      * lives behind Phase A files this feature does not touch). */
     listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
+  };
+
+  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions over the live RPC
+   * connection (never OMP's config, see `modelRoles` above for that) -- the composer picker's
+   * `setModel`/`cycleModel` and the role selector (`/role`, Ctrl+R)'s `applyRole`/`listRoles`.
+   * Refused with `'not-idle'` while the Session is working (FINDINGS "RM0 probe" item 57's own
+   * closing entry: mid-turn `set_model` is not provably safe on `omp` 18.10.1). Optional:
+   * `src/main`/`src/preload` (Electron, frozen) never port lane RM's model/role family at all --
+   * the Rust build is the only implementation, same pattern as `modelRoles.set`'s own
+   * `propagation` field above. */
+  model?: {
+    /** `set_model { provider, modelId }`: Session-scoped only, pins the Session (a later
+     * Settings role change, #740, leaves it alone) and clears any tracked role. */
+    setModel(sessionId: string, provider: string, modelId: string): Promise<Result<{ model: Model }>>;
+    /** `cycle_model`: steps through catalog models, NOT roles (FINDINGS item 54) -- pins the
+     * Session exactly like `setModel`. */
+    cycleModel(sessionId: string): Promise<Result<{ model: Model }>>;
+    /** Forwards OMP's own native `/switch @<role>` (FINDINGS item 54); un-pins the Session and
+     * records `role` as its tracked role. `role` must be one of `listRoles`' own `roles[].role`
+     * values -- an unknown role is refused locally (`'invalid-argument'`) before anything is
+     * sent, since OMP's own text command silently no-ops on one it cannot resolve. */
+    applyRole(sessionId: string, role: string): Promise<Result<{ model: Model; role: string }>>;
+    /** The Ctrl+R selector's own listing: `cycleOrder` plus `"plan"`, each with its configured
+     * `modelRoles` selector (raw string; the renderer's own catalog lookup turns it into a
+     * friendly, provider-free name, #741) and whether it is the Session's current role. */
+    listRoles(sessionId: string): Promise<
+      Result<{ roles: Array<{ role: string; model: string | null; current: boolean }>; currentRole: string | null; pinned: boolean }>
+    >;
   };
 
   window: {
