@@ -41,6 +41,7 @@ pub mod sessions_agent;
 pub mod sessions_lifecycle;
 pub mod settings;
 pub mod side_chat;
+pub mod subagents;
 pub mod theme;
 pub mod updates;
 
@@ -168,6 +169,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);
+    subagents::register(dispatcher);
     clipboard::register(dispatcher);
     file_explorer::register(dispatcher);
     files::register(dispatcher);

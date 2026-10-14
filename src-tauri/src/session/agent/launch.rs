@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
+use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
@@ -285,6 +286,9 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
+        let conv = session.current_conversation.as_deref();
+        let terminated_unexpectedly =
+            complete && termination::detect_unexpected_termination_for_transcript(conv).await;
 
         // Port of `exitedDuringStart`: a concurrent `onExit` may have cleared `process` while the
         // history fetch above was in flight.
@@ -303,12 +307,8 @@ impl SessionAgent {
                 Some(current_mode)
             };
             if complete {
-                // Merges in the freshly fetched history rather than replacing the transcript
-                // outright (code-review finding, 2026-10-13): a flat replace silently dropped
-                // any notice/request/in-flight item a live frame appended while this fetch was
-                // in flight. Port of `mergeLiveTranscript`.
-                state.transcript.merge_from_history(&messages);
-                let _ = state.transcript.settle_interrupted_tool_rows();
+                let transcript = &mut state.transcript;
+                transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
         // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
@@ -316,9 +316,9 @@ impl SessionAgent {
         if let Some(notice) = rebaseline_notice {
             self.append_notice(notice, "info").await;
         }
-
+        crate::session::subagents::on_attach_reconcile(self).await;
+        crate::session::readout::on_launch(self).await;
         self.sync_from_state(&state_data).await;
-
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
@@ -466,8 +466,8 @@ impl SessionAgent {
         {
             self.events.emit_session_list_changed();
         }
+        crate::session::readout::on_sync_from_state(self, state).await; // lane R5 (#788)
     }
-
     pub(super) fn spawn_frame_listener(
         &self,
         proc: Arc<OmpProcess>,
@@ -499,24 +499,15 @@ impl SessionAgent {
                         // Issue #784: the same extension point for every not-yet-landed lane's
                         // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
                         crate::session::model::on_exit(&agent, code, requested).await;
-                        crate::session::readout::on_exit(&agent, code, requested).await;
                         crate::session::side_chat::on_exit(&agent, code, requested).await;
-                        crate::session::subagents::on_exit(&agent, code, requested).await;
-                        // Lane R3 (issue #786, gate-fix): gated on `is_current` -- a stale exit
-                        // for an already-superseded life must never clear a NEWER attempt's own
-                        // cancel handle/stage or recompute its termination verdict.
-                        // `start_queue::on_exit` is passed `stop_requested` (the Session's own
-                        // flag), never the raw `requested` above. `termination::on_exit` needs
-                        // BOTH the raw `requested` (its own `requested && !stop_requested` early
-                        // return, a launch()-internal cleanup stop) AND `was_already_stopped`
-                        // (skips recomputing a crash verdict entirely once something more
-                        // authoritative already settled this life's status before this exit
-                        // event was even processed, the same race `should_apply_crash_exit_
-                        // verdict` guards for `handle_exit`'s own status write), AND
-                        // `epoch_at_exit` (round 6 gate-fix) -- captured by `handle_exit` under
-                        // its own lock, checked by `termination::on_exit` before every state
-                        // write it makes, not just the persisted marker.
+                        // Lane R3 (issue #786): gated on `is_current` -- a stale exit for an
+                        // already-superseded life must never recompute a newer life's own
+                        // termination verdict, cancel its start, or (gate round 2, code LOW,
+                        // lane R5) bump `readout`'s `pr_poll_generation` a second time, which
+                        // would silently kill the NEWER life's own PR-poll timer.
                         if is_current {
+                            crate::session::readout::on_exit(&agent, code, requested).await;
+                            crate::session::subagents::on_exit(&agent, code, requested).await;
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
                             crate::session::termination::on_exit(

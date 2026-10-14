@@ -18,9 +18,11 @@
 // directory left behind at quit is the same already-accepted, non-fatal case the TS module's own
 // header documents.
 //
-// `get_config`/`set_config` take no lock of their own (same as `config.ts`'s own `run`/
-// `ompRaw`): a caller with a real read-merge-write transaction (today, only `ipc::model_roles`'s
-// `set_model_role`) holds its own lock across the whole sequence, mirroring `enqueueWrite`.
+// `get_config`/`set_config` serialise against every OTHER `config get/set` call via
+// `call_config_locked`/`OMP_INVOCATION_LOCK` (below), but take no READ-MERGE-WRITE transaction
+// lock of their own (same as `config.ts`'s own `run`/`ompRaw`): a caller with a real
+// read-merge-write transaction (today, only `ipc::model_roles`'s `set_model_role`) holds its
+// own separate lock across the whole sequence, mirroring `enqueueWrite`.
 //
 // `OmpExecutor` is the one seam a test can swap: `get_config_with`/`set_config_with`/
 // `run_json_with` take `&dyn OmpExecutor` so a lane's own read-merge-write ordering (e.g.
@@ -140,6 +142,42 @@ pub trait OmpExecutor: Send + Sync {
 
 pub struct RealOmpExecutor;
 
+/// Serialises every real `omp config get/set` invocation process-wide, one at a time --
+/// `omp models --kind` (`run_json_with`, Settings' own catalog reads) does NOT go through this:
+/// it never touches config and would otherwise queue behind config reads/writes for no reason.
+/// Concurrent invocations (lane RM's own `apply_role_change` sweep could run several
+/// `apply_role_now` calls at once, each able to read `modelRoles`) all share the ONE memoised
+/// scratch `cwd` above; under heavy load, concurrent `omp` processes racing in that same
+/// directory were SUSPECTED (not confirmed -- a direct 65-call falsification against 3
+/// concurrently-starting/-running `omp --mode rpc-ui` agents on the same profile reproduced
+/// nothing) to intermittently return a response missing its own `value` field, or an empty
+/// `modelRoles` record even when one is genuinely configured. Config reads are rare (never a
+/// hot per-frame path), so correctness wins over any parallelism here.
+static OMP_INVOCATION_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+
+/// Wraps the lock acquisition AND the `omp` call itself in ONE `TIMEOUT_MS` deadline, so a
+/// caller queued behind others fails closed at that deadline total instead of eventually
+/// acquiring the lock and then getting a FRESH budget on top (which would let queued callers
+/// pile up for up to 2x the deadline under contention). Used by `get_config_with`/
+/// `set_config_with` only -- see `OMP_INVOCATION_LOCK`'s own doc comment above for why
+/// `run_json_with` does not call this.
+async fn call_config_locked(
+    executor: &dyn OmpExecutor,
+    args: &[String],
+    failure_message: &str,
+    strip_env_vars: &[&str],
+) -> Result<String, OmpConfigError> {
+    match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), async {
+        let _permit = OMP_INVOCATION_LOCK.lock().await;
+        executor.call(args, failure_message, strip_env_vars).await
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(timeout_error()),
+    }
+}
+
 impl OmpExecutor for RealOmpExecutor {
     fn call<'a>(
         &'a self,
@@ -208,17 +246,45 @@ async fn run_omp(
     let stdout_pipe = child.stdout.take().expect("configured as piped above");
     let stderr_pipe = child.stderr.take().expect("configured as piped above");
 
-    let (status, stdout_buf, stderr_buf) = match tokio::time::timeout(
+    // Gate-fix (round 6, diagnostic): log every invocation at debug level -- args (truncated to
+    // the first 3: the subcommand, `get`/`set`, and the key -- a `config set`'s own VALUE, past
+    // index 2, is NEVER logged, security gate-fix), cwd, elapsed ms, exit code, whether it timed
+    // out, and the stdout byte length, to confirm or rule out a concurrent-`omp`-process race
+    // in the shared scratch `cwd` before changing behaviour based on a guess.
+    let logged_args = &args[..args.len().min(3)];
+    let start = std::time::Instant::now();
+    let timeout_result = tokio::time::timeout(
         Duration::from_millis(TIMEOUT_MS),
         read_capped_output(&mut child, stdout_pipe, stderr_pipe, MAX_STDOUT_BYTES),
     )
-    .await
-    {
-        Ok(Ok(result)) => result,
-        Ok(Err(err)) => return Err(err),
-        Err(_) => return Err(timeout_error()),
-    };
-    map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
+    .await;
+    let elapsed_ms = start.elapsed().as_millis();
+    match timeout_result {
+        Ok(Ok((status, stdout_buf, stderr_buf))) => {
+            log::debug!(
+                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} exit_code={:?} timed_out=false stdout_len={}",
+                cwd.display(),
+                status.code(),
+                stdout_buf.len(),
+            );
+            map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
+        }
+        Ok(Err(err)) => {
+            log::debug!(
+                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=false read_error={}",
+                cwd.display(),
+                err.message,
+            );
+            Err(err)
+        }
+        Err(_) => {
+            log::debug!(
+                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=true",
+                cwd.display(),
+            );
+            Err(timeout_error())
+        }
+    }
 }
 
 /// Reads `child`'s stdout (capped at `max_stdout_bytes`) and stderr concurrently. Gate-fix (code
@@ -383,9 +449,13 @@ pub async fn get_config_with(
         key.to_string(),
         "--json".to_string(),
     ];
-    let stdout = executor
-        .call(&args, "Could not read omp config.", strip_env_vars)
-        .await?;
+    let stdout = call_config_locked(
+        executor,
+        &args,
+        "Could not read omp config.",
+        strip_env_vars,
+    )
+    .await?;
     parse_object_json(&stdout)
 }
 
@@ -415,9 +485,13 @@ pub async fn set_config_with(
         "--".to_string(),
         value_arg,
     ];
-    let stdout = executor
-        .call(&args, "Could not save omp config.", strip_env_vars)
-        .await?;
+    let stdout = call_config_locked(
+        executor,
+        &args,
+        "Could not save omp config.",
+        strip_env_vars,
+    )
+    .await?;
     parse_object_json(&stdout)
 }
 

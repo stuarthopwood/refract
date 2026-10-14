@@ -184,6 +184,7 @@ so the diff only ever fails on a real, un-triaged regression:
 | --- | --- | --- | --- |
 | `repositories.add` response's `value.remote.kind` | `"unknown"` | `"none"` | Filed as [issue #835](https://github.com/stuarthopwood/refract/issues/835) -- a real, pre-existing design difference (`repositories.rs`'s `.add` always returns the `unknown` placeholder, computed lazily later via `.remotes`/`.rename`; the Electron handler computes it eagerly), not fixed here. |
 | `chat.answer` response envelope | `{"ok":true,"value":null}` | `{"ok":true}` | Tolerated by the `value:null` scrub in `scrub_known_divergences` (an explicit `value:null` next to `ok:true` is dropped on both sides before comparing); the production wire contract itself is unchanged for every channel. |
+| `sessions.open` response's `value.readout.branch` | `{"name": ..., "detached": bool} \| null` | absent (no key at all) | Lane R5, [issue #724](https://github.com/stuarthopwood/refract/issues/724)/[#788](https://github.com/stuarthopwood/refract/issues/788): a brand-new, Rust-only `SessionReadout` field (the live checked-out branch) -- Electron's own frozen `readout.ts` never computed this (epic #797 rule 5, "a feature that exists only in Rust is acceptable"), so it never appears on that shell's side at all. Dropped from both sides before comparing. |
 
 A Session this test never calls `sessions.setVisible` on would also show a different final
 `unread` flag (see "Normalization rules" above) -- the Electron fixture's own driving script DOES

@@ -44,7 +44,7 @@ each piece.
 **Story 1 -- Run the Rust build and see Repositories (P1, spec.md)**
 
 1. Run `pnpm dev` with `omp` on PATH at a supported version. Expect: a native window titled
-   "Refract (Rust preview)" opens with native OS decorations (no custom caption bar -- an accepted
+   "Refract" opens with native OS decorations (no custom caption bar -- an accepted
    difference, see "Known differences" below), showing the Repositories screen.
 2. Confirm the saved theme's CSS class is already applied on the very first rendered frame -- no
    flash of the wrong theme (`contracts/bridge.md` "Theme bootstrap"; FR-010/FR-011, SC-003).

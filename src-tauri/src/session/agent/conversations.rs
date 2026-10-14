@@ -4,6 +4,7 @@
 use serde_json::{json, Value};
 
 use crate::omp::transcript::TranscriptState;
+use crate::session::termination;
 use crate::store::registry::SessionPatch;
 
 use super::launch_support::{fetch_all_messages, verify_reattach};
@@ -58,6 +59,11 @@ impl SessionAgent {
             state.transcript = TranscriptState::new();
         }
         self.emit_patch_reset().await;
+        // Lane R5 (issue #577, #712): clears the PREVIOUS Conversation's readout/subagent state
+        // before (possibly) refreshing it from the brand-new one's `get_state` below -- never
+        // left showing a stale reading if that request itself fails.
+        crate::session::readout::on_conversation_reset(self).await;
+        crate::session::subagents::on_conversation_reset(self).await;
         if let Ok(res) = proc
             .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
@@ -146,16 +152,33 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
+        // Issue #786 follow-up: `file` is the historical Conversation just switched to -- if
+        // ITS tail shows it was abandoned mid tool-call, the row `settle_interrupted_tool_rows`
+        // below settles to `interrupted` rather than leaving it `running` forever once rendered
+        // as history. Port of `SessionAgent.ts`'s `openConversation` calling
+        // `detectUnexpectedTermination(file)` at this exact point, read only when `complete`
+        // (matching TS's own `if (complete) { ... }` gating).
+        let terminated_unexpectedly = if complete {
+            termination::detect_unexpected_termination_for_transcript(Some(&file)).await
+        } else {
+            false
+        };
         {
             let mut state = self.state.lock().await;
             state.transcript = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
+                fresh.set_terminated_unexpectedly(terminated_unexpectedly);
                 let _ = fresh.settle_interrupted_tool_rows();
                 fresh
             } else {
                 TranscriptState::new()
             };
         }
+        // Lane R5 (issue #577, #712): this is a DIFFERENT Conversation's history, so the
+        // previous one's readout/subagent state never carries over (see `start_new_conversation`
+        // above for the identical reasoning).
+        crate::session::readout::on_conversation_reset(self).await;
+        crate::session::subagents::on_conversation_reset(self).await;
         self.sync_from_state(&data).await;
         self.emit_patch_reset().await;
         Ok(())
