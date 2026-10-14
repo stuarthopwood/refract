@@ -11,6 +11,13 @@
 // happen given the atomic write, but defensive) falls back to an mtime-based staleness test
 // ("a few minutes") instead of being treated as unconditionally live or unconditionally dead.
 // `Drop` removes the file only if it still holds THIS process's own pid.
+//
+// Gate-round-4 (PR #833 follow-up): a failed `GetProcessTimes` on this process's own creation
+// time now propagates as `Failed` instead of being swallowed into a fabricated tick-0 value
+// (which would have made every future launch's `process_matches` compare against made-up data).
+// The single steal attempt re-reads the lock's content immediately before removing it and only
+// removes if unchanged since the abandonment check -- if another launch already stole/rewrote
+// it in between, this launch backs off to `AlreadyRunning` instead of deleting that fresh lock.
 
 use std::path::{Path, PathBuf};
 
@@ -41,9 +48,12 @@ pub struct ImportLock {
 impl ImportLock {
     pub async fn acquire(data_dir: &Path) -> Result<Self, ImportOutcome> {
         let path = data_dir.join(LOCK_FILE);
+        let created_at_ticks = current_process_created_at().map_err(|err| {
+            ImportOutcome::Failed(format!("reading this process's own creation time: {err}"))
+        })?;
         let owner = LockOwner {
             pid: std::process::id(),
-            created_at_ticks: current_process_created_at(),
+            created_at_ticks,
         };
 
         match try_create_lock(&path, &owner).await {
@@ -57,17 +67,31 @@ impl ImportLock {
         // Exactly one steal attempt: a live owner means `AlreadyRunning`; an abandoned lock is
         // removed and recreated once, and if that loses a race to a third process, this launch
         // also backs off to `AlreadyRunning` rather than looping.
-        if !is_abandoned(&path).await {
+        let Ok(snapshot) = tokio::fs::read(&path).await else {
+            // Already gone (or unreadable); let the create below settle it either way.
+            return finish_steal(&path, &owner).await;
+        };
+        if !is_abandoned_snapshot(&snapshot, &path).await {
             return Err(ImportOutcome::AlreadyRunning);
         }
-        let _ = tokio::fs::remove_file(&path).await;
-        match try_create_lock(&path, &owner).await {
-            LockCreate::Created => Ok(Self { path }),
-            LockCreate::Exists => Err(ImportOutcome::AlreadyRunning),
-            LockCreate::Error(err) => {
-                Err(ImportOutcome::Failed(format!("creating {path:?}: {err}")))
-            }
+        // Re-read right before removing (optional hardening): only remove if the content is
+        // still exactly what was just judged abandoned. If it changed, another launch already
+        // acted on this same lock -- clobbering ITS fresh lock would be wrong; leave it alone
+        // and let `try_create_lock` below report `Exists` (-> `AlreadyRunning`) instead.
+        if matches!(tokio::fs::read(&path).await, Ok(current) if current == snapshot) {
+            let _ = tokio::fs::remove_file(&path).await;
         }
+        finish_steal(&path, &owner).await
+    }
+}
+
+async fn finish_steal(path: &Path, owner: &LockOwner) -> Result<ImportLock, ImportOutcome> {
+    match try_create_lock(path, owner).await {
+        LockCreate::Created => Ok(ImportLock {
+            path: path.to_path_buf(),
+        }),
+        LockCreate::Exists => Err(ImportOutcome::AlreadyRunning),
+        LockCreate::Error(err) => Err(ImportOutcome::Failed(format!("creating {path:?}: {err}"))),
     }
 }
 
@@ -101,12 +125,12 @@ async fn try_create_lock(path: &Path, owner: &LockOwner) -> LockCreate {
 /// live process anymore (`process_matches` checks pid AND creation time, so a reused pid is
 /// never mistaken for the original owner), or -- for an empty/unparseable file, which the
 /// atomic write above should prevent but a defensive fallback still covers -- when its mtime is
-/// older than a few minutes.
-async fn is_abandoned(path: &Path) -> bool {
-    let Ok(bytes) = tokio::fs::read(path).await else {
-        return true;
-    };
-    match serde_json::from_slice::<LockOwner>(&bytes) {
+/// older than a few minutes. Takes an already-read `bytes` snapshot rather than re-reading
+/// `path` itself, so the caller can re-read and compare afterward before removing (gate-round-3
+/// optional hardening): acting on a stale-at-read-time snapshot instead of the current file
+/// content would risk deleting a DIFFERENT, freshly-written lock a racing launch just created.
+async fn is_abandoned_snapshot(bytes: &[u8], path: &Path) -> bool {
+    match serde_json::from_slice::<LockOwner>(bytes) {
         Ok(owner) => !process_matches(owner.pid, owner.created_at_ticks),
         Err(_) => is_mtime_stale(path).await,
     }
@@ -141,7 +165,7 @@ mod windows_filetime {
 }
 
 #[cfg(target_os = "windows")]
-fn current_process_created_at() -> u64 {
+fn current_process_created_at() -> Result<u64, String> {
     use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
     use windows_filetime::FILETIME;
     // Safety: a single documented Win32 API call on this process's own pseudo-handle (never
@@ -154,20 +178,25 @@ fn current_process_created_at() -> u64 {
             FILETIME::default(),
             FILETIME::default(),
         );
-        let _ = GetProcessTimes(
+        GetProcessTimes(
             GetCurrentProcess(),
             &mut creation,
             &mut exit,
             &mut kernel,
             &mut user,
-        );
-        filetime_to_ticks(creation)
+        )
+        // Gate-round-4: a failure here used to be swallowed and recorded as tick 0, which
+        // would make every future launch's `process_matches` compare against a fabricated
+        // value instead of a real one -- propagated as `Failed` instead (`acquire`'s own `?`),
+        // since this call should never realistically fail for a process reading its own times.
+        .map_err(|err| format!("GetProcessTimes (own process): {err}"))?;
+        Ok(filetime_to_ticks(creation))
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn current_process_created_at() -> u64 {
-    0
+fn current_process_created_at() -> Result<u64, String> {
+    Ok(0)
 }
 
 #[cfg(target_os = "windows")]
@@ -201,6 +230,9 @@ fn process_matches(pid: u32, expected_created_at_ticks: u64) -> bool {
     }
 }
 
+/// Always "not a match" off Windows (this build's own target is Windows-only, spec.md
+/// Assumptions; `GetProcessTimes`/`OpenProcess` have no portable equivalent here) -- a live
+/// owner's lock would always be (harmlessly) stolen on a non-Windows build of this crate.
 #[cfg(not(target_os = "windows"))]
 fn process_matches(_pid: u32, _expected_created_at_ticks: u64) -> bool {
     false
