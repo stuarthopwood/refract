@@ -7,5 +7,7 @@
 pub mod config;
 pub mod diff;
 pub mod images;
+pub mod login_providers;
 pub mod process;
+pub mod redact;
 pub mod transcript;

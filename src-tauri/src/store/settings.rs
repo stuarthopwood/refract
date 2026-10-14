@@ -83,6 +83,15 @@ pub struct Settings {
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Quality-gate correction (code review, 2026-10-14): Electron's `this.data` is an untyped
+    /// JS object, so an unrecognised settings.json key rides along through every
+    /// `{...this.data, ...}` spread into `settings.get`'s reply and every `settings:changed`
+    /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
+    /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
+    /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
+    /// overlaps a known field above (`SettingsStore::open` excludes all nine by name).
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 /// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
@@ -208,6 +217,23 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(true);
 
+        const KNOWN_FIELDS: [&str; 9] = [
+            "version",
+            "approvalMode",
+            "sessionReadout",
+            "split",
+            "theme",
+            "watermarkEnabled",
+            "transcriptDisplay",
+            "showSampleData",
+            "detectImagePathsOnPaste",
+        ];
+        let extra: Map<String, Value> = object
+            .iter()
+            .filter(|(key, _)| !KNOWN_FIELDS.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
         let data = Settings {
             version: 1,
             approval_mode,
@@ -218,6 +244,7 @@ impl SettingsStore {
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            extra,
         };
 
         Ok(Self {
@@ -270,6 +297,14 @@ impl SettingsStore {
             "detectImagePathsOnPaste".to_string(),
             json!(self.data.detect_image_paths_on_paste),
         );
+        // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
+        // never overwrites a known key above (by construction, `data.extra` excludes all nine of
+        // them), so a renderer feature's own not-yet-ported setting survives every save. Also now
+        // the same field `settings.get`/`settings:changed` flatten into the wire shape (see
+        // `Settings::extra`'s own doc comment).
+        for (key, value) in &self.data.extra {
+            map.insert(key.clone(), value.clone());
+        }
         Value::Object(map)
     }
 
@@ -396,3 +431,9 @@ impl SettingsStore {
         self.persist_whole(next).await
     }
 }
+
+// Split into a sibling file (not inline here) only to keep this file comfortably under this
+// build's 600-line-per-file cap once the full ported test suite (below) is included.
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

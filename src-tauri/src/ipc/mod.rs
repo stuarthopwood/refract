@@ -32,6 +32,7 @@ pub mod clipboard;
 pub mod conversations;
 pub mod file_explorer;
 pub mod files;
+pub mod model_roles;
 pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
@@ -154,9 +155,10 @@ impl Dispatcher {
 /// `clipboard.writeText`/`readiness.check` (Phase 1), and the agent-backed `sessions.{open,
 /// stopAgent,setVisible}`, `conversations.{startNew,open}`, and every `chat.*` channel (Phase 3,
 /// tasks.md T024 to T026) -- each now dispatches into the live `session::SessionManager`
-/// `AppState::session_manager` carries. Every other module registered below (`accounts`,
-/// `attachments`, `file_explorer`, `files`, `pull_requests`, `side_chat`, `theme`) is an empty,
-/// pre-declared stub: its `register` is a no-op until that lane lands.
+/// `AppState::session_manager` carries. `settings.*`, `theme.*`, `modelRoles.*`, and
+/// `window.popupMenu` (lane R8, #791) are now also fully wired. Every other module registered
+/// below (`accounts`, `attachments`, `file_explorer`, `files`, `pull_requests`, `side_chat`) is
+/// an empty, pre-declared stub: its `register` is a no-op until that lane lands.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings::register(dispatcher);
     readiness::register(dispatcher);
@@ -175,6 +177,8 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     theme::register(dispatcher);
     app::register(dispatcher);
     updates::register(dispatcher);
+    model_roles::register(dispatcher);
+    crate::shell::menu::register(dispatcher);
 }
 
 // ---------------------------------------------------------------------------
