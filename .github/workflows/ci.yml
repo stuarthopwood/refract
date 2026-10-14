@@ -45,6 +45,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Vitest auto-discovers every src/**/*.test.ts (vitest.config.ts's own `include`); no
+      # separate step is needed to name any individual suite here.
       - name: Vitest
         run: pnpm test
 
@@ -66,9 +68,27 @@ jobs:
       - name: Check file size
         run: pnpm check:file-size
 
+      # Issue #519/#795 (R12b): flags an OMP wire command/frame-type string literal Refract
+      # reads or writes that the vendored rpc-wire schema (scripts/fixtures/omp-schema/) doesn't
+      # know about (this fails the step). `--check-pin` additionally reports, non-fatally, when
+      # that vendored schema is behind the npm registry's current @oh-my-pi/pi-coding-agent
+      # version; it never fails the step regardless of what it finds.
+      - name: Check OMP schema drift
+        run: pnpm check:omp-schema -- --check-pin
+
+      # Gate infrastructure, not a product check: proves the drift detector above can actually
+      # fail by seeding deliberately undeclared literals and asserting its own detection logic
+      # flags every one of them (see check-omp-schema-drift.mjs's own --self-test header
+      # comment). Exits 1 if any self-test assertion fails.
+      - name: Check OMP schema drift self-test
+        run: pnpm check:omp-schema -- --self-test
+
       - name: Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
+      # Includes the issue #795 (R12b) Rust integration tests under src-tauri/tests/
+      # (transcript_golden.rs, contract_replay.rs, transcript_terminated_unexpectedly_tests.rs)
+      # -- Cargo auto-discovers everything under tests/, so no separate step is needed for them.
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 

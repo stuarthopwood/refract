@@ -1,0 +1,43 @@
+[
+  {
+    "type": "tool_execution_start",
+    "toolCallId": "call-1",
+    "toolName": "write",
+    "args": { "path": "note.txt", "content": "hi" }
+  },
+  {
+    "type": "tool_execution_end",
+    "toolCallId": "call-1",
+    "toolName": "write",
+    "result": { "content": [{ "type": "text", "text": "Successfully wrote 2 bytes to note.txt" }] },
+    "isError": false
+  },
+  {
+    "type": "message_start",
+    "messageId": "msg-a1",
+    "message": { "role": "assistant", "content": [{ "type": "text", "text": "" }], "timestamp": 0 }
+  },
+  {
+    "type": "message_update",
+    "messageId": "msg-a1",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "partial": { "role": "assistant", "content": [{ "type": "text", "text": "xy" }], "timestamp": 0 }
+    }
+  },
+  {
+    "type": "message_update",
+    "messageId": "msg-a1",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "partial": { "role": "assistant", "content": [{ "type": "text", "text": "xyzzy9" }], "timestamp": 0 }
+    }
+  },
+  {
+    "type": "message_end",
+    "messageId": "msg-a1",
+    "message": { "role": "assistant", "content": [{ "type": "text", "text": "xyzzy9" }], "timestamp": 0 }
+  }
+]

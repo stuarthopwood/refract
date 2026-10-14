@@ -1,0 +1,242 @@
+[
+  {
+    "args": "<REPO_DIR>",
+    "channel": "repositories.add",
+    "kind": "ipc",
+    "response": {
+      "ok": true,
+      "value": {
+        "addedAt": "<TIMESTAMP>",
+        "defaultBranch": "main",
+        "id": "<REPO_ID>",
+        "name": "<REPO_NAME>",
+        "path": "<REPO_DIR>",
+        "remote": {
+          "kind": "unknown"
+        }
+      }
+    }
+  },
+  {
+    "args": [
+      {
+        "baseBranch": "main",
+        "repositoryId": "<REPO_ID>"
+      }
+    ],
+    "channel": "sessions.create",
+    "kind": "ipc",
+    "response": {
+      "ok": true,
+      "value": {
+        "archivedAt": null,
+        "baseBranch": "main",
+        "branch": "<BRANCH_NAME>",
+        "createdAt": "<TIMESTAMP>",
+        "currentConversation": null,
+        "id": "<SESSION_ID>",
+        "lastActivityAt": "<TIMESTAMP>",
+        "lastMessageCount": null,
+        "name": "<BRANCH_NAME>",
+        "repositoryId": "<REPO_ID>",
+        "sessionDir": null,
+        "worktreePath": "<WORKTREE_PATH>"
+      }
+    }
+  },
+  {
+    "args": [
+      "<SESSION_ID>",
+      true
+    ],
+    "channel": "sessions.open",
+    "kind": "ipc",
+    "response": {
+      "ok": true,
+      "value": {
+        "conversations": [],
+        "readout": {
+          "changes": null,
+          "contextUsage": null,
+          "pullRequest": null,
+          "subagentCount": null,
+          "todoProgress": null,
+          "turnTime": null
+        },
+        "runtime": {
+          "launchedMode": "ask",
+          "pending": [],
+          "pendingMode": null,
+          "queue": {
+            "followUp": [],
+            "steering": []
+          },
+          "sessionId": "<SESSION_ID>",
+          "status": "idle",
+          "transcript": [],
+          "unread": false
+        },
+        "subagents": []
+      }
+    }
+  },
+  {
+    "kind": "transcript_snapshot",
+    "label": "after_sessions_open",
+    "runtimeView": {
+      "launchedMode": "ask",
+      "pending": [],
+      "pendingMode": null,
+      "queue": {
+        "followUp": [],
+        "steering": []
+      },
+      "sessionId": "<SESSION_ID>",
+      "status": "idle",
+      "transcript": [],
+      "unread": false
+    }
+  },
+  {
+    "args": [
+      "<SESSION_ID>",
+      "Create note.txt with the text 'hi', then tell me the token xyzzy9."
+    ],
+    "channel": "chat.send",
+    "kind": "ipc",
+    "response": {
+      "ok": true,
+      "value": {
+        "queued": false
+      }
+    }
+  },
+  {
+    "kind": "transcript_snapshot",
+    "label": "after_approval_request",
+    "runtimeView": {
+      "launchedMode": "ask",
+      "pending": [
+        {
+          "details": [
+            "Path: note.txt",
+            "Content:",
+            "hi"
+          ],
+          "kind": "approval",
+          "requestId": "dlg-1",
+          "target": "note.txt",
+          "tool": "write"
+        }
+      ],
+      "pendingMode": null,
+      "queue": {
+        "followUp": [],
+        "steering": []
+      },
+      "sessionId": "<SESSION_ID>",
+      "status": "needs-you",
+      "transcript": [
+        {
+          "at": 0,
+          "id": "msg-u1",
+          "kind": "user",
+          "text": "Create note.txt with the text 'hi', then tell me the token xyzzy9."
+        },
+        {
+          "args": {
+            "content": "hi",
+            "path": "note.txt"
+          },
+          "id": "tool-exec:call-1",
+          "kind": "tool",
+          "startedAt": "<TIMESTAMP_MS>",
+          "status": "running",
+          "target": "note.txt",
+          "tool": "write",
+          "toolCallId": "call-1",
+          "write": {
+            "content": "hi",
+            "path": "note.txt"
+          }
+        },
+        {
+          "id": "request:dlg-1",
+          "kind": "request",
+          "requestId": "dlg-1"
+        }
+      ],
+      "unread": false
+    }
+  },
+  {
+    "args": [
+      "<SESSION_ID>",
+      "dlg-1",
+      {
+        "approve": true
+      }
+    ],
+    "channel": "chat.answer",
+    "kind": "ipc",
+    "response": {
+      "ok": true,
+      "value": null
+    }
+  },
+  {
+    "kind": "transcript_snapshot",
+    "label": "after_turn_settled",
+    "runtimeView": {
+      "launchedMode": "ask",
+      "pending": [],
+      "pendingMode": null,
+      "queue": {
+        "followUp": [],
+        "steering": []
+      },
+      "sessionId": "<SESSION_ID>",
+      "status": "idle",
+      "transcript": [
+        {
+          "at": 0,
+          "id": "msg-u1",
+          "kind": "user",
+          "text": "Create note.txt with the text 'hi', then tell me the token xyzzy9."
+        },
+        {
+          "args": {
+            "content": "hi",
+            "path": "note.txt"
+          },
+          "durationMs": "<TIMESTAMP_MS>",
+          "id": "tool-exec:call-1",
+          "kind": "tool",
+          "output": "Successfully wrote 2 bytes to note.txt",
+          "startedAt": "<TIMESTAMP_MS>",
+          "status": "done",
+          "target": "note.txt",
+          "tool": "write",
+          "toolCallId": "call-1",
+          "write": {
+            "content": "hi",
+            "path": "note.txt"
+          }
+        },
+        {
+          "id": "request:dlg-1",
+          "kind": "request",
+          "requestId": "dlg-1",
+          "resolved": "approved"
+        },
+        {
+          "id": "msg-a1:0",
+          "kind": "assistant-text",
+          "streaming": false,
+          "text": "xyzzy9"
+        }
+      ],
+      "unread": true
+    }
+  }
+]
