@@ -114,36 +114,85 @@ impl SessionManager {
     }
 
     /// Issue #740 (lane RM): called by `ipc::model_roles::model_roles_set` after a role's
-    /// config value changes. Moves every live, non-pinned Session whose tracked role is `role`
-    /// onto its freshly-resolved model -- immediately if idle, queued for its own next settle if
-    /// working (Stuart's decision, 2026-10-13: "automatic at the next idle moment", no prompt,
-    /// never refused); a Session pinned by `/switch`/the composer picker (#454) is skipped.
+    /// config value changes. Moves every live, non-pinned, non-stopped Session whose tracked
+    /// role is `role` onto its freshly-resolved model -- immediately if idle (concurrently,
+    /// bounded, gate-fix MEDIUM/perf), queued for its own next settle if working (Stuart's
+    /// decision, 2026-10-13: "automatic at the next idle moment", no prompt, never refused); a
+    /// Session pinned by `/switch`/the composer picker (#454) is skipped, and a Session with no
+    /// live agent (never opened this run, or stopped) is skipped rather than counted as failed
+    /// (gate-fix, HIGH/tests: it resumes its saved model on its own next start, same "new
+    /// Sessions only" note the role page already carries for a start-time-only role).
     pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
-        let mut summary = crate::session::model::RoleChangeSummary::default();
+        use crate::session::model::{apply_role_now, current_selection, RoleChangeSummary};
+        use crate::session::SessionStatus;
+
+        let mut summary = RoleChangeSummary::default();
+        // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
+        // one at a time -- each makes up to three RPCs (a `get_state` before, the `/switch
+        // @role` send, a `get_state` after), so a serial sweep's worst case grows with the
+        // Session count.
+        const CONCURRENCY: usize = 4;
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
+        let mut idle_tasks = Vec::new();
+
         for agent in self.live_agents() {
-            let (pinned, current_role) = crate::session::model::current_selection(&agent).await;
+            let name = self
+                .registry
+                .lock()
+                .await
+                .get_session(agent.session_id())
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| agent.session_id().to_string());
+
+            if agent.status().await == SessionStatus::Stopped {
+                summary.skipped_stopped.push(name);
+                continue;
+            }
+            let (pinned, current_role) = current_selection(&agent).await;
             let effective = current_role.as_deref().unwrap_or("default");
             if effective != role {
                 continue;
             }
             if pinned {
-                summary.skipped_pinned += 1;
+                summary.skipped_pinned.push(name);
                 continue;
             }
-            let working = matches!(
-                agent.status().await,
-                crate::session::SessionStatus::Working | crate::session::SessionStatus::NeedsYou
-            );
-            if working {
-                agent
-                    .with_model_state(|s| s.pending_role_reapply = Some(role.to_string()))
-                    .await;
-                summary.queued += 1;
-            } else {
-                match crate::session::model::apply_role_now(&agent, role, true).await {
-                    Ok(_) => summary.moved += 1,
-                    Err(_) => summary.failed += 1,
+            // Atomic with the status read above being stale by now is fine: this re-checks
+            // `status` itself (gate-fix, HIGH, race) and sets `pending_role_reapply` under the
+            // SAME lock acquisition, so a settle landing in the gap can never lose the reapply.
+            if agent.queue_role_reapply_or_ready(role).await {
+                summary.queued.push(name);
+                continue;
+            }
+            let semaphore = semaphore.clone();
+            let role = role.to_string();
+            idle_tasks.push(tokio::spawn(async move {
+                let _permit = semaphore
+                    .acquire_owned()
+                    .await
+                    .expect("semaphore never closed");
+                let result = apply_role_now(&agent, &role, true).await;
+                (name, agent, result)
+            }));
+        }
+        for task in idle_tasks {
+            match task.await {
+                Ok((name, _agent, Ok(_))) => summary.moved.push(name),
+                Ok((name, agent, Err(err))) if err.code == "not-idle" => {
+                    // Race: became working between the atomic queue-or-ready check above and
+                    // `apply_role_now`'s own `send_if_idle` -- re-queue rather than fail (#740's
+                    // own acceptance: "never refused").
+                    agent
+                        .with_model_state(|s| {
+                            if s.pending_role_reapply.is_none() {
+                                s.pending_role_reapply = Some(role.to_string());
+                            }
+                        })
+                        .await;
+                    summary.queued.push(name);
                 }
+                Ok((name, _agent, Err(_))) => summary.failed.push(name),
+                Err(_join_err) => {}
             }
         }
         summary
@@ -467,5 +516,128 @@ mod tests {
         assert_eq!(find("healthy")["stopReason"], "not-started");
         assert_eq!(find("hand-emptied")["stopReason"], "worktree-missing");
         assert_eq!(find("removed")["stopReason"], "worktree-missing");
+    }
+
+    /// Builds a bare `SessionManager` over a fresh scratch registry/settings pair, with one
+    /// `Session` row registered (no real git worktree needed: these tests never start the
+    /// agent's own `omp` process, only manipulate its in-memory state).
+    async fn make_manager_with_session(
+        dir: &std::path::Path,
+        session_id: &str,
+    ) -> Arc<SessionManager> {
+        let mut registry_store = RegistryStore::open(dir).await.expect("open registry");
+        registry_store
+            .add_repository(Repository {
+                id: "repo-1".to_string(),
+                path: dir.to_string_lossy().to_string(),
+                name: "pinion".to_string(),
+                default_branch: "main".to_string(),
+                added_at: "2026-01-01T00:00:00.000Z".to_string(),
+            })
+            .await
+            .expect("add repository");
+        registry_store
+            .add_session(make_session(session_id, "repo-1", dir, "test-branch"))
+            .await
+            .expect("add session");
+        let registry = Arc::new(AsyncMutex::new(registry_store));
+        let settings = Arc::new(AsyncMutex::new(
+            SettingsStore::open(dir).await.expect("open settings"),
+        ));
+        let app_handle_slot: Arc<StdMutex<Option<tauri::AppHandle>>> =
+            Arc::new(StdMutex::new(None));
+        let events = EventSink::new(app_handle_slot, registry.clone());
+        SessionManager::new(registry, settings, events)
+    }
+
+    /// Gate-fix (HIGH, tests, #740): "which Sessions follow which role" and the apply/skip
+    /// rules -- a Session pinned by hand (#454) is skipped and named, never moved.
+    #[tokio::test]
+    async fn apply_role_change_skips_a_pinned_session() {
+        let dir = temp_dir("role-sweep-pinned");
+        let manager = make_manager_with_session(&dir, "s1").await;
+        let agent = manager.get_or_create_agent("s1");
+        // Represents an OPEN, idle Session (pinning is meaningless for one that was never
+        // started) -- the default status for a freshly `get_or_create_agent`'d agent is
+        // `Stopped`, which the sweep already skips for an unrelated reason (tested separately
+        // below).
+        agent
+            .set_status(crate::session::SessionStatus::Idle, None, None)
+            .await;
+        agent
+            .with_model_state(|s| {
+                s.pinned = true;
+                s.current_role = Some("default".to_string());
+            })
+            .await;
+        let summary = manager.apply_role_change("default").await;
+        assert_eq!(summary.skipped_pinned, vec!["Test Session".to_string()]);
+        assert!(summary.moved.is_empty());
+        assert!(summary.queued.is_empty());
+        assert!(summary.failed.is_empty());
+    }
+
+    /// A Session on a DIFFERENT role is untouched (no bucket at all), not merely "not moved".
+    #[tokio::test]
+    async fn apply_role_change_ignores_a_session_on_a_different_role() {
+        let dir = temp_dir("role-sweep-other-role");
+        let manager = make_manager_with_session(&dir, "s1").await;
+        let agent = manager.get_or_create_agent("s1");
+        agent
+            .set_status(crate::session::SessionStatus::Idle, None, None)
+            .await;
+        agent
+            .with_model_state(|s| {
+                s.pinned = false;
+                s.current_role = Some("smol".to_string());
+            })
+            .await;
+        let summary = manager.apply_role_change("default").await;
+        assert!(summary.moved.is_empty());
+        assert!(summary.queued.is_empty());
+        assert!(summary.skipped_pinned.is_empty());
+        assert!(summary.skipped_stopped.is_empty());
+        assert!(summary.failed.is_empty());
+    }
+
+    /// A working Session is queued for its own next settle, never refused (#740's own decided
+    /// design) -- and the queue happens atomically with the status read (`queue_role_reapply_
+    /// or_ready`), so `State.pending_role_reapply` is actually set, not merely reported.
+    #[tokio::test]
+    async fn apply_role_change_queues_a_working_session() {
+        let dir = temp_dir("role-sweep-working");
+        let manager = make_manager_with_session(&dir, "s1").await;
+        let agent = manager.get_or_create_agent("s1");
+        agent
+            .with_model_state(|s| {
+                s.pinned = false;
+                s.current_role = Some("default".to_string());
+            })
+            .await;
+        agent
+            .set_status(crate::session::SessionStatus::Working, None, None)
+            .await;
+        let summary = manager.apply_role_change("default").await;
+        assert_eq!(summary.queued, vec!["Test Session".to_string()]);
+        assert!(summary.moved.is_empty());
+        let pending = agent
+            .with_model_state(|s| s.pending_role_reapply.clone())
+            .await;
+        assert_eq!(pending, Some("default".to_string()));
+    }
+
+    /// Gate-fix (HIGH, tests, #740): a Session with no live agent (never started this run --
+    /// the default status for a freshly `get_or_create_agent`'d Session) is skipped, never
+    /// counted as failed -- it resumes its own saved model on its next real start.
+    #[tokio::test]
+    async fn apply_role_change_skips_a_never_started_session_as_stopped_not_failed() {
+        let dir = temp_dir("role-sweep-stopped");
+        let manager = make_manager_with_session(&dir, "s1").await;
+        let _agent = manager.get_or_create_agent("s1"); // never started: status stays `Stopped`
+        let summary = manager.apply_role_change("default").await;
+        assert_eq!(summary.skipped_stopped, vec!["Test Session".to_string()]);
+        assert!(summary.moved.is_empty());
+        assert!(summary.queued.is_empty());
+        assert!(summary.failed.is_empty());
     }
 }

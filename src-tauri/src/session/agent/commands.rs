@@ -89,8 +89,11 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new Conversation in this Session"),
     ("btw", "Ask the agent a side question"),
-    ("role", "Switch roles for this Session"),
-    ("models", "Open model role settings"),
+    // Gate-fix (HIGH): `role`/`models` are NOT listed here -- the renderer has no handler for
+    // either yet (`MessageInput.tsx` only intercepts `btw`), so listing them would offer two
+    // commands that always fail `unknown-command`, which contradicts this list's own "working
+    // implementation" rule. They stay reserved (`NATIVE_RESERVED_COMMANDS` above) so a custom
+    // command can never claim either name; add them here once the renderer half lands.
 ];
 
 /// Port of `slash-commands.ts`'s own `filterSupportedCommands`, extended per issue #760: a
@@ -109,6 +112,12 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
     // it in the menu at all would be misleading -- it can never actually run.
     let mut builtin_claimed: std::collections::HashSet<&str> = std::collections::HashSet::new();
     builtin_claimed.extend(NATIVE_RESERVED_COMMANDS.iter().copied());
+    // Gate-fix (MEDIUM, security): `switch` is a real OMP builtin this lane forwards (never
+    // reserved, since it must still reach OMP) -- seeded unconditionally rather than only when
+    // `raw` happens to report a builtin-sourced `switch` entry, so a custom command named
+    // `switch` can never take the name over even against an OMP version/config that does not
+    // list it as a builtin.
+    builtin_claimed.insert("switch");
     for command in raw {
         if !is_builtin_source(command.get("source").and_then(Value::as_str)) {
             continue;

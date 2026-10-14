@@ -17,14 +17,19 @@ export interface Model {
 }
 
 /** Lane RM (#740): `RefractApi.modelRoles.set`'s own propagation summary after sweeping every
- * live Session for one that was on the changed role ("Moved N Sessions..., left M pinned, K
- * waiting for their turn to finish"). Field names match Rust's
- * `#[serde(rename_all = "camelCase")]` `RoleChangeSummary` (`session::model`) exactly. */
+ * live Session for one that was on the changed role. Gate-fix (MEDIUM): each bucket names the
+ * Sessions in it (their display `name`), not just a count, so the Settings page's own polite
+ * result can say which Sessions moved/were skipped and why ("Moved 'bold-merlin'..., left
+ * 'fond-orca' pinned"). Field names match Rust's `#[serde(rename_all = "camelCase")]`
+ * `RoleChangeSummary` (`session::model`) exactly. */
 export interface RoleChangeSummary {
-  moved: number;
-  queued: number;
-  skippedPinned: number;
-  failed: number;
+  moved: string[];
+  queued: string[];
+  skippedPinned: string[];
+  /** A Session with no live agent this run (never opened, or stopped): resumes its own saved
+   * model on its next real start, not counted as a failure. */
+  skippedStopped: string[];
+  failed: string[];
 }
 
 /** Per-Session model/role actions over the live RPC connection (never OMP's config -- see

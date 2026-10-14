@@ -432,14 +432,34 @@ fn classify_switch_refuses_a_second_argument() {
 }
 
 #[test]
-fn classify_switch_accepts_a_dash_led_single_token() {
-    // The issue's own charset includes `-`, so a flag-shaped single token is syntactically
-    // Supported here -- it simply fails to resolve as a real model downstream (FINDINGS item
-    // 53), which this classifier never claims to validate.
+fn classify_switch_refuses_a_leading_dash_flag_like_argument() {
+    // Gate-fix (HIGH, #762 acceptance: "/switch cannot be given ... a flag"): a leading `-` is
+    // refused even though `-` is an allowed INTERIOR character (`claude-sonnet-5.5`) -- `-` is
+    // still part of the charset, so it is checked via a dedicated leading-character rule, not
+    // removed from the charset outright.
     let commands = vec![json!({ "name": "switch", "source": "builtin" })];
     assert!(matches!(
         classify_slash_invocation("switch", "--help", &commands),
-        SlashInvocationClassification::Supported
+        SlashInvocationClassification::UnsupportedArguments
+    ));
+}
+
+#[test]
+fn classify_switch_refuses_an_over_long_argument() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    let long = "a".repeat(257);
+    assert!(matches!(
+        classify_slash_invocation("switch", &long, &commands),
+        SlashInvocationClassification::UnsupportedArguments
+    ));
+}
+
+#[test]
+fn classify_switch_refuses_a_path_like_argument_with_a_space() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "/some path/model", &commands),
+        SlashInvocationClassification::UnsupportedArguments
     ));
 }
 
@@ -454,10 +474,33 @@ fn model_models_role_are_reserved() {
 }
 
 #[test]
-fn role_is_listed_in_the_native_menu() {
+fn role_and_models_are_not_listed_in_the_native_menu_yet() {
+    // Gate-fix (HIGH): no renderer handler exists for either yet -- listing them would offer
+    // two commands that always fail `unknown-command`. Still reserved (previous test), just
+    // not menu-visible until the renderer half lands.
     let out = filter_supported_commands(&[]);
-    assert!(out
+    assert!(!out
         .iter()
-        .any(|c| c.get("name").and_then(Value::as_str) == Some("role")
-            && c.get("source").and_then(Value::as_str) == Some("native")));
+        .any(|c| c.get("name").and_then(Value::as_str) == Some("role")));
+    assert!(!out
+        .iter()
+        .any(|c| c.get("name").and_then(Value::as_str) == Some("models")));
+}
+
+#[test]
+fn switch_cannot_be_shadowed_by_a_custom_command_even_if_omp_never_lists_a_builtin_switch() {
+    // Gate-fix (MEDIUM, security): `switch` is seeded into the builtin-claimed set
+    // unconditionally (not only when `raw` itself reports a builtin-sourced `switch` entry), so
+    // a repo-supplied file/skill command named `switch` can never take the name over even
+    // against an OMP build/config that does not list `switch` as a builtin at all.
+    let raw = vec![
+        json!({ "name": "switch", "source": "file", "description": "a user command named switch" }),
+    ];
+    let filtered = filter_supported_commands(&raw);
+    assert!(
+        !filtered
+            .iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("switch")),
+        "a file command named `switch` must never be listed: {filtered:?}"
+    );
 }

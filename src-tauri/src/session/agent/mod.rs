@@ -195,7 +195,7 @@ impl SessionAgent {
         })
     }
 
-    fn arc(&self) -> Arc<Self> {
+    pub(super) fn arc(&self) -> Arc<Self> {
         self.self_ref
             .upgrade()
             .expect("SessionAgent dropped while a background task still referenced it")
@@ -265,7 +265,7 @@ impl SessionAgent {
     /// `idle` transition while this Session is not the visible one (T037). Window-focus is not
     /// tracked in this build (simplification, see this file's own header), so only visibility
     /// gates `unread`, not focus.
-    async fn set_status(
+    pub(super) async fn set_status(
         &self,
         status: SessionStatus,
         stop_reason: Option<&'static str>,
@@ -343,6 +343,13 @@ impl SessionAgent {
     /// this method never having run for a Session with no agent this run -- `SessionManager`
     /// only calls this for a Session that already has one).
     pub async fn summary_fields(&self) -> Value {
+        // Gate-fix (HIGH, correctness): computed BEFORE the `state.lock()` below, never while
+        // holding it -- `current_selection` can lazily seed `current_role` from the Session's
+        // own Conversation file the first time this runs (#741: never a guessed `"default"`),
+        // which needs its own `with_model_state` lock acquisition; calling it while already
+        // holding `state.lock()` here would deadlock (the same `tokio::sync::Mutex`, not
+        // reentrant).
+        let (pinned, current_role) = crate::session::model::current_selection(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -350,10 +357,14 @@ impl SessionAgent {
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
             // Issue #740/#741 (lane RM): role chip/pin state on every `sessions.list()` row.
-            "currentRole": if state.model.pinned { Value::Null } else {
-                Value::String(state.model.current_role.clone().unwrap_or_else(|| "default".to_string()))
+            // `current_role` is `None` (-> JSON `null`) when truly unknown, never a guess.
+            "currentRole": if pinned { Value::Null } else {
+                match current_role {
+                    Some(role) => Value::String(role),
+                    None => Value::Null,
+                }
             },
-            "pinned": state.model.pinned,
+            "pinned": pinned,
         });
         if let Some(reason) = state.stop_reason {
             payload
@@ -509,8 +520,10 @@ impl SessionAgent {
     }
 
     /// Generic RPC passthrough for a lane module (lane RM's `session::model`): same
-    /// `state.process.clone()` + error mapping as `chat.rs`'s own `send()`.
-    #[allow(dead_code)]
+    /// `state.process.clone()` + error mapping as `chat.rs`'s own `send()`. No idle check of
+    /// its own -- see `request_rpc_if_idle` below for the atomic version every lane call that
+    /// changes the model/role now uses instead (gate-fix, HIGH: the old two-step "check idle,
+    /// then call this" had a race window a concurrent turn start could land in).
     pub(super) async fn request_rpc(
         &self,
         cmd: Value,
@@ -533,11 +546,136 @@ impl SessionAgent {
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))
     }
 
+    /// Gate-fix (HIGH, race): the atomic form `request_rpc` itself cannot be -- checking
+    /// `state.status` and cloning `state.process` happen under the SAME lock acquisition here,
+    /// so nothing can start a turn between "confirmed idle" and "process handle taken". Refuses
+    /// with `not-idle` (never queues) if the Session is working at that exact instant. Lane RM's
+    /// `set_model`/`cycle_model` use this for every RPC that changes the live model.
+    pub(super) async fn request_rpc_if_idle(
+        &self,
+        cmd: Value,
+        timeout_ms: u64,
+        refusal_message: &str,
+    ) -> Result<Value, AgentError> {
+        let proc = {
+            let state = self.state.lock().await;
+            if matches!(
+                state.status,
+                SessionStatus::Working | SessionStatus::NeedsYou
+            ) {
+                return Err(AgentError::new(
+                    "not-idle",
+                    format!("{refusal_message} after the current turn."),
+                ));
+            }
+            state.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot send, no live process",
+                        self.session_id
+                    ),
+                )
+            })?
+        };
+        proc.request(cmd, timeout_ms)
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))
+    }
+
+    /// `send()`'s own atomic-idle sibling (gate-fix, HIGH, race): `send()` itself always allows
+    /// a mid-turn call to queue as a follow-up (`streamingBehavior`), which is exactly what lane
+    /// RM's own `/switch`/`/role` text commands must never do (constitution-level refusal, not
+    /// queuing). Checks `state.status` and takes `state.process`/marks-user-acted under the
+    /// SAME lock acquisition, so nothing can start a turn in the gap, then sends a plain `prompt`
+    /// with no `streamingBehavior` field at all (this path only ever runs while idle).
+    pub(super) async fn send_if_idle(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+    ) -> Result<Value, AgentError> {
+        let proc = {
+            let mut state = self.state.lock().await;
+            if matches!(
+                state.status,
+                SessionStatus::Working | SessionStatus::NeedsYou
+            ) {
+                return Err(AgentError::new(
+                    "not-idle",
+                    "Switch the model after the current turn.",
+                ));
+            }
+            state.transcript.mark_user_acted();
+            state.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot send, no live process",
+                        self.session_id
+                    ),
+                )
+            })?
+        };
+        let mut cmd = json!({ "type": "prompt", "message": text });
+        if let Some(images) = images {
+            if !images.is_empty() {
+                cmd["images"] = Value::Array(images);
+            }
+        }
+        let res = proc
+            .request(cmd, DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        if res.get("success").and_then(Value::as_bool) != Some(true) {
+            let err_message = res
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string();
+            return Err(AgentError::new(
+                "prompt-failed",
+                format!("prompt failed: {err_message}"),
+            ));
+        }
+        Ok(json!({ "queued": false }))
+    }
+
+    /// Gate-fix (HIGH, race, #740): atomically decides whether a Settings-triggered role reapply
+    /// must be queued (the Session is working right now) or can run immediately -- the old code
+    /// read `status()` and wrote `pending_role_reapply` as two SEPARATE lock acquisitions, so a
+    /// settle landing between them lost the reapply until the Session's NEXT turn ended (which
+    /// then ran on the stale model). Returns `true` when queued (nothing further to do here;
+    /// `on_frame`'s own settle hook applies it later), `false` when the Session was idle at this
+    /// exact instant (the caller must call `apply_role_now` itself right away).
+    pub(super) async fn queue_role_reapply_or_ready(&self, role: &str) -> bool {
+        let mut state = self.state.lock().await;
+        if matches!(
+            state.status,
+            SessionStatus::Working | SessionStatus::NeedsYou
+        ) {
+            state.model.pending_role_reapply = Some(role.to_string());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The Session's own current Conversation file path, if any (registry lookup; #741: reading
+    /// its latest `model_change` role needs this). `None` for a brand-new Session that has never
+    /// sent its first message.
+    pub(super) async fn current_conversation_path(&self) -> Option<String> {
+        self.registry
+            .lock()
+            .await
+            .get_session(&self.session_id)?
+            .current_conversation
+            .clone()
+    }
+
     /// Re-reads `get_state`, applies it via `sync_from_state`, and returns the raw `data`
     /// object (FINDINGS item 30: `model = {provider, id, name?}`) so a lane (RM's own
     /// `set_model`/`cycle_model`/role switch) can refresh the composer label/notice itself.
     /// Best-effort: failures are non-fatal to the caller.
-    #[allow(dead_code)]
     pub(super) async fn refresh_from_state(&self) -> Result<Value, AgentError> {
         let res = self
             .request_rpc(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)

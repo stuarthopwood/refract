@@ -200,3 +200,63 @@ fn parse_session_id_and_text_rejects_missing_or_non_string() {
         None
     );
 }
+
+// ---------------------------------------------------------------------------
+// rewrite_model_to_switch (lane RM, issue #762)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rewrite_model_to_switch_rewrites_bare_model() {
+    assert_eq!(
+        rewrite_model_to_switch("model".to_string(), String::new()),
+        ("switch".to_string(), String::new(), "model".to_string())
+    );
+}
+
+#[test]
+fn rewrite_model_to_switch_rewrites_model_with_an_argument() {
+    assert_eq!(
+        rewrite_model_to_switch(
+            "model".to_string(),
+            "github-copilot/claude-sonnet-5.5".to_string()
+        ),
+        (
+            "switch".to_string(),
+            "github-copilot/claude-sonnet-5.5".to_string(),
+            "model".to_string()
+        )
+    );
+}
+
+#[test]
+fn rewrite_model_to_switch_leaves_every_other_command_unchanged() {
+    assert_eq!(
+        rewrite_model_to_switch("switch".to_string(), "@task".to_string()),
+        (
+            "switch".to_string(),
+            "@task".to_string(),
+            "switch".to_string()
+        )
+    );
+    assert_eq!(
+        rewrite_model_to_switch("role".to_string(), "smol".to_string()),
+        ("role".to_string(), "smol".to_string(), "role".to_string())
+    );
+    assert_eq!(
+        rewrite_model_to_switch("usage".to_string(), String::new()),
+        ("usage".to_string(), String::new(), "usage".to_string())
+    );
+}
+
+#[test]
+fn rewrite_model_to_switch_original_name_is_always_what_the_user_typed() {
+    // #762's own acceptance wording: "a test proves the text sent to OMP is /switch ... and
+    // never /model ..." -- `original_name` is what error messages show; `name` (rewritten) is
+    // what reaches classification/forwarding. The two must differ exactly when the user typed
+    // `/model`.
+    let (classified, _rest, original) =
+        rewrite_model_to_switch("model".to_string(), "x".to_string());
+    assert_eq!(classified, "switch");
+    assert_eq!(original, "model");
+    assert_ne!(classified, original);
+}
