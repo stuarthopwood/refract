@@ -498,3 +498,161 @@ async fn resolve_termination_falls_through_to_the_tail_read_otherwise() {
     assert!(result.terminated_unexpectedly);
     assert_eq!(result.pending_tool_names, vec!["bash".to_string()]);
 }
+
+#[tokio::test]
+async fn marker_invalid_for_a_negative_size() {
+    // Port of `stoppedOnRequestMarker.test.ts`'s own "is false for a negative or non-finite
+    // size" -- a hand-edited or corrupt `registry.json` must never be trusted (fails closed,
+    // same as every other mismatch this function checks).
+    let file = write_scratch("hello").await;
+    let session = make_session(Some(&file), Some(&file), Some(-1));
+    assert!(!is_stopped_on_request_marker_valid(&session).await);
+}
+
+// -------------------------------------------------------------------------------------------
+// `record_stopped_on_request_marker`/`clear_stopped_on_request_marker` against a real agent +
+// registry (gate-fix, test review HIGH, round 6): ports `stoppedOnRequestMarker.test.ts`'s own
+// `recordStoppedOnRequestMarker`/`clearStoppedOnRequestMarker` describe blocks. TS injects a
+// `stillCurrent: () => boolean` closure directly; this port's equivalent check
+// (`s.epoch == epoch_at_exit`) lives behind an async `with_termination_state` lock, so these
+// tests exercise it through the REAL `SessionAgent`'s own epoch instead (Main's "or the agent
+// state" alternative) -- `clear_stopped_on_request_marker`'s own bump is what a concurrent
+// Recover racing this exact write would have done.
+
+async fn make_marker_test_agent(
+    label: &str,
+    marker_conversation: Option<&str>,
+    marker_size: Option<i64>,
+) -> std::sync::Arc<SessionAgent> {
+    let dir = std::env::temp_dir().join(format!(
+        "refract-termination-marker-agent-{label}-{}",
+        uuid::Uuid::new_v4()
+    ));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let session_id = format!("session-{label}");
+    let mut session = make_session(None, marker_conversation, marker_size);
+    session.id = session_id.clone();
+    let mut registry_store = crate::store::registry::RegistryStore::open(&dir)
+        .await
+        .unwrap();
+    registry_store
+        .add_repository(crate::store::registry::Repository {
+            id: "repo-1".to_string(),
+            path: dir.to_string_lossy().into_owned(),
+            name: "Test Repo".to_string(),
+            default_branch: "main".to_string(),
+            added_at: "2026-01-01T00:00:00.000Z".to_string(),
+        })
+        .await
+        .unwrap();
+    registry_store.add_session(session).await.unwrap();
+    let registry = std::sync::Arc::new(tokio::sync::Mutex::new(registry_store));
+    let settings = std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::store::settings::SettingsStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let app_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let events = crate::events::EventSink::new(app_handle_slot, registry.clone());
+    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
+    manager.get_or_create_agent(&session_id)
+}
+
+#[tokio::test]
+async fn record_marker_writes_the_patch_when_still_current() {
+    let agent = make_marker_test_agent("write", None, None).await;
+    let file = write_scratch("hello").await;
+    let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
+    record_stopped_on_request_marker(&agent, Some(&file), epoch_at_exit).await;
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        session.stopped_on_request_conversation.as_deref(),
+        Some(file.as_str())
+    );
+    assert!(session.stopped_on_request_at_size.is_some());
+}
+
+#[tokio::test]
+async fn record_marker_skips_the_write_once_a_newer_life_has_started() {
+    // Port of "skips the write entirely when stillCurrent() reports false after the stat
+    // resolves": `epoch_at_exit` was captured for a life that is no longer current by the time
+    // this call's own check runs -- a concurrent Recover's `clear_stopped_on_request_marker`
+    // (called at the top of every fresh `launch()`) already bumped the live epoch past it.
+    let agent = make_marker_test_agent("stale", None, None).await;
+    let file = write_scratch("hello").await;
+    let stale_epoch = agent.with_termination_state(|s| s.epoch).await;
+    agent.clear_stopped_on_request_marker().await; // bumps epoch past `stale_epoch`
+    record_stopped_on_request_marker(&agent, Some(&file), stale_epoch).await;
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert!(session.stopped_on_request_conversation.is_none());
+    assert!(session.stopped_on_request_at_size.is_none());
+}
+
+#[tokio::test]
+async fn record_marker_records_nothing_when_conversation_is_none() {
+    let agent = make_marker_test_agent("no-conv", None, None).await;
+    let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
+    record_stopped_on_request_marker(&agent, None, epoch_at_exit).await;
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert!(session.stopped_on_request_conversation.is_none());
+}
+
+#[tokio::test]
+async fn record_marker_never_panics_when_the_conversation_file_is_missing() {
+    let agent = make_marker_test_agent("missing-file", None, None).await;
+    let missing = std::env::temp_dir().join(format!(
+        "refract-termination-marker-missing-{}.jsonl",
+        uuid::Uuid::new_v4()
+    ));
+    let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
+    record_stopped_on_request_marker(&agent, Some(&missing.to_string_lossy()), epoch_at_exit).await;
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert!(session.stopped_on_request_conversation.is_none());
+}
+
+#[tokio::test]
+async fn clear_marker_clears_both_fields_and_bumps_the_epoch() {
+    let file = write_scratch("hello").await;
+    let size = tokio::fs::metadata(&file).await.unwrap().len() as i64;
+    let agent = make_marker_test_agent("clear", Some(&file), Some(size)).await;
+    let epoch_before = agent.with_termination_state(|s| s.epoch).await;
+    agent.clear_stopped_on_request_marker().await;
+    let session = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .cloned()
+        .unwrap();
+    assert!(session.stopped_on_request_conversation.is_none());
+    assert!(session.stopped_on_request_at_size.is_none());
+    let epoch_after = agent.with_termination_state(|s| s.epoch).await;
+    assert!(
+        epoch_after > epoch_before,
+        "a new life starting must bump the epoch"
+    );
+}
