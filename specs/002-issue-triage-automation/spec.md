@@ -101,21 +101,22 @@ starting point for implementation — but it depends on User Story 1's classific
 existing.
 
 **Independent Test**: Trigger triage for an issue whose text clearly warrants a new feature and
-confirm the comment's pickup plan lists `/speckit.specify` through `/speckit.implement` in order;
-trigger it for an issue referencing an existing spec and confirm the plan instead names that
-feature's directory and lists the converge sequence.
+confirm the comment's pickup plan lists `/grill-with-docs` then `/speckit.specify` through
+`/speckit.implement` in order; trigger it for an issue referencing an existing spec and confirm
+the plan instead lists `/grill-with-docs`, then names that feature's directory and lists the
+converge sequence.
 
 **Acceptance Scenarios**:
 
 1. **Given** an issue classified `speckit_route: specify` and `state: ready-for-agent`, **When**
-   triage posts its comment, **Then** the pickup plan lists, in order, `/speckit.specify`,
-   `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.analyze`, and
-   `/speckit.implement`, noting `/speckit.taskstoissues` is optional.
+   triage posts its comment, **Then** the pickup plan lists, in order, `/grill-with-docs`,
+   `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.analyze`,
+   and `/speckit.implement`, noting `/speckit.taskstoissues` is optional.
 2. **Given** an issue classified `speckit_route: converge`, **When** triage posts its comment,
-   **Then** the pickup plan names the target feature directory (resolved from the issue's
-   `spec:NNN` label against the real `specs/` directory listing, or `specs/001-core-session-workspace`
-   as a fallback) and lists amending its `spec.md`, then `/speckit.converge`, then
-   `/speckit.implement`.
+   **Then** the pickup plan lists, in order, `/grill-with-docs`, then names the target feature
+   directory (resolved from the issue's `spec:NNN` label against the real `specs/` directory
+   listing, or `specs/001-core-session-workspace` as a fallback) and lists amending its
+   `spec.md`, then `/speckit.converge`, then `/speckit.implement`.
 3. **Given** an issue classified `state: ready-for-human`, **When** triage posts its comment,
    **Then** the same route-specific pickup plan is listed, prefixed to say it applies after the
    human decision or manual work is done.
@@ -297,8 +298,9 @@ also with no commands listed.
   (`copilot`/`anthropic`/`heuristic`).
 - **Triage comment**: The single AI-authored comment per issue that discloses the classification
   and ends with the Spec Kit pickup plan.
-- **Spec Kit pickup plan**: The deterministic, ordered list of `/speckit.*` commands (or a
-  "not ready yet" / one-line hint) for whoever picks the issue up next.
+- **Spec Kit pickup plan**: The deterministic, ordered list of commands (`/grill-with-docs` then
+  the route's `/speckit.*` commands) for whoever picks the issue up next, or a "not ready yet" /
+  one-line hint.
 - **Feature directory**: The existing `specs/NNN-*` directory a `converge`-routed issue's pickup
   plan names as its amendment target.
 

@@ -160,7 +160,7 @@ there). A malformed title silently breaks both the version bump and the changelo
 ## Grill first, then the full Spec Kit plan (HARD RULE)
 
 On 2026-10-15 the user decided every Refract story starts with a `/grill-with-docs` session (the
-parent agent interviews Stuart against `CONTEXT.md`, `docs/adr` and the code, one question at a
+main agent interviews Stuart against `CONTEXT.md`, `docs/adr` and the code, one question at a
 time with a recommended answer, updating `CONTEXT.md` and ADRs inline), and its outcomes feed the
 Spec Kit steps. Then the issue's whole Spec Kit pickup plan runs in order, with no step skipped:
 
