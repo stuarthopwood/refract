@@ -18,11 +18,28 @@
 //   (`clampThinkingLevelForModel` likewise resolves to `undefined`) -- this used to be treated as
 //   an error on a SUCCESSFUL switch (a false failure toast the user would see even though OMP had
 //   already applied the change). Fixed per Stuart's amendment: `inherit` always reads back as
-//   "Default" (that is what inherit MEANS, regardless of whether the model echoes it), so its
-//   registry row is patched directly here rather than left null by the generic sync below; any
-//   OTHER requested level the model doesn't report is shown as an explicit "not reported by this
-//   model" state (`null`) rather than silently presented as if it had been confirmed. Neither
-//   branch is ever an error.
+//   "Default" (that is what inherit MEANS, regardless of whether the model echoes it); any OTHER
+//   requested level the model doesn't report is shown as an explicit "not reported" state over
+//   the wire (`null`) rather than silently presented as if it had been confirmed. Neither branch
+//   is ever an error.
+//
+// Gate round 2 fix (code-reviewer HIGH): `session::agent::launch::sync_from_state` used to
+// unconditionally overwrite the registry's `last_thinking_level` with whatever THIS get_state
+// call reported -- `None` whenever `thinkingLevel` was absent, which is every settle and every
+// relaunch for `inherit` (and for any model that never reports reasoning at all). That wiped out
+// a just-applied "Default" on the very next turn or app restart. Fixed in two places together:
+// `sync_from_state` (launch.rs) now leaves `last_thinking_level` UNTOUCHED on a generic settle
+// when `thinkingLevel` is absent (never writes over it with `None`), so an explicitly-persisted
+// "inherit" survives; this function, in turn, is now the ONLY place that ever writes the field
+// when OMP doesn't echo the level back, and always writes something explicit rather than
+// leaving it for the (no longer existing) generic write to fill in: `Some("inherit")` for a
+// Default request (so it persists across settles and relaunches), or an explicit `None` (clearing
+// any STALE previously-confirmed level) for any other request this model didn't confirm.
+// Stuart's correction (supersedes an earlier, wrong version of this same fix): a Session with NO
+// level ever explicitly requested, and a non-Default request the model does not confirm, BOTH
+// read as "Reasoning not reported" (`modelDisplay.ts`) -- "Default" is shown ONLY once the
+// developer has explicitly chosen it and it has been confirmed or implied by `inherit`'s own
+// request semantics; a fresh, untouched Session is never silently presented as "Default".
 
 use serde_json::{json, Value};
 
@@ -102,19 +119,27 @@ pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Val
         .get("thinkingLevel")
         .and_then(Value::as_str)
         .map(str::to_string);
-    // `refresh_from_state`'s own `sync_from_state` already wrote the registry from THIS SAME
-    // state read, via the identical `state.get("thinkingLevel")` lookup -- so for every branch
-    // below except the `inherit`-not-reported one, that write already landed the same value this
-    // function is about to return. Only `inherit` needs a direct patch: `sync_from_state` has no
-    // "what did the picker just request" context, so without this the registry (and every later
-    // read of `lastThinkingLevel`) would show "not reported" even though requesting Default
-    // always succeeds by definition.
-    let thinking_level = match reported {
-        Some(value) => Some(value),
-        None if level == "inherit" => Some("inherit".to_string()),
-        None => None,
-    };
-    if level == "inherit" && thinking_level.as_deref() == Some("inherit") {
+    // The wire response (unchanged contract, `ipc-model.ts`'s `{ thinkingLevel: string | null }`):
+    // `Some` when OMP reported it, OR when the request was `inherit` (Default is always a valid
+    // outcome regardless of echo); `None` only for a non-`inherit` request the model didn't
+    // confirm.
+    let wire_level = reported
+        .clone()
+        .or_else(|| (level == "inherit").then(|| "inherit".to_string()));
+    // Gate round 2 fix (code-reviewer HIGH): `sync_from_state` (launch.rs) no longer writes
+    // `last_thinking_level` AT ALL when `thinkingLevel` is absent from a generic `get_state` --
+    // a later settle or app relaunch must never erase what THIS call is about to store. So
+    // whenever OMP didn't echo the level back, this is the ONLY place that ever persists the
+    // outcome, and it must always write something explicit: `Some("inherit")` for a Default
+    // request, so it survives future settles/relaunches, or an explicit `None` for any OTHER
+    // request this model didn't confirm -- clearing any STALE previously-confirmed level, so a
+    // failed-to-confirm switch away from a real level never keeps showing that old level as if
+    // still current. (Stuart's correction: a fresh, never-touched Session and this unconfirmed
+    // case read identically, "Reasoning not reported" -- `modelDisplay.ts` -- never "Default".)
+    // When `reported` IS `Some`, `sync_from_state`'s own write (from this exact same state read)
+    // already covers it, so no separate patch is needed here.
+    if reported.is_none() {
+        let stored_level = (level == "inherit").then(|| "inherit".to_string());
         let patched = agent
             .registry()
             .lock()
@@ -122,7 +147,7 @@ pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Val
             .update_session(
                 agent.session_id(),
                 SessionPatch {
-                    last_thinking_level: Some(Some("inherit".to_string())),
+                    last_thinking_level: Some(stored_level),
                     ..Default::default()
                 },
             )
@@ -131,7 +156,7 @@ pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Val
             agent.events().emit_session_list_changed();
         }
     }
-    let label = match &thinking_level {
+    let label = match &wire_level {
         Some(value) => reasoning_label(value),
         None => "a level this model did not report back".to_string(),
     };
@@ -141,5 +166,5 @@ pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Val
         format!("Reasoning switched to {label}."),
     )
     .await;
-    Ok(json!({ "thinkingLevel": thinking_level }))
+    Ok(json!({ "thinkingLevel": wire_level }))
 }

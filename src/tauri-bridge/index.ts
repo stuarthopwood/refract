@@ -246,7 +246,7 @@ const refract: RefractApi = {
         sessionId
       ),
     setThinkingLevel: (sessionId: string, level: ThinkingLevel) =>
-      request<{ thinkingLevel: string }>(IPC_REQUESTS.MODEL_SET_THINKING_LEVEL, sessionId, level)
+      request<{ thinkingLevel: string | null }>(IPC_REQUESTS.MODEL_SET_THINKING_LEVEL, sessionId, level)
   },
 
   window: {

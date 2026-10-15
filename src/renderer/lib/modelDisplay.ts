@@ -41,14 +41,18 @@ export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | 
 }
 
 /** The human label for a Session's last known thinking level: `null` before any model has ever
- * been seen at all; "Not reported by this model" (gate round 1, 2026-10-15, amended by Stuart)
- * once a model IS known but the last `get_state` carried no reasoning level back for a
- * successfully-applied non-`inherit` request (`thinking_level.rs`'s own documented read-back
- * gap -- `lastThinkingLevel` is only ever written alongside `lastModel`, `sync_from_state`'s own
- * guard, so the two together tell the two states apart without a third persisted field); the
- * resolved label otherwise. */
+ * been seen at all; "Reasoning not reported" (gate round 2, code-reviewer HIGH, corrected mid-
+ * round by Stuart -- supersedes a wrong first attempt at this same fix that showed "Default"
+ * here instead) once a model IS known but `lastThinkingLevel` itself is falsy -- covers BOTH a
+ * Session where no level was ever explicitly requested, and one where a non-Default request was
+ * explicitly made but this model did not confirm it back (`thinking_level.rs` explicitly clears
+ * the field to `None` in that second case, so neither shows a stale previously-confirmed level).
+ * "Default" is shown ONLY for the literal stored value `"inherit"` -- an explicit Default
+ * request that `thinking_level.rs` persists directly, surviving later settles/relaunches even
+ * though omp's own `get_state` never echoes it back; the resolved label otherwise. */
 export function formatThinkingLevelLabel(session: Pick<Session, 'lastModel' | 'lastThinkingLevel'>): string | null {
-  if (!session.lastThinkingLevel) return session.lastModel ? 'Not reported by this model' : null
+  if (!session.lastModel) return null
+  if (!session.lastThinkingLevel) return 'Reasoning not reported'
   // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
   // inherited Object.prototype properties for a key like "constructor" or "toString" --
   // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,

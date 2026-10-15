@@ -94,7 +94,7 @@ export interface ModelApi {
    * successful `'inherit'` request always resolves to the literal string `'inherit'`, never
    * `null`, since Default is always a valid outcome regardless of whether the model echoes it)
    * and for any OTHER level on a model that does not report reasoning effort at all. `null` MUST
-   * NOT be treated as an error: the renderer shows "Not reported by this model" for it, never a
+   * NOT be treated as an error: the renderer shows "Reasoning not reported" for it, never a
    * toast, since the underlying `set_thinking_level` RPC itself already succeeded. */
   setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<Result<{ thinkingLevel: string | null }>>;
 }

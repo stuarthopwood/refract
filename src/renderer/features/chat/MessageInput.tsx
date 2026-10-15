@@ -25,8 +25,8 @@ import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { attachImageFile } from './attachImage'
 import {
-  attachImageFile,
   buildChipLabel,
   buildImagePathAttachment,
   describeAttachFailureReason,
@@ -1564,8 +1564,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   // overrides `variant="default"`'s `--primary` fill, which resolves to a
                   // near-white neutral in Dark and Dark (high contrast) -- almost identical to
                   // Stop's `invert` fill there, failing "visibly distinct in weight". `--send`
-                  // is chromatic (indigo) in every built-in theme instead.
-                  className="rounded-full bg-send text-send-foreground hover:bg-send/80 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  // is chromatic (indigo) in every built-in theme instead. Hover mixes 15% of
+                  // the page background into the fill (gate round 2 fix: a bare
+                  // `hover:bg-send/80` opacity modifier violated the design rules' own "never a
+                  // Tailwind opacity modifier on a token class" -- `button.tsx`'s `secondary`
+                  // variant's own `color-mix` pattern instead).
+                  className="rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
                   aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}

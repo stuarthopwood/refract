@@ -16,9 +16,12 @@ const buttonVariants = cva(
         // `--send` accent fill (gate round 1, 2026-10-15: Send no longer shares `--primary`,
         // which reads as a near-identical near-white neutral to THIS fill in two of the three
         // built-in themes) -- the two are never the same colour, so they stay visually distinct
-        // even though both are solid. `hover:bg-foreground/85` (gate round 1 fix: previously
-        // `hover:bg-foreground`, identical to the resting fill, gave no hover feedback at all).
-        invert: "bg-foreground text-background hover:bg-foreground/85",
+        // even though both are solid. Hover mixes 15% of the page background into the fill (gate
+        // round 2 fix: a bare `hover:bg-foreground/85` opacity modifier violated the design
+        // rules' own "never a Tailwind opacity modifier on a token class", `secondary`'s own
+        // `color-mix` pattern below instead; before that, `hover:bg-foreground` with no modifier
+        // at all was identical to the resting fill, no hover feedback whatsoever).
+        invert: "bg-foreground text-background hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_15%)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

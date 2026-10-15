@@ -994,3 +994,71 @@ branch at the time it was marked.
   148, the post-R13 count). The full `ci-local.mjs` run, the scratch live-check re-run exercising
   every fixed behaviour with real CDP keyboard/mouse input, and screenshots are recorded in the PR
   body, not retrofitted into this task.
+
+**Gate round 2 fixes (same day, same session, after T151-T159 above landed and PR #877 went up for
+a second review)**: code-reviewer FAIL (1 High), accessibility-auditor FAIL (1 High), test-reviewer
+and security-auditor PASS. T160-T168 below fix every finding, amended TWICE by Stuart on the same
+point (T160's own read-back semantics, corrected mid-round).
+
+- [X] T160 [US1] Fix Default-persistence (code-reviewer HIGH): `sync_from_state` (launch.rs) now
+  only writes `last_thinking_level` when `thinkingLevel` is ACTUALLY REPORTED by `get_state` --
+  previously it wrote `None` unconditionally whenever absent, which erased
+  `thinking_level::set_thinking_level`'s own explicit "inherit" write on the very next settle or
+  app relaunch. `thinking_level.rs` is now the ONLY place that writes the field when absent, and
+  always writes something explicit: `Some("inherit")` for a Default request (so it survives), or
+  an explicit `None` for any other unconfirmed request (clearing any stale previously-confirmed
+  level). **Corrected TWICE by Stuart mid-round** (an initial attempt at this same fix wrongly
+  showed "Default" for any Session with no stored level at all): a Session where nothing was ever
+  explicitly requested, and one where a non-Default request was not confirmed, BOTH read as
+  "Reasoning not reported" (`modelDisplay.ts`, renamed from round 1's "Not reported by this
+  model") -- "Default" is shown ONLY for the literal persisted `"inherit"`.
+- [X] T161 [US1] Fix the keyboard-active option's contrast (accessibility-auditor HIGH): `bg-accent`
+  alone measured under 1.3:1 in every theme. `pickerShared.tsx`'s new `PICKER_OPTION_CLASS`/
+  `PICKER_OPTION_ACTIVE_CLASS` add an opaque `border-l-active-indicator` left border when active,
+  matching `SlashMenu.tsx`'s own pattern exactly, used by both the Roles and Models options.
+- [X] T162 [US1] Fix Enter-applies-the-wrong-option after typing (accessibility-auditor MEDIUM):
+  the active index stayed at 0 (the first Role, never filtered) regardless of what was typed.
+  `ModelPicker.tsx` now resets the active index to the first MATCHING MODEL whenever the filter
+  is non-empty.
+- [X] T163 [US1] Fix pointer-cancellation (accessibility-auditor MEDIUM, WCAG 2.5.2): selecting an
+  option ran on `onMouseDown` (the press), so sliding off before releasing could not cancel it.
+  `preventDefault()` (keeps focus in the filter field) stays on `onMouseDown`; the actual select-
+  and-close now runs on `onClick`, which only fires for a completed primary-button press-and-
+  release on the same element (a right- or middle-click never fires it at all).
+- [X] T164 [US1] Name the Model popover (accessibility-auditor MEDIUM, WCAG 4.1.2):
+  `aria-label="Choose model"` on `PopoverContent` -- Radix gives it `role="dialog"` with no label
+  of its own.
+- [X] T165 [US1] Fix Tab leaving the popover open (accessibility-auditor LOW, WCAG 2.4.3): Tab in
+  the filter field now closes the popover and returns focus to the trigger, instead of leaving
+  this non-modal popover open and carrying focus to whatever follows its portal in the DOM.
+- [X] T166 [US1] Fix the invalid double-`aria-selected` listbox (accessibility-auditor LOW): the
+  current Role and the current Model could both carry `aria-selected="true"` at once. The current
+  Role is now sr-only "(current)" text plus its visible tick; `aria-selected` belongs to the
+  Models group alone. `rolesError` moved from a bare `<p>` inside the listbox (not an allowed
+  child) to a disabled `role="option"`, matching `catalogError`'s own pattern.
+- [X] T167 [US1] Remaining LOW findings: the visible Reasoning label "Reasoning not reported" (was
+  "Not reported by this model", lacked the word "Reasoning" for a sighted user); the
+  `tauri-bridge/index.ts` `setThinkingLevel` return type corrected to `string | null` (was
+  `string`, silently widened); `attachImageFile` moved to its own module, `attachImage.ts` (closes
+  an import cycle between `attachments.ts` and `state/draft-store.ts`, harmless only because
+  `@/state` happened to load first); `ModelPicker` moved to its own file, `ModelPicker.tsx`
+  (`ComposerPickers.tsx` had grown to 427 lines/three components); both pickers' disabled reason
+  is now ALSO a visible `Tooltip`, with `aria-describedby={undefined}` on the trigger so the
+  tooltip's content (which always repeats something already in the accessible name) is never
+  announced twice; two opacity-modifier hovers (`hover:bg-send/80`, `hover:bg-foreground/85`,
+  both introduced in gate round 1) replaced with the `color-mix` pattern `button.tsx`'s
+  `secondary` variant already uses, per the design rules' own "never a Tailwind opacity modifier
+  on a token class".
+- [X] T168 [US1] Update the docs and verify: spec 001 gains a gate round 2 Clarification (the
+  persistence fix, Stuart's correction recorded verbatim), FR-064 rewritten in place for the
+  persistence guarantee, the active-row contrast, Tab, pointer-cancellation, the popover name, the
+  single-`aria-selected` rule, and the visible disabled Tooltip; three Edge Cases bullets updated
+  or added. `docs/design/product-chat.md`, `quickstart.md`, `contracts/ipc.md`, and
+  `src/shared/ipc-model.ts`'s own doc comment all get the "Reasoning not reported" rename.
+  Re-ran `pnpm typecheck` (clean), `pnpm check:indent` (0 odd-indent), `pnpm check:file-size` (0
+  violations -- `launch.rs` needed its own new `if let` block trimmed to net-zero growth against
+  its exact 600-line baseline), `pnpm check:parity` (97/97, 23/23). The full `ci-local.mjs` run,
+  the scratch live-check proving Default's persistence through both a settle and a full app
+  relaunch, the keyboard-active row, and the fresh/unconfirmed "Reasoning not reported" states
+  with real CDP input, and screenshots, are recorded in the PR body, not retrofitted into this
+  task.

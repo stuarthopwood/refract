@@ -455,9 +455,9 @@ impl SessionAgent {
                         id: truncate(id, MAX_MODEL_FIELD_LENGTH),
                         name: name.map(|n| truncate(n, MAX_MODEL_FIELD_LENGTH)),
                     });
-                    let thinking_level = state.get("thinkingLevel").and_then(Value::as_str);
-                    patch.last_thinking_level =
-                        Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
+                    if let Some(t) = state.get("thinkingLevel").and_then(Value::as_str) {
+                        patch.last_thinking_level = Some(Some(truncate(t, MAX_MODEL_FIELD_LENGTH)));
+                    }
                 }
             }
         }
