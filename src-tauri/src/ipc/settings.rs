@@ -316,8 +316,9 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
         .get("collapsedRepositoryIds")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
-    let collapsed_repository_ids = crate::store::settings::sanitize_collapsed_repository_ids(ids_value)
-        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let collapsed_repository_ids =
+        crate::store::settings::sanitize_collapsed_repository_ids(ids_value)
+            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
     let archived_open = object
         .get("archivedOpen")
         .and_then(Value::as_bool)
