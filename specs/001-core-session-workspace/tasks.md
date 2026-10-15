@@ -1556,6 +1556,7 @@ unread-response, Manage sessions in pass one; idle, stopped, the same two in Hig
 vision-deficiency and forced-colours in pass two) rather than all five simultaneously, since the
 `session.jsonl` fixture only scripts one turn per `OmpProcess` and a second Session's own
 `Stop agent` action was driven in a separate instance to avoid retriggering the Session-row
-HoverCard the first pass's `displayStatus` assertions already depended on.
+HoverCard the first pass's `displayStatus` assertions already depended on. Opened as draft
+PR #902 (`feat/731-session-status-icons`).
 
 
