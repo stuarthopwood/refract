@@ -314,6 +314,25 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '05-panel-tree-arrowdown-selection.png'));
     findings.push(`Keyboard ArrowDown moved the tree's roving tab stop and selection from "${selectedBefore}" to "${selectedAfter}" -- confirms the tree keyboard handler and the active-indicator bar (visible in the screenshot) both work. firstRowId=${firstRowId}.`);
 
+    // Gate round 3 (M7, real finding on two reviewers): `outline-hidden` alone, and then plain
+    // removal of any outline-* utility, were each tried and rejected before landing the final
+    // fix (`outline-hidden` + `focus-visible:outline-solid`, SubagentPanel.tsx). The row now
+    // focused by the real keyboard ArrowDown above is THIS exact tree row, with THIS exact
+    // real browser, under THIS exact Tailwind build -- not the isolated `tailwindcss.compile()`
+    // check used during development, which proves the utility classes generate the right CSS
+    // but not that the actual Chromium focus-visible heuristic fires and paints it. Asserts on
+    // the computed style, not just a screenshot, so this can fail loudly, not just look plausible.
+    const focusedRowOutline = await cdp.evaluate(
+      `(() => { const el = document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]'); if (!el) return null; const cs = getComputedStyle(el); return { isActiveElement: el === document.activeElement, outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, outlineColor: cs.outlineColor }; })()`,
+    );
+    if (!focusedRowOutline || !focusedRowOutline.isActiveElement) {
+      throw new Error(`verify-563: M7 live check could not confirm the focused tree row is document.activeElement: ${JSON.stringify(focusedRowOutline)}`);
+    }
+    if (focusedRowOutline.outlineStyle === 'none' || focusedRowOutline.outlineWidth === '0px') {
+      throw new Error(`verify-563: M7 REGRESSION -- the keyboard-focused tree row paints no outline live (outline-style=${focusedRowOutline.outlineStyle}, outline-width=${focusedRowOutline.outlineWidth}); the outline-hidden+focus-visible:outline-solid fix did not survive contact with the real build.`);
+    }
+    findings.push(`M7 live confirmation: the keyboard-focused tree row's own computed style is outline-style=${focusedRowOutline.outlineStyle}, outline-width=${focusedRowOutline.outlineWidth}, outline-color=${focusedRowOutline.outlineColor} -- a real, painting focus ring on :focus-visible, not just a compiled utility that looks right in isolation.`);
+
     // Close the panel via its own exact Close button (`PanelTabBar.tsx`'s `[data-panel-close]`,
     // `aria-label="Close Subagents panel"` -- never a generic "aria-label contains close" guess,
     // which can match an unrelated control). This panel was opened via the rail button fallback

@@ -140,6 +140,19 @@ async function main() {
 
   async function handleCommand(cmd) {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
+    // Issue #572's `set_ask_dialog{enabled:true}` probe (`launch_support.rs`'s
+    // `send_set_ask_dialog`) is sent once per process right after launch, independently of
+    // whatever the tape's own `__wait__` sequence currently expects -- it predates every
+    // existing fixture (none of them list it in a `__wait__` entry), so it used to be silently
+    // dropped here and Refract blocked for its own full 60s request timeout waiting for a reply
+    // that never came, stalling every later tape step (including the ones the tape WAS waiting
+    // for) behind that timeout. Answered immediately and out-of-band, never touching `waitingFor`
+    // or the tape cursor, so every existing and future fixture gets this for free with no
+    // fixture file changes (AGENTS.md: no new fixtures).
+    if (cmd.type === 'set_ask_dialog') {
+      emit({ id: cmd.id, type: 'response', command: 'set_ask_dialog', success: true, data: { enabled: true } });
+      return;
+    }
     if (!waitingFor || !waitingFor.includes(cmd.type)) {
       process.stderr.write(`verify-tauri-fake-omp: scenario "${scenarioName}" was not waiting for "${cmd.type}" (waiting for ${JSON.stringify(waitingFor)}); dropped\n`);
       return;

@@ -59,6 +59,11 @@ function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
+async function pressKey(cdp, key, windowsVirtualKeyCode) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key, windowsVirtualKeyCode });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, windowsVirtualKeyCode });
+}
+
 function buildLauncher(dir) {
   mkdirSync(dir, { recursive: true });
   const src = path.join(__dirname, 'verify-tauri-launcher.rs');
@@ -391,6 +396,30 @@ async function main() {
         );
         await cdp.screenshot(path.join(SHOTS_DIR, '05-turn-a-panel-preselected.png'));
         findings.push(`Activating the "tres" chain entry opened the panel pre-selected on it (decision 13); focus landed on the selected tree row: ${focusOnSelected}.`);
+
+        // Gate round 3 (M7, code-reviewer/accessibility-auditor High on PR #899): the pre-select
+        // focus above landed via a plain `.focus()` call, which Chromium does not always treat
+        // as keyboard-originated for `:focus-visible` purposes. A real ArrowDown (`Input.
+        // dispatchKeyEvent`, not a script `.focus()`) is unambiguously keyboard input, so the row
+        // it moves focus to is a genuine `:focus-visible` test case -- the exact case the fix
+        // (`outline-hidden` + `focus-visible:outline-solid`, SubagentPanel.tsx) targets. No new
+        // model turn needed: reuses the tree already open from the pre-select above.
+        await pressKey(cdp, 'ArrowDown', 40);
+        await cdp.waitFor(
+          `(() => { const sel = document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]'); return !!sel && !sel.textContent.toLowerCase().includes('tres'); })()`,
+          { timeoutMs: 10_000, label: 'ArrowDown moved the roving tab stop off "tres"' },
+        );
+        const m7Outline = await cdp.evaluate(
+          `(() => { const el = document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]'); if (!el) return null; const cs = getComputedStyle(el); return { isActiveElement: el === document.activeElement, outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, outlineColor: cs.outlineColor, text: el.textContent }; })()`,
+        );
+        await cdp.screenshot(path.join(SHOTS_DIR, '05b-turn-a-panel-keyboard-focus-ring.png'));
+        if (!m7Outline || !m7Outline.isActiveElement) {
+          notExercised.push(`M7 live check could not confirm the ArrowDown-focused tree row is document.activeElement: ${JSON.stringify(m7Outline)}`);
+        } else if (m7Outline.outlineStyle === 'none' || m7Outline.outlineWidth === '0px') {
+          notExercised.push(`M7 REGRESSION: the keyboard-focused tree row paints no outline live (outline-style=${m7Outline.outlineStyle}, outline-width=${m7Outline.outlineWidth}).`);
+        } else {
+          findings.push(`M7 live confirmation: a REAL keyboard ArrowDown (Input.dispatchKeyEvent, not a script focus() call) moved the roving tab stop to "${m7Outline.text}", whose own computed style is outline-style=${m7Outline.outlineStyle}, outline-width=${m7Outline.outlineWidth}, outline-color=${m7Outline.outlineColor} -- a real, painting :focus-visible ring on the real build, not just a compiled utility that looks right in isolation.`);
+        }
 
         await cdp.click(`document.querySelector('[data-panel-close]')`);
         await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: 'Panel closed' });
