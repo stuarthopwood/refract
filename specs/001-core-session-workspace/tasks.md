@@ -1713,7 +1713,9 @@ This phase was written retroactively after the implementation above, in the same
   through a real quit and relaunch on the SAME scratch data dir, reading
   `sessionListCollapse` back out of `<dataDir>/settings.json` rather than the dead
   `window.__refractStores` DEV-only baseline the first driver asserted against, and failing
-  instead of silently falling back when a real click misses) proved, against real DOM input
+  instead of silently falling back when a real click misses, its session-list-specific CDP
+  driving helpers extracted to a new `scripts/verify-tauri-session-list-helpers.mjs` to keep the
+  file under the #806 600-line cap once the rewrite grew it past it) proved, against real DOM input
   (never `window.refract.*` as a shortcut, except the one incidental `theme.set` call used only
   to switch themes between screenshots): two Repository groups added and opened by default;
   Collapse all/Expand all closing and opening every Repository group plus Archived together,
