@@ -5,16 +5,17 @@ the same `TranscriptItem` JSON in Rust and in the TypeScript." These files are t
 of that proof. The original TS reader, `src/main/omp/transcript.golden.test.ts`, was deleted
 during gate remediation (AGENTS.md's "no new tests while prototyping" rule, PR #834 review): the
 sole reader of both fixture pairs below is now `src-tauri/tests/transcript_golden.rs`, one
-`#[test]` function per pair. Each golden file is still produced by an actual run of the real TS
+`#[test]` function per pair. Each golden file was produced by an actual run of the real TS
 builders (never hand-typed) via a one-time throwaway generator script, deleted immediately after
-use -- see "Regenerating" below.
+use -- see "Regenerating (historical)" below: `src/main` was deleted wholesale at #796/R13, so
+that TS generator path no longer exists and these fixtures are now permanently frozen.
 
 `src-tauri/tests/transcript_terminated_unexpectedly_tests.rs` is a separate, fixture-free file:
-it ports `src/main/omp/transcript.test.ts`'s own 4 named `it(...)` cases (that file's
-`describe('fromHistory terminatedUnexpectedly gating', ...)` block) directly, using inline
-`serde_json::json!` message literals instead of a scenario/golden pair, matching the TS test's
-own style of building its messages inline in code. It is not covered by this README; see that
-file's own header comment.
+it ports the now-deleted `src/main/omp/transcript.test.ts`'s own 4 named `it(...)` cases (that
+file's `describe('fromHistory terminatedUnexpectedly gating', ...)` block) directly, using
+inline `serde_json::json!` message literals instead of a scenario/golden pair, matching the TS
+test's own style of building its messages inline in code. It is not covered by this README; see
+that file's own header comment.
 
 ## Files
 
@@ -80,13 +81,13 @@ leaving every other field exactly as built, before comparing against the golden 
 only normalization applied anywhere in this fixture set; every other field (ids, text, tool
 names, args, `write` payloads, status) is compared byte-for-byte as built.
 
-## Regenerating
+## Regenerating (historical -- frozen at #796/R13)
 
-If either `*-scenario.json` file changes, regenerate its paired `*-golden.json` (do not hand-edit
-golden files -- they must come from an actual run of the real builders):
+If either `*-scenario.json` file changed, the paired `*-golden.json` was regenerated (never
+hand-edited -- it had to come from an actual run of the real builders):
 
 1. Write a throwaway script under `src/main/omp/` (a `vitest`-runnable file, since `fromHistory`/
-   `applyFrame` live behind this repo's `src/**` path aliases) that imports `fromHistory`/
+   `applyFrame` lived behind this repo's `src/**` path aliases) that imports `fromHistory`/
    `applyFrame` from `./transcript`, reads the relevant `*-scenario.json` fixture from this
    directory, computes the item list the same way the deleted `transcript.golden.test.ts` did
    (`fromHistory(messages, new Set())`, or fold frames one at a time through
@@ -99,8 +100,16 @@ golden files -- they must come from an actual run of the real builders):
    `vitest run <path>` still filters through the repo's default `include` glob first.
 2. Run it once: `npx vitest run --config <throwaway-config-path>`.
 3. Delete both the throwaway script and the throwaway vitest config (plain delete by their
-   literal paths) -- they are one-off generator artifacts, not kept tests. AGENTS.md's "no new
-   tests" rule means no `src/main/omp/*.test.ts` file may survive this process.
+   literal paths) -- they were one-off generator artifacts, never kept tests. AGENTS.md's "no new
+   tests" rule meant no `src/main/omp/*.test.ts` file could survive this process.
 4. Re-run `cd src-tauri && cargo test --test transcript_golden` (with `CARGO_TARGET_DIR`/
-   `CARGO_INCREMENTAL` set per the repo's build rules) to confirm the Rust reader still agrees
+   `CARGO_INCREMENTAL` set per the repo's build rules) to confirm the Rust reader still agreed
    with the regenerated golden file.
+
+**`src/main` (and `fromHistory`/`applyFrame` themselves) were deleted wholesale at #796/R13** --
+there is no TypeScript builder left to run step 1 against, so these golden files can never be
+regenerated on `main` again; they are now permanently frozen, exactly like
+`scripts/fixtures/contract-replay/session-scenario.electron-trace.json`. If a real regression
+ever requires regenerating one, check out the `electron-final` tag (the last commit with
+`src/main`, tagged for this purpose) and run the procedure above from there; do not attempt to
+port it forward to the Rust-only tree.
