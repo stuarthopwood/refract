@@ -143,9 +143,14 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
               key={theme.id}
               ref={isActive ? activeItemRef : undefined}
               onSelect={() => chooseTheme(theme.id, theme.name)}
-              className={isActive ? 'focus:shadow-[inset_4px_0_0_0_var(--color-ring)]' : undefined}
             >
-              {isActive && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-active-indicator" />}
+              {/* Gate round 6 fix (`agent://Arch877` Medium 2): this row used to ALSO draw a
+                  permanent 2px indigo bar plus a 4px ring-coloured focus override whenever this
+                  theme was the active one -- once the shared `DropdownMenuItem` focus cue became
+                  the SAME indigo `--active-indicator` (gate round 5), arrowing onto a DIFFERENT
+                  theme showed two visually identical indigo bars, with only a sub-1.3:1
+                  `bg-accent` telling them apart. The trailing "Current" text below is the ONLY
+                  current-theme marker now; the bar means focus alone, same as every other menu. */}
               <span
                 aria-hidden
                 className="size-4 shrink-0 rounded-full border border-border"

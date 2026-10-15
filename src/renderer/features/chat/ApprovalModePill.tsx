@@ -16,7 +16,6 @@
 // on a mode the app-wide setting has since moved on from (regression fixed here).
 import type { ComponentType } from 'react'
 import { CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
-import { badgeVariants } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useSessionsStore, useSettingsStore } from '@/state'
-import { COMPOSER_FOCUS_CLASS } from './pickerShared'
+import { PICKER_TRIGGER_CLASS } from './pickerShared'
 import type { ApprovalMode } from '../../../shared/model'
 
 interface ModeItem {
@@ -82,13 +81,12 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           // pickers (WCAG 2.5.3, `docs/design/accessibility.md:16`).
           aria-label={`${current.label}, approval mode${pendingLabel ? `. ${pendingLabel}` : ''}`}
           className={cn(
-            badgeVariants({ variant: 'outline' }),
-            'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted',
-            // Gate round 5 fix (Visual Medium #4): the shared composer focus class
-            // (`pickerShared.tsx`), instead of this pill's own gate round 4 one-off copy of it --
-            // the pill, both pickers, Attach, Send and Stop all draw the identical opaque 2px
-            // outline now.
-            COMPOSER_FOCUS_CLASS
+            PICKER_TRIGGER_CLASS,
+            // Gate round 6 fix (`agent://Arch877` Visual N7): was a one-off duplicate of
+            // `pickerShared.tsx`'s own trigger class (including its stale `gap-1.5`, missed when
+            // that shared class moved to `gap-2`) -- now reads the shared class directly, so the
+            // two can never drift apart again. `COMPOSER_DISABLED_CLASS` folded in here never
+            // activates: this pill is never `aria-disabled`.
           )}
         >
           <CurrentIcon aria-hidden className="size-3" />

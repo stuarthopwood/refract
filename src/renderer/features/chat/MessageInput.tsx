@@ -24,7 +24,7 @@ import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from '
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { attachImageFile } from './attachImage'
 import {
@@ -1357,8 +1357,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           the intended recessive fill. Plus a `border-muted-foreground/85` border re-measured at
           >=3:1 against both the page background and this fill (WCAG 1.4.11), Send/Stop moved
           inside as round icon-only buttons, and the provider/model/effort readout along the
-          bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
-          field, not just the text area, shows the focus state. */}
+          bottom. The box's own focus ring is scoped to the textarea alone (gate round 5; see the
+          composer-dimming comment below). */}
       {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
           the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
           vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
@@ -1544,8 +1544,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               it is not destructive, and red is reserved for destructive and error states". The
               two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
               FR-011), a documented exception to "one filled button per surface": the two fills
-              are visually distinct colours conveying different intents, not a duplicated weight. */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). */}
+          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1591,11 +1591,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   className={cn(
                     'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
                     // Composer-dimming fix (gate round 4: scoped to the field block, not the
-                    // whole box): own opacity only for the OTHER refusal reasons (starting, a
-                    // pending attachment read, empty text) -- the field block's own `opacity-60`
-                    // already covers the `disabled` case, and `disabled` can never be true at the
-                    // same time as `starting`.
-                    !disabled && 'aria-disabled:opacity-50',
+                    // whole box): the shared disabled treatment only for the OTHER refusal
+                    // reasons (starting, a pending attachment read, empty text) -- the field
+                    // block's own `opacity-60` already covers the `disabled` case, and `disabled`
+                    // can never be true at the same time as `starting` (round 6: was opacity-50).
+                    !disabled && COMPOSER_DISABLED_CLASS,
                     COMPOSER_BUTTON_FOCUS_CLASS
                   )}
                   aria-label="Send message"
@@ -1618,8 +1618,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then Model/Reasoning
             pickers (FR-064, replacing the old read-only CpuIcon/GaugeIcon line), then Attach.
             Gate round 5 (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus
-            outline off the box's own bottom border; `px-2.5`/the picker rows' `py-1.5` stay a
-            documented spacing-grid exception, shared with other composer surfaces. */}
+            outline off the box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt
+            (round 6 fixed the triggers' own `gap-1.5` to `gap-2`, dropping a fictional "exception" claim). */}
         <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />

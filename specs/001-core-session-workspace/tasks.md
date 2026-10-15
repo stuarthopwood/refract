@@ -1284,3 +1284,117 @@ Readout's populated figure both visible as a bonus confirmation) in
 `C:/Users/shopwood/AppData/Local/Temp/refract-564-gate5-shots/`; the throwaway driver script and
 every scratch dir/profile (across all seven iterations needed to find and fix the test's own
 selector bugs and the stale-binary issue) were deleted after use.
+
+- [X] T184 [US1] Gate round 6 fix 1 (Medium, `agent://G564Code`): `ModelPicker.tsx`'s empty
+  trigger regressed to a lowercase, non-sentence-case `'not known yet'` fragment -- FR-064's
+  exact wording, `?? 'Model not known yet'`, restored; the ", model" accessible-name suffix is
+  now dropped when no model is known at all, since stacking it after "Model not known yet" read
+  oddly ("Model not known yet, model").
+- [X] T185 [US1] Gate round 6 fix 2 (Medium, `agent://Arch877`/`agent://G564Code`/
+  `agent://G564A11y`): the catalog-error row is no longer a `<button>` nested inside
+  `role="option"` (invalid, and unreachable by keyboard since Tab closes the popover) -- the row
+  itself IS the option now, included in `activatableIndices`, Enter- and click-activatable, with
+  a local `retrying` flag (`Loader2Icon` + "Retrying…" + `aria-disabled`, the same pattern
+  `ModelRolesSection.tsx`'s own catalog retry uses) and never closing the popover on activation.
+  The listbox container also gets its own `onMouseDown` preventDefault (covering the Retry row
+  unmounting mid-click on success, plus the headings and empty area, none of which had one), and
+  the error text now says reopening the menu also retries.
+- [X] T186 [US1] Gate round 6 fix 3 (Medium, `agent://Arch877`): the Profile menu's Theme
+  submenu drew its OWN permanent 2px indigo bar plus a 4px ring-coloured focus override on the
+  active theme row -- once the shared `DropdownMenuItem` focus cue became the same indigo
+  `--active-indicator` (gate round 5), arrowing onto a different theme showed two visually
+  identical bars. Both removed; the trailing "Current" text is now the only current-theme marker,
+  matching the composer's own convention. `DropdownMenuSubTrigger` also moved to
+  `--active-indicator` (was `--color-ring`, the only other place still showing the old colour),
+  and a destructive `DropdownMenuItem` (Sign out, Remove repository…) now draws its own
+  `--color-destructive` inset shadow instead of the indigo bar landing on its red tint.
+- [X] T187 [US1] Gate round 6 fix 4 (Medium, `agent://Arch877`): the Reasoning picker's
+  accessible name and Tooltip doubled the word "Reasoning" whenever the trigger's own label
+  already started with it ("Reasoning not reported, reasoning", "Reasoning: Reasoning not
+  reported") -- the noun is now appended/prefixed only when the label does not already start
+  with "Reasoning".
+- [X] T188 [US1] Gate round 6 LOW fixes, Visual (`agent://Arch877`): Send and Stop's own
+  container gap widened to `gap-2` (was `gap-1`) so the shared 2px focus outline never reaches
+  into the other button's fill; Send now uses the shared `COMPOSER_DISABLED_CLASS` (opacity-60
+  plus a hover reset) for its own non-`disabled` refusal reasons, instead of a one-off
+  `aria-disabled:opacity-50` with no hover reset; `AttachButton` now imports
+  `COMPOSER_DISABLED_CLASS` instead of duplicating its exact string; catalog rows' provider text
+  is now `text-xs`, matching the Roles group's own secondary text size. Discovered live-checking
+  this same fix: `ApprovalModePill.tsx` had its OWN duplicate of `pickerShared.tsx`'s trigger
+  class (including its stale `gap-1.5`, missed when that shared class moved to `gap-2`, and
+  confirmed via the live-build's own embedded JS bundle) -- now reads `PICKER_TRIGGER_CLASS`
+  directly instead of a second copy, so the two can never drift apart again.
+- [X] T189 [US1] Gate round 6 LOW fixes, Flow (`agent://Arch877`): the pending state now carries
+  `{ label, provider? }` instead of a bare string -- a model pick's own provider shows
+  immediately (never the stale previous model's), and a role pick's own id fills the same slot,
+  so the pending parenthetical always names something concrete about what is resolving.
+  `smol`/`slow`'s "Default" fallback wording moved INTO the shared `ROLE_FALLBACK_LABEL`
+  (`ModelRolesSection.tsx`), so Settings and the picker can no longer drift apart; a role with
+  neither a model nor a documented fallback (e.g. `plan`) now states that reason directly
+  ("Inherited (no fallback)"), instead of a bare "Inherited" that never said why the row is
+  `aria-disabled`.
+- [X] T190 [US1] Gate round 6 LOW fixes, Layout (`agent://Arch877`): the scroll-to-active-option
+  effect is deferred one animation frame, so it runs after the popover's own
+  `--radix-popover-content-available-height` has settled rather than mid-layout; the popover's
+  own height cap raised 24rem -> 30rem (24rem measured closer to 9 rows than decision 6's "~12
+  rows" once the filter field and padding are accounted for); the `DropdownMenuRadioItem`
+  comment correctly distinguishes its own far-edge trailing check from the Approval pill's
+  different inline-after-label "Current" convention, rather than overclaiming they match.
+- [X] T191 [US1] Gate round 6 fix (`agent://Arch877` Visual N7/N8): the stale "documented
+  spacing-grid exception" comment removed (no such exception exists in
+  `docs/design/foundations-typography-spacing.md`'s own 4px-grid rule, which lists `gap-1.5` as
+  an explicit violation, not an exception) -- `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` moves
+  `gap-1.5` to the on-grid `gap-2`; the stale "`focus-within` ring replacing the text area's own"
+  wording corrected in `MessageInput.tsx`'s older composer-tone comment and
+  `docs/design/product-chat.md`'s Message box bullet, both now pointing at the gate round 5
+  textarea-scoped form instead of the pre-round-5 whole-box claim.
+- [X] T192 [US1] Docs: spec 001's FR-064 gains the "bare `name` only" wording clarified (list
+  rows ALSO show the provider as muted secondary text, never combined into one `provider/name`
+  string -- only the trigger shows the bare name alone) plus a Gate round 6 amendments sentence;
+  FR-065 gains a Gate round 6 fix sentence for the Send/Stop gap and shared disabled class.
+
+**Verified**: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent`,
+`pnpm check:file-size` (0 violations/313 files -- `ModelPicker.tsx`'s own Retry-row rebuild
+pushed it to 647 lines, over the #806 600-line cap for the first time; the "Models" listbox
+group extracted into a new `ModelCatalogGroup.tsx`, 139 lines, bringing `ModelPicker.tsx` back to
+564), `node scripts/check-theme-contrast.mjs` (all 328 pairs across 3 themes PASS, including the
+pre-existing `--active-indicator`/`--destructive` pairs, unaffected by a focus-shadow colour swap
+on an already-measured token), and the full `node scripts/ci-local.mjs` (all 16 steps, including
+`cargo test`/`clippy`/`fmt --check` and the Tauri debug build) -- two unrelated Windows-build
+flakes along the way (a transient `link.exe`/`mt.exe` LNK1327 failure, and a
+`STATUS_DLL_INIT_FAILED` on a build script under heavy concurrent rebuild load), both resolved by
+a clean retry, plus one order-dependent pre-existing Rust test
+(`git::remote::tests::repository_remote_returns_has_host_for_a_configured_remote`, untouched by
+this round's files) that failed once inside the full suite but passed standalone and on a full
+clean retry -- not this round's regression.
+
+Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+`WEBVIEW2_USER_DATA_FOLDER`, a scratch git repo, driven through the real UI): the first two
+attempts hit the SAME stale-embedded-binary issue gate round 5 already found (the copied exe's
+`ApprovalModePill` still read the pre-gate-5 "Approval mode: Ask" order from its own aria-label,
+confirming via the built JS bundle itself that the source WAS current -- `cargo`'s own asset-
+embedding did not pick up a content change tracked only by directory mtime); a `touch
+src-tauri/src/main.rs` plus a fresh, standalone `pnpm tauri build --debug --no-bundle` forced a
+real re-embed each time, confirmed by a fresh aria-label read before re-running. **6 of 8 checks
+pass** on the third attempt: the Approval pill reads "Ask, approval mode" (gate round 5's order,
+confirmed current); the Reasoning trigger reads "Medium, reasoning" (never doubled); Attach is
+Tab-reachable with a real non-zero opaque `focus-visible` outline; the Send/Stop container
+measures an 8px `gap-2`; the Profile menu's Theme submenu shows zero permanent
+`.bg-active-indicator` bars (screenshot `6-theme-submenu-open.png` confirms only the "Theme" row
+itself, the keyboard focus target, is highlighted, with "Dark \u2713 Current" the only current-theme
+marker). **2 checks against this round's own test assumptions, not product code, failed and were
+corrected**: this harness's "session" scenario reports a model (`Session.lastModel`) immediately
+on creation, so the "Model not known yet" empty-trigger wording (T184) was not reachable in this
+tape and is recorded as not independently driven live, the same kind of scoping gap earlier
+rounds documented for other roles; the Retry path (T185/T190) also could not be exercised,
+confirming gate round 5's own finding that this harness's model catalog call has no on-demand
+failure mode (the scratch profile's own seeded config lists successfully every time). While
+investigating the Approval pill wording, this live check also caught and fixed a real miss in
+T188: `ApprovalModePill.tsx` had its own duplicate of the shared trigger class, including the
+stale `gap-1.5` the `pickerShared.tsx` fix was supposed to cover everywhere. Screenshots:
+`C:/Users/shopwood/AppData/Local/Temp/refract-564-gate6-shots/` --
+`1-session-idle.png` (bottom row at rest: Ask, "Example Model One", Medium, Attach),
+`2-model-popover-open.png`, `4-attach-focused.png` (the shared opaque focus outline),
+`5-after-profile-attempt.png` and `6-theme-submenu-open.png` (the corrected Theme submenu). The
+throwaway driver script and every scratch dir/profile (across all attempts, including the two
+rebuild-only passes) were deleted after use.

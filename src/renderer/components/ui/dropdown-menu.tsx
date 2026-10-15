@@ -66,9 +66,12 @@ function DropdownMenuItem({
       // Gate round 5 fix (Visual Medium #11): the active-row inset shadow used the plain focus-
       // ring token (`--color-ring`), a different cue from the composer's own pickers, which use
       // the opaque `--active-indicator` token for the SAME purpose (gate round 2) -- unified so
-      // every menu's active-row cue is the same colour.
+      // every menu's active-row cue is the same colour. Gate round 6 fix (`agent://Arch877`
+      // Medium 2): a destructive item (Sign out, Remove repository...) keeps its OWN focus cue,
+      // `--color-destructive` instead of the indigo `--active-indicator`, so the bar never reads
+      // as "active/current" sitting on top of the red tint it already gets below.
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)] data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -97,11 +100,14 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       // Gate round 5 fix (Visual Medium #11): the current-level check moves from a LEADING
-      // `absolute left-2` indicator to a TRAILING one, matching the Model picker's and the
-      // Approval pill's own trailing checks (this is the only consumer of this vendored
+      // `absolute left-2` indicator to a TRAILING one at the row's far edge, matching the Model
+      // picker's own icon-only trailing check (this is the only consumer of this vendored
       // component in the app today, so the change is scoped to exactly the one menu that needed
-      // it). The inset shadow also moves to `--active-indicator`, same as `DropdownMenuItem`
-      // above.
+      // it). Gate round 6 correction (`agent://Arch877` Layout, downgraded from Medium): the
+      // Approval pill's own current-item cue is a DIFFERENT convention (an inline "Current" word
+      // plus icon right after the label, not pushed to the row's far edge) -- this change was
+      // never meant to match that, only the Model picker's. The inset shadow also moves to
+      // `--active-indicator`, same as `DropdownMenuItem` above.
       className={cn(
         "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
@@ -137,7 +143,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-ring)] data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

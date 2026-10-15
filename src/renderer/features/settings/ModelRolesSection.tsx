@@ -105,11 +105,20 @@ const CATALOG_KIND_LABEL: Record<CatalogKind, string> = {
   judge: 'judge'
 }
 
-// Documented fallback chains (`omp://models.md`): shown next to "Inherited" so the sentinel says
-// what it actually resolves to, not just that it is unset. Exported (gate round 5, #564 follow-
-// up): the composer's Model picker reuses this SAME map and wording for its own Roles list,
-// rather than inventing a second "unset" sentinel that could drift from this one.
+// Documented fallback chains (`omp://models.md`, confirmed live via `model_support.rs`'s own
+// `direct_selector_with_fallback`): shown next to "Inherited" so the sentinel says what it
+// actually resolves to, not just that it is unset. Exported (gate round 5, #564 follow-up): the
+// composer's Model picker reuses this SAME map and wording for its own Roles list, rather than
+// inventing a second "unset" sentinel that could drift from this one. Gate round 6 fix
+// (`agent://Arch877` Flow L-N1): `smol`/`slow` moved IN here too (they used to live only in a
+// second, picker-local copy, `ModelPicker.tsx`'s own now-removed `ROLE_NO_MODEL_FALLBACK`) so
+// this section's own "Inherited" (no qualifier) and the picker's "Inherited (...)" can never
+// drift apart again -- both unset `smol` and unset `slow` inherit an explicitly configured
+// `default`, `model_support.rs`'s own fallback, distinct from the THREE roles below that inherit
+// a role covered by this map instead.
 export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
+  smol: 'Default',
+  slow: 'Default',
   tiny: 'Smol',
   memory: 'Tiny',
   advisor: 'Slow'

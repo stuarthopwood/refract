@@ -57,7 +57,10 @@ export const COMPOSER_DISABLED_CLASS =
 
 export const PICKER_TRIGGER_CLASS = cn(
   badgeVariants({ variant: 'outline' }),
-  'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted',
+  // Gate round 6 fix (Visual, `agent://Arch877`): `gap-1.5` (6px) is off the 4px spacing grid
+  // (`docs/design/foundations-typography-spacing.md` lists it as one of the exact violations the
+  // #474 audit found, not an exception) -- `gap-2` (8px) is the nearest on-grid step.
+  'h-6 shrink-0 gap-2 px-2.5 hover:bg-muted aria-expanded:bg-muted',
   COMPOSER_DISABLED_CLASS,
   COMPOSER_FOCUS_CLASS
 )

@@ -60,7 +60,7 @@
 //   jumping on screen as the match count changes.
 // - The Roles group is hidden entirely once the filter is non-empty (decision 8's "Roles first"
 //   only ever applied with no filter typed); a role whose own `model` is `null` AND has no
-//   documented fallback (`ROLE_NO_MODEL_FALLBACK`) is `aria-disabled` and excluded from the
+//   documented fallback (`ROLE_FALLBACK_LABEL`) is `aria-disabled` and excluded from the
 //   keyboard-reachable set (`activatableIndices`, below) -- selecting it would resolve to
 //   nothing, since OMP has nothing configured to fall back to either.
 // - The catalog's three real states (loading, loaded-but-empty, filtered-to-nothing) now render
@@ -72,17 +72,44 @@
 //   cannot be reopened until the request settles (a failure still raises its existing toast).
 // - The accessible name now starts with the trigger's own visible text (WCAG 2.5.3,
 //   `docs/design/accessibility.md:16`), with the full `provider/name` kept parenthetically.
+//
+// Gate round 6 fixes (`agent://G564Code`, `agent://Arch877`, `agent://G564A11y`):
+// - Empty trigger regression fixed: `?? 'Model not known yet'` (was a lowercase, non-sentence-
+//   case `'not known yet'` fragment) -- FR-064's exact wording, matching the Tooltip and
+//   `SessionDetailsCard.tsx`. The ", model" accessible-name suffix is now dropped when no model
+//   is known at all (it read oddly stacked after "Model not known yet").
+// - The catalog error row is no longer a `<button>` nested inside `role="option"` (an invalid,
+//   screen-reader-invisible combination) -- it IS the option now, Enter-activatable like every
+//   other row, with its own local `retrying` state (`Loader2Icon` + "Retrying…" + aria-disabled,
+//   the same pattern `ModelRolesSection.tsx`'s own catalog retry uses) and never closes the
+//   popover on activation. The whole listbox container also gets `onMouseDown` preventDefault
+//   (not just each option), so a click anywhere inside it -- the Retry row unmounting mid-click
+//   on success included -- can never drop focus to `<body>`.
+// - `smol`/`slow`'s "Default" fallback wording moved INTO Settings' own `ROLE_FALLBACK_LABEL`
+//   (`ModelRolesSection.tsx`), so this picker reads that map directly with no local duplicate --
+//   Settings and this picker can no longer drift apart on the same five roles. A role with
+//   neither a model nor a fallback (e.g. `plan`) now names that reason in its own "Inherited
+//   (no fallback)" text, instead of a bare "Inherited" that never said why the row is disabled.
+// - Pending state now carries `{ label, provider? }` (the role id standing in for `provider` on
+//   a role pick) instead of a bare string -- the accessible name's parenthetical shows the NEW
+//   value's own provider/role while applying, not the stale previous one.
+// - The scroll-to-active-option effect is deferred one animation frame, so it runs after the
+//   popover's own `--radix-popover-content-available-height` has settled, not mid-layout.
+// - The popover's height cap raised 24rem -> 30rem (decision 6's "~12 rows" measured closer to 9
+//   at 24rem once the filter field and padding are accounted for).
+// - Catalog rows' provider text is now `text-xs`, matching the Roles group's own secondary text
+//   size (was unset, inheriting the row's `text-sm`).
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { CheckIcon, CpuIcon, Loader2Icon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel } from '@/lib/modelDisplay'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
+import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { ROLE_FALLBACK_LABEL } from '../settings/ModelRolesSection'
 import {
   PICKER_OPTION_ACTIVE_CLASS,
@@ -92,16 +119,13 @@ import {
   usePickerOpenState
 } from './pickerShared'
 
-// `omp://models.md` "Role aliases and settings" (confirmed live, `model_support.rs`'s own
-// `direct_selector_with_fallback`): unset `smol`/`slow` inherit an explicitly configured
-// `default`, the one documented fallback `ROLE_FALLBACK_LABEL` (Settings' own map, covering
-// `tiny`/`memory`/`advisor`) does not itself carry. Merged here so EVERY role this picker can
-// show as "Inherited (...)" uses one authoritative source, not two that could drift apart.
-const ROLE_NO_MODEL_FALLBACK: Partial<Record<string, string>> = {
-  ...ROLE_FALLBACK_LABEL,
-  smol: 'Default',
-  slow: 'Default'
-}
+// Gate round 6 fix (`agent://Arch877` Flow L-N1): `smol`/`slow`'s "Default" fallback now lives
+// IN the shared `ROLE_FALLBACK_LABEL` itself (`ModelRolesSection.tsx`), not merged in locally --
+// Settings' own "Inherited" wording and this picker's "Inherited (...)" wording read the exact
+// same map, so the two can never drift apart again. Re-typed to a plain `string` index below:
+// `role` here is whatever id OMP's own `model.listRoles` reports, not guaranteed to be one of
+// this app's closed `ModelRoleId` values.
+const ROLE_FALLBACK: Partial<Record<string, string>> = ROLE_FALLBACK_LABEL
 
 export function ModelPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
@@ -125,8 +149,18 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   // Gate round 5 fix (Flow Medium #9): set for the duration of a `setModel`/`applyRole` call --
   // the trigger shows this requested value with a spinner, carries `aria-busy`, and the picker
   // refuses to reopen (folded into `usePickerOpenState`'s own `disabled` below) until the request
-  // settles, so a second change can never start while the first is still in flight.
-  const [pendingLabel, setPendingLabel] = useState<string | null>(null)
+  // settles, so a second change can never start while the first is still in flight. Gate round 6
+  // fix (`agent://Arch877` Layout N5/Flow L-N2): carries `{ label, provider? }` instead of a bare
+  // string -- a MODEL pick's own `provider` is known immediately (no need to show the stale
+  // PREVIOUS model's provider while a different one is being applied); a ROLE pick has no
+  // provider of its own, so its own role id fills the same slot instead, naming which role is
+  // resolving.
+  const [pendingLabel, setPendingLabel] = useState<{ label: string; provider?: string } | null>(null)
+  // Gate round 6 fix (`agent://Arch877` Medium 1, `agent://G564Code`/`agent://G564A11y` Low): the
+  // catalog-error row's own in-flight state for an explicit Retry activation (reopening the
+  // popover already force-reloads unconditionally, see the effect above; this is for retrying
+  // WITHOUT closing and reopening).
+  const [retrying, setRetrying] = useState(false)
   const initializedActiveRef = useRef(false)
   const effectiveDisabled = disabled || pendingLabel !== null
   const { open, setOpen, onOpenChange } = usePickerOpenState(effectiveDisabled)
@@ -174,11 +208,16 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
    * fallback case only, so the caller knows to keep it monospace (gate round 1 fix: a friendly
    * name is never code-shaped data). Gate round 5 fix (Flow Medium #10): `model: null` no longer
    * shows a bare, unexplained "unset" -- reuses Settings' own "Inherited (...)" wording and
-   * fallback mapping, so the sentinel says what it actually resolves to. */
+   * fallback mapping, so the sentinel says what it actually resolves to. Gate round 6 fix
+   * (`agent://Arch877` Flow L-N1): a role with NEITHER a model NOR a documented fallback now
+   * names that reason directly ("Inherited (no fallback)"), instead of a bare "Inherited" that
+   * never said why the row is `aria-disabled`. */
   function friendlyRoleModel(role: string, selector: string | null): { text: string; raw: boolean; hasFallback: boolean } {
     if (!selector) {
-      const fallback = ROLE_NO_MODEL_FALLBACK[role]
-      return { text: fallback ? `Inherited (${fallback})` : 'Inherited', raw: false, hasFallback: Boolean(fallback) }
+      const fallback = ROLE_FALLBACK[role]
+      return fallback
+        ? { text: `Inherited (${fallback})`, raw: false, hasFallback: true }
+        : { text: 'Inherited (no fallback)', raw: false, hasFallback: false }
     }
     const match = (catalog ?? []).find((entry) => `${entry.provider}/${entry.id}` === selector)
     return match ? { text: match.name, raw: false, hasFallback: true } : { text: selector, raw: true, hasFallback: true }
@@ -188,17 +227,24 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   // SPARSE ordered list rather than the contiguous `[0, optionCount)` range gate round 3 assumed
   // -- a filter hides every role index entirely (decision 8: Roles First only with no filter),
   // and a role with no model AND no documented fallback is excluded even when roles ARE shown,
-  // since selecting it would resolve to nothing.
+  // since selecting it would resolve to nothing. Gate round 6 fix (`agent://Arch877` Medium 1):
+  // when a catalog load has failed, the ONE reachable "Models" index is the Retry row itself
+  // (never a raw model row, since none loaded) -- Enter/click retries without closing the
+  // popover.
   const activatableIndices = useMemo(() => {
     const indices: number[] = []
     if (!filter.trim() && roles) {
       roles.forEach((role, index) => {
-        if (role.model !== null || ROLE_NO_MODEL_FALLBACK[role.role]) indices.push(index)
+        if (role.model !== null || ROLE_FALLBACK[role.role]) indices.push(index)
       })
     }
-    filteredCatalog.forEach((_, modelIndex) => indices.push(roleCount + modelIndex))
+    if (catalogError) {
+      indices.push(roleCount)
+    } else {
+      filteredCatalog.forEach((_, modelIndex) => indices.push(roleCount + modelIndex))
+    }
     return indices
-  }, [roles, filter, filteredCatalog, roleCount])
+  }, [roles, filter, filteredCatalog, roleCount, catalogError])
 
   // Gate round 2 fix (MEDIUM, accessibility-auditor): roles are never filtered, so index 0 was
   // always the first role regardless of what was typed -- Enter after typing a search term
@@ -238,12 +284,19 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   }, [activatableIndices, activeIndex])
   const optionId = (index: number) => `${listboxId}-option-${index}`
 
+  // Gate round 6 fix (`agent://Arch877` Layout N2, [INFERENCE]): deferred one animation frame --
+  // `scrollIntoView` could run before the popover's own `--radix-popover-content-available-
+  // height` (and so its real layout) has settled, leaving the highlighted current model below
+  // the fold on a fresh open.
   useEffect(() => {
-    listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+    const raf = requestAnimationFrame(() => {
+      listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(raf)
   }, [clampedActiveIndex])
 
   async function handleSelectModel(entry: ModelCatalogEntry) {
-    setPendingLabel(entry.name)
+    setPendingLabel({ label: entry.name, provider: entry.provider })
     try {
       const result = await window.refract.model.setModel(sessionId, entry.provider, entry.id)
       if (!result.ok) notify({ code: result.error.code, message: result.error.message })
@@ -253,13 +306,25 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   }
 
   async function handleSelectRole(role: string, requestedLabel: string) {
-    setPendingLabel(requestedLabel)
+    // Gate round 6 fix (`agent://Arch877` Layout N5/Flow L-N2): a role has no provider of its
+    // own -- its own id fills that slot instead, so the pending parenthetical still names
+    // something concrete about what is resolving, rather than the stale previous model.
+    setPendingLabel({ label: requestedLabel, provider: role })
     try {
       const result = await window.refract.model.applyRole(sessionId, role)
       if (!result.ok) notify({ code: result.error.code, message: result.error.message })
     } finally {
       setPendingLabel(null)
     }
+  }
+
+  // Gate round 6 fix (`agent://Arch877` Medium 1): retrying a cached catalog error never closes
+  // the popover (unlike a role/model pick) -- the developer stays put to see whether it worked.
+  async function handleCatalogRetry() {
+    if (retrying) return
+    setRetrying(true)
+    await loadCatalog('chat', true)
+    setRetrying(false)
   }
 
   function selectActiveOption() {
@@ -270,10 +335,15 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
       const friendly = friendlyRoleModel(role.role, role.model)
       if (!friendly.hasFallback && role.model === null) return
       void handleSelectRole(role.role, friendly.text)
-    } else {
-      const entry = filteredCatalog[clampedActiveIndex - roleCount]
-      if (entry) void handleSelectModel(entry)
+      setOpen(false)
+      return
     }
+    if (catalogError) {
+      if (clampedActiveIndex === roleCount) void handleCatalogRetry()
+      return
+    }
+    const entry = filteredCatalog[clampedActiveIndex - roleCount]
+    if (entry) void handleSelectModel(entry)
     setOpen(false)
   }
 
@@ -321,13 +391,25 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   }
 
   const disabledReason = notIdle ? 'Available once the session is idle.' : stopped ? 'Start the agent to change the model.' : null
-  const triggerLabel = pendingLabel ?? modelNameOnly ?? 'not known yet'
+  // Gate round 6 fix (`agent://G564Code` Medium): `?? 'Model not known yet'` -- FR-064's exact,
+  // sentence-case wording (was a lowercase `'not known yet'` fragment this round's trigger-text
+  // rework regressed to), matching the Tooltip and `SessionDetailsCard.tsx`.
+  const triggerLabel = pendingLabel?.label ?? modelNameOnly ?? 'Model not known yet'
   // Gate round 5 fix (Flow Medium #11): the accessible name now STARTS with the trigger's own
   // visible text (WCAG 2.5.3, `docs/design/accessibility.md:16`); `provider/name` stays available
   // parenthetically here, and in full in the Tooltip below, rather than disappearing once the
-  // visible text dropped to the bare name.
-  const providerParenthetical = session?.lastModel?.provider ? ` (${session.lastModel.provider})` : ''
-  const ariaLabel = `${triggerLabel}, model${providerParenthetical}${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
+  // visible text dropped to the bare name. Gate round 6 fix (`agent://G564Code` Medium): the
+  // ", model" suffix is now dropped when no model is known at all -- "Model not known yet, model"
+  // read oddly stacked. The parenthetical itself now also reads from `pendingLabel` while
+  // pending (gate round 6, `agent://Arch877` Layout N5/Flow L-N2): the NEW value's own
+  // provider/role id, never the stale previous model's provider.
+  const noModelKnown = pendingLabel === null && modelNameOnly === null
+  const providerParenthetical = pendingLabel
+    ? (pendingLabel.provider ? ` (${pendingLabel.provider})` : '')
+    : session?.lastModel?.provider
+      ? ` (${session.lastModel.provider})`
+      : ''
+  const ariaLabel = `${triggerLabel}${noModelKnown ? '' : ', model'}${providerParenthetical}${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
   const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : (modelFullLabel ?? 'Model not known yet'))
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -364,8 +446,11 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
         // Gate round 5 fix (Layout Medium #6): FIXED height while open (was `max-h-[...]`) -- the
         // list below is already `flex-1 overflow-y-auto`, so IT absorbs a changing result count
         // instead of the whole popover (and the filter field inside it) resizing and visibly
-        // jumping as the match count changes.
-        className="flex h-[min(24rem,var(--radix-popover-content-available-height))] w-72 flex-col overflow-hidden p-0"
+        // jumping as the match count changes. Gate round 6 fix (`agent://Arch877` Layout N7):
+        // 24rem showed about 9 rows once the filter field and padding are accounted for, short of
+        // decision 6's "~12 rows" -- raised to 30rem, still capped by `min()` against the
+        // popover's own available height on a short viewport.
+        className="flex h-[min(30rem,var(--radix-popover-content-available-height))] w-72 flex-col overflow-hidden p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           filterInputRef.current?.focus()
@@ -387,7 +472,19 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             className="h-7"
           />
         </div>
-        <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={listRef}
+          id={listboxId}
+          role="listbox"
+          aria-label="Models"
+          className="min-h-0 flex-1 overflow-y-auto"
+          // Gate round 6 fix (`agent://Arch877` Medium 1): a backstop alongside each option's own
+          // `onMouseDown` preventDefault below -- covers the headings, the empty space between
+          // groups, and the Retry row unmounting mid-click on a successful retry, none of which
+          // had their own handler, so a click there could drop focus to `<body>` while the
+          // popover stayed open.
+          onMouseDown={(event) => event.preventDefault()}
+        >
           {/* Gate round 5 fix (Flow Medium #5): hidden entirely once a filter is typed, not just
               excluded from the keyboard-reachable set -- decision 8's "Roles first" only ever
               meant the untouched, no-filter state. */}
@@ -442,83 +539,24 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
               )}
             </div>
           )}
-          <div role="group" aria-labelledby={modelsHeadingId}>
-            <div id={modelsHeadingId} role="presentation" className="px-2 py-1 text-xs font-medium text-muted-foreground">
-              Models
-            </div>
-            {/* Gate round 5 fix (Flow Medium #7, #8): the catalog's three real states now render
-                distinct text instead of one "Loading models…" row covering both "not loaded yet"
-                and "loaded, genuinely empty" -- and a cached error gets a Retry action (the open
-                effect above also force-reloads on every open when an error is already cached, so
-                this button is for an immediate retry without closing and reopening). */}
-            {catalogError && (
-              <div role="option" aria-disabled className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-                <span className="min-w-0 flex-1 truncate">{catalogError}</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  className="shrink-0"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void loadCatalog('chat', true)
-                  }}
-                >
-                  Retry
-                </Button>
-              </div>
-            )}
-            {!catalogError && catalog === undefined && (
-              <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-                <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
-                Loading models…
-              </div>
-            )}
-            {!catalogError && catalog !== undefined && catalog.length === 0 && (
-              <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
-                No models available. Check the agent's own model configuration.
-              </div>
-            )}
-            {!catalogError && catalog !== undefined && catalog.length > 0 && filteredCatalog.length === 0 && (
-              <div role="option" aria-disabled className="px-2 py-1.5 text-sm text-muted-foreground">
-                No models match.
-              </div>
-            )}
-            {!catalogError &&
-              filteredCatalog.map((entry, modelIndex) => {
-                const flatIndex = roleCount + modelIndex
-                const active = flatIndex === clampedActiveIndex
-                // Gate round 1 fix (MEDIUM, code-reviewer): compares identity (`provider` + `id`),
-                // never the display label -- the old `modelLabel === \`${provider}/${name}\``
-                // comparison missed a Session whose `lastModel.name` is absent and double-ticked
-                // any two entries sharing a name.
-                const checked = Boolean(
-                  session?.lastModel && entry.provider === session.lastModel.provider && entry.id === session.lastModel.id
-                )
-                return (
-                  <div
-                    key={entry.selector}
-                    id={optionId(flatIndex)}
-                    role="option"
-                    aria-selected={checked}
-                    data-active={active}
-                    onMouseEnter={() => setActiveIndex(flatIndex)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={(event) => {
-                      if (event.button !== 0) return
-                      void handleSelectModel(entry)
-                      setOpen(false)
-                    }}
-                    className={cn(PICKER_OPTION_CLASS, active && PICKER_OPTION_ACTIVE_CLASS)}
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {entry.name} <span className="text-muted-foreground">{entry.provider}</span>
-                    </span>
-                    {checked && <CheckIcon aria-hidden className="size-3.5 shrink-0" />}
-                  </div>
-                )
-              })}
-          </div>
+          {/* Extracted to `ModelCatalogGroup.tsx` (gate round 6, issue #806's 600-line cap). */}
+          <ModelCatalogGroup
+            modelsHeadingId={modelsHeadingId}
+            roleCount={roleCount}
+            catalogError={catalogError}
+            catalog={catalog}
+            filteredCatalog={filteredCatalog}
+            clampedActiveIndex={clampedActiveIndex}
+            optionId={optionId}
+            retrying={retrying}
+            currentModel={session?.lastModel ?? null}
+            onHoverIndex={setActiveIndex}
+            onRetry={() => void handleCatalogRetry()}
+            onSelectModel={(entry) => {
+              void handleSelectModel(entry)
+              setOpen(false)
+            }}
+          />
         </div>
       </PopoverContent>
     </Popover>

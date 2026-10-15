@@ -21,6 +21,14 @@
 // - `AttachButton` now names its OWN disabled reason (it previously stayed "Attach images" in
 //   both the Tooltip and the accessible name while stopped, unlike both pickers), and uses the
 //   same shared focus/disabled-opacity classes as everything else in this row.
+//
+// Gate round 6 fixes (`agent://Arch877`, action items):
+// - The "Reasoning" noun suffix/prefix (accessible name and Tooltip) is now skipped whenever the
+//   trigger's own label ALREADY starts with "Reasoning" ("Reasoning not reported"/"Reasoning not
+//   known yet") -- it used to append unconditionally, reading "Reasoning not reported, reasoning"
+//   and "Reasoning: Reasoning not reported".
+// - `AttachButton` now imports the shared `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`) instead
+//   of duplicating its exact string locally.
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -31,7 +39,7 @@ import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from 
 import { attachImageFile } from './attachImage'
 import { notify, useSessionsStore } from '@/state'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
-import { COMPOSER_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 export { ModelPicker } from './ModelPicker'
 
@@ -61,9 +69,14 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   // Gate round 5 fix (Flow Medium #11): the accessible name now STARTS with the trigger's own
   // visible text (WCAG 2.5.3, `docs/design/accessibility.md:16`) -- the "Reasoning" noun moves to
   // the Tooltip below instead of prefixing the name, the same choice `ModelPicker.tsx` makes for
-  // its own "Model: ..." prefix (consistency decision, gate round 5 Medium #11).
-  const ariaLabel = `${triggerLabel}, reasoning${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
-  const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : `Reasoning: ${label}`)
+  // its own "Model: ..." prefix (consistency decision, gate round 5 Medium #11). Gate round 6 fix
+  // (`agent://Arch877` Medium 3): both the unset-level labels ("Reasoning not reported"/
+  // "Reasoning not known yet") already START with "Reasoning" -- appending the noun
+  // unconditionally doubled it ("Reasoning not reported, reasoning"); the noun is now added only
+  // when the trigger's own label does not already start with it.
+  const startsWithReasoning = /^reasoning\b/i.test(triggerLabel)
+  const ariaLabel = `${triggerLabel}${startsWithReasoning ? '' : ', reasoning'}${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
+  const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : /^reasoning\b/i.test(label) ? label : `Reasoning: ${label}`)
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -153,11 +166,10 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             aria-describedby={undefined}
             // Gate round 5 fix (Visual LOW): shares the SAME disabled-opacity value and the same
             // opaque focus outline every other composer control now uses, instead of its own
-            // bespoke `opacity-60` and Button's default ring-based focus.
-            className={cn(
-              'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent aria-disabled:hover:text-current',
-              COMPOSER_BUTTON_FOCUS_CLASS
-            )}
+            // bespoke `opacity-60` and Button's default ring-based focus. Gate round 6 fix
+            // (`agent://Arch877` Visual): imports `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`)
+            // instead of duplicating its exact string, so the two can never drift apart.
+            className={cn(COMPOSER_DISABLED_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()
