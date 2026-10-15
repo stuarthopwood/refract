@@ -1,4 +1,4 @@
-// The Subagents panel (spec 004 FR-017 to FR-020, FR-023 to FR-026): the right-side pane's first
+// The Subagents panel (spec 004 FR-017 to FR-020, FR-024 to FR-027): the right-side pane's first
 // occupant, opened by activating the Subagents chip. Shows the Session's subagents as a
 // `role="tree"` (issue #563) in a vertical `ResizablePanelGroup` over the selected one's live
 // stream (text and tool calls) through the same renderers the main transcript uses
@@ -27,7 +27,7 @@ interface SubagentTreeNode {
   children: SubagentTreeNode[]
 }
 
-/** FR-023 (issue #563): the Session is the implicit root (never rendered itself); these are its
+/** FR-024 (issue #563): the Session is the implicit root (never rendered itself); these are its
  * first level, in start order. A node's own `children` would hold the agents IT started, once
  * the tracker can tell which agent started which -- no `parentId` exists on `SubagentSummary`
  * today, so every node's `children` is honestly empty until #712 supplies that data; nothing
@@ -152,7 +152,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         break
       case 'ArrowRight': {
         event.preventDefault()
-        // FR-024/#712: a deliberate no-op today -- no row's own depth is ever one more than
+        // FR-025/#712: a deliberate no-op today -- no row's own depth is ever one more than
         // this one's, since `buildSubagentTree` gives every node an empty `children` until a
         // later story supplies parent ids. Moves to the first child the instant one exists.
         const next = rows[index + 1]
@@ -183,7 +183,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     // path, or its own tool rows) resolves against this Session's worktree too, instead of
     // silently falling back to plain unstyled text just because this is a different mount point.
     <LinkContext.Provider value={sessionId}>
-      {/* FR-023: a vertical split, tree above stream -- the FileExplorerPanel.tsx tree/preview
+      {/* FR-024: a vertical split, tree above stream -- the FileExplorerPanel.tsx tree/preview
           precedent (its own tabbed and resizable 60/20 over 40/15 split). */}
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="60%" minSize="20%">
@@ -212,26 +212,29 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   onFocus={() => void selectSubagent(row.node.id)}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
+                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-hidden',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own forced-colours selected fallback, reused verbatim
                     // so both trees are visually consistent and the selected row survives Windows
                     // High Contrast (where the `bg-active-indicator` bar below is itself repainted
                     // away). Gate round 2 (High) claimed `outline-hidden` fixed the Tailwind 4 trap
-                    // (`outline-none` pins `outline-style: none` permanently, so `focus-visible`
-                    // utilities below never actually paint) -- it did not: compiling this exact
-                    // class list with the installed tailwindcss@4.3.3 shows `.outline-hidden` ALSO
-                    // sets `--tw-outline-style: none` unconditionally (identical to `.outline-
-                    // none`), and `.focus-visible\:outline-2:focus-visible` only ever reads that
-                    // same custom property via `var(--tw-outline-style)` -- so `outline-hidden`
-                    // permanently wins the cascade on that property regardless of focus state.
-                    // Gate round 3 fix: no base `outline-*` utility at all, matching every OTHER
-                    // verified-working `focus-visible:outline-*` row in this codebase
-                    // (`CollapsedLine.tsx`, `ManageSessionRow.tsx`, `ProfileItem.tsx`,
-                    // `PullRequestRow.tsx`) -- `--tw-outline-style` then keeps its universal
-                    // `solid` default, so `focus-visible:outline-2` paints on keyboard focus and
-                    // nothing paints otherwise (no UA default outline survives Tailwind's reset).
-                    'hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+                    // (`outline-none` pins `outline-style: none` permanently) -- it did not:
+                    // compiling this exact class list with the installed tailwindcss@4.3.3 shows
+                    // `.outline-hidden` ALSO sets `--tw-outline-style: none` unconditionally
+                    // (identical to `.outline-none`), and `.focus-visible\:outline-2:focus-visible`
+                    // only ever reads that same custom property via `var(--tw-outline-style)`, so
+                    // `outline-hidden` permanently won the cascade on that property regardless of
+                    // focus state (round 3 architect finding M7, verified independently by Layout).
+                    // Gate round 3 fix: `focus-visible:outline-solid` (precedent:
+                    // `pickerShared.tsx`'s `COMPOSER_BUTTON_FOCUS_CLASS`) re-sets
+                    // `--tw-outline-style: solid` at the SAME specificity as `outline-hidden`'s own
+                    // class selector, so on `:focus-visible` it wins the cascade tie by coming
+                    // later in Tailwind's canonical utility order, painting a solid ring; outside
+                    // `:focus-visible`, `outline-hidden` still wins, keeping the row visually bare
+                    // AND its own `forced-colors` transparent-outline reservation for Windows High
+                    // Contrast -- unlike dropping `outline-hidden` outright, which would also have
+                    // dropped that reservation.
+                    'hover:bg-muted/50 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >
                   {/* Decision 13 (issue #563): the selected node gets the shared 2px

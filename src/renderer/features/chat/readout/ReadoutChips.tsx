@@ -205,7 +205,7 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
-  // Issue #563, FR-026: records the chip itself as the opener when it is the control that
+  // Issue #563, FR-027: records the chip itself as the opener when it is the control that
   // opened the panel this time, so closing it returns focus here instead of always falling back
   // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
   const onActivate = (event: MouseEvent<HTMLButtonElement>) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })

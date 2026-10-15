@@ -47,7 +47,7 @@ interface SubagentPanelState {
   suspended: boolean
   /** The control that opened the panel THIS time, recorded from `openPanel`'s own
    * `options?.opener` (issue #563): closing the panel focuses this element first, when it is
-   * still connected to the document, before falling back to the Subagents chip (FR-026).
+   * still connected to the document, before falling back to the Subagents chip (FR-027).
    * Replaced wholesale on every `openPanel` call -- each explicit open re-establishes who
    * opened it this time -- and cleared back to `null` wherever `sessionId` itself is cleared
    * (`closePanel`, `reset`). */
@@ -68,7 +68,7 @@ interface SubagentPanelState {
   clearPendingFocus(): void
   /** Binds the panel's content to `sessionId` -- the shell (`right-pane-store.ts`'s
    * `openPanel('subagents')`) decides whether the panel is actually showing. `options.opener`
-   * (issue #563, FR-026) records the control to return focus to on close; `options.
+   * (issue #563, FR-027) records the control to return focus to on close; `options.
    * selectSubagentId` pre-selects an agent the same way a row click would (the chat pane's
    * Stage/chain rows activating a specific agent), reusing `selectSubagent` rather than
    * duplicating its fetch logic. */
@@ -77,7 +77,7 @@ interface SubagentPanelState {
    * when focus was actually inside the panel at close time -- callers closing the panel for a
    * reason OTHER than the user clicking its own Close button (a new turn starting, the visible
    * Session archiving/vanishing) pass `false` so a steal never happens. Prefers `openerEl`
-   * (issue #563, FR-026) when it is still connected to the document, falling back to the
+   * (issue #563, FR-027) when it is still connected to the document, falling back to the
    * Subagents chip only when it is not (the pre-#563 target, still correct when nothing else
    * opened the panel). Also keeps `right-pane-store.ts`'s `openPanelIds` in sync (a no-op if
    * 'subagents' is already closed there), so every existing call site stays the single place
@@ -198,7 +198,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     if (options?.restoreFocus ?? true) {
       const panelEl = document.getElementById('right-pane-active-panel')
       if (panelEl?.contains(document.activeElement)) {
-        // Issue #563, FR-026: whichever control opened the panel THIS time takes priority over
+        // Issue #563, FR-027: whichever control opened the panel THIS time takes priority over
         // the Subagents chip now that something other than the chip (the chat pane's new
         // Subagent chain row) can open it; the chip stays the fallback for whenever `openerEl`
         // is unset or has since left the document (e.g. its own row scrolled out and unmounted).

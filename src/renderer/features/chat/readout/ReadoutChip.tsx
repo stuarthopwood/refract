@@ -16,7 +16,7 @@ export interface ReadoutChipProps {
   children: ReactNode
   /** Issue #563 gate remediation (L2/L6 across reviewers): widened to accept the click event so
    * callers that open a panel pre-selected on a specific agent (e.g. `ReadoutChips.tsx`'s own
-   * Subagents Readout) can record `event.currentTarget` as the opener (FR-026) -- a plain
+   * Subagents Readout) can record `event.currentTarget` as the opener (FR-027) -- a plain
    * `() => {...}` callback still satisfies this (JS/TS callback arity is contravariant-
    * permissive), so no other existing caller breaks. */
   onActivate?: (event: MouseEvent<HTMLButtonElement>) => void

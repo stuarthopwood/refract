@@ -29,7 +29,7 @@ export function openHostedPanel(
  * toggling an open-and-active rail icon off). `subagents` keeps its own existing `closePanel()`
  * unchanged (FR-015's regression guarantee): it clears the session binding, tells main to stop
  * forwarding the selected subagent's patches, keeps `right-pane-store.ts` in sync, and restores
- * focus to whichever control opened the panel THIS time (issue #563, FR-026) -- the Subagents
+ * focus to whichever control opened the panel THIS time (issue #563, FR-027) -- the Subagents
  * chip is only the fallback now, used whenever no opener was recorded or it has since left the
  * document, not a fixed first priority (FR-015's own regression guarantee is unaffected: nothing
  * else opened the panel before issue #563, so the chip was always that fallback in practice).
@@ -88,7 +88,7 @@ export function resumeHostedPanels(ids: readonly PanelId[]): void {
 
 /** FR-005/FR-006: activating a panel's rail button opens it if the pane is collapsed, or it is
  * not already the open, active panel; it closes it (via the explicit-close path above) only when
- * the pane is open AND this panel is open and active. `opener` (issue #563, FR-026) is only
+ * the pane is open AND this panel is open and active. `opener` (issue #563, FR-027) is only
  * relevant to the open branch -- a toggle-off close has no agent to pre-select, so nothing for
  * closing from this control's own button to specially record over the generic rail/launcher
  * fallback `closeHostedPanel` already applies. */

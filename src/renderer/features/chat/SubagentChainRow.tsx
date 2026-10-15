@@ -150,6 +150,12 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         icon={<SubagentStatusGlyph status={status} />}
         label={item.name}
         meta={meta}
+        // Gate round 3 fix (architect M9): a Stage that mounts with exactly one agent and later
+        // gains a sibling (becoming a multi-agent Stage) stays inside the SAME uncontrolled
+        // `CollapsedLine` the whole time (Radix only reads `defaultOpen` on mount) -- without this,
+        // it stayed collapsed through that transition while still running (decision 6 requires
+        // expanded while unsettled). Matches the non-solo branch's own `defaultOpen` below exactly.
+        defaultOpen={isRunning || status === 'failed' || status === 'cancelled' || status === 'exited'}
         // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
         // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
         triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}
