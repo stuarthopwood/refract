@@ -9,7 +9,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::commands::string_array;
 use super::launch_support::truncate;
-use super::{AgentError, PendingRequest, SessionAgent, SessionStatus};
+use super::{AgentError, AskOption, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {
     /// `chat.answer` (T028): writes the `extension_ui_response` for a still-pending request
@@ -86,6 +86,10 @@ pub(super) enum DialogClassification {
     Cancel(String),
     Notify { message: String, level: String },
     Request(PendingRequest),
+    /// D3 (#572): an `ask` frame with no/empty `questions`, or any question missing a non-empty
+    /// `id`. No `PendingRequest` is ever created for this -- `frame.rs`'s own handler answers
+    /// `{cancelled:true}` on the wire itself and surfaces the error notice.
+    Malformed { id: String },
 }
 
 const APPROVAL_PREFIX: &str = "Allow tool:";
@@ -196,6 +200,17 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             option_details: None,
             input_kind: "confirm",
         }),
+        "ask" => match parse_ask_questions(frame) {
+            Some(questions) => DialogClassification::Request(PendingRequest::Ask {
+                request_id: id,
+                questions,
+                deadline_at: frame
+                    .get("timeout")
+                    .and_then(Value::as_f64)
+                    .map(|secs| now_ms() + (secs * 1000.0) as i64),
+            }),
+            None => DialogClassification::Malformed { id },
+        },
         "cancel" => DialogClassification::Cancel(
             frame
                 .get("targetId")
@@ -219,6 +234,64 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
     }
 }
 
+/// Port of `dialogs.ts`'s own `ask` question parsing (D3, #572): `None` when the frame has no
+/// (or an empty) `questions` array, or when any question is missing a non-empty `id` --
+/// both map to `DialogClassification::Malformed` at the call site, never a partially-built
+/// `PendingRequest::Ask`.
+fn parse_ask_questions(frame: &Value) -> Option<Vec<AskQuestion>> {
+    let raw = frame.get("questions")?.as_array()?;
+    if raw.is_empty() {
+        return None;
+    }
+    let mut questions = Vec::with_capacity(raw.len());
+    for q in raw {
+        let qid = q.get("id").and_then(Value::as_str).unwrap_or("");
+        if qid.is_empty() {
+            return None;
+        }
+        // `preview` (rich-dialog-only, D3) is intentionally never read here.
+        let options = q
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|o| AskOption {
+                        label: o
+                            .get("label")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        description: o
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        questions.push(AskQuestion {
+            id: qid.to_string(),
+            question: q
+                .get("question")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            header: q.get("header").and_then(Value::as_str).map(str::to_string),
+            options,
+            multi: q.get("multi").and_then(Value::as_bool).unwrap_or(false),
+            recommended: q.get("recommended").and_then(Value::as_i64),
+        });
+    }
+    Some(questions)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Port of `dialogs.ts`'s own `buildDialogResponse`.
 fn build_dialog_response(
     request_id: &str,
@@ -237,6 +310,15 @@ fn build_dialog_response(
             })?;
         return Ok(
             json!({ "type": "extension_ui_response", "id": request_id, "value": if approve { "Approve" } else { "Deny" } }),
+        );
+    }
+    if matches!(request, PendingRequest::Ask { .. }) {
+        let answers = answer
+            .get("answers")
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("expected an answers array for ask request {request_id}"))?;
+        return Ok(
+            json!({ "type": "extension_ui_response", "id": request_id, "answers": answers.clone() }),
         );
     }
     if let PendingRequest::Question { input_kind, .. } = request {
@@ -270,6 +352,7 @@ pub fn is_chat_answer(value: &Value) -> bool {
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))
+        || matches!(obj.get("answers"), Some(Value::Array(_)))
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::commands::{filter_supported_commands, string_array};
 use super::requests::{classify_dialog, DialogClassification};
-use super::{SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
+use super::{PendingRequest, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
     pub(super) async fn handle_frame(&self, frame: Value) {
@@ -122,25 +122,55 @@ impl SessionAgent {
                 self.append_notice(message, &level).await
             }
             DialogClassification::Cancel(target) => {
-                let became_working = {
+                let (became_working, cancelled_request) = {
                     let mut state = self.state.lock().await;
-                    if !state.pending.iter().any(|r| r.request_id() == target) {
+                    let Some(cancelled_request) = state
+                        .pending
+                        .iter()
+                        .find(|r| r.request_id() == target)
+                        .cloned()
+                    else {
                         return;
-                    }
+                    };
                     state.pending.retain(|r| r.request_id() != target);
-                    state.pending.is_empty() && state.status == SessionStatus::NeedsYou
+                    (
+                        state.pending.is_empty() && state.status == SessionStatus::NeedsYou,
+                        cancelled_request,
+                    )
                 };
                 self.upsert_request_row(&target, Some(RequestResolution::Cancelled))
                     .await;
-                self.append_notice(
-                    "Request withdrawn: the agent cancelled it.".to_string(),
-                    "info",
-                )
-                .await;
+                // D17 (#572): an `Ask` card closes WITHOUT this notice -- after a timeout it
+                // would be untrue, since the answer summary is built from the tool result
+                // instead. Every other pending-request kind keeps it exactly as before.
+                if !matches!(cancelled_request, PendingRequest::Ask { .. }) {
+                    self.append_notice(
+                        "Request withdrawn: the agent cancelled it.".to_string(),
+                        "info",
+                    )
+                    .await;
+                }
                 self.events.emit_request_resolved(&self.session_id, &target);
                 if became_working {
                     self.set_status(SessionStatus::Working, None, None).await;
                 }
+            }
+            DialogClassification::Malformed { id } => {
+                // D3 (#572): no `PendingRequest` was ever created for this frame, so Refract
+                // answers `{cancelled:true}` on the wire itself (instead of via
+                // `answer_request`, which requires an existing pending row) and surfaces the
+                // error notice in its place.
+                let proc = self.state.lock().await.process.clone();
+                if let Some(proc) = proc {
+                    let _ = proc
+                        .send_raw(json!({ "type": "extension_ui_response", "id": id, "cancelled": true }))
+                        .await;
+                }
+                self.append_notice(
+                    "Couldn't show the agent's question.".to_string(),
+                    "error",
+                )
+                .await;
             }
             DialogClassification::Request(request) => {
                 // Port of `addPendingRequest` (SessionAgent.ts:1641-1644): push+`NeedsYou`+

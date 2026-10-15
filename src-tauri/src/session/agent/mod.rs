@@ -68,7 +68,7 @@ pub use commands::{
 };
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
-pub use types::{AgentError, PendingRequest, SessionStatus};
+pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
 /// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
 /// (private there), so re-declared here with the same value for every `request()` call this
@@ -99,6 +99,11 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
+    // D1/D2 (#572): whether this process's `set_ask_dialog{enabled:true}` call succeeded;
+    // sent once per `launch()` (once per process life), in-memory only, never persisted to the
+    // registry. `false` (never retried for this process's life) once a reattach/relaunch starts
+    // a new process, `launch()` re-sends the probe and this is recomputed fresh.
+    ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
@@ -193,6 +198,7 @@ impl SessionAgent {
                 pending: Vec::new(),
                 commands: Vec::new(),
                 process: None,
+                ask_dialog_enabled: false,
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,

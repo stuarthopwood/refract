@@ -124,6 +124,17 @@ _Avoid_: Item, entry (too generic elsewhere in this file)
 A boxed, self-contained block of content set apart from the surrounding list or layout, typically surfacing details or asking for a decision (for example, a session details card).
 _Avoid_: Panel
 
+**Question card**:
+The decision card shown when the agent asks the developer one or more questions (issue #572); has one tab per question when there are several, and one Submit.
+_Avoid_: ask tool card, ask dialog (OMP's protocol name)
+
+**Asked-user line**:
+The unboxed, collapsible transcript row an answered, cancelled, or unanswered **Question card** becomes (issue #572).
+_Avoid_: answered card, answer pill
+
+**Recommended option**:
+The option the agent marks as its default (issue #572). Shown as text, never preselected; OMP uses it if the question times out.
+
 **Panel**:
 A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**).
 _Avoid_: Sidebar, drawer

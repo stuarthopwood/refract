@@ -138,10 +138,16 @@ Built in the main process from OMP frames (see [contracts/omp-usage.md](contract
 ```ts
 type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
-  | { kind: 'question'; requestId: string; title: string; options: string[]; optionDetails?: string[]; allowText: boolean };
+  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
+
+interface AskQuestion {
+  id: string; question: string; header?: string;
+  options: { label: string; description?: string }[]; multi: boolean; recommended?: number;
+}
 ```
 
-`requestId` is the `id` of the OMP `extension_ui_request`. Requests do not survive a process restart: on a restart they are dropped and the Session shows a notice.
+`requestId` is the `id` of the OMP `extension_ui_request`. Requests do not survive a process restart: on a restart they are dropped and the Session shows a notice. `kind:'ask'` (issue #572) is the structured multi-question dialog, built only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md "Start-up sequence"); `kind:'question'` (`inputKind` tells `choice`/`text`/`confirm` apart) stays the one-question-at-a-time fallback, built the same way whether the dialog was never enabled or a given `select`/`input`/`editor`/`confirm` frame simply arrived outside an `ask` dialog (for example an extension's own prompt). `deadlineAt` is an epoch-ms value computed once, when the frame arrives, from OMP's own `timeout` (seconds); Refract never counts it down itself, only renders it as a static line.
 
 ## State transitions
 
