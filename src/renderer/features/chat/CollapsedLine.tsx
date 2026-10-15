@@ -45,23 +45,29 @@ export interface CollapsedLineProps {
 // The one shared collapsed-line baseline every chat output kind builds on (T080, docs/DESIGN.md
 // "Chat"): an icon slot, a label, a truncating one-line summary, a status/duration slot, and (if
 // `children` is given) a `Collapsible` expansion. A new output kind should start here instead of
-// growing its own one-off collapsed row.
-export function CollapsedLine({
-  icon,
-  label,
-  summary,
-  meta,
-  summaryClassName,
-  summaryWrap,
-  open,
-  onOpenChange,
-  defaultOpen,
-  triggerAriaLabel,
-  action,
-  children,
-  className,
-  contentClassName
-}: CollapsedLineProps) {
+// growing its own one-off collapsed row. Forwards a ref to whichever element can actually receive
+// focus (the plain row `div` with no `children`, or the `CollapsibleTrigger` button with them) --
+// gate round 2 (D17): the sole focus target `ResolvedRequestSummary`/`AskQuestionRow` hand focus
+// to once the Ask card's own resolution replaces it (`ask-focus-intent.ts`).
+export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
+  {
+    icon,
+    label,
+    summary,
+    meta,
+    summaryClassName,
+    summaryWrap,
+    open,
+    onOpenChange,
+    defaultOpen,
+    triggerAriaLabel,
+    action,
+    children,
+    className,
+    contentClassName
+  },
+  ref
+) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
   const isControlled = open !== undefined
   const actualOpen = isControlled ? open : uncontrolledOpen
@@ -87,12 +93,31 @@ export function CollapsedLine({
         // (#565 decision 11) instead of hugging the label.
         <span className="min-w-0 flex-1" />
       )}
-      {meta !== undefined && <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>}
+      {meta !== undefined && (
+        <>
+          {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
+           * summary straight into the meta slot with no separator ("...and 1 more Answered"),
+           * which can sound like part of the question's own text rather than a status word. Not
+           * whitespace-only, so it survives collapsing. */}
+          <span className="sr-only">, </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
+        </>
+      )}
     </>
   )
 
   if (children === undefined) {
-    return <div className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm', className)}>{row}</div>
+    return (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        tabIndex={-1}
+        // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
+        // still shows a focus indicator in forced-colours mode, matching the trigger below.
+        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+      >
+        {row}
+      </div>
+    )
   }
 
   return (
@@ -107,9 +132,16 @@ export function CollapsedLine({
        * reads as a disconnected pill floating above the content. */}
       <div className="flex items-center gap-1">
         <CollapsibleTrigger
+          ref={ref as React.Ref<HTMLButtonElement>}
           aria-label={triggerAriaLabel}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            // Gate round 3 (architect M-1, unanimous): this trigger sits inside
+            // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`),
+            // which establishes paint containment with no padding -- an outward
+            // `outline-offset-2` (the shadcn default) draws OUTSIDE this element's own box and
+            // was very likely clipped by that containment. `-2px` draws the ring INSIDE instead,
+            // matching the plain row above.
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
             actualOpen && 'rounded-b-none'
           )}
         >
@@ -124,4 +156,4 @@ export function CollapsedLine({
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
     </Collapsible>
   )
-}
+})

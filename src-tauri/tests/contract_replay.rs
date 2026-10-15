@@ -470,7 +470,7 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     let agent = state.session_manager.get_or_create_agent(&session_id);
 
     // 3. sessions.open: spawns the shimmed `omp`, drives negotiate_protocol/get_state/
-    //    available_commands_update/get_messages_page (tape lines 1-8) to completion.
+    //    available_commands_update/get_messages_page (tape lines 1-10) to completion.
     let open_args = json!([session_id, true]);
     let open_envelope = dispatcher
         .dispatch(

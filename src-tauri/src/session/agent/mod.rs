@@ -60,6 +60,7 @@ mod lane_support;
 mod launch;
 mod launch_support;
 mod requests;
+mod status;
 mod sync_from_state;
 mod types;
 pub use commands::{
@@ -68,7 +69,7 @@ pub use commands::{
 };
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
-pub use types::{AgentError, PendingRequest, SessionStatus};
+pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
 /// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
 /// (private there), so re-declared here with the same value for every `request()` call this
@@ -99,6 +100,11 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
+    // D1/D2 (#572): `set_ask_dialog` result; in-memory only. Gate round 2 (security Low):
+    // purely INFORMATIONAL -- the fallback decision uses `send_set_ask_dialog`'s own return
+    // value directly (`launch.rs`); nothing reads this field back.
+    #[allow(dead_code)]
+    ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
@@ -193,6 +199,7 @@ impl SessionAgent {
                 pending: Vec::new(),
                 commands: Vec::new(),
                 process: None,
+                ask_dialog_enabled: false,
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
@@ -456,14 +463,6 @@ impl SessionAgent {
         }
         Self::insert_termination_and_progress_fields(obj, &state);
         payload
-    }
-
-    pub async fn status(&self) -> SessionStatus {
-        self.state.lock().await.status
-    }
-
-    pub async fn available_commands(&self) -> Vec<Value> {
-        self.state.lock().await.commands.clone()
     }
 
     // -----------------------------------------------------------------------------------------

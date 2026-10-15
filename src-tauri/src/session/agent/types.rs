@@ -104,6 +104,28 @@ impl std::error::Error for AgentError {}
 /// `rename_all_fields` (not `rename_all`, which only renames variants) gives the camelCase field
 /// names the renderer matches on (`requestId`, `optionDetails`, `inputKind`).
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AskOption {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// `src/shared/model.ts`'s own `AskQuestion` (one entry of `PendingRequest::Ask`'s `questions`).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AskQuestion {
+    pub id: String,
+    pub question: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    pub options: Vec<AskOption>,
+    pub multi: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all_fields = "camelCase")]
 pub enum PendingRequest {
     #[serde(rename = "approval")]
@@ -124,6 +146,13 @@ pub enum PendingRequest {
         option_details: Option<Vec<Option<String>>>,
         input_kind: &'static str,
     },
+    #[serde(rename = "ask")]
+    Ask {
+        request_id: String,
+        questions: Vec<AskQuestion>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        deadline_at: Option<i64>,
+    },
 }
 
 impl PendingRequest {
@@ -132,7 +161,9 @@ impl PendingRequest {
     // `session::agent` and its descendants, same reach it already had before the split.
     pub(super) fn request_id(&self) -> &str {
         match self {
-            Self::Approval { request_id, .. } | Self::Question { request_id, .. } => request_id,
+            Self::Approval { request_id, .. }
+            | Self::Question { request_id, .. }
+            | Self::Ask { request_id, .. } => request_id,
         }
     }
 }

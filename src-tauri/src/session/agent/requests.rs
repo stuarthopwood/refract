@@ -9,7 +9,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::commands::string_array;
 use super::launch_support::truncate;
-use super::{AgentError, PendingRequest, SessionAgent, SessionStatus};
+use super::{AgentError, AskOption, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {
     /// `chat.answer` (T028): writes the `extension_ui_response` for a still-pending request
@@ -84,8 +84,17 @@ impl SessionAgent {
 pub(super) enum DialogClassification {
     Ignore,
     Cancel(String),
-    Notify { message: String, level: String },
+    Notify {
+        message: String,
+        level: String,
+    },
     Request(PendingRequest),
+    /// D3 (#572): an `ask` frame with no/empty `questions`, or any question missing a non-empty
+    /// `id`. No `PendingRequest` is ever created for this -- `frame.rs`'s own handler answers
+    /// `{cancelled:true}` on the wire itself and surfaces the error notice.
+    Malformed {
+        id: String,
+    },
 }
 
 const APPROVAL_PREFIX: &str = "Allow tool:";
@@ -196,6 +205,23 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             option_details: None,
             input_kind: "confirm",
         }),
+        "ask" => match parse_ask_questions(frame) {
+            Some(questions) => DialogClassification::Request(PendingRequest::Ask {
+                request_id: id,
+                questions,
+                // Gate-fix (round 1, security/code review HIGH): OMP's `timeout` is
+                // milliseconds, not seconds -- `ask.md` step 3 ("reads `ask.timeout`, converts
+                // seconds to milliseconds" before opening the dialog) and `rpc.md`'s own example
+                // (`"timeout": 30000`) both confirm the WIRE value is already in ms. The earlier
+                // `(secs * 1000.0)` conversion made every deadline about 1000x too late.
+                deadline_at: frame
+                    .get("timeout")
+                    .and_then(Value::as_f64)
+                    .filter(|ms| ms.is_finite() && *ms >= 0.0)
+                    .map(|ms| now_ms().saturating_add(ms as i64)),
+            }),
+            None => DialogClassification::Malformed { id },
+        },
         "cancel" => DialogClassification::Cancel(
             frame
                 .get("targetId")
@@ -219,6 +245,136 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
     }
 }
 
+/// Port of `dialogs.ts`'s own `ask` question parsing (D3, #572): `None` when the frame has no
+/// (or an empty) `questions` array, or when any question is missing a non-empty `id` --
+/// both map to `DialogClassification::Malformed` at the call site, never a partially-built
+/// `PendingRequest::Ask`.
+fn parse_ask_questions(frame: &Value) -> Option<Vec<AskQuestion>> {
+    let raw = frame.get("questions")?.as_array()?;
+    if raw.is_empty() {
+        return None;
+    }
+    let mut questions = Vec::with_capacity(raw.len());
+    for q in raw {
+        let qid = q.get("id").and_then(Value::as_str).unwrap_or("");
+        if qid.is_empty() {
+            return None;
+        }
+        // `preview` (rich-dialog-only, D3) is intentionally never read here.
+        let options = q
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|o| AskOption {
+                        label: o
+                            .get("label")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        description: o
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        questions.push(AskQuestion {
+            id: qid.to_string(),
+            question: q
+                .get("question")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            header: q.get("header").and_then(Value::as_str).map(str::to_string),
+            options,
+            multi: q.get("multi").and_then(Value::as_bool).unwrap_or(false),
+            recommended: q.get("recommended").and_then(Value::as_i64),
+        });
+    }
+    Some(questions)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Defence in depth (gate-fix, security/code review Medium): the renderer already only ever
+/// builds `answers` from the labels it rendered and never sends both an option and `customInput`
+/// for a single choice, and OMP itself fails closed on a malformed `answers` shape -- but nothing
+/// in between checked it before this. Rejects a wrong count or order, an id that does not match
+/// the pending `PendingRequest::Ask`'s own question at that position, a label never offered, a
+/// multi-select count violation on a single-choice question, an overlong `customInput`, or both
+/// an option and `customInput` sent together for a single choice.
+const MAX_ASK_CUSTOM_INPUT_LEN: usize = 4096;
+
+fn validate_ask_answers(questions: &[AskQuestion], answers: &[Value]) -> Result<(), String> {
+    if answers.len() != questions.len() {
+        return Err(format!(
+            "expected {} answers, got {}",
+            questions.len(),
+            answers.len()
+        ));
+    }
+    for (question, answer) in questions.iter().zip(answers) {
+        let obj = answer
+            .as_object()
+            .ok_or_else(|| "answer entry is not an object".to_string())?;
+        let id = obj
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "answer entry has no id".to_string())?;
+        if id != question.id {
+            return Err(format!(
+                "answer id {id} does not match expected {}",
+                question.id
+            ));
+        }
+        let selected = obj
+            .get("selectedOptions")
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("answer {id} has no selectedOptions array"))?;
+        let mut selected_count = 0usize;
+        for label in selected {
+            let label = label
+                .as_str()
+                .ok_or_else(|| format!("answer {id} has a non-string selectedOptions entry"))?;
+            if !question.options.iter().any(|o| o.label == label) {
+                return Err(format!(
+                    "answer {id} selected an option not offered: {label}"
+                ));
+            }
+            selected_count += 1;
+        }
+        if !question.multi && selected_count > 1 {
+            return Err(format!(
+                "answer {id} is single-choice but selected {selected_count} options"
+            ));
+        }
+        match obj.get("customInput") {
+            None => {}
+            Some(Value::String(text)) => {
+                if text.chars().count() > MAX_ASK_CUSTOM_INPUT_LEN {
+                    return Err(format!(
+                        "answer {id} customInput exceeds {MAX_ASK_CUSTOM_INPUT_LEN} characters"
+                    ));
+                }
+                if !question.multi && selected_count > 0 {
+                    return Err(format!(
+                        "answer {id} is single-choice but sent both an option and customInput"
+                    ));
+                }
+            }
+            Some(_) => return Err(format!("answer {id} has a non-string customInput")),
+        }
+    }
+    Ok(())
+}
+
 /// Port of `dialogs.ts`'s own `buildDialogResponse`.
 fn build_dialog_response(
     request_id: &str,
@@ -237,6 +393,16 @@ fn build_dialog_response(
             })?;
         return Ok(
             json!({ "type": "extension_ui_response", "id": request_id, "value": if approve { "Approve" } else { "Deny" } }),
+        );
+    }
+    if let PendingRequest::Ask { questions, .. } = request {
+        let answers = answer
+            .get("answers")
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("expected an answers array for ask request {request_id}"))?;
+        validate_ask_answers(questions, answers)?;
+        return Ok(
+            json!({ "type": "extension_ui_response", "id": request_id, "answers": answers.clone() }),
         );
     }
     if let PendingRequest::Question { input_kind, .. } = request {
@@ -270,6 +436,7 @@ pub fn is_chat_answer(value: &Value) -> bool {
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))
+        || matches!(obj.get("answers"), Some(Value::Array(_)))
 }
 
 #[cfg(test)]
