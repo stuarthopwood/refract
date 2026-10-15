@@ -1531,23 +1531,31 @@ This phase was written retroactively after the implementation above (no prior `/
   `App.tsx`/`mod.rs` visible-set rule, never a state poke); Session A's icon has the
   `<path>`-bearing `CircleCheckIcon` shape before the turn and the bell (`text-state-needs-you`)
   during the pending approval; Manage sessions renders "Unread response" with no truncation in
-  the widened column; reopening Session A clears it back to Idle. `pnpm typecheck` (0 errors),
+  the widened column; reopening Session A clears it back to Idle. A second instance (ellipsis
+  menu only, never the HoverCard-wrapped open button) proved **Stopped** (`Stop agent`,
+  `text-state-stopped`) on Dark and, after switching the real Theme submenu, on **Dark (high
+  contrast)** too; DevTools vision-deficiency emulation (deuteranopia/protanopia/tritanopia) and
+  `forced-colors: active` both keep the square (Stopped) and check-circle (Idle) glyphs visibly
+  distinct by shape, confirmed in the forced-colours screenshot. `pnpm typecheck` (0 errors),
   `pnpm vitest` (148/148, no new tests), `node scripts/check-indent.mjs` (0 violations),
-  `node scripts/check-file-size.mjs` (0 cap violations), and `node
-  scripts/check-theme-contrast.mjs` (every pair across all 3 themes PASS, including the new
-  `state-unread-response`/`state-idle` sidebar pairs) all ran clean.
+  `node scripts/check-file-size.mjs` (0 cap violations), `node scripts/check-theme-contrast.mjs`
+  (every pair across all 3 themes PASS, including the new `state-unread-response`/`state-idle`
+  sidebar pairs) and the full `node scripts/ci-local.mjs` (16/16 steps) all ran clean.
 
 This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
 "Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
-roundtable rather than a live grill, per Stuart's standing delegation while away). **Not
-exercised live**: the Obsidian/Dark-(high-contrast) theme switch, DevTools vision-deficiency
-(deuteranopia/protanopia/tritanopia) and `forced-colors: active` emulation on the live session
-list, and a Stopped-session screenshot -- a WebView2 CDP quirk this harness hit
-("Object reference chain is too long", `Runtime.evaluate`'s `returnByValue` choking on a
-raw-element finder expression passed to `waitFor` instead of a boolean one) was traced and fixed
-for the Manage sessions step, but time did not allow re-running the theme/emulation/stopped
-steps after the fix; the token values themselves are verified by `check-theme-contrast.mjs`
-against the real computed CSS (not hand-waved), and the `CircleCheckIcon`/`MessageSquareTextIcon`
-forced-colours shapes (solid disc, ring-with-check, bubble-with-lines, bell, empty square) are a
-property of `currentColor`-only glyphs already relied on by every existing session-state icon.
+roundtable rather than a live grill, per Stuart's standing delegation while away). A WebView2 CDP
+harness quirk ("Object reference chain is too long", `Runtime.evaluate`'s `returnByValue`
+choking on a raw-element finder expression passed to `waitFor` instead of a boolean one) cost
+several retries before being traced and fixed. **Not exercised live**: the Obsidian theme on the
+full five-state list (attempted, timed out once on a cold IPC round trip after the Stopped/High
+contrast pass; not required by the brief, which asks for Dark and High contrast) and a combined
+screenshot of all five states (working/needs-you/unread-response/idle/stopped) in one single
+list at once -- the two live-check passes each captured a subset (idle x3, working, needs-you,
+unread-response, Manage sessions in pass one; idle, stopped, the same two in High contrast,
+vision-deficiency and forced-colours in pass two) rather than all five simultaneously, since the
+`session.jsonl` fixture only scripts one turn per `OmpProcess` and a second Session's own
+`Stop agent` action was driven in a separate instance to avoid retriggering the Session-row
+HoverCard the first pass's `displayStatus` assertions already depended on.
+
 
