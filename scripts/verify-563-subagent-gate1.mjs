@@ -48,7 +48,11 @@ const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-563-gate1-shots/
 const TURN_A_PROMPT =
   "Make your very first tool call be exactly ONE call to the task tool that starts TWO subagents together in that SAME call (not two separate calls -- one call, two subagents in it): the first subagent's entire job is to reply with exactly the single word 'uno' and nothing else; the second subagent's entire job is to reply with exactly the single word 'dos' and nothing else. Wait for both of those to finish. Then, once both have finished, call the task tool a second time, by itself, with one tiny subagent whose entire job is to reply with exactly the single word 'tres' and nothing else. Once all three subagents have replied, reply with exactly the single word 'gate563complete' yourself and nothing else.";
 const TURN_B_PROMPT =
-  "Call the task tool once with one tiny subagent whose entire job is to reply with exactly the single word 'quattro' and nothing else. Do not reply with anything else yourself.";
+  // Gate round 2 fix: a bare one-word reply finished before Stop could land in testing here
+  // (the subagent settled to Finished on its own, never giving Stop anything to interrupt), so
+  // the subagent's own task now pads out a slow, pointless count first -- giving Stop a real
+  // window to land mid-run -- before it replies with the sentinel word.
+  "Call the task tool once with one tiny subagent whose entire job is to count out loud from 1 to 200, one number per line, then on its own final line reply with exactly the single word 'quattro' and nothing else. Do not reply with anything else yourself.";
 const TURN_A_SENTINEL = 'gate563complete';
 
 function spawnSync_(cmd, args, opts = {}) {
@@ -365,8 +369,13 @@ async function main() {
       findings.push('Chain row expands to show its per-Stage entries (uno/dos in Stage 1, tres in Stage 2).');
 
       // Click the "tres" chain entry (a real <button>, since the tracker still knows it) and
-      // confirm the panel opens pre-selected on it with focus landed there.
-      const entryFinder = `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button')).find((el) => el.textContent.toLowerCase().includes('tres')); })()`;
+      // confirm the panel opens pre-selected on it with focus landed there. Gate round 2 fix:
+      // scoped to a `[role="group"][aria-label^="Stage "]` wrapper -- the chain's own
+      // `ChainStageLine` markup -- not just "any button containing 'tres'", which also matches
+      // Stage 2's OWN in-place disclosure trigger now that gate round 2 addendum B renders a
+      // solo Stage with the agent's bare name as its label ("Tres"), identical text to the
+      // chain's compact entry; the two are only distinguishable by DOM position/ancestry.
+      const entryFinder = `(() => { const groups = document.querySelectorAll('[role="group"][aria-label^="Stage "]'); for (const g of groups) { const btn = Array.from(g.querySelectorAll('button')).find((el) => el.textContent.toLowerCase().includes('tres')); if (btn) return btn; } return null; })()`;
       const entryExists = await cdp.evaluate(`!!${entryFinder}`);
       if (!entryExists) {
         notExercised.push('The "tres" chain entry rendered as plain (untracked) text, not a clickable button -- the live SubagentSummary readout never correlated to it in time (toolCallId/specIndex match), so the pre-select/focus/close-return path below could not be driven through it.');
@@ -438,9 +447,15 @@ async function main() {
       );
       await cdp.screenshot(path.join(SHOTS_DIR, '08-turn-b-running.png'));
       // Measured overlap check: the status word (meta slot) and the label (agent name/Stage N)
-      // must not share horizontal space -- read both elements' own getBoundingClientRect.
+      // must not share horizontal space -- read both elements' own getBoundingClientRect. Gate
+      // round 2 fix: starts from the exact label span (same query as the waitFor above), then
+      // walks up to its own `CollapsedLine` row container (`rounded-md`, that component's own
+      // class) -- the prior "any element whose combined textContent includes both substrings"
+      // search could match an unrelated ancestor wrapping the whole transcript (anything with
+      // "quattro" and "Running" ANYWHERE inside it, observed live matching an unrelated
+      // "Info:" notice row instead).
       const runningLayout = await cdp.evaluate(
-        `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; const row = Array.from(t.querySelectorAll('*')).find((el) => el.textContent.toLowerCase().includes('quattro') && el.children.length > 0 && el.textContent.includes('Running')); if (!row) return null; const r = row.getBoundingClientRect(); return { rowText: row.textContent.trim().slice(0, 120), rowWidth: r.width }; })()`,
+        `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; const label = Array.from(t.querySelectorAll('span')).find((el) => el.textContent.trim().toLowerCase() === 'quattro'); const row = label ? label.closest('[class*="rounded-md"]') : null; if (!row || !row.textContent.includes('Running')) return null; const r = row.getBoundingClientRect(); return { rowText: row.textContent.trim().slice(0, 120), rowWidth: r.width }; })()`,
       );
       findings.push(`Turn (b) captured Running state live: ${JSON.stringify(runningLayout)}.`);
 
