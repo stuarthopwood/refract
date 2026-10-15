@@ -151,7 +151,8 @@ Stuart's goal: start using Refract for real work stories. These make that safe. 
 | C5 | #464 (+#2) | Git changes, stage, commit, AI commit message; fold #2 (commit, push, PR controls) in | todo | C1, C4 (shared status), B2 (`omp commit` probe) |
 | C6 | #3 | Terminal, tabs, per-Session shells | todo | C1, B2 (PTY on Electron 44.5.1) |
 | C7 | #465 | `@` mentions in the composer | todo | B2 (`@path` over RPC), C4 |
-| C8 | #470 | File editing with AI assist and autocomplete | todo | C4, B2 |
+| C7b | #878 | **Markdown editor (Stuart 2026-10-15, grilled, none deferred):** `.md` files open in a #732 main-area file tab in an **always-editable Rendered view** with the screenshot's toolbar (Heading, Bold, Italic, Quote, Inline code, Code block, Link, lists, Task list, Outdent, Indent, Table) and a **Rendered/Source** toggle; Source is editable and keeps the toolbar. **Saving changes only the edited blocks** (byte-exact elsewhere, CRLF/LF kept), explicit Ctrl+S with a dirty marker, a conflict bar (Reload, Keep mine, Compare) when the agent changes the file; Mermaid, front matter, raw HTML and footnotes are locked blocks with Edit in Source. Spike the editor against the fidelity rule first (CodeMirror 6 live-preview vs block splice); new Rust `fileExplorer.writeFile` with containment, atomic write and an expected-hash check | todo | #732, #809, C4 |
+| C8 | #470 | File editing with AI assist and autocomplete; **reuses #878's write path, save and conflict model** (and its editor if the spike picks CodeMirror 6) | todo | C4, B2, C7b |
 
 ### Phase D: parallel lanes (start any lane once A is done; keep one agent per file)
 
@@ -496,6 +497,8 @@ Also filed 2026-10-15: #867 Add project flyout (Local folder, Clone from GitHub)
 Also filed 2026-10-15: #869 Home (needs-you Sessions, recent Session summaries, my pull requests and issues, quick actions), placed as the Phase D "Home" row. No duplicate; related to #504 (Issues page, shared issues data layer), #702 (idle recaps, later) and #867. Grilled 2026-10-15 together with #867 (`grill-with-docs`): every open question in both issues resolved, `CONTEXT.md` gained **Project**, **GitHub repository** and **Home** (Repository retired from UI text).
 
 Also filed 2026-10-15: #874 Pull requests view across Projects on #504's shared list shell (from the #504 grill, Q5), placed in the GitHub issues lane straight after #504. Grilled #504 the same day: every open question resolved (nav order Home, Pull requests, Issues; Filter tabs; Start a Session in v1 with trusted-author auto-send; Sort select; Rust-only backend); #869's issues tab renamed "Authored by me" to match the Pull requests Filter tab; `CONTEXT.md` gained **Issues view** and **Filter tab** now covers both views.
+
+Also filed 2026-10-15: #878 Markdown editor (always-editable Rendered view, editable Source view, formatting toolbar, block-level save fidelity), grilled with Stuart (10 questions, none deferred), placed as row C7b before #470 (C8, which now reuses its write path). Commented on #470 and #732. `CONTEXT.md` gained **Rendered view** and **Source view**.
 
 Audited against the full open-issue list (2026-10-10, 201 open): four long-open strays had no Queue or index placement -- #71 (WCAG AA mediums/lows from the quality gate, added to Phase E), #102 (new-session picker Create button missing the one-click in-flight guard -- likely already fixed as a side effect of #620/PR #635's shared `creatingRepositoryIds` guard, noted on the Session list menu: New Session row; confirm live and close), #388 (spec-007 Mermaid contrast checker non-deterministic after 3 regate rounds, needs Stuart's call -- Decisions-still-needed item 9), #593 (4 remaining odd-indent-allow-listed files from #387/PR #589, added to Phase E).
 
