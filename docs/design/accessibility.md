@@ -78,6 +78,7 @@ Governance (agenda item 12) decided to put this checklist in the Spec Kit plan t
 - [ ] Destructive menu item is last, after a separator.
 - [ ] Every icon-only control has a `Tooltip`, matching `aria-label`, a 24px+ target (the strict icon-only bundle has no spacing exception; the general 2.5.8 rule above covers other targets), and a keyboard focus-visible reveal.
 - [ ] No new box nested inside another box (zero-box rule).
+- [ ] A grouped list of rows (a tool group, a Stage, the Subagent chain) hangs from a **Spine** -- one neutral `border-divider` left rule, never coloured, animated, or shown for a group of exactly one member (issue #565).
 - [ ] Toast/banner/inline/transcript channel matches the scope of the message, and errors never auto-dismiss.
 
 ### Patterns ([patterns.md](patterns.md))

@@ -7,6 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
 import type { ToolGroup } from './groupToolItems'
+import { SpineList } from './SpineList'
 import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -110,6 +111,9 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       summaryWrap={summaryWrap}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
       defaultOpen={defaultOpen}
+      // #565 decision 10: a member's expanded body starts at the label column, `pl-8` (the
+      // default `px-2`'s own `pr-2` is kept, only the left side widens).
+      contentClassName="pl-8"
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
@@ -194,7 +198,17 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const meta = solo && last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
 
   return (
-    <CollapsedLine icon={<StatusIcon status={status} />} label={label} summary={summary} summaryWrap={summaryWrap} meta={meta}>
+    <CollapsedLine
+      icon={<StatusIcon status={status} />}
+      label={label}
+      summary={summary}
+      summaryWrap={summaryWrap}
+      meta={meta}
+      // #565 decision 10 (solo): the lone call's own body starts at the label column, `pl-8`.
+      // #565 decision 8 (multi): the only geometry once a `SpineList` is the content is its own
+      // `ml-4`/`pt-1` -- this container's own padding is zeroed (mirrors `StageGroupRow`).
+      contentClassName={solo ? 'pl-8' : 'space-y-0 p-0'}
+    >
       {solo ? (
         <ToolCallBody
           item={last}
@@ -202,18 +216,19 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
           onDialogOpenChange={(open) => setOpenDialogItemId(open ? last.id : null)}
         />
       ) : (
-        <div className="space-y-1">
+        <SpineList gap="member">
           {group.items.map((item) => (
-            <ToolCallRow
-              key={item.id}
-              item={item}
-              summaryWrap={summaryWrap}
-              dialogOpen={openDialogItemId === item.id}
-              onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
-              defaultOpen={openDialogItemId === item.id}
-            />
+            <li key={item.id}>
+              <ToolCallRow
+                item={item}
+                summaryWrap={summaryWrap}
+                dialogOpen={openDialogItemId === item.id}
+                onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
+                defaultOpen={openDialogItemId === item.id}
+              />
+            </li>
           ))}
-        </div>
+        </SpineList>
       )}
     </CollapsedLine>
   )

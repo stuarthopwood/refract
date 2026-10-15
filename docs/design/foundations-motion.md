@@ -44,6 +44,8 @@ Every animation above, and any added later, follows these rules:
 
 Reduced motion removes all transitions and replaces every spinner with a static glyph plus the word (agenda item 11), intended to meet WCAG 2.3.3 Animation from interactions (Level AAA, adopted beyond AA; not met until the static-glyph replacement is built). Today, `globals.css`'s `prefers-reduced-motion: reduce` block collapses every animation and transition to a single 0.01ms iteration (`animation-duration`/`transition-duration: 0.01ms`, `animation-iteration-count: 1`, `scroll-behavior: auto`); replacing spinners with a static glyph is not built yet.
 
+The **Spine** connector (issue #565) never animates in any state, including reduced motion (there is nothing to reduce): it is a plain CSS border that appears or disappears instantly with its group's own collapse/expand, the same way the border itself draws with no transition.
+
 Pausing on a hidden window (Caps and pause rules above), the 3-row shimmer cap, and the `prefers-reduced-motion` OS preference are not, on their own, a user-controlled pause path for WCAG 2.2.2: none of them is a control the user can reach to stop a looping animation that is visible and running. The shimmer, the waiting three-dot animation, the streaming caret, `AgentSpinner` (`globals.css`, `animation-iteration-count: infinite`, issue #612, supersedes `BrandSpinner`/spec 011), every `animate-spin` icon — `Loader2Icon`/`LoaderCircleIcon` (sign-in, readiness, running tool rows, the streaming thinking row, running subagents, the New session button) — the spinning `CheckIcon` for pending PR checks (`PullRequestRow.tsx:74`, `PullRequestDetail.tsx:210`), the spinning `RefreshCwIcon` on pull-request refresh (`P…
 
 ## Focus

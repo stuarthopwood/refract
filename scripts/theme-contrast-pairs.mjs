@@ -118,6 +118,13 @@ export const PAIRS = [
   // Subagent status icons on `--muted` (#563 remediation, decision 26): finished/failed icons.
   { fg: 'state-idle', bg: 'muted', min: 3 },
   { fg: 'severity-error', bg: 'muted', min: 3 },
+  // #565 decision 32: a node icon must keep 3:1 on the hover tint too (`CollapsedLine`'s own
+  // `hover:bg-muted`, decision 18) -- `ring/muted` is already gated above; these two were not.
+  { fg: 'state-working', bg: 'muted', min: 3 },
+  { fg: 'destructive', bg: 'muted', min: 3 },
+  // "N failed"/"N interrupted" text (`ToolGroupRow`'s own summary) rendered on the same hover
+  // tint needs the 4.5:1 text floor, distinct from the icon-only 3:1 pair just above.
+  { fg: 'destructive', bg: 'muted', min: 4.5 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/

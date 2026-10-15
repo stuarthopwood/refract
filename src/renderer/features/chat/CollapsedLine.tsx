@@ -75,7 +75,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   const row = (
     <>
-      <span className="flex size-3.5 shrink-0 items-center justify-center">{icon}</span>
+      {/* #565 decision 7: 16px slot (icon itself stays 14px, `size-3.5`, centred within it) so
+       * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly. */}
+      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
         <span className="min-w-0 max-w-full truncate font-medium" title={typeof label === 'string' ? label : undefined}>
           {label}
@@ -100,7 +102,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
            * which can sound like part of the question's own text rather than a status word. Not
            * whitespace-only, so it survives collapsing. */}
           <span className="sr-only">, </span>
-          <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
+          {/* #565 decision 33: `tabular-nums` keeps a duration's digits aligned down a Spine. */}
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{meta}</span>
         </>
       )}
     </>
@@ -121,15 +124,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   }
 
   return (
-    <Collapsible
-      open={actualOpen}
-      onOpenChange={setOpen}
-      className={cn('rounded-md border border-transparent hover:border-border', className)}
-    >
-      {/* Square choice items (docs/DESIGN.md "Look and feel"): only what's actually adjacent gets
-       * square treatment -- once open, the content panel sits flush against this trigger's own
-       * bottom edge, so its bottom corners go square instead of keeping a rounded highlight that
-       * reads as a disconnected pill floating above the content. */}
+    <Collapsible open={actualOpen} onOpenChange={setOpen} className={className}>
+      {/* #565 decision 18: the root used to carry its own always-on `border border-transparent`
+       * (hover swapping it to `hover:border-border`), a second box nested right inside whatever
+       * ancestor box this row sits in -- the confirmed cause of #430's nested-box bug. Hover is
+       * now only the trigger's own ghost `hover:bg-muted` below; the root carries no border. */}
       <div className="flex items-center gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
@@ -141,8 +140,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             // `outline-offset-2` (the shadcn default) draws OUTSIDE this element's own box and
             // was very likely clipped by that containment. `-2px` draws the ring INSIDE instead,
             // matching the plain row above.
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-            actualOpen && 'rounded-b-none'
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
           )}
         >
           {row}
