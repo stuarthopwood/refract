@@ -143,7 +143,12 @@ copy-paste step); it was never auto-run by `pnpm test`/CI (it lived under `scrip
 `vitest.config.ts`'s own `include: ['src/**/*.test.ts']`, and wasn't named `*.test.ts`/
 `*.spec.ts` either), and needed its own one-off vitest config
 (`scripts/gen-contract-replay-electron-trace.vitest.config.mjs`) to be runnable at all, since an
-explicit CLI file argument alone does not override `vitest.config.ts`'s `include`.
+explicit CLI file argument alone does not override `vitest.config.ts`'s `include`. Regenerate
+(when it could still run, before #796):
+
+```
+npx vitest run --config scripts/gen-contract-replay-electron-trace.vitest.config.mjs scripts/gen-contract-replay-electron-trace.mjs
+```
 
 **The generator and its one-off vitest config were deleted at #796/R13 along with `src/main`,
 `src/preload` and the rest of the Electron build** -- there is no longer an Electron shell (or

@@ -21,7 +21,7 @@ Spec 001 (core session workspace) is implemented: sessions per git worktree, cha
 pnpm install
 pnpm dev            # Tauri (Rust) build with hot reload
 pnpm build          # production build (tauri build --no-bundle), output in src-tauri/target/
-pnpm typecheck      # tsc --noEmit over the main and web projects
+pnpm typecheck      # tsc --noEmit over tsconfig.node.json and tsconfig.web.json
 ```
 
 `pnpm dev`/`pnpm build` run `cargo` under the hood; point `CARGO_TARGET_DIR` at a shared build

@@ -1,6 +1,8 @@
 // Issue #795 (lane R12b): direct ports of `src/main/omp/transcript.test.ts`'s
 // `describe('fromHistory terminatedUnexpectedly gating', ...)` 4 named `it(...)` cases (that
-// file's lines 15, 21, 27, 41) -- gate-round-2 HIGH #2 remediation. The previous round's 7
+// file's lines 15, 21, 27, 41) -- gate-round-2 HIGH #2 remediation. `src/main` was deleted at
+// #796/R13; that file's text is only readable at tag `electron-final` now. The previous round's
+// 7
 // scenario pairs under `scripts/fixtures/transcript-golden/` (`thinking`, `isError`, `subagent`,
 // `notice`, `hasUserActed`, `reset-on-removal`, `request`) were NOT ports of any named test case
 // -- they were derived from reading `transcript.rs`'s own code paths, which is exactly what
