@@ -82,6 +82,25 @@ field whose bottom bar shows the mode, model, and agent.
   request, Subagents) is a quiet text button with a hover background and no border. CONTEXT.md's
   **Readout chip** term is retired (moved to _Avoid_); the row is the **Status line**, each entry
   a **Readout** (decision 2).
+- Q: Issue #437: the Context usage chip shows its figures in full with thousands separators and
+  the word "tokens" (for example "44,842/1,000,000 tokens (4%)"), and the old `compact()` helper
+  (`Intl.NumberFormat` with `notation: 'compact'`, used only by the Changes chip) is upper-case
+  and rounds without a fixed decimal count, so it cannot be reused as is. What replaces both, and
+  how far does the change reach? -> A: `/grill-with-docs` session, 2026-10-15. **Scope** (decision
+  1): one shared `k`/`m`/`b` formatter for the Changes Readout, the Context usage Readout, AND the
+  Session details card's diff line (`formatDiffStat`, spec 001 FR-039) -- so the hover card and
+  the status line never show the same figure two ways; it replaces `ReadoutChips.tsx`'s own
+  `compact()` entirely. **Threshold** (decision 2): one rule for every figure -- plain below
+  1,000, abbreviated from 1,000 up (1,234 reads "1.2k"); at most one decimal, trailing zero
+  dropped, round half up (decided earlier the same day, 2026-10-05: lower-case suffixes, no word
+  "tokens", example "44.8k/1m (4%)"). **Locale** (decision 3): English suffixes `k`/`m`/`b`
+  regardless of the system locale. **Wording and accessibility** (decision 4): the Context usage
+  Readout's visible text drops the word "tokens"; the full phrase, including the high-usage
+  warning state, reaches assistive technology through a real `sr-only` span next to `aria-hidden`
+  visual text (the pattern the Current time chip already uses), replacing the existing high-state
+  `accessibleName` on this chip's own role-less `<span>`, which several real screen readers (NVDA
+  in browse mode, often Narrator and JAWS) ignore there. Built inside PR #877 (#564's composer
+  status line), spec 004 is the right feature directory for this change, not spec 001.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -218,8 +237,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - The Session's Base branch no longer exists, or its worktree is missing: the Changes chip shows
   "Not available" instead of a count or hiding, matching the Session details card (spec 001
   FR-039).
-- A change count is very large: it is shown abbreviated (for example "1.2k") rather than as an
-  unbounded exact number.
+- A change count (or the Context usage chip's token figures) is very large: it is shown
+  abbreviated by the shared `k`/`m`/`b` formatter (FR-002, FR-003) rather than as an unbounded
+  exact number -- 1,234 reads "1.2k". Rounding to one decimal can carry into the next suffix: for
+  example 999,950 rounds to 999.95k, which rounds again to 1000.0k at one decimal, so the
+  formatter carries up and shows "1m", never "1000k".
 - Many chips are shown at once in a narrow window: the row wraps onto a further line, or scrolls,
   and never hides or overlaps the message box.
 - A pull request lookup fails, or GitHub access is unavailable: the chip is simply not shown; no
@@ -333,12 +355,25 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-002**: The Changes chip MUST show the number of files changed and the total lines added
   and removed for the Session's worktree against its Base branch, counting committed edits,
   uncommitted edits, and new untracked files — the same figure the Session details card shows
-  (spec 001 FR-039); large counts MUST be shown abbreviated; when the Base branch no longer
-  exists or the worktree is missing, the chip MUST show "Not available".
+  (spec 001 FR-039); each figure MUST be abbreviated past 1,000 by the one shared formatter
+  FR-003 also uses (2026-10-15 grill, issue #437), so the two never show the same count two
+  different ways; when the Base branch no longer exists or the worktree is missing, the chip
+  MUST show "Not available".
 - **FR-003**: The Context window usage chip MUST show the tokens used, the context window size,
   and the percentage used, for the Session's running agent; it MUST be hidden, or show "Not
   available", when the agent does not report this; as usage nears the window's limit, the chip
-  MUST visibly warn using text or an icon, never color alone.
+  MUST visibly warn using text or an icon, never color alone. The used-tokens and window-size
+  figures MUST be formatted by one shared lower-case `k`/`m`/`b` formatter (2026-10-15 grill,
+  issue #437, decided 2026-10-05/2026-10-15): plain below 1,000; at most one decimal above it,
+  with a trailing zero dropped (`1m`, never `1.0m`), rounded half up, carrying to the next larger
+  suffix when rounding would otherwise reach 1,000 of the current one (for example 999,950 reads
+  `1m`, never `1000k`); English suffixes regardless of system locale. This is the SAME formatter
+  FR-002's Changes chip and the Session details card's diff line use, so no figure is ever shown
+  two different ways across the app. The visible text drops the literal word "tokens" (for
+  example "44.8k/1m (4%)"); the full wording, including the high-usage warning state, MUST still
+  reach assistive technology, through a real `sr-only` phrase next to `aria-hidden` visual text
+  (the same pattern the Current time chip already uses) rather than an `aria-label` on this
+  chip's own role-less `<span>`, which several real screen readers ignore there.
 - **FR-004**: The Turn time chip MUST show the elapsed time of the Session's currently running
   turn, updating as the turn runs, and MUST be hidden whenever no turn is running.
 - **FR-005**: The Current time chip MUST show the local time to the minute, updating at least

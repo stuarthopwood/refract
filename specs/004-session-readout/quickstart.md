@@ -37,8 +37,10 @@ These OMP facts are unverified and are checked before the work that depends on t
 2. Open a Session whose worktree or Base branch is missing. Expect: the Changes chip reads "Not
    available" rather than a count or being hidden.
 3. Start a turn and watch the row while it runs. Expect: a Turn time chip ticks up, a Context
-   window usage chip shows tokens/window/percent (or "Not available" if the agent never reports
-   it) and visibly warns (text or icon, not colour alone) once usage nears the window's limit.
+   window usage chip shows used/window/percent abbreviated by the shared `k`/`m`/`b` formatter
+   with no literal word "tokens" (for example "44.8k/1m (4%)", issue #437), or "Not available" if
+   the agent never reports it, and visibly warns (text or icon, not colour alone) once usage
+   nears the window's limit.
 4. Let the turn end. Expect: the Turn time chip disappears; Changes and Context window usage keep
    their last reading.
 5. Watch the Current time chip (turn it on in Settings first; it defaults off) for at least a
