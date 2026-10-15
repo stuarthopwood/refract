@@ -15,8 +15,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { TranscriptItem } from '../../../shared/model'
-import { CollapsedLine } from './CollapsedLine'
-import { SpineList, SPINE_HOST_CONTENT_CLASS } from './SpineList'
+import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import type { StageGroup } from './groupSubagentStages'
@@ -176,6 +176,10 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
         // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
         triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}
+        // #565 decisions 10/13: a one-agent Stage renders identically to `SubagentRow` (FR-067),
+        // so its own expanded body starts at the same label column every other Spine member's
+        // body does, not the default px-2 column.
+        contentClassName={LABEL_COLUMN_CONTENT_CLASS}
       >
         <SubagentBody item={item} />
       </CollapsedLine>
@@ -223,14 +227,11 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       contentClassName={SPINE_HOST_CONTENT_CLASS}
     >
       <SpineList gap="member">
-        {group.items.map((item) => {
-          const isNew = isRunning && !seenIds.has(item.id)
-          return (
-            <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
-              <SubagentRow item={item} />
-            </li>
-          )
-        })}
+        {group.items.map((item) => (
+          <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+            <SubagentRow item={item} />
+          </SpineItem>
+        ))}
       </SpineList>
     </CollapsedLine>
   )
@@ -419,17 +420,11 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       action={<ChainShowPanelButton sessionId={sessionId} />}
     >
       <SpineList gap="stage">
-        {stages.map((stage) => {
-          const isNew = !seenStageIds.has(stage.id) && isRunning
-          return (
-            <li
-              key={stage.id}
-              className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}
-            >
-              <ChainStageLine stage={stage} sessionId={sessionId} />
-            </li>
-          )
-        })}
+        {stages.map((stage) => (
+          <SpineItem key={stage.id} isNew={!seenStageIds.has(stage.id) && isRunning}>
+            <ChainStageLine stage={stage} sessionId={sessionId} />
+          </SpineItem>
+        ))}
       </SpineList>
     </CollapsedLine>
   )

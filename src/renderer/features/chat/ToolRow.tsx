@@ -7,7 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
 import type { ToolGroup } from './groupToolItems'
-import { SpineList, SPINE_HOST_CONTENT_CLASS } from './SpineList'
+import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -233,20 +233,17 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         />
       ) : (
         <SpineList gap="member">
-          {group.items.map((item) => {
-            const isNew = isRunning && !seenIds.has(item.id)
-            return (
-              <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
-                <ToolCallRow
-                  item={item}
-                  summaryWrap={summaryWrap}
-                  dialogOpen={openDialogItemId === item.id}
-                  onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
-                  defaultOpen={openDialogItemId === item.id}
-                />
-              </li>
-            )
-          })}
+          {group.items.map((item) => (
+            <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+              <ToolCallRow
+                item={item}
+                summaryWrap={summaryWrap}
+                dialogOpen={openDialogItemId === item.id}
+                onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
+                defaultOpen={openDialogItemId === item.id}
+              />
+            </SpineItem>
+          ))}
         </SpineList>
       )}
     </CollapsedLine>
