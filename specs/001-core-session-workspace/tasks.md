@@ -812,3 +812,70 @@ not a prior `/speckit.plan`/`/speckit.tasks` pass (none existed for #564).
 This phase was written retroactively after the implementation above, in the same session that
 built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #564; Stuart's own 2026-10-
 15 Decided comments on the issue, plus the mockup-stories review reply, are the decision record).
+
+**`/grill-with-docs` follow-up (same day, same session, after T137-T143 above landed)**: Stuart's
+"Decided (Stuart, 2026-10-15): `/grill-with-docs` session for this story" comment on #564 gave six
+further decisions. T144-T151 below implement them; `/speckit.implement` was run against this
+phase per that comment, task by task, each `[X]` citing the actual code on this branch at the
+time it was marked, not a prior plan.
+
+- [X] T144 [US1] Amend the docs for the six grill decisions: `CONTEXT.md` retires **Readout chip**
+  (moved to its own _Avoid_ line) and introduces **Status line** and the re-scoped **Readout**
+  entry, with **Chat pane**, **Subagent panel**, and the generic **Chip** entry's own example
+  updated to match; `specs/001-core-session-workspace/spec.md` gets a further `### Session
+  2026-10-15` Clarifications block (Stop's neutral fill superseding that same day's earlier
+  answer, the stopped-agent disabled state, the Reasoning level order, the Model picker's filter/
+  Roles menu, and a pointer to spec 004's plain-text decision), FR-064 rewritten in place for all
+  of the above (not yet externally reviewed, so amended directly rather than superseded by a new
+  FR number), FR-065 rewritten for Stop's neutral fill, US1 acceptance scenario 11 and a new Edge
+  Cases bullet for the stopped-disabled state; `specs/004-session-readout/spec.md` gets its own
+  Clarifications entry, FR-023 rewritten in place for the plain-text/no-box rule, and its Key
+  Entities **Readout chip** entry renamed to **Readout** with the same rule. `docs/design/
+  product-chat.md`'s Message box bullet and `docs/design/product-layout.md`'s Approval-pill/
+  status-bar/chat-header/status-line bullets rewritten to match (neutral Stop, accent Send, the
+  stopped-disabled pickers, the Reasoning order, the Model picker's filter/Roles menu, and the
+  Status line's plain-text/no-box rule, replacing every remaining "chip row"/"Readout chip"
+  wording).
+- [X] T145 [US1] Restyle `src/renderer/features/chat/readout/ReadoutChip.tsx` to plain text, no
+  box (decision 1): drops `badgeVariants` entirely; a read-only Readout is now `inline-flex` text
+  with an icon, no border or fill; an interactive one (`onActivate`/`href`) adds only
+  `rounded-md hover:bg-muted hover:text-foreground`, still no border. The seven `ReadoutChips.tsx`
+  components and `ComposerStatusLine.tsx` need no changes themselves -- they only call this
+  shared baseline, which now renders the new look under them unchanged.
+- [X] T146 [US1] Reorder and relabel `src/renderer/lib/modelDisplay.ts`'s `THINKING_LEVEL_LABEL`/
+  `THINKING_LEVELS` for decision 4: `inherit` now reads "Default" (was "Inherit"), and the
+  declared order is `inherit, off, minimal, low, medium, high, xhigh, max` (was `off, inherit,
+  ...`), Default first. `formatThinkingLevelLabel` (used by both `MessageInput.tsx`'s Reasoning
+  picker and `SessionDetailsCard.tsx`'s tooltip) picks up the new label automatically since both
+  read the same map.
+- [X] T147 [US1] Add a solid NEUTRAL `invert` Button variant (decision 5):
+  `src/renderer/components/ui/button.tsx` gains `invert: "bg-foreground text-background
+  hover:bg-foreground"` (no opacity-modified hover, per the token rules) alongside the existing
+  variants; `MessageInput.tsx`'s Stop button switches from `variant="default"` to
+  `variant="invert"`, and Send switches from `variant="outline"` to `variant="default"` (Send
+  "keeps the accent fill" per the decision's own wording, which only makes sense if Send already
+  has one), with the surrounding comment rewritten for both.
+- [X] T148 [US1] Give the Model and Reasoning pickers a stopped-agent disabled state (decision 3):
+  `ComposerPickers.tsx`'s `usePickerDisabled` (renamed from the single-purpose `useNotIdle`) now
+  returns `{ disabled, notIdle, stopped }`; `disabled = notIdle || stopped` gates `aria-disabled`
+  and the controlled `onOpenChange` refusal for both pickers, each with its own accessible-name
+  reason ("Available once the session is idle." vs "Start the agent to change the
+  model/reasoning level."); a disabled picker's `onOpenChange` never calls
+  `setModel`/`setThinkingLevel`/`applyRole`, so nothing is stored for the next start.
+- [X] T149 [US1] Rebuild the Model picker's own menu (decision 6): a type-to-filter `Input` at the
+  top of `DropdownMenuContent` (Radix's `DropdownMenu.Content` has no public `onOpenAutoFocus`
+  unlike Dialog/AlertDialog, so a `useEffect` keyed on `open` focuses the field instead, winning
+  the race against Radix's own default first-item focus), a **Roles** `DropdownMenuLabel` group
+  first built from `model.listRoles(sessionId)` (fetched on open) with each role's own raw
+  selector looked up against the already-loaded catalog for a friendly name, selecting one calls
+  `model.applyRole`; then a **Models** group, the catalog filtered by the typed text
+  (case-insensitive substring over `provider`/`name`), current one ticked, capped to
+  `max-h-96 overflow-y-auto` (roughly 12 rows) rather than growing unbounded for the 91-entry chat
+  catalog.
+- [X] T150 [US1] Update the docs and verify: re-ran `pnpm typecheck` (clean), `pnpm
+  check:file-size` (0 violations, unchanged from T142), `pnpm check:indent` (0 odd-indent lines),
+  `pnpm check:theme-contrast` (all 313 pairs still pass -- the new `invert` button variant and the
+  restyled `ReadoutChip` are not in `scripts/check-theme-contrast.mjs`'s own pair list, so this
+  confirms no EXISTING pair regressed, not a new check for either). Rebuilt `pnpm tauri build
+  --debug --no-bundle` and re-ran the scratch live check (screenshots and exact results recorded
+  in the PR body, not retrofitted into this task).

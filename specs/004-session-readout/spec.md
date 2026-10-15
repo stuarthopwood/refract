@@ -75,6 +75,13 @@ field whose bottom bar shows the mode, model, and agent.
   full chat width, figures tabular, Current time last at the right end when enabled; when nothing
   is meaningful or enabled the status line now renders nothing at all, since the pill that used
   to guarantee at least one item is gone.
+- Q: `/grill-with-docs` follow-up (issue #564): should the status line's readouts keep the
+  existing boxed/chip look (`ReadoutChip.tsx`'s `badgeVariants` pill), now that the Approval
+  pill is gone? -> A: No (decision 1): plain text, no box, per the zero-box rule and the mock -- a
+  read-only readout is an icon plus text with no border or fill; one that opens something (Pull
+  request, Subagents) is a quiet text button with a hover background and no border. CONTEXT.md's
+  **Readout chip** term is retired (moved to _Avoid_); the row is the **Status line**, each entry
+  a **Readout** (decision 2).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -400,13 +407,20 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   shown as tabular numbers. When enabled, the Current time readout MUST be the line's last item,
   at its right end. When no readout is both enabled and meaningful, the status line MUST render
   nothing at all -- no empty bar -- since the Approval mode pill that previously guaranteed at
-  least one item no longer lives here.
+  least one item no longer lives here. Every readout MUST be plain text, not a boxed chip
+  (2026-10-15 grill, issue #564, decision 1): a read-only readout (Changes, Todo progress,
+  Context window usage, Turn time, Current time) MUST show as an icon plus text with no border or
+  fill; a readout that opens something (Pull request, Subagents) MUST show as a quiet text
+  control with a hover background and no border, never a bordered or filled pill.
 
 ### Key Entities
 
-- **Readout chip**: one chip in the row, for one readout kind (Changes, Context window usage,
-  Turn time, Current time, Pull request, Subagents, Todo progress), shown only while that readout is enabled and
-  meaningful for the Session, and clickable only for Pull request and Subagents.
+- **Readout**: one entry in the status line, for one readout kind (Changes, Context window
+  usage, Turn time, Current time, Pull request, Subagents, Todo progress), shown only while that
+  readout is enabled and meaningful for the Session, plain text with no border or fill, and a
+  quiet text button (hover background, still no border) only for Pull request and Subagents,
+  which are the only two that open something (2026-10-15 grill, issue #564, supersedes this
+  entry's earlier "chip" framing).
 - **Session readout settings**: the app-wide record of which readouts are shown or hidden, with
   the defaults in FR-013, persisted across restarts and applied to every open Session.
 - **Subagent panel**: the panel opened from the Subagents chip, listing the current turn's
