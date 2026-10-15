@@ -1442,3 +1442,44 @@ rebuild-only passes) were deleted after use.
   PR body leftovers corrected: the stale `max-h-96` wording in the gaps list (now describes the
   current `h-[min(30rem,...)]` popover), and gate round 6's undescribed `5-after-profile-
   attempt.png` screenshot now has a caption.
+
+**Verified**: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent`,
+`pnpm check:file-size` (0 violations/313 files, `MessageInput.tsx` held at exactly its 1632-line
+baseline), `node scripts/check-theme-contrast.mjs` (all 328 pairs across 3 themes PASS), and the
+full `node scripts/ci-local.mjs` (all 16 steps). The Rust side needed several retries this round:
+a now-familiar transient `link.exe`/`mt.exe` `LNK1327` failure recurred three times in a row
+(unusually persistent, not the usual one-off flake); investigating turned up that the linker was
+referencing a STALE absolute path to a DIFFERENT worktree's own `windows-app-manifest.xml`
+(`...\refract-811-main-worktree\...`, a sibling lane's own checkout building the SAME crate
+concurrently against this machine's SAME shared `CARGO_TARGET_DIR`) -- a build-script fingerprint
+collision between two checkouts of identical crate name/version/profile sharing one target
+directory, not a defect in this PR's own code. A `touch src-tauri/build.rs src-tauri/src/main.rs`
+forced a fresh, uncached build-script run and resolved it; a subsequent attempt also hit a
+"blocking waiting for file lock"/"failed to run cargo metadata" stall from the SAME concurrent
+lane actually holding the shared target directory's lock at that moment, resolved by waiting it
+out and retrying (`timeout: 0`) rather than by any code change.
+
+Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+`WEBVIEW2_USER_DATA_FOLDER`, a scratch git repo, driven through the real UI, the freshly-built
+exe from the same `ci-local.mjs` run copied out before testing): **4 of 4 checks pass**:
+- Hovering the disabled Send button with an empty draft reads a real, non-transparent
+  `backgroundColor` (`oklch(0.541066 0.158793 290.277)`, the `--send` token, at `opacity: 0.6`)
+  via `getComputedStyle` -- confirmed the fix, not just the absence of a visible regression;
+  screenshot `2-send-hovered-empty-draft.png` shows the filled indigo circle under the cursor.
+- The Roles group now shows "Loading roles…" instead of an empty heading (confirmed in the
+  popover rows dump, though the probe's own model/role catalog resolved before a screenshot could
+  catch the loading state visibly).
+- The Profile menu's Theme submenu genuinely expands (confirmed by its own rows -- "Dark",
+  "Dark (high contrast)", "Obsidian", "Appearance settings…" -- appearing in the DOM, not just a
+  vacuous zero-count after a premature screenshot the first attempt took): all ten rows read
+  `hasPermanentBar: false`, and screenshot `4-theme-submenu-open.png` shows "Dark ✓ Current" with
+  no indigo bar on it, only on the still-keyboard-focused "Theme" trigger row itself.
+- **Not exercised**: the Retry row's own wrapping (T194) -- this harness's model catalog call
+  still resolves successfully every time against the scratch profile's own seeded config, the
+  same finding gate rounds 5 and 6 already recorded; no on-demand way to force a catalog error
+  exists in this harness.
+
+Screenshots: `C:/Users/shopwood/AppData/Local/Temp/refract-564-gate7-shots/` --
+`1-session-idle.png`, `2-send-hovered-empty-draft.png` (the key Medium-1 evidence),
+`4-theme-submenu-open.png` (the key Medium-3 evidence). The throwaway driver script and every
+scratch dir/profile (across every attempt) were deleted after use.
