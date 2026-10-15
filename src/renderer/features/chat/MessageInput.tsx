@@ -24,7 +24,7 @@ import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from '
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { attachImageFile } from './attachImage'
 import {
@@ -1591,11 +1591,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   className={cn(
                     'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
                     // Composer-dimming fix (gate round 4: scoped to the field block, not the
-                    // whole box): the shared disabled treatment only for the OTHER refusal
-                    // reasons (starting, a pending attachment read, empty text) -- the field
-                    // block's own `opacity-60` already covers the `disabled` case, and `disabled`
-                    // can never be true at the same time as `starting` (round 6: was opacity-50).
-                    !disabled && COMPOSER_DISABLED_CLASS,
+                    // whole box): the shared disabled OPACITY for the OTHER refusal reasons
+                    // (starting, a pending read, empty text); `disabled` can't be true with
+                    // `starting` (round 7: opacity only, no hover reset -- Send's opaque resting
+                    // fill made the shared reset drop it transparent on hover, Arch877 Medium 1).
+                    !disabled && COMPOSER_DISABLED_OPACITY_CLASS,
                     COMPOSER_BUTTON_FOCUS_CLASS
                   )}
                   aria-label="Send message"

@@ -1398,3 +1398,47 @@ stale `gap-1.5` the `pickerShared.tsx` fix was supposed to cover everywhere. Scr
 `5-after-profile-attempt.png` and `6-theme-submenu-open.png` (the corrected Theme submenu). The
 throwaway driver script and every scratch dir/profile (across all attempts, including the two
 rebuild-only passes) were deleted after use.
+
+- [X] T193 [US1] Gate round 7 fix 1 (Medium, `agent://Arch877`/`agent://G564Code`): hovering a
+  disabled Send button (its ordinary empty-draft resting state) dropped the indigo `--send` fill
+  to transparent -- gate round 6's `!disabled && COMPOSER_DISABLED_CLASS` added a hover RESET
+  (`aria-disabled:hover:bg-transparent`) meant for a control transparent at rest (the outline/
+  ghost triggers), more specific than Send's own `hover:bg-[color-mix(...)]`. `pickerShared.tsx`
+  now splits `COMPOSER_DISABLED_CLASS` into `COMPOSER_DISABLED_OPACITY_CLASS` (cursor plus
+  opacity-60 alone) and `COMPOSER_DISABLED_HOVER_RESET_CLASS`; `COMPOSER_DISABLED_CLASS` stays
+  the combined value for everything that was already transparent at rest. Send now takes
+  `COMPOSER_DISABLED_OPACITY_CLASS` alone.
+- [X] T194 [US1] Gate round 7 fix 2 (Medium, `agent://Arch877`): the Retry row's error text
+  truncated to about 33 visible characters in the 288px popover, hiding any real diagnostic.
+  `ModelCatalogGroup.tsx`'s error span moves from `truncate` to `whitespace-normal break-words`
+  (row gains `items-start`); the stale "Reopening this menu also retries." hint is dropped
+  (the row is itself directly Enter/click-activatable now, gate round 6); the row also gets its
+  own `retryOptionId` (was `optionId(roleCount)`, reused by the first model row once the catalog
+  loads, so a successful retry's `aria-activedescendant` could point at a stale id).
+- [X] T195 [US1] Gate round 7 fix 3 (Medium, doc-only, `agent://Arch877`): the shared dropdown
+  menu's own `--active-indicator` focus bar (gate round 5) narrows Stuart's 2026-10-04 "Active/
+  selected indicator" rule, which had listed "a dropdown's checked option" as one of the surfaces
+  that bar marks -- in a dropdown menu specifically, the bar now means keyboard focus ONLY, and
+  a trailing check plus "Current" (or `aria-checked`) marks the current option instead, matching
+  the composer's own pickers. Recorded as "Decided (Skippy, delegated by Stuart 2026-10-15)" in
+  `docs/design/product-look-and-feel.md`'s own rule (every OTHER current/selected surface is
+  unchanged), `docs/design/product-layout.md`'s Theme-submenu description, and
+  `ProfileMenu.tsx`'s own `ThemeSubmenu` comment; posted as a comment on issue #564 for Stuart's
+  own sign-off, since this narrows his rule rather than merely documenting new behaviour.
+- [X] T196 [US1] Gate round 7 LOW fixes (`agent://Arch877`/`agent://G564Code`/`agent://G564A11y`):
+  `handleCatalogRetry` wraps its `loadCatalog` call in `try`/`finally` (matching
+  `handleSelectModel`/`handleSelectRole`'s own guard) so a future IPC rejection can never leave
+  `retrying` stuck true; the open effect's automatic retry-on-reopen now calls
+  `handleCatalogRetry()` directly instead of `loadCatalog` bare, so it shows the SAME
+  "Retrying…" feedback a manual retry does; the scroll-to-active-option effect's deps gain
+  `open` (a reopen whose active index happened to equal the previous open's never re-ran it,
+  leaving the list scrolled to the top); an empty-string model `name` now falls through to `id`
+  (`name?.trim() || id`, `modelDisplay.ts`'s `formatModelLabel` and `ModelPicker.tsx`'s own
+  `modelNameOnly`, was `name ?? id`, which kept a blank trigger for an empty but non-null name);
+  `AttachButton` gains `dark:aria-disabled:hover:bg-transparent` (the vendored `ghost` Button
+  variant's own `dark:hover:bg-muted/50` tied the shared reset's specificity in Dark/Dark-HC);
+  the Roles group shows a "Loading roles…" row (matching the Models group's own loading-state
+  convention) while `listRoles` is still pending, instead of a heading with nothing under it.
+  PR body leftovers corrected: the stale `max-h-96` wording in the gaps list (now describes the
+  current `h-[min(30rem,...)]` popover), and gate round 6's undescribed `5-after-profile-
+  attempt.png` screenshot now has a caption.

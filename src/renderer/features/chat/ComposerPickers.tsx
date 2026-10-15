@@ -168,8 +168,12 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             // opaque focus outline every other composer control now uses, instead of its own
             // bespoke `opacity-60` and Button's default ring-based focus. Gate round 6 fix
             // (`agent://Arch877` Visual): imports `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`)
-            // instead of duplicating its exact string, so the two can never drift apart.
-            className={cn(COMPOSER_DISABLED_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
+            // instead of duplicating its exact string, so the two can never drift apart. Gate
+            // round 7 fix (`agent://Arch877` Visual L1): `button.tsx`'s `ghost` variant has its
+            // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
+            // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
+            // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
+            className={cn(COMPOSER_DISABLED_CLASS, 'dark:aria-disabled:hover:bg-transparent', COMPOSER_BUTTON_FOCUS_CLASS)}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()

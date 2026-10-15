@@ -15,8 +15,15 @@
 // may not expose at all, and which Tab/arrow-keys could never reach anyway) -- the row itself IS
 // the option now (`ModelPicker.tsx`'s own `activatableIndices` includes it), so Enter and a
 // direct click both retry without ever closing the popover; a local `retrying` flag (owned by the
-// parent) shows "Retrying…" with a spinner and blocks a second concurrent call; the text itself
-// says reopening the menu also retries, for the one path that still only works by mouse today.
+// parent) shows "Retrying…" with a spinner and blocks a second concurrent call.
+//
+// Gate round 7 fix (`agent://Arch877` Medium 2, Flow/Layout Low): the error text now wraps
+// (`whitespace-normal break-words`, was `truncate`, cutting any real error to about 33 visible
+// characters in this 288px-wide popover) -- the stale "Reopening this menu also retries." hint
+// is gone too, since the row itself is now directly Enter/click-activatable, not just reachable
+// by closing and reopening the menu. The row also gets its OWN id (`retryOptionId`, passed down
+// rather than derived from `optionId`) so a successful retry's `aria-activedescendant` never
+// reuses an id that belonged to the now-gone error row.
 import { CheckIcon, Loader2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ModelCatalogEntry } from '../../../shared/model'
@@ -30,6 +37,7 @@ export function ModelCatalogGroup({
   filteredCatalog,
   clampedActiveIndex,
   optionId,
+  retryOptionId,
   retrying,
   currentModel,
   onHoverIndex,
@@ -43,6 +51,7 @@ export function ModelCatalogGroup({
   filteredCatalog: ModelCatalogEntry[]
   clampedActiveIndex: number | null
   optionId: (index: number) => string
+  retryOptionId: string
   retrying: boolean
   currentModel: { provider: string; id: string } | null
   onHoverIndex: (index: number) => void
@@ -56,7 +65,7 @@ export function ModelCatalogGroup({
       </div>
       {catalogError && (
         <div
-          id={optionId(roleCount)}
+          id={retryOptionId}
           role="option"
           aria-disabled={retrying || undefined}
           data-active={roleCount === clampedActiveIndex}
@@ -71,14 +80,20 @@ export function ModelCatalogGroup({
           }}
           className={cn(
             PICKER_OPTION_CLASS,
-            'justify-between',
+            // Gate round 7 fix (`agent://Arch877` Medium 2): `items-start` (was the row's own
+            // `items-center`) so a wrapped multi-line error doesn't centre the Retry label
+            // against only its first line.
+            'items-start justify-between gap-2',
             roleCount === clampedActiveIndex && PICKER_OPTION_ACTIVE_CLASS,
             retrying && 'cursor-not-allowed opacity-60'
           )}
         >
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            {catalogError} Reopening this menu also retries.
-          </span>
+          {/* Gate round 7 fix (`agent://Arch877` Medium 2): `whitespace-normal break-words` (was
+              `truncate`) -- a real error cut to about 33 visible characters in this 288px popover
+              hid the diagnostic from every sighted user; the stale "Reopening this menu also
+              retries." hint is gone, since the row is now directly Enter/click-activatable, not
+              just reachable by closing and reopening the menu. */}
+          <span className="min-w-0 flex-1 whitespace-normal break-words text-muted-foreground">{catalogError}</span>
           <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
             {retrying && <Loader2Icon aria-hidden className="size-3 animate-spin" />}
             {retrying ? 'Retrying…' : 'Retry'}

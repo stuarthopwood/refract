@@ -137,8 +137,10 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const modelLabelIsRaw = Boolean(session?.lastModel && !session.lastModel.name)
   // Gate round 5 fix (Layout/Flow/Visual Medium #3): the VISIBLE trigger text is the bare model
   // name (or raw id, the same `modelLabelIsRaw` case), never `provider/name` -- the full form
-  // stays in the Tooltip and the accessible name's parenthetical below.
-  const modelNameOnly = session?.lastModel ? (session.lastModel.name ?? session.lastModel.id) : null
+  // stays in the Tooltip and the accessible name's parenthetical below. Gate round 7 fix (Flow
+  // Low, `agent://Arch877`): `name ?? id` kept an EMPTY-STRING `name`, leaving the trigger
+  // visibly blank -- `?.trim() ||` falls through to `id` for both absent and blank names.
+  const modelNameOnly = session?.lastModel ? (session.lastModel.name?.trim() || session.lastModel.id) : null
   const catalog = useModelRolesStore((s) => s.catalogs.chat)
   const catalogError = useModelRolesStore((s) => s.catalogErrors.chat)
   const loadCatalog = useModelRolesStore((s) => s.loadCatalog)
@@ -178,7 +180,13 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     }
     // Gate round 5 fix (Flow Medium #8): a cached catalog error must not stay cached forever --
     // every open forces a fresh attempt when one is on record, instead of only ever trying once.
-    void loadCatalog('chat', Boolean(catalogError))
+    // Gate round 7 fix (Flow Low, `agent://Arch877`): routed through `handleCatalogRetry` so this
+    // automatic retry shows the SAME "Retrying…" feedback a manually-triggered one does.
+    if (catalogError) {
+      void handleCatalogRetry()
+    } else {
+      void loadCatalog('chat', false)
+    }
     setFilter('')
     setActiveIndex(0)
     void window.refract.model.listRoles(sessionId).then((result) => {
@@ -283,17 +291,27 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     return next ?? activatableIndices[activatableIndices.length - 1]!
   }, [activatableIndices, activeIndex])
   const optionId = (index: number) => `${listboxId}-option-${index}`
+  // Gate round 7 fix (Flow Low, `agent://Arch877`/`agent://G564A11y`): a distinct, non-numeric
+  // id for the catalog-error Retry row -- it used to share `optionId(roleCount)` with whatever
+  // model row would occupy that SAME flat index once the catalog loads, so a successful retry
+  // could leave `aria-activedescendant` pointing at an id that now belongs to a different,
+  // unrelated row (or stay unchanged if the two ids happened to coincide), announcing nothing.
+  const retryOptionId = `${listboxId}-option-retry`
+  const activeOptionDomId = (index: number) => (catalogError && index === roleCount ? retryOptionId : optionId(index))
 
   // Gate round 6 fix (`agent://Arch877` Layout N2, [INFERENCE]): deferred one animation frame --
   // `scrollIntoView` could run before the popover's own `--radix-popover-content-available-
   // height` (and so its real layout) has settled, leaving the highlighted current model below
-  // the fold on a fresh open.
+  // the fold on a fresh open. Gate round 7 fix (Layout Low, `agent://Arch877`): added `open` to
+  // the deps -- a reopen whose active index happens to equal the PREVIOUS open's (e.g. the
+  // first role again) never re-ran this effect at all, so the list could open scrolled to the
+  // top instead of showing the active row.
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
     })
     return () => cancelAnimationFrame(raf)
-  }, [clampedActiveIndex])
+  }, [open, clampedActiveIndex])
 
   async function handleSelectModel(entry: ModelCatalogEntry) {
     setPendingLabel({ label: entry.name, provider: entry.provider })
@@ -320,11 +338,19 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
 
   // Gate round 6 fix (`agent://Arch877` Medium 1): retrying a cached catalog error never closes
   // the popover (unlike a role/model pick) -- the developer stays put to see whether it worked.
+  // Gate round 7 fix (Flow Low, `agent://Arch877`): `try`/`finally` -- `loadCatalog` always
+  // resolves today (the store itself never rejects), but a future IPC failure must not leave
+  // `retrying` stuck true forever, the same guard `handleSelectModel`/`handleSelectRole` already
+  // have. Also called from the open effect now, so an automatic retry on reopen shows
+  // "Retrying…" too, not just one started by activating the row directly.
   async function handleCatalogRetry() {
     if (retrying) return
     setRetrying(true)
-    await loadCatalog('chat', true)
-    setRetrying(false)
+    try {
+      await loadCatalog('chat', true)
+    } finally {
+      setRetrying(false)
+    }
   }
 
   function selectActiveOption() {
@@ -463,7 +489,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             aria-autocomplete="list"
             aria-expanded
             aria-controls={listboxId}
-            aria-activedescendant={clampedActiveIndex !== null ? optionId(clampedActiveIndex) : undefined}
+            aria-activedescendant={clampedActiveIndex !== null ? activeOptionDomId(clampedActiveIndex) : undefined}
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             onKeyDown={handleFilterKeyDown}
@@ -493,6 +519,15 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
               <div id={rolesHeadingId} role="presentation" className="px-2 py-1 text-xs font-medium text-muted-foreground">
                 Roles
               </div>
+              {/* Gate round 7 fix (Flow Low, `agent://G564Code`/`agent://G564A11y`): a loading row
+                  while `listRoles` is still pending -- the heading used to show with nothing
+                  under it, an unlabelled group for however long the probe took. */}
+              {roles === null && !rolesError && (
+                <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+                  <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin" />
+                  Loading roles…
+                </div>
+              )}
               {roles !== null &&
                 roles.map((role, index) => {
                   const friendly = friendlyRoleModel(role.role, role.model)
@@ -548,6 +583,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             filteredCatalog={filteredCatalog}
             clampedActiveIndex={clampedActiveIndex}
             optionId={optionId}
+            retryOptionId={retryOptionId}
             retrying={retrying}
             currentModel={session?.lastModel ?? null}
             onHoverIndex={setActiveIndex}

@@ -37,7 +37,10 @@ export const THINKING_LEVELS: readonly ThinkingLevel[] = ['inherit', 'off', 'min
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
   if (!session.lastModel) return null
   const { provider, id, name } = session.lastModel
-  return `${provider}/${name ?? id}`
+  // Gate round 7 fix (Flow Low, `agent://Arch877`): `name ?? id` kept an EMPTY-STRING `name`
+  // (never actually seen from omp [INFERENCE], but not ruled out by the type) -- `?.trim() ||`
+  // falls through to `id` for both `undefined`/`null` and a blank/whitespace-only string.
+  return `${provider}/${name?.trim() || id}`
 }
 
 /** The human label for a Session's last known thinking level: `null` before any model has ever

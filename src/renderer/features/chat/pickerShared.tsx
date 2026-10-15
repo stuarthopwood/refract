@@ -48,12 +48,22 @@ export const COMPOSER_BUTTON_FOCUS_CLASS = cn(COMPOSER_FOCUS_CLASS, 'focus-visib
 
 /** Gate round 5 fix (Visual LOW): disabled composer triggers used two different opacities (0.5,
  * `badgeVariants`' own `aria-disabled:opacity-50`; 0.6, the box-dim-matching override gate round
- * 4 added per-picker) and still showed hover feedback while disabled. One shared value, applied
- * unconditionally wherever `aria-disabled` is the only disabled signal (no separate native
- * `disabled` attribute), plus a hover reset so a disabled trigger's own hover background/text
- * classes never activate underneath the dim. */
-export const COMPOSER_DISABLED_CLASS =
-  'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent aria-disabled:hover:text-current'
+ * 4 added per-picker) and still showed hover feedback while disabled. One shared opacity value,
+ * applied unconditionally wherever `aria-disabled` is the only disabled signal (no separate
+ * native `disabled` attribute).
+ *
+ * Gate round 7 fix (Visual Medium 1, `agent://Arch877`/`agent://G564Code`): split the hover
+ * RESET out into its own class. The reset (`aria-disabled:hover:bg-transparent
+ * aria-disabled:hover:text-current`) only suits a control whose resting fill IS transparent
+ * (the outline/ghost triggers below) -- applied to Send, whose resting fill is the OPAQUE
+ * `--send` token, `[aria-disabled=true]:hover` (0,3,0 specificity) beat Send's own
+ * `hover:bg-[color-mix(...)]` (0,2,0), so hovering a disabled, empty-draft Send (its ordinary
+ * resting state) dropped the indigo fill to transparent, leaving a bare white arrow. Send now
+ * takes `COMPOSER_DISABLED_OPACITY_CLASS` alone; everything that was transparent at rest keeps
+ * the combined `COMPOSER_DISABLED_CLASS` below, unchanged. */
+export const COMPOSER_DISABLED_OPACITY_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-60'
+export const COMPOSER_DISABLED_HOVER_RESET_CLASS = 'aria-disabled:hover:bg-transparent aria-disabled:hover:text-current'
+export const COMPOSER_DISABLED_CLASS = cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_DISABLED_HOVER_RESET_CLASS)
 
 export const PICKER_TRIGGER_CLASS = cn(
   badgeVariants({ variant: 'outline' }),
