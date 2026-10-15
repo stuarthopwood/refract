@@ -60,8 +60,8 @@ mod lane_support;
 mod launch;
 mod launch_support;
 mod requests;
+mod sync_from_state;
 mod types;
-
 pub use commands::{
     classify_slash_invocation, parse_slash_command, SlashInvocationClassification,
     NATIVE_RESERVED_COMMANDS,

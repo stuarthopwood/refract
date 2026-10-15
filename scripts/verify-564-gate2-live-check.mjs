@@ -7,7 +7,7 @@
 // Usage: CARGO_TARGET_DIR=<shared dir> node scripts/verify-564-gate2-live-check.mjs (requires a
 // prior `pnpm tauri build --debug --no-bundle`).
 
-import { mkdirSync, existsSync, copyFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
@@ -19,7 +19,10 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 const CONFIG_DIR_NAME = process.env.PI_CONFIG_DIR || '.omp';
-const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-564-gate2-shots';
+// Gate round 3 fix (LOW, code-reviewer): the previous hard-coded `C:/Users/shopwood/...` default
+// tied the harness to one machine (the same fix `verify-tauri.mjs` already made); falls back to
+// the OS temp dir, with an env override for a caller who wants a specific location.
+const SHOTS_DIR = process.env.REFRACT_564_GATE2_SHOTS_DIR || path.join(tmpdir(), 'refract-564-gate2-shots');
 
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -127,7 +130,12 @@ async function main() {
 
   let first;
   let second;
+  // Gate round 3 fix (LOW, code-reviewer): the whole run, including both launches and the
+  // summary below, is now wrapped in one outer try/finally so the scratch profile this run
+  // created is always removed -- even when a step above throws and escapes uncaught -- not left
+  // for manual cleanup.
   try {
+    try {
     // --- Launch 1: add repository, create/open a Session, exercise the Model picker and the
     // Default-persistence fix across a settle. ---
     first = await launchAndConnect(9391, 'target1.pid');
@@ -218,6 +226,41 @@ async function main() {
       `window.refract.sessions.list().then(r => r.ok ? r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.lastModel?.id : r)`,
     );
     record('A right-click on the active option still applies nothing (onClick, not onMouseDown)', afterRightClick === 'probe-fake-model', { afterRightClick });
+
+    // No-match Enter (gate round 3 fix, MEDIUM): a filter matching zero catalog models (roles
+    // are never filtered) must leave no active option at all -- never fall through to the last,
+    // unrelated ROLE -- so `aria-activedescendant` is absent and Enter applies nothing.
+    for (let i = 0; i < 'robe'.length; i++) {
+      await first.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 8, key: 'Backspace' });
+      await first.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 8, key: 'Backspace' });
+    }
+    for (const ch of 'zzznomatch') {
+      await first.cdp.send('Input.insertText', { text: ch });
+      await sleep(20);
+    }
+    await first.cdp.waitFor(
+      `Array.from(document.querySelectorAll('[role="option"]')).some(e => e.textContent.includes('No models match'))`,
+      { timeoutMs: 5000, label: 'no-match message shown' },
+    );
+    const noMatchActivedescendant = await first.cdp.evaluate(
+      `document.querySelector('input[aria-label="Filter models"]')?.getAttribute('aria-activedescendant')`,
+    );
+    record('A filter with zero matches leaves no active option (aria-activedescendant absent)', noMatchActivedescendant === null, { noMatchActivedescendant });
+    const lastModelBeforeNoMatchEnter = await first.cdp.evaluate(
+      `window.refract.sessions.list().then(r => r.ok ? r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.lastModel?.id : r)`,
+    );
+    await first.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 13, key: 'Enter' });
+    await first.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter' });
+    await sleep(300);
+    const popoverStillOpenAfterNoMatchEnter = await first.cdp.evaluate(`!!document.querySelector('input[aria-label="Filter models"]')`);
+    const lastModelAfterNoMatchEnter = await first.cdp.evaluate(
+      `window.refract.sessions.list().then(r => r.ok ? r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.lastModel?.id : r)`,
+    );
+    record(
+      'Enter with no active option applies nothing and leaves the popover open',
+      popoverStillOpenAfterNoMatchEnter && lastModelAfterNoMatchEnter === lastModelBeforeNoMatchEnter,
+      { popoverStillOpenAfterNoMatchEnter, lastModelBeforeNoMatchEnter, lastModelAfterNoMatchEnter },
+    );
     await first.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 27, key: 'Escape' });
     await first.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape' });
     await first.cdp.waitFor(`!document.querySelector('input[aria-label="Filter models"]')`, { timeoutMs: 5000, label: 'popover closed after Escape' });
@@ -295,14 +338,76 @@ async function main() {
     if (second?.child) await stopLauncher(second.child).catch(() => {});
   }
 
+  // --- Third launch: proves the round-3 `sync_from_state` fix. Our harness's only model
+  // (`probe-fake-model`) never reports `thinkingLevel` back, so OMP can never be made to CONFIRM
+  // a concrete level through real use -- the one piece of state this isolated, credential-free
+  // harness cannot produce through the real UI. Seeded directly into `registry.json` instead,
+  // with no instance running (the file is only ever read at `RegistryStore::open`, process
+  // startup, so editing it while an instance is live would never be picked up). ---
+  let third;
+  try {
+    const registryPath = path.join(dataDir, 'registry.json');
+    const registryJson = JSON.parse(readFileSync(registryPath, 'utf8'));
+    const seededSession = registryJson.sessions?.find((s) => s.id === sessionId);
+    if (!seededSession) throw new Error(`registry.json seed: session ${sessionId} not found`);
+    seededSession.lastThinkingLevel = 'high';
+    writeFileSync(registryPath, JSON.stringify(registryJson, null, 2));
+
+    third = await launchAndConnect(9393, 'target3.pid');
+    record('bridge ready (launch 3, after seeding a stale "high")', true);
+    await third.cdp.waitFor(`!!document.querySelector('[data-session-open]')`, { timeoutMs: 30_000, label: 'session row rendered (launch 3)' });
+    await third.cdp.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`);
+    await third.cdp.waitFor(`!!document.querySelector('textarea[aria-label="Message"]')`, { timeoutMs: 30_000, label: 'composer mounted (launch 3)' });
+    const labelBeforeRestart = await third.cdp.evaluate(
+      `Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'))?.textContent.trim()`,
+    );
+    record('The seeded stale "High" reads back before the agent restarts in this process', labelBeforeRestart === 'High', { labelBeforeRestart });
+
+    // Start the agent (a real turn against the unreachable provider, which will fail, but the
+    // start-time get_state/sync_from_state path still runs): `thinkingLevel` is absent (the fake
+    // model never reports it) and the stored value is a CONCRETE "high", not "inherit", so the
+    // round-3 fix must clear it.
+    void third.cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, 'hello')`);
+    await third.cdp
+      .waitFor(
+        `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.status !== 'working')`,
+        { timeoutMs: 30_000, label: 'turn settles (expected to fail, unreachable provider)' },
+      )
+      .catch(() => {});
+    await sleep(500);
+    const labelAfterRestart = await third.cdp.evaluate(
+      `Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'))?.textContent.trim()`,
+    );
+    record(
+      'A stale CONCRETE level (seeded "High") is cleared to "Reasoning not reported" once the restarted agent\'s get_state omits it (gate round 3 fix)',
+      labelAfterRestart === 'Reasoning not reported',
+      { labelAfterRestart },
+    );
+    await third.cdp.screenshot(path.join(SHOTS_DIR, '7-stale-level-cleared-after-restart.png'));
+  } catch (err) {
+    console.error('verify-564-gate2-live-check: aborted during the stale-level clear phase:', err);
+    process.exitCode = 1;
+  } finally {
+    if (third?.cdp) third.cdp.close();
+    if (third?.child) await stopLauncher(third.child).catch(() => {});
+  }
+
   console.log('\n--- summary ---');
   for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}: ${r.name}`);
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} passed`);
   console.log(`scratch dir (to remove after this run): ${scratchRoot}`);
-  console.log(`isolated profile (to remove after this run): ${path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile)}`);
+  console.log(`isolated profile: ${path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile)} (removed automatically below)`);
   console.log(`screenshots: ${SHOTS_DIR}`);
   if (failed.length > 0) process.exitCode = 1;
+  } finally {
+    // Safe-deletion rule: only ever delete a path built from a name we just asserted is this
+    // run's own scratch profile, never a bare variable or a default expansion.
+    if (profile.startsWith('refract-564-gate2-')) {
+      const profileDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile);
+      rmSync(profileDir, { recursive: true, force: true });
+    }
+  }
 }
 
 await main();

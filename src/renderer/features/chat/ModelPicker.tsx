@@ -118,7 +118,16 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
 
-  const clampedActiveIndex = Math.min(activeIndex, Math.max(optionCount - 1, 0))
+  // Gate round 3 fix (MEDIUM, code-reviewer): when a filter matches no model (roles are never
+  // filtered), there must be no active option at all -- Enter does nothing and
+  // `aria-activedescendant` points nowhere, instead of silently landing on (and applying) the
+  // last unrelated role. Also fixes a race (LOW): deriving this at render from the latest
+  // `roleCount` means an `activeIndex` set by the effect above before `listRoles` resolves gets
+  // reclamped correctly the moment roles arrive, with no extra effect dependency needed.
+  const activatableStart = filter.trim() ? roleCount : 0
+  const activatableEnd = filter.trim() ? roleCount + filteredCatalog.length : optionCount
+  const clampedActiveIndex =
+    activatableEnd > activatableStart ? Math.min(Math.max(activeIndex, activatableStart), activatableEnd - 1) : null
   const optionId = (index: number) => `${listboxId}-option-${index}`
 
   useEffect(() => {
@@ -136,6 +145,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   }
 
   function selectActiveOption() {
+    if (clampedActiveIndex === null) return
     if (clampedActiveIndex < roleCount) {
       const role = roles?.[clampedActiveIndex]
       if (role) void handleSelectRole(role.role)
@@ -234,7 +244,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             aria-autocomplete="list"
             aria-expanded
             aria-controls={listboxId}
-            aria-activedescendant={optionCount > 0 ? optionId(clampedActiveIndex) : undefined}
+            aria-activedescendant={clampedActiveIndex !== null ? optionId(clampedActiveIndex) : undefined}
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             onKeyDown={handleFilterKeyDown}

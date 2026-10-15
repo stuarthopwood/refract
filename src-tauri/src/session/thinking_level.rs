@@ -28,18 +28,28 @@
 // call reported -- `None` whenever `thinkingLevel` was absent, which is every settle and every
 // relaunch for `inherit` (and for any model that never reports reasoning at all). That wiped out
 // a just-applied "Default" on the very next turn or app restart. Fixed in two places together:
-// `sync_from_state` (launch.rs) now leaves `last_thinking_level` UNTOUCHED on a generic settle
+// `sync_from_state` (launch.rs) now leaves a stored `"inherit"` UNTOUCHED on a generic settle
 // when `thinkingLevel` is absent (never writes over it with `None`), so an explicitly-persisted
-// "inherit" survives; this function, in turn, is now the ONLY place that ever writes the field
-// when OMP doesn't echo the level back, and always writes something explicit rather than
-// leaving it for the (no longer existing) generic write to fill in: `Some("inherit")` for a
-// Default request (so it persists across settles and relaunches), or an explicit `None` (clearing
-// any STALE previously-confirmed level) for any other request this model didn't confirm.
+// "inherit" survives; this function, in turn, is now the ONLY place that ever writes
+// `Some("inherit")` itself -- always writing something explicit rather than leaving it for the
+// (no longer existing) generic write to fill in: `Some("inherit")` for a Default request (so it
+// persists across settles and relaunches), or an explicit `None` (clearing any STALE
+// previously-confirmed level) for any other request this model didn't confirm.
 // Stuart's correction (supersedes an earlier, wrong version of this same fix): a Session with NO
 // level ever explicitly requested, and a non-Default request the model does not confirm, BOTH
 // read as "Reasoning not reported" (`modelDisplay.ts`) -- "Default" is shown ONLY once the
 // developer has explicitly chosen it and it has been confirmed or implied by `inherit`'s own
 // request semantics; a fresh, untouched Session is never silently presented as "Default".
+//
+// Gate round 3 fix (code-reviewer HIGH): round 2's "leaves `last_thinking_level` UNTOUCHED on a
+// generic settle when `thinkingLevel` is absent" went too far -- it also left a stale CONCRETE
+// level (e.g. "high") untouched after a model or role switch to one that doesn't report
+// reasoning effort, so the Reasoning picker and radio-group kept showing the old level as if
+// still current. `sync_from_state` (launch.rs) now reads the stored value under its own registry
+// lock and clears it (`Some(None)`) whenever it is anything OTHER than `"inherit"` and
+// `thinkingLevel` is absent; only an explicitly-persisted `"inherit"` (never a concrete level)
+// survives an absent report, matching omp's own contract that the field is left out only for
+// `inherit` itself or a model with no effort control at all.
 
 use serde_json::{json, Value};
 
