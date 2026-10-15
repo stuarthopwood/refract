@@ -2,16 +2,16 @@ import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE } from '../../shared/model'
 import type { SessionListCollapse } from '../../shared/model'
 
-// Issue #735 (decision record, decisions 63-95): collapsed/expanded state for the session
+// Issue #735 (decision record): collapsed/expanded state for the session
 // list's per-Repository groups and the cross-repository Archived group (#527), persisted in
 // `Settings.sessionListCollapse`. Lives in its own store rather than `useSettingsStore`
-// (decision 72): a per-Repository record (option B) cannot hold Archived at all -- it has no
+// (decision 16): a per-Repository record (option B) cannot hold Archived at all -- it has no
 // Repository record of its own -- and would add view state to `registry.json` and its rollback
 // paths. Storing only the DIFFERENCE from each group's default here makes "a new Project opens,
 // Archived starts closed" true for free, and #638's Repository reordering can never disturb a
 // `Set` keyed by Repository id the way a positional array could.
 //
-// This store is the ONE writer of `sessionListCollapse` (decisions 74-78): `restore()` below
+// This store is the ONE writer of `sessionListCollapse` (decision 17): `restore()` below
 // reads Settings once at startup (`init-stores.ts`) and every other action here updates local
 // state immediately, then persists it debounced -- the store never reads a setter's own reply or
 // a later `settings:changed` broadcast back into itself, so a broadcast from an unrelated setter
@@ -19,33 +19,35 @@ import type { SessionListCollapse } from '../../shared/model'
 // `useSettingsStore`'s own action list for the same reason.
 interface SessionListState {
   /** Ids of Repository groups the user has explicitly collapsed; a Repository absent here is
-   * open -- the default for every newly added Project (decision 72). */
+   * open -- the default for every newly added Project (decision 16). */
   collapsedRepositoryIds: Set<string>
   archivedOpen: boolean
-  /** False until `restore()` has run once at startup (decisions 83-86): `SessionList` renders
+  /** False until `restore()` has run once at startup (decision 19): `SessionList` renders
    * only its own fixed chrome until this flips true, so a Repository group never paints open
    * and then immediately snaps shut once the persisted state loads a moment later -- Repositories
    * load in a separate, later async step than Settings and would otherwise race it. */
   restored: boolean
-  /** Decision 121: a selector so a later story (#559 search) can override it while a query is
+  /** Decision 26: a selector so a later story (#559 search) can override it while a query is
    * active without this store ever writing that override back out as the saved state. */
   isGroupOpen(repositoryId: string): boolean
-  toggleRepository(repositoryId: string): void
+  /** Driven by Radix's own `onOpenChange` value, never a blind toggle -- a redundant call with
+   * the current value must be a no-op, not an inversion. */
+  setRepositoryOpen(repositoryId: string, open: boolean): void
   setArchivedOpen(open: boolean): void
   /** The toolbar's two buttons (decisions 5, 11): every Project group, plus Archived while it is
    * currently shown (`archivedVisible` -- #527's own "hidden entirely while nothing anywhere is
    * archived" rule). While Archived is hidden, its saved flag is left untouched. */
   collapseAll(repositoryIds: string[], archivedVisible: boolean): void
   expandAll(repositoryIds: string[], archivedVisible: boolean): void
-  /** Decisions 88-90: opens a closed Repository group the moment a create or restore actually
+  /** Decision 20: opens a closed Repository group the moment a create or restore actually
    * succeeds and moves a row into it (`sessions-store.ts`'s `create`/`restore`) -- never for a
    * plain selection, a Split restore, or a status change. A no-op if already open. */
   openRepositoryGroup(repositoryId: string): void
   /** Reads `Settings.sessionListCollapse` once at startup and flips `restored` true either way,
    * including when `settings.get` itself failed and this runs against the shared
-   * `DEFAULT_SETTINGS` fallback (decision 84) -- never itself a persisting write. */
+   * `DEFAULT_SETTINGS` fallback (decision 19) -- never itself a persisting write. */
   restore(value: SessionListCollapse): void
-  /** Decisions 79-82: drops every collapsed-repository id no longer present. Called only after
+  /** Decision 18: drops every collapsed-repository id no longer present. Called only after
    * a successful `repositories.list` load or a successful `repositories.remove` -- never against
    * an empty failure fallback, which would wipe the user's whole saved layout. */
   pruneRepositories(existingIds: Set<string>): void
@@ -56,8 +58,8 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
   // pattern `split-store.ts`'s own `persist` uses.
   let persistTimer: number | undefined
 
-  // Decision 69: the setter writes the WHOLE value; decision 77: this store never reads the
-  // reply or a later broadcast back into itself.
+  // Decision 17: the setter writes the WHOLE value, and this store never reads the reply or a
+  // later broadcast back into itself.
   function persist(immediate = false): void {
     if (persistTimer) {
       clearTimeout(persistTimer)
@@ -84,7 +86,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       }, 300)
   }
 
-  // Decision 76: flushes a pending debounced write on quit, the same `beforeunload`/`pagehide`
+  // Decision 17: flushes a pending debounced write on quit, the same `beforeunload`/`pagehide`
   // pattern `split-store.ts` uses, so a toggle made just before closing the app is not lost.
   if (typeof window !== 'undefined') {
     const flushPending = (): void => {
@@ -99,9 +101,10 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
     archivedOpen: DEFAULT_SESSION_LIST_COLLAPSE.archivedOpen,
     restored: false,
     isGroupOpen: (repositoryId) => !get().collapsedRepositoryIds.has(repositoryId),
-    toggleRepository: (repositoryId) => {
+    setRepositoryOpen: (repositoryId, open) => {
+      if (get().collapsedRepositoryIds.has(repositoryId) === !open) return
       const collapsedRepositoryIds = new Set(get().collapsedRepositoryIds)
-      if (collapsedRepositoryIds.has(repositoryId)) collapsedRepositoryIds.delete(repositoryId)
+      if (open) collapsedRepositoryIds.delete(repositoryId)
       else collapsedRepositoryIds.add(repositoryId)
       set({ collapsedRepositoryIds })
       persist()

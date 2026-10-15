@@ -31,12 +31,20 @@ export function RepositoryGroup({
   sessions: SessionSummary[]
 }) {
   const createSession = useSessionsStore((state) => state.create)
-  // #735 decisions 15, 21, 22, 63-78: the persisted open/closed state (replaces `defaultOpen`),
-  // the Waiting marker and the visible-Session active bar -- both only shown while closed
-  // (decisions 92, 103), never computed or rendered while the group is already open.
+  // Issue #527: archived Sessions no longer get their own per-repository group here -- they all
+  // move into one cross-repository `ArchivedGroup` at the bottom of the list instead. Computed
+  // before the hooks below (gate round 1 fix, code-reviewer/a11y/architect HIGH): the marker and
+  // the active bar must read only this Repository's own LISTED Sessions (decision 21 says "that
+  // group's listed Sessions"), never an archived Session that has already moved to Archived --
+  // using the raw `sessions` prop there put a false bar and marker on a Repository header for a
+  // Session the group no longer shows at all (confirmed live, gate round 1).
+  const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  // #735 decisions 15, 21, 22: the persisted open/closed state (replaces `defaultOpen`), the
+  // Waiting marker and the visible-Session active bar -- both only shown while closed (decisions
+  // 21, 22), never computed or rendered while the group is already open.
   const isOpen = useSessionListStore((state) => state.isGroupOpen(repository.id))
-  const containsVisibleSession = useSplitStore((state) => sessions.some((session) => state.paneSessionIds.includes(session.id)))
-  const marker = isOpen ? null : groupWaitingState(sessions)
+  const containsVisibleSession = useSplitStore((state) => active.some((session) => state.paneSessionIds.includes(session.id)))
+  const marker = isOpen ? null : groupWaitingState(active)
   const containsOpenSession = !isOpen && containsVisibleSession
   // Issue #620, UX consult item 2 decision 6: this per-repository in-flight guard used to be a
   // private ref/state pair only this button could see -- it now lives in `sessions-store.ts`,
@@ -153,9 +161,6 @@ export function RepositoryGroup({
     triggerRef.current?.focus()
   }, [renaming])
 
-  // Issue #527: archived Sessions no longer get their own per-repository group here -- they all
-  // move into one cross-repository `ArchivedGroup` at the bottom of the list instead.
-  const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon --
   // `has` and the honest `unknown` "could not tell" case both get the same remote-capable icon,
   // so an unreadable repository or a parse failure is never shown as local-only when it might
@@ -176,7 +181,7 @@ export function RepositoryGroup({
         : 'Git repository'
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
-      <Collapsible open={isOpen} onOpenChange={() => useSessionListStore.getState().toggleRepository(repository.id)}>
+      <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
         <div className="group flex items-center gap-1 px-1">
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
