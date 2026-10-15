@@ -63,10 +63,10 @@ use model_support::{
     friendly_model_text, is_switch_argument_token, model_value, post_notice, selector_matches_model,
 };
 
-/// Mirrors `agent::mod`'s own `DEFAULT_REQUEST_TIMEOUT_MS` (private there); re-declared here
-/// with the same value, same convention `omp::process.rs` itself documents for a value it does
-/// not export.
-const REQUEST_TIMEOUT_MS: u64 = 60_000;
+/// Mirrors `agent::mod`'s own `DEFAULT_REQUEST_TIMEOUT_MS` (private); re-declared with the same
+/// value. `pub(super)` (gate round 1, security-auditor Low) so sibling `thinking_level.rs`,
+/// split out of this file, shares it instead of a third copy.
+pub(super) const REQUEST_TIMEOUT_MS: u64 = 60_000;
 
 /// Lane RM's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
 /// ever needing to change when this lane adds a field here. Reachable through `SessionAgent`'s

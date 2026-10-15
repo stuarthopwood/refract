@@ -28,6 +28,13 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  /* 2026-10-15 grill (issue #564, decision 5, gate round 1 fix): Send's OWN accent fill -- NOT
+     `--primary`, since `--primary` resolves to a near-white neutral in both Dark and Dark (high
+     contrast), where it would read almost identically to Stop's `invert` fill. Chromatic
+     (indigo, "the #5A5EEE family") in every theme; used ONLY by the composer's Send button
+     (MessageInput.tsx) -- every other `variant="default"` button keeps using `--primary`. */
+  --color-send: var(--send);
+  --color-send-foreground: var(--send-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -141,6 +148,14 @@
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
+  /* 2026-10-15 grill decision 5, gate round 1 fix: Send's own indigo fill (lifted a touch
+     lighter than Obsidian's own `#5A5EEE` `--primary`, which this near-black composer floor
+     would otherwise bring too close to the WCAG 1.4.11 non-text-contrast floor) -- verified in
+     `scripts/check-theme-contrast.mjs`: fill-vs-composer-background and white-on-fill both clear
+     3:1 (the icon-without-text threshold, `docs/design/accessibility.md` "Contrast") with
+     comfortable margin. */
+  --send: #6D71F0;
+  --send-foreground: #FFFFFF;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -363,6 +378,11 @@
   --surface-hover: var(--surface-3);
   --primary: #5A5EEE;
   --primary-foreground: #FFFFFF;
+  /* 2026-10-15 grill decision 5, gate round 1 fix: Send reuses this preset's own `--primary`
+     indigo verbatim -- it is already the "#5A5EEE family" Stuart's decision names, and already
+     verified against this theme's own composer-background. */
+  --send: #5A5EEE;
+  --send-foreground: #FFFFFF;
   --secondary: var(--surface-hover);
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-hover);
@@ -445,6 +465,11 @@
   --popover-foreground: oklch(1 0 0);
   --primary: oklch(1 0 0);
   --primary-foreground: oklch(0 0 0);
+  /* 2026-10-15 grill decision 5, gate round 1 fix: same lifted indigo as `.theme-dark` above
+     (not `--primary`, which is pure white here and would read identically to Stop's `invert`
+     fill) -- verified against this theme's own near-black composer-background floor. */
+  --send: #6D71F0;
+  --send-foreground: #FFFFFF;
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.26 0 0);
