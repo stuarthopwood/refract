@@ -10,7 +10,6 @@
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
   "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 1159,
-  "src/renderer/features/sessions/SessionList.tsx": 1393,
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 718,
   "src/shared/ipc.ts": 900,
