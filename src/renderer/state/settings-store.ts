@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
 import { notify } from './notify'
 import { useChatScrollStore } from './scroll-store'
@@ -27,7 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   watermarkEnabled: true,
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
-  detectImagePathsOnPaste: true
+  detectImagePathsOnPaste: true,
+  sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE
   // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
   // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
   // value as enabled, so this client-only placeholder never flickers ghost text off for

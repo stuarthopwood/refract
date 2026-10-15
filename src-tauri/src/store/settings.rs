@@ -64,6 +64,17 @@ pub struct SplitLayout {
     pub focused_index: u8,
 }
 
+/// #735 data-model.md: only the DIFFERENCE from each group's default is stored -- a Repository
+/// id absent from `collapsed_repository_ids` is open (the default for a newly added Project),
+/// and `archived_open` defaults `false`. De-duplicated and validated in
+/// `parse_session_list_collapse` below.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListCollapse {
+    pub collapsed_repository_ids: Vec<String>,
+    pub archived_open: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptDisplaySettings {
     pub thinking: bool,
@@ -83,6 +94,10 @@ pub struct Settings {
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// #735 data-model.md: collapsed/expanded state for the session list's per-Repository
+    /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
+    /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
+    pub session_list_collapse: SessionListCollapse,
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
     /// main-process features are frozen, epic #797), so this field has no TypeScript
     /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
@@ -97,7 +112,7 @@ pub struct Settings {
     /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
     /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
     /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
-    /// overlaps a known field above (`SettingsStore::open` excludes all ten by name).
+    /// overlaps a known field above (`SettingsStore::open` excludes all eleven by name).
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -131,6 +146,37 @@ fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
         session_ids: [first.to_string(), second.to_string()],
         divider_percent,
         focused_index,
+    })
+}
+
+/// #735 data-model.md: a present-but-malformed `sessionListCollapse` resets to the default
+/// (`{ collapsedRepositoryIds: [], archivedOpen: false }`), the same lazy-correction pattern
+/// `parse_split_layout` uses. De-duplicates `collapsedRepositoryIds` (a hand-edited file could
+/// repeat an id).
+fn default_session_list_collapse() -> SessionListCollapse {
+    SessionListCollapse {
+        collapsed_repository_ids: Vec::new(),
+        archived_open: false,
+    }
+}
+
+fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
+    let object = value.as_object()?;
+    let ids_value = object.get("collapsedRepositoryIds")?.as_array()?;
+    let mut collapsed_repository_ids: Vec<String> = Vec::with_capacity(ids_value.len());
+    for id in ids_value {
+        let id = id.as_str()?;
+        if !collapsed_repository_ids
+            .iter()
+            .any(|existing| existing == id)
+        {
+            collapsed_repository_ids.push(id.to_string());
+        }
+    }
+    let archived_open = object.get("archivedOpen")?.as_bool()?;
+    Some(SessionListCollapse {
+        collapsed_repository_ids,
+        archived_open,
     })
 }
 
@@ -232,7 +278,18 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        const KNOWN_FIELDS: [&str; 10] = [
+        // #735 data-model.md: a missing/null key is the default (no migration needed, every
+        // pre-#735 settings.json simply lacks this key); a present-but-malformed value resets
+        // to the default rather than trusted, the same lazy-correction pattern every other
+        // object-shaped field in this function uses.
+        let session_list_collapse = match object.get("sessionListCollapse") {
+            Some(v) if !v.is_null() => {
+                parse_session_list_collapse(v).unwrap_or_else(default_session_list_collapse)
+            }
+            _ => default_session_list_collapse(),
+        };
+
+        const KNOWN_FIELDS: [&str; 11] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -243,6 +300,7 @@ impl SettingsStore {
             "showSampleData",
             "detectImagePathsOnPaste",
             "wordPredictionEnabled",
+            "sessionListCollapse",
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -261,6 +319,7 @@ impl SettingsStore {
             show_sample_data,
             detect_image_paths_on_paste,
             word_prediction_enabled,
+            session_list_collapse,
             extra,
         };
 
@@ -324,10 +383,14 @@ impl SettingsStore {
             "wordPredictionEnabled".to_string(),
             json!(self.data.word_prediction_enabled),
         );
+        map.insert(
+            "sessionListCollapse".to_string(),
+            json!(self.data.session_list_collapse),
+        );
         // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `data.extra` excludes all ten of
-        // them), so a renderer feature's own not-yet-ported setting survives every save. Also now
-        // the same field `settings.get`/`settings:changed` flatten into the wire shape (see
+        // never overwrites a known key above (by construction, `data.extra` excludes all eleven
+        // of them), so a renderer feature's own not-yet-ported setting survives every save. Also
+        // now the same field `settings.get`/`settings:changed` flatten into the wire shape (see
         // `Settings::extra`'s own doc comment).
         for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
@@ -467,6 +530,21 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             word_prediction_enabled: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setSessionListCollapse(value)` (#735, data-model.md): persists the whole
+    /// `SessionListCollapse` row -- the renderer's `session-list-store.ts` is the sole writer
+    /// and never reads a broadcast back (its own doc comment explains why), so there is no
+    /// raw/lazy-correction tracking here, the same plain-replace shape `set_split` uses.
+    pub async fn set_session_list_collapse(
+        &mut self,
+        value: SessionListCollapse,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            session_list_collapse: value,
             ..self.data.clone()
         };
         self.persist_whole(next).await

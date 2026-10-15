@@ -3,6 +3,8 @@ import type { ComponentType, KeyboardEvent, Ref } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { StateIcon } from './sessionDisplay'
+import type { GroupWaitingState } from './sessionDisplay'
 
 // Gate round 3 fix (Low, code-reviewer): named so it reads as "the width of the row's own
 // action buttons", not a bare magic number -- two 28px `icon-sm` buttons (RepositoryGroup.tsx's
@@ -28,7 +30,9 @@ export function GroupHeaderTrigger({
   tooltip,
   triggerRef,
   onDoubleClick,
-  onKeyDown
+  onKeyDown,
+  marker,
+  containsOpenSession
 }: {
   label: string
   title?: string
@@ -37,6 +41,12 @@ export function GroupHeaderTrigger({
   triggerRef?: Ref<HTMLButtonElement>
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
+  /** #735 decisions 21, 92-100: the Waiting marker -- the most urgent state among this
+   * (closed) Group's Sessions, or `null`/`undefined` for an open Group or one with nothing to
+   * flag. */
+  marker?: GroupWaitingState | null
+  /** #735 decisions 22, 101-104: this (closed) Group contains the currently visible Session. */
+  containsOpenSession?: boolean
 }) {
   const pathId = useId()
   // Gate round 2 fix (Low, a11y-auditor): dropping the native `title` below (so it never shows
@@ -44,19 +54,34 @@ export function GroupHeaderTrigger({
   // entirely, since that span was never focusable or read either way -- an `sr-only` span plus
   // `aria-describedby` restores it, only when there is a path to describe.
   const describedByPath = tooltip && title
+  // #735 decisions 98, 103: the marker's status word and "contains open session" both extend
+  // the trigger's own accessible name, the same way `tooltip` already does -- combined into one
+  // name, not read twice over by a second `aria-describedby` region.
+  const extraNameParts = [tooltip, marker?.label, containsOpenSession ? 'contains open session' : null].filter(
+    (part): part is string => Boolean(part)
+  )
+  const ariaLabel = extraNameParts.length > 0 ? `${label}, ${extraNameParts.join(', ')}` : undefined
   const trigger = (
     <CollapsibleTrigger
       ref={triggerRef}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
-      aria-label={tooltip ? `${label}, ${tooltip}` : undefined}
+      aria-label={ariaLabel}
       // Gate round 1 fix (Low, a11y-auditor): without this, the Tooltip wrapper below adds its
       // own `aria-describedby` pointing at the SAME text `aria-label` above already carries, so
       // a screen reader would read the remote status twice for one hover/focus. Radix's Slot
       // merge lets this explicit prop win over the one Tooltip injects.
       aria-describedby={describedByPath ? pathId : undefined}
-      className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
+      {/* #735 decisions 22, 103-104: the visible Session's group, while closed -- the existing
+          selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover. */}
+      {containsOpenSession && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
+        />
+      )}
       {/* Gate round 1 fix (High, code-reviewer): keying this off `data-state` broke the moment
           the whole trigger became a Tooltip's child too -- Radix's `TooltipTrigger` spreads its
           OWN `data-state` ('closed'/'delayed-open'/'instant-open') onto this element AFTER
@@ -70,6 +95,14 @@ export function GroupHeaderTrigger({
       {describedByPath && (
         <span id={pathId} className="sr-only">
           {title}
+        </span>
+      )}
+      {/* #735 decisions 21, 97-98: the Waiting marker -- lines up in one column next to the
+          space the row's own header actions reserve (#567 decision 6). Unaffected by
+          `containsOpenSession`'s bar above: that sits flush on the trigger's own left edge. */}
+      {marker && (
+        <span aria-hidden className="ml-auto flex shrink-0">
+          <StateIcon status={marker.status} />
         </span>
       )}
     </CollapsibleTrigger>

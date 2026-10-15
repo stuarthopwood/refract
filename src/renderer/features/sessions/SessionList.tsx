@@ -1,10 +1,13 @@
-import { FolderPlusIcon, GitPullRequestIcon } from 'lucide-react'
+import { useId } from 'react'
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
-import { usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 
@@ -19,6 +22,40 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+  // #735 decisions 63-68, 83-86: the persisted collapse/expand state. `restored` gates the
+  // toolbar and every group below -- nothing paints open and then immediately snaps shut once
+  // the persisted state loads a moment after Repositories do (decision 85).
+  const collapsedRepositoryIds = useSessionListStore((state) => state.collapsedRepositoryIds)
+  const archivedOpen = useSessionListStore((state) => state.archivedOpen)
+  const restored = useSessionListStore((state) => state.restored)
+  const collapseAllReasonId = useId()
+  const expandAllReasonId = useId()
+  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
+  // Decision 11: Archived counts toward "all" only while #527's own "hidden entirely while
+  // nothing anywhere is archived" rule shows it; while hidden, its saved flag is ignored.
+  const archivedSessions = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId))
+  const archivedVisible = archivedSessions.length > 0
+  const groupCount = repositories.length + (archivedVisible ? 1 : 0)
+  const collapsedCount =
+    repositories.filter((repository) => collapsedRepositoryIds.has(repository.id)).length +
+    (archivedVisible && !archivedOpen ? 1 : 0)
+  // Decision 12: no special branch for zero groups -- both are vacuously true then, so both
+  // buttons read as a no-op rather than one of them doing something undefined.
+  const allCollapsed = collapsedCount === groupCount
+  const allExpanded = collapsedCount === 0
+  function handleCollapseAll(): void {
+    if (allCollapsed) return
+    useSessionListStore.getState().collapseAll(repositories.map((repository) => repository.id), archivedVisible)
+    // #735 decision 15: one polite announcement for Collapse/Expand all (per-group toggles and
+    // the startup restore stay silent -- `useChatAreaAnnouncer` survives the view swapping to
+    // Settings or Manage sessions, the same reasoning this file's own create/restore paths use).
+    useChatAreaAnnouncer.getState().announce('All groups collapsed')
+  }
+  function handleExpandAll(): void {
+    if (allExpanded) return
+    useSessionListStore.getState().expandAll(repositories.map((repository) => repository.id), archivedVisible)
+    useChatAreaAnnouncer.getState().announce('All groups expanded')
+  }
   // Issue #620, UX consult item 2 decision 9: the row menu's "New session from {branch}" item's
   // "Creating session from {branch}" / "Created session {name}" announcements now go through
   // the app-level `useChatAreaAnnouncer` (#621's shared announcer, now that it exists on
@@ -75,21 +112,69 @@ export function SessionList() {
         <GitPullRequestIcon aria-hidden className="size-4" />
         Pull requests
       </Button>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-3 p-2">
-          {repositories.map((repository) => (
-            <RepositoryGroup
-              key={repository.id}
-              repository={repository}
-              sessions={sessions.filter((session) => session.repositoryId === repository.id)}
-            />
-          ))}
-          <ArchivedGroup
-            sessions={sessions.filter((session) => session.archivedAt)}
-            repositoriesById={new Map(repositories.map((repository) => [repository.id, repository]))}
-          />
-        </div>
-      </ScrollArea>
+      {restored && (
+        <>
+          {/* #735 decisions 4-9: pinned, outside and above the ScrollArea -- reachable from a
+              long, scrolled list. No border/fill/label/role="toolbar" (zero-box rule; arrow-key
+              roving is ruled out by #567 decision 17). */}
+          <div className="mt-4 flex shrink-0 items-center justify-end gap-1 px-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Collapse all groups"
+                  aria-disabled={allCollapsed || undefined}
+                  aria-describedby={allCollapsed ? collapseAllReasonId : undefined}
+                  className="text-muted-foreground hover:bg-sidebar-border hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 dark:hover:bg-sidebar-border"
+                  onClick={handleCollapseAll}
+                >
+                  <ChevronsDownUpIcon aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <div className="flex flex-col gap-1">
+                  <span>Collapse all groups</span>
+                  {allCollapsed && <span id={collapseAllReasonId}>All groups are collapsed</span>}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Expand all groups"
+                  aria-disabled={allExpanded || undefined}
+                  aria-describedby={allExpanded ? expandAllReasonId : undefined}
+                  className="text-muted-foreground hover:bg-sidebar-border hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 dark:hover:bg-sidebar-border"
+                  onClick={handleExpandAll}
+                >
+                  <ChevronsUpDownIcon aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <div className="flex flex-col gap-1">
+                  <span>Expand all groups</span>
+                  {allExpanded && <span id={expandAllReasonId}>All groups are expanded</span>}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-3 p-2">
+              {repositories.map((repository) => (
+                <RepositoryGroup
+                  key={repository.id}
+                  repository={repository}
+                  sessions={sessions.filter((session) => session.repositoryId === repository.id)}
+                />
+              ))}
+              <ArchivedGroup sessions={archivedSessions} repositoriesById={repositoriesById} />
+            </div>
+          </ScrollArea>
+        </>
+      )}
       {/* #447: the only way to add another repository once the first-run screen is gone. A
           persistent footer so it is always reachable; the dialog keeps its own validation and
           returns focus here on close. */}

@@ -16,6 +16,7 @@ import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
+import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useUpdateStore } from './update-store'
 
@@ -270,6 +271,13 @@ export function initStores(): void {
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
+    // #735 decisions 83-86: restored in this same Promise.all block, right alongside Settings,
+    // not deferred to themeBootstrap -- the Sessions arrive in this same load, so nothing
+    // visible is held back by doing it here. Repositories load separately (below) and would
+    // otherwise draw open groups that then immediately snap shut once this resolves. Runs
+    // against the shared `DEFAULT_SETTINGS` fallback (and still flips `restored` true) even
+    // when `settings.get` itself failed.
+    useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
@@ -293,6 +301,12 @@ export function initStores(): void {
   void (async () => {
     const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    // #735 decisions 80-81: pruning only ever runs against a genuinely successful load -- a
+    // failed load's own `[]` fallback must never be mistaken for "there are now zero
+    // Repositories" and wipe every collapsed id the user had saved.
+    if (repositoriesLoad.ok) {
+      useSessionListStore.getState().pruneRepositories(new Set(repositoriesLoad.value.map((repository) => repository.id)))
+    }
     if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes(true)
   })()
 

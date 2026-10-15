@@ -3,6 +3,7 @@ import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from
 import type { Session } from '../../shared/model'
 import { notify } from './notify'
 import { useSplitStore } from './split-store'
+import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
   sessions: SessionSummary[]
@@ -168,6 +169,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       if (result.ok) {
         await get().refresh()
         useSplitStore.getState().replaceFocused(result.value.id)
+        // #735 decisions 88-89: every create caller (the header "+", the branch picker,
+        // Ctrl+N, the row menu's "New session from {branch}") funnels through this one action,
+        // so opening the Repository's own group here covers all four at once -- the existing
+        // focus-the-new-row paths above already prove the user is looking at this group.
+        useSessionListStore.getState().openRepositoryGroup(repositoryId)
       }
       return result
     } finally {
@@ -186,8 +192,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     return result.ok
   },
   restore: async (id) => {
+    // #735 decisions 88-89: captured before the call -- the Session is still in `sessions`
+    // (archived or not) either way, and its `repositoryId` never changes across a restore.
+    const repositoryId = get().sessions.find((session) => session.id === id)?.repositoryId
     const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)
+    else if (repositoryId) useSessionListStore.getState().openRepositoryGroup(repositoryId)
     return result.ok
   },
   stopAgent: async (id) => {

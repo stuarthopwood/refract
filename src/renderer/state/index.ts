@@ -20,6 +20,7 @@ import { SIDE_CHAT_LOADING_HINT, useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore } from './right-pane-store'
 import { useSplitStore } from './split-store'
+import { useSessionListStore } from './session-list-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
 import { useUpdateStore } from './update-store'
@@ -48,6 +49,7 @@ export { SIDE_CHAT_LOADING_HINT, useSideChatStore }
 export { useFileExplorerStore }
 export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore }
 export { useSplitStore }
+export { useSessionListStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'

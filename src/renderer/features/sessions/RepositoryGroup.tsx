@@ -15,11 +15,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
 import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
-import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
+import { notify, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
+import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
 
 export function RepositoryGroup({
@@ -30,6 +31,13 @@ export function RepositoryGroup({
   sessions: SessionSummary[]
 }) {
   const createSession = useSessionsStore((state) => state.create)
+  // #735 decisions 15, 21, 22, 63-78: the persisted open/closed state (replaces `defaultOpen`),
+  // the Waiting marker and the visible-Session active bar -- both only shown while closed
+  // (decisions 92, 103), never computed or rendered while the group is already open.
+  const isOpen = useSessionListStore((state) => state.isGroupOpen(repository.id))
+  const containsVisibleSession = useSplitStore((state) => sessions.some((session) => state.paneSessionIds.includes(session.id)))
+  const marker = isOpen ? null : groupWaitingState(sessions)
+  const containsOpenSession = !isOpen && containsVisibleSession
   // Issue #620, UX consult item 2 decision 6: this per-repository in-flight guard used to be a
   // private ref/state pair only this button could see -- it now lives in `sessions-store.ts`,
   // shared with the row's own "New session from {branch}" menu item and `NewSessionDialog`, so
@@ -168,7 +176,7 @@ export function RepositoryGroup({
         : 'Git repository'
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
-      <Collapsible defaultOpen>
+      <Collapsible open={isOpen} onOpenChange={() => useSessionListStore.getState().toggleRepository(repository.id)}>
         <div className="group flex items-center gap-1 px-1">
           {renaming ? (
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -202,6 +210,8 @@ export function RepositoryGroup({
               tooltip={remoteTooltip}
               onDoubleClick={startRenaming}
               onKeyDown={handleTriggerKeyDown}
+              marker={marker}
+              containsOpenSession={containsOpenSession}
             />
           )}
           {/* These three action buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` in
