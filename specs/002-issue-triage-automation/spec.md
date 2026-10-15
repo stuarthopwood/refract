@@ -13,6 +13,17 @@ it, and posts a deterministic Spec Kit pickup plan telling whoever picks the iss
 or an AI agent running the Spec Kit commands — exactly which commands to run next. No agent runs
 in CI and no application code is ever touched."
 
+## Clarifications
+
+### Session 2026-10-15
+
+- Q: Every Refract story now starts with a `/grill-with-docs` session before any Spec Kit step
+  runs; does the deterministic pickup plan reflect that? → A: Yes — for `speckit_route: specify`
+  and `speckit_route: converge`, the pickup plan's first step is `/grill-with-docs` (Stuart and
+  the main agent stress-test the issue against `CONTEXT.md`, `docs/adr` and the code; the
+  outcomes feed the spec), with the rest of the pipeline renumbered after it. The `route: none`
+  type hints are unaffected.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Automatic triage on new issues (Priority: P1)
@@ -217,15 +228,17 @@ also with no commands listed.
   - `state: ready-for-human` and `route: none` → a single line saying a human decision or manual
     work is needed first and that there are no Spec Kit steps; it MUST NOT also show the
     route-`none` type hint.
-- **FR-019**: For `speckit_route: specify`, the pickup plan MUST list, in order:
-  `/speckit.specify` (using the issue title and body as the feature description),
-  `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.analyze`, `/speckit.implement`,
-  and note that `/speckit.taskstoissues` is optional.
+- **FR-019**: For `speckit_route: specify`, the pickup plan MUST list, in order: `/grill-with-docs`
+  (Stuart and the main agent stress-test the issue against `CONTEXT.md`, docs/adr and the code;
+  the outcomes feed the spec), `/speckit.specify` (using the issue title and body as the feature
+  description), `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.analyze`,
+  `/speckit.implement`, and note that `/speckit.taskstoissues` is optional.
 - **FR-020**: For `speckit_route: converge`, System MUST resolve the target feature directory from
   the issue's `spec:NNN` label against the real `specs/` directory listing in the checked-out
   workspace, falling back to `specs/001-core-session-workspace` when no label is present and that
-  directory exists, else naming it generically; the pickup plan MUST list amending that feature's
-  `spec.md`, then `/speckit.converge`, then `/speckit.implement`.
+  directory exists, else naming it generically; the pickup plan MUST list, in order,
+  `/grill-with-docs` (same stress-test as FR-019), amending that feature's `spec.md`, then
+  `/speckit.converge`, then `/speckit.implement`.
 - **FR-021**: An optional model field, `pickup_notes`, MUST be capped at 4 entries of at most 160
   characters each, sanitised the same way as `rationale`, and rendered as a bulleted list under the
   pickup plan; the list MUST be omitted entirely when empty.

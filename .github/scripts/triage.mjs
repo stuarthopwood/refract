@@ -311,20 +311,22 @@ export function renderPickupPlan(c, featureDirectory) {
   }
   const prefix = c.state === "ready-for-human" ? "After the human decision/manual work is done:\n\n" : "";
   if (c.route === "specify") {
-    return `${prefix}1. \`/speckit.specify\` — use the issue title and body as the feature description.
-2. \`/speckit.clarify\`
-3. \`/speckit.plan\`
-4. \`/speckit.tasks\`
-5. \`/speckit.analyze\`
-6. \`/speckit.implement\`
+    return `${prefix}1. \`/grill-with-docs\` — Stuart and the main agent stress-test the issue against CONTEXT.md, docs/adr and the code; the outcomes feed the spec.
+2. \`/speckit.specify\` — use the issue title and body as the feature description.
+3. \`/speckit.clarify\`
+4. \`/speckit.plan\`
+5. \`/speckit.tasks\`
+6. \`/speckit.analyze\`
+7. \`/speckit.implement\`
 
 (\`/speckit.taskstoissues\` is optional.)`;
   }
   if (c.route === "converge") {
     const target = featureDirectory ? `\`${featureDirectory}\`` : "the relevant existing feature directory";
-    return `${prefix}1. Amend ${target}'s \`spec.md\` for the requested change.
-2. \`/speckit.converge\` — appends a Convergence phase to \`tasks.md\` (append-only).
-3. \`/speckit.implement\``;
+    return `${prefix}1. \`/grill-with-docs\` — Stuart and the main agent stress-test the issue against CONTEXT.md, docs/adr and the code; the outcomes feed the spec.
+2. Amend ${target}'s \`spec.md\` for the requested change.
+3. \`/speckit.converge\` — appends a Convergence phase to \`tasks.md\` (append-only).
+4. \`/speckit.implement\``;
   }
   // route === "none" and state here is always ready-for-agent (ready-for-human
   // + none returned its own single-line message above): a one-line pickup
