@@ -85,12 +85,17 @@ export interface ProfileMenuContentProps {
 }
 
 /** The Theme submenu (FR-019, T022): every built-in preset in `THEMES`' own declaration order,
- *  the active one marked by a check icon, the word "Current", AND the same shared 2px
- *  `--active-indicator` bar every other "current/selected" surface in the app uses
- *  (docs/DESIGN.md "Active/selected indicator"; never colour alone), with the exact
- *  swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each theme's own
- *  real `--background` value, not an invented accent). Choosing a DIFFERENT preset saves it
- *  immediately via `useThemeStore.getState().save` (a menu is a transient overlay -- Settings'
+ *  the active one marked by a trailing check icon plus the word "Current" -- the ONLY
+ *  current-theme marker (gate round 6 fix, `agent://Arch877`: this row used to ALSO draw a
+ *  permanent 2px `--active-indicator` bar, which clashed once every dropdown menu's own
+ *  keyboard-focus cue became that SAME bar, gate round 5 -- "Decided (Skippy, delegated by
+ *  Stuart 2026-10-15)": in a DROPDOWN MENU specifically, the bar means keyboard focus only;
+ *  `docs/DESIGN.md`'s "Active/selected indicator" rule still covers every OTHER current/
+ *  selected surface, e.g. the session list row and conversation-history entry, unchanged), with
+ *  the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each
+ *  theme's own real `--background` value, not an invented accent). Choosing a DIFFERENT preset
+ *  saves it immediately via `useThemeStore.getState().save` (a menu is a transient overlay --
+ *  Settings'
  *  own Appearance section is where a live preview with Save/Cancel belongs); choosing the
  *  already-active preset is a deliberate no-op, the same FR-002/FR-006 deviation note
  *  ThemePicker.tsx's own `choose` already documents. Selecting a preset closes the whole menu
@@ -143,9 +148,14 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
               key={theme.id}
               ref={isActive ? activeItemRef : undefined}
               onSelect={() => chooseTheme(theme.id, theme.name)}
-              className={isActive ? 'focus:shadow-[inset_4px_0_0_0_var(--color-ring)]' : undefined}
             >
-              {isActive && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-active-indicator" />}
+              {/* Gate round 6 fix (`agent://Arch877` Medium 2): this row used to ALSO draw a
+                  permanent 2px indigo bar plus a 4px ring-coloured focus override whenever this
+                  theme was the active one -- once the shared `DropdownMenuItem` focus cue became
+                  the SAME indigo `--active-indicator` (gate round 5), arrowing onto a DIFFERENT
+                  theme showed two visually identical indigo bars, with only a sub-1.3:1
+                  `bg-accent` telling them apart. The trailing "Current" text below is the ONLY
+                  current-theme marker now; the bar means focus alone, same as every other menu. */}
               <span
                 aria-hidden
                 className="size-4 shrink-0 rounded-full border border-border"

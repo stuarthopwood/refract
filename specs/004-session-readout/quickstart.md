@@ -29,14 +29,18 @@ These OMP facts are unverified and are checked before the work that depends on t
 
 **Story 1: see a session's state at a glance (FR-001 to FR-010, FR-021)**
 
-1. Open a Session with uncommitted edits against its Base branch. Expect: the chip row directly
-   above the message box shows the Approval mode pill first, then a Changes chip matching the
-   Session details card's figure (spec 001 FR-039), abbreviated for a very large count.
+1. Open a Session with uncommitted edits against its Base branch. Expect: the status line (the
+   old chip row, renamed; 2026-10-15, issue #564 -- the Approval mode pill is no longer here, it
+   is inside the message box instead, spec 001 FR-065) directly above the message box shows a
+   Changes chip matching the Session details card's figure (spec 001 FR-039), abbreviated for a
+   very large count.
 2. Open a Session whose worktree or Base branch is missing. Expect: the Changes chip reads "Not
    available" rather than a count or being hidden.
 3. Start a turn and watch the row while it runs. Expect: a Turn time chip ticks up, a Context
-   window usage chip shows tokens/window/percent (or "Not available" if the agent never reports
-   it) and visibly warns (text or icon, not colour alone) once usage nears the window's limit.
+   window usage chip shows used/window/percent abbreviated by the shared `k`/`m`/`b` formatter
+   with no literal word "tokens" (for example "44.8k/1m (4%)", issue #437), or "Not available" if
+   the agent never reports it, and visibly warns (text or icon, not colour alone) once usage
+   nears the window's limit.
 4. Let the turn end. Expect: the Turn time chip disappears; Changes and Context window usage keep
    their last reading.
 5. Watch the Current time chip (turn it on in Settings first; it defaults off) for at least a
@@ -85,8 +89,8 @@ These OMP facts are unverified and are checked before the work that depends on t
    "Appearance" (spec 007's theme picker) — the Session readout section lists Changes,
    Context window usage, Turn time, Current time, Pull request, Subagents, and Todo progress, each
    with its own on/off control; on a never-changed install, every one is on except Current time.
-2. Turn Current time on. Expect: every open Session's chip row shows it within about 1 s, with no
-   Session reopened and no restart.
+2. Turn Current time on. Expect: every open Session's status line shows it, last at the row's
+   right end, within about 1 s, with no Session reopened and no restart.
 3. Restart Refract. Expect: Settings and every Session's row still reflect that choice.
 4. Using only the keyboard, reach every control in the Session readout section with a visible
    focus indicator, and toggle at least two of them.

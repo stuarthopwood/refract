@@ -16,6 +16,7 @@ pub mod side_chat;
 pub mod start_queue;
 pub mod subagents;
 pub mod termination;
+pub mod thinking_level;
 
 pub use agent::{AgentError, SessionAgent, SessionStatus};
 pub use manager::SessionManager;

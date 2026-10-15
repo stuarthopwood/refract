@@ -705,3 +705,781 @@ This phase was written retroactively after the implementation above, as a qualit
 - [X] T136 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new FR-062 (#543) and FR-063 (#547), a dated `### Session 2026-10-13` Clarifications entry, US1 acceptance scenario 17, and a new Edge Cases bullet for a non-`skill://` path or malformed/missing `skill-prompt` `details`; `docs/PLAN.md`'s "Skill rows" and "Log rendering audit" rows record the PR.
 
 This phase was written retroactively after the implementation above, in the same session that built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue; decision comments posted on #543 and #547 recording the scope before the PR). `pnpm typecheck` (both tsconfigs), `pnpm check:indent` (0 odd-indent lines), the existing `pnpm vitest` suite (376 pass, no new tests added per AGENTS.md #605), `pnpm check:ui-text` (0 leaks), `pnpm check:theme-contrast` (all 313 pairs pass, unchanged by this phase), `pnpm check:drag-regions` (0 violations), and `pnpm build` all ran clean after the build (see the PR body for the exact live-check result, run or skipped by the free-memory bar at push time).
+
+## Phase 37: Convergence
+
+Written retroactively on 2026-10-15, after the composer restyle (#564) was already built on
+this branch: every `[X]` below cites the code as it stands on this branch at the time of writing,
+not a prior `/speckit.plan`/`/speckit.tasks` pass (none existed for #564).
+
+- [X] T137 [US1] Amend `spec.md` for the composer restyle (issue #564, child of #549): FR-041
+  marked superseded by FR-064; FR-056 marked amended by FR-065; new FR-064 (Model and Reasoning
+  pickers in the message box's bottom row) and FR-065 (Approval mode pill relocated into that
+  row, Stop's filled weight) appended after FR-063; US1 acceptance scenario 11 rewritten for the
+  new bottom row; a new Edge Cases bullet for the not-idle refusal; a dated
+  `### Session 2026-10-15` Clarifications entry recording Stuart's decisions (status line full
+  width, Current time at the right end, no branch name or mode dot, the Reasoning picker's scope
+  and its Rust-only target now that R13 deletes Electron concurrently, Stop's filled weight).
+  `contracts/ipc.md`'s `session:status` row description updated from "above the message box" to
+  "inside the message box's own bottom row". `quickstart.md` Story 1 steps 6 and 9 rewritten for
+  the new bottom row and Stop's weight.
+- [X] T138 [US1] Amend spec 004's `spec.md` (same issue, since the chip row's own FR-001 and the
+  readout spec's own Edge Cases bullet are directly contradicted by the pill's move): FR-001
+  marked superseded by FR-023; new FR-023 (the renamed status line: full width, ordering, Current
+  time last, no empty bar once the pill is gone) appended after FR-022; the "chip row still shows
+  the Approval mode pill alone" Edge Cases bullet rewritten for the new empty-when-nothing-
+  meaningful behaviour; a dated `### Session 2026-10-15` Clarifications entry. `quickstart.md`
+  Story 1 steps 1 and 2 reworded from "chip row" to "status line" and to drop the pill mention.
+- [X] T139 [US1] Add `src/renderer/features/chat/ComposerStatusLine.tsx` (new file): renders the
+  renamed status line (spec 004 FR-023) -- every readout chip FR-023 names except the Approval
+  mode pill, `tabular-nums` on the row, Current time last with `ml-auto` so it sits at the right
+  end when enabled. `src/renderer/features/chat/readout/ReadoutChips.tsx`'s `CurrentTimeChip`
+  gains an optional `className` prop, passed through to its own `ReadoutChip`, for exactly this.
+  `MessageInput.tsx`'s old inline chip-row `<div>` (Approval pill plus seven
+  `sessionReadout[...] && <Chip .../>` lines) is replaced with one `<ComposerStatusLine
+  sessionId={sessionId} />`; the now-unused `sessionReadout` selector and the `ReadoutChips`
+  import are removed from `MessageInput.tsx`.
+- [X] T140 [US1] Add `src/renderer/features/chat/ComposerPickers.tsx` (new file): `ModelPicker`
+  and `ReasoningPicker` (FR-064) -- each a `DropdownMenu`-backed labelled menu button matching
+  `ApprovalModePill.tsx`'s own badge-trigger styling, naming the Session's current value
+  (`formatModelLabel`/`formatThinkingLevelLabel`, unchanged from the old read-only line),
+  refusing to open (controlled `open`/`onOpenChange`, `aria-disabled` with the reason folded into
+  the accessible name) while the Session is `working` or `needs-you`; `ModelPicker` loads
+  `useModelRolesStore`'s `chat` catalog on first open and calls `window.refract.model.setModel`
+  on selection, `ReasoningPicker` lists `modelDisplay.ts`'s new `THINKING_LEVELS` and calls
+  `window.refract.model.setThinkingLevel`. Targets the Rust build only (Stuart approved R13,
+  delete Electron, 2026-10-15, running concurrently in a separate worktree): no Electron
+  read-only fallback branch was built, since one would be dead code the moment R13 lands.
+  `AttachButton` (FR-065) in the same file: a hidden native `<input type="file">` (images only)
+  plus a ghost icon button, feeding each chosen file through the exact same `buildImageAttachment`
+  validation and toast wording `MessageInput.tsx`'s own paste handler already uses (spec 009) --
+  renderer-only, no new IPC, so no main-process change either shell would need.
+  `src/renderer/lib/modelDisplay.ts` exports `THINKING_LEVEL_LABEL` (was module-private) and adds
+  `THINKING_LEVELS` (the closed `ThinkingLevel` union in display order, typed independently of
+  `THINKING_LEVEL_LABEL`'s own deliberately-untyped `Record<string, string>`, so the Reasoning
+  picker's `onSelect` stays correctly typed). `MessageInput.tsx`'s bottom row (the old
+  `CpuIcon`/`GaugeIcon` read-only line) is replaced with `<ApprovalModePill .../>` (moved here
+  from the status line, FR-065), `<ModelPicker .../>`, `<ReasoningPicker .../>`, and
+  `<AttachButton .../>`; the now-unused `modelSession`/`modelLabel`/`thinkingLabel` locals, the
+  `CpuIcon`/`GaugeIcon`/`PaperclipIcon` icon imports, and the `formatModelLabel`/
+  `formatThinkingLevelLabel` import are removed from `MessageInput.tsx` (both helpers are used
+  from `ComposerPickers.tsx` instead).
+- [X] T141 [US1] Give Stop a filled `variant="default"` (was `outline`, matching Send) so it reads
+  as clearly distinct in weight from Send while a turn is running (FR-065; docs/design/
+  components.md "Button": one filled button per surface, never both Send and Stop at once since
+  Send itself stays outline throughout). `docs/design/product-chat.md`'s "Message box" bullet
+  rewritten for the new bottom row (pickers and the Attach button in place of the read-only
+  line, the Approval pill here instead of above the box) and for Stop's new weight, replacing its
+  stale "share the exact same `variant="outline"` ... weight than the other" wording.
+- [X] T142 [US1] Update the docs and verify: `docs/PLAN.md`'s #564 row (status, PR link). Verified
+  so far (see the PR body for the exact command output): `pnpm typecheck` (both tsconfigs, clean),
+  `pnpm check:indent` (0 odd-indent lines across 364 files), `pnpm check:theme-contrast` (all 313
+  pairs across 3 themes pass, unchanged by this phase), `pnpm check:drag-regions` (0 violations),
+  `pnpm check:parity` (97 of 97 requests, 23 of 23 events), `pnpm check:versions` (all four
+  manifests agree), `pnpm check:omp-schema -- --check-pin` and `--self-test` (no drift, self-test
+  passes), `cargo fmt --check` (clean), `cargo test` (727 Rust tests plus the four integration
+  suites, all pass -- gate round 1 correction: an earlier version of this entry twice claimed
+  "no Rust files touched by this story", which was never accurate even then, since this story's
+  own earlier commit 1871f9b had already added Rust code (`model.setThinkingLevel`) before this
+  verification pass ever ran),
+  `pnpm test` (Vitest; one `SessionAgent.test.ts` case failed with a Windows `EPERM` temp-file
+  rename race under the full 30-file parallel run but passed in isolation and on a lone rerun --
+  pre-existing flakiness, unrelated to this story, which never touches `SessionAgent.ts` or
+  `atomicJson.ts`). `pnpm check:file-size` initially reported two failures from this branch's own earlier commit
+  1871f9b (not main, so not actually pre-existing as first assumed -- corrected mid-session):
+  `src/shared/ipc.ts` grew from 900 to 901 lines, and `src-tauri/src/session/model.rs` grew from
+  600 to 650 adding `set_thinking_level`. Fixed, move-only, no behaviour change: `model.rs`'s
+  `set_thinking_level` moved to a new sibling file, `src-tauri/src/session/thinking_level.rs`
+  (declared in `session/mod.rs`), restoring `model.rs` to byte-identical content with its own
+  pre-1871f9b version (confirmed via a direct diff against `git show 1871f9b~1`); `model_support`'s
+  `post_notice` widened from `pub(super)` to `pub(in crate::session)` so the new sibling module can
+  call it; `ipc/model.rs`'s one call site now reads `thinking_level::set_thinking_level`. `ipc.ts`'s
+  one added line (`MODEL_SET_THINKING_LEVEL`) is offset by folding its preceding comment onto the
+  `MODEL_SET_MODEL` line as a trailing comment, landing back at exactly 900. `cargo fmt`,
+  `cargo test` (unchanged pass count) and `cargo clippy -D warnings` all re-run clean after the
+  split. `pnpm check:file-size` now reports 0 cap violations across 386 files. `MessageInput.tsx`
+  itself shrank (1632 to 1599 lines against its own 1632-line baseline, well inside the cap)
+  despite the new bottom row, since the chip-row/read-only-line removal outweighed the new
+  pickers/status-line/attach-button wiring; both new files (`ComposerStatusLine.tsx`,
+  `ComposerPickers.tsx`, `thinking_level.rs`) are comfortably under the 600-line cap. The Tauri debug build, `check:ui-text`, and a live CDP check on a scratch instance
+  are still to run; their results are recorded in the PR body, not retrofitted into this task.
+
+- [X] T143 [US1] Split `src-tauri/src/session/model.rs`'s `set_thinking_level` into its own file,
+  `src-tauri/src/session/thinking_level.rs` (declared in `session/mod.rs`), restoring `model.rs`
+  to exactly its pre-1871f9b content and size (see T142's evidence) -- a move, not a rewrite:
+  identical body and signature, the one call site in `ipc/model.rs` updated from
+  `model::set_thinking_level` to `thinking_level::set_thinking_level`, and
+  `model::model_support::post_notice`'s visibility widened from `pub(super)` to
+  `pub(in crate::session)` so the new sibling module can still call it.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #564; Stuart's own 2026-10-
+15 Decided comments on the issue, plus the mockup-stories review reply, are the decision record).
+
+**`/grill-with-docs` follow-up (same day, same session, after T137-T143 above landed)**: Stuart's
+"Decided (Stuart, 2026-10-15): `/grill-with-docs` session for this story" comment on #564 gave six
+further decisions. T144-T150 below implement them; `/speckit.implement` was run against this
+phase per that comment, task by task, each `[X]` citing the actual code on this branch at the
+time it was marked, not a prior plan.
+
+- [X] T144 [US1] Amend the docs for the six grill decisions: `CONTEXT.md` retires **Readout chip**
+  (moved to its own _Avoid_ line) and introduces **Status line** and the re-scoped **Readout**
+  entry, with **Chat pane**, **Subagent panel**, and the generic **Chip** entry's own example
+  updated to match; `specs/001-core-session-workspace/spec.md` gets a further `### Session
+  2026-10-15` Clarifications block (Stop's neutral fill superseding that same day's earlier
+  answer, the stopped-agent disabled state, the Reasoning level order, the Model picker's filter/
+  Roles menu, and a pointer to spec 004's plain-text decision), FR-064 rewritten in place for all
+  of the above (not yet externally reviewed, so amended directly rather than superseded by a new
+  FR number), FR-065 rewritten for Stop's neutral fill, US1 acceptance scenario 11 and a new Edge
+  Cases bullet for the stopped-disabled state; `specs/004-session-readout/spec.md` gets its own
+  Clarifications entry, FR-023 rewritten in place for the plain-text/no-box rule, and its Key
+  Entities **Readout chip** entry renamed to **Readout** with the same rule. `docs/design/
+  product-chat.md`'s Message box bullet and `docs/design/product-layout.md`'s Approval-pill/
+  status-bar/chat-header/status-line bullets rewritten to match (neutral Stop, accent Send, the
+  stopped-disabled pickers, the Reasoning order, the Model picker's filter/Roles menu, and the
+  Status line's plain-text/no-box rule, replacing every remaining "chip row"/"Readout chip"
+  wording).
+- [X] T145 [US1] Restyle `src/renderer/features/chat/readout/ReadoutChip.tsx` to plain text, no
+  box (decision 1): drops `badgeVariants` entirely; a read-only Readout is now `inline-flex` text
+  with an icon, no border or fill; an interactive one (`onActivate`/`href`) adds only
+  `rounded-md hover:bg-muted hover:text-foreground`, still no border. The seven `ReadoutChips.tsx`
+  components and `ComposerStatusLine.tsx` need no changes themselves -- they only call this
+  shared baseline, which now renders the new look under them unchanged.
+- [X] T146 [US1] Reorder and relabel `src/renderer/lib/modelDisplay.ts`'s `THINKING_LEVEL_LABEL`/
+  `THINKING_LEVELS` for decision 4: `inherit` now reads "Default" (was "Inherit"), and the
+  declared order is `inherit, off, minimal, low, medium, high, xhigh, max` (was `off, inherit,
+  ...`), Default first. `formatThinkingLevelLabel` (used by both `MessageInput.tsx`'s Reasoning
+  picker and `SessionDetailsCard.tsx`'s tooltip) picks up the new label automatically since both
+  read the same map.
+- [X] T147 [US1] Add a solid NEUTRAL `invert` Button variant (decision 5):
+  `src/renderer/components/ui/button.tsx` gains `invert: "bg-foreground text-background
+  hover:bg-foreground"` (no opacity-modified hover, per the token rules) alongside the existing
+  variants; `MessageInput.tsx`'s Stop button switches from `variant="default"` to
+  `variant="invert"`, and Send switches from `variant="outline"` to `variant="default"` (Send
+  "keeps the accent fill" per the decision's own wording, which only makes sense if Send already
+  has one), with the surrounding comment rewritten for both.
+- [X] T148 [US1] Give the Model and Reasoning pickers a stopped-agent disabled state (decision 3):
+  `ComposerPickers.tsx`'s `usePickerDisabled` (renamed from the single-purpose `useNotIdle`) now
+  returns `{ disabled, notIdle, stopped }`; `disabled = notIdle || stopped` gates `aria-disabled`
+  and the controlled `onOpenChange` refusal for both pickers, each with its own accessible-name
+  reason ("Available once the session is idle." vs "Start the agent to change the
+  model/reasoning level."); a disabled picker's `onOpenChange` never calls
+  `setModel`/`setThinkingLevel`/`applyRole`, so nothing is stored for the next start.
+- [X] T149 [US1] Rebuild the Model picker's own menu (decision 6): a type-to-filter `Input` at the
+  top of `DropdownMenuContent` (Radix's `DropdownMenu.Content` has no public `onOpenAutoFocus`
+  unlike Dialog/AlertDialog, so a `useEffect` keyed on `open` focuses the field instead, winning
+  the race against Radix's own default first-item focus), a **Roles** `DropdownMenuLabel` group
+  first built from `model.listRoles(sessionId)` (fetched on open) with each role's own raw
+  selector looked up against the already-loaded catalog for a friendly name, selecting one calls
+  `model.applyRole`; then a **Models** group, the catalog filtered by the typed text
+  (case-insensitive substring over `provider`/`name`), current one ticked, capped to
+  `max-h-96 overflow-y-auto` (roughly 12 rows) rather than growing unbounded for the 91-entry chat
+  catalog.
+- [X] T150 [US1] Update the docs and verify: re-ran `pnpm typecheck` (clean), `pnpm
+  check:file-size` (0 violations, unchanged from T142), `pnpm check:indent` (0 odd-indent lines),
+  `pnpm check:theme-contrast` (all 313 pairs still pass -- the new `invert` button variant and the
+  restyled `ReadoutChip` are not in `scripts/check-theme-contrast.mjs`'s own pair list, so this
+  confirms no EXISTING pair regressed, not a new check for either). Rebuilt `pnpm tauri build
+  --debug --no-bundle` and re-ran the scratch live check (screenshots and exact results recorded
+  in the PR body, not retrofitted into this task).
+
+**Gate round 1 fixes (same day, same session, after T137-T150 above landed and PR #877 went up for
+review)**: code-reviewer, accessibility-auditor (1 Critical, 2 High), test-reviewer and
+security-auditor all reviewed the PR; code/accessibility/tests came back FAIL. T151-T159 below fix
+every finding, amended by Stuart on one point (T155's read-back semantics). `/speckit.implement`
+was run against this phase per that round, task by task, each `[X]` citing the actual code on this
+branch at the time it was marked.
+
+- [X] T151 [US1] Merge `origin/main` (R13, commit `da2856a`: delete the Electron build) into this
+  branch, resolving two conflicts (`docs/PLAN.md`, `docs/design/product-layout.md` -- combined,
+  never a one-sided discard). `shared/ipc.ts`'s `RefractApi.model` becomes non-optional (Electron,
+  the only other possible implementation, never ported this family and no longer exists at all),
+  removing the dangling-`!`-assertion risk the Low finding flagged. `pnpm install --frozen-lockfile`
+  (Electron/koffi packages removed); `pnpm test` drops from 376 to 148 passing tests, matching R13's
+  own removal of every Electron main/preload test suite, not a regression.
+- [X] T152 [US1] Rebuild the Model picker (`ComposerPickers.tsx`) as a `Popover` holding a
+  type-to-filter combobox `Input` (`role="combobox"`, focus via the popover's own public
+  `onOpenAutoFocus`, no timers) plus a hand-built `role="listbox"` driven by
+  `aria-activedescendant` -- the same pattern `SlashMenu.tsx`/`MessageInput.tsx` already use:
+  ArrowUp/Down move the active option, Enter applies it, Escape closes the popover. Fixes
+  test-reviewer/code-reviewer HIGH: Radix `DropdownMenu.Content`'s own typeahead moved focus off
+  the filter field to the first matching item on every keystroke, and blocked Tab/ArrowDown for
+  anything but the content element itself, so the filter was unusable from the keyboard. Two
+  `role="group"`/`aria-labelledby` sections (Roles, Models); the current role/model is
+  `aria-selected` plus a visible tick; the listbox scrolls once past about 12 rows, capped further
+  by the popover's own `max-h-[min(24rem,var(--radix-popover-content-available-height))]` so the
+  filter field never scrolls off a short viewport.
+- [X] T153 [US1] Fix the picker menu close-trap (code-reviewer HIGH): a shared
+  `usePickerOpenState(disabled)` hook (`ComposerPickers.tsx`) used by both pickers blocks only an
+  attempt to OPEN while disabled (`if (next && disabled) return`) and force-closes an already-open
+  menu via its own effect the instant `disabled` becomes true -- previously `onOpenChange` returned
+  early for `next === false` too, so Escape, an outside click, and selecting an item were all
+  swallowed once the Session's status flipped while a menu sat open.
+- [X] T154 [US1] Reasoning picker: `DropdownMenuRadioGroup`/`DropdownMenuRadioItem` (new,
+  `dropdown-menu.tsx`, Radix's own `RadioGroup`/`RadioItem`/`ItemIndicator`) bound to the Session's
+  `lastThinkingLevel`, replacing a plain `DropdownMenuItem` with a decorative `aria-hidden`
+  `CheckIcon`. Fixes code-reviewer HIGH: Radix exposes the checked item as `aria-checked`/
+  `role="menuitemradio"` automatically, so a screen reader now hears which level is current.
+- [X] T155 [US1] `thinking_level.rs`: validate `level` against the closed 8-value `ThinkingLevel`
+  set before sending anything to OMP, refusing an unknown value with `invalid-argument` (closes
+  security-auditor Low; mirrors `model::apply_role`'s own `known_role_list()` check). Fix the
+  false-error read-back (code-reviewer HIGH, AMENDED by Stuart mid-round, superseding the review's
+  own suggested "map every missing level to Default"): OMP's `get_state` leaves `thinkingLevel` out
+  of its response both for `inherit` and for any OTHER level a non-reasoning model was asked for --
+  previously ANY missing read-back after a successful switch raised a `prompt-failed` error the
+  user saw as a failed change that had in fact succeeded. Now: a requested `inherit` always
+  resolves to `"inherit"` (patched directly into the registry via `SessionAgent::registry()`/
+  `events()`, since `refresh_from_state`'s own generic `sync_from_state` has no "just requested"
+  context and would otherwise leave it `None`); any OTHER requested level the model does not
+  report resolves to `None` or `null` over the wire, read by the renderer as "Not reported by this
+  model" (`modelDisplay.ts`'s `formatThinkingLevelLabel`, now `Pick<Session, 'lastModel' |
+  'lastThinkingLevel'>` so it can tell "never known" from "known model, unreported level"). Neither
+  branch ever raises an error. Contract: `ipc-model.ts`'s `setThinkingLevel` returns `{
+  thinkingLevel: string | null }` (was `string`); `contracts/ipc.md` and spec 001's FR-064 updated
+  to match. The transcript notice now reads "Reasoning switched to <UI label>." (was "Thinking
+  level switched to <raw OMP string>."), matching the picker's own wording. `REQUEST_TIMEOUT_MS`
+  shared from `model.rs` (now `pub(super)`) instead of re-declared a third time (security-auditor
+  Low).
+- [X] T156 [US1] Send's own `--send`/`--send-foreground` token pair (gate round 1, Stuart): a new
+  per-theme pair in `globals.css` for all three built-in themes (Obsidian reuses its own `#5A5EEE`
+  `--primary` verbatim; Dark and Dark high contrast get a lifted `#6D71F0`, since `--primary`
+  resolves to a near-white neutral in both, nearly identical to Stop's `invert` fill there, failing
+  "visibly distinct in weight" in 2 of 3 themes), mapped into the `@theme inline` layer and applied
+  ONLY to the composer's Send button (`MessageInput.tsx`), overriding `variant="default"`'s shared
+  `--primary` fill -- every other `default`-variant button elsewhere is unaffected. Two new pairs
+  in `scripts/check-theme-contrast.mjs` (icon-on-fill and fill-vs-composer-background, both at the
+  3:1 icon-without-text floor, `docs/design/accessibility.md`): computed and verified at 3.08:1 to
+  6.47:1 across all three themes, comfortably clearing the floor. Stop's `SquareIcon` gets
+  `fill-current` (was read by a reviewer as "an outlined square" on a solid fill) and `invert`
+  gains a real `hover:bg-foreground/85` (was identical to its resting fill, no hover feedback at
+  all). `docs/design/components.md`'s Button table documents the new `invert` row and the
+  composer's both-filled exception.
+- [X] T157 [US1] Remaining code-reviewer/test-reviewer MEDIUM and LOW findings: friendly model/role
+  names drop `font-code` (not code-shaped data; mono kept only for a raw `provider/id` fallback,
+  `modelDisplay.ts`/`ComposerPickers.tsx`); the current-model tick now compares identity (`provider`
+  + `id`) instead of the display label, which missed a Session whose `lastModel.name` is absent and
+  double-ticked entries sharing a name; a new shared `attachImageFile` (`attachments.ts`) replaces a
+  duplicated validate-plus-commit block between the Attach button and a pasted image's own paste
+  handler; `ReadoutChip.tsx`'s interactive variant gets an opaque `focus-visible:outline-2
+  focus-visible:outline-offset-2 focus-visible:outline-ring` (the plain-text restyle in T145 had
+  dropped `badgeVariants`' own ring entirely, leaving only the browser default); the picker
+  triggers' own `PICKER_TRIGGER_CLASS` gets the same opaque ring, overriding `badgeVariants`' `/50`
+  alpha ring (below the WCAG 1.4.11 3:1 floor); the Attach button's hidden file input uses `hidden`
+  (was `sr-only` + `tabIndex={-1}`, so a screen reader's browse mode landed on a stray do-nothing
+  control) and its Tooltip gets `aria-describedby={undefined}` (its content purely repeated the
+  button's own accessible name). A full-label `title` attribute on both picker triggers substitutes
+  for a Tooltip there (avoiding an unproven nested Tooltip-inside-Popover/DropdownMenu-trigger
+  composition with no precedent elsewhere in this codebase) so a long truncated model name is still
+  readable by a sighted user.
+- [X] T158 [US1] A right- or middle-click on a Model picker option applied the selection the same
+  as a primary click (`onMouseDown`'s own `preventDefault()` keeps focus in the filter field but
+  does not filter by button) -- found live by Stuart during round 1 verification. Both the Roles
+  and Models option handlers now return early unless `event.button === 0`.
+- [X] T159 [US1] Update the docs and verify: spec 001's Clarifications gain five gate round 1
+  entries, FR-064 and FR-065 rewritten in place for the combobox/listbox rebuild, the close-on-
+  disable fix, the radio-group Reasoning picker, the null/"Not reported" read-back semantics and
+  the `--send` token, US1 acceptance scenario 11 updated to match, three new Edge Cases bullets
+  (close-on-disable, the null read-back, the right/middle-click guard); `contracts/ipc.md`'s
+  `setThinkingLevel` row and its Electron-optional note updated; `quickstart.md` step 9 rewritten
+  for the new picker interaction. `docs/design/product-chat.md`'s Message box bullet and
+  `docs/design/components.md`'s Button table updated to match. `tasks.md` T142's own "no Rust files
+  touched by this story" claim (repeated twice) corrected -- never actually true even when written,
+  since this story's own earlier commit `1871f9b` had already added Rust code before that
+  verification pass ran; "T144-T151" corrected to "T144-T150" (the phase has 7 tasks, not 8).
+  Re-ran `pnpm typecheck` (clean), `cargo check` (clean, 4m14s cold build after the shared cache
+  was cleared), `pnpm check:indent` (0 odd-indent), `pnpm check:file-size` (0 violations across 305
+  files -- `model.rs`, `check-theme-contrast.mjs` and `ipc.ts` each needed their own new comments
+  trimmed back to stay within their existing baselines), `pnpm check:ui-text` (0 leaks),
+  `pnpm check:theme-contrast` (319 of 319 pairs across 3 themes, up from 313), `pnpm test` (148 of
+  148, the post-R13 count). The full `ci-local.mjs` run, the scratch live-check re-run exercising
+  every fixed behaviour with real CDP keyboard/mouse input, and screenshots are recorded in the PR
+  body, not retrofitted into this task.
+
+**Gate round 2 fixes (same day, same session, after T151-T159 above landed and PR #877 went up for
+a second review)**: code-reviewer FAIL (1 High), accessibility-auditor FAIL (1 High), test-reviewer
+and security-auditor PASS. T160-T168 below fix every finding, amended TWICE by Stuart on the same
+point (T160's own read-back semantics, corrected mid-round).
+
+- [X] T160 [US1] Fix Default-persistence (code-reviewer HIGH): `sync_from_state` (launch.rs) now
+  only writes `last_thinking_level` when `thinkingLevel` is ACTUALLY REPORTED by `get_state` --
+  previously it wrote `None` unconditionally whenever absent, which erased
+  `thinking_level::set_thinking_level`'s own explicit "inherit" write on the very next settle or
+  app relaunch. `thinking_level.rs` is now the ONLY place that writes the field when absent, and
+  always writes something explicit: `Some("inherit")` for a Default request (so it survives), or
+  an explicit `None` for any other unconfirmed request (clearing any stale previously-confirmed
+  level). **Corrected TWICE by Stuart mid-round** (an initial attempt at this same fix wrongly
+  showed "Default" for any Session with no stored level at all): a Session where nothing was ever
+  explicitly requested, and one where a non-Default request was not confirmed, BOTH read as
+  "Reasoning not reported" (`modelDisplay.ts`, renamed from round 1's "Not reported by this
+  model") -- "Default" is shown ONLY for the literal persisted `"inherit"`.
+- [X] T161 [US1] Fix the keyboard-active option's contrast (accessibility-auditor HIGH): `bg-accent`
+  alone measured under 1.3:1 in every theme. `pickerShared.tsx`'s new `PICKER_OPTION_CLASS`/
+  `PICKER_OPTION_ACTIVE_CLASS` add an opaque `border-l-active-indicator` left border when active,
+  matching `SlashMenu.tsx`'s own pattern exactly, used by both the Roles and Models options.
+- [X] T162 [US1] Fix Enter-applies-the-wrong-option after typing (accessibility-auditor MEDIUM):
+  the active index stayed at 0 (the first Role, never filtered) regardless of what was typed.
+  `ModelPicker.tsx` now resets the active index to the first MATCHING MODEL whenever the filter
+  is non-empty.
+- [X] T163 [US1] Fix pointer-cancellation (accessibility-auditor MEDIUM, WCAG 2.5.2): selecting an
+  option ran on `onMouseDown` (the press), so sliding off before releasing could not cancel it.
+  `preventDefault()` (keeps focus in the filter field) stays on `onMouseDown`; the actual select-
+  and-close now runs on `onClick`, which only fires for a completed primary-button press-and-
+  release on the same element (a right- or middle-click never fires it at all).
+- [X] T164 [US1] Name the Model popover (accessibility-auditor MEDIUM, WCAG 4.1.2):
+  `aria-label="Choose model"` on `PopoverContent` -- Radix gives it `role="dialog"` with no label
+  of its own.
+- [X] T165 [US1] Fix Tab leaving the popover open (accessibility-auditor LOW, WCAG 2.4.3): Tab in
+  the filter field now closes the popover and returns focus to the trigger, instead of leaving
+  this non-modal popover open and carrying focus to whatever follows its portal in the DOM.
+- [X] T166 [US1] Fix the invalid double-`aria-selected` listbox (accessibility-auditor LOW): the
+  current Role and the current Model could both carry `aria-selected="true"` at once. The current
+  Role is now sr-only "(current)" text plus its visible tick; `aria-selected` belongs to the
+  Models group alone. `rolesError` moved from a bare `<p>` inside the listbox (not an allowed
+  child) to a disabled `role="option"`, matching `catalogError`'s own pattern.
+- [X] T167 [US1] Remaining LOW findings: the visible Reasoning label "Reasoning not reported" (was
+  "Not reported by this model", lacked the word "Reasoning" for a sighted user); the
+  `tauri-bridge/index.ts` `setThinkingLevel` return type corrected to `string | null` (was
+  `string`, silently widened); `attachImageFile` moved to its own module, `attachImage.ts` (closes
+  an import cycle between `attachments.ts` and `state/draft-store.ts`, harmless only because
+  `@/state` happened to load first); `ModelPicker` moved to its own file, `ModelPicker.tsx`
+  (`ComposerPickers.tsx` had grown to 427 lines/three components); both pickers' disabled reason
+  is now ALSO a visible `Tooltip`, with `aria-describedby={undefined}` on the trigger so the
+  tooltip's content (which always repeats something already in the accessible name) is never
+  announced twice; two opacity-modifier hovers (`hover:bg-send/80`, `hover:bg-foreground/85`,
+  both introduced in gate round 1) replaced with the `color-mix` pattern `button.tsx`'s
+  `secondary` variant already uses, per the design rules' own "never a Tailwind opacity modifier
+  on a token class".
+- [X] T168 [US1] Update the docs and verify: spec 001 gains a gate round 2 Clarification (the
+  persistence fix, Stuart's correction recorded verbatim), FR-064 rewritten in place for the
+  persistence guarantee, the active-row contrast, Tab, pointer-cancellation, the popover name, the
+  single-`aria-selected` rule, and the visible disabled Tooltip; three Edge Cases bullets updated
+  or added. `docs/design/product-chat.md`, `quickstart.md`, `contracts/ipc.md`, and
+  `src/shared/ipc-model.ts`'s own doc comment all get the "Reasoning not reported" rename.
+  Re-ran `pnpm typecheck` (clean), `pnpm check:indent` (0 odd-indent), `pnpm check:file-size` (0
+  violations -- `launch.rs` needed its own new `if let` block trimmed to net-zero growth against
+  its exact 600-line baseline), `pnpm check:parity` (97/97, 23/23). The full `ci-local.mjs` run,
+  the scratch live-check proving Default's persistence through both a settle and a full app
+  relaunch, the keyboard-active row, and the fresh/unconfirmed "Reasoning not reported" states
+  with real CDP input, and screenshots, are recorded in the PR body, not retrofitted into this
+  task.
+- [X] T169 [US1] Composer-dimming fix (Stuart, 2026-10-15, reviewing PR #877, FR-065): removed the
+  message box's own per-field grey background/opacity on the disabled text area (the vendored
+  `Textarea` component's `disabled:bg-input/50 disabled:opacity-50 dark:disabled:bg-input/80`
+  overridden to `disabled:bg-transparent disabled:opacity-100 dark:disabled:bg-transparent`) and
+  replaced it with one container `opacity-60` on the whole box (`MessageInput.tsx`'s own
+  `disabled` flag), covering the text field and its bottom row together. The Attach button's own
+  `aria-disabled:opacity-50` (identical condition, `disabled` passed straight through) is dropped
+  entirely; the Model and Reasoning pickers now take a `boxDimmed` prop (`disabled` from
+  MessageInput, the SAME boolean, passed down rather than re-derived) and suppress their own
+  `aria-disabled:opacity-50` only while it is true, keeping it for their independent `notIdle`
+  (mid-turn) disable reason, which the box never dims for. Re-deriving `boxDimmed` locally in
+  each picker from `usePickerDisabled`'s own `stopped`/a new `stopReason` read was tried first and
+  reverted: `useSessionsStore`'s `SessionSummary.stopReason` and the `SessionRuntimeView`-based
+  `stopReason` prop `ChatPane` feeds `MessageInput` are two genuinely different, independently
+  computed values (confirmed live: after a relaunch the former read `"not-started"` while the
+  latter's absence is exactly what makes `MessageInput`'s own `disabled` true) -- passing the one
+  authoritative value down as a prop avoids relying on two sources staying in sync.
+- [X] T170 [US1] Update the docs and verify: spec 001 gains a 2026-10-15 Clarification (the
+  grey-background-to-single-opacity decision, the no-double-dimming rule, the behaviour-unchanged
+  guarantee) and FR-065 is amended with the same box-dimming requirement. `pnpm typecheck`
+  (`tsconfig.node.json` + `tsconfig.web.json`, clean), `pnpm test` (148/148), `pnpm check:indent`
+  (0 odd-indent), `pnpm check:ui-text` (0 leaks/371 files, run after `pnpm tauri build --debug
+  --no-bundle`) all pass; no Rust touched, so `ci-local.mjs` was not re-run in full. A scratch
+  live check (isolated `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`OMP_PROFILE`, a scratch git
+  repo, driven through the real UI, across a relaunch to reach the genuine "stopped, agent not
+  yet restarted" state a plain `sessions.stopAgent` call does NOT reproduce -- confirmed live that
+  call alone leaves `stopReason: 'not-started'`, keeping the composer enabled) proves, with real
+  computed styles read via CDP: the enabled composer has no box opacity and no textarea disabled
+  styling; the disabled composer's box reads `opacity: 0.6` with the `opacity-60` class present,
+  the textarea has no background/opacity of its own and shows the `"The agent is stopped."`
+  placeholder; the Attach, Model and Reasoning triggers all read `opacity: 1` (no second dim).
+  Screenshots `8-stopped-dimmed.png` and `9-enabled.png` (Dark, the app's own default theme) are
+  recorded in the PR body alongside the exact pass/fail lines, not retrofitted into this task.
+- [X] T171 [US1] Gate round 4 fix (Stuart, 2026-10-15, reviewing PR #877, FR-065): the Approval
+  mode pill stays BRIGHT while the composer is disabled -- it still works while the agent is
+  stopped (FR-056), unlike the Model/Reasoning pickers, which are correctly disabled then, so
+  dimming it would misrepresent it as unusable. `MessageInput.tsx`'s own box-level `opacity-60`
+  is removed from the outer container (its border/background never dim again) and moved onto
+  the field block div (`relative flex items-end`, covering the textarea and Send/Stop together).
+  `ModelPicker.tsx`/`ComposerPickers.tsx`'s `ReasoningPicker`/`AttachButton` each now apply the
+  SAME `opacity-60` value directly (`boxDimmed && 'aria-disabled:opacity-60'` for the pickers,
+  `disabled && 'opacity-60'` for Attach) instead of suppressing their own opacity to 100%, since
+  the box no longer provides one shared dim for the whole bottom row -- the stopped-agent reason
+  and the independent mid-turn `notIdle` reason still never compound into a different-looking
+  dim, matching FR-065's existing no-double-dimming rule. The Approval pill itself
+  (`ApprovalModePill.tsx`) is untouched by any of this and was never wrapped in a dimming
+  container.
+- [X] T172 [US1] Gate round 4 fix (same round, WCAG 1.4.11): the Approval pill's own focus
+  indicator gets the same opaque `focus-visible:outline-ring` convention the Model/Reasoning
+  picker triggers already use (gate round 1, `PICKER_TRIGGER_CLASS`), dropping `badgeVariants`'
+  own translucent `ring-ring/50` (`focus-visible:ring-0 focus-visible:outline-2
+  focus-visible:outline-offset-2 focus-visible:outline-ring`). Two new `check-theme-contrast.mjs`
+  pairs close a pre-existing gap neither had before (`ring`/`composer-background` and
+  `border`/`composer-background`, the pill's resting edge and its new focus outline against the
+  specific surface it sits on, never checked against `--composer-background` before, only
+  against `--background`/`--popover`/`--muted`) -- measured 4.37 to 15.42:1 (ring) and 4.45 to
+  5.27:1 (border) across all three built-in themes, all above the 3:1 floor in both states.
+  `scripts/check-theme-contrast.mjs`'s own file-size ratchet violation (935 lines, over its
+  923-line baseline -- the ratchet is lower-only, #806) was fixed not by raising the baseline
+  but by extracting its `PAIRS` array (plus the comment block explaining it) into a new
+  `scripts/theme-contrast-pairs.mjs` module, a pure-data, behaviour-preserving move: the script
+  now imports `PAIRS` from there and iterates it exactly as before, dropping to 791 lines (under
+  its UNCHANGED 923 baseline); `scripts/file-size-baseline.json` is byte-identical to `main`.
+
+  Verified: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent` (0
+  odd-indent), `pnpm check:file-size` (0 violations/312 files, baseline unchanged from main),
+  `node scripts/check-theme-contrast.mjs` (all 325 pairs across 3 themes PASS, unchanged from
+  before the extraction -- confirming the move changed no behaviour), `pnpm check:parity`
+  (97/97, 23/23), `pnpm check:drag-regions` (0 violations/115 files). No Rust touched, so the
+  full `cargo`/`ci-local.mjs` suite was not re-run; the Tauri debug build WAS rebuilt (renderer-
+  only changes still need a fresh bundle) to drive the live check below.
+
+  Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+  `WEBVIEW2_USER_DATA_FOLDER`/`OMP_PROFILE`, a scratch git repo, driven through the real UI,
+  across a relaunch to reach the genuine "stopped, agent not yet restarted" state, same pattern
+  T170 used): **12/12 checks pass**, every one a real computed style or real keyboard-dispatched
+  focus read via CDP, not a screenshot guess -- the pill's own `opacity` reads `1` in BOTH the
+  enabled state (launch 1) and the disabled/stopped state (after the relaunch), while the field
+  block, Model picker, Reasoning picker, and Attach button all read `opacity: 0.6` in the stopped
+  state, and the box's own container reads `opacity: 1` throughout (never dims); real Tab
+  navigation (dispatched key events, never a scripted `.focus()`) reached the pill's trigger and
+  its `:focus-visible` state shows a real `2px solid` opaque outline (`outlineColor:
+  oklch(0.556 0 0)`, not `rgba(0, 0, 0, 0)`), confirming the ring-to-outline swap actually took
+  effect, not just typechecked. Screenshots `11-pill-keyboard-focused.png` (enabled state, the
+  pill's new outline visible) and `10-stopped-pill-bright.png` (stopped state, the pill visibly
+  brighter than the dimmed Model/Reasoning pickers beside it) recorded in the PR body; the
+  throwaway driver script and its scratch dir/profile were deleted after use.
+
+- [X] T173 [US1] Gate round 5 fix 1 (Layout/Flow/Visual Medium, `agent://Arch877`): an empty
+  status line (`ComposerStatusLine.tsx`) now collapses via `empty:hidden` (a flex container with
+  no React children has no DOM children either, so `:empty` matches), instead of leaving a
+  lopsided gap above and below it from the parent's own `gap-2`.
+- [X] T174 [US1] Gate round 5 fix 2 (spec 004 FR-007): `ReadoutChips.tsx`'s `SubagentsChip`
+  emphasis flipped from the no-op `running === 0 ? 'text-muted-foreground' : undefined` to
+  `running > 0 ? 'text-foreground' : undefined` -- `ReadoutChip.tsx`'s own base class already
+  carries `text-muted-foreground`, so neither branch of the old condition ever differed from the
+  resting state.
+- [X] T175 [US1] Gate round 5 fix 3 (Layout/Flow/Visual Medium): `ModelPicker.tsx`'s VISIBLE
+  trigger text and list rows now show the model's bare `name` only (was `provider/name`, cut at
+  160px with about 400px of unused row) -- `provider/name` (`formatModelLabel`) moves to the
+  Tooltip and stays parenthetically in the accessible name; the trigger gains `max-w-72` (was a
+  40-character inner-span cap) and the list rows show the provider as muted secondary text.
+- [X] T176 [US1] Gate round 5 fix 4 (Visual Medium, FR-065): one shared composer focus treatment
+  (`pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS`/`COMPOSER_BUTTON_FOCUS_CLASS`) replaces the mix of
+  `ring`/`outline`/`border-colour` the Approval pill, both pickers, Attach, Send, and Stop each
+  drew independently across gate rounds 1 and 4; `MessageInput.tsx`'s own box `focus-within` ring
+  is now scoped to `has-[textarea:focus-visible]` (was any descendant focus), so a focused
+  bottom-row control is never shown with two different focus indicators stacked.
+- [X] T177 [US1] Gate round 5 fix 5 (Layout Medium): `ModelPicker.tsx` hides its Roles group
+  entirely once the filter is non-empty (decision 8's "Roles first" only ever meant the
+  untouched, no-filter state); the keyboard-reachable flat-index range generalised from a
+  contiguous range to a sparse `activatableIndices` array so hidden-while-filtering roles (and
+  no-fallback roles, T179) are skipped by Arrow keys without needing a reachable-but-inert state.
+- [X] T178 [US1] Gate round 5 fix 6 (Layout Medium, [INFERENCE]): the Model popover's height is
+  now FIXED while open (`h-[min(24rem,...)]`, was `max-h-[min(24rem,...)]`) -- the listbox,
+  already `flex-1 overflow-y-auto`, absorbs a changing result count instead of the whole popover
+  (and the filter field inside it) visibly resizing as the match count changes.
+- [X] T179 [US1] Gate round 5 fix 7 and 10 (Flow Medium): the catalog's three real states --
+  loading (`catalog === undefined`), loaded-but-empty (`catalog.length === 0`), and
+  filtered-to-no-match (`filteredCatalog.length === 0`) -- now render distinct text, a
+  `Loader2Icon` on the loading row (was one "Loading models…" string covering both "not loaded"
+  and "loaded, empty"). A role whose own configured model is `null` AND has no documented
+  fallback is `aria-disabled` and excluded from `activatableIndices` (T177); one that DOES have a
+  fallback reuses Settings' own wording (`ROLE_FALLBACK_LABEL`, exported from
+  `ModelRolesSection.tsx`) plus `smol`/`slow`'s own `model_support.rs` fallback to `default`
+  (`ROLE_NO_MODEL_FALLBACK`, merging both sources).
+- [X] T180 [US1] Gate round 5 fix 8 (Flow Medium): a cached `catalogError` now forces
+  `loadCatalog('chat', true)` on every open (was an unforced call that returned early while an
+  error was cached, so a transient failure stayed failed forever), and the error row gains an
+  explicit Retry button independent of reopening the popover.
+- [X] T181 [US1] Gate round 5 fix 9 (Flow Medium): both pickers now hold a local `pendingLabel`
+  for the duration of `setModel`/`applyRole`/`setThinkingLevel` -- `aria-busy`, the requested
+  value shown with a `Loader2Icon`, and `usePickerOpenState`'s own `disabled` folds in
+  `pendingLabel !== null` so the trigger cannot be reopened mid-request; a failure still raises
+  its existing toast (unchanged), and the pending state clears in a `finally` block regardless of
+  outcome.
+- [X] T182 [US1] Gate round 5 fix 11a (Visual Medium): `dropdown-menu.tsx`'s active-row inset
+  shadow (`DropdownMenuItem`/`DropdownMenuRadioItem`, the Approval pill's and the Reasoning
+  picker's own shared menus) now uses `--active-indicator` (was `--ring`), matching the Model
+  picker's own active-row convention; `DropdownMenuRadioItem`'s current-level check moves from a
+  LEADING `absolute left-2` indicator to a TRAILING one, matching the Model picker's and the
+  Approval pill's own trailing checks (the only consumer of this vendored component in the app
+  today, so the change is scoped to exactly the one menu that needed it). A new
+  `active-indicator`/`popover` contrast pair (`scripts/theme-contrast-pairs.mjs`) measures the
+  inset shadow's own real surface, never checked before.
+- [X] T183 [US1] Gate round 5 fix 11b (Flow Medium, WCAG 2.5.3): every composer control's
+  accessible name now STARTS with its own visible text (`docs/design/accessibility.md:16`) --
+  the Model/Reasoning pickers' "Model: .../Reasoning: ..." prefixes and the Approval pill's
+  "Approval mode: ..." prefix are gone; the Model picker's full `provider/name` and the Reasoning
+  noun both move to a parenthetical/Tooltip instead, so neither surface loses the detail.
+
+**LOW fixes in the same round**: `MessageInput.tsx`'s bottom row gains `pb-2 gap-2` (was
+`pb-1 gap-1.5`), keeping the shared focus outline off the box's own bottom border;
+`ModelPicker.tsx`'s catalog rows drop `text-xs` (now inherit `PICKER_OPTION_CLASS`'s own
+`text-sm`, matching the role rows); the active index now starts on the CURRENT model when the
+picker opens (scrolled into view by the existing effect) rather than always the first role;
+`pickerShared.tsx`'s `COMPOSER_DISABLED_CLASS` is one shared `opacity-60` (was 0.5 the badge
+default, 0.6 the gate round 4 override) plus an `aria-disabled:hover:*` reset so a disabled
+trigger no longer shows hover feedback; `ComposerPickers.tsx`'s `AttachButton` now names its own
+disabled reason ("Start the agent to attach images.", was "Attach images" unconditionally); the
+Context usage Readout's `high` threshold tests the rounded, displayed percent (spec 004 FR-003,
+`ReadoutChips.tsx`); `SessionDetailsCard.tsx`'s diff line gains the same `sr-only` full-figure
+pairing the status line's `ChangesChip` already has (`formatDiffStatAccessible`, extracted to
+`sessionDisplay.tsx` so both surfaces share one function); `thinking_level.rs`'s not-confirmed
+notice now names the REQUESTED level ("High (not reported back by this model)", was "a level
+this model did not report back", naming nothing); `MessageInput.tsx`'s disabled placeholder text
+gains `disabled:placeholder:text-foreground` (the field block's own 0.6 dim left the base
+`placeholder:text-muted-foreground` around 3.4:1, too low to read the stop reason it carries);
+`ApprovalModePill.tsx:1-6`'s header comment corrected (no longer says "the chip row directly
+above the message box", stale since #564 moved the pill into the box); `docs/design/
+product-chat.md`'s Message box line documents the scoped dim, the bright pill, and the shared
+focus outline.
+
+**Verified**: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent`
+(0 odd-indent), the full `node scripts/ci-local.mjs` (all 16 steps, including `cargo
+test`/`clippy`/`fmt --check` and the Tauri debug build) pass end to end -- one `cargo fmt --check`
+fix needed along the way (a `format!` call's own line-wrapping, applied with `cargo fmt`, no
+behaviour change). `node scripts/check-theme-contrast.mjs` (all 328 pairs across 3 themes PASS,
+up from 325 after the new `active-indicator`/`popover` pair). `pnpm check:file-size` (0
+violations/312 files, baseline unchanged from `main` -- `MessageInput.tsx` briefly grew 12 lines
+past its own 1,632-line baseline from this round's comments; trimmed back to exactly 1,632 by
+tightening three comment blocks, no code removed).
+
+Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+`WEBVIEW2_USER_DATA_FOLDER`/`OMP_PROFILE`, a scratch git repo, driven through the real UI): a
+first attempt and a second attempt both hit a STALE debug binary (a prior `pnpm tauri build
+--debug --no-bundle` inside the same `ci-local.mjs` run had not actually re-embedded the fresh
+frontend bundle into the Rust binary -- confirmed by grepping the built JS for `has-[textarea`,
+present in `out/tauri-web` but the launched app's own computed styles still showed the OLD
+`focus-within` box ring); a `touch src-tauri/src/main.rs` plus a fresh, standalone `pnpm tauri
+build --debug --no-bundle` forced a real re-embed, confirmed by the SAME computed-style read
+before re-running the live check. **15/15 checks pass** (one earlier assertion, that the
+Settings-only `tiny` role would show "Inherited (Smol)", was itself wrong: this picker's own
+`model.listRoles` scopes to OMP's `cycleOrder` + "plan", which excludes `tiny` on this profile's
+default `cycleOrder` -- not a product bug, corrected and re-run): the status line collapses to a
+real `display: none` once nothing is meaningful; `smol` (unset, no entry in Settings' own
+fallback map) reads "Inherited (Default)" via `model_support.rs`'s own fallback; `plan` (unset,
+no fallback anywhere) is `aria-disabled`; the popover's own height measures byte-identical before
+and after typing an 11-character filter that empties the result set; the Roles group's DOM node
+disappears entirely while filtering and reappears once cleared; filtering to zero catalog matches
+shows "No models match."; selecting the one seeded model is confirmed via `Session.lastModel`;
+the trigger then shows the bare name "Probe Fake Model" with `(probe-fake)` in the accessible
+name; all four composer controls tested (the Approval pill, the Model trigger, the Reasoning
+trigger, Attach) show a real, non-zero, opaque `2px solid` `:focus-visible` outline via real
+Tab-dispatched keyboard navigation. An unplanned but useful observation: the Model trigger's own
+aria-label was STILL `"...(probe-fake). Applying…"` when re-checked, confirming the pending state
+(T181) persists for a real, non-trivial duration against the unreachable provider rather than
+flashing and clearing before it could be observed -- direct evidence the fix addresses the
+finding's own stated concern ("the trigger shows the old value for up to 60s"), not just a quick
+flash. **Not exercised**: `tiny`/`memory`/`advisor`'s own Settings-map wording (see above, a
+harness/cycleOrder scoping gap, not a product gap); a genuinely simulated catalog load error
+(T180's force-reload and Retry path) -- `modelRoles.listCatalog` goes through the real `omp`
+CLI, which this harness has no way to make fail on demand without a deeper fixture change, so
+this is recorded as not independently driven live, per the same honest-gaps convention every
+earlier round in this PR has used. Screenshots `1-model-picker-roles-inherited.png` (the Roles
+group showing both fallback wordings and the disabled `plan` row, the Models group showing the
+provider as muted secondary text) and `3-attach-focused-shared-outline.png` (Attach focused with
+the shared opaque outline, the Context usage Readout's own "high" warning and the Changes
+Readout's populated figure both visible as a bonus confirmation) in
+`C:/Users/shopwood/AppData/Local/Temp/refract-564-gate5-shots/`; the throwaway driver script and
+every scratch dir/profile (across all seven iterations needed to find and fix the test's own
+selector bugs and the stale-binary issue) were deleted after use.
+
+- [X] T184 [US1] Gate round 6 fix 1 (Medium, `agent://G564Code`): `ModelPicker.tsx`'s empty
+  trigger regressed to a lowercase, non-sentence-case `'not known yet'` fragment -- FR-064's
+  exact wording, `?? 'Model not known yet'`, restored; the ", model" accessible-name suffix is
+  now dropped when no model is known at all, since stacking it after "Model not known yet" read
+  oddly ("Model not known yet, model").
+- [X] T185 [US1] Gate round 6 fix 2 (Medium, `agent://Arch877`/`agent://G564Code`/
+  `agent://G564A11y`): the catalog-error row is no longer a `<button>` nested inside
+  `role="option"` (invalid, and unreachable by keyboard since Tab closes the popover) -- the row
+  itself IS the option now, included in `activatableIndices`, Enter- and click-activatable, with
+  a local `retrying` flag (`Loader2Icon` + "Retrying…" + `aria-disabled`, the same pattern
+  `ModelRolesSection.tsx`'s own catalog retry uses) and never closing the popover on activation.
+  The listbox container also gets its own `onMouseDown` preventDefault (covering the Retry row
+  unmounting mid-click on success, plus the headings and empty area, none of which had one), and
+  the error text now says reopening the menu also retries.
+- [X] T186 [US1] Gate round 6 fix 3 (Medium, `agent://Arch877`): the Profile menu's Theme
+  submenu drew its OWN permanent 2px indigo bar plus a 4px ring-coloured focus override on the
+  active theme row -- once the shared `DropdownMenuItem` focus cue became the same indigo
+  `--active-indicator` (gate round 5), arrowing onto a different theme showed two visually
+  identical bars. Both removed; the trailing "Current" text is now the only current-theme marker,
+  matching the composer's own convention. `DropdownMenuSubTrigger` also moved to
+  `--active-indicator` (was `--color-ring`, the only other place still showing the old colour),
+  and a destructive `DropdownMenuItem` (Sign out, Remove repository…) now draws its own
+  `--color-destructive` inset shadow instead of the indigo bar landing on its red tint.
+- [X] T187 [US1] Gate round 6 fix 4 (Medium, `agent://Arch877`): the Reasoning picker's
+  accessible name and Tooltip doubled the word "Reasoning" whenever the trigger's own label
+  already started with it ("Reasoning not reported, reasoning", "Reasoning: Reasoning not
+  reported") -- the noun is now appended/prefixed only when the label does not already start
+  with "Reasoning".
+- [X] T188 [US1] Gate round 6 LOW fixes, Visual (`agent://Arch877`): Send and Stop's own
+  container gap widened to `gap-2` (was `gap-1`) so the shared 2px focus outline never reaches
+  into the other button's fill; Send now uses the shared `COMPOSER_DISABLED_CLASS` (opacity-60
+  plus a hover reset) for its own non-`disabled` refusal reasons, instead of a one-off
+  `aria-disabled:opacity-50` with no hover reset; `AttachButton` now imports
+  `COMPOSER_DISABLED_CLASS` instead of duplicating its exact string; catalog rows' provider text
+  is now `text-xs`, matching the Roles group's own secondary text size. Discovered live-checking
+  this same fix: `ApprovalModePill.tsx` had its OWN duplicate of `pickerShared.tsx`'s trigger
+  class (including its stale `gap-1.5`, missed when that shared class moved to `gap-2`, and
+  confirmed via the live-build's own embedded JS bundle) -- now reads `PICKER_TRIGGER_CLASS`
+  directly instead of a second copy, so the two can never drift apart again.
+- [X] T189 [US1] Gate round 6 LOW fixes, Flow (`agent://Arch877`): the pending state now carries
+  `{ label, provider? }` instead of a bare string -- a model pick's own provider shows
+  immediately (never the stale previous model's), and a role pick's own id fills the same slot,
+  so the pending parenthetical always names something concrete about what is resolving.
+  `smol`/`slow`'s "Default" fallback wording moved INTO the shared `ROLE_FALLBACK_LABEL`
+  (`ModelRolesSection.tsx`), so Settings and the picker can no longer drift apart; a role with
+  neither a model nor a documented fallback (e.g. `plan`) now states that reason directly
+  ("Inherited (no fallback)"), instead of a bare "Inherited" that never said why the row is
+  `aria-disabled`.
+- [X] T190 [US1] Gate round 6 LOW fixes, Layout (`agent://Arch877`): the scroll-to-active-option
+  effect is deferred one animation frame, so it runs after the popover's own
+  `--radix-popover-content-available-height` has settled rather than mid-layout; the popover's
+  own height cap raised 24rem -> 30rem (24rem measured closer to 9 rows than decision 6's "~12
+  rows" once the filter field and padding are accounted for); the `DropdownMenuRadioItem`
+  comment correctly distinguishes its own far-edge trailing check from the Approval pill's
+  different inline-after-label "Current" convention, rather than overclaiming they match.
+- [X] T191 [US1] Gate round 6 fix (`agent://Arch877` Visual N7/N8): the stale "documented
+  spacing-grid exception" comment removed (no such exception exists in
+  `docs/design/foundations-typography-spacing.md`'s own 4px-grid rule, which lists `gap-1.5` as
+  an explicit violation, not an exception) -- `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` moves
+  `gap-1.5` to the on-grid `gap-2`; the stale "`focus-within` ring replacing the text area's own"
+  wording corrected in `MessageInput.tsx`'s older composer-tone comment and
+  `docs/design/product-chat.md`'s Message box bullet, both now pointing at the gate round 5
+  textarea-scoped form instead of the pre-round-5 whole-box claim.
+- [X] T192 [US1] Docs: spec 001's FR-064 gains the "bare `name` only" wording clarified (list
+  rows ALSO show the provider as muted secondary text, never combined into one `provider/name`
+  string -- only the trigger shows the bare name alone) plus a Gate round 6 amendments sentence;
+  FR-065 gains a Gate round 6 fix sentence for the Send/Stop gap and shared disabled class.
+
+**Verified**: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent`,
+`pnpm check:file-size` (0 violations/313 files -- `ModelPicker.tsx`'s own Retry-row rebuild
+pushed it to 647 lines, over the #806 600-line cap for the first time; the "Models" listbox
+group extracted into a new `ModelCatalogGroup.tsx`, 139 lines, bringing `ModelPicker.tsx` back to
+564), `node scripts/check-theme-contrast.mjs` (all 328 pairs across 3 themes PASS, including the
+pre-existing `--active-indicator`/`--destructive` pairs, unaffected by a focus-shadow colour swap
+on an already-measured token), and the full `node scripts/ci-local.mjs` (all 16 steps, including
+`cargo test`/`clippy`/`fmt --check` and the Tauri debug build) -- two unrelated Windows-build
+flakes along the way (a transient `link.exe`/`mt.exe` LNK1327 failure, and a
+`STATUS_DLL_INIT_FAILED` on a build script under heavy concurrent rebuild load), both resolved by
+a clean retry, plus one order-dependent pre-existing Rust test
+(`git::remote::tests::repository_remote_returns_has_host_for_a_configured_remote`, untouched by
+this round's files) that failed once inside the full suite but passed standalone and on a full
+clean retry -- not this round's regression.
+
+Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+`WEBVIEW2_USER_DATA_FOLDER`, a scratch git repo, driven through the real UI): the first two
+attempts hit the SAME stale-embedded-binary issue gate round 5 already found (the copied exe's
+`ApprovalModePill` still read the pre-gate-5 "Approval mode: Ask" order from its own aria-label,
+confirming via the built JS bundle itself that the source WAS current -- `cargo`'s own asset-
+embedding did not pick up a content change tracked only by directory mtime); a `touch
+src-tauri/src/main.rs` plus a fresh, standalone `pnpm tauri build --debug --no-bundle` forced a
+real re-embed each time, confirmed by a fresh aria-label read before re-running. **6 of 8 checks
+pass** on the third attempt: the Approval pill reads "Ask, approval mode" (gate round 5's order,
+confirmed current); the Reasoning trigger reads "Medium, reasoning" (never doubled); Attach is
+Tab-reachable with a real non-zero opaque `focus-visible` outline; the Send/Stop container
+measures an 8px `gap-2`; the Profile menu's Theme submenu shows zero permanent
+`.bg-active-indicator` bars (screenshot `6-theme-submenu-open.png` confirms only the "Theme" row
+itself, the keyboard focus target, is highlighted, with "Dark \u2713 Current" the only current-theme
+marker). **2 checks against this round's own test assumptions, not product code, failed and were
+corrected**: this harness's "session" scenario reports a model (`Session.lastModel`) immediately
+on creation, so the "Model not known yet" empty-trigger wording (T184) was not reachable in this
+tape and is recorded as not independently driven live, the same kind of scoping gap earlier
+rounds documented for other roles; the Retry path (T185/T190) also could not be exercised,
+confirming gate round 5's own finding that this harness's model catalog call has no on-demand
+failure mode (the scratch profile's own seeded config lists successfully every time). While
+investigating the Approval pill wording, this live check also caught and fixed a real miss in
+T188: `ApprovalModePill.tsx` had its own duplicate of the shared trigger class, including the
+stale `gap-1.5` the `pickerShared.tsx` fix was supposed to cover everywhere. Screenshots:
+`C:/Users/shopwood/AppData/Local/Temp/refract-564-gate6-shots/` --
+`1-session-idle.png` (bottom row at rest: Ask, "Example Model One", Medium, Attach),
+`2-model-popover-open.png`, `4-attach-focused.png` (the shared opaque focus outline),
+`5-after-profile-attempt.png` and `6-theme-submenu-open.png` (the corrected Theme submenu). The
+throwaway driver script and every scratch dir/profile (across all attempts, including the two
+rebuild-only passes) were deleted after use.
+
+- [X] T193 [US1] Gate round 7 fix 1 (Medium, `agent://Arch877`/`agent://G564Code`): hovering a
+  disabled Send button (its ordinary empty-draft resting state) dropped the indigo `--send` fill
+  to transparent -- gate round 6's `!disabled && COMPOSER_DISABLED_CLASS` added a hover RESET
+  (`aria-disabled:hover:bg-transparent`) meant for a control transparent at rest (the outline/
+  ghost triggers), more specific than Send's own `hover:bg-[color-mix(...)]`. `pickerShared.tsx`
+  now splits `COMPOSER_DISABLED_CLASS` into `COMPOSER_DISABLED_OPACITY_CLASS` (cursor plus
+  opacity-60 alone) and `COMPOSER_DISABLED_HOVER_RESET_CLASS`; `COMPOSER_DISABLED_CLASS` stays
+  the combined value for everything that was already transparent at rest. Send now takes
+  `COMPOSER_DISABLED_OPACITY_CLASS` alone.
+- [X] T194 [US1] Gate round 7 fix 2 (Medium, `agent://Arch877`): the Retry row's error text
+  truncated to about 33 visible characters in the 288px popover, hiding any real diagnostic.
+  `ModelCatalogGroup.tsx`'s error span moves from `truncate` to `whitespace-normal break-words`
+  (row gains `items-start`); the stale "Reopening this menu also retries." hint is dropped
+  (the row is itself directly Enter/click-activatable now, gate round 6); the row also gets its
+  own `retryOptionId` (was `optionId(roleCount)`, reused by the first model row once the catalog
+  loads, so a successful retry's `aria-activedescendant` could point at a stale id).
+- [X] T195 [US1] Gate round 7 fix 3 (Medium, doc-only, `agent://Arch877`): the shared dropdown
+  menu's own `--active-indicator` focus bar (gate round 5) narrows Stuart's 2026-10-04 "Active/
+  selected indicator" rule, which had listed "a dropdown's checked option" as one of the surfaces
+  that bar marks -- in a dropdown menu specifically, the bar now means keyboard focus ONLY, and
+  a trailing check plus "Current" (or `aria-checked`) marks the current option instead, matching
+  the composer's own pickers. Recorded as "Decided (Skippy, delegated by Stuart 2026-10-15)" in
+  `docs/design/product-look-and-feel.md`'s own rule (every OTHER current/selected surface is
+  unchanged), `docs/design/product-layout.md`'s Theme-submenu description, and
+  `ProfileMenu.tsx`'s own `ThemeSubmenu` comment; posted as a comment on issue #564 for Stuart's
+  own sign-off, since this narrows his rule rather than merely documenting new behaviour.
+- [X] T196 [US1] Gate round 7 LOW fixes (`agent://Arch877`/`agent://G564Code`/`agent://G564A11y`):
+  `handleCatalogRetry` wraps its `loadCatalog` call in `try`/`finally` (matching
+  `handleSelectModel`/`handleSelectRole`'s own guard) so a future IPC rejection can never leave
+  `retrying` stuck true; the open effect's automatic retry-on-reopen now calls
+  `handleCatalogRetry()` directly instead of `loadCatalog` bare, so it shows the SAME
+  "Retrying…" feedback a manual retry does; the scroll-to-active-option effect's deps gain
+  `open` (a reopen whose active index happened to equal the previous open's never re-ran it,
+  leaving the list scrolled to the top); an empty-string model `name` now falls through to `id`
+  (`name?.trim() || id`, `modelDisplay.ts`'s `formatModelLabel` and `ModelPicker.tsx`'s own
+  `modelNameOnly`, was `name ?? id`, which kept a blank trigger for an empty but non-null name);
+  `AttachButton` gains `dark:aria-disabled:hover:bg-transparent` (the vendored `ghost` Button
+  variant's own `dark:hover:bg-muted/50` tied the shared reset's specificity in Dark/Dark-HC);
+  the Roles group shows a "Loading roles…" row (matching the Models group's own loading-state
+  convention) while `listRoles` is still pending, instead of a heading with nothing under it.
+  PR body leftovers corrected: the stale `max-h-96` wording in the gaps list (now describes the
+  current `h-[min(30rem,...)]` popover), and gate round 6's undescribed `5-after-profile-
+  attempt.png` screenshot now has a caption.
+
+**Verified**: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent`,
+`pnpm check:file-size` (0 violations/313 files, `MessageInput.tsx` held at exactly its 1632-line
+baseline), `node scripts/check-theme-contrast.mjs` (all 328 pairs across 3 themes PASS), and the
+full `node scripts/ci-local.mjs` (all 16 steps). The Rust side needed several retries this round:
+a now-familiar transient `link.exe`/`mt.exe` `LNK1327` failure recurred three times in a row
+(unusually persistent, not the usual one-off flake); investigating turned up that the linker was
+referencing a STALE absolute path to a DIFFERENT worktree's own `windows-app-manifest.xml`
+(`...\refract-811-main-worktree\...`, a sibling lane's own checkout building the SAME crate
+concurrently against this machine's SAME shared `CARGO_TARGET_DIR`) -- a build-script fingerprint
+collision between two checkouts of identical crate name/version/profile sharing one target
+directory, not a defect in this PR's own code. A `touch src-tauri/build.rs src-tauri/src/main.rs`
+forced a fresh, uncached build-script run and resolved it; a subsequent attempt also hit a
+"blocking waiting for file lock"/"failed to run cargo metadata" stall from the SAME concurrent
+lane actually holding the shared target directory's lock at that moment, resolved by waiting it
+out and retrying (`timeout: 0`) rather than by any code change.
+
+Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+`WEBVIEW2_USER_DATA_FOLDER`, a scratch git repo, driven through the real UI, the freshly-built
+exe from the same `ci-local.mjs` run copied out before testing): **4 of 4 checks pass**:
+- Hovering the disabled Send button with an empty draft reads a real, non-transparent
+  `backgroundColor` (`oklch(0.541066 0.158793 290.277)`, the `--send` token, at `opacity: 0.6`)
+  via `getComputedStyle` -- confirmed the fix, not just the absence of a visible regression;
+  screenshot `2-send-hovered-empty-draft.png` shows the filled indigo circle under the cursor.
+- The Roles group now shows "Loading roles…" instead of an empty heading (confirmed in the
+  popover rows dump, though the probe's own model/role catalog resolved before a screenshot could
+  catch the loading state visibly).
+- The Profile menu's Theme submenu genuinely expands (confirmed by its own rows -- "Dark",
+  "Dark (high contrast)", "Obsidian", "Appearance settings…" -- appearing in the DOM, not just a
+  vacuous zero-count after a premature screenshot the first attempt took): all ten rows read
+  `hasPermanentBar: false`, and screenshot `4-theme-submenu-open.png` shows "Dark ✓ Current" with
+  no indigo bar on it, only on the still-keyboard-focused "Theme" trigger row itself.
+- **Not exercised**: the Retry row's own wrapping (T194) -- this harness's model catalog call
+  still resolves successfully every time against the scratch profile's own seeded config, the
+  same finding gate rounds 5 and 6 already recorded; no on-demand way to force a catalog error
+  exists in this harness.
+
+Screenshots: `C:/Users/shopwood/AppData/Local/Temp/refract-564-gate7-shots/` --
+`1-session-idle.png`, `2-send-hovered-empty-draft.png` (the key Medium-1 evidence),
+`4-theme-submenu-open.png` (the key Medium-3 evidence). The throwaway driver script and every
+scratch dir/profile (across every attempt) were deleted after use.

@@ -7,7 +7,7 @@ import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { StateIcon, STATUS_LABEL, formatDiffStat, formatRelativeTime } from './sessionDisplay'
+import { StateIcon, STATUS_LABEL, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
 /** The session details card (T069/T070): wraps the row's open button (`children`, passed through
@@ -109,15 +109,20 @@ export function SessionDetailsCard({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />
-              <span className="truncate">
-                {worktreeMissing
-                  ? 'Not available'
-                  : diffStatResult === 'loading'
-                    ? 'Counting changes…'
-                    : diffStatResult === null
-                      ? 'Not available'
-                      : formatDiffStat(diffStatResult)}
-              </span>
+              {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
+                  all, unlike the status line's identical `ChangesChip`, which carries one
+                  (`formatDiffStatAccessible`, shared from `sessionDisplay.tsx` precisely so
+                  this card and the status line can never phrase the same stat two ways). */}
+              {worktreeMissing || diffStatResult === 'loading' || diffStatResult === null ? (
+                <span className="truncate">
+                  {worktreeMissing ? 'Not available' : diffStatResult === 'loading' ? 'Counting changes…' : 'Not available'}
+                </span>
+              ) : (
+                <span className="truncate">
+                  <span className="sr-only">{formatDiffStatAccessible(diffStatResult)}</span>
+                  <span aria-hidden>{formatDiffStat(diffStatResult)}</span>
+                </span>
+              )}
             </div>
             <div className="flex items-center justify-end gap-1.5 pt-1">
               <Button variant="outline" size="xs" onClick={() => void copyPath()}>

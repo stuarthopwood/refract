@@ -145,7 +145,11 @@ async fn next_notice_id(agent: &SessionAgent) -> String {
     format!("model-notice:{}:{seq}", agent.session_id())
 }
 
-pub(super) async fn post_notice(agent: &SessionAgent, level: NoticeLevel, text: String) {
+pub(in crate::session) async fn post_notice(
+    agent: &SessionAgent,
+    level: NoticeLevel,
+    text: String,
+) {
     let id = next_notice_id(agent).await;
     agent
         .upsert_transcript_item(TranscriptItem::Notice { id, level, text })
