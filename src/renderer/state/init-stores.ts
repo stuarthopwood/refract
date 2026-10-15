@@ -271,7 +271,7 @@ export function initStores(): void {
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
-    // #735 decisions 83-86: restored in this same Promise.all block, right alongside Settings,
+    // #735 decision 19: restored in this same Promise.all block, right alongside Settings,
     // not deferred to themeBootstrap -- the Sessions arrive in this same load, so nothing
     // visible is held back by doing it here. Repositories load separately (below) and would
     // otherwise draw open groups that then immediately snap shut once this resolves. Runs
@@ -301,7 +301,7 @@ export function initStores(): void {
   void (async () => {
     const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
-    // #735 decisions 80-81: pruning only ever runs against a genuinely successful load -- a
+    // #735 decision 18: pruning only ever runs against a genuinely successful load -- a
     // failed load's own `[]` fallback must never be mistaken for "there are now zero
     // Repositories" and wipe every collapsed id the user had saved.
     if (repositoriesLoad.ok) {

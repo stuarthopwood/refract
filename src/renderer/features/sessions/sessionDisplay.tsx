@@ -41,7 +41,7 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
-/** #735 decisions 21, 92-100 (and #748's own "Show hidden" badge, decision 100): the single most
+/** #735 decision 21 (and #748's own "Show hidden" badge, its decision 100): the single most
  * urgent state among a Group's listed Sessions, in precedence order -- Needs you, then
  * Terminated unexpectedly, then Unread response (#731, now landed). Working, idle and an
  * ordinary Stopped Session (no `terminatedUnexpectedly`) never count. `status` feeds the shared

@@ -85,7 +85,7 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
     }
     const repositories = get().repositories.filter((repository) => repository.id !== id)
     set({ repositories })
-    // #735 decisions 79-82: pruned only after a successful remove, never left for a later
+    // #735 decision 18: pruned only after a successful remove, never left for a later
     // stale write to bring the id back (see `session-list-store.ts`'s own `pruneRepositories`
     // doc comment).
     useSessionListStore.getState().pruneRepositories(new Set(repositories.map((repository) => repository.id)))

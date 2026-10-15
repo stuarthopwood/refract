@@ -3,7 +3,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { useSessionListStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { GroupHeaderTrigger } from './GroupHeader'
+import { GROUP_HEADER_ACTIONS_OFFSET_PX, GroupHeaderTrigger } from './GroupHeader'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
 
@@ -24,9 +24,9 @@ export function ArchivedGroup({
   // store-update).
   const rows = sessions.filter((session) => repositoriesById.has(session.repositoryId))
   const sorted = [...rows].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
-  // #735 decisions 15, 21, 22, 63-78: the persisted open/closed state (replaces the previous
-  // uncontrolled, always-closed-by-default Collapsible), the Waiting marker and the visible-
-  // Session active bar -- both only shown while closed (decisions 92, 103). Hooks run
+  // #735 decisions 15-17: the persisted open/closed state (replaces the previous uncontrolled,
+  // always-closed-by-default Collapsible), the Waiting marker and the visible-Session active bar
+  // -- both only shown while closed (decisions 21, 22). Hooks run
   // unconditionally, ABOVE the `rows.length === 0` early return below (Rules of Hooks) --
   // `sorted` is simply `[]` on that pass, which every selector/helper below already handles.
   const isOpen = useSessionListStore((state) => state.archivedOpen)
@@ -37,13 +37,19 @@ export function ArchivedGroup({
   return (
     <div className="flex flex-col" data-archived-group="">
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setArchivedOpen(open)}>
-        <div className="flex items-center gap-1 px-1">
+        <div className="group flex items-center gap-1 px-1">
           <GroupHeaderTrigger
             label={`Archived (${sorted.length})`}
             icon={ArchiveIcon}
             marker={marker}
             containsOpenSession={containsOpenSession}
           />
+          {/* Gate round 1 fix (Low, ui-traversal-layout-v3): Archived has no action buttons of
+              its own, so without this spacer the trigger's `ml-auto` marker would land further
+              right than every Repository header's own marker (which shares its row with
+              `GROUP_HEADER_ACTIONS_OFFSET_PX`'s worth of buttons), breaking decision 21's "one
+              column" rule. */}
+          <div aria-hidden className="shrink-0" style={{ width: GROUP_HEADER_ACTIONS_OFFSET_PX }} />
         </div>
         <CollapsibleContent>
           <ul aria-label="Archived sessions" className="flex flex-col gap-0.5 py-1">

@@ -10,8 +10,11 @@ import type { GroupWaitingState } from './sessionDisplay'
 // action buttons", not a bare magic number -- two 28px `icon-sm` buttons (RepositoryGroup.tsx's
 // own "+" quick-create and branch picker) plus the 22px "..." menu button, their `gap-1`
 // spacing, and the row's own trailing padding: (28 + 28 + 22) + (3 * 4) + 4 = 94px, rounded up
-// with a small margin.
-const GROUP_HEADER_ACTIONS_OFFSET_PX = 104
+// with a small margin. Exported (gate round 1 fix, Low, ui-traversal-layout-v3) so
+// `ArchivedGroup.tsx`, which has no action buttons of its own, can reserve the same width as a
+// spacer -- otherwise its trigger's `ml-auto` marker lands a full actions-width further right
+// than every Repository header's own marker, breaking decision 21's "one column" rule.
+export const GROUP_HEADER_ACTIONS_OFFSET_PX = 104
 
 // Issue #527 decision 1: the one trigger styling (chevron, size, case, padding) shared by a
 // Repository header and the cross-repository Archived header in ArchivedGroup.tsx, so the two headers cannot
@@ -41,11 +44,11 @@ export function GroupHeaderTrigger({
   triggerRef?: Ref<HTMLButtonElement>
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
-  /** #735 decisions 21, 92-100: the Waiting marker -- the most urgent state among this
+  /** #735 decision 21: the Waiting marker -- the most urgent state among this
    * (closed) Group's Sessions, or `null`/`undefined` for an open Group or one with nothing to
    * flag. */
   marker?: GroupWaitingState | null
-  /** #735 decisions 22, 101-104: this (closed) Group contains the currently visible Session. */
+  /** #735 decision 22: this (closed) Group contains the currently visible Session. */
   containsOpenSession?: boolean
 }) {
   const pathId = useId()
@@ -54,7 +57,7 @@ export function GroupHeaderTrigger({
   // entirely, since that span was never focusable or read either way -- an `sr-only` span plus
   // `aria-describedby` restores it, only when there is a path to describe.
   const describedByPath = tooltip && title
-  // #735 decisions 98, 103: the marker's status word and "contains open session" both extend
+  // #735 decisions 21, 22: the marker's status word and "contains open session" both extend
   // the trigger's own accessible name, the same way `tooltip` already does -- combined into one
   // name, not read twice over by a second `aria-describedby` region.
   const extraNameParts = [tooltip, marker?.label, containsOpenSession ? 'contains open session' : null].filter(
@@ -74,7 +77,7 @@ export function GroupHeaderTrigger({
       aria-describedby={describedByPath ? pathId : undefined}
       className="group/trigger relative flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
-      {/* #735 decisions 22, 103-104: the visible Session's group, while closed -- the existing
+      {/* #735 decision 22: the visible Session's group, while closed -- the existing
           selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover. */}
       {containsOpenSession && (
         <span
@@ -97,7 +100,7 @@ export function GroupHeaderTrigger({
           {title}
         </span>
       )}
-      {/* #735 decisions 21, 97-98: the Waiting marker -- lines up in one column next to the
+      {/* #735 decision 21: the Waiting marker -- lines up in one column next to the
           space the row's own header actions reserve (#567 decision 6). Unaffected by
           `containsOpenSession`'s bar above: that sits flush on the trigger's own left edge. */}
       {marker && (

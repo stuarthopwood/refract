@@ -7,9 +7,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_HOVER_RESET_CLASS } from '@/features/chat/pickerShared'
 import { usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+
+// Gate round 1 fix (High, ui-visual-system-v3): decision 23's literal focus class string
+// (`focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
+// focus-visible:outline-ring`) draws nothing on `Button` -- its base `outline-none`
+// (`button.tsx:7`) sets `outline-style: none`, which the decision's own classes never reset.
+// `COMPOSER_BUTTON_FOCUS_CLASS` already carries the fix (`outline-solid`) for exactly this
+// trap. Also folds in `COMPOSER_DISABLED_HOVER_RESET_CLASS` (gate round 1 Low: a disabled
+// toolbar button kept showing hover feedback) so both toolbar buttons, and #748's Show hidden
+// button once it joins this row, share one definition instead of two pasted ~260-character
+// strings.
+export const SESSION_LIST_TOOLBAR_BUTTON_CLASS = cn(
+  'text-muted-foreground hover:bg-sidebar-border hover:text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50 dark:hover:bg-sidebar-border',
+  COMPOSER_BUTTON_FOCUS_CLASS,
+  COMPOSER_DISABLED_HOVER_RESET_CLASS
+)
 
 // The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
 // sorted by most recent activity, and one cross-repository Archived group at the bottom of the
@@ -22,9 +38,9 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
-  // #735 decisions 63-68, 83-86: the persisted collapse/expand state. `restored` gates the
+  // #735 decisions 15-19: the persisted collapse/expand state. `restored` gates the
   // toolbar and every group below -- nothing paints open and then immediately snaps shut once
-  // the persisted state loads a moment after Repositories do (decision 85).
+  // the persisted state loads a moment after Repositories do (decision 19).
   const collapsedRepositoryIds = useSessionListStore((state) => state.collapsedRepositoryIds)
   const archivedOpen = useSessionListStore((state) => state.archivedOpen)
   const restored = useSessionListStore((state) => state.restored)
@@ -46,7 +62,7 @@ export function SessionList() {
   function handleCollapseAll(): void {
     if (allCollapsed) return
     useSessionListStore.getState().collapseAll(repositories.map((repository) => repository.id), archivedVisible)
-    // #735 decision 15: one polite announcement for Collapse/Expand all (per-group toggles and
+    // #735 decision 14: one polite announcement for Collapse/Expand all (per-group toggles and
     // the startup restore stay silent -- `useChatAreaAnnouncer` survives the view swapping to
     // Settings or Manage sessions, the same reasoning this file's own create/restore paths use).
     useChatAreaAnnouncer.getState().announce('All groups collapsed')
@@ -126,7 +142,7 @@ export function SessionList() {
                   aria-label="Collapse all groups"
                   aria-disabled={allCollapsed || undefined}
                   aria-describedby={allCollapsed ? collapseAllReasonId : undefined}
-                  className="text-muted-foreground hover:bg-sidebar-border hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 dark:hover:bg-sidebar-border"
+                  className={SESSION_LIST_TOOLBAR_BUTTON_CLASS}
                   onClick={handleCollapseAll}
                 >
                   <ChevronsDownUpIcon aria-hidden />
@@ -157,7 +173,7 @@ export function SessionList() {
                   aria-label="Expand all groups"
                   aria-disabled={allExpanded || undefined}
                   aria-describedby={allExpanded ? expandAllReasonId : undefined}
-                  className="text-muted-foreground hover:bg-sidebar-border hover:text-foreground focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 dark:hover:bg-sidebar-border"
+                  className={SESSION_LIST_TOOLBAR_BUTTON_CLASS}
                   onClick={handleExpandAll}
                 >
                   <ChevronsUpDownIcon aria-hidden />
