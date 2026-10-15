@@ -224,7 +224,7 @@ export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset
 
 export type SlashCommand = SlashCommandDescriptor;
 
-export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true };
+export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
 export interface LowMemoryWarning {
   low: boolean;

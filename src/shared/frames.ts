@@ -106,18 +106,7 @@ export interface SlashCommandDescriptor {
 // Dialogs (extension_ui_request / extension_ui_response), per "Dialogs"
 // ---------------------------------------------------------------------------
 
-export type ExtensionUiMethod =
-  | 'select'
-  | 'confirm'
-  | 'input'
-  | 'editor'
-  | 'notify'
-  | 'setStatus'
-  | 'setWidget'
-  | 'setTitle'
-  | 'set_editor_text'
-  | 'open_url'
-  | 'cancel';
+export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'ask' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text' | 'open_url' | 'cancel';
 
 export interface ExtensionUiRequestFrame {
   type: 'extension_ui_request';
@@ -128,6 +117,12 @@ export interface ExtensionUiRequestFrame {
   optionDetails?: { description?: string }[];
   message?: string;
   notifyType?: 'info' | 'warning' | 'error';
+  /** `method:'ask'` only (#572, after `set_ask_dialog` opts in): one entry per question of the
+   * batch; `options` never include an "Other" entry, hosts always offer free text themselves. */
+  questions?: Array<{ id: string; question: string; header?: string; options: Array<{ label: string; description?: string; preview?: string }>; multi?: boolean; recommended?: number }>;
+  /** `method:'ask'` only, in milliseconds (OMP's own `setTimeout` value, not seconds), when
+   * `ask.timeout` is configured non-zero. */
+  timeout?: number;
   /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
   targetId?: string;
   // setWidget/setStatus/setTitle/set_editor_text/open_url carry method-specific fields
@@ -135,7 +130,9 @@ export interface ExtensionUiRequestFrame {
   [key: string]: unknown;
 }
 
-export type ExtensionUiAnswer = { value: string } | { confirmed: boolean } | { cancelled: true };
+/** `{ answers }` answers an `ask` request (#572): one entry per question, in request order,
+ * each `id` copied exactly (`omp://rpc.md` "Extension UI Sub-Protocol"). */
+export type ExtensionUiAnswer = { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> };
 
 export interface ExtensionUiResponseCommand {
   type: 'extension_ui_response';
