@@ -171,11 +171,14 @@ async function clickBashHeaderAt(cdp, index) {
  * later geometry read. Waits for the matching `<ol>`/no-`<ol>` state under THIS header's own
  * `[data-slot="collapsible"]` root, not the whole transcript (there can be several headers). */
 async function setBashHeaderExpanded(cdp, index, wantOpen) {
-  const isOpen = await cdp.evaluate(`(${BASH_HEADER_FINDER})[${index}]?.getAttribute('aria-expanded') === 'true'`);
+  // Bug fix: bracket indexing (`arr[-1]`) is ALWAYS `undefined` in JS for a negative index --
+  // only `.at(-1)` resolves "last" -- so this must match `clickBashHeaderAt`'s own `.at()` call
+  // or a negative `index` (turn b's solo header) can never be read back correctly here.
+  const isOpen = await cdp.evaluate(`(${BASH_HEADER_FINDER}).at(${index})?.getAttribute('aria-expanded') === 'true'`);
   if (isOpen === wantOpen) return;
   await clickBashHeaderAt(cdp, index);
   await cdp.waitFor(
-    `(${BASH_HEADER_FINDER})[${index}]?.getAttribute('aria-expanded') === '${wantOpen}'`,
+    `(${BASH_HEADER_FINDER}).at(${index})?.getAttribute('aria-expanded') === '${wantOpen}'`,
     { timeoutMs: 10_000, label: `bash header ${index} aria-expanded=${wantOpen}` },
   );
 }
@@ -190,23 +193,13 @@ async function getAccessibleNameAndRole(cdp, selectorExpr) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
-/** Switches the scratch Session's own Approval mode through the real pill (never Stuart's real
- * settings -- this is the scratch Session's own per-app-instance setting, scratch data dir).
- * Auto mode removes approval cards entirely, which is what lets two bash calls land in ONE
- * `ToolGroup` (`groupToolItems.ts` decision 14 treats a pending-approval call as its own grouping
- * boundary -- the actual root cause G906Tests found for every earlier run's group-of-1 split). */
-async function setApprovalMode(cdp, modeLabel) {
-  await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode'))`);
-  await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(modeLabel)}))`,
-    { timeoutMs: 10_000, label: `Approval mode menu open, "${modeLabel}" item visible` },
-  );
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(modeLabel)}))`);
-  await cdp.waitFor(
-    `(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode')); return !!b && b.getAttribute('aria-label').startsWith(${JSON.stringify(modeLabel)}); })()`,
-    { timeoutMs: 10_000, label: `Approval pill now reads "${modeLabel}"` },
-  );
-}
+// Root-cause fix round 2 (Main): `settings.setApprovalMode` only ever sets `pendingMode`, applied
+// at each Session's next settle (contracts/ipc.md) -- the pill update this script tried to await
+// by driving the UI would never land before this script's own next step, since nothing settles a
+// scratch Session that was never mid-turn in the first place. Seeding the scratch data dir's own
+// `settings.json` with `approvalMode: "auto"` BEFORE the Session is ever created instead makes
+// `omp` launch already in Auto (`--approval-mode=yolo`, data-model.md), with no settle to wait
+// for and nothing to click.
 
 /** Drives the REAL Profile-menu UI (gate finding H1: `window.refract.theme.preview(id)` only
  * moves the title-bar overlay colour, never the renderer's `<html>` class the CSS tokens key off
@@ -251,6 +244,10 @@ async function main() {
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-565-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-565-launcher-'));
     mkdirSync(SHOTS_DIR, { recursive: true });
+    // Seeded BEFORE launch (never driven through the pill, which only sets `pendingMode` --
+    // Main's diagnosis): `omp` then launches already in Auto (`--approval-mode=yolo`), so no
+    // approval-card grouping boundary ever exists for either scripted turn.
+    writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
     const port = await getFreePort();
     gitHeadSha = gitHead();
 
@@ -305,10 +302,13 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // Root-cause fix (G906Tests): Auto mode removes approval cards, which were the actual
-    // grouping boundary splitting every earlier run's two bash calls into two separate groups.
-    await setApprovalMode(cdp, 'Auto');
-    findings.push('Scratch Session Approval mode switched to Auto via the real pill (no approval-card grouping boundary).');
+    // Sanity check (Main): confirm the seeded settings.json actually took effect before relying
+    // on it -- the pill's own accessible name is the one user-visible proof.
+    const approvalPillLabel = await cdp.evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode')); return b ? b.getAttribute('aria-label') : null; })()`);
+    if (!approvalPillLabel || !approvalPillLabel.startsWith('Auto')) {
+      throw new Error(`verify-565-spine: seeded settings.json approvalMode:"auto" did not take effect -- the Approval pill reads "${approvalPillLabel}", expected to start with "Auto".`);
+    }
+    findings.push(`Scratch Session launched already in Auto approval mode (seeded settings.json, pill reads "${approvalPillLabel}") -- no approval-card grouping boundary.`);
 
     // ---- Turn (a): 2 bash calls, second fails -> multi-call ToolGroupRow on a SpineList ----
     await cdp.typeIntoByLabel('Message', TURN_A_PROMPT);
@@ -486,7 +486,11 @@ async function main() {
       const read = (el) => { if (!el) return null; const s = getComputedStyle(el); return { transitionDuration: s.transitionDuration, animationName: s.animationName }; };
       return { spine: read(ol), member: read(member) };
     })()`);
-    const motionOk = (m) => !!m && m.transitionDuration.split(',').every((d) => d.trim() === '0s') && m.animationName === 'none';
+    // `globals.css`'s own `prefers-reduced-motion: reduce` block collapses every
+    // transition/animation to a single 0.01ms iteration (foundations-motion.md), not literally
+    // 0s -- `getComputedStyle` reports that as `1e-05s`. Accept anything <=1ms as "no motion",
+    // never literal "0s" only (a test bug the first run of this fix caught).
+    const motionOk = (m) => !!m && m.transitionDuration.split(',').every((d) => parseFloat(d) <= 0.001) && m.animationName === 'none';
     if (!spineMotion.spine) notExercised.push('Could not measure the Spine <ol> transition/animation under reduced motion (element not found, likely collapsed).');
     else if (!motionOk(spineMotion.spine)) failures.push(`Spine <ol> computed transitionDuration=${spineMotion.spine.transitionDuration}, animationName=${spineMotion.spine.animationName} under reduced motion -- decision 27 expects none.`);
     else findings.push('Spine genuinely has no transition/animation under reduced motion (decision 27).');
