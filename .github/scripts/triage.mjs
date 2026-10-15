@@ -209,7 +209,7 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
   // A maintainer-chosen type can make the route wrong; re-derive it. Docs,
   // questions and spikes never need a spec. A model classification has read
   // the issue body and can tell a multi-file rename or an icon set wired
-  // into the Electron build (spec work) from a one-line fix, so a
+  // into the Tauri build (spec work) from a one-line fix, so a
   // model-sourced route stands even under a maintainer-overridden
   // bug/chore/design type. The keyword heuristic cannot make that judgment
   // call, so a non-model classification is re-derived exactly as
