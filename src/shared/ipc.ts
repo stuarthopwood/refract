@@ -372,6 +372,7 @@ export const IPC_REQUESTS = {
   MODEL_CYCLE_MODEL: 'model.cycleModel',
   MODEL_APPLY_ROLE: 'model.applyRole',
   MODEL_LIST_ROLES: 'model.listRoles',
+  MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',

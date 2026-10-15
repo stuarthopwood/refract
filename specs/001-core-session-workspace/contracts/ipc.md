@@ -94,6 +94,26 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 | `settings.get()` | `Settings` |
 | `settings.setApprovalMode(mode)` | `Settings`. Sets `pendingMode` on every live Session whose mode differs; the restart happens at each Session's next settle. |
 
+### Model (lane RM, issues #454/#740/#741/#762/#766/#760/#564)
+
+Per-Session model/role/reasoning actions over the live RPC connection (never OMP's persisted
+`modelRoles` config, which `settings.*`/`RefractApi.modelRoles` own instead); not part of this
+spec's own acceptance criteria (added by lane RM after spec 001 shipped), documented here so the
+channel list stays complete. Full reasoning lives in `src/shared/ipc-model.ts`'s own doc comments.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `model.setModel(sessionId, provider, modelId)` | `{ model: Model }` | The composer's model picker (#454). Session-scoped only (never writes `modelRoles`); pins the Session and clears any tracked role. |
+| `model.cycleModel(sessionId)` | `{ model: Model }` | Steps through catalog models (FINDINGS item 54: never `cycleOrder`'s roles); same pinning as `setModel`. |
+| `model.applyRole(sessionId, role)` | `{ model: Model; role: string }` | `/role`, Ctrl+R and a role chip click (#766); forwards OMP's native `/switch @<role>`. Un-pins the Session. |
+| `model.listRoles(sessionId)` | `{ roles: Array<{ role, model, current }>; currentRole; pinned }` | The Ctrl+R selector's own listing (#766): `cycleOrder` plus `"plan"`. |
+| `model.setThinkingLevel(sessionId, level)` | `{ thinkingLevel: string }` | The composer's Reasoning picker (#564). Forwards OMP's `set_thinking_level` RPC; never touches model pinning or the tracked role. `level` is OMP's own `"inherit" \| "off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"`. |
+
+Every call above refuses with `not-idle` while the Session is working (FINDINGS "RM0 probe" item
+57: mid-turn `set_model` is not provably safe) and `agent-not-running` for a Session with no live
+process. Optional on `RefractApi`: `src/main`/`src/preload` (Electron, frozen) never port this
+family -- the Rust build (`src-tauri/`) is the only implementation.
+
 ### Window (spec 001 T100, FR-057)
 
 | Method | Returns | Notes |

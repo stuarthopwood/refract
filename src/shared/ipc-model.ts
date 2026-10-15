@@ -35,15 +35,22 @@ export interface RoleChangeSummary {
   failed: string[];
 }
 
-/** Per-Session model/role actions over the live RPC connection (never OMP's config -- see
- * `RefractApi.modelRoles` for that): the composer picker's `setModel`/`cycleModel` and the role
- * selector (`/role`, Ctrl+R)'s `applyRole`/`listRoles`. Every call refuses with `'not-idle'`
- * while the Session is working (FINDINGS "RM0 probe" item 57's own closing entry: mid-turn
- * `set_model` is not provably safe on `omp` 18.10.1, a regression from a clean 18.8.0 pass) --
- * refused outright, never queued, except #740's own Settings-triggered role reapply, which is
- * not driven through this API at all (it runs Session-side on its own next settle). Optional on
- * `RefractApi`: `src/main`/`src/preload` (Electron, frozen) never port this family -- the Rust
- * build is the only implementation. */
+/** `omp://rpc.md`'s own `ThinkingLevel` vocabulary (confirmed live, FINDINGS "RM0 probe" closing
+ * entry and `docs/spike/FINDINGS.md`'s Spec 003 gate-probe item 1): the ONLY values OMP's
+ * `set_thinking_level` RPC accepts for `ModelApi.setThinkingLevel` below. Same union `frames.ts`'s
+ * own `thinkingLevel` field documents, carried there as a plain `string` (a read-only passthrough,
+ * never validated against this list) -- this type constrains the OUTBOUND argument only. */
+export type ThinkingLevel = 'off' | 'inherit' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/** Per-Session model/role/reasoning actions over the live RPC connection (never OMP's config --
+ * see `RefractApi.modelRoles` for that): the composer picker's `setModel`/`cycleModel`, the
+ * Reasoning picker's `setThinkingLevel` (#564), and the role selector (`/role`, Ctrl+R)'s
+ * `applyRole`/`listRoles`. Every call refuses with `'not-idle'` while the Session is working
+ * (FINDINGS "RM0 probe" item 57's own closing entry: mid-turn `set_model` is not provably safe
+ * on `omp` 18.10.1, a regression from a clean 18.8.0 pass) -- refused outright, never queued,
+ * except #740's own Settings-triggered role reapply, which is not driven through this API at all
+ * (it runs Session-side on its own next settle). Optional on `RefractApi`: `src/main`/`src/preload`
+ * (Electron, frozen) never port this family -- the Rust build is the only implementation. */
 export interface ModelApi {
   /** `set_model { provider, modelId }`: Session-scoped only (OMP's own description, "for this
    * session only" -- never writes `modelRoles`); pins the Session (a later Settings role
@@ -73,4 +80,9 @@ export interface ModelApi {
       pinned: boolean;
     }>
   >;
+  /** `set_thinking_level { level }` (#564, the composer's Reasoning picker): session-scoped
+   * only, forwarding OMP's own RPC verbatim -- never pins the Session or touches its tracked
+   * role (unlike `setModel`/`cycleModel`/`applyRole`, reasoning effort is orthogonal to which
+   * model/role is selected). Same refusal rules as `setModel` (`'not-idle'` while working). */
+  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<Result<{ thinkingLevel: string }>>;
 }

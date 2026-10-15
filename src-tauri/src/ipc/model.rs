@@ -1,12 +1,12 @@
-// IPC handlers for `model.*` (lane RM, issues #454, #740, #741, #762, #766, #760): the
-// composer's model picker (`setModel`, `cycleModel`) and the role selector (`/role`, Ctrl+R:
-// `applyRole`, `listRoles`). Thin argument-parsing wrappers over `session::model`'s own business
-// logic (mid-turn refusal, pin/role bookkeeping, notices, resolution) -- this file owns only
-// positional-argument validation and the `AgentError` -> `IpcError` mapping, the same direct
-// passthrough `ipc::chat`'s own `map_chat_error` already uses for this exact error shape (not
-// `map_agent_error`, whose whitelist is tuned for session-lifecycle codes this lane never
-// returns: `not-idle`, `prompt-failed`, `invalid-argument`, `omp-probe-failed`,
-// `agent-not-running`).
+// IPC handlers for `model.*` (lane RM, issues #454, #740, #741, #762, #766, #760, #564): the
+// composer's model picker (`setModel`, `cycleModel`), the Reasoning picker (`setThinkingLevel`),
+// and the role selector (`/role`, Ctrl+R: `applyRole`, `listRoles`). Thin argument-parsing
+// wrappers over `session::model`'s own business logic (mid-turn refusal, pin/role bookkeeping,
+// notices, resolution) -- this file owns only positional-argument validation and the
+// `AgentError` -> `IpcError` mapping, the same direct passthrough `ipc::chat`'s own
+// `map_chat_error` already uses for this exact error shape (not `map_agent_error`, whose
+// whitelist is tuned for session-lifecycle codes this lane never returns: `not-idle`,
+// `prompt-failed`, `invalid-argument`, `omp-probe-failed`, `agent-not-running`).
 
 use std::sync::Arc;
 
@@ -22,6 +22,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("model.cycleModel", model_cycle_model);
     d.register("model.applyRole", model_apply_role);
     d.register("model.listRoles", model_list_roles);
+    d.register("model.setThinkingLevel", model_set_thinking_level);
 }
 
 fn manager(state: &AppState) -> &Arc<SessionManager> {
@@ -76,6 +77,26 @@ pub fn model_cycle_model(state: AppState, args: Vec<Value>) -> HandlerFuture {
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
         let result = model::cycle_model(&agent).await.map_err(map_model_error)?;
+        Ok(result)
+    })
+}
+
+/// #564: the composer's Reasoning picker, `(sessionId, level)`.
+pub fn model_set_thinking_level(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let (Some(session_id), Some(level)) = (
+            args.first().and_then(Value::as_str),
+            args.get(1).and_then(Value::as_str),
+        ) else {
+            return Err(invalid_argument(
+                "model.setThinkingLevel expects (sessionId, level) strings",
+            ));
+        };
+        require_session(&state, session_id).await?;
+        let agent = manager(&state).get_or_create_agent(session_id);
+        let result = model::set_thinking_level(&agent, level)
+            .await
+            .map_err(map_model_error)?;
         Ok(result)
     })
 }
