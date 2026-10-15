@@ -268,7 +268,11 @@ pub(super) async fn on_start_progress(
 /// settled, notice-seeded subagent is the CURRENTLY visible one, the notice is also queued as a
 /// `subagent:patch` upsert -- replacing `streams` alone never reaches an already-open panel,
 /// which only ever learns of new rows through that patch channel.
-async fn settle_running_subagents(agent: &SessionAgent, target_status: SummaryStatus, notice_text: &str) {
+async fn settle_running_subagents(
+    agent: &SessionAgent,
+    target_status: SummaryStatus,
+    notice_text: &str,
+) {
     let (summaries_value, visible_ops) = agent
         .with_subagents_state(|s| {
             let mut changed = false;
