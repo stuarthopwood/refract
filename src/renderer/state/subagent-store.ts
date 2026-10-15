@@ -52,6 +52,15 @@ interface SubagentPanelState {
    * opened it this time -- and cleared back to `null` wherever `sessionId` itself is cleared
    * (`closePanel`, `reset`). */
   openerEl: HTMLElement | null
+  /** Issue #563 gate remediation (code-reviewer H1/H2): a one-shot counter, the `sideChatFocusRequestId`
+   * precedent (`right-pane-store.ts`) applied here -- bumped by `openPanel` ONLY when
+   * `options.selectSubagentId` is set (a genuine pre-selected open, e.g. a chat pane chain/
+   * Stage row), never on a plain re-open with no pre-selection. `SubagentPanel.tsx`'s own
+   * focus effect depends on this instead of `selectedId` so it fires exactly once per
+   * pre-selected open -- including re-activating an agent that was ALREADY selected, since the
+   * counter still bumps even though `selectedId` itself wouldn't change -- and never on a plain
+   * remount/tab-switch back to an unchanged `selectedId` (the prior dependency's two bugs). */
+  focusRequestId: number
   /** Binds the panel's content to `sessionId` -- the shell (`right-pane-store.ts`'s
    * `openPanel('subagents')`) decides whether the panel is actually showing. `options.opener`
    * (issue #563, FR-026) records the control to return focus to on close; `options.
@@ -102,9 +111,15 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   streams: {},
   suspended: false,
   openerEl: null,
+  focusRequestId: 0,
   openPanel: (sessionId, options) => {
     const { sessionId: prevSessionId } = get()
     const openerEl = options?.opener ?? null
+    // Issue #563 gate remediation: a genuine pre-selected open (the chat pane's Stage/chain
+    // rows) bumps `focusRequestId` so `SubagentPanel.tsx`'s own one-shot focus effect fires --
+    // a plain re-open with no pre-selection (a rail click, the chip, a remount) must NEVER bump
+    // this, or that effect would steal focus back to the tree on every such re-open/remount.
+    const focusBump = options?.selectSubagentId ? 1 : 0
     // Gate remediation (Low/Medium, code-reviewer + security-auditor): rebinding to a different
     // Session without clearing the old one left main still forwarding the previous Session's
     // selected subagent's patches to no listener, and this store's own `selectedId`/`streams`
@@ -114,7 +129,14 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       void window.refract.chat
         .setVisibleSubagent(prevSessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-      set({ sessionId, selectedId: null, streams: {}, suspended: false, openerEl })
+      set((s) => ({
+        sessionId,
+        selectedId: null,
+        streams: {},
+        suspended: false,
+        openerEl,
+        focusRequestId: s.focusRequestId + focusBump
+      }))
     } else {
       // Gate remediation (High, round 4): re-opening the SAME Session (rail, chip or launcher,
       // after a drag-collapse) must leave `suspended`/`streams` exactly as `suspend()` left
@@ -124,7 +146,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       // stream and main still not forwarding patches. `openerEl` is replaced wholesale
       // regardless (issue #563): each explicit open re-establishes who opened it this time,
       // even a re-open of the same Session.
-      set({ sessionId, openerEl })
+      set((s) => ({ sessionId, openerEl, focusRequestId: s.focusRequestId + focusBump }))
     }
     // Issue #563: a caller (the chat pane's Stage/chain rows) can open the panel pre-selected
     // on a specific agent -- reuses `selectSubagent`'s own fetch/cache logic rather than

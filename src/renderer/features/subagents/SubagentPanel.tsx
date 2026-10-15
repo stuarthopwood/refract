@@ -1,5 +1,5 @@
 // The Subagents panel (spec 004 FR-017 to FR-020, FR-023 to FR-026): the right-side pane's first
-// occupant, opened by activating the Subagents chip. Shows the current turn's subagents as a
+// occupant, opened by activating the Subagents chip. Shows the Session's subagents as a
 // `role="tree"` (issue #563) in a vertical `ResizablePanelGroup` over the selected one's live
 // stream (text and tool calls) through the same renderers the main transcript uses
 // (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text). Spec 013: its own title
@@ -14,7 +14,7 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/s
 import type { SubagentSummary } from '../../../shared/model'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
-import { formatDuration } from '../chat/toolStatus'
+import { formatElapsed } from '../chat/formatElapsed'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
 import { SubagentStatusIcon } from './subagentStatus'
@@ -89,15 +89,23 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     return found === -1 ? 0 : found
   }, [rows, selectedId])
 
-  // Decision 13 (issue #563): opening the panel already pre-selected on an agent (the chat
-  // pane's new Stage/chain rows, via `openPanel`'s `selectSubagentId`) focuses that row once it
-  // is mounted. Harmless to re-run on a plain in-panel selection too: `document.activeElement`
-  // is already the row by then, so the guard below no-ops.
+  // Decision 13 (issue #563); gate remediation (code-reviewer H1/H2): opening the panel
+  // already pre-selected on an agent (the chat pane's Stage/chain rows, via `openPanel`'s
+  // `selectSubagentId`) focuses that row once it is mounted. Depends on `focusRequestId`
+  // (`subagent-store.ts`, the `sideChatFocusRequestId` precedent), NOT `selectedId`: the prior
+  // `selectedId` dependency reran on every mount with a retained id -- stealing focus back to
+  // the tree on a plain tab-switch or a remount returning from Settings -- and never reran at
+  // all when a chain/entry click re-targeted an agent that was ALREADY selected (`selectedId`
+  // unchanged). `focusRequestId` only bumps for a genuine pre-selected open, covering both
+  // cases, and fires exactly once per bump.
+  const focusRequestId = useSubagentPanelStore((s) => s.focusRequestId)
   useEffect(() => {
-    if (!selectedId) return
-    const el = rowRefs.current.get(selectedId)
-    if (el && document.activeElement !== el) el.focus()
-  }, [selectedId])
+    if (focusRequestId === 0) return
+    const id = useSubagentPanelStore.getState().selectedId
+    if (!id) return
+    const el = rowRefs.current.get(id)
+    el?.focus()
+  }, [focusRequestId])
 
   function moveToRow(index: number): void {
     const row = rows[index]
@@ -180,50 +188,65 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           precedent (its own tabbed and resizable 60/20 over 40/15 split). */}
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="60%" minSize="20%">
-          <div role="tree" aria-label="Subagents" className="flex h-full flex-col gap-0.5 overflow-y-auto px-3 py-2">
-            {rows.map((row, index) => (
-              <div
-                key={row.node.id}
-                ref={(el) => {
-                  if (el) rowRefs.current.set(row.node.id, el)
-                  else rowRefs.current.delete(row.node.id)
-                }}
-                role="treeitem"
-                // Decision 12 (issue #563): `aria-level` always carries the TRUE depth, even
-                // though the visual indent below is capped at 3 levels.
-                aria-level={row.depth + 1}
-                aria-setsize={row.setsize}
-                aria-posinset={row.posinset}
-                aria-selected={row.node.id === selectedId}
-                tabIndex={index === tabbableIndex ? 0 : -1}
-                style={{ paddingLeft: `${Math.min(row.depth, 2) * 16}px` }}
-                onFocus={() => void selectSubagent(row.node.id)}
-                onKeyDown={(event) => handleRowKeyDown(event, index)}
-                className={cn(
-                  'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-none',
-                  'hover:bg-muted/50 focus-visible:bg-muted/70',
-                  row.node.id === selectedId && 'font-medium'
-                )}
-              >
-                {/* Decision 13 (issue #563): the selected node gets the shared 2px
-                    `--active-indicator` bar (SessionList.tsx/ManageSessionRow.tsx precedent)
-                    instead of a `bg-muted` background. */}
-                {row.node.id === selectedId && (
-                  <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
-                )}
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <SubagentStatusIcon status={row.node.status} />
-                </span>
-                <span className="min-w-0 flex-1 truncate" title={row.node.nameOrTask}>
-                  {row.node.nameOrTask}
-                </span>
-                {row.node.status !== 'running' && row.node.durationMs != null && (
-                  <span className="shrink-0 text-xs text-muted-foreground">{formatDuration(row.node.durationMs)}</span>
-                )}
-              </div>
-            ))}
-            {rows.length === 0 && <p className="px-2 py-1.5 text-sm text-muted-foreground">No subagents this turn.</p>}
-          </div>
+          {rows.length > 0 ? (
+            <div role="tree" aria-label="Subagents" className="flex h-full flex-col gap-0.5 overflow-y-auto px-3 py-2">
+              {rows.map((row, index) => (
+                <div
+                  key={row.node.id}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(row.node.id, el)
+                    else rowRefs.current.delete(row.node.id)
+                  }}
+                  role="treeitem"
+                  // Decision 12 (issue #563): `aria-level` always carries the TRUE depth, even
+                  // though the visual indent below is capped at 3 levels.
+                  aria-level={row.depth + 1}
+                  aria-setsize={row.setsize}
+                  aria-posinset={row.posinset}
+                  aria-selected={row.node.id === selectedId}
+                  tabIndex={index === tabbableIndex ? 0 : -1}
+                  // Gate remediation (Medium, visual): the 2px `--active-indicator` bar below is
+                  // `left-0`, so depth 0's prior 0px inset sat it directly on top of the status
+                  // icon -- the 8px base inset (kept per-level/3-level cap below unchanged)
+                  // gives the bar its own clear lane.
+                  style={{ paddingLeft: `${8 + Math.min(row.depth, 2) * 16}px` }}
+                  onFocus={() => void selectSubagent(row.node.id)}
+                  onKeyDown={(event) => handleRowKeyDown(event, index)}
+                  className={cn(
+                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-none',
+                    // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
+                    // tree-row precedent's own focus ring and forced-colours selected fallback,
+                    // reused verbatim so both trees are visually consistent and the selected row
+                    // survives Windows High Contrast (where the `bg-active-indicator` bar below is
+                    // itself repainted away).
+                    'hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+                  )}
+                >
+                  {/* Decision 13 (issue #563): the selected node gets the shared 2px
+                      `--active-indicator` bar (SessionList.tsx/ManageSessionRow.tsx precedent)
+                      instead of a `bg-muted` background. */}
+                  {row.node.id === selectedId && (
+                    <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
+                  )}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <SubagentStatusIcon status={row.node.status} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={row.node.nameOrTask}>
+                    {row.node.nameOrTask}
+                  </span>
+                  {row.node.status !== 'running' && row.node.durationMs != null && (
+                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Gate remediation (Medium, a11y): a `<p>` is not a permitted child of `role="tree"`
+            // (ARIA's required-owned-elements rule) -- rendered as a sibling instead, only when
+            // the tree itself has nothing to show. Decision 24 plus the Session-wide (not
+            // turn-scoped) definition this panel now uses: "No agents running.", not "this turn".
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">No agents running.</p>
+          )}
         </ResizablePanel>
         <ResizableHandle withHandle aria-label="Resize agent tree and stream" />
         <ResizablePanel defaultSize="40%" minSize="15%">

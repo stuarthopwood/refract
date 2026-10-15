@@ -364,10 +364,10 @@ const PAIRS = [
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
   { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
   { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
-  // Issue #630: `DiffView.tsx`'s new +N added-line count sits as real `text-xs` body text on
-  // the diff box's own `bg-muted` header (the same token the diff gutter's own insert tint
-  // already uses, chosen over a raw Tailwind palette colour precisely so it is gated here).
+  // Issue #630: `DiffView.tsx`'s +N added-line count sits as `text-xs` body text on the diff box's own `bg-muted` header.
   { fg: 'state-working', bg: 'muted', min: 4.5 },
+  { fg: 'state-idle', bg: 'muted', min: 3 },
+  { fg: 'severity-error', bg: 'muted', min: 3 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/

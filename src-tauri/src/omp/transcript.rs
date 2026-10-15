@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::diff::{finalize_live_transcript, merge_history_with_live};
+use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFinalizeCause};
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -562,13 +562,17 @@ fn apply_batch_task_result(
                 .and_then(|e| e.get("id"))
                 .and_then(Value::as_str)
                 .map(String::from);
-            // A hard batch failure (`is_error`) flips every subagent row to `error`, even one
-            // whose `progress[i].status` is still `"pending"` -- otherwise that row spins
-            // forever.
+            // #563 decision 15: `is_error` still lets a row's own `progress[i].status` win when
+            // present (`Cancelled` via `map_progress_status`); only a row with none falls back.
             if is_error {
-                *status = fallback_status;
+                let entry_status = entry.and_then(|e| e.get("status")).and_then(Value::as_str);
+                *status = if entry_status.is_some() {
+                    map_progress_status(entry_status)
+                } else {
+                    fallback_status
+                };
                 if let Some(jid) = entry_job_id {
-                    *job_id = Some(jid);
+                    *job_id = Some(jid)
                 }
                 if live {
                     if let Some(sa) = started_at {
@@ -2012,14 +2016,10 @@ impl TranscriptState {
         }
     }
 
-    /// Finalizes every still-live row (a still-`running` tool/subagent call becomes `error`,
-    /// streaming assistant-text/thinking stops `streaming`) via `diff::finalize_live_transcript`.
-    /// For `SessionAgent::handle_exit`'s own use: a crash or `stop()` mid-turn must not leave a
-    /// row spinning forever in the UI (code-review finding, 2026-10-13; TS calls this
-    /// `finalizeLiveItems`, `SessionAgent.ts:1379`).
-    pub fn finalize_live_items(&mut self) {
+    /// Finalizes every still-live row: tool->`error`; subagent settles per `cause` (`#563` decision 15: `UserStop`->`Cancelled`, `Crash`->`Exited`).
+    pub fn finalize_live_items(&mut self, cause: SubagentFinalizeCause) {
         let items = std::mem::take(&mut self.items);
-        self.items = finalize_live_transcript(items);
+        self.items = finalize_live_transcript(items, cause);
     }
 
     /// Builds history items and settles them BEFORE merging onto the live ones (never after --

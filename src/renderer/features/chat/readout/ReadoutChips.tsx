@@ -6,6 +6,7 @@
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
 import { useEffect, useState } from 'react'
+import type { MouseEvent } from 'react'
 import {
   ClockIcon,
   FileDiffIcon,
@@ -185,7 +186,10 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
-  const onActivate = () => openHostedPanel('subagents', sessionId)
+  // Issue #563, FR-026: records the chip itself as the opener when it is the control that
+  // opened the panel this time, so closing it returns focus here instead of always falling back
+  // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
   if (subagentCount === null) return null
   const { running, finished, exited, failed, cancelled } = subagentCount
   const phrase = (() => {

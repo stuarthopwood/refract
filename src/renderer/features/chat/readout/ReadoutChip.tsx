@@ -3,14 +3,19 @@
 // plain element readable as one phrase through a screen reader. Every chip in the row (spec 004
 // data-model.md "Readout chip") builds on this, the same way every non-message chat output builds
 // on the shared `CollapsedLine` baseline (docs/DESIGN.md "Chat").
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType, MouseEvent, ReactNode } from 'react'
 import { badgeVariants } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
 export interface ReadoutChipProps {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   children: ReactNode
-  onActivate?: () => void
+  /** Issue #563 gate remediation (L2/L6 across reviewers): widened to accept the click event so
+   * callers that open a panel pre-selected on a specific agent (e.g. `ReadoutChips.tsx`'s own
+   * Subagents chip) can record `event.currentTarget` as the opener (FR-026) -- a plain
+   * `() => {...}` callback still satisfies this (JS/TS callback arity is contravariant-
+   * permissive), so no other existing caller breaks. */
+  onActivate?: (event: MouseEvent<HTMLButtonElement>) => void
   /** An external URL (e.g. the Pull request chip, FR-006): renders a real `<a target="_blank">`
    * instead of a button, so Electron's existing `setWindowOpenHandler` opens it in the system
    * browser (the same pattern Markdown.tsx already uses for external links) with no new IPC. */

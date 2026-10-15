@@ -11,8 +11,8 @@ import * as React from 'react'
 import { cn } from 'cn'
 
 export interface SpineListProps {
-  /** `<li>` rows (or elements that render their own `<li>`); member icons land 8px right of the
-   * spine via this component's own `pl-2` (never directly on the line). */
+  /** `<li>` rows (or elements that render their own `<li>`); member icons keep their OWN `px-2`
+   * from `CollapsedLine`'s trigger, giving an 8px gap to the right of the line (#565 decision 8). */
   children: React.ReactNode
   /** Row gap: 4px (`space-y-1`, the default -- "between members") or 8px (`space-y-2` --
    * "between stages", the Subagent chain's own stage-to-stage list). */
@@ -22,7 +22,14 @@ export interface SpineListProps {
 
 export function SpineList({ children, gap = 'member', className }: SpineListProps) {
   return (
-    <ol className={cn('border-l border-divider pl-2', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}>
+    // #565 decision 8: `ml-4` sits the line clear of the parent header's own icon column,
+    // `pt-1` (not `pl-2`) gives the first member row's top breathing room -- members keep their
+    // own `px-2` (from `CollapsedLine`'s trigger) for the 8px gap right of the line. Decision 23
+    // / M9: a member arriving in an expanded RUNNING group must not be announced individually.
+    <ol
+      aria-live="off"
+      className={cn('ml-4 border-l border-divider pt-1', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}
+    >
       {children}
     </ol>
   )

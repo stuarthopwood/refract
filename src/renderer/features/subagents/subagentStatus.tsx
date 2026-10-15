@@ -17,12 +17,10 @@ export const SUBAGENT_STATUS_LABEL: Record<SubagentRowStatus, string> = {
   exited: 'Agent exited'
 }
 
-/** A distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop
- * (cancelled), unplug (exited). `finished`'s word is `sr-only` (decision 14): a finished
- * reviewer may still have returned a FAIL verdict, so a quiet icon-plus-duration row, not a
- * loud "Finished" claim, avoids overstating the result; every other state's word stays visible
- * (never colour alone). */
-export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
+/** The icon-only markup shared by `SubagentStatusIcon` and `SubagentStatusGlyph` below: a
+ * distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop
+ * (cancelled), unplug (exited). */
+function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
   const className = 'size-3.5 shrink-0'
   return (
     <>
@@ -31,7 +29,35 @@ export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
       {status === 'failed' && <XCircleIcon aria-hidden className={cn(className, 'text-severity-error')} />}
       {status === 'cancelled' && <CircleStopIcon aria-hidden className={cn(className, 'text-muted-foreground')} />}
       {status === 'exited' && <UnplugIcon aria-hidden className={cn(className, 'text-muted-foreground')} />}
+    </>
+  )
+}
+
+/** A distinct icon per state, never colour alone (WCAG 2.1 AA). `finished`'s word is `sr-only`
+ * (decision 14): a finished reviewer may still have returned a FAIL verdict, so a quiet
+ * icon-plus-duration row, not a loud "Finished" claim, avoids overstating the result; every
+ * other state's word stays visible (never colour alone). For the two inline call sites that lay
+ * this out in their own flex row (`SubagentPanel.tsx`'s tree row, `SubagentChainRow.tsx`'s
+ * `ChainAgentEntry`/`ChainStageLine`) -- NEVER for a `CollapsedLine` `icon=` slot, whose fixed
+ * `size-3.5` box the visible word would overflow and paint over the label; use
+ * `SubagentStatusGlyph` there instead. */
+export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
+  return (
+    <>
+      <SubagentStatusGlyphIcons status={status} />
       <span className={status === 'finished' ? 'sr-only' : undefined}>{SUBAGENT_STATUS_LABEL[status]}</span>
+    </>
+  )
+}
+
+/** Same icon markup as `SubagentStatusIcon`, but the status word is ALWAYS `sr-only`: for any
+ * `CollapsedLine` `icon=` slot (a fixed `size-3.5` box too narrow for an inline word), whose
+ * caller renders the visible word itself in the `meta` slot instead, ahead of the duration. */
+export function SubagentStatusGlyph({ status }: { status: SubagentRowStatus }) {
+  return (
+    <>
+      <SubagentStatusGlyphIcons status={status} />
+      <span className="sr-only">{SUBAGENT_STATUS_LABEL[status]}</span>
     </>
   )
 }

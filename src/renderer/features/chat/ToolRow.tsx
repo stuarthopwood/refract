@@ -5,8 +5,9 @@ import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
+import { formatElapsed } from './formatElapsed'
 import type { ToolGroup } from './groupToolItems'
-import { chatRowStatus, SubagentStatusIcon } from '../subagents/subagentStatus'
+import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -222,19 +223,15 @@ interface SubagentRowProps {
   item: SubagentItem
 }
 
-// One collapsed line per subagent a batch `task()` call started (T078, docs/DESIGN.md "Chat"):
-// never grouped by `groupToolItems` (T074), identity is the stable `item.id` (so a later
-// activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
-// the prompt and (once known) the result as plain text.
-export function SubagentRow({ item }: SubagentRowProps) {
+// The expansion content for one subagent row (prompt, then result once known as plain text):
+// split out so `StageGroupRow` (`SubagentChainRow.tsx`) can reuse it for its own solo-of-the-turn
+// case without ever going through `SubagentRow`'s own `CollapsedLine` wrapper (#563 remediation,
+// H2/H3: a Stage's content must never switch element type between solo and multi members).
+export function SubagentBody({ item }: SubagentRowProps) {
   const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
   const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
   return (
-    <CollapsedLine
-      icon={<SubagentStatusIcon status={chatRowStatus(item.status)} />}
-      label={item.name}
-      meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
-    >
+    <>
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
         <div className="max-h-64 overflow-auto rounded-lg">
@@ -249,6 +246,35 @@ export function SubagentRow({ item }: SubagentRowProps) {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+// One collapsed line per subagent a batch `task()` call started (T078, docs/DESIGN.md "Chat"):
+// never grouped by `groupToolItems` (T074), identity is the stable `item.id` (so a later
+// activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
+// the prompt and (once known) the result as plain text.
+//
+// Quality-gate remediation (H1, unanimous): `icon=` is a `CollapsedLine` icon slot (a fixed
+// `size-3.5` box) -- `SubagentStatusGlyph` keeps its status word `sr-only` there (never visible,
+// it would overflow the box and paint over the label); the visible word is rendered HERE instead,
+// in `meta`, ahead of the duration, gated off for `finished` (decision 14: a quiet icon-plus-
+// duration row, never a loud "Finished" claim).
+export function SubagentRow({ item }: SubagentRowProps) {
+  const status = chatRowStatus(item.status)
+  const duration =
+    item.status !== 'running' && item.durationMs != null ? (
+      <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
+    ) : undefined
+  const meta = (
+    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
+      {duration}
+    </span>
+  )
+  return (
+    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta}>
+      <SubagentBody item={item} />
     </CollapsedLine>
   )
 }

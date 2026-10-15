@@ -17,16 +17,18 @@ import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
-import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
-import { groupSubagentStages, isStageGroup, type StageGroupedItem } from './groupSubagentStages'
+import { groupToolItems, isToolGroup } from './groupToolItems'
+import { groupSubagentStages, isStageGroup, type StageGroup, type StageGroupedItem } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
 import { formatElapsed } from './formatElapsed'
-import { ToolGroupRow, SubagentRow } from './ToolRow'
+import { ToolGroupRow } from './ToolRow'
+import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
+import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -214,9 +216,6 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
       // through the same `ToolGroupRow` component type as the grouped path above.
       return <ToolGroupRow group={{ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] }} />
 
-    case 'subagent':
-      return <SubagentRow item={item} />
-
     case 'agent-message':
       return <AgentMessageRow item={item} />
 
@@ -278,94 +277,6 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
       <span className="sr-only">Turn took {elapsed}</span>
     </div>
   )
-}
-
-// Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
-// as compact, secondary material and must not inherit the full rhythm the turns/real messages
-// around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
-// `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
-// direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
-const BOOKKEEPING_KINDS: Partial<Record<StageGroupedItem['kind'], true>> = {
-  'tool-group': true,
-  'stage-group': true,
-  thinking: true,
-  advisory: true,
-  notice: true,
-  subagent: true,
-  'agent-message': true,
-  'skill-prompt': true
-}
-
-function isBookkeepingRow(row: StageGroupedItem): boolean {
-  return BOOKKEEPING_KINDS[row.kind] === true
-}
-
-// Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
-// `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all -- these
-// act as a pure *view* filter: turning one back on restores every hidden row immediately, including
-// past turns, with no reload, since the underlying `TranscriptItem[]` in the transcript store is
-// never touched. Filtering the array handed to `.map()` (the render loop below) rather than hiding
-// rows with CSS is what keeps a fully-hidden row out of the accessibility tree and tab order
-// entirely, and is also what makes a run of now-hidden rows leave no empty gap or stray margin:
-// `isFirstRow`/`previousRow` (the render loop's own gap-class bookkeeping) only ever see the rows
-// that are actually rendered with real content, so a hidden (or sr-only -- see below) row can never
-// become the "previous" row a later one measures its own margin against.
-//
-// "Never hide what needs the user or reports a problem" (issue #457): an answered/pending `ask`
-// question and a `request` card both survive untouched below, since neither is a `ToolGroup` or a
-// `subagent` row to begin with (`groupToolItems` never merges an `ask` call, and `request`/
-// `notice`/`advisory`/`agent-message` rows are never part of either filtered kind). A `ToolGroup`
-// or `subagent` row that reports a problem (an `error` or `interrupted` tool call; an `error` or
-// `exited` subagent) stays `'visible'` even with "Show tool calls" off, matching
-// `ChatDisplaySection.tsx`'s own copy ("failed or interrupted calls always show").
-//
-// Quality-gate fix (code review/a11y, Medium, round 2): EVERY hidden `thinking` item -- not only a
-// non-streaming one -- is stripped from the array before `groupToolItems` runs (the turn-map render
-// loop below builds `itemsForGrouping` for exactly this). A thinking part's own `streaming` flag is
-// the WHOLE assistant message's flag (`src/main/omp/transcript.ts`'s `buildAssistantItems`), so it
-// can still read `true` while that same message's later tool calls are already streaming in as
-// `running` -- a streaming thinking item is NOT always the newest item, so keeping it in the
-// grouping input (the round-1 design) could leave it sitting between two same-tool runs, merging
-// them the instant the message ends and losing the later run's own expanded/focus state. `thinking`
-// is therefore a plain `'visible'`/`'hidden'` toggle below; its own in-progress signal is announced
-// once per assistant message (the whole message shares one `streaming` flag -- see `announceThinking`
-// below), outside the grouped rows entirely (see the render loop's standalone sr-only span).
-//
-// Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`subagent` row that is hidden by "Show
-// tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a BASE
-// candidate instead of `'hidden'` -- the render loop then promotes only the LAST such candidate in
-// the turn (round 3: not simply the turn's last row by position -- a finished, hidden row can sit
-// after the real running one, e.g. parallel subagents or a quick bookkeeping call that outraces a
-// still-running sibling) back to `'sr-only'`, downgrading every earlier candidate to `'hidden'` (a
-// group id is keyed off its first call, so a run of N sequential calls with tool calls hidden would
-// otherwise unmount-and-remount a fresh `'sr-only'` row between every pair of calls, each one a new
-// log addition and its own announcement -- one announcement per step, not per turn, if every
-// candidate were promoted instead of only the last one), and only while that row's own turn is the
-// one actually running. A visible `'sr-only'` row keeps its `MessageScrollerItem` (same key, same
-// position) but swaps its content for a one-line sr-only status span naming what is running -- the
-// transcript's `role="log"` gets one polite addition marking that a turn is in progress, instead of
-// a user whose screen reader has no visible `TurnTotalLine` text (it is `aria-hidden` while running)
-// losing every sign of life. A row that finishes without needing attention naturally falls back to
-// `'hidden'`.
-type RowVisibility = 'visible' | 'hidden' | 'sr-only'
-
-function rowVisibility(row: StageGroupedItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
-  if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
-  if (transcriptDisplay.toolCalls) return 'visible'
-  // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).
-  if (isStageGroup(row)) {
-    if (row.items.some((item) => item.status === 'error' || item.status === 'exited' || item.status === 'cancelled')) return 'visible'
-    return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
-  }
-  if (isToolGroup(row)) {
-    if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
-    return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
-  }
-  if (row.kind === 'subagent') {
-    if (row.status === 'error' || row.status === 'exited' || row.status === 'cancelled') return 'visible'
-    return row.status === 'running' ? 'sr-only' : 'hidden'
-  }
-  return 'visible'
 }
 
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
@@ -511,6 +422,21 @@ export function Transcript({
     () => windowTranscriptTurns(turns, revealedEarlier),
     [turns, revealedEarlier]
   )
+
+  // Issue #563 decision 3 + gate fix (H1/H4): Stage boundaries must never depend on the "Show
+  // thinking" toggle, so grouping runs ONCE per turn here on the UNFILTERED `turn.items`.
+  const turnsWithStages = React.useMemo(
+    () =>
+      visibleTurns.map((turn) => {
+        const groupedWithStages = groupSubagentStages(groupToolItems(turn.items))
+        return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
+      }),
+    [visibleTurns]
+  )
+
+  // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
+  // -- the single out-of-log announcer, rendered as a sibling of `revealedAnnouncement` below.
+  const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
 
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
@@ -1002,7 +928,7 @@ export function Transcript({
               </div>
             )}
             {hasConversationStarted &&
-              visibleTurns.map((turn, turnIndex) => {
+              turnsWithStages.map(({ turn, groupedWithStages, stages }, turnIndex) => {
                 const previousTurn = turnIndex > 0 ? visibleTurns[turnIndex - 1] : undefined
                 const showTimeGapDivider =
                   previousTurn?.userItem != null &&
@@ -1013,12 +939,16 @@ export function Transcript({
 
                 let previousRow: StageGroupedItem | undefined
 
-                // Issue #457 quality-gate fix (round 2): every hidden thinking item is stripped
-                // before grouping (not only a non-streaming one -- see `rowVisibility`'s own comment
-                // for why a streaming one isn't safe to keep here either).
-                const itemsForGrouping = transcriptDisplay.thinking
-                  ? turn.items
-                  : turn.items.filter((item) => item.kind !== 'thinking')
+                // Gate fix (H1/H4): a hidden `thinking` item must still be dropped from what
+                // renders, but it can no longer be stripped BEFORE grouping (that let two serial
+                // `task()` calls merge into one Stage once "Show thinking" turned off -- decision
+                // 3, Stage membership must never depend on a display setting). `groupedWithStages`
+                // (from `turnsWithStages` above) is built from the full, unfiltered items;
+                // `groupedForRender` drops the hidden row AFTER grouping instead, safe because
+                // neither grouper ever folds a bare `thinking` row into a group.
+                const groupedForRender = transcriptDisplay.thinking
+                  ? groupedWithStages
+                  : groupedWithStages.filter((row) => row.kind !== 'thinking')
 
                 // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
                 // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
@@ -1035,10 +965,7 @@ export function Transcript({
                 // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
                 // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
-                // Issue #563: `stages` reads the unfiltered list -- the chain always shows (decision 5).
-                const groupedWithStages = groupSubagentStages(groupToolItems(itemsForGrouping))
-                const stages = groupedWithStages.filter(isStageGroup)
-                const basePairs = groupedWithStages.map(
+                const basePairs = groupedForRender.map(
                   (row): [StageGroupedItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
                 )
                 const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
@@ -1080,9 +1007,10 @@ export function Transcript({
                             messageId={row.id}
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
-                            {/* Quality-gate fix (round 3), extended issue #563: `rowVisibility`
-                                only ever returns `'sr-only'` for a `ToolGroup`, a `'subagent'`
-                                row or a `StageGroup`, so a cast documents the unreachable case. */}
+                            {/* `rowVisibility` only ever returns `'sr-only'` for a `ToolGroup` or
+                                `StageGroup` now (a bare `subagent` item can't reach here, see
+                                `StageGroupedItem` in groupSubagentStages.ts) -- the final
+                                `undefined` only satisfies the type checker and never renders. */}
                             <span className="sr-only">
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
@@ -1090,7 +1018,7 @@ export function Transcript({
                                   ? row.items[0]!.skill
                                     ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
                                     : `${toolStatusLabel('running')} ${row.tool}`
-                                  : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
+                                  : undefined}
                             </span>
                           </MessageScrollerItem>
                         )
@@ -1153,6 +1081,9 @@ export function Transcript({
             `handleLoadEarlier` sets it. */}
         <span role="status" aria-live="polite" className="sr-only">
           {revealedAnnouncement}
+        </span>
+        <span role="status" aria-live="polite" className="sr-only">
+          {stageAnnouncement}
         </span>
         <Button
           ref={buttonRef}

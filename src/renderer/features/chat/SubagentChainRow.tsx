@@ -9,15 +9,22 @@ import * as React from 'react'
 import { BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useReadoutStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine } from './CollapsedLine'
 import { SpineList } from './SpineList'
-import { SubagentRow } from './ToolRow'
+import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import type { StageGroup } from './groupSubagentStages'
-import { chatRowStatus, SubagentStatusIcon, summarizeSubagentStatuses, type SubagentRowStatus } from '../subagents/subagentStatus'
+import {
+  chatRowStatus,
+  SUBAGENT_STATUS_LABEL,
+  SubagentStatusGlyph,
+  SubagentStatusIcon,
+  summarizeSubagentStatuses,
+  type SubagentRowStatus
+} from '../subagents/subagentStatus'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -33,7 +40,9 @@ function stageTimeRange(items: readonly SubagentItem[]): { startedAt?: number; e
 }
 
 // "N running", "N failed", "N cancelled", "N exited" joined by commas, each only when non-zero
-// (decisions 5/15): cancelled is always its own word, never folded into "failed".
+// (decisions 5/15): cancelled is always its own word, never folded into "failed". Used by
+// `SubagentChainRow`'s own per-turn roll-up; `StageGroupRow`'s own roll-up (below) needs the
+// "N of M finished" / mixed-outcome "finished" wording decision 5/M1 asks for instead.
 function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
   const parts: string[] = []
   if (counts.running > 0) parts.push(`${counts.running} running`)
@@ -43,7 +52,10 @@ function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
   return parts.join(', ')
 }
 
-function overallStatus(counts: Record<SubagentRowStatus, number>): SubagentRowStatus {
+// Exported: the Transcript.tsx settle announcer (a sibling slice, #563 remediation H3) needs the
+// same overall-status classification a Stage/chain header already uses, so its one centralised
+// announcement is keyed off the exact same "has this settled" logic as the visible icon.
+export function overallStatus(counts: Record<SubagentRowStatus, number>): SubagentRowStatus {
   if (counts.running > 0) return 'running'
   if (counts.failed > 0) return 'failed'
   if (counts.cancelled > 0) return 'cancelled'
@@ -51,71 +63,147 @@ function overallStatus(counts: Record<SubagentRowStatus, number>): SubagentRowSt
   return 'finished'
 }
 
-/** One Stage, rendered in place (decision 4): always the same component type whether it has one
- * agent or several (mirrors `ToolGroupRow`'s own solo path, `groupToolItems.ts`), so a Stage's
- * row never switches React element type as a second agent streams in. Renders IDENTICAL output
- * to today's bare `SubagentRow` (decision 1) only when this is the turn's one and only Stage AND
- * that Stage has exactly one agent; every other Stage -- including a solo-agent Stage inside a
- * multi-Stage turn -- gets its own "Stage N" header (decision 1: "a single stage is fully
- * summarised by its own group header"). */
+// Stage header roll-up wording (#563 remediation, M1/M2): while running, "N agents, N running"
+// muddied the one fact that matters -- how many have actually finished -- so the live form reads
+// "N of M finished" instead, with any non-zero failed/cancelled/exited appended (comma-joined,
+// same shape as `rollupPhrase`).
+function stageRunningSummary(counts: Record<SubagentRowStatus, number>, total: number): string {
+  const parts = [`${counts.finished} of ${total} finished`]
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
+  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  return parts.join(', ')
+}
+
+/** The settled-form "N agents, rollup" text (#563 remediation, M1/M2): the "N agents" form
+ * returns once settled, but a MIXED outcome (not every agent merely finished) also states how
+ * many did, so "4 agents, 3 finished, 1 failed" never hides a partial result behind a flat count
+ * -- a Stage where every agent finished stays the plain, quiet "N agents" decision 14 intends.
+ * Exported: the Transcript.tsx settle announcer (a sibling slice) reads these exact words, so its
+ * live-region announcement can never drift from the text the Stage's own header already shows. */
+export function stageSettleSummary(group: StageGroup): string {
+  const counts = summarizeSubagentStatuses(group.items.map((item) => chatRowStatus(item.status)))
+  const total = group.items.length
+  const categories = [counts.finished, counts.failed, counts.cancelled, counts.exited].filter((n) => n > 0).length
+  const parts: string[] = []
+  if (categories > 1 && counts.finished > 0) parts.push(`${counts.finished} finished`)
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
+  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  return `${total} agent${total === 1 ? '' : 's'}${parts.length ? `, ${parts.join(', ')}` : ''}`
+}
+
+/** One Stage, rendered in place (decision 4): ALWAYS the same `CollapsedLine` (mirrors
+ * `ToolGroupRow`'s own solo path, `groupToolItems.ts`), so a Stage's row never switches React
+ * element type as a second agent or a second Stage streams in (#563 remediation H2/H3: the
+ * previous `solo` branch returned a bare `SubagentRow` -- a different element type -- unmounting
+ * and losing open/focus state the instant a second agent or Stage arrived). Renders IDENTICAL
+ * output to today's bare `SubagentRow` (decision 1) only when this is the turn's one and only
+ * Stage AND that Stage has exactly one agent; every other Stage -- including a solo-agent Stage
+ * inside a multi-Stage turn -- gets its own "Stage N" header (decision 1: "a single stage is
+ * fully summarised by its own group header"). A one-agent Stage's content is the agent's own
+ * body directly, no `SpineList`/`<ol>` at all (#565 decision 13: a list mounts only once a 2nd
+ * member arrives); a multi-agent Stage's content is the member `SpineList`. */
 export function StageGroupRow({ group }: { group: StageGroup }) {
   const statuses = group.items.map((item) => chatRowStatus(item.status))
   const counts = summarizeSubagentStatuses(statuses)
   const status = overallStatus(counts)
   const isRunning = status === 'running'
-  const rollup = rollupPhrase(counts)
-  const summary = `${group.items.length} agent${group.items.length === 1 ? '' : 's'}${rollup ? `, ${rollup}` : ''}`
+  const total = group.items.length
+  const soloOfTurn = group.totalStages === 1 && total === 1
 
-  // Decision 21: "one polite announcement per stage when it settles ... nothing while history
-  // loads" -- the ref's initial value is this render's own `isRunning`, so a Stage that mounts
-  // already-settled (reopened history) never announces; only a LIVE running-to-settled
-  // transition does. Called unconditionally, before the solo early-return below, since hooks
-  // can never run conditionally.
-  const [announcement, setAnnouncement] = React.useState('')
-  const wasRunningRef = React.useRef(isRunning)
+  // #563 remediation (L4/decision 19, #565 decision 26) fade-in: a member row that mounts WHILE
+  // this Stage is live (running) fades in; one present at a settled/history mount never does.
+  // Seeded synchronously during render (never in an effect, so a settled reopen never flashes a
+  // first invisible frame), then every currently-rendered id is marked seen in an effect after
+  // paint so a row only ever fades in once.
+  const seenIdsRef = React.useRef<Set<string> | null>(null)
+  if (seenIdsRef.current === null) {
+    const seen = new Set<string>()
+    if (!isRunning) for (const item of group.items) seen.add(item.id)
+    seenIdsRef.current = seen
+  }
+  const seenIds = seenIdsRef.current
   React.useEffect(() => {
-    if (wasRunningRef.current && !isRunning) {
-      setAnnouncement(`Stage ${group.stageIndex} of ${group.totalStages} finished, ${summary}`)
-    }
-    wasRunningRef.current = isRunning
-  }, [isRunning, group.stageIndex, group.totalStages, summary])
+    for (const item of group.items) seenIds.add(item.id)
+  }, [group.items, seenIds])
 
-  const solo = group.totalStages === 1 && group.items.length === 1
-  if (solo) return <SubagentRow item={group.items[0]!} />
+  if (soloOfTurn) {
+    const item = group.items[0]!
+    const duration =
+      item.status !== 'running' && item.durationMs != null ? (
+        <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
+      ) : undefined
+    const meta = (
+      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
+        {duration}
+      </span>
+    )
+    return (
+      <CollapsedLine
+        icon={<SubagentStatusGlyph status={status} />}
+        label={item.name}
+        meta={meta}
+        className="border-transparent hover:border-transparent"
+      >
+        <SubagentBody item={item} />
+      </CollapsedLine>
+    )
+  }
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
+  const summaryText = isRunning ? stageRunningSummary(counts, total) : stageSettleSummary(group)
+  // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
+  // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta`, ahead
+  // of the duration -- gated off for `finished` (decision 14).
+  const meta = (
+    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
+      {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
+    </span>
+  )
 
   return (
-    <>
-      {/* Always mounted (never created together with its own text, which a screen reader
-       * generally fails to announce), outside the `Collapsible` below -- Radix unmounts
-       * collapsed content entirely, so an sr-only span living only inside it could never
-       * announce a settle that happens while the row is collapsed. */}
-      <span role="status" aria-live="polite" className="sr-only">
-        {announcement}
-      </span>
-      <CollapsedLine
-        icon={<SubagentStatusIcon status={status} />}
-        label={`Stage ${group.stageIndex}`}
-        summary={summary}
-        summaryWrap
-        meta={durationMs != null ? <span className="tabular-nums">{formatElapsed(durationMs)}</span> : undefined}
-        defaultOpen={isRunning || status === 'failed' || status === 'cancelled' || status === 'exited'}
-      >
-        {/* Decision 2: the accessible name adds the stage COUNT the visible label omits. */}
-        <span className="sr-only">
-          Stage {group.stageIndex} of {group.totalStages}, {summary}
-        </span>
+    <CollapsedLine
+      icon={<SubagentStatusGlyph status={status} />}
+      label={`Stage ${group.stageIndex}`}
+      // M1/L2: label and summary joined with a literal "· " separator, aria-hidden on the dot
+      // only -- the accessible name comes entirely from `triggerAriaLabel` below instead.
+      summary={
+        <>
+          <span aria-hidden="true">· </span>
+          {summaryText}
+        </>
+      }
+      summaryWrap
+      meta={meta}
+      defaultOpen={isRunning || status === 'failed' || status === 'cancelled' || status === 'exited'}
+      // M1/decision 2: the accessible name carries the stage COUNT the visible label omits,
+      // applied directly to the trigger (not an sr-only span inside `children`, which Radix
+      // unmounts while collapsed and so is invisible to assistive tech in the common case).
+      triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}`}
+      className="border-transparent hover:border-transparent"
+      // #565 decision 8: zeroed only when a `SpineList` is the content -- its own `ml-4`/`pt-1`
+      // is the sole geometry in play then; a single agent's own body keeps the default padding.
+      contentClassName={total >= 2 ? 'space-y-0 p-0' : undefined}
+    >
+      {total === 1 ? (
+        <SubagentBody item={group.items[0]!} />
+      ) : (
         <SpineList gap="member">
-          {group.items.map((item) => (
-            <li key={item.id}>
-              <SubagentRow item={item} />
-            </li>
-          ))}
+          {group.items.map((item) => {
+            const isNew = isRunning && !seenIds.has(item.id)
+            return (
+              <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
+                <SubagentRow item={item} />
+              </li>
+            )
+          })}
         </SpineList>
-      </CollapsedLine>
-    </>
+      )}
+    </CollapsedLine>
   )
 }
 
@@ -126,7 +214,11 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
  * `toolCallId`+`specIndex` (the two representations use unrelated id schemes, `model.ts`'s own
  * documented rule), never by `item.id` directly. */
 function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: string | null }) {
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId]?.subagents ?? []) : []))
+  // Quality-gate remediation (Medium, code review): the bare `?? []` fallback returned a fresh
+  // array identity on every render, defeating zustand's `useSyncExternalStore` memoisation under
+  // React 19 -- `EMPTY_READOUT_ENTRY` is the stable singleton the rest of the codebase already
+  // uses for exactly this (e.g. `SubagentPanel.tsx`).
+  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : []))
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
   const status = chatRowStatus(item.status)
   const duration = item.durationMs != null ? formatElapsed(item.durationMs) : undefined
@@ -140,12 +232,12 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
     </>
   )
   if (!match || !sessionId) {
-    return <span className="inline-flex max-w-48 items-center gap-1 text-sm text-muted-foreground">{content}</span>
+    return <span className="inline-flex max-w-48 items-center gap-1 px-2 py-1 text-sm text-muted-foreground">{content}</span>
   }
   return (
     <button
       type="button"
-      className="inline-flex max-w-48 items-center gap-1 rounded px-1 py-0.5 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex max-w-48 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       onClick={(event) =>
         openHostedPanel('subagents', sessionId, { selectSubagentId: match.id, opener: event.currentTarget })
       }
@@ -170,16 +262,22 @@ function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: st
 
 /** Decision 7: a ghost icon-only button opening the panel without selecting any one agent --
  * separate from each entry's own activation, so the disclosure chevron (expand/collapse this
- * row) is never overloaded with a second meaning. */
+ * row) is never overloaded with a second meaning. Lives in the chain header's own `action=` slot
+ * (#563 remediation, M1/M4/M5): a sibling of the `CollapsibleTrigger`, not nested inside it. */
 function ChainShowPanelButton({ sessionId }: { sessionId: string | null }) {
   if (!sessionId) return null
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      {/* `aria-describedby={undefined}` (repo convention, e.g. `PanelTabBar.tsx`'s own
+       * `TabButton`): Radix sets `aria-describedby` on the trigger whenever the tooltip is open,
+       * and a screen reader's accessible-description computation follows that reference into the
+       * tooltip's own text regardless -- redundant here since `aria-label` is already the full
+       * description. */}
+      <TooltipTrigger asChild aria-describedby={undefined}>
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon-xs"
           aria-label="Show subagents panel"
           onClick={(event) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })}
         >
@@ -197,13 +295,30 @@ function ChainShowPanelButton({ sessionId }: { sessionId: string | null }) {
  * because this renders directly in the turn's own `React.Fragment` (like `TurnTotalLine`), not
  * inside a `MessageScrollerItem` keyed to any one `TranscriptItem`. */
 export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; sessionId: string | null }) {
-  if (stages.length < 2) return null
-
+  // Decision 19/#565 decision 26 fade-in: a Stage entry that mounts WHILE the chain is live
+  // (running) fades in; one present at a settled/history mount never does (same seen-set
+  // pattern as `StageGroupRow`'s own member rows, lazily seeded during render, never in an
+  // effect, so a settled reopen never flashes a first invisible frame). Computed unconditionally,
+  // before the `stages.length < 2` early return below, since hooks can never run conditionally.
+  const seenStageIdsRef = React.useRef<Set<string> | null>(null)
   const allItems = stages.flatMap((stage) => stage.items)
   const statuses = allItems.map((item) => chatRowStatus(item.status))
   const counts = summarizeSubagentStatuses(statuses)
   const status = overallStatus(counts)
   const isRunning = status === 'running'
+
+  if (seenStageIdsRef.current === null) {
+    const seen = new Set<string>()
+    if (!isRunning) for (const stage of stages) seen.add(stage.id)
+    seenStageIdsRef.current = seen
+  }
+  const seenStageIds = seenStageIdsRef.current
+  React.useEffect(() => {
+    for (const stage of stages) seenStageIds.add(stage.id)
+  }, [stages, seenStageIds])
+
+  if (stages.length < 2) return null
+
   const { startedAt, endedAt } = stageTimeRange(allItems)
   // Decision 19: the chain's own duration ticks every second while running (measured wall-clock
   // from the first Stage's first start to now), and is `aria-hidden` while running (matches
@@ -214,36 +329,48 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // Decision 6: expanded while anything is unsettled, collapsed once every agent finished --
   // covering a reopened history the same way.
   const defaultOpen = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
+  // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
+  // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta`, ahead
+  // of the duration -- gated off for `finished` (decision 14).
+  const meta = (
+    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
+      {durationMs != null && (
+        <span aria-hidden={isRunning || undefined}>
+          <span aria-hidden="true" className="tabular-nums">
+            {formatElapsed(durationMs)}
+          </span>
+          <span className="sr-only">Took {formatElapsed(durationMs)}</span>
+        </span>
+      )}
+    </span>
+  )
 
   return (
     <CollapsedLine
-      icon={<SubagentStatusIcon status={status} />}
+      icon={<SubagentStatusGlyph status={status} />}
       label="Subagents"
       summary={summary}
       summaryWrap
-      meta={
-        durationMs != null ? (
-          <span aria-hidden={isRunning || undefined}>
-            <span aria-hidden="true" className="tabular-nums">
-              {formatElapsed(durationMs)}
-            </span>
-            <span className="sr-only">Took {formatElapsed(durationMs)}</span>
-          </span>
-        ) : undefined
-      }
+      meta={meta}
       defaultOpen={defaultOpen}
-      className="mt-6"
+      className="mt-6 border-transparent hover:border-transparent"
+      contentClassName="space-y-0 p-0"
+      triggerAriaLabel={`Subagents, ${summary}`}
+      action={<ChainShowPanelButton sessionId={sessionId} />}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="sr-only">{summary}</span>
-        <ChainShowPanelButton sessionId={sessionId} />
-      </div>
       <SpineList gap="stage">
-        {stages.map((stage) => (
-          <li key={stage.id}>
-            <ChainStageLine stage={stage} sessionId={sessionId} />
-          </li>
-        ))}
+        {stages.map((stage) => {
+          const isNew = !seenStageIds.has(stage.id) && isRunning
+          return (
+            <li
+              key={stage.id}
+              className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}
+            >
+              <ChainStageLine stage={stage} sessionId={sessionId} />
+            </li>
+          )
+        })}
       </SpineList>
     </CollapsedLine>
   )

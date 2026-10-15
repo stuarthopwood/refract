@@ -17,7 +17,12 @@ export interface StageGroup {
   totalStages: number
 }
 
-export type StageGroupedItem = GroupedTranscriptItem | StageGroup
+// Code-review gate fix (Medium, round 4, 2026-10-15): every `subagent`-kind item is now ALWAYS
+// wrapped into a `StageGroup` by this function, even a run of one (the "always wrap" rule the
+// comment below mirrors from `groupToolItems`) -- so a bare `subagent` item can never reach a
+// consumer. Excluding it here (rather than just trusting convention) makes the compiler flag
+// every stale bare-`subagent` call site as a type error.
+export type StageGroupedItem = Exclude<GroupedTranscriptItem, { kind: 'subagent' }> | StageGroup
 
 export function isStageGroup(item: StageGroupedItem): item is StageGroup {
   return item.kind === 'stage-group'
