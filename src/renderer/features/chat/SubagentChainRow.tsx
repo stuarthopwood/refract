@@ -16,7 +16,7 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine } from './CollapsedLine'
-import { SpineList } from './SpineList'
+import { SpineList, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import type { StageGroup } from './groupSubagentStages'
@@ -176,12 +176,6 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
         // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
         triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}
-        // Gate round 3 fix (architect M4): `border-transparent hover:border-transparent` still
-        // carried `Collapsible`'s own unconditional `border` (1px solid, just invisible), adding
-        // a stray 1px to every measured gap. `border-0` removes the border entirely instead of
-        // merely hiding its colour, so this header's own measured geometry (and `SubagentRow`'s,
-        // below) now matches `SpineList.tsx`'s own documented 8px claim exactly.
-        className="border-0"
       >
         <SubagentBody item={item} />
       </CollapsedLine>
@@ -224,10 +218,9 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       // visibly, since `aria-label` replaces the content name outright -- otherwise a running
       // Stage's own accessible name carries no "Running" and no elapsed time at all.
       triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
-      className="border-0"
       // #565 decision 8: the sole geometry in play once a `SpineList` is the content is its own
       // `ml-4`/`pt-1` -- `total` is always >= 2 here (a solo Stage returns early above).
-      contentClassName="space-y-0 p-0"
+      contentClassName={SPINE_HOST_CONTENT_CLASS}
     >
       <SpineList gap="member">
         {group.items.map((item) => {
@@ -413,8 +406,8 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       summaryWrap
       meta={meta}
       defaultOpen={defaultOpen}
-      className="mt-6 border-0"
-      contentClassName="space-y-0 p-0"
+      className="mt-6"
+      contentClassName={SPINE_HOST_CONTENT_CLASS}
       // Gate round 2 (Low): also restates the running/failed/etc. word `meta` shows visibly,
       // since `aria-label` replaces the content name outright. Gate round 3 (Medium): the
       // duration is left OUT while running -- it ticks every second (`forceTick` above), and

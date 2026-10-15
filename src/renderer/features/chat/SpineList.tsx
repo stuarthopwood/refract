@@ -10,6 +10,11 @@
 import * as React from 'react'
 import { cn } from 'cn'
 
+// #565 decision 8/11: once a `Collapsible`'s own content is a `SpineList`, the sole geometry in
+// play is the list's own `ml-4`/`pt-1` -- every host zeroes its `CollapsedLine`'s own
+// `contentClassName` to this value rather than copying the literal string by hand.
+export const SPINE_HOST_CONTENT_CLASS = 'space-y-0 p-0'
+
 export interface SpineListProps {
   /** `<li>` rows (or elements that render their own `<li>`); member icons keep their OWN `px-2`
    * from `CollapsedLine`'s trigger, giving an 8px gap to the right of the line (#565 decision 8). */

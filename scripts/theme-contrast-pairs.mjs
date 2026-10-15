@@ -118,13 +118,16 @@ export const PAIRS = [
   // Subagent status icons on `--muted` (#563 remediation, decision 26): finished/failed icons.
   { fg: 'state-idle', bg: 'muted', min: 3 },
   { fg: 'severity-error', bg: 'muted', min: 3 },
-  // #565 decision 32: a node icon must keep 3:1 on the hover tint too (`CollapsedLine`'s own
-  // `hover:bg-muted`, decision 18) -- `ring/muted` is already gated above; these two were not.
-  { fg: 'state-working', bg: 'muted', min: 3 },
-  { fg: 'destructive', bg: 'muted', min: 3 },
-  // "N failed"/"N interrupted" text (`ToolGroupRow`'s own summary) rendered on the same hover
-  // tint needs the 4.5:1 text floor, distinct from the icon-only 3:1 pair just above.
+  // #565 decision 32: a node icon, and a notice's own coloured summary text, must keep their
+  // floor on the hover tint too (`CollapsedLine`'s own `hover:bg-muted`, decision 18).
+  // `state-working/muted` and `ring/muted` are already gated at the stricter 4.5/3 floors above
+  // and below (lines 117, 152) -- only `destructive`/`muted` and `state-needs-you`/`muted` were
+  // genuinely missing. Both are real rendered text today: a long error/warning `NoticeRow`'s own
+  // `summaryClassName` (`text-destructive`/`text-state-needs-you`) sits directly on this tint
+  // once hovered (`ToolGroupRow`'s own "N failed"/"N interrupted" text stays `text-muted-
+  // foreground`, already covered at line 109, until #570 gives it real colour).
   { fg: 'destructive', bg: 'muted', min: 4.5 },
+  { fg: 'state-needs-you', bg: 'muted', min: 4.5 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/

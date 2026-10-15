@@ -3,6 +3,13 @@ import { ChevronRightIcon } from 'lucide-react'
 import { cn } from 'cn'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
+// #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
+// `gap-2` (8px) = 32px -- is private to this file's own layout, so every consumer that wants a
+// nested `Collapsible`'s own expanded body to start there (a solo group's body, a `SpineList`
+// member's own body, a long notice's body) imports this constant rather than copying `pl-8` by
+// hand; a future slot/gap change then only has one call site to update.
+export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
+
 export interface CollapsedLineProps {
   /** Icon slot: the consumer picks a shape that differs by state (running spinner, check,
    * cross, warning triangle, ...) so a warning or error is never signalled by colour alone

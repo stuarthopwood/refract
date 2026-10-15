@@ -1637,3 +1637,64 @@ This phase was written retroactively after the implementation above, in the same
 - [X] T220 [US1] Real-`omp` live gate verification (Main's own follow-up request, same session): a NEW committed driver (`scripts/verify-563-subagent-gate1.mjs`) against REAL `omp` 18.10.1 (no fake, no PATH shim, no `OMP_PROFILE` override -- the ambient already-signed-in default profile, the established "a real model is needed" isolation posture `docs/spike/chat-lines-probe.mjs`/`get-subagents-probe.mjs` already use: scratch cwd/worktree/`REFRACT_DATA_DIR`, never Stuart's real Session list) and a real model (`github-copilot/claude-opus-5.5`), driving a scratch Session through three scenarios with deliberately tiny echo-only subagent prompts. **Confirmed live, clean run, screenshot `03-turn-a-chain-row.png`**: prompting the real model to call `task()` once with two subagents together (Uno, Dos) then `task()` again with one more (Tres) produced exactly "Subagents 2 stages, 3 agents" with "Stage 1" (Uno, Dos) and "Stage 2" (Tres) -- the chain row, Stage grouping, the quiet sr-only "Finished" icon (no visible word overlapping the name, H1), the header's action button, and the Spine geometry all render correctly against a genuine multi-Stage real-model turn, not just the one-Stage fake-omp fixture. **Confirmed live**: toggling "Show thinking" off and back on for that same settled turn left the Stage labels and chain summary byte-for-byte identical (the H1/H4 independence fix holds against a real multi-Stage turn). **Not independently confirmed this round** (see Not Exercised below for why): the chain-entry pre-select/focus/close-return round trip, and the Cancelled/Running status-word non-overlap layout proof -- both blocked first by two script-selector bugs (a false-positive "done"/"quattro" substring match against the user's OWN prompt text, and a case-sensitive `'tres'`/`'quattro'` compare where the real model capitalises subagent names as "Tres"/"Quattro"; both fixed, committed in the same script), then by this machine's own shared `CARGO_TARGET_DIR` being overwritten mid-session by a concurrent lane's own build (the same standing cross-lane collision this story's PR body already documented once before) -- confirmed by rebuilding fresh immediately before the one run that succeeded, and by the inconsistent pass/fail pattern across repeated identical runs afterward matching exactly that signature, not a flaky product behaviour. Screenshots and the raw per-run findings: `C:/Users/shopwood/AppData/Local/Temp/refract-563-gate1-shots/`. No new tests or fixtures added (AGENTS.md).
 
 **Final live run (gate round 3 follow-up, 2026-10-15)**: the chain-entry failures above were a driver bug, not timing. The chain mounts expanded while running (decision 6), and the driver's "expand" click collapsed it. With the driver reading `aria-expanded` first, all four entry-path checks passed on real `omp`: Tres pre-selected in the panel, focus on its tree row, a keyboard ArrowUp showing a solid 2px ring, and closing the panel returning focus to the entry. The PR therefore says **Closes #563**. Cancelled-after-Stop stays deferred (M2, accepted).
+
+## Phase 43: Convergence
+
+(Provisional numbering: open PR #905/#735 will claim Phase 42/FR-069 first; the parent renumbers
+both on merge, per the gate's established renumber-on-landing rule.)
+
+- [X] T240 [US1] `CollapsedLine.tsx`: icon slot widened 14px -> 16px (`size-4`, icon stays
+  `size-3.5`, decision 7); the root `Collapsible`'s always-on `border border-transparent
+  hover:border-border` and the `rounded-b-none` it drove deleted outright (decision 18, settles
+  issue #430's nested-box bug) -- hover is now only the trigger's own ghost `hover:bg-muted`; the
+  meta slot gained `tabular-nums` (decision 33). A new `LABEL_COLUMN_CONTENT_CLASS` ('pl-8')
+  constant exported so the label-column body padding is defined once, not copied by hand.
+- [X] T241 [US1] `ToolRow.tsx`: `ToolGroupRow`'s multi-call branch now renders onto `<SpineList
+  gap="member">` (was a plain `space-y-1` div), each call wrapped in its own `<li>`; the outer
+  `CollapsedLine`'s `contentClassName` is conditional (`LABEL_COLUMN_CONTENT_CLASS` for a solo
+  call's body, a new `SPINE_HOST_CONTENT_CLASS` ('space-y-0 p-0', exported from `SpineList.tsx`)
+  for the multi/SpineList branch, mirroring `StageGroupRow`'s existing pattern); each nested
+  `ToolCallRow` and `SubagentRow` body now starts at the same label column (decision 10). A new
+  member streaming into a RUNNING group fades in once, 150ms, mirroring `StageGroupRow`'s own
+  seen-set (decision 26) -- #565 ships this on `ToolGroupRow` rather than leaving tool groups and
+  Stages inconsistent. `NoticeRow.tsx`'s long-notice body moves `pl-7` -> the same constant.
+- [X] T242 [US1] `scripts/theme-contrast-pairs.mjs`: added `destructive/muted` (4.5:1) and
+  `state-needs-you/muted` (4.5:1) -- the two genuinely new hover-tint pairs decision 32 needed;
+  `state-working/muted` and `ring/muted` were already gated at a stricter floor, so no redundant
+  entry was added for either. `node scripts/check-theme-contrast.mjs`: 361/361 pairs PASS across
+  all 3 themes. Docs updated: `CONTEXT.md` (new **Spine**/**Tool group** glossary entries, the
+  **Stage**/**Subagent chain** entries noted as using Spine), `docs/design/product-chat.md`
+  ("Grouped tool calls" and "Subagents" bullets), `docs/design/components.md` ("left rail" ->
+  Spine), `docs/design/foundations-motion.md` (Spine never animates), `docs/design/
+  accessibility.md` (new design-system checklist line). `specs/001-core-session-workspace/
+  spec.md` amended: FR-008 and FR-047 each gained a Spine clause, plus a new "Session 2026-10-15
+  (connected-log spine)" Clarifications section citing the decision record.
+- [X] T243 [US1] Quality gate: code-reviewer, accessibility-auditor, security-auditor,
+  test-reviewer and `ui-architect-v3` run as one parallel batch against the diff. No Critical or
+  High finding in the product code from any reviewer. Findings fixed: stale comments describing
+  the old `<div>`/`size-3.5`/border-0 shapes (`ToolRow.tsx`, `subagentStatus.tsx`,
+  `SubagentChainRow.tsx`), the now-dead `border-0` overrides left by deleting the root border
+  (`ToolRow.tsx`'s `SubagentRow`, `SubagentChainRow.tsx`'s Stage/chain rows -- the latter file is
+  outside #565's own stated scope, touched only for this zero-behaviour-change cleanup, recorded
+  here as the one explicit departure from the decision record's file list), two redundant
+  contrast pairs and a wrong rationale comment in `theme-contrast-pairs.mjs`, and "Spine
+  connector" wording simplified to "Spine" per the glossary's own `_Avoid_: connector` entry.
+  `ui-architect-v3` could not spawn its own three specialists (no nested task tool in its
+  sandbox) and reviewed the diff itself against the decision record directly instead; every
+  in-scope decision (7-11, 13, 15, 17-21, 23, 30, 32, 33) confirmed matching the code.
+
+**Known gap at handoff**: `scripts/verify-565-spine.mjs` (new, committed, a real-`omp` live CDP
+driver per this story's own driver-script precedent) was reviewed by the quality gate before its
+first full run completed, which caught three logic defects that would report a false failure (or
+log false evidence) on a correct build: the Spine x-offset assertion expected 16px from the
+header icon's edge instead of ~0px from its centre; the "group of one has no Spine" check never
+re-collapsed turn (a)'s own group before turn (b), so it always saw a stray `<ol>`; and the
+Dark/Obsidian/Dark-high-contrast screenshots called `window.refract.theme.preview(id)`, which
+only moves the title-bar overlay colour (`theme-store.ts`'s own CRITICAL-remediation comment),
+never the renderer's `<html>` class the CSS tokens actually key off. None of these are product
+code; `pnpm typecheck` (0 errors) and the existing Vitest suite are otherwise unaffected (no new
+tests, per AGENTS.md's prototyping rule). The script needs its theme-switch to drive the real
+Profile-menu UI (click `[data-profile-name-button]`, the Theme submenu, the named preset) instead
+of the bridge call, and the two check fixes above, before a run's exit code can be trusted as
+live-check evidence; until then the PR says **Refs #565**, not **Closes**, and the full
+`node scripts/ci-local.mjs` run and the real-`omp` live check itself are both owed as follow-up.

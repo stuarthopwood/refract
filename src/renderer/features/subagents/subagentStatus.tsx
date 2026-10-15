@@ -39,7 +39,7 @@ function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
  * other state's word stays visible (never colour alone). For the two inline call sites that lay
  * this out in their own flex row (`SubagentPanel.tsx`'s tree row, `SubagentChainRow.tsx`'s
  * `ChainAgentEntry`/`ChainStageLine`) -- NEVER for a `CollapsedLine` `icon=` slot, whose fixed
- * `size-3.5` box the visible word would overflow and paint over the label; use
+ * `size-4` box (#565 decision 7) the visible word would overflow and paint over the label; use
  * `SubagentStatusGlyph` there instead. */
 export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
   return (
@@ -51,8 +51,9 @@ export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
 }
 
 /** Same icon markup as `SubagentStatusIcon`, but the status word is ALWAYS `sr-only`: for any
- * `CollapsedLine` `icon=` slot (a fixed `size-3.5` box too narrow for an inline word), whose
- * caller renders the visible word itself in the `meta` slot instead, ahead of the duration. */
+ * `CollapsedLine` `icon=` slot (a fixed `size-4` box, #565 decision 7, too narrow for an inline
+ * word), whose caller renders the visible word itself in the `meta` slot instead, ahead of the
+ * duration. */
 export function SubagentStatusGlyph({ status }: { status: SubagentRowStatus }) {
   return (
     <>

@@ -1,13 +1,13 @@
 import * as React from 'react'
 import type { TranscriptItem } from '../../../shared/model'
 import { CodeBlock, FileLinkButton, inferOutputBlock } from './Markdown'
-import { CollapsedLine } from './CollapsedLine'
+import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
 import type { ToolGroup } from './groupToolItems'
-import { SpineList } from './SpineList'
+import { SpineList, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -111,9 +111,9 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       summaryWrap={summaryWrap}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
       defaultOpen={defaultOpen}
-      // #565 decision 10: a member's expanded body starts at the label column, `pl-8` (the
-      // default `px-2`'s own `pr-2` is kept, only the left side widens).
-      contentClassName="pl-8"
+      // #565 decision 10: a member's expanded body starts at the label column (the default
+      // `px-2`'s own `pr-2` is kept, only the left side widens).
+      contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
@@ -145,7 +145,7 @@ interface ToolGroupRowProps {
 // Quality-gate remediation (A11y, High round 3; Medium round 2): `openDialogItemId` (which
 // call's "View full call" dialog, if any, is open) is held HERE, above the solo/multi switch
 // above, keyed by `item.id` -- not as `ToolCallDialog`'s own internal state. The switch between
-// the solo branch (`ToolCallBody` directly) and the multi branch (a `<div>` of `ToolCallRow`s)
+// the solo branch (`ToolCallBody` directly) and the multi branch (a `SpineList` `<ol>` of `ToolCallRow`s)
 // changes the child's element type at this tree position (exactly the
 // `ToolCallRow`-vs-`CollapsedLine` problem the comment above already solved one level up), so a
 // `ToolCallBody`/`ToolCallDialog` for a call that is mid-run unmounts and remounts the moment a
@@ -180,6 +180,22 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       : interruptedCount > 0
         ? 'interrupted'
         : 'done'
+  const isRunning = status === 'running'
+  // #565 decision 26 (mirrors `StageGroupRow`'s own seen-set, `SubagentChainRow.tsx`): a member
+  // that mounts WHILE this group is live (running) fades in; one already present at a settled
+  // or history mount never does. Seeded synchronously during render (never in an effect, so a
+  // settled reopen never flashes a first invisible frame), then every currently-rendered id is
+  // marked seen in an effect after paint so a row only ever fades in once.
+  const seenIdsRef = React.useRef<Set<string> | null>(null)
+  if (seenIdsRef.current === null) {
+    const seen = new Set<string>()
+    if (!isRunning) for (const item of group.items) seen.add(item.id)
+    seenIdsRef.current = seen
+  }
+  const seenIds = seenIdsRef.current
+  React.useEffect(() => {
+    for (const item of group.items) seenIds.add(item.id)
+  }, [group.items, seenIds])
   const last = group.items[group.items.length - 1]!
   const othersCount = group.items.length - 1
   // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
@@ -204,10 +220,10 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       summary={summary}
       summaryWrap={summaryWrap}
       meta={meta}
-      // #565 decision 10 (solo): the lone call's own body starts at the label column, `pl-8`.
+      // #565 decision 10 (solo): the lone call's own body starts at the label column.
       // #565 decision 8 (multi): the only geometry once a `SpineList` is the content is its own
       // `ml-4`/`pt-1` -- this container's own padding is zeroed (mirrors `StageGroupRow`).
-      contentClassName={solo ? 'pl-8' : 'space-y-0 p-0'}
+      contentClassName={solo ? LABEL_COLUMN_CONTENT_CLASS : SPINE_HOST_CONTENT_CLASS}
     >
       {solo ? (
         <ToolCallBody
@@ -217,17 +233,20 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         />
       ) : (
         <SpineList gap="member">
-          {group.items.map((item) => (
-            <li key={item.id}>
-              <ToolCallRow
-                item={item}
-                summaryWrap={summaryWrap}
-                dialogOpen={openDialogItemId === item.id}
-                onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
-                defaultOpen={openDialogItemId === item.id}
-              />
-            </li>
-          ))}
+          {group.items.map((item) => {
+            const isNew = isRunning && !seenIds.has(item.id)
+            return (
+              <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
+                <ToolCallRow
+                  item={item}
+                  summaryWrap={summaryWrap}
+                  dialogOpen={openDialogItemId === item.id}
+                  onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
+                  defaultOpen={openDialogItemId === item.id}
+                />
+              </li>
+            )
+          })}
         </SpineList>
       )}
     </CollapsedLine>
@@ -271,10 +290,10 @@ export function SubagentBody({ item }: SubagentRowProps) {
 // the prompt and (once known) the result as plain text.
 //
 // Quality-gate remediation (H1, unanimous): `icon=` is a `CollapsedLine` icon slot (a fixed
-// `size-3.5` box) -- `SubagentStatusGlyph` keeps its status word `sr-only` there (never visible,
-// it would overflow the box and paint over the label); the visible word is rendered HERE instead,
-// in `meta`, ahead of the duration, gated off for `finished` (decision 14: a quiet icon-plus-
-// duration row, never a loud "Finished" claim).
+// `size-4` box, #565 decision 7) -- `SubagentStatusGlyph` keeps its status word `sr-only` there
+// (never visible, it would overflow the box and paint over the label); the visible word is
+// rendered HERE instead, in `meta`, ahead of the duration, gated off for `finished` (decision 14:
+// a quiet icon-plus-duration row, never a loud "Finished" claim).
 export function SubagentRow({ item }: SubagentRowProps) {
   const status = chatRowStatus(item.status)
   const duration =
@@ -291,12 +310,10 @@ export function SubagentRow({ item }: SubagentRowProps) {
     </span>
   )
   return (
-    // Gate round 3 fix (architect M4): this row is ALWAYS a `SpineList` member today (its only
-    // caller, `SubagentChainRow.tsx`'s non-solo branch) -- `border-0` removes `Collapsible`'s own
-    // unconditional border entirely (not just its colour, which `border-transparent` alone still
-    // left at 1px), dropping the unwanted hover box AND matching `SpineList.tsx`'s documented 8px
-    // gap exactly instead of a stray 9px.
-    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta} className="border-0">
+    // #565 decision 10: this row is always a `SpineList` member (its only caller,
+    // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same
+    // label column `ToolCallRow`'s member body does -- one geometry for every Spine member.
+    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta} contentClassName={LABEL_COLUMN_CONTENT_CLASS}>
       <SubagentBody item={item} />
     </CollapsedLine>
   )
