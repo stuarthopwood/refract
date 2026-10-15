@@ -212,16 +212,25 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   onFocus={() => void selectSubagent(row.node.id)}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-hidden',
+                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
-                    // tree-row precedent's own focus ring and forced-colours selected fallback,
-                    // reused verbatim so both trees are visually consistent and the selected row
-                    // survives Windows High Contrast (where the `bg-active-indicator` bar below is
-                    // itself repainted away). Gate round 2 (High): `outline-none` paired with
-                    // `focus-visible:outline-*` is the Tailwind 4 trap (`outline-none` pins
-                    // `outline-style: none` permanently, so the focus-visible utilities below
-                    // never actually paint) -- `outline-hidden` only suppresses the DEFAULT
-                    // browser outline, leaving `outline-style` free for `focus-visible` to set.
+                    // tree-row precedent's own forced-colours selected fallback, reused verbatim
+                    // so both trees are visually consistent and the selected row survives Windows
+                    // High Contrast (where the `bg-active-indicator` bar below is itself repainted
+                    // away). Gate round 2 (High) claimed `outline-hidden` fixed the Tailwind 4 trap
+                    // (`outline-none` pins `outline-style: none` permanently, so `focus-visible`
+                    // utilities below never actually paint) -- it did not: compiling this exact
+                    // class list with the installed tailwindcss@4.3.3 shows `.outline-hidden` ALSO
+                    // sets `--tw-outline-style: none` unconditionally (identical to `.outline-
+                    // none`), and `.focus-visible\:outline-2:focus-visible` only ever reads that
+                    // same custom property via `var(--tw-outline-style)` -- so `outline-hidden`
+                    // permanently wins the cascade on that property regardless of focus state.
+                    // Gate round 3 fix: no base `outline-*` utility at all, matching every OTHER
+                    // verified-working `focus-visible:outline-*` row in this codebase
+                    // (`CollapsedLine.tsx`, `ManageSessionRow.tsx`, `ProfileItem.tsx`,
+                    // `PullRequestRow.tsx`) -- `--tw-outline-style` then keeps its universal
+                    // `solid` default, so `focus-visible:outline-2` paints on keyboard focus and
+                    // nothing paints otherwise (no UA default outline survives Tailwind's reset).
                     'hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >
