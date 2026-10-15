@@ -1638,18 +1638,19 @@ This phase was written retroactively after the implementation above, in the same
 
 **Final live run (gate round 3 follow-up, 2026-10-15)**: the chain-entry failures above were a driver bug, not timing. The chain mounts expanded while running (decision 6), and the driver's "expand" click collapsed it. With the driver reading `aria-expanded` first, all four entry-path checks passed on real `omp`: Tres pre-selected in the panel, focus on its tree row, a keyboard ArrowUp showing a solid 2px ring, and closing the panel returning focus to the entry. The PR therefore says **Closes #563**. Cancelled-after-Stop stays deferred (M2, accepted).
 
-## Phase 43: Convergence
+## Phase 42: Convergence
 
-(Provisional numbering: open PR #905/#735 will claim Phase 42/FR-069 first; the parent renumbers
-both on merge, per the gate's established renumber-on-landing rule.)
+(Renumbered from provisional Phase 43/T240-T245 to Phase 42/T221-T226 on confirming PR #905/#735
+had not yet landed Phase 42/FR-069 on `origin/main` at renumber time, per the gate's own
+renumber-on-landing rule.)
 
-- [X] T240 [US1] `CollapsedLine.tsx`: icon slot widened 14px -> 16px (`size-4`, icon stays
+- [X] T221 [US1] `CollapsedLine.tsx`: icon slot widened 14px -> 16px (`size-4`, icon stays
   `size-3.5`, decision 7); the root `Collapsible`'s always-on `border border-transparent
   hover:border-border` and the `rounded-b-none` it drove deleted outright (decision 18, settles
   issue #430's nested-box bug) -- hover is now only the trigger's own ghost `hover:bg-muted`; the
   meta slot gained `tabular-nums` (decision 33). A new `LABEL_COLUMN_CONTENT_CLASS` ('pl-8')
   constant exported so the label-column body padding is defined once, not copied by hand.
-- [X] T241 [US1] `ToolRow.tsx`: `ToolGroupRow`'s multi-call branch now renders onto `<SpineList
+- [X] T222 [US1] `ToolRow.tsx`: `ToolGroupRow`'s multi-call branch now renders onto `<SpineList
   gap="member">` (was a plain `space-y-1` div), each call wrapped in its own `<li>`; the outer
   `CollapsedLine`'s `contentClassName` is conditional (`LABEL_COLUMN_CONTENT_CLASS` for a solo
   call's body, a new `SPINE_HOST_CONTENT_CLASS` ('space-y-0 p-0', exported from `SpineList.tsx`)
@@ -1658,7 +1659,7 @@ both on merge, per the gate's established renumber-on-landing rule.)
   member streaming into a RUNNING group fades in once, 150ms, mirroring `StageGroupRow`'s own
   seen-set (decision 26) -- #565 ships this on `ToolGroupRow` rather than leaving tool groups and
   Stages inconsistent. `NoticeRow.tsx`'s long-notice body moves `pl-7` -> the same constant.
-- [X] T242 [US1] `scripts/theme-contrast-pairs.mjs`: added `destructive/muted` (4.5:1) and
+- [X] T223 [US1] `scripts/theme-contrast-pairs.mjs`: added `destructive/muted` (4.5:1) and
   `state-needs-you/muted` (4.5:1) -- the two genuinely new hover-tint pairs decision 32 needed;
   `state-working/muted` and `ring/muted` were already gated at a stricter floor, so no redundant
   entry was added for either. `node scripts/check-theme-contrast.mjs`: 361/361 pairs PASS across
@@ -1669,7 +1670,7 @@ both on merge, per the gate's established renumber-on-landing rule.)
   accessibility.md` (new design-system checklist line). `specs/001-core-session-workspace/
   spec.md` amended: FR-008 and FR-047 each gained a Spine clause, plus a new "Session 2026-10-15
   (connected-log spine)" Clarifications section citing the decision record.
-- [X] T243 [US1] Quality gate: code-reviewer, accessibility-auditor, security-auditor,
+- [X] T224 [US1] Quality gate: code-reviewer, accessibility-auditor, security-auditor,
   test-reviewer and `ui-architect-v3` run as one parallel batch against the diff. No Critical or
   High finding in the product code from any reviewer. Findings fixed: stale comments describing
   the old `<div>`/`size-3.5`/border-0 shapes (`ToolRow.tsx`, `subagentStatus.tsx`,
@@ -1699,7 +1700,7 @@ of the bridge call, and the two check fixes above, before a run's exit code can 
 live-check evidence; until then the PR says **Refs #565**, not **Closes**, and the full
 `node scripts/ci-local.mjs` run and the real-`omp` live check itself are both owed as follow-up.
 
-- [X] T244 [US1] Round-2 five-reviewer gate (G906) fixes: a G906Tests investigation found
+- [X] T225 [US1] Round-2 five-reviewer gate (G906) fixes: a G906Tests investigation found
   `verify-565-spine.mjs`'s two bash calls never merged into one `ToolGroup` because the default
   Approval mode ("Ask") makes each call wait for its own approval card, and `groupToolItems.ts`
   decision 14 treats a pending-approval call as its own grouping boundary -- not a Thinking-row
@@ -1733,7 +1734,7 @@ multi-member group remain unexercised live; the product code itself is verified 
 independent reviewers' own geometry arithmetic plus the automated gates (typecheck, 361/361
 contrast pairs, `ci-local` 16/16) and is unchanged by this gap. **Refs #565**, not **Closes**.
 
-- [X] T245 [US1] Round-3 fix (Main's own diagnosis): `settings.setApprovalMode` only ever sets
+- [X] T226 [US1] Round-3 fix (Main's own diagnosis): `settings.setApprovalMode` only ever sets
   `pendingMode`, applied at a Session's NEXT settle (`contracts/ipc.md`) -- driving the real
   Approval pill before a Session had ever gone through a turn had nothing to settle, so the pill
   never actually updated. Fixed by seeding the scratch data dir's own `settings.json`
@@ -1771,3 +1772,10 @@ bugs, and the final re-confirmation run, remain unproven. **Refs #565** pending 
 reconfirmation (recommended once shared disk pressure clears); the main agent should judge
 whether the prior run's own evidence, plus these two understood and fixed script bugs, meets the
 bar for **Closes #565**.
+
+**Resolution (Main, spot-check of the 00:44 evidence)**: accepted. The 00:44 run's own
+`report.json` was subsequently overwritten by the disk-failed reconfirmation attempt's own
+(incomplete) write; screenshots `00`-`07` (also timestamped 00:44, in the shots folder) are the
+real, kept evidence for that run -- the full multi-call Spine, pl-8, role=list, "1 failed" text,
+and the real Obsidian/Dark-high-contrast Theme-submenu screenshots, all confirmed live. **Closes
+#565.**
