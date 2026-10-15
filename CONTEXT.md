@@ -88,6 +88,14 @@ _Avoid_: Comment thread, discussion
 Any of comment, reply, resolve, unresolve, submit a review (comment/approve/request changes), or merge (spec 003) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, and merging each require a confirmation naming the pull request and the exact action first.
 _Avoid_: PR action, operation
 
+**Rendered view**:
+The formatted display of a Markdown file or value, with its syntax hidden; for a Markdown file in a file tab it is editable in place. One of the two views behind the Rendered/Source toggle.
+_Avoid_: Preview (implies read-only), WYSIWYG, edit mode
+
+**Source view**:
+The raw Markdown text of the same file or value, shown and edited as code. The other view behind the Rendered/Source toggle.
+_Avoid_: Code view, raw view, code only
+
 **Theme** (spec 007):
 One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
