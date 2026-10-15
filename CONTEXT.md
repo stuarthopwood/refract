@@ -4,12 +4,16 @@ Refract is a desktop app for working with a coding agent, one isolated copy of a
 
 ## Language
 
-**Repository**:
-A local git project the developer has added to Refract. Owns zero or more **Sessions**.
-_Avoid_: Project, workspace
+**Project**:
+A local git checkout the developer has added to Refract, either an existing folder or a clone of a **GitHub repository**. Owns zero or more **Sessions**.
+_Avoid_: Repository, repo, workspace (in UI text; code identifiers keep `repository`)
+
+**GitHub repository**:
+The remote copy of a **Project** on GitHub: what a **Project** is cloned from, and where its pull requests and issues live. A **Project** has zero or one **GitHub repository**.
+_Avoid_: Project (for the remote side), remote (alone)
 
 **Session**:
-One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Repository** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
+One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
 
 **Archive**:
@@ -21,11 +25,11 @@ Permanently remove a **Session**, its **Worktree**, and its **Conversations**, o
 _Avoid_: Remove, discard
 
 **Worktree**:
-The isolated checkout of a **Repository** that a **Session** works in. Created by Refract when the **Session** is created.
+The isolated checkout of a **Project** that a **Session** works in. Created by Refract when the **Session** is created.
 _Avoid_: Branch, folder, clone
 
 **Base branch**:
-The branch a new **Session**'s **Worktree** branches from. One-click creation uses the repository's default branch; the branch button opens a picker with the default branch preselected. Any branch can be a Base branch, including another **Session**'s branch, which the picker lists under that **Session**'s name.
+The branch a new **Session**'s **Worktree** branches from. One-click creation uses the **Project**'s default branch; the branch button opens a picker with the default branch preselected. Any branch can be a Base branch, including another **Session**'s branch, which the picker lists under that **Session**'s name.
 _Avoid_: Parent branch, source branch
 
 **Approval mode**:
@@ -60,13 +64,21 @@ _Avoid_: Splitter, resize handle (for this boundary specifically)
 Whichever of a **Split**'s two **Chat panes** currently receives a session-row click, the message box, Stop, the queue, and approvals (spec 005). Exactly one pane is focused at a time, marked by a left-edge accent bar plus a visible "Focused" text badge (never colour alone); clicking, typing, or Ctrl+Shift+\ moves it.
 _Avoid_: Active pane, selected pane
 
+**Home**:
+The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues).
+_Avoid_: Home pane, dashboard, start page
+
 **Pull requests view**:
-The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Repository**'s pull requests on GitHub, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
+The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
 
+**Issues view**:
+The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
+_Avoid_: Issues page, issue log, issue tracker
+
 **Filter tab**:
-One of the five tabs a **Pull requests view**'s list offers -- Open, Authored by me, Assigned to me, Involves me, Review requested (spec 003) -- narrowing which pull requests the list shows; exactly one is active at a time, defaulting to Open.
-_Avoid_: Filter, category
+One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: Open, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to Open.
+_Avoid_: Filter, category, "Created by me" (say Authored by me)
 
 **Review thread**:
 A comment thread anchored to a location in a pull request's diff (spec 003), with a resolved or unresolved state; resolving and unresolving are both explicit, reversible actions, never inferred from a reply.
@@ -75,6 +87,14 @@ _Avoid_: Comment thread, discussion
 **Review action**:
 Any of comment, reply, resolve, unresolve, submit a review (comment/approve/request changes), or merge (spec 003) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, and merging each require a confirmation naming the pull request and the exact action first.
 _Avoid_: PR action, operation
+
+**Rendered view**:
+The formatted display of a Markdown file or value, with its syntax hidden; for a Markdown file in a file tab it is editable in place. One of the two views behind the Rendered/Source toggle.
+_Avoid_: Preview (implies read-only), WYSIWYG, edit mode
+
+**Source view**:
+The raw Markdown text of the same file or value, shown and edited as code. The other view behind the Rendered/Source toggle.
+_Avoid_: Code view, raw view, code only
 
 **Theme** (spec 007):
 One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.

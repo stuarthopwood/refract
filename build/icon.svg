@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Teal/Cyan shades -->
+    <path id="teal-top" d="M101.5 156.5 L137.5 136 L210.5 178 L174.5 198.5 Z" />
+    <path id="teal-side" d="M101.5 156.5 L101.5 198.5 L174.5 241 L174.5 198.5 Z" />
+    <path id="teal-front" d="M174.5 198.5 L210.5 178 L210.5 219.5 L174.5 241 Z" />
+    
+    <!-- Amber/Orange shades -->
+    <path id="orange-top" d="M301.5 178 L374.5 136 L410.5 156.5 L337.5 198.5 Z" />
+    <path id="orange-side" d="M337.5 198.5 L410.5 156.5 L410.5 198.5 L337.5 241 Z" />
+    <path id="orange-front" d="M301.5 178 L337.5 198.5 L337.5 241 L301.5 219.5 Z" />
+    
+    <!-- Violet/Purple bottom pillar shades -->
+    <path id="purple-top" d="M213.5 319.5 L256 295 L298.5 319.5 L256 344 Z" />
+    <path id="purple-left-side" d="M213.5 319.5 L256 344 L256 429 L213.5 404 Z" />
+    <path id="purple-right-side" d="M256 344 L298.5 319.5 L298.5 404 L256 429 Z" />
+
+    <path id="center-top" d="M195 219 L256 183.5 L317 219 L256 254.5 Z" />
+    <path id="center-left-front" d="M195 219 L256 254.5 L256 325.5 L195 290 Z" />
+    <path id="center-right-front" d="M256 254.5 L317 219 L317 290 L256 325.5 Z" />
+  </defs>
+
+  <!-- Left Arm (Teal) -->
+  <use href="#teal-top" fill="#3EAC9E" />       
+  <use href="#teal-side" fill="#1C8F8F" />      
+  <use href="#teal-front" fill="#199D95" />     
+
+  <!-- Right Arm (Orange) -->
+  <use href="#orange-top" fill="#F8A740" />     
+  <use href="#orange-side" fill="#D9811C" />    
+  <use href="#orange-front" fill="#ECA231" />   
+
+  <!-- Bottom Arm (Purple) -->
+  <use href="#purple-top" fill="#A877E0" />           
+  <use href="#purple-left-side" fill="#7544C9" />     
+  <use href="#purple-right-side" fill="#4B278A" />    
+
+  <!-- Central Core Base Faces -->
+  <use href="#center-top" fill="#7844CD" />
+  <use href="#center-left-front" fill="#52208E" />
+  <use href="#center-right-front" fill="#52208E" />
+
+  <!-- Internal Facets (Left Side) -->
+  <path d="M195 219 L256 254.5 L225.5 237 Z" fill="#8041B5" /> 
+  <path d="M195 254.5 L225.5 237 L225.5 272 L195 290 Z" fill="#4D1F8E" /> 
+  <path d="M195 254.5 L195 219 L225.5 237 Z" fill="#45187A" /> 
+  <path d="M195 290 L225.5 272 L256 325.5 Z" fill="#32AC9E" /> 
+
+  <!-- Internal Facets (Right Side) -->
+  <path d="M256 254.5 L286.5 237 L286.5 272 L256 325.5 Z" fill="#32AC9E" /> 
+  <path d="M317 219 L286.5 237 L286.5 272 L317 290 Z" fill="#F09B29" /> 
+  <path d="M256 325.5 L286.5 272 L317 290 Z" fill="#492484" /> 
+  <path d="M256 254.5 L317 219 L286.5 237 Z" fill="#864DD6" /> 
+</svg>

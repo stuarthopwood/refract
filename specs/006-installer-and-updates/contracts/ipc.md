@@ -54,10 +54,23 @@ awaited before `BrowserWindow.show()` in `src/main/index.ts`.
 
 ## Dependency-install downloads and update downloads (constitution V)
 
-Every HTTPS fetch this spec performs (the vendor installers in research.md decision 6; the
-installer and checksum assets via `gh release download` in decision 3) happens in the main process
-only, to a fixed, hard-coded set of hosts (`api.github.com`, `github.com` release-asset URLs, and
-whatever `gh`'s own download implementation uses for a private repository); none of it is ever
-fetched by, or exposed as a URL to, the renderer. Release notes (`notesUrl`) only ever open through
-the existing safe `shell.openExternal` path (`src/main/index.ts`'s `openExternalSafe`), never
-inside an app window.
+Every HTTPS fetch this spec performs happens in the main process only, to a fixed, hard-coded set
+of hosts; none of it is ever fetched by, or exposed as a URL to, the renderer:
+
+- `api.github.com`: Git for Windows' and the GitHub CLI's own `releases/latest` metadata
+  (`dependencyInstall.ts`).
+- `github.com` release-asset URLs, which redirect once to `objects.githubusercontent.com` or
+  `release-assets.githubusercontent.com` -- `dependencyInstall.ts`'s `fetchFromAllowedHost`
+  checks every hop's own host against this fixed pair, rather than letting `fetch` follow a
+  redirect to an unchecked host (quality-gate remediation, Medium).
+- `raw.githubusercontent.com`, pinned to a specific tag/commit (`OMP_PINNED_TAG`,
+  `dependencyInstall.ts`), for OMP's own install script -- quality-gate remediation (Medium,
+  security): the previous `omp.sh/install.ps1` redirect pointed at that upstream repository's
+  moving `main` branch, which a compromised or force-pushed branch could change with no change on
+  Refract's side at all.
+- Whatever `gh`'s own download implementation uses for a private repository (the installer and
+  checksum assets via `gh release download` in decision 3).
+
+Release notes (`notesUrl`) only ever open through the existing safe `shell.openExternal` path
+(`src/main/index.ts`'s `openExternalSafe`), never inside an app window.
+

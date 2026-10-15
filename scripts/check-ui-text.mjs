@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Scans built renderer/main/preload bundles for leaked project terminology (requirement/task
+// Scans built renderer bundles for leaked project terminology (requirement/task
 // numbers, user-story numbers, or phrases like "later task"/"wired up"/"not implemented") that
 // should never reach a user-visible string. Usage: node scripts/check-ui-text.mjs [rootDir]
 // (default: <repoRoot>/out). Exits 1 if any match is found, 2 if no bundle files were scanned,
@@ -25,9 +25,9 @@ const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired u
 const ALLOWED = ['not implemented'];
 
 const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 'out'));
-// `tauri-web/assets` is the shared renderer as built by `pnpm build` (Tauri, the main build);
-// the other three are the Electron build's output (`pnpm build:electron`, frozen until #796).
-const SUBDIRS = ['main', 'preload', path.join('renderer', 'assets'), path.join('tauri-web', 'assets')];
+// `tauri-web/assets` is the shared renderer as built by `pnpm build` (Tauri, the only build
+// since Electron was deleted at #796/R13).
+const SUBDIRS = [path.join('tauri-web', 'assets')];
 
 function* walk(dir) {
   let entries;

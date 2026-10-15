@@ -5,7 +5,9 @@
 // `live-frames-scenario.json`/`live-frames-golden.json`; see that directory's README for
 // provenance and the `startedAt`/`durationMs` normalization every test applies). There is no
 // live TS counterpart file any more (`src/main/omp/transcript.golden.test.ts` was deleted
-// during gate remediation per AGENTS.md's "no new tests" rule) -- this file is the sole reader
+// during gate remediation per AGENTS.md's "no new tests" rule, and `src/main` itself was
+// deleted wholesale at #796/R13 -- that file's text is only readable at tag `electron-final`
+// now) -- this file is the sole reader
 // of both fixture pairs. `src-tauri/tests/transcript_terminated_unexpectedly_tests.rs` ports
 // `transcript.test.ts`'s own named `terminatedUnexpectedly` gating cases separately, using
 // inline message literals instead of a fixture pair.
