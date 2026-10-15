@@ -882,3 +882,115 @@ time it was marked, not a prior plan.
   confirms no EXISTING pair regressed, not a new check for either). Rebuilt `pnpm tauri build
   --debug --no-bundle` and re-ran the scratch live check (screenshots and exact results recorded
   in the PR body, not retrofitted into this task).
+
+**Gate round 1 fixes (same day, same session, after T137-T150 above landed and PR #877 went up for
+review)**: code-reviewer, accessibility-auditor (1 Critical, 2 High), test-reviewer and
+security-auditor all reviewed the PR; code/accessibility/tests came back FAIL. T151-T159 below fix
+every finding, amended by Stuart on one point (T155's read-back semantics). `/speckit.implement`
+was run against this phase per that round, task by task, each `[X]` citing the actual code on this
+branch at the time it was marked.
+
+- [X] T151 [US1] Merge `origin/main` (R13, commit `da2856a`: delete the Electron build) into this
+  branch, resolving two conflicts (`docs/PLAN.md`, `docs/design/product-layout.md` -- combined,
+  never a one-sided discard). `shared/ipc.ts`'s `RefractApi.model` becomes non-optional (Electron,
+  the only other possible implementation, never ported this family and no longer exists at all),
+  removing the dangling-`!`-assertion risk the Low finding flagged. `pnpm install --frozen-lockfile`
+  (Electron/koffi packages removed); `pnpm test` drops from 376 to 148 passing tests, matching R13's
+  own removal of every Electron main/preload test suite, not a regression.
+- [X] T152 [US1] Rebuild the Model picker (`ComposerPickers.tsx`) as a `Popover` holding a
+  type-to-filter combobox `Input` (`role="combobox"`, focus via the popover's own public
+  `onOpenAutoFocus`, no timers) plus a hand-built `role="listbox"` driven by
+  `aria-activedescendant` -- the same pattern `SlashMenu.tsx`/`MessageInput.tsx` already use:
+  ArrowUp/Down move the active option, Enter applies it, Escape closes the popover. Fixes
+  test-reviewer/code-reviewer HIGH: Radix `DropdownMenu.Content`'s own typeahead moved focus off
+  the filter field to the first matching item on every keystroke, and blocked Tab/ArrowDown for
+  anything but the content element itself, so the filter was unusable from the keyboard. Two
+  `role="group"`/`aria-labelledby` sections (Roles, Models); the current role/model is
+  `aria-selected` plus a visible tick; the listbox scrolls once past about 12 rows, capped further
+  by the popover's own `max-h-[min(24rem,var(--radix-popover-content-available-height))]` so the
+  filter field never scrolls off a short viewport.
+- [X] T153 [US1] Fix the picker menu close-trap (code-reviewer HIGH): a shared
+  `usePickerOpenState(disabled)` hook (`ComposerPickers.tsx`) used by both pickers blocks only an
+  attempt to OPEN while disabled (`if (next && disabled) return`) and force-closes an already-open
+  menu via its own effect the instant `disabled` becomes true -- previously `onOpenChange` returned
+  early for `next === false` too, so Escape, an outside click, and selecting an item were all
+  swallowed once the Session's status flipped while a menu sat open.
+- [X] T154 [US1] Reasoning picker: `DropdownMenuRadioGroup`/`DropdownMenuRadioItem` (new,
+  `dropdown-menu.tsx`, Radix's own `RadioGroup`/`RadioItem`/`ItemIndicator`) bound to the Session's
+  `lastThinkingLevel`, replacing a plain `DropdownMenuItem` with a decorative `aria-hidden`
+  `CheckIcon`. Fixes code-reviewer HIGH: Radix exposes the checked item as `aria-checked`/
+  `role="menuitemradio"` automatically, so a screen reader now hears which level is current.
+- [X] T155 [US1] `thinking_level.rs`: validate `level` against the closed 8-value `ThinkingLevel`
+  set before sending anything to OMP, refusing an unknown value with `invalid-argument` (closes
+  security-auditor Low; mirrors `model::apply_role`'s own `known_role_list()` check). Fix the
+  false-error read-back (code-reviewer HIGH, AMENDED by Stuart mid-round, superseding the review's
+  own suggested "map every missing level to Default"): OMP's `get_state` leaves `thinkingLevel` out
+  of its response both for `inherit` and for any OTHER level a non-reasoning model was asked for --
+  previously ANY missing read-back after a successful switch raised a `prompt-failed` error the
+  user saw as a failed change that had in fact succeeded. Now: a requested `inherit` always
+  resolves to `"inherit"` (patched directly into the registry via `SessionAgent::registry()`/
+  `events()`, since `refresh_from_state`'s own generic `sync_from_state` has no "just requested"
+  context and would otherwise leave it `None`); any OTHER requested level the model does not
+  report resolves to `None` or `null` over the wire, read by the renderer as "Not reported by this
+  model" (`modelDisplay.ts`'s `formatThinkingLevelLabel`, now `Pick<Session, 'lastModel' |
+  'lastThinkingLevel'>` so it can tell "never known" from "known model, unreported level"). Neither
+  branch ever raises an error. Contract: `ipc-model.ts`'s `setThinkingLevel` returns `{
+  thinkingLevel: string | null }` (was `string`); `contracts/ipc.md` and spec 001's FR-064 updated
+  to match. The transcript notice now reads "Reasoning switched to <UI label>." (was "Thinking
+  level switched to <raw OMP string>."), matching the picker's own wording. `REQUEST_TIMEOUT_MS`
+  shared from `model.rs` (now `pub(super)`) instead of re-declared a third time (security-auditor
+  Low).
+- [X] T156 [US1] Send's own `--send`/`--send-foreground` token pair (gate round 1, Stuart): a new
+  per-theme pair in `globals.css` for all three built-in themes (Obsidian reuses its own `#5A5EEE`
+  `--primary` verbatim; Dark and Dark high contrast get a lifted `#6D71F0`, since `--primary`
+  resolves to a near-white neutral in both, nearly identical to Stop's `invert` fill there, failing
+  "visibly distinct in weight" in 2 of 3 themes), mapped into the `@theme inline` layer and applied
+  ONLY to the composer's Send button (`MessageInput.tsx`), overriding `variant="default"`'s shared
+  `--primary` fill -- every other `default`-variant button elsewhere is unaffected. Two new pairs
+  in `scripts/check-theme-contrast.mjs` (icon-on-fill and fill-vs-composer-background, both at the
+  3:1 icon-without-text floor, `docs/design/accessibility.md`): computed and verified at 3.08:1 to
+  6.47:1 across all three themes, comfortably clearing the floor. Stop's `SquareIcon` gets
+  `fill-current` (was read by a reviewer as "an outlined square" on a solid fill) and `invert`
+  gains a real `hover:bg-foreground/85` (was identical to its resting fill, no hover feedback at
+  all). `docs/design/components.md`'s Button table documents the new `invert` row and the
+  composer's both-filled exception.
+- [X] T157 [US1] Remaining code-reviewer/test-reviewer MEDIUM and LOW findings: friendly model/role
+  names drop `font-code` (not code-shaped data; mono kept only for a raw `provider/id` fallback,
+  `modelDisplay.ts`/`ComposerPickers.tsx`); the current-model tick now compares identity (`provider`
+  + `id`) instead of the display label, which missed a Session whose `lastModel.name` is absent and
+  double-ticked entries sharing a name; a new shared `attachImageFile` (`attachments.ts`) replaces a
+  duplicated validate-plus-commit block between the Attach button and a pasted image's own paste
+  handler; `ReadoutChip.tsx`'s interactive variant gets an opaque `focus-visible:outline-2
+  focus-visible:outline-offset-2 focus-visible:outline-ring` (the plain-text restyle in T145 had
+  dropped `badgeVariants`' own ring entirely, leaving only the browser default); the picker
+  triggers' own `PICKER_TRIGGER_CLASS` gets the same opaque ring, overriding `badgeVariants`' `/50`
+  alpha ring (below the WCAG 1.4.11 3:1 floor); the Attach button's hidden file input uses `hidden`
+  (was `sr-only` + `tabIndex={-1}`, so a screen reader's browse mode landed on a stray do-nothing
+  control) and its Tooltip gets `aria-describedby={undefined}` (its content purely repeated the
+  button's own accessible name). A full-label `title` attribute on both picker triggers substitutes
+  for a Tooltip there (avoiding an unproven nested Tooltip-inside-Popover/DropdownMenu-trigger
+  composition with no precedent elsewhere in this codebase) so a long truncated model name is still
+  readable by a sighted user.
+- [X] T158 [US1] A right- or middle-click on a Model picker option applied the selection the same
+  as a primary click (`onMouseDown`'s own `preventDefault()` keeps focus in the filter field but
+  does not filter by button) -- found live by Stuart during round 1 verification. Both the Roles
+  and Models option handlers now return early unless `event.button === 0`.
+- [X] T159 [US1] Update the docs and verify: spec 001's Clarifications gain five gate round 1
+  entries, FR-064 and FR-065 rewritten in place for the combobox/listbox rebuild, the close-on-
+  disable fix, the radio-group Reasoning picker, the null/"Not reported" read-back semantics and
+  the `--send` token, US1 acceptance scenario 11 updated to match, three new Edge Cases bullets
+  (close-on-disable, the null read-back, the right/middle-click guard); `contracts/ipc.md`'s
+  `setThinkingLevel` row and its Electron-optional note updated; `quickstart.md` step 9 rewritten
+  for the new picker interaction. `docs/design/product-chat.md`'s Message box bullet and
+  `docs/design/components.md`'s Button table updated to match. `tasks.md` T142's own "no Rust files
+  touched by this story" claim (repeated twice) corrected -- never actually true even when written,
+  since this story's own earlier commit `1871f9b` had already added Rust code before that
+  verification pass ran; "T144-T151" corrected to "T144-T150" (the phase has 7 tasks, not 8).
+  Re-ran `pnpm typecheck` (clean), `cargo check` (clean, 4m14s cold build after the shared cache
+  was cleared), `pnpm check:indent` (0 odd-indent), `pnpm check:file-size` (0 violations across 305
+  files -- `model.rs`, `check-theme-contrast.mjs` and `ipc.ts` each needed their own new comments
+  trimmed back to stay within their existing baselines), `pnpm check:ui-text` (0 leaks),
+  `pnpm check:theme-contrast` (319 of 319 pairs across 3 themes, up from 313), `pnpm test` (148 of
+  148, the post-R13 count). The full `ci-local.mjs` run, the scratch live-check re-run exercising
+  every fixed behaviour with real CDP keyboard/mouse input, and screenshots are recorded in the PR
+  body, not retrofitted into this task.
