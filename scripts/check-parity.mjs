@@ -362,6 +362,7 @@ const REQUEST_LANES = {
   MODEL_CYCLE_MODEL: 'RM',
   MODEL_APPLY_ROLE: 'RM',
   MODEL_LIST_ROLES: 'RM',
+  MODEL_SET_THINKING_LEVEL: 'RM', // #564, ipc/model.rs
 };
 
 const EVENT_LANES = {

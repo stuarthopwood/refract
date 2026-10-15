@@ -367,11 +367,11 @@ export const IPC_REQUESTS = {
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
-  // Lane RM: `model: {...}` (ipc-model.ts).
   MODEL_SET_MODEL: 'model.setModel',
   MODEL_CYCLE_MODEL: 'model.cycleModel',
   MODEL_APPLY_ROLE: 'model.applyRole',
   MODEL_LIST_ROLES: 'model.listRoles',
+  MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -758,9 +758,9 @@ export interface RefractApi extends UpdatesApi {
     listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
   };
 
-  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s
-   * own `ModelApi` has the full reasoning); optional (Electron never ports this family). */
-  model?: ModelApi;
+  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s own
+   * `ModelApi` has the full reasoning); non-optional since Electron is gone (R13, gate round 1). */
+  model: ModelApi;
 
   window: {
     /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,

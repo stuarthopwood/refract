@@ -3,6 +3,7 @@
 
 import { BellRingIcon, CircleIcon, SquareIcon } from 'lucide-react'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
+import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import type { DiffStat } from '../../../shared/ipc'
 import type { SessionStatus } from '../../../shared/model'
@@ -41,10 +42,31 @@ export function StateIcon({ status }: { status: SessionStatus }) {
   }
 }
 
-/** `"N files changed +A -D"` (singular "file" for exactly one), with a trailing " (partial)" when
- * the diff stat's caps stopped counting before the real total. */
+/** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past
+ * 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared
+ * lower-case k/m/b formatter for this, the Changes Readout and the Context usage Readout, so the
+ * Session details card and the status line never show the same figure two ways), with a
+ * trailing " (partial)" when the diff stat's caps stopped counting before the real total. */
 export function formatDiffStat(stat: DiffStat): string {
   const noun = stat.files === 1 ? 'file' : 'files'
   const suffix = stat.partial ? ' (partial)' : ''
-  return `${stat.files} ${noun} changed +${stat.additions} -${stat.deletions}${suffix}`
+  return `${compactNumber(stat.files)} ${noun} changed +${compactNumber(stat.additions)} -${compactNumber(stat.deletions)}${suffix}`
+}
+
+// Full, un-abbreviated figures for assistive technology (gate round 4, #437 LOW), shared between
+// the status line's `ChangesChip` (`ReadoutChips.tsx`) and the Session details card below (gate
+// round 5, Flow LOW: the card's own diff line had no `sr-only` pairing at all, unlike the status
+// line's identical figure) -- one function so the two surfaces can never phrase the same stat
+// two different ways.
+const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
+
+export function formatDiffStatAccessible(stat: DiffStat): string {
+  const noun = stat.files === 1 ? 'file' : 'files'
+  const partialSuffix = stat.partial ? ' (partial)' : ''
+  const filesFull = FULL_NUMBER_FORMAT.format(stat.files)
+  const additionsFull = FULL_NUMBER_FORMAT.format(stat.additions)
+  const deletionsFull = FULL_NUMBER_FORMAT.format(stat.deletions)
+  const additionsNoun = stat.additions === 1 ? 'addition' : 'additions'
+  const deletionsNoun = stat.deletions === 1 ? 'deletion' : 'deletions'
+  return `${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
 }

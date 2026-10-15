@@ -9,7 +9,7 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, CpuIcon, GaugeIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,25 +17,18 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
-import {
-  ChangesChip,
-  ContextUsageChip,
-  CurrentTimeChip,
-  PullRequestChip,
-  SubagentsChip,
-  TodoProgressChip,
-  TurnTimeChip
-} from './readout/ReadoutChips'
+import { ComposerStatusLine } from './ComposerStatusLine'
+import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { attachImageFile } from './attachImage'
 import {
   buildChipLabel,
-  buildImageAttachment,
   buildImagePathAttachment,
   describeAttachFailureReason,
   EMPTY_ATTACHMENTS,
@@ -52,7 +45,6 @@ import {
 } from './attachments'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
-import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -100,7 +92,6 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
@@ -109,13 +100,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
   // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
-  // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
-  // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
-  // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
-  // (docs/DESIGN.md "No bracket/parenthetical UI copy"); `null` until the first `get_state`.
-  const modelSession = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const modelLabel = formatModelLabel(modelSession ?? {})
-  const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue come
   // ONLY from the real `followUp`/`steering` arrays above via `deriveQueuedChips`
@@ -998,19 +982,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (imageFile) {
       // FR-001: never let any image data reach the textarea's own text value.
       event.preventDefault()
-      const result = await buildImageAttachment(imageFile)
-      if (!result.ok) {
-        notify({
-          code: result.reason === 'too-large' ? 'image-too-large' : 'invalid-argument',
-          message:
-            result.reason === 'too-large'
-              ? `Image is too large to attach (over the ${formatByteSize(MAX_IMAGE_INPUT_BYTES)} limit); nothing was attached.`
-              : 'That image could not be read; nothing was attached.'
-        })
-        return
-      }
-      useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-      announceAttachment(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
+      await attachImageFile(sessionId, imageFile)
       return
     }
 
@@ -1351,21 +1323,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <span id={composerHintId} className="sr-only">
         {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
       </span>
-      {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
-          Approval mode pill is always the first item, FR-056; `flex-wrap` lets the row wrap onto
-          a further line at any window width rather than ever hiding or overlapping the box below
-          it (FR-009). Which readout chips render is gated by Settings (FR-012 to FR-014); each
-          chip independently hides itself when its own data is null (FR-002 to FR-007, FR-021). */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <ApprovalModePill sessionId={sessionId} />
-        {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
-        {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
-        {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
-        {sessionReadout['current-time'] && <CurrentTimeChip />}
-        {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
-        {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
-        {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
-      </div>
+      {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
+          2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
+          own bottom row below (spec 001 FR-065) instead of as this row's guaranteed first item. */}
+      <ComposerStatusLine sessionId={sessionId} />
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
       <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} containerRef={attachmentStripRef} />
@@ -1396,10 +1357,24 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           the intended recessive fill. Plus a `border-muted-foreground/85` border re-measured at
           >=3:1 against both the page background and this fill (WCAG 1.4.11), Send/Stop moved
           inside as round icon-only buttons, and the provider/model/effort readout along the
-          bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
-          field, not just the text area, shows the focus state. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-        <div className="relative flex items-end">
+          bottom. The box's own focus ring is scoped to the textarea alone (gate round 5; see the
+          composer-dimming comment below). */}
+      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
+          the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
+          vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
+          unusable parts (text field, Send/Stop, Model/Reasoning pickers, Attach) dim as one
+          `opacity-60` layer instead, never a colour-opacity modifier. The outer box's own
+          border/background never dims: the Approval pill DOES still work while stopped, so it
+          sits on the undimmed `bg-composer-background` with its full-strength border either way
+          (measured, WCAG 1.4.11). `disabled` is the same boolean already driving the native
+          `disabled` attribute below; the 3:1 control-edge rule applies to the enabled border
+          only. Gate round 5 fix (Visual Medium #4): the ring shows only on the TEXTAREA's own
+          `:focus-visible` (`has-[textarea:focus-visible]`, was `focus-within`, which lit the
+          whole box for a pill/picker/Attach/Send focus too -- each now draws its OWN opaque
+          outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS`, gate4
+          `11-pill-keyboard-focused.png`). */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50">
+        <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
           {showSlashMenu && (
             <SlashMenu
               id={slashMenuId}
@@ -1449,7 +1424,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
+            // Gate round 5 fix (Visual LOW): the field block's own 0.6 dim left the base
+            // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
+            // read the stop reason it carries -- `disabled:placeholder:text-foreground`
+            // brightens the placeholder itself so the dim lands it back near readable.
+            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent"
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1556,23 +1535,33 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
               rather than `bottom-1.5`, so the button stays centered as the textarea grows to
               multiple lines instead of drifting toward the bottom (morning UI feedback,
-              2026-10-04). Send and Stop share the exact same `variant="outline"` + `size="icon-sm"`
-              treatment -- only the icon inside differs -- so neither reads as a different size or
-              weight than the other. */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but
+              each carries a different fill (2026-10-15 grill, issue #564, decision 5): Send is
+              `variant="default"`, the one accent-filled commit action on this surface
+              (docs/design/components.md "Button": "the single commit action... one filled
+              button per surface"); Stop is `variant="invert"`, a solid NEUTRAL fill (inverted
+              foreground-on-background), deliberately never red -- "stopping keeps the work, so
+              it is not destructive, and red is reserved for destructive and error states". The
+              two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
+              FR-011), a documented exception to "one filled button per surface": the two fills
+              are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). */}
+          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="invert"
                     size="icon-sm"
-                    className="rounded-full"
+                    className={cn('rounded-full', COMPOSER_BUTTON_FOCUS_CLASS)}
                     aria-label="Stop"
                     aria-keyshortcuts="Control+Shift+X"
                     onClick={() => void handleStop()}
                   >
-                    <SquareIcon />
+                    {/* Gate round 1 fix: `SquareIcon` is an outline-only glyph at this size, read
+                        by a reviewer as "an outlined square" on a solid fill -- `fill-current`
+                        makes it a solid stop glyph instead. */}
+                    <SquareIcon className="fill-current" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -1588,9 +1577,27 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="icon-sm"
-                  className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  // 2026-10-15 grill decision 5, gate round 1 fix: Send's own `--send` token
+                  // overrides `variant="default"`'s `--primary` fill, which resolves to a
+                  // near-white neutral in Dark and Dark (high contrast) -- almost identical to
+                  // Stop's `invert` fill there, failing "visibly distinct in weight". `--send`
+                  // is chromatic (indigo) in every built-in theme instead. Hover mixes 15% of
+                  // the page background into the fill (gate round 2 fix: a bare
+                  // `hover:bg-send/80` opacity modifier violated the design rules' own "never a
+                  // Tailwind opacity modifier on a token class" -- `button.tsx`'s `secondary`
+                  // variant's own `color-mix` pattern instead).
+                  className={cn(
+                    'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
+                    // Composer-dimming fix (gate round 4: scoped to the field block, not the
+                    // whole box): the shared disabled OPACITY for the OTHER refusal reasons
+                    // (starting, a pending read, empty text); `disabled` can't be true with
+                    // `starting` (round 7: opacity only, no hover reset -- Send's opaque resting
+                    // fill made the shared reset drop it transparent on hover, Arch877 Medium 1).
+                    !disabled && COMPOSER_DISABLED_OPACITY_CLASS,
+                    COMPOSER_BUTTON_FOCUS_CLASS
+                  )}
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
                   aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
@@ -1608,23 +1615,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        {/* Model-in-use and thinking-level readout (T062/T063): a leading icon for each instead
-            of a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy").
-            */}
-        <div className="flex items-center gap-3 truncate px-2.5 pb-1 text-xs text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1 truncate">
-            <CpuIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{modelLabel ?? 'Model not known yet'}</span>
-          </span>
-          {thinkingLabel && (
-            <span className="flex min-w-0 shrink-0 items-center gap-1">
-              <GaugeIcon className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                <span className="sr-only">Thinking level: </span>
-                {thinkingLabel}
-              </span>
-            </span>
-          )}
+        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then Model/Reasoning
+            pickers (FR-064, replacing the old read-only CpuIcon/GaugeIcon line), then Attach.
+            Gate round 5 (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus
+            outline off the box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt
+            (round 6 fixed the triggers' own `gap-1.5` to `gap-2`, dropping a fictional "exception" claim). */}
+        <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
+          <ApprovalModePill sessionId={sessionId} />
+          <ModelPicker sessionId={sessionId} />
+          <ReasoningPicker sessionId={sessionId} />
+          <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>
     </div>

@@ -32,7 +32,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
-import type { Model, RoleChangeSummary } from '../shared/ipc-model'
+import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
@@ -244,7 +244,9 @@ const refract: RefractApi = {
       request<{ roles: Array<{ role: string; model: string | null; current: boolean }>; currentRole: string | null; pinned: boolean }>(
         IPC_REQUESTS.MODEL_LIST_ROLES,
         sessionId
-      )
+      ),
+    setThinkingLevel: (sessionId: string, level: ThinkingLevel) =>
+      request<{ thinkingLevel: string | null }>(IPC_REQUESTS.MODEL_SET_THINKING_LEVEL, sessionId, level)
   },
 
   window: {
