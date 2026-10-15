@@ -4,6 +4,7 @@
 // faithful port (T015's own "Settings CRUD" scope) so a later slice's IPC registration is a
 // one-line `dispatcher.register(...)` away, not a second pass over this file.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -160,19 +161,42 @@ fn default_session_list_collapse() -> SessionListCollapse {
     }
 }
 
-fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
-    let object = value.as_object()?;
-    let ids_value = object.get("collapsedRepositoryIds")?.as_array()?;
+/// Gate round 2 fix (Low, security-auditor + code-reviewer): shared de-dupe-and-cap pass for
+/// `collapsedRepositoryIds`, used by both the disk parser above and the IPC setter
+/// (`ipc/settings.rs::parse_session_list_collapse_arg`) so the two can never drift apart again.
+/// Caps at 1,000 ids (far more than any real profile's Repository count) and 256 bytes per id
+/// (well over any real Repository id's length), a floor under a hand-edited `settings.json` or
+/// a renderer bug, not a real workflow. Duplicate ids are REMOVED, never rejected
+/// (contracts/ipc.md), the same lazy-correction pattern the rest of this file already uses. A
+/// `HashSet` membership check replaces the previous `Vec::iter().any()` scan (O(n) instead of
+/// O(n^2)). Returns `None` once either cap is exceeded or an element is not a string -- the IPC
+/// caller turns that into `invalid-argument`; the disk loader's own caller resets to the
+/// default, exactly like any other malformed field here.
+pub(crate) const SESSION_LIST_COLLAPSE_MAX_IDS: usize = 1000;
+pub(crate) const SESSION_LIST_COLLAPSE_MAX_ID_BYTES: usize = 256;
+
+pub(crate) fn sanitize_collapsed_repository_ids(ids_value: &[Value]) -> Option<Vec<String>> {
+    if ids_value.len() > SESSION_LIST_COLLAPSE_MAX_IDS {
+        return None;
+    }
+    let mut seen: HashSet<&str> = HashSet::with_capacity(ids_value.len());
     let mut collapsed_repository_ids: Vec<String> = Vec::with_capacity(ids_value.len());
     for id in ids_value {
         let id = id.as_str()?;
-        if !collapsed_repository_ids
-            .iter()
-            .any(|existing| existing == id)
-        {
+        if id.len() > SESSION_LIST_COLLAPSE_MAX_ID_BYTES {
+            return None;
+        }
+        if seen.insert(id) {
             collapsed_repository_ids.push(id.to_string());
         }
     }
+    Some(collapsed_repository_ids)
+}
+
+fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
+    let object = value.as_object()?;
+    let ids_value = object.get("collapsedRepositoryIds")?.as_array()?;
+    let collapsed_repository_ids = sanitize_collapsed_repository_ids(ids_value)?;
     let archived_open = object.get("archivedOpen")?.as_bool()?;
     Some(SessionListCollapse {
         collapsed_repository_ids,

@@ -170,7 +170,7 @@ export const PAIRS = [
   { fg: 'agent-spinner-core', bg: 'background', min: 3 },
   // #735 (session list collapse/expand): the Waiting marker (decision 21) and the visible
   // Session's active bar (decision 22) both render inside the session list's own `bg-sidebar`
-  // surface, and the toolbar's two buttons (decision 108) render their focus ring there too --
+  // surface, and the toolbar's two buttons (decision 23) render their focus ring there too --
   // none of these were ever checked against `--sidebar`/`--sidebar-accent` specifically before,
   // only against the page `--background` (the icon-only pairs above).
   { fg: 'state-needs-you', bg: 'sidebar', min: 3 },

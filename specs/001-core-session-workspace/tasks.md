@@ -1732,25 +1732,73 @@ This phase was written retroactively after the implementation above, in the same
   mixed collapse state surviving a real app quit and relaunch on the SAME scratch data dir (a
   ~1.5s wait before the forceful Job-Object kill, since that kill never fires
   `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would otherwise never
-  run); and the toolbar's 2px focus outline actually rendering under keyboard focus (gate round 1
-  regression proof for T224's fix), checked via the CDP Accessibility domain's own focus report,
+  run); and the toolbar's focus outline actually rendering under keyboard focus (gate round 1
+  regression proof for T224's fix), checked via computed style (`getComputedStyle`, not the CDP
+  Accessibility domain -- that domain reports accessible names/roles, not rendered box styles;
+  gate round 2 fixed this mislabel and also fixed the reading itself to settle to decision 23's
+  exact 2px solid value, after an earlier reading mid-transition misreported 3px -- see T227),
   never a bare truthy check. Screenshots (Dark and High contrast, the collapsed group with its
   marker, the mixed state before and after relaunch) recorded to
   `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node scripts/ci-local.mjs` 16/16
   PASS (including the full Rust test suite, clippy, and a Tauri debug build) both before and
   after merging `origin/main`.
+- [X] T227 [US5] Gate round 2 remediation (five-reviewer, 2026-10-15): Code and Tests FAILed on
+  one High (Closes vs Refs: decision 29's Settings round trip and prune checks were still
+  unexercised); Security, Accessibility and Architect PASSed. Fixed:
+  - `scripts/verify-tauri-735.mjs`/`verify-tauri-session-list-helpers.mjs`: a third scratch
+    Repository (C, empty, collapsed) and two new checks -- the Settings round trip (open
+    Settings via the profile item's cog, return via "Back to chat", assert the mixed state
+    survived the whole-list remount) and the prune (remove Repository C, assert its id actually
+    leaves `settings.json` on disk without disturbing Repository A's or Archived's own saved
+    state); `createSessionViaQuickCreate` now waits for the Repository's own row count to
+    increase, not only that a composer is enabled (a dropped second create went undetected the
+    old way, and genuinely happened once in round 1's own evidence); the focus-outline check now
+    waits 250ms for `transition-all` to settle and asserts the EXACT `outline-style: solid`,
+    `outline-width: 2px`, `outline-offset: 2px` (round 1's "solid, 3px" reading was the pre-settle
+    value, not a real departure); both Collapse all and Expand all now get a REAL second click
+    asserted to change nothing, not only a read of `aria-disabled`; new `assertExeMatchesProcess`
+    (`verify-tauri-cdp.mjs`) actually checks the launched process's own exe path and a fresh
+    sha256 against the scratch copy, not only logging the hash at copy time; screenshots, the
+    STEP-PASS report and settings.json dumps now persist to
+    `C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots/` and are kept (round 1's own
+    evidence had been deleted by a later manual cleanup pass).
+  - `SessionList.tsx`: the toolbar's no-op dimming now targets only the glyph
+    (`aria-disabled:[&_svg]:opacity-50`), keeping the focus ring at full contrast; the
+    disabled-hover background/text resets are now toolbar-specific and `dark`-prefixed
+    (`dark:aria-disabled:hover:bg-transparent`, `aria-disabled:hover:text-muted-foreground`),
+    since the composer's own `COMPOSER_DISABLED_HOVER_RESET_CLASS` lost on both counts here (a
+    specificity tie against `dark:hover:bg-sidebar-border`, and `text-current` resolving to the
+    inherited `sidebar-foreground` instead of this button's own `muted-foreground`);
+    `SESSION_LIST_TOOLBAR_BUTTON_CLASS` is no longer exported (nothing outside this file uses it).
+  - `init-stores.ts`: `pruneRepositories` now awaits a `restoredPromise` resolved right after
+    `restore()`, so it can never again run before the real saved ids are loaded (closes the D18
+    departure, dropped from the table below).
+  - `sessions-store.ts`: the `create()`/`restore()` comments now cite the recorded D20 departure
+    instead of claiming full compliance with it.
+  - `src-tauri/src/store/settings.rs`/`ipc/settings.rs`: new shared
+    `sanitize_collapsed_repository_ids` (1,000-id cap, 256-byte-per-id cap, `HashSet` de-dupe
+    instead of the old O(n^2) scan) used by both the disk loader and the IPC setter.
+  - `contracts/ipc.md`: reworded to state plainly that duplicate ids are removed, not rejected,
+    and documents the two new caps. `scripts/check-parity.mjs`: added
+    `SETTINGS_SET_SESSION_LIST_COLLAPSE: 'R8'` (was unassigned).
+  - `scripts/theme-contrast-pairs.mjs:173`, `sessionDisplay.tsx:44`: the two leftover
+    decision-number citations outside the record's 1-29 fixed/removed.
+  - **Live re-verification**: both decision 29 checks pass live against the current head (see
+    above); `node scripts/ci-local.mjs` 16/16 PASS; `cargo test` and `cargo clippy` clean.
+    Screenshots and the STEP-PASS report at
+    `C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots/`.
+  - **Switched to Closes #735**: every item on decision 29's own verification list is now either
+    live-proved or named as an accepted Low departure (D20) in the table below -- no
+    acceptance-scoped item is left unexercised.
 
-**Not exercised this phase** (stated plainly, not hidden): the decision record's own verification
-list also names opening Settings and returning (confirming the collapse state survives the view
-remount `SettingsScreen.tsx` causes) and a removed Repository's id actually dropping out of the
-persisted `settings.json` -- neither was driven by the live check above, only by code review
-(`init-stores.ts`'s restore/prune wiring, `repositories-store.ts`'s `remove`); a frame-by-frame
-capture proving no visible flash of open groups before the persisted state loads (the `restored`
-gate's own correctness is a code-review claim here, not a captured absence-of-flash); the
-toolbar's two-line tooltip's own hover-visible rendering (its DOM structure and `aria-describedby`
-target were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot
-and #748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 26-27,
-hooks only: `isGroupOpen` selector, first-button-slot order).
+**Not exercised this phase** (stated plainly, not hidden): a frame-by-frame capture proving no
+visible flash of open groups before the persisted state loads (the `restored` gate's own
+correctness is a code-review claim here, not a captured absence-of-flash); the toolbar's
+two-line tooltip's own hover-visible rendering (its DOM structure and `aria-describedby` target
+were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot and
+#748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 26-27, hooks
+only: `isGroupOpen` selector, first-button-slot order). Decision 29's own Settings round trip and
+prune, previously listed here as unexercised, are now both live-proved in T227 above.
 
 This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
 "Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
@@ -1769,20 +1817,23 @@ two marker states) and Low findings (decision-number citations in comments using
 63-121 scheme instead of the record's own 1-29, `RepositoryGroup.tsx` ignoring Radix's own
 `open` value, auto-open-on-restore firing even when focus does not move, a possible
 prune/restore race, and a disabled toolbar button still showing hover feedback); every High and
-Medium finding above is fixed in T223-T226 and this entry; the prune/restore race and the
-focus-independent auto-open remain accepted Low departures from the record, named in the table
-below rather than silently dropped. Kept **Refs #735**, not **Closes**, for the two "Not
-exercised" items named above, following the same standard #731's own Phase 40 entry set for a
-partially-verified decision record. Merged `origin/main` (PR #899/#563, which lands as this
-file's own Phase 41) before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16
-clean afterward. Renumbered from provisional Phase 41/T214-T219 to Phase 42/T221-T226 once
+Medium finding above was fixed in T223-T226; the prune/restore race and the focus-independent
+auto-open were recorded as accepted Low departures in the table below rather than silently
+dropped. Kept **Refs #735**, not **Closes**, for decision 29's Settings round trip and prune --
+named but not yet exercised. Merged `origin/main` (PR #899/#563, which lands as this file's own
+Phase 41) before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean
+afterward. Renumbered from provisional Phase 41/T214-T219 to Phase 42/T221-T226 once
 `origin/main` confirmed tasks.md ends at Phase 41/T220 (per Main's own merge instruction).
+
+A gate round 2 found one remaining High (the Closes/Refs mismatch above, plus the two decision-29
+items still unexercised) and several Medium/Low findings; T227 fixes all of them and switches
+this entry to **Closes #735** -- see T227's own entry for the full list. D18 (the prune/restore
+race) is fixed there too and dropped from the table below; D20 and D23 stand as recorded,
+accepted departures.
 
 **Departures from the decision record** (named per the gate's own finding, not silently dropped):
 
 | Decision | Departure |
 |---|---|
-| D18 | The prune can race the restore and do nothing in theory; not fixed this round (Low, accepted). |
 | D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
-| D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue). |
-
+| D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |

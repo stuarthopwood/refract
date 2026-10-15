@@ -300,8 +300,11 @@ pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -
 }
 
 /// #735 contracts/ipc.md `settings.setSessionListCollapse`: basic-shape validation only --
-/// `{ collapsedRepositoryIds: string[], archivedOpen: boolean }`, de-duplicating ids, mirroring
-/// `parse_split_arg`'s own validate-then-persist pattern above.
+/// `{ collapsedRepositoryIds: string[], archivedOpen: boolean }` -- plus the shared
+/// `sanitize_collapsed_repository_ids` cap-and-dedupe pass (gate round 2 fix), mirroring
+/// `parse_split_arg`'s own validate-then-persist pattern above. Ids are de-duplicated silently,
+/// never rejected; an over-cap count or id length IS rejected as `invalid-argument`, since this
+/// is the renderer's own validated write path, unlike the disk loader's lazy-correction.
 const SESSION_LIST_COLLAPSE_SHAPE_MESSAGE: &str =
     "settings.setSessionListCollapse expects { collapsedRepositoryIds: string[], archivedOpen: boolean }";
 
@@ -313,18 +316,8 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
         .get("collapsedRepositoryIds")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
-    let mut collapsed_repository_ids: Vec<String> = Vec::with_capacity(ids_value.len());
-    for id in ids_value {
-        let id = id
-            .as_str()
-            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
-        if !collapsed_repository_ids
-            .iter()
-            .any(|existing| existing == id)
-        {
-            collapsed_repository_ids.push(id.to_string());
-        }
-    }
+    let collapsed_repository_ids = crate::store::settings::sanitize_collapsed_repository_ids(ids_value)
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
     let archived_open = object
         .get("archivedOpen")
         .and_then(Value::as_bool)
