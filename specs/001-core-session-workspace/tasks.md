@@ -1611,3 +1611,106 @@ decision 21's live-verification list is not fully done (see T213's own blocked i
 Phase 40/T206-T213 on merging `origin/main` (PR #900/#572 claimed Phase 39/T199-T205 first), per
 Main's own merge instruction; every cross-reference (PR body, `docs/PLAN.md`, the #731
 investigation-record issue comment, the #650 backlog comment) updated to match.
+
+## Phase 41: Convergence
+
+- [X] T214 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
+  "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): a pinned Collapse all /
+  Expand all toolbar row above the session list's scroll area (16px gap under Pull requests),
+  two `icon-xs` ghost buttons in fixed order, `aria-disabled` (never native `disabled`) with an
+  always-mounted sr-only no-op reason plus a second visual tooltip line, and a polite
+  `useChatAreaAnnouncer` announcement on each ("All groups collapsed"/"All groups expanded",
+  per-group toggles and the startup restore stay silent). "All" means every Repository group
+  plus Archived while #527's own "hidden entirely while nothing anywhere is archived" rule shows
+  it; Archived's own saved flag is left untouched while hidden.
+- [X] T215 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
+  archivedOpen: boolean }`, default all-open/Archived-closed): `src/shared/model.ts`/`ipc.ts`,
+  `src/tauri-bridge/index.ts`, `src-tauri/src/store/settings.rs` (shape, `KNOWN_FIELDS`,
+  `serialize_for_disk`, `set_session_list_collapse`) and `src-tauri/src/ipc/settings.rs`
+  (`settings.setSessionListCollapse`, de-duplicated-string-array-plus-boolean shape validation,
+  `invalid-argument` otherwise). New `src/renderer/state/session-list-store.ts`: the field's
+  sole writer, debounced ~300ms persist flushed on `beforeunload`/`pagehide`, a `restored` flag
+  read once at startup alongside `settings.get`/`sessions.list` so `SessionList.tsx` never
+  paints a group open and then snaps it shut once the persisted state arrives a moment later
+  than Repositories do, `isGroupOpen`/`toggleRepository`/`setArchivedOpen`/`collapseAll`/
+  `expandAll`/`openRepositoryGroup`/`pruneRepositories`. `init-stores.ts` restores the state and
+  prunes removed-Repository ids after a successful `repositories.list`; `repositories-store.ts`
+  prunes after a successful `remove`; `sessions-store.ts`'s `create()`/`restore()` (the one choke
+  point every create entry -- the header "+", the branch picker, Ctrl+N, the row menu's own "New
+  session from {branch}" item -- and the one restore entry already funnel through) call
+  `openRepositoryGroup` on success, covering decision 22's "a closed group reopens, and that open
+  is saved, only when a create or a restore actually moves a row into it" without touching
+  `SessionRow.tsx`/`useSessionRowActions.ts` (the #731/#811 headroom-constrained hook) at all.
+- [X] T216 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
+  controlled (`open`/`onOpenChange`, replacing `defaultOpen` and the old uncontrolled-closed
+  Archived group). `GroupHeader.tsx`'s `GroupHeaderTrigger` gains `marker`/`containsOpenSession`
+  props: a Waiting marker (the shared `StateIcon`, `size-4`, `ml-auto flex shrink-0`, after the
+  label) shown only on a closed group, naming the most urgent state among its Sessions via a new
+  `groupWaitingState()` precedence helper in `sessionDisplay.tsx` (Needs you, then Terminated
+  unexpectedly, then Unread response -- #731's own state, merged in from `origin/main` and wired
+  into the same precedence list its own decision record anticipated); and a 2px
+  `bg-active-indicator` header bar (forced-colours `bg-[Highlight]`) on the Repository group
+  currently holding the visible Session while it is closed. Both combine into one accessible
+  name, never a second `aria-describedby` region.
+- [X] T217 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
+  `state-stopped`, `active-indicator`, `ring`, `muted-foreground` against `sidebar`/
+  `sidebar-accent`) for the marker, the active bar and the toolbar's own focus ring, all of which
+  render inside the session list's `bg-sidebar` surface and were previously checked only against
+  the page `background`.
+- [X] T218 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
+  2026-10-09 Archived "not persisted across restarts" clarification in place, a new 2026-10-15
+  Clarifications Q&A, acceptance scenario 7 under User Story 5, provisional **FR-069** --
+  FR-064 to FR-066 taken by #564/#572, FR-067/FR-068 claimed by open PR #899, renumber before
+  merge), `data-model.md` (`SessionListCollapse` entity), `contracts/ipc.md`
+  (`settings.setSessionListCollapse` row), `CONTEXT.md` (**Group header**, **Waiting marker**),
+  `docs/design/product-layout.md` (the toolbar bullet, merged with #731's own session-list-row
+  wording update).
+- [X] T219 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
+  repositories, the copied exe's sha256 asserted against the launched pid before each run,
+  `scripts/verify-tauri-735.mjs`, new) proved, against real DOM input (never
+  `window.refract.*` as a shortcut, except the one incidental `theme.set` call used only to
+  switch themes between screenshots): two Repository groups added and opened by default;
+  Collapse all/Expand all closing and opening every Repository group plus Archived together,
+  including a real no-op second click (`aria-disabled`, the correct always-mounted reason text,
+  never native `disabled`); the toolbar's keyboard reach immediately after Pull requests
+  (focused, not clicked -- a real click there navigates to the Pull Requests view, whose own
+  repository combobox steals focus on mount) via the real computed accessible name (CDP
+  Accessibility domain, never `textContent`); a collapsed Repository group holding a Session
+  with a genuinely pending approval (status `needs-you`) showing the Waiting marker, its real
+  accessible name reading "..., Needs you"; open-on-create (the header "+" quick-create reopened
+  a closed group) and open-on-restore (restoring an Archived Session reopened its own closed
+  Repository group); and the whole collapse/expand state surviving a real app quit and relaunch
+  on the SAME scratch data dir (a ~1.5s wait before the forceful Job-Object kill, since that kill
+  never fires `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would
+  otherwise never run). Screenshots (Dark and High contrast, the collapsed group with its
+  marker) recorded to `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node
+  scripts/ci-local.mjs` 16/16 PASS (including the full Rust test suite, clippy, and a Tauri
+  debug build) both before and after merging `origin/main`.
+
+**Not exercised this phase** (stated plainly, not hidden): the decision record's own verification
+list also names opening Settings and returning (confirming the collapse state survives the view
+remount `SettingsScreen.tsx` causes) and a removed Repository's id actually dropping out of the
+persisted `settings.json` -- neither was driven by the live check above, only by code review
+(`init-stores.ts`'s restore/prune wiring, `repositories-store.ts`'s `remove`); a frame-by-frame
+capture proving no visible flash of open groups before the persisted state loads (the `restored`
+gate's own correctness is a code-review claim here, not a captured absence-of-flash); the
+toolbar's two-line tooltip's own hover-visible rendering (its DOM structure and `aria-describedby`
+target were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot
+and #748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 28-29,
+hooks only: `isGroupOpen` selector, first-button-slot order).
+
+This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
+"Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
+roundtable rather than a live grill, per Stuart's standing delegation while away). A delegated
+docs subagent's first attempt at the spec.md/data-model.md/contracts/ipc.md/CONTEXT.md/
+product-layout.md amendments used relative paths that resolved against an unrelated sibling
+worktree instead of this one (the worktree-path-resolution trap); caught during
+self-verification (a `git status` diff of zero in this worktree for files the subagent claimed
+to edit), that worktree's own 5 touched files were reverted to clean and the amendments were
+redone directly here. Opened as draft PR #905 (`feat/735-collapse-all`); kept **Refs #735**, not
+**Closes**, for the two "Not exercised" items named above, following the same standard #731's own
+Phase 40 entry set for a partially-verified decision record. Merged `origin/main` (PR #902/#731,
+which this story's own Waiting marker precedence and `sessionDisplay.tsx` both now build on)
+before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean afterward.
+Renumbered from provisional Phase 39/T214+ guesses to Phase 41/T214-T219 once `origin/main`
+confirmed tasks.md ends at Phase 40/T213 (per Main's own merge instruction).
