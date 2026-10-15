@@ -84,12 +84,17 @@ impl SessionAgent {
 pub(super) enum DialogClassification {
     Ignore,
     Cancel(String),
-    Notify { message: String, level: String },
+    Notify {
+        message: String,
+        level: String,
+    },
     Request(PendingRequest),
     /// D3 (#572): an `ask` frame with no/empty `questions`, or any question missing a non-empty
     /// `id`. No `PendingRequest` is ever created for this -- `frame.rs`'s own handler answers
     /// `{cancelled:true}` on the wire itself and surfaces the error notice.
-    Malformed { id: String },
+    Malformed {
+        id: String,
+    },
 }
 
 const APPROVAL_PREFIX: &str = "Allow tool:";

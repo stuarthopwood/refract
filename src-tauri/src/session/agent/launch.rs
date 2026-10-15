@@ -19,7 +19,9 @@ use super::launch_support::{
     assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
     registry_store_error_message, send_set_ask_dialog, to_process_mode, truncate, verify_reattach,
 };
-use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH};
+use super::{
+    AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
+};
 
 impl SessionAgent {
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an

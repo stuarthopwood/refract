@@ -163,14 +163,13 @@ impl SessionAgent {
                 let proc = self.state.lock().await.process.clone();
                 if let Some(proc) = proc {
                     let _ = proc
-                        .send_raw(json!({ "type": "extension_ui_response", "id": id, "cancelled": true }))
+                        .send_raw(
+                            json!({ "type": "extension_ui_response", "id": id, "cancelled": true }),
+                        )
                         .await;
                 }
-                self.append_notice(
-                    "Couldn't show the agent's question.".to_string(),
-                    "error",
-                )
-                .await;
+                self.append_notice("Couldn't show the agent's question.".to_string(), "error")
+                    .await;
             }
             DialogClassification::Request(request) => {
                 // Port of `addPendingRequest` (SessionAgent.ts:1641-1644): push+`NeedsYou`+

@@ -206,7 +206,10 @@ pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess)
         .await
     {
         Ok(response) => {
-            response.get("success").and_then(Value::as_bool).unwrap_or(false)
+            response
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
                 && response
                     .get("data")
                     .and_then(|data| data.get("enabled"))
