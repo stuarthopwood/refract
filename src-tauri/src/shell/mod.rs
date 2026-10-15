@@ -7,4 +7,5 @@
 pub mod memory;
 pub mod menu;
 pub mod notifications;
+pub mod single_instance;
 pub mod window_state;
