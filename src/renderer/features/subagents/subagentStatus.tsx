@@ -45,7 +45,7 @@ export function SubagentStatusIcon({ status }: { status: SubagentRowStatus }) {
   return (
     <>
       <SubagentStatusGlyphIcons status={status} />
-      <span className={status === 'finished' ? 'sr-only' : undefined}>{SUBAGENT_STATUS_LABEL[status]}</span>
+      <span className={cn('shrink-0 whitespace-nowrap', status === 'finished' && 'sr-only')}>{SUBAGENT_STATUS_LABEL[status]}</span>
     </>
   )
 }

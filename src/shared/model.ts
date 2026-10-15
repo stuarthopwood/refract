@@ -465,9 +465,7 @@ export type TranscriptItem =
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
       status: 'running' | 'done' | 'error' | 'cancelled' | 'exited';
-      /** Absent when built from history (no reliable wall clock to derive it from), matching
-       * the `thinking` item's `startedAt`. */
-      startedAt?: number;
+      startedAt?: number; // absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
        * falling back to `.label`), shown as plain text on expansion once known. */
@@ -475,6 +473,7 @@ export type TranscriptItem =
       /** The batch call's own `details.progress[].id`/the later `details.jobs[].jobId`, used only
        * to correlate this row across the two frames; never rendered. */
       jobId?: string;
+      messageId: string; // owning assistant message's id (history `h{index}`, live real id); `groupSubagentStages` keys Stage membership on this, not timing (#563 gate round 2 addendum A)
     }
   | {
       /** An IRC-style message between a subagent and the main agent, or between subagents

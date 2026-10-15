@@ -122,7 +122,7 @@ interface SubagentSummary {
   toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
   specIndex: number;                        // this spec's position in the owning call's own tasks[] (gate fix, 2026-10-07): the correlation key reconcileSubagentsOnAttach uses against the chat transcript's own subagent row, since the two sides' id schemes never match
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
-  status: 'running' | 'finished' | 'failed' | 'exited'; // 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited'; // 'cancelled': issue #563 decision 15, split out of 'failed' (a cancel/abort is not a failure); 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
   startedAt: number;
   durationMs?: number;                      // present once status is finished, failed, or exited, and startedAt was genuinely known (gate fix, 2026-10-07: never fabricated from a history row with no wall clock)
 }

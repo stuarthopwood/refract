@@ -27,6 +27,12 @@ use serde_json::Value;
 
 use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFinalizeCause};
 
+mod subagent_items;
+use subagent_items::{
+    apply_async_result_jobs, apply_batch_task_result, jobs_from_details, read_task_specs,
+    subagent_name, task_text, try_apply_async_result, upsert_subagent_items,
+};
+
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
 // ---------------------------------------------------------------------------
@@ -104,6 +110,14 @@ pub enum TranscriptItem {
         result: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job_id: Option<String>,
+        /// The owning assistant message's id (history: `h{index}`, a stable ordinal; live: the
+        /// real message id, which still orders the same way): the key the renderer groups
+        /// Stage membership by (#563 gate round 2 architect addendum A), since reopened history
+        /// carries no subagent timing to split on. Empty for the brief live window between a
+        /// `tool_execution_start` frame and the message snapshot that echoes its `task` call
+        /// back (`upsert_subagent_items`'s own doc comment), self-correcting once that lands.
+        #[serde(default)]
+        message_id: String,
     },
     #[serde(rename = "agent-message")]
     AgentMessage {
@@ -428,296 +442,6 @@ fn join_text(parts: &[Value]) -> String {
         .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
         .filter_map(|p| p.get("text").and_then(Value::as_str))
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Subagents (T078, FINDINGS item 22(e)): port of `transcript.ts` lines 110-278
-// ---------------------------------------------------------------------------
-
-/// Reads `args.tasks[]` defensively (port of `readTaskSpecs`): a malformed or absent array means
-/// the caller falls back to rendering the call as a plain `tool` item instead of silently
-/// dropping it.
-fn read_task_specs(args: &Value) -> Vec<Value> {
-    args.get("tasks")
-        .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter(|t| t.is_object()).cloned().collect())
-        .unwrap_or_default()
-}
-
-fn task_text(spec: &Value) -> String {
-    spec.get("task")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string()
-}
-
-fn subagent_name(spec: &Value) -> String {
-    if let Some(name) = spec.get("name").and_then(Value::as_str) {
-        if !name.is_empty() {
-            return name.to_string();
-        }
-    }
-    let task = task_text(spec);
-    if task.chars().count() > SUBAGENT_NAME_LENGTH {
-        format!(
-            "{}\u{2026}",
-            task.chars().take(SUBAGENT_NAME_LENGTH).collect::<String>()
-        )
-    } else {
-        task
-    }
-}
-
-/// Upserts one `subagent` item per `specs[]` entry, keyed by `subagent:<tool_call_id>:<index>`.
-/// Port of `upsertSubagentItems`.
-fn upsert_subagent_items(
-    mut items: Vec<Arc<TranscriptItem>>,
-    tool_call_id: &str,
-    specs: &[Value],
-) -> Vec<Arc<TranscriptItem>> {
-    for (index, spec) in specs.iter().enumerate() {
-        let id = format!("subagent:{tool_call_id}:{index}");
-        let name = subagent_name(spec);
-        let task = task_text(spec);
-        let existing_pos = items.iter().position(|item| item.id() == id);
-        match existing_pos {
-            Some(pos) => {
-                if let TranscriptItem::Subagent {
-                    name: n, task: t, ..
-                } = Arc::make_mut(&mut items[pos])
-                {
-                    *n = name;
-                    *t = task;
-                }
-            }
-            None => items.push(Arc::new(TranscriptItem::Subagent {
-                id,
-                tool_call_id: tool_call_id.to_string(),
-                spec_index: index as u32,
-                name,
-                task,
-                status: SubagentStatus::Running,
-                started_at: Some(now_ms()),
-                duration_ms: None,
-                result: None,
-                job_id: None,
-            })),
-        }
-    }
-    items
-}
-
-/// `pending` (still running) is the only status FINDINGS item 22(e) actually observed; any other
-/// string is a plain completion/failure signal. Port of `mapProgressStatus`.
-fn map_progress_status(status: Option<&str>) -> SubagentStatus {
-    match status {
-        Some("cancelled") | Some("aborted") => SubagentStatus::Cancelled,
-        Some("failed") | Some("error") => SubagentStatus::Error,
-        Some("pending") => SubagentStatus::Running,
-        None => SubagentStatus::Running,
-        Some(_) => SubagentStatus::Done,
-    }
-}
-
-/// Applies a `task` call's own `tool_execution_end` (live, `live = true`) or `toolResult`
-/// (history) result to every `subagent` item sharing `tool_call_id`. Port of
-/// `applyBatchTaskResult`. Returns `items` unchanged when `tool_call_id` has no subagent items at
-/// all, so callers can fall through to the generic `tool` item path for a malformed `task` call.
-fn apply_batch_task_result(
-    items: Vec<Arc<TranscriptItem>>,
-    tool_call_id: &str,
-    is_error: bool,
-    details: &Value,
-    live: bool,
-) -> Vec<Arc<TranscriptItem>> {
-    let subagent_positions: Vec<usize> = items
-        .iter()
-        .enumerate()
-        .filter(|(_, item)| {
-            matches!(item.as_ref(), TranscriptItem::Subagent { tool_call_id: t, .. } if t == tool_call_id)
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if subagent_positions.is_empty() {
-        return items;
-    }
-    let progress = details.get("progress").and_then(Value::as_array);
-    let fallback_status = if is_error {
-        SubagentStatus::Error
-    } else {
-        SubagentStatus::Done
-    };
-    let mut items = items;
-    for (progress_index, &pos) in subagent_positions.iter().enumerate() {
-        let entry = progress.and_then(|p| p.get(progress_index));
-        if let TranscriptItem::Subagent {
-            status,
-            job_id,
-            duration_ms,
-            started_at,
-            ..
-        } = Arc::make_mut(&mut items[pos])
-        {
-            let entry_job_id = entry
-                .and_then(|e| e.get("id"))
-                .and_then(Value::as_str)
-                .map(String::from);
-            // #563 decision 15: `is_error` still lets a row's own `progress[i].status` win when
-            // present (`Cancelled` via `map_progress_status`); only a row with none falls back.
-            if is_error {
-                let entry_status = entry.and_then(|e| e.get("status")).and_then(Value::as_str);
-                *status = if entry_status.is_some() {
-                    map_progress_status(entry_status)
-                } else {
-                    fallback_status
-                };
-                if let Some(jid) = entry_job_id {
-                    *job_id = Some(jid)
-                }
-                if live {
-                    if let Some(sa) = started_at {
-                        *duration_ms = Some((now_ms() - *sa).max(0));
-                    }
-                }
-                continue;
-            }
-            if let Some(entry) = entry {
-                let entry_status = entry.get("status").and_then(Value::as_str);
-                *status = map_progress_status(entry_status);
-                if let Some(jid) = entry_job_id {
-                    *job_id = Some(jid);
-                }
-            } else {
-                *status = fallback_status;
-                if live {
-                    if let Some(sa) = started_at {
-                        *duration_ms = Some((now_ms() - *sa).max(0));
-                    }
-                }
-            }
-        }
-    }
-    items
-}
-
-fn safe_stringify(value: &Value) -> String {
-    if let Some(s) = value.as_str() {
-        return s.to_string();
-    }
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-}
-
-/// The authoritative per-subagent completion (FINDINGS item 22(e)): a later `custom`/
-/// `async-result` message's `details.jobs[]` keys each entry by `jobId`, the `wait` tool's own
-/// `tool_execution_end` by `id` instead -- both key names are matched here, falling back to
-/// `label === name` for a subagent that never got a `progress` entry at all. Port of
-/// `applyAsyncResultJobs`.
-fn apply_async_result_jobs(
-    items: Vec<Arc<TranscriptItem>>,
-    jobs: &[Value],
-) -> Vec<Arc<TranscriptItem>> {
-    items
-        .into_iter()
-        .map(|mut item| {
-            let TranscriptItem::Subagent { name, job_id, .. } = item.as_ref() else {
-                return item;
-            };
-            let job_id_of = |j: &Value| -> Option<String> {
-                j.get("jobId")
-                    .and_then(Value::as_str)
-                    .or_else(|| j.get("id").and_then(Value::as_str))
-                    .map(String::from)
-            };
-            let by_job_id = jobs
-                .iter()
-                .find(|j| job_id_of(j).as_deref() == job_id.as_deref() && job_id.is_some());
-            let by_label = if job_id.is_none() {
-                jobs.iter()
-                    .find(|j| j.get("label").and_then(Value::as_str) == Some(name.as_str()))
-            } else {
-                None
-            };
-            let job = match by_job_id.or(by_label) {
-                Some(j) => j,
-                None => return item,
-            };
-            let job_status = job.get("status").and_then(Value::as_str);
-            if matches!(job_status, Some("pending") | Some("running")) {
-                return item;
-            }
-            // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
-            // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: the latter two
-            // map to `error`; `cancelled`/`aborted` get their own status (decision 15, #563).
-            let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
-            let failed = matches!(job_status, Some("failed") | Some("error"));
-            let error_text = job.get("errorText").and_then(Value::as_str);
-            let result_text = job.get("resultText").and_then(Value::as_str);
-            let schema_data = job.get("schema").and_then(|s| s.get("data"));
-            let label = job.get("label").and_then(Value::as_str);
-            let new_job_id = job_id_of(job);
-            let new_duration = job
-                .get("durationMs")
-                .and_then(Value::as_f64)
-                .map(|f| f as i64);
-            // `Arc::make_mut` clones the value only when another reference is still outstanding,
-            // so an untouched (`return item` above) or no-op subagent row never pays a copy.
-            if let TranscriptItem::Subagent {
-                status,
-                duration_ms,
-                result,
-                job_id,
-                ..
-            } = Arc::make_mut(&mut item)
-            {
-                let new_result = if (failed || is_cancelled) && error_text.is_some() {
-                    error_text.map(String::from)
-                } else if let Some(r) = result_text {
-                    Some(r.to_string())
-                } else if let Some(data) = schema_data {
-                    Some(safe_stringify(data))
-                } else if let Some(l) = label {
-                    Some(l.to_string())
-                } else {
-                    result.clone()
-                };
-                *status = if is_cancelled {
-                    SubagentStatus::Cancelled
-                } else if failed {
-                    SubagentStatus::Error
-                } else {
-                    SubagentStatus::Done
-                };
-                *result = new_result;
-                if let Some(d) = new_duration {
-                    *duration_ms = Some(d);
-                }
-                if let Some(jid) = new_job_id {
-                    *job_id = Some(jid);
-                }
-            }
-            item
-        })
-        .collect()
-}
-
-/// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool
-/// (port of `jobsFromDetails`).
-fn jobs_from_details(details: &Value) -> Option<Vec<Value>> {
-    details.get("jobs").and_then(Value::as_array).cloned()
-}
-
-/// Returns the patched items when `message` is a batch-subagent result carrier, `None` when it
-/// is not one at all. Port of `tryApplyAsyncResult`.
-fn try_apply_async_result(
-    items: &[Arc<TranscriptItem>],
-    custom_type: &str,
-    details: &Value,
-) -> Option<Vec<Arc<TranscriptItem>>> {
-    if custom_type != ASYNC_RESULT_CUSTOM_TYPE {
-        return None;
-    }
-    let jobs = details.get("jobs").and_then(Value::as_array)?;
-    Some(apply_async_result_jobs(items.to_vec(), jobs))
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,6 +979,7 @@ fn build_assistant_items(
                                     duration_ms: *duration_ms,
                                     result: sub_result.clone(),
                                     job_id: job_id.clone(),
+                                    message_id: message_id.to_string(),
                                 }),
                                 _ => result.push(TranscriptItem::Subagent {
                                     id: sub_id,
@@ -1267,6 +992,7 @@ fn build_assistant_items(
                                     duration_ms: None,
                                     result: None,
                                     job_id: None,
+                                    message_id: message_id.to_string(),
                                 }),
                             }
                         }

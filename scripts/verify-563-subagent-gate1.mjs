@@ -157,6 +157,20 @@ async function safeRmSync(dir) {
   }
 }
 
+/** Gate round 2 fix ([CRITICAL] N-new, G899Tests): re-hashes the private-scratch exe copy and
+ * throws loudly if it has drifted from the hash recorded right after the build-and-copy step --
+ * a concurrent lane's own rebuild overwriting the SHARED CARGO_TARGET_DIR mid-run cannot reach
+ * this private copy, but this still catches the equivalent failure mode (anything else touching
+ * `exePath` after launch) before a critical assertion below is allowed to trust stale output. */
+function assertExeUnchanged(exePath, expectedHash, label) {
+  const actualHash = sha256OfFile(exePath);
+  if (actualHash !== expectedHash) {
+    throw new Error(
+      `assertExeUnchanged (${label}): ${exePath} hash is ${actualHash.slice(0, 12)}…, expected ${expectedHash.slice(0, 12)}… -- the exe under test changed after launch; this run's findings cannot be trusted.`,
+    );
+  }
+}
+
 async function transcriptText(cdp) {
   return cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.textContent ?? ''`);
 }
@@ -210,7 +224,7 @@ async function main() {
     console.log(`verify-563-gate1: shots dir ${SHOTS_DIR}`);
     console.log(`verify-563-gate1: CDP port ${port}`);
 
-    const { dest: exePath } = buildAndCopyExeFresh(exeDir);
+    const { dest: exePath, hash: exeHash } = buildAndCopyExeFresh(exeDir);
     const launcherExe = buildLauncher(launcherDir);
 
     const launched = await launchBuiltExe(launcherExe, exePath, {
@@ -323,11 +337,21 @@ async function main() {
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && /\\d+\\s+stages,\\s+\\d+\\s+agents/.test(t.textContent); })()`,
         { timeoutMs: 120_000, label: 'Subagent chain row rendered (2+ Stages this turn)' },
       );
+      assertExeUnchanged(exePath, exeHash, 'chain row rendered');
       await cdp.screenshot(path.join(SHOTS_DIR, '03-turn-a-chain-row.png'));
       const chainSummary = await cdp.evaluate(
         `(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/\\d+\\s+stages,\\s+\\d+\\s+agents[^.]*/) ?? [''])[0]`,
       );
-      findings.push(`Subagent chain row rendered: "${chainSummary}" -- confirms the real model followed the 2-parallel-then-1-serial instruction into two Stages within one turn.`);
+      if (!chainSummary) throw new Error('chainSummary matched empty: the chain row text did not actually contain "N stages, M agents" despite the waitFor above passing.');
+      // Gate round 2 fix ([CRITICAL] N-new): a #563 DOM marker, not just substring text that an
+      // OLDER build (lacking this story's own code) could never produce by coincidence -- the
+      // `role="group"`-labelled Stage line this round's own `ChainStageLine` introduces. Proves
+      // the running build genuinely contains this PR's code, not a stale pre-#563 binary.
+      const hasStageGroupMarker = await cdp.evaluate(
+        `!!document.querySelector('[role="group"][aria-label^="Stage "]')`,
+      );
+      if (!hasStageGroupMarker) throw new Error('No [role="group"][aria-label^="Stage "] element found in the chain body -- the running build may not actually contain this PR\u2019s ChainStageLine markup.');
+      findings.push(`Subagent chain row rendered: "${chainSummary}" -- confirms the real model followed the 2-parallel-then-1-serial instruction into two Stages within one turn; the chain's own [role="group"] Stage marker is present, confirming this build.`);
 
       // Expand the chain (click its own collapsed trigger -- the "Subagents" labelled row).
       await cdp.click(
@@ -373,19 +397,32 @@ async function main() {
 
     // ---- Scenario (c): toggle "Show thinking" off, confirm Stage count/numbering unchanged ----
     try {
+      assertExeUnchanged(exePath, exeHash, 'before thinking-toggle check');
       const stagesBefore = await cdp.evaluate(`(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/Stage \\d+/g) ?? []).join(',')`);
+      // Gate round 2 fix ([CRITICAL] N-new, G899Tests): the prior version compared `stagesBefore
+      // === stagesAfter` unconditionally, so two EMPTY strings (no "Stage N" text ever found,
+      // meaning this check was run against a build with no Stage rendering at all, or ran before
+      // the chain-row wait above actually settled) silently passed as "identical: true". Assert
+      // non-empty first, so a vacuous pass is impossible.
+      if (!stagesBefore) throw new Error('stagesBefore matched empty: no "Stage N" text found before toggling -- this check cannot prove anything about numbering stability.');
       await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('thinking', false)`);
       await sleep(500);
+      assertExeUnchanged(exePath, exeHash, 'after thinking-toggle');
       const stagesAfter = await cdp.evaluate(`(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/Stage \\d+/g) ?? []).join(',')`);
+      if (!stagesAfter) throw new Error('stagesAfter matched empty: "Stage N" text disappeared entirely once thinking was hidden -- either a real regression, or the transcript re-rendered onto a different build; either way this is not "identical".');
       await cdp.screenshot(path.join(SHOTS_DIR, '07-thinking-off-stages-unchanged.png'));
       const chainSummaryAfter = await cdp.evaluate(
         `(document.querySelector('[aria-label="Transcript"]')?.textContent.match(/\\d+\\s+stages,\\s+\\d+\\s+agents[^.]*/) ?? [''])[0]`,
       );
-      findings.push(`Show-thinking toggle (H1/H4 fix): Stage labels before="${stagesBefore}" after="${stagesAfter}" (identical: ${stagesBefore === stagesAfter}); chain summary after toggle: "${chainSummaryAfter}".`);
+      if (!chainSummaryAfter) throw new Error('chainSummaryAfter matched empty: the chain summary text disappeared once thinking was hidden.');
+      const identical = stagesBefore === stagesAfter;
+      if (!identical) throw new Error(`Stage labels changed when "Show thinking" toggled off: before="${stagesBefore}" after="${stagesAfter}" -- H2/H4 regression.`);
+      findings.push(`Show-thinking toggle (H2/H4 fix): Stage labels before="${stagesBefore}" after="${stagesAfter}" (both non-empty, genuinely identical); chain summary after toggle: "${chainSummaryAfter}".`);
       // Toggle back on, so the rest of this run (and any later screenshot) reflects the default.
       await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('thinking', true)`);
     } catch (err) {
-      notExercised.push(`Show-thinking toggle check failed: ${err.message}`);
+      await cdp.screenshot(path.join(SHOTS_DIR, '99-diag-thinking-toggle-failure.png'));
+      notExercised.push(`Show-thinking toggle check failed or regressed: ${err.message}`);
     }
 
     // ---- Scenario (b): a second turn, Stopped mid-run -> Cancelled status word, no overlap ----
@@ -425,13 +462,21 @@ async function main() {
       notExercised.push(`Turn (b) (fail/cancel + status-word layout) did not complete: ${err.message}`);
     }
 
-    console.log('verify-563-gate1: PASS -- see findings below.');
-    for (const f of findings) console.log(' -', f);
+    writeFileSync(path.join(SHOTS_DIR, 'findings.json'), JSON.stringify({ findings, notExercised }, null, 2));
     if (notExercised.length) {
+      // Gate round 2 fix ([CRITICAL] N-new): the prior version always printed PASS regardless of
+      // this list, so an incomplete run (a target missing, an assertion that degraded itself to
+      // "not exercised" instead of failing) was indistinguishable from a genuinely clean one in
+      // both this console output and the caller's exit code.
+      console.log('verify-563-gate1: INCOMPLETE -- see findings below, then NOT EXERCISED.');
+      for (const f of findings) console.log(' -', f);
       console.log('verify-563-gate1: NOT EXERCISED:');
       for (const n of notExercised) console.log(' -', n);
+      process.exitCode = 1;
+      return;
     }
-    writeFileSync(path.join(SHOTS_DIR, 'findings.json'), JSON.stringify({ findings, notExercised }, null, 2));
+    console.log('verify-563-gate1: PASS -- see findings below.');
+    for (const f of findings) console.log(' -', f);
   } finally {
     if (autoApprove) await autoApprove.stop();
     cdp?.close();

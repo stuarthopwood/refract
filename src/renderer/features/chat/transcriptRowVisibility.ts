@@ -44,13 +44,18 @@ export function isBookkeepingRow(row: StageGroupedItem): boolean {
 // `exited`, or `cancelled` subagent) stays `'visible'` even with "Show tool calls" off, matching
 // `ChatDisplaySection.tsx`'s own copy ("failed or interrupted calls always show").
 //
-// Gate fix (H1/H4, #563 remediation round 4): EVERY hidden `thinking` item -- not only a
-// non-streaming one -- is dropped from what actually renders; `Transcript.tsx`'s own
-// `groupedForRender` does this AFTER grouping runs, not before (decision 3: Stage membership
-// must never depend on a display setting). A thinking part's own `streaming` flag is the WHOLE
-// assistant message's flag, so it can still read `true` while that message's later tool calls
-// are already `running`; its own in-progress signal is announced once per message instead (see
-// `Transcript.tsx`'s own `announceThinking`), outside the grouped rows entirely.
+// Gate round 2 (architect addendum A): EVERY hidden `thinking` item -- not only a non-streaming
+// one -- is dropped from what actually renders; `Transcript.tsx`'s own `turnsWithStages` memo
+// now does this BEFORE grouping runs, restored to the simpler pre-round-1 order now that Stage
+// membership keys on each `subagent` item's own `messageId` (`groupSubagentStages.ts`) instead
+// of position, so it no longer depends on when the filter runs. This function's own
+// `row.kind === 'thinking'` branch below still only ever sees a thinking row when the toggle is
+// ON (it is filtered out upstream when off), so its `'hidden'` return stays defensive, not dead:
+// a future caller that stops pre-filtering would still get the right answer. A thinking part's
+// own `streaming` flag is the WHOLE assistant message's flag, so it can still read `true` while
+// that message's later tool calls are already `running`; its own in-progress signal is announced
+// once per message instead (see `Transcript.tsx`'s own `announceThinking`), outside the grouped
+// rows entirely.
 //
 // Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`StageGroup` row that is hidden by
 // "Show tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a

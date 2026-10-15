@@ -89,23 +89,22 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     return found === -1 ? 0 : found
   }, [rows, selectedId])
 
-  // Decision 13 (issue #563); gate remediation (code-reviewer H1/H2): opening the panel
-  // already pre-selected on an agent (the chat pane's Stage/chain rows, via `openPanel`'s
-  // `selectSubagentId`) focuses that row once it is mounted. Depends on `focusRequestId`
-  // (`subagent-store.ts`, the `sideChatFocusRequestId` precedent), NOT `selectedId`: the prior
-  // `selectedId` dependency reran on every mount with a retained id -- stealing focus back to
-  // the tree on a plain tab-switch or a remount returning from Settings -- and never reran at
-  // all when a chain/entry click re-targeted an agent that was ALREADY selected (`selectedId`
-  // unchanged). `focusRequestId` only bumps for a genuine pre-selected open, covering both
-  // cases, and fires exactly once per bump.
-  const focusRequestId = useSubagentPanelStore((s) => s.focusRequestId)
+  // Decision 13 (issue #563); gate round 2 fix (High): opening the panel already pre-selected
+  // on an agent (the chat pane's Stage/chain rows, via `openPanel`'s `selectSubagentId`)
+  // focuses that row once it is mounted. One-shot (`pendingFocusSubagentId`,
+  // `subagent-store.ts`): the prior `focusRequestId` counter was never consumed or reset, so
+  // this effect ran on EVERY mount while it still read > 0 -- stealing focus into the tree on a
+  // plain tab-switch away and back, or a remount returning from Settings, long after the
+  // pre-selected open that set it. `clearPendingFocus()` consumes the request the instant this
+  // effect focuses the row, so a later remount with no NEW pre-selected open reads `null` and
+  // does nothing.
+  const pendingFocusSubagentId = useSubagentPanelStore((s) => s.pendingFocusSubagentId)
+  const clearPendingFocus = useSubagentPanelStore((s) => s.clearPendingFocus)
   useEffect(() => {
-    if (focusRequestId === 0) return
-    const id = useSubagentPanelStore.getState().selectedId
-    if (!id) return
-    const el = rowRefs.current.get(id)
-    el?.focus()
-  }, [focusRequestId])
+    if (!pendingFocusSubagentId) return
+    rowRefs.current.get(pendingFocusSubagentId)?.focus()
+    clearPendingFocus()
+  }, [pendingFocusSubagentId, clearPendingFocus])
 
   function moveToRow(index: number): void {
     const row = rows[index]
@@ -213,12 +212,16 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   onFocus={() => void selectSubagent(row.node.id)}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-none',
+                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-hidden',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own focus ring and forced-colours selected fallback,
                     // reused verbatim so both trees are visually consistent and the selected row
                     // survives Windows High Contrast (where the `bg-active-indicator` bar below is
-                    // itself repainted away).
+                    // itself repainted away). Gate round 2 (High): `outline-none` paired with
+                    // `focus-visible:outline-*` is the Tailwind 4 trap (`outline-none` pins
+                    // `outline-style: none` permanently, so the focus-visible utilities below
+                    // never actually paint) -- `outline-hidden` only suppresses the DEFAULT
+                    // browser outline, leaving `outline-style` free for `focus-visible` to set.
                     'hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >

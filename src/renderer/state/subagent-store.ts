@@ -52,15 +52,20 @@ interface SubagentPanelState {
    * opened it this time -- and cleared back to `null` wherever `sessionId` itself is cleared
    * (`closePanel`, `reset`). */
   openerEl: HTMLElement | null
-  /** Issue #563 gate remediation (code-reviewer H1/H2): a one-shot counter, the `sideChatFocusRequestId`
-   * precedent (`right-pane-store.ts`) applied here -- bumped by `openPanel` ONLY when
-   * `options.selectSubagentId` is set (a genuine pre-selected open, e.g. a chat pane chain/
-   * Stage row), never on a plain re-open with no pre-selection. `SubagentPanel.tsx`'s own
-   * focus effect depends on this instead of `selectedId` so it fires exactly once per
-   * pre-selected open -- including re-activating an agent that was ALREADY selected, since the
-   * counter still bumps even though `selectedId` itself wouldn't change -- and never on a plain
-   * remount/tab-switch back to an unchanged `selectedId` (the prior dependency's two bugs). */
-  focusRequestId: number
+  /** Issue #563 gate round 2 fix (High): the prior `focusRequestId` counter was never consumed
+   * or reset, so `SubagentPanel.tsx`'s own effect ran on EVERY mount while it still read > 0 --
+   * stealing focus into the tree on a plain tab-switch away and back, or a remount returning
+   * from Settings, long after the pre-selected open that set it. One-shot instead: `openPanel`
+   * replaces this wholesale with `options.selectSubagentId` (or `null` for a plain re-open with
+   * no pre-selection); `SubagentPanel.tsx`'s focus effect consumes it -- focuses the row, then
+   * calls `clearPendingFocus()` -- so a later remount with the SAME still-selected agent and no
+   * new pre-selected open sees `null` and does nothing. */
+  pendingFocusSubagentId: string | null
+  /** Clears `pendingFocusSubagentId` back to `null` once `SubagentPanel.tsx`'s focus effect has
+   * consumed it (focused the row). The one-shot half of the fix above: without this, the SAME
+   * non-null value would still be sitting there for the next remount to misread as a fresh
+   * request. */
+  clearPendingFocus(): void
   /** Binds the panel's content to `sessionId` -- the shell (`right-pane-store.ts`'s
    * `openPanel('subagents')`) decides whether the panel is actually showing. `options.opener`
    * (issue #563, FR-026) records the control to return focus to on close; `options.
@@ -111,15 +116,17 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   streams: {},
   suspended: false,
   openerEl: null,
-  focusRequestId: 0,
+  pendingFocusSubagentId: null,
+  clearPendingFocus: () => set({ pendingFocusSubagentId: null }),
   openPanel: (sessionId, options) => {
     const { sessionId: prevSessionId } = get()
     const openerEl = options?.opener ?? null
-    // Issue #563 gate remediation: a genuine pre-selected open (the chat pane's Stage/chain
-    // rows) bumps `focusRequestId` so `SubagentPanel.tsx`'s own one-shot focus effect fires --
-    // a plain re-open with no pre-selection (a rail click, the chip, a remount) must NEVER bump
-    // this, or that effect would steal focus back to the tree on every such re-open/remount.
-    const focusBump = options?.selectSubagentId ? 1 : 0
+    // Gate round 2 fix: replaced wholesale on every call (`options.selectSubagentId` for a
+    // genuine pre-selected open, `null` for a plain re-open with no pre-selection) -- never
+    // bumped, so a later remount/tab-switch back with no new pre-selected open always reads
+    // `null` here and `SubagentPanel.tsx`'s focus effect does nothing, instead of re-reading a
+    // stale non-zero counter and stealing focus back into the tree.
+    const pendingFocusSubagentId = options?.selectSubagentId ?? null
     // Gate remediation (Low/Medium, code-reviewer + security-auditor): rebinding to a different
     // Session without clearing the old one left main still forwarding the previous Session's
     // selected subagent's patches to no listener, and this store's own `selectedId`/`streams`
@@ -129,14 +136,14 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       void window.refract.chat
         .setVisibleSubagent(prevSessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-      set((s) => ({
+      set({
         sessionId,
         selectedId: null,
         streams: {},
         suspended: false,
         openerEl,
-        focusRequestId: s.focusRequestId + focusBump
-      }))
+        pendingFocusSubagentId
+      })
     } else {
       // Gate remediation (High, round 4): re-opening the SAME Session (rail, chip or launcher,
       // after a drag-collapse) must leave `suspended`/`streams` exactly as `suspend()` left
@@ -146,7 +153,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       // stream and main still not forwarding patches. `openerEl` is replaced wholesale
       // regardless (issue #563): each explicit open re-establishes who opened it this time,
       // even a re-open of the same Session.
-      set((s) => ({ sessionId, openerEl, focusRequestId: s.focusRequestId + focusBump }))
+      set({ sessionId, openerEl, pendingFocusSubagentId })
     }
     // Issue #563: a caller (the chat pane's Stage/chain rows) can open the panel pre-selected
     // on a specific agent -- reuses `selectSubagent`'s own fetch/cache logic rather than
@@ -170,7 +177,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // those controls in the Tab order and in screen-reader browse mode. The shell (RightPaneShell)
     // also gates the content on `openPanelIds`, but clearing `sessionId` here too means no stale
     // panel state lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
-    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null })
+    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null })
     useRightPaneStore.getState().closePanel('subagents')
     // High remediation (code-reviewer, spec-004 final confirmation pass): the readout update
     // that unmounts this panel's content is debounced, so the chip this used to focus
@@ -250,7 +257,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .setVisibleSubagent(sessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
-    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null })
+    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null })
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewTurn: (sessionId) => {

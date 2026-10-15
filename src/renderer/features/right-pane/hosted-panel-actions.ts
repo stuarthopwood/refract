@@ -15,12 +15,13 @@ export function openHostedPanel(
 ): void {
   if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId, options)
   // Issue #563 gate remediation: when the caller pre-selects an agent, `SubagentPanel.tsx`'s own
-  // `focusRequestId` effect (bumped above, inside `openPanel`) is the ONLY thing that should move
-  // focus -- `right-pane-store.ts`'s own generic "focus the newly opened panel's content" effect
-  // runs in the SAME commit as a genuine open and, left unsuppressed, steals focus to its content
-  // wrapper a tick after this panel's own effect already landed it on the pre-selected tree row
-  // (child effects run before parent effects). `focus: false` sets `suppressNextContentFocus`
-  // (`RightPaneShell.tsx`'s own consuming effect), leaving that race with only one winner.
+  // `pendingFocusSubagentId` effect (set above, inside `openPanel`) is the ONLY thing that
+  // should move focus -- `right-pane-store.ts`'s own generic "focus the newly opened panel's
+  // content" effect runs in the SAME commit as a genuine open and, left unsuppressed, steals
+  // focus to its content wrapper a tick after this panel's own effect already landed it on the
+  // pre-selected tree row (child effects run before parent effects). `focus: false` sets
+  // `suppressNextContentFocus` (`RightPaneShell.tsx`'s own consuming effect), leaving that race
+  // with only one winner.
   useRightPaneStore.getState().openPanel(id, { focus: !options?.selectSubagentId })
 }
 

@@ -49,7 +49,7 @@ The row between the transcript and the message box (spec 004), spanning the chat
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
 **Stage**:
-The subagents started by one `task()` call (or by `task()` calls issued together, with nothing else in the transcript between them), numbered in turn order (issue #563).
+The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal).
 _Avoid_: Batch (in UI text), gate, phase
 
 **Subagent chain**:

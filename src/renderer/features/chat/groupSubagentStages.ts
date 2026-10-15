@@ -28,15 +28,17 @@ export function isStageGroup(item: StageGroupedItem): item is StageGroup {
   return item.kind === 'stage-group'
 }
 
-// Groups consecutive `subagent` transcript items into one `StageGroup` per Stage (issue #563
-// decision 3): a Stage is the subagents started by one `task()` call, or by `task()` calls
-// issued together with nothing else in the transcript between them. [INFERENCE, spec 001
-// Clarifications 2026-10-15]: this build's transcript carries no explicit assistant-message or
-// part-index field to key "issued together" on directly, so adjacency -- no intervening
-// non-subagent item -- is the closest available proxy: a genuinely later, serial `task()` call
-// is always preceded by at least one other item (the model's next turn: a `thinking`/`request`/
-// `tool`/`assistant-text` row). Runs once per turn, AFTER `groupToolItems` (whose own `ToolGroup`
-// items pass through untouched, since none has `kind: 'subagent'`).
+// Groups `subagent` transcript items into one `StageGroup` per Stage (issue #563 decision 3): a
+// Stage is the subagents started by one `task()` call, or by `task()` calls issued together
+// within the same assistant message. Keyed on each item's own `messageId` (#563 gate round 2
+// architect addendum A), stamped by the Rust transcript builder at construction time -- NOT on
+// position/adjacency: reopened history carries no subagent timing to split a later serial call
+// on, and an adjacency proxy could merge two genuinely serial `task()` calls that happen to land
+// with nothing else between them in the transcript. A run also flushes on any non-subagent item
+// (so a later Stage's own items still render at their true position in the log), and on a
+// `messageId` change within an unbroken run of subagent items. Runs once per turn, AFTER
+// `groupToolItems` (whose own `ToolGroup` items pass through untouched, since none has
+// `kind: 'subagent'`).
 //
 // Mirrors `groupToolItems`'s own "always wrap, even a run of one" rule (T074, this file's
 // sibling): a Stage's own row must never switch React element type as a second agent or a
@@ -47,6 +49,7 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
   const result: StageGroupedItem[] = []
   const stages: StageGroup[] = []
   let run: SubagentItem[] = []
+  let runMessageId: string | null = null
 
   const flush = () => {
     if (run.length === 0) return
@@ -54,11 +57,14 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
     stages.push(stage)
     result.push(stage)
     run = []
+    runMessageId = null
   }
 
   for (const item of items) {
     if (item.kind === 'subagent') {
+      if (run.length > 0 && item.messageId !== runMessageId) flush()
       run.push(item)
+      runMessageId = item.messageId
       continue
     }
     // A hidden-bookkeeping-tool failure notice (T086, FR-052) is the one documented exception

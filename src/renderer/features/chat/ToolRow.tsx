@@ -266,9 +266,12 @@ export function SubagentRow({ item }: SubagentRowProps) {
     item.status !== 'running' && item.durationMs != null ? (
       <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
     ) : undefined
+  // Gate round 2 (Low, double-word fix): the status word here duplicates the icon slot's own
+  // `SubagentStatusGlyph` `sr-only` word (both sit inside this row's computed accessible name,
+  // e.g. "Failed alpha Failed 3s") -- `aria-hidden` keeps the visible word sighted-only.
   const meta = (
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
+      {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
       {duration}
     </span>
   )

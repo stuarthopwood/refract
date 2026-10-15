@@ -423,15 +423,20 @@ export function Transcript({
     [turns, revealedEarlier]
   )
 
-  // Issue #563 decision 3 + gate fix (H1/H4): Stage boundaries must never depend on the "Show
-  // thinking" toggle, so grouping runs ONCE per turn here on the UNFILTERED `turn.items`.
+  // Issue #563 decision 3 + gate round 2 architect addendum A: Stage boundaries key on each
+  // `subagent` item's own `messageId` (groupSubagentStages.ts), not on position, so they no
+  // longer depend on filtering order -- "Show thinking" off can safely drop thinking items
+  // BEFORE grouping again, restoring `groupToolItems`'s original "merges across a hidden
+  // thinking item" behaviour (#457) that briefly regressed when both groupers ran on the
+  // unfiltered list to protect Stage boundaries, a protection the `messageId` key no longer needs.
   const turnsWithStages = React.useMemo(
     () =>
       visibleTurns.map((turn) => {
-        const groupedWithStages = groupSubagentStages(groupToolItems(turn.items))
+        const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
+        const groupedWithStages = groupSubagentStages(groupToolItems(viewItems))
         return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
       }),
-    [visibleTurns]
+    [visibleTurns, transcriptDisplay.thinking]
   )
 
   // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
@@ -939,17 +944,6 @@ export function Transcript({
 
                 let previousRow: StageGroupedItem | undefined
 
-                // Gate fix (H1/H4): a hidden `thinking` item must still be dropped from what
-                // renders, but it can no longer be stripped BEFORE grouping (that let two serial
-                // `task()` calls merge into one Stage once "Show thinking" turned off -- decision
-                // 3, Stage membership must never depend on a display setting). `groupedWithStages`
-                // (from `turnsWithStages` above) is built from the full, unfiltered items;
-                // `groupedForRender` drops the hidden row AFTER grouping instead, safe because
-                // neither grouper ever folds a bare `thinking` row into a group.
-                const groupedForRender = transcriptDisplay.thinking
-                  ? groupedWithStages
-                  : groupedWithStages.filter((row) => row.kind !== 'thinking')
-
                 // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
                 // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
                 // unmount and remount a fresh sr-only row (a fresh id, since `groupToolItems` keys a
@@ -965,7 +959,7 @@ export function Transcript({
                 // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
                 // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
-                const basePairs = groupedForRender.map(
+                const basePairs = groupedWithStages.map(
                   (row): [StageGroupedItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
                 )
                 const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1

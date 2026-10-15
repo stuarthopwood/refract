@@ -97,20 +97,23 @@ export function stageSettleSummary(group: StageGroup): string {
  * `ToolGroupRow`'s own solo path, `groupToolItems.ts`), so a Stage's row never switches React
  * element type as a second agent or a second Stage streams in (#563 remediation H2/H3: the
  * previous `solo` branch returned a bare `SubagentRow` -- a different element type -- unmounting
- * and losing open/focus state the instant a second agent or Stage arrived). Renders IDENTICAL
- * output to today's bare `SubagentRow` (decision 1) only when this is the turn's one and only
- * Stage AND that Stage has exactly one agent; every other Stage -- including a solo-agent Stage
- * inside a multi-Stage turn -- gets its own "Stage N" header (decision 1: "a single stage is
- * fully summarised by its own group header"). A one-agent Stage's content is the agent's own
- * body directly, no `SpineList`/`<ol>` at all (#565 decision 13: a list mounts only once a 2nd
- * member arrives); a multi-agent Stage's content is the member `SpineList`. */
+ * and losing open/focus state the instant a second agent or Stage arrived). A Stage with exactly
+ * one agent renders IDENTICAL output to today's bare `SubagentRow` (decision 1: "a single agent
+ * renders exactly like today's SubagentRow") whether or not the turn has other Stages (gate
+ * round 2 architect addendum B: `solo` is `items.length === 1` in every turn, never gated on
+ * `totalStages` too -- the Stage number lives ONLY in the chain and in this row's own
+ * `triggerAriaLabel`, never in the visible label, so nothing is relabelled under the reader when
+ * a second Stage later arrives, decision 6). Every multi-agent Stage gets its own "Stage N"
+ * header (decision 1: "a single stage is fully summarised by its own group header"); its content
+ * is the member `SpineList` (a one-agent Stage's content is the agent's own body directly, no
+ * `SpineList`/`<ol>` at all -- #565 decision 13: a list mounts only once a 2nd member arrives). */
 export function StageGroupRow({ group }: { group: StageGroup }) {
   const statuses = group.items.map((item) => chatRowStatus(item.status))
   const counts = summarizeSubagentStatuses(statuses)
   const status = overallStatus(counts)
   const isRunning = status === 'running'
   const total = group.items.length
-  const soloOfTurn = group.totalStages === 1 && total === 1
+  const solo = total === 1
 
   // #563 remediation (L4/decision 19, #565 decision 26) fade-in: a member row that mounts WHILE
   // this Stage is live (running) fades in; one present at a settled/history mount never does.
@@ -128,16 +131,18 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
 
-  if (soloOfTurn) {
+  if (solo) {
     const item = group.items[0]!
     const duration =
-      item.status !== 'running' && item.durationMs != null ? (
-        <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
-      ) : undefined
+      item.status !== 'running' && item.durationMs != null ? formatElapsed(item.durationMs) : undefined
+    // #563 gate round 2 (double-word fix): the visible word here duplicates the icon slot's own
+    // `SubagentStatusGlyph` `sr-only` word (both sit inside this trigger's accessible name), and
+    // `triggerAriaLabel` below already states the word and duration once on its own -- `aria-
+    // hidden` keeps this span sighted-only, so the computed name is never read twice.
     const meta = (
-      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
         {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
-        {duration}
+        {duration != null && <span className="tabular-nums">{duration}</span>}
       </span>
     )
     return (
@@ -145,6 +150,9 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         icon={<SubagentStatusGlyph status={status} />}
         label={item.name}
         meta={meta}
+        // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
+        // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
+        triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}
         className="border-transparent hover:border-transparent"
       >
         <SubagentBody item={item} />
@@ -157,9 +165,10 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
   const summaryText = isRunning ? stageRunningSummary(counts, total) : stageSettleSummary(group)
   // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
   // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta`, ahead
-  // of the duration -- gated off for `finished` (decision 14).
+  // of the duration -- gated off for `finished` (decision 14). `aria-hidden` (gate round 2,
+  // double-word fix): `triggerAriaLabel` below restates the word and duration once on its own.
   const meta = (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
       {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
       {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
     </span>
@@ -183,26 +192,25 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       // M1/decision 2: the accessible name carries the stage COUNT the visible label omits,
       // applied directly to the trigger (not an sr-only span inside `children`, which Radix
       // unmounts while collapsed and so is invisible to assistive tech in the common case).
-      triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}`}
+      // Gate round 2 (Low): also restates the running/failed/etc. word and duration `meta` shows
+      // visibly, since `aria-label` replaces the content name outright -- otherwise a running
+      // Stage's own accessible name carries no "Running" and no elapsed time at all.
+      triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       className="border-transparent hover:border-transparent"
-      // #565 decision 8: zeroed only when a `SpineList` is the content -- its own `ml-4`/`pt-1`
-      // is the sole geometry in play then; a single agent's own body keeps the default padding.
-      contentClassName={total >= 2 ? 'space-y-0 p-0' : undefined}
+      // #565 decision 8: the sole geometry in play once a `SpineList` is the content is its own
+      // `ml-4`/`pt-1` -- `total` is always >= 2 here (a solo Stage returns early above).
+      contentClassName="space-y-0 p-0"
     >
-      {total === 1 ? (
-        <SubagentBody item={group.items[0]!} />
-      ) : (
-        <SpineList gap="member">
-          {group.items.map((item) => {
-            const isNew = isRunning && !seenIds.has(item.id)
-            return (
-              <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
-                <SubagentRow item={item} />
-              </li>
-            )
-          })}
-        </SpineList>
-      )}
+      <SpineList gap="member">
+        {group.items.map((item) => {
+          const isNew = isRunning && !seenIds.has(item.id)
+          return (
+            <li key={item.id} className={isNew ? 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150' : undefined}>
+              <SubagentRow item={item} />
+            </li>
+          )
+        })}
+      </SpineList>
     </CollapsedLine>
   )
 }
@@ -247,9 +255,18 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
   )
 }
 
+// Decision 8: each Stage's own line in the chain body is a labelled `role="group"` -- the
+// `<ol>`/`<li>` from `SpineList` only gives an unlabelled "1 of 2" position, which softens the
+// stage boundary a screen reader needs to hear. `px-2` (gate round 2, High): `SpineList`'s own
+// `pl-2` was dropped in favour of each ROW supplying its own 8px gap from the line (#565
+// decision 8), which this row's text never did, leaving "Stage N" flush against the spine.
 function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+    <div
+      role="group"
+      aria-label={`Stage ${stage.stageIndex} of ${stage.totalStages}, ${stageSettleSummary(stage)}`}
+      className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
+    >
       <span className="shrink-0 font-medium">Stage {stage.stageIndex}</span>
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         {stage.items.map((item) => (
@@ -317,6 +334,18 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
     for (const stage of stages) seenStageIds.add(stage.id)
   }, [stages, seenStageIds])
 
+  // Decision 19 (gate round 2 fix): the chain's own duration must genuinely tick once a second
+  // while running, matching `Transcript.tsx`'s own `TurnTotalLine` tick (`forceTick` pattern) --
+  // the comment below already claimed this, but nothing re-rendered this component on its own
+  // until now, so `Date.now()` was only ever read once per OTHER state change. Also before the
+  // early return (hooks rule).
+  const [, forceTick] = React.useReducer((count: number) => count + 1, 0)
+  React.useEffect(() => {
+    if (!isRunning) return
+    const interval = setInterval(forceTick, 1000)
+    return () => clearInterval(interval)
+  }, [isRunning])
+
   if (stages.length < 2) return null
 
   const { startedAt, endedAt } = stageTimeRange(allItems)
@@ -331,18 +360,13 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   const defaultOpen = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
   // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
   // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta`, ahead
-  // of the duration -- gated off for `finished` (decision 14).
+  // of the duration -- gated off for `finished` (decision 14). `aria-hidden` (gate round 2,
+  // double-word fix): `triggerAriaLabel` below restates the word and duration once on its own,
+  // so the formerly-separate `sr-only` "Took ..." span is dead now and dropped entirely.
   const meta = (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
       {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
-      {durationMs != null && (
-        <span aria-hidden={isRunning || undefined}>
-          <span aria-hidden="true" className="tabular-nums">
-            {formatElapsed(durationMs)}
-          </span>
-          <span className="sr-only">Took {formatElapsed(durationMs)}</span>
-        </span>
-      )}
+      {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
     </span>
   )
 
@@ -356,7 +380,9 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       defaultOpen={defaultOpen}
       className="mt-6 border-transparent hover:border-transparent"
       contentClassName="space-y-0 p-0"
-      triggerAriaLabel={`Subagents, ${summary}`}
+      // Gate round 2 (Low): also restates the running/failed/etc. word and duration `meta` shows
+      // visibly, since `aria-label` replaces the content name outright.
+      triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       action={<ChainShowPanelButton sessionId={sessionId} />}
     >
       <SpineList gap="stage">
