@@ -21,10 +21,9 @@
 // Not covered here (left for a future round): a real, signed-in `omp`'s own `ask.timeout`
 // handling (`ask.jsonl` carries no `timeout` key, matching `docs/spike/FINDINGS.md` item 59's
 // live probe at its disabled default), and keyboard-only operation of the radio/tab groups
-// themselves (every pick above is a mouse click or typed text, never Tab/Arrow-key navigation
-// through the option rows) -- gate round 3 adds real keyboard Tab+Enter for ONLY the final
-// Submit step, specifically to prove the D17 focus-ring target is not clipped, not as a stand-in
-// for full keyboard coverage of the whole card.
+// themselves (every pick above is a mouse click or typed text) -- gate round 3 adds real
+// keyboard Tab+Enter for ONLY the final Submit step, to prove the D17 focus-ring target is not
+// clipped, not as a stand-in for full keyboard coverage of the whole card.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync } from 'node:fs';
@@ -130,11 +129,8 @@ function copyBuiltExe(destDir) {
   const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(src)) throw new Error(`copyBuiltExe: built exe not found at ${src}`);
   copyFileSync(src, dest);
-  // Gate round 3: logged, not compared against anything stored -- a sibling lane's own gate
-  // round once found a copied exe whose embedded JS bundle was stale (cargo's own asset
-  // embedding keyed off a directory mtime that a content-only change does not always bump), so
-  // this hash is the evidence a reviewer needs to confirm two runs actually built different code
-  // rather than silently reusing a cached binary.
+  // Gate round 3: logged so a reviewer can confirm two runs built different code rather than
+  // silently reusing a stale cached binary (a sibling lane's gate once found exactly that).
   const hash = createHash('sha256').update(readFileSync(dest)).digest('hex');
   console.log(`verify-tauri-ask: copied exe sha256 ${hash} (${dest})`);
   return dest;
@@ -252,11 +248,9 @@ function askRowTriggerFinder() {
   return `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.includes('Asked user:'))`;
 }
 
-/** Gate round 3: the REAL computed accessible name of `document.activeElement`, read through the
- * CDP Accessibility domain (`Accessibility.getPartialAXTree` against the live element's own
- * `objectId`) -- never `textContent`, which joins adjacent flex-item spans with no separator and
- * is not what a screen reader actually announces. Returns `null` for both `name`/`role` when
- * nothing is focused or the element yields no AX node (e.g. focus is on `<body>`). */
+/** Gate round 3: the REAL computed accessible name of `document.activeElement` via CDP
+ * Accessibility domain -- never `textContent`, which has no separator and is not what a screen
+ * reader announces. `null` for both fields when nothing is focused or there is no AX node. */
 async function getActiveElementAccessibleName(cdp) {
   await cdp.send('Accessibility.enable');
   const evalResult = await cdp.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false });
@@ -267,11 +261,8 @@ async function getActiveElementAccessibleName(cdp) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
-/** Gate round 3 (architect M-1): a real keyboard Tab (`Input.dispatchKeyEvent`, `type: 'keyDown'`
- * so the browser's own default focus-move action runs, not just a synthetic DOM event), used to
- * drive the final Submit via keyboard instead of a mouse click -- the only way to prove the D17
- * target's own `:focus-visible` ring is not clipped, since Chromium suppresses `:focus-visible`
- * after a mouse-driven focus regardless of what the CSS says. */
+/** Gate round 3 (architect M-1): a real keyboard Tab, used to drive Submit via keyboard instead
+ * of a mouse click -- Chromium suppresses `:focus-visible` after a mouse-driven focus. */
 async function pressTab(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
