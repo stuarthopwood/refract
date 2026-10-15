@@ -31,6 +31,10 @@ export const PAIRS = [
   { fg: 'ring', bg: 'background', min: 3 },
   { fg: 'scrollbar-thumb', bg: 'background', min: 3 },
   { fg: 'active-indicator', bg: 'background', min: 3 },
+  // Gate round 5 (#564 follow-up): `dropdown-menu.tsx`'s own active-row inset shadow now uses
+  // this token (was `--ring`), rendered on `bg-popover` (`DropdownMenuContent`'s own fill),
+  // never checked against that specific surface before.
+  { fg: 'active-indicator', bg: 'popover', min: 3 },
   { fg: 'destructive', bg: 'background', min: 3 },
   { fg: 'state-working', bg: 'background', min: 3 },
   { fg: 'state-idle', bg: 'background', min: 3 },

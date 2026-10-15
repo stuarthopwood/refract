@@ -166,9 +166,16 @@ pub async fn set_thinking_level(agent: &SessionAgent, level: &str) -> Result<Val
             agent.events().emit_session_list_changed();
         }
     }
+    // Gate round 5 fix (Flow LOW, `agent://Arch877`): the not-confirmed branch used to drop the
+    // requested level entirely ("a level this model did not report back", naming nothing) --
+    // `reasoning_label(level)` is the SAME helper the confirmed branch already calls, just on
+    // the originally-REQUESTED string instead of the echoed-back `wire_level`.
     let label = match &wire_level {
         Some(value) => reasoning_label(value),
-        None => "a level this model did not report back".to_string(),
+        None => format!(
+            "{} (not reported back by this model)",
+            reasoning_label(level)
+        ),
     };
     post_notice(
         agent,

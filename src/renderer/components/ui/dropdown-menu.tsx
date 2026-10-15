@@ -63,8 +63,12 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-variant={variant}
       data-inset={inset}
+      // Gate round 5 fix (Visual Medium #11): the active-row inset shadow used the plain focus-
+      // ring token (`--color-ring`), a different cue from the composer's own pickers, which use
+      // the opaque `--active-indicator` token for the SAME purpose (gate round 2) -- unified so
+      // every menu's active-row cue is the same colour.
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-ring)] data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -92,18 +96,24 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
+      // Gate round 5 fix (Visual Medium #11): the current-level check moves from a LEADING
+      // `absolute left-2` indicator to a TRAILING one, matching the Model picker's and the
+      // Approval pill's own trailing checks (this is the only consumer of this vendored
+      // component in the app today, so the change is scoped to exactly the one menu that needed
+      // it). The inset shadow also moves to `--active-indicator`, same as `DropdownMenuItem`
+      // above.
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 py-1.5 pr-2 pl-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-ring)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span className="pointer-events-none flex size-3.5 shrink-0 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
           <CheckIcon aria-hidden className="size-3.5" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
-      {children}
     </DropdownMenuPrimitive.RadioItem>
   )
 }

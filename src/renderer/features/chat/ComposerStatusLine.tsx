@@ -12,9 +12,11 @@
 // chip, when enabled, renders last with `ml-auto` so it sits at the row's right end (Stuart,
 // 2026-10-15); no branch name and no mode dot (same decision, 2026-10-15 mockup-stories review:
 // the Session row already shows the branch, spec 004 data-model.md, so repeating either here
-// would be redundant). When no chip is enabled or meaningful, this renders an empty, zero-height
-// flex container -- never a visible empty bar, since the one guaranteed item (the Approval pill)
-// is gone.
+// would be redundant). When no chip is enabled or meaningful, the container collapses to true
+// zero height via `empty:hidden` (gate round 5, Visual Medium: a flex container with no React
+// children still has no DOM children either, so `:empty` matches and the parent's own `gap-2`
+// no longer adds a lopsided gap above an invisible row) -- never a visible empty bar, since the
+// one guaranteed item (the Approval pill) is gone.
 import { useSettingsStore } from '@/state'
 import {
   ChangesChip,
@@ -29,7 +31,7 @@ import {
 export function ComposerStatusLine({ sessionId }: { sessionId: string }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
-    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
+    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
       {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
       {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}

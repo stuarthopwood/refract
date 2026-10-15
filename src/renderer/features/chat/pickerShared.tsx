@@ -34,14 +34,32 @@ export function usePickerOpenState(disabled: boolean) {
   return { open, setOpen, onOpenChange }
 }
 
+/** Gate round 5 fix (Visual Medium #4, #11): one shared composer focus treatment instead of each
+ * control drawing its own mix of ring/outline/border-colour -- the Approval pill, both pickers,
+ * Attach, Send and Stop all now draw the SAME opaque 2px outline with a 2px offset.
+ * `badgeVariants`-based triggers (the pill, the pickers) already show a visible outline once a
+ * width utility is applied (their base class never sets `outline-style: none`); `Button`-based
+ * controls (`button.tsx`) start from `outline-none` and draw their own `ring`/`border-ring`
+ * focus instead, so `COMPOSER_BUTTON_FOCUS_CLASS` additionally turns the outline style back on
+ * (`outline-solid`) and drops Button's own ring/border-colour change so the two never show at
+ * once. */
+export const COMPOSER_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+export const COMPOSER_BUTTON_FOCUS_CLASS = cn(COMPOSER_FOCUS_CLASS, 'focus-visible:border-transparent focus-visible:outline-solid')
+
+/** Gate round 5 fix (Visual LOW): disabled composer triggers used two different opacities (0.5,
+ * `badgeVariants`' own `aria-disabled:opacity-50`; 0.6, the box-dim-matching override gate round
+ * 4 added per-picker) and still showed hover feedback while disabled. One shared value, applied
+ * unconditionally wherever `aria-disabled` is the only disabled signal (no separate native
+ * `disabled` attribute), plus a hover reset so a disabled trigger's own hover background/text
+ * classes never activate underneath the dim. */
+export const COMPOSER_DISABLED_CLASS =
+  'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent aria-disabled:hover:text-current'
+
 export const PICKER_TRIGGER_CLASS = cn(
   badgeVariants({ variant: 'outline' }),
-  'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
-  // Gate round 1 fix (MEDIUM): `badgeVariants`' own base focus ring is `ring-ring/50` (50%
-  // alpha), below the WCAG 1.4.11 non-text 3:1 floor for a focus indicator. Opaque override,
-  // the codebase's own `outline-ring` convention (`CollapsedLine.tsx`); `cn`'s Tailwind-merge
-  // dedupes the conflicting `ring-color` utility so this wins over the base class above.
-  'focus-visible:ring-ring focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted',
+  COMPOSER_DISABLED_CLASS,
+  COMPOSER_FOCUS_CLASS
 )
 
 /** The keyboard-active option highlight (gate round 2, accessibility-auditor HIGH): a plain

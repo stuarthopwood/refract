@@ -101,6 +101,17 @@ field whose bottom bar shows the mode, model, and agent.
   `accessibleName` on this chip's own role-less `<span>`, which several real screen readers (NVDA
   in browse mode, often Narrator and JAWS) ignore there. Built inside PR #877 (#564's composer
   status line), spec 004 is the right feature directory for this change, not spec 001.
+- Q: Gate round 5 (`agent://Arch877`, fifth-gate UI/UX review of PR #877): the Subagents chip's
+  running-vs-finished emphasis (`running === 0 ? 'text-muted-foreground' : undefined`) was a
+  no-op, since `ReadoutChip.tsx`'s own base class already carries `text-muted-foreground` --
+  neither state ever looked different from the other. Fix? -> A: `running > 0 ? 'text-foreground'
+  : undefined` (FR-007 amended): the RUNNING state goes brighter instead of attempting to make
+  the already-quiet finished state quieter still.
+- Q: Gate round 5: the Context usage Readout's high-usage warning tested `contextUsage.percent
+  >= 90` (the raw value) while the visible text showed `Math.round(contextUsage.percent)` -- a
+  raw 89.5 to 89.99 displayed "90%" with no warning at all. Fix? -> A: Test the rounded,
+  DISPLAYED percent instead (FR-003 amended): the warning must always agree with what the
+  developer actually reads.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -362,7 +373,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-003**: The Context window usage chip MUST show the tokens used, the context window size,
   and the percentage used, for the Session's running agent; it MUST be hidden, or show "Not
   available", when the agent does not report this; as usage nears the window's limit, the chip
-  MUST visibly warn using text or an icon, never color alone. The used-tokens and window-size
+  MUST visibly warn using text or an icon, never color alone. The high-usage warning threshold
+  (gate round 5, Flow LOW fix) is evaluated against the ROUNDED percentage actually shown, not
+  the raw value underneath it -- a raw 89.5 to 89.99 rounds to the displayed "90%", and the
+  warning MUST agree with what the developer reads, not a value one percentage point below it.
+  The used-tokens and window-size
   figures MUST be formatted by one shared lower-case `k`/`m`/`b` formatter (2026-10-15 grill,
   issue #437, decided 2026-10-05/2026-10-15): plain below 1,000; at most one decimal above it,
   with a trailing zero dropped (`1m`, never `1.0m`), rounded half up, carrying to the next larger
@@ -388,7 +403,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   show a quiet, comma-joined total of whichever of `finished`/`exited`/`failed` are non-zero (for
   example "1 finished, 1 exited", or "1 failed" when a turn's only subagents failed), worded
   distinctly per status rather than folded into one misleading "finished" bucket (issue #536); it
-  MUST be hidden when the turn has started none.
+  MUST be hidden when the turn has started none. The RUNNING state MUST visibly stand out from
+  the quiet finished-only total (gate round 5, Layout/Visual Medium fix: the chip's own base
+  style is already the quiet muted colour every readout uses at rest, so a running-vs-finished
+  distinction needs the RUNNING state to go brighter, not the finished state to go quieter still,
+  which a literal reading of "quiet" above could otherwise be misread as).
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.

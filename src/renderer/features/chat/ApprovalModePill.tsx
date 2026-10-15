@@ -1,6 +1,8 @@
-// Approval mode pill (docs/DESIGN.md "Chat"; FR-015, FR-020, FR-054, FR-056): the single home for
-// the app-wide Approval mode, sitting as the first item in the chip row directly above the
-// message box (MessageInput.tsx). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
+// Approval mode pill (docs/DESIGN.md "Chat"; FR-015, FR-020, FR-054, FR-056; spec 001 FR-065):
+// the single home for the app-wide Approval mode, first in the composer box's own bottom row
+// (`MessageInput.tsx`; moved there from the status line above by #496, gate round 5 fix: this
+// comment still said "the chip row directly above the message box", stale since #564 moved it
+// INTO the box). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
 // and the chat header's pending-mode Badge (ChatHeader.tsx, T098) -- both read/wrote the exact
 // same `settings.approvalMode` / session `pendingMode`, so this is the one place left that does.
 // The pill's "current" mode is the Session's own `launchedMode` while its agent is actually LIVE
@@ -23,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useSessionsStore, useSettingsStore } from '@/state'
+import { COMPOSER_FOCUS_CLASS } from './pickerShared'
 import type { ApprovalMode } from '../../../shared/model'
 
 interface ModeItem {
@@ -74,16 +77,18 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Approval mode: ${current.label}${pendingLabel ? `. ${pendingLabel}` : ''}`}
+          // Gate round 5 fix (Flow Medium #11): starts with the trigger's own visible text
+          // ("Ask"/"Edit freely"/"Auto"), matching the SAME fix on the Model and Reasoning
+          // pickers (WCAG 2.5.3, `docs/design/accessibility.md:16`).
+          aria-label={`${current.label}, approval mode${pendingLabel ? `. ${pendingLabel}` : ''}`}
           className={cn(
             badgeVariants({ variant: 'outline' }),
             'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted',
-            // Gate round 4 fix (WCAG 1.4.11): `badgeVariants`' own base focus ring is
-            // `ring-ring/50` (50% alpha), below the non-text 3:1 floor -- the same gate round 1
-            // fixed on the Model/Reasoning picker triggers (`PICKER_TRIGGER_CLASS`). Dropped
-            // (`ring-0`, which `cn`'s Tailwind-merge resolves against the base class's
-            // `ring-[3px]`) in favour of the same opaque `outline-ring` convention.
-            'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+            // Gate round 5 fix (Visual Medium #4): the shared composer focus class
+            // (`pickerShared.tsx`), instead of this pill's own gate round 4 one-off copy of it --
+            // the pill, both pickers, Attach, Send and Stop all draw the identical opaque 2px
+            // outline now.
+            COMPOSER_FOCUS_CLASS
           )}
         >
           <CurrentIcon aria-hidden className="size-3" />

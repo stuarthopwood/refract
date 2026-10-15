@@ -24,6 +24,7 @@ import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from '
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { attachImageFile } from './attachImage'
 import {
@@ -1358,21 +1359,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           inside as round icon-only buttons, and the provider/model/effort readout along the
           bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
           field, not just the text area, shows the focus state. */}
-      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4,
-          Stuart 2026-10-15: the Approval pill stays BRIGHT -- it works even while the agent is
-          stopped): the box no longer grows a grey fill on its own text area while disabled
-          (`Textarea`'s vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden
-          below) -- the unusable parts (the text field, Send/Stop, and the Model/Reasoning
-          pickers and Attach button in the bottom row) dim as one `opacity-60` layer instead
-          (never a Tailwind colour-opacity modifier like `bg-x/50`), matching the house "dimmed
-          but still visible" convention (`docs/design/product-layout.md` "Check again"). The
-          outer box's own border/background never dims (measured: the Approval pill, which DOES
-          still work while stopped, sits directly on the undimmed `bg-composer-background` with
-          its full-strength border either way, never on a faded surface that would drop its own
-          WCAG 1.4.11 edge below 3:1). Behaviour is unchanged: `disabled` is exactly the same
-          boolean that already drove the native `disabled` attribute below. The WCAG 1.4.11 3:1
-          control-edge rule applies to the enabled border only; a disabled control is exempt. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
+          the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
+          vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
+          unusable parts (text field, Send/Stop, Model/Reasoning pickers, Attach) dim as one
+          `opacity-60` layer instead, never a colour-opacity modifier. The outer box's own
+          border/background never dims: the Approval pill DOES still work while stopped, so it
+          sits on the undimmed `bg-composer-background` with its full-strength border either way
+          (measured, WCAG 1.4.11). `disabled` is the same boolean already driving the native
+          `disabled` attribute below; the 3:1 control-edge rule applies to the enabled border
+          only. Gate round 5 fix (Visual Medium #4): the ring shows only on the TEXTAREA's own
+          `:focus-visible` (`has-[textarea:focus-visible]`, was `focus-within`, which lit the
+          whole box for a pill/picker/Attach/Send focus too -- each now draws its OWN opaque
+          outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS`, gate4
+          `11-pill-keyboard-focused.png`). */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50">
         <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
           {showSlashMenu && (
             <SlashMenu
@@ -1423,7 +1424,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent dark:disabled:bg-transparent"
+            // Gate round 5 fix (Visual LOW): the field block's own 0.6 dim left the base
+            // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
+            // read the stop reason it carries -- `disabled:placeholder:text-foreground`
+            // brightens the placeholder itself so the dim lands it back near readable.
+            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent"
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1548,7 +1553,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     type="button"
                     variant="invert"
                     size="icon-sm"
-                    className="rounded-full"
+                    className={cn('rounded-full', COMPOSER_BUTTON_FOCUS_CLASS)}
                     aria-label="Stop"
                     aria-keyshortcuts="Control+Shift+X"
                     onClick={() => void handleStop()}
@@ -1585,14 +1590,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   // variant's own `color-mix` pattern instead).
                   className={cn(
                     'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
-                    // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: now scoped to the
-                    // field block, not the whole box): own opacity only for the OTHER three
-                    // refusal reasons (starting, a pending attachment read, empty text) -- while
-                    // `disabled` itself is the reason, the enclosing field block's own
-                    // `opacity-60` already covers this button; `disabled` can never be true at
-                    // the same time as `starting` (that only runs through the `!disabled`
-                    // notStarted branch).
-                    !disabled && 'aria-disabled:opacity-50'
+                    // Composer-dimming fix (gate round 4: scoped to the field block, not the
+                    // whole box): own opacity only for the OTHER refusal reasons (starting, a
+                    // pending attachment read, empty text) -- the field block's own `opacity-60`
+                    // already covers the `disabled` case, and `disabled` can never be true at the
+                    // same time as `starting`.
+                    !disabled && 'aria-disabled:opacity-50',
+                    COMPOSER_BUTTON_FOCUS_CLASS
                   )}
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
@@ -1611,13 +1615,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        {/* Composer bottom row (#564, spec 001 FR-065): the Approval mode pill moved here from
-            the status line above (#496), then the model and reasoning pickers (FR-064, replacing
-            the old read-only CpuIcon/GaugeIcon line), then the attach button. */}
-        <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-1">
+        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then Model/Reasoning
+            pickers (FR-064, replacing the old read-only CpuIcon/GaugeIcon line), then Attach.
+            Gate round 5 (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus
+            outline off the box's own bottom border; `px-2.5`/the picker rows' `py-1.5` stay a
+            documented spacing-grid exception, shared with other composer surfaces. */}
+        <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
-          <ModelPicker sessionId={sessionId} boxDimmed={disabled} />
-          <ReasoningPicker sessionId={sessionId} boxDimmed={disabled} />
+          <ModelPicker sessionId={sessionId} />
+          <ReasoningPicker sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>

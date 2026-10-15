@@ -10,33 +10,60 @@
 // level as `aria-checked`/`role="menuitemradio"`, never a plain item with a decorative check
 // icon. Gate round 2 (LOW): the disabled reason is now ALSO a visible Tooltip, not only the
 // accessible name.
-import { useRef } from 'react'
+//
+// Gate round 5 fixes (fifth-gate UI/UX review, PR #877, `agent://Arch877`):
+// - A local `pendingLabel` mirrors `ModelPicker.tsx`'s own pending state: set for the duration of
+//   `setThinkingLevel`, shown on the trigger with a `Loader2Icon`, `aria-busy`, and folded into
+//   `usePickerOpenState`'s own `disabled` so the menu cannot reopen mid-request.
+// - The accessible name now starts with the trigger's own visible text (the bare level, e.g.
+//   "High") -- matching `ModelPicker.tsx`'s own fix for the SAME WCAG 2.5.3 finding -- with the
+//   "Reasoning" noun moved to the Tooltip instead of prefixing the visible/accessible text.
+// - `AttachButton` now names its OWN disabled reason (it previously stayed "Attach images" in
+//   both the Tooltip and the accessible name while stopped, unlike both pickers), and uses the
+//   same shared focus/disabled-opacity classes as everything else in this row.
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { GaugeIcon, PaperclipIcon } from 'lucide-react'
+import { GaugeIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
 import { attachImageFile } from './attachImage'
 import { notify, useSessionsStore } from '@/state'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
-import { PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 export { ModelPicker } from './ModelPicker'
 
-export function ReasoningPicker({ sessionId, boxDimmed }: { sessionId: string; boxDimmed: boolean }) {
+export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
-  const { open, onOpenChange } = usePickerOpenState(disabled)
+  // Gate round 5 fix (Flow Medium #9): set for the duration of `setThinkingLevel`; folded into
+  // `usePickerOpenState`'s own disabled condition so the menu cannot reopen mid-request.
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null)
+  const effectiveDisabled = disabled || pendingLabel !== null
+  const { open, onOpenChange } = usePickerOpenState(effectiveDisabled)
   const thinkingLabel = formatThinkingLevelLabel(session ?? {})
 
   async function handleSelect(level: ThinkingLevel) {
-    const result = await window.refract.model.setThinkingLevel(sessionId, level)
-    if (!result.ok) notify({ code: result.error.code, message: result.error.message })
+    setPendingLabel(THINKING_LEVEL_LABEL[level] ?? level)
+    try {
+      const result = await window.refract.model.setThinkingLevel(sessionId, level)
+      if (!result.ok) notify({ code: result.error.code, message: result.error.message })
+    } finally {
+      setPendingLabel(null)
+    }
   }
 
   const label = thinkingLabel ?? 'Reasoning not known yet'
   const disabledReason = notIdle ? 'Available once the session is idle.' : stopped ? 'Start the agent to change the reasoning level.' : null
+  const triggerLabel = pendingLabel ?? label
+  // Gate round 5 fix (Flow Medium #11): the accessible name now STARTS with the trigger's own
+  // visible text (WCAG 2.5.3, `docs/design/accessibility.md:16`) -- the "Reasoning" noun moves to
+  // the Tooltip below instead of prefixing the name, the same choice `ModelPicker.tsx` makes for
+  // its own "Model: ..." prefix (consistency decision, gate round 5 Medium #11).
+  const ariaLabel = `${triggerLabel}, reasoning${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
+  const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : `Reasoning: ${label}`)
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -44,33 +71,32 @@ export function ReasoningPicker({ sessionId, boxDimmed }: { sessionId: string; b
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-disabled={disabled}
-              aria-label={`Reasoning: ${label}${disabledReason ? `. ${disabledReason}` : ''}`}
+              aria-disabled={effectiveDisabled}
+              aria-busy={pendingLabel !== null}
+              aria-label={ariaLabel}
               // Gate round 2 fix (LOW): the Tooltip's own content always duplicates something
               // already in the accessible name (the level when enabled, the disabled reason when
               // not) -- suppressed so a screen reader never says either twice; the Tooltip
               // itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: the Approval pill stays
-              // bright, so the box no longer provides one shared dim for its whole bottom row)
-              // -- `boxDimmed` (true only while the agent is stopped, decision 3) applies the
-              // same `opacity-60` the field block uses, replacing `PICKER_TRIGGER_CLASS`'s own
-              // `aria-disabled:opacity-50` so the stopped-agent reason and the independent
-              // mid-turn `notIdle` reason never compound into a different-looking dim.
-              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-60')}
+              className={PICKER_TRIGGER_CLASS}
             >
-              <GaugeIcon aria-hidden className="size-3" />
-              <span>{label}</span>
+              {pendingLabel !== null ? (
+                <Loader2Icon aria-hidden className="size-3 animate-spin" />
+              ) : (
+                <GaugeIcon aria-hidden className="size-3" />
+              )}
+              <span>{triggerLabel}</span>
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>{disabledReason ?? label}</TooltipContent>
+        <TooltipContent>{tooltipContent}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start">
         {/* Gate round 1 fix (code-reviewer HIGH): a `DropdownMenuRadioGroup`/`RadioItem` bound to
             the Session's current level, instead of a plain `DropdownMenuItem` with a decorative
             `aria-hidden` check icon -- Radix exposes the current one as `aria-checked`/
-            `role="menuitemradio"` automatically, so a screen reader hears it. */}
+            `role="menuitemradio"` automatically. */}
         <DropdownMenuRadioGroup value={session?.lastThinkingLevel ?? undefined} onValueChange={(value) => void handleSelect(value as ThinkingLevel)}>
           {THINKING_LEVELS.map((level) => (
             <DropdownMenuRadioItem key={level} value={level}>
@@ -93,6 +119,10 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
     }
   }
 
+  // Gate round 5 fix (Flow LOW): named its own disabled reason -- previously stayed "Attach
+  // images" in both the Tooltip and the accessible name while stopped, unlike both pickers
+  // (which already name theirs).
+  const disabledReason = disabled ? 'Start the agent to attach images.' : null
   return (
     <>
       {/* Gate round 1 fix (LOW): `hidden` rather than `sr-only` + `tabIndex={-1}` -- a screen
@@ -115,19 +145,19 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label="Attach images"
+            aria-label={`Attach images${disabledReason ? `. ${disabledReason}` : ''}`}
             aria-disabled={disabled}
             // Gate round 1 fix (LOW): the described-by Radix's own Tooltip auto-wires here would
             // just repeat this button's own accessible name ("Attach images" both places) -- a
             // screen reader would say it twice. Suppressed; the tooltip still shows visually.
             aria-describedby={undefined}
-            // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: the Approval pill stays
-            // bright, so the box no longer provides a shared dim for its whole bottom row) --
-            // `disabled` here is exactly MessageInput.tsx's own box-dim condition (decision 3,
-            // stopped only), so this button now applies the same `opacity-60` the field block
-            // uses directly, rather than relying on an enclosing box-wide dim that no longer
-            // exists.
-            className={cn('aria-disabled:cursor-not-allowed', disabled && 'opacity-60')}
+            // Gate round 5 fix (Visual LOW): shares the SAME disabled-opacity value and the same
+            // opaque focus outline every other composer control now uses, instead of its own
+            // bespoke `opacity-60` and Button's default ring-based focus.
+            className={cn(
+              'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent aria-disabled:hover:text-current',
+              COMPOSER_BUTTON_FOCUS_CLASS
+            )}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()
@@ -136,7 +166,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             <PaperclipIcon />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Attach images</TooltipContent>
+        <TooltipContent>{disabledReason ?? 'Attach images'}</TooltipContent>
       </Tooltip>
     </>
   )

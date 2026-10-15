@@ -106,8 +106,10 @@ const CATALOG_KIND_LABEL: Record<CatalogKind, string> = {
 }
 
 // Documented fallback chains (`omp://models.md`): shown next to "Inherited" so the sentinel says
-// what it actually resolves to, not just that it is unset.
-const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
+// what it actually resolves to, not just that it is unset. Exported (gate round 5, #564 follow-
+// up): the composer's Model picker reuses this SAME map and wording for its own Roles list,
+// rather than inventing a second "unset" sentinel that could drift from this one.
+export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
   tiny: 'Smol',
   memory: 'Tiny',
   advisor: 'Slow'

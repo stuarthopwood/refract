@@ -564,3 +564,31 @@ independently driven: a real OMP agent reporting a context-window usage large en
 the `m`/`b` tiers (the scratch harness's fake model never reports usage at all, so the Context
 usage chip stays hidden in every live check; `compactNumber`'s own tier logic is identical
 regardless of which Readout calls it, and is exercised directly above).
+
+## Phase 35: Convergence for gate round 5 (`agent://Arch877`)
+
+**Goal**: two Medium findings from the fifth gate on PR #877 (#564's composer restyle), scoped
+to this spec's own chips: the Subagents running state's emphasis was a no-op, and the Context
+usage high-warning threshold disagreed with the displayed percent.
+
+- [X] T131 [US1] `ReadoutChips.tsx`'s `SubagentsChip`: `className` changed from
+  `running === 0 ? 'text-muted-foreground' : undefined` to `running > 0 ? 'text-foreground' :
+  undefined` (FR-007 amended). `ReadoutChip.tsx`'s own base class already carries
+  `text-muted-foreground`, so the old condition never actually differed from the chip's resting
+  state in either branch -- flipped so the RUNNING state is the one with real visual weight.
+- [X] T132 [US1] `ReadoutChips.tsx`'s `ContextUsageChip`: `high` now tests the rounded, DISPLAYED
+  `percent` instead of the raw `contextUsage.percent` (FR-003 amended) -- a raw value of 89.5 to
+  89.99 rounds to the shown "90%" but was previously still under the raw 90 threshold, so the
+  warning silently disagreed with what the developer actually read.
+
+**Verified 2026-10-15**: `pnpm typecheck`, `pnpm test` (148/148, unchanged -- neither chip has a
+dedicated unit test, both are exercised live below), `pnpm check:indent`, and the full
+`node scripts/ci-local.mjs` (all 16 steps, including `cargo test`/`clippy`/`fmt` and the Tauri
+debug build) all pass. Live-checked on an isolated scratch Tauri instance alongside the rest of
+this PR's gate round 5 work: the status line's own screenshots (see spec 001's tasks.md Phase 37
+gate round 5 entry) show the Subagents chip's running state in the default foreground colour,
+visibly distinct from the muted Readouts beside it. The Context usage high-threshold fix itself
+was NOT independently live-exercised (same gap Phase 34 recorded: the scratch harness's fake
+model never reports context-window usage at all, so this chip stays hidden in every live check
+here) -- confirmed by direct inspection of the changed comparison instead (`percent` is computed
+one line above `high` and used identically by both).

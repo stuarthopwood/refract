@@ -18,15 +18,18 @@ import {
 import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
-import { formatDiffStat } from '@/features/sessions/sessionDisplay'
+import { formatDiffStat, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../Transcript'
 import { ReadoutChip } from './ReadoutChip'
 
-// Full, un-abbreviated figures for the `sr-only` phrases below (gate round 4, #437 LOW): the
-// visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a screen-reader
-// user hearing "seven point five k" loses precision a sighted user reading "7.5k" at least sees
-// spelled out in full on hover/zoom; the full locale-formatted figure (`7,500`) is unambiguous
-// read aloud either way.
+// Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
+// 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
+// screen-reader user hearing "seven point five k" loses precision a sighted user reading "7.5k"
+// at least sees spelled out in full on hover/zoom; the full locale-formatted figure (`7,500`) is
+// unambiguous read aloud either way. `ChangesChip` below shares its own equivalent,
+// `formatDiffStatAccessible` (gate round 5, DRY: extracted to `sessionDisplay.tsx` so the status
+// line and the Session details card's diff line can both use it, never phrasing the same stat
+// two different ways).
 const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
@@ -45,14 +48,9 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
       </ReadoutChip>
     )
   }
-  const noun = changes.files === 1 ? 'file' : 'files'
-  const partialSuffix = changes.partial ? ' (partial)' : ''
-  const filesFull = FULL_NUMBER_FORMAT.format(changes.files)
-  const additionsFull = FULL_NUMBER_FORMAT.format(changes.additions)
-  const deletionsFull = FULL_NUMBER_FORMAT.format(changes.deletions)
   return (
     <ReadoutChip icon={FileDiffIcon}>
-      <span className="sr-only">{`${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} ${changes.additions === 1 ? 'addition' : 'additions'}, ${deletionsFull} ${changes.deletions === 1 ? 'deletion' : 'deletions'}`}</span>
+      <span className="sr-only">{formatDiffStatAccessible(changes)}</span>
       <span aria-hidden>{formatDiffStat(changes)}</span>
     </ReadoutChip>
   )
@@ -78,8 +76,12 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
       </ReadoutChip>
     )
   }
+  // Gate round 5 fix (Flow LOW): the rounded, DISPLAYED percent is what the warning must agree
+  // with -- testing the raw value let 89.5 to 89.99 show "90%" with no warning at all, since the
+  // raw value itself was still under 90 even though the rounded figure the developer reads was
+  // already at the threshold.
   const percent = Math.round(contextUsage.percent)
-  const high = contextUsage.percent >= 90
+  const high = percent >= 90
   const used = compactNumber(contextUsage.usedTokens)
   const windowSize = compactNumber(contextUsage.windowTokens)
   const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
@@ -219,7 +221,12 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       // focus-move retarget (research.md Decision 10).
       onActivate={onActivate}
       accessibleName={`Open subagents panel (${phrase})`}
-      className={running === 0 ? 'text-muted-foreground' : undefined}
+      // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
+      // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
+      // was a no-op in the finished-only case and never actually emphasised the running state,
+      // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
+      // RUNNING state is the one that stands out instead.
+      className={running > 0 ? 'text-foreground' : undefined}
     >
       <span aria-hidden>{phrase}</span>
     </ReadoutChip>
