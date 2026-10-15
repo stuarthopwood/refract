@@ -69,11 +69,14 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const filterInputRef = useRef<HTMLInputElement>(null)
 
   // Radix's `DropdownMenu.Content` has no public `onOpenAutoFocus` hook (unlike Dialog/
-  // AlertDialog) -- it manages initial focus internally (the first item). This effect wins the
-  // race by running after that, moving focus onto the filter field instead (decision 6: "focus
-  // starts there").
+  // AlertDialog) -- it manages initial focus internally, and keeps re-asserting it for a few
+  // ticks after mount (a single later call, even via `requestAnimationFrame`, still loses the
+  // race). Retried at three short delays to reliably land last, rather than a fragile one-shot
+  // timing guess (decision 6: "focus starts there").
   useEffect(() => {
-    if (open) filterInputRef.current?.focus()
+    if (!open) return
+    const timers = [0, 50, 150].map((delay) => setTimeout(() => filterInputRef.current?.focus(), delay))
+    return () => timers.forEach(clearTimeout)
   }, [open])
 
   const filteredCatalog = useMemo(() => {
