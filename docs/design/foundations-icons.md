@@ -50,7 +50,7 @@ Known gap: neither control has its tooltip today (`AttachmentStrip.tsx:41-49`, `
 
 ## Colour and decoration
 
-Colour is meaning, never decoration (agenda item 9). It appears only for state, severity, brand marks, syntax highlighting, and diffs. Never use a per-tab accent colour or emoji as a UI icon, including in the file explorer (#463) — file types there use `lucide` glyphs in the muted tone.
+Colour is meaning, never decoration (agenda item 9). It appears only for state, severity, brand marks, syntax highlighting, diffs, and a **Project colour** the developer chooses themselves (amended 2026-10-15, #887: a colour the user picks for a Project counts as identity, so it is meaning; the app never assigns one on its own). Never use an app-chosen per-tab accent colour or emoji as a UI icon, including in the file explorer (#463) — file types there use `lucide` glyphs in the muted tone.
 
 ## Metadata iconography
 
