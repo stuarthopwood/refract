@@ -326,6 +326,12 @@ const PAIRS = [
   { fg: 'border', bg: 'card', min: 3 },
   { fg: 'border', bg: 'popover', min: 3 },
   { fg: 'border', bg: 'muted', min: 3 },
+  // Gate round 4 (#564 follow-up): the Approval mode pill's own `badgeVariants({variant:
+  // 'outline'})` renders `border-border` (opaque), not the composer box's own translucent
+  // `border-muted-foreground/85` -- a different token, never checked against this specific
+  // surface, since the composer-dimming change now leaves the pill resting directly on
+  // `--composer-background` in both the enabled and the (never-dimmed-anymore) disabled state.
+  { fg: 'border', bg: 'composer-background', min: 3 },
   { fg: 'border-strong', bg: 'background', min: 3 },
   { fg: 'border-strong', bg: 'card', min: 3 },
   { fg: 'border-strong', bg: 'popover', min: 3 },
@@ -393,6 +399,12 @@ const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
+  // Gate round 4 (#564 follow-up): the Approval mode pill's `focus-visible:outline-ring` (and
+  // the Model/Reasoning picker triggers' own, `PICKER_TRIGGER_CLASS`, already live since gate
+  // round 1) both render their opaque focus outline directly on `--composer-background`, never
+  // checked against that specific surface before -- closes the same kind of pre-existing gap
+  // the `muted-foreground`/`composer-background` pair above closed.
+  { fg: 'ring', bg: 'composer-background', min: 3 },
   // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
   // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
   // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.

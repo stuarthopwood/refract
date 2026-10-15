@@ -1,7 +1,7 @@
-// The chip row's individual readouts (spec 004 FR-002 to FR-007, FR-021), each built on
+// The status line's individual readouts (spec 004 FR-002 to FR-007, FR-021), each built on
 // ReadoutChip.tsx's shared baseline. Each takes an explicit `sessionId` prop (spec 005
 // convergence, tasks.md T030: generalised from a single implicit "the visible Session" to
-// per-session storage, so each pane's own chip row reads its own Session's data) and reads
+// per-session storage, so each pane's own status line reads its own Session's data) and reads
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
@@ -22,10 +22,19 @@ import { formatDiffStat } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../Transcript'
 import { ReadoutChip } from './ReadoutChip'
 
+// Full, un-abbreviated figures for the `sr-only` phrases below (gate round 4, #437 LOW): the
+// visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a screen-reader
+// user hearing "seven point five k" loses precision a sighted user reading "7.5k" at least sees
+// spelled out in full on hover/zoom; the full locale-formatted figure (`7,500`) is unambiguous
+// read aloud either way.
+const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
+
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
  * formatter, issue #437), matching the Session details card's `formatDiffStat` exactly -- both
  * now go through the same function, so neither can show the figure a different way; "Not
- * available" for the `'not-available'` literal; hidden (`null`) otherwise. */
+ * available" for the `'not-available'` literal; hidden (`null`) otherwise. The full figures
+ * reach assistive technology through a real `sr-only` span next to the `aria-hidden` abbreviated
+ * visual text (gate round 4, #437 LOW), the same pairing `ContextUsageChip` below already uses. */
 export function ChangesChip({ sessionId }: { sessionId: string }) {
   const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
   if (changes === null) return null
@@ -36,9 +45,15 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
       </ReadoutChip>
     )
   }
+  const noun = changes.files === 1 ? 'file' : 'files'
+  const partialSuffix = changes.partial ? ' (partial)' : ''
+  const filesFull = FULL_NUMBER_FORMAT.format(changes.files)
+  const additionsFull = FULL_NUMBER_FORMAT.format(changes.additions)
+  const deletionsFull = FULL_NUMBER_FORMAT.format(changes.deletions)
   return (
     <ReadoutChip icon={FileDiffIcon}>
-      <span>{formatDiffStat(changes)}</span>
+      <span className="sr-only">{`${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} additions, ${deletionsFull} deletions`}</span>
+      <span aria-hidden>{formatDiffStat(changes)}</span>
     </ReadoutChip>
   )
 }
@@ -46,10 +61,11 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
 /** FR-003: "N/M (P%)" (each figure abbreviated by the shared `compactNumber` formatter, the word
  * "tokens" dropped from the visible text, issue #437, 2026-10-15 grill), hidden when `null`,
  * "Not available" for the `'not-available'` literal, a visible warning (icon + the word "high",
- * never colour alone) once `percent >= 90`. The full wording, including the high-usage warning,
- * reaches assistive technology through a real `sr-only` span next to the `aria-hidden` visual
- * text -- the same pattern `CurrentTimeChip`/`TodoProgressChip` already use -- rather than this
- * chip's own former `accessibleName` prop, which `ReadoutChip`'s role-less `<span>` fallback (no
+ * never colour alone) once `percent >= 90`. The full wording, including the high-usage warning
+ * and the full (un-abbreviated) token figures, reaches assistive technology through a real
+ * `sr-only` span next to the `aria-hidden` visual text -- the same pattern
+ * `CurrentTimeChip`/`TodoProgressChip` already use -- rather than this chip's own former
+ * `accessibleName` prop, which `ReadoutChip`'s role-less `<span>` fallback (no
  * `onActivate`/`href` here) exposes as a bare `aria-label` that several real screen readers
  * (NVDA in browse mode, often Narrator and JAWS) ignore on a non-interactive element. */
 export function ContextUsageChip({ sessionId }: { sessionId: string }) {
@@ -66,9 +82,11 @@ export function ContextUsageChip({ sessionId }: { sessionId: string }) {
   const high = contextUsage.percent >= 90
   const used = compactNumber(contextUsage.usedTokens)
   const windowSize = compactNumber(contextUsage.windowTokens)
+  const usedFull = FULL_NUMBER_FORMAT.format(contextUsage.usedTokens)
+  const windowFull = FULL_NUMBER_FORMAT.format(contextUsage.windowTokens)
   return (
     <ReadoutChip icon={high ? TriangleAlertIcon : GaugeIcon}>
-      <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${used} of ${windowSize} tokens used, ${percent} percent`}</span>
+      <span className="sr-only">{`Context usage${high ? ' high' : ''}: ${usedFull} of ${windowFull} tokens used, ${percent} percent`}</span>
       <span aria-hidden>
         {used}/{windowSize} ({percent}%)
         {high && <span className="font-medium text-destructive"> high</span>}

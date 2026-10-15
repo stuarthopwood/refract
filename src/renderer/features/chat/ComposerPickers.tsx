@@ -51,7 +51,13 @@ export function ReasoningPicker({ sessionId, boxDimmed }: { sessionId: string; b
               // not) -- suppressed so a screen reader never says either twice; the Tooltip
               // itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-100')}
+              // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: the Approval pill stays
+              // bright, so the box no longer provides one shared dim for its whole bottom row)
+              // -- `boxDimmed` (true only while the agent is stopped, decision 3) applies the
+              // same `opacity-60` the field block uses, replacing `PICKER_TRIGGER_CLASS`'s own
+              // `aria-disabled:opacity-50` so the stopped-agent reason and the independent
+              // mid-turn `notIdle` reason never compound into a different-looking dim.
+              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-60')}
             >
               <GaugeIcon aria-hidden className="size-3" />
               <span>{label}</span>
@@ -115,10 +121,13 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             // just repeat this button's own accessible name ("Attach images" both places) -- a
             // screen reader would say it twice. Suppressed; the tooltip still shows visually.
             aria-describedby={undefined}
-            // Composer-dimming fix (Stuart, 2026-10-15): no own opacity -- `disabled` here is
-            // exactly MessageInput.tsx's own box-dim condition, so the box's single `opacity-60`
-            // already covers this button; a second opacity-50 on top of it read too faint.
-            className="aria-disabled:cursor-not-allowed"
+            // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: the Approval pill stays
+            // bright, so the box no longer provides a shared dim for its whole bottom row) --
+            // `disabled` here is exactly MessageInput.tsx's own box-dim condition (decision 3,
+            // stopped only), so this button now applies the same `opacity-60` the field block
+            // uses directly, rather than relying on an enclosing box-wide dim that no longer
+            // exists.
+            className={cn('aria-disabled:cursor-not-allowed', disabled && 'opacity-60')}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()

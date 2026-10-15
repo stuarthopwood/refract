@@ -1358,22 +1358,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           inside as round icon-only buttons, and the provider/model/effort readout along the
           bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
           field, not just the text area, shows the focus state. */}
-      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877): the box no longer
-          grows a grey fill on its own text area while disabled (`Textarea`'s vendored
-          `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the WHOLE box
-          (this field and its bottom row alike) dims as one unit instead, with a single container
-          `opacity-60` here (never a Tailwind colour-opacity modifier like `bg-x/50`), matching
-          the house "dimmed but still visible" convention (`docs/design/product-layout.md`
-          "Check again"). Behaviour is unchanged: `disabled` is exactly the same boolean that
-          already drove the native `disabled` attribute below. The WCAG 1.4.11 3:1 control-edge
-          rule applies to the enabled border only; a disabled control is exempt. */}
-      <div
-        className={cn(
-          'flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50',
-          disabled && 'opacity-60'
-        )}
-      >
-        <div className="relative flex items-end">
+      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4,
+          Stuart 2026-10-15: the Approval pill stays BRIGHT -- it works even while the agent is
+          stopped): the box no longer grows a grey fill on its own text area while disabled
+          (`Textarea`'s vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden
+          below) -- the unusable parts (the text field, Send/Stop, and the Model/Reasoning
+          pickers and Attach button in the bottom row) dim as one `opacity-60` layer instead
+          (never a Tailwind colour-opacity modifier like `bg-x/50`), matching the house "dimmed
+          but still visible" convention (`docs/design/product-layout.md` "Check again"). The
+          outer box's own border/background never dims (measured: the Approval pill, which DOES
+          still work while stopped, sits directly on the undimmed `bg-composer-background` with
+          its full-strength border either way, never on a faded surface that would drop its own
+          WCAG 1.4.11 edge below 3:1). Behaviour is unchanged: `disabled` is exactly the same
+          boolean that already drove the native `disabled` attribute below. The WCAG 1.4.11 3:1
+          control-edge rule applies to the enabled border only; a disabled control is exempt. */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+        <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
           {showSlashMenu && (
             <SlashMenu
               id={slashMenuId}
@@ -1585,11 +1585,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   // variant's own `color-mix` pattern instead).
                   className={cn(
                     'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
-                    // Composer-dimming fix (Stuart, 2026-10-15): own opacity only for the OTHER
-                    // three refusal reasons (starting, a pending attachment read, empty text) --
-                    // while `disabled` itself is the reason, the box's own opacity-60 already
-                    // covers this button; `disabled` can never be true at the same time as
-                    // `starting` (that only runs through the `!disabled` notStarted branch).
+                    // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: now scoped to the
+                    // field block, not the whole box): own opacity only for the OTHER three
+                    // refusal reasons (starting, a pending attachment read, empty text) -- while
+                    // `disabled` itself is the reason, the enclosing field block's own
+                    // `opacity-60` already covers this button; `disabled` can never be true at
+                    // the same time as `starting` (that only runs through the `!disabled`
+                    // notStarted branch).
                     !disabled && 'aria-disabled:opacity-50'
                   )}
                   aria-label="Send message"

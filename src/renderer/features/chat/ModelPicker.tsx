@@ -226,7 +226,13 @@ export function ModelPicker({ sessionId, boxDimmed }: { sessionId: string; boxDi
               // disabled reason when not) -- suppressed so a screen reader never says either
               // twice; the Tooltip itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-100')}
+              // Composer-dimming fix (Stuart, 2026-10-15; gate round 4: the Approval pill stays
+              // bright, so the box no longer provides one shared dim for its whole bottom row)
+              // -- `boxDimmed` (true only while the agent is stopped, decision 3) applies the
+              // same `opacity-60` the field block uses, replacing `PICKER_TRIGGER_CLASS`'s own
+              // `aria-disabled:opacity-50` so the stopped-agent reason and the independent
+              // mid-turn `notIdle` reason never compound into a different-looking dim.
+              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-60')}
             >
               <CpuIcon aria-hidden className="size-3" />
               <span className={cn('max-w-40 truncate', modelLabelIsRaw && 'font-code')}>{modelLabel ?? 'Model not known yet'}</span>

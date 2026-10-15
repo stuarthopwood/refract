@@ -77,7 +77,13 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
           aria-label={`Approval mode: ${current.label}${pendingLabel ? `. ${pendingLabel}` : ''}`}
           className={cn(
             badgeVariants({ variant: 'outline' }),
-            'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted'
+            'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted',
+            // Gate round 4 fix (WCAG 1.4.11): `badgeVariants`' own base focus ring is
+            // `ring-ring/50` (50% alpha), below the non-text 3:1 floor -- the same gate round 1
+            // fixed on the Model/Reasoning picker triggers (`PICKER_TRIGGER_CLASS`). Dropped
+            // (`ring-0`, which `cn`'s Tailwind-merge resolves against the base class's
+            // `ring-[3px]`) in favour of the same opaque `outline-ring` convention.
+            'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
           )}
         >
           <CurrentIcon aria-hidden className="size-3" />

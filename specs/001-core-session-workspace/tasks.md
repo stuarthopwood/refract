@@ -1095,3 +1095,54 @@ point (T160's own read-back semantics, corrected mid-round).
   placeholder; the Attach, Model and Reasoning triggers all read `opacity: 1` (no second dim).
   Screenshots `8-stopped-dimmed.png` and `9-enabled.png` (Dark, the app's own default theme) are
   recorded in the PR body alongside the exact pass/fail lines, not retrofitted into this task.
+- [X] T171 [US1] Gate round 4 fix (Stuart, 2026-10-15, reviewing PR #877, FR-065): the Approval
+  mode pill stays BRIGHT while the composer is disabled -- it still works while the agent is
+  stopped (FR-056), unlike the Model/Reasoning pickers, which are correctly disabled then, so
+  dimming it would misrepresent it as unusable. `MessageInput.tsx`'s own box-level `opacity-60`
+  is removed from the outer container (its border/background never dim again) and moved onto
+  the field block div (`relative flex items-end`, covering the textarea and Send/Stop together).
+  `ModelPicker.tsx`/`ComposerPickers.tsx`'s `ReasoningPicker`/`AttachButton` each now apply the
+  SAME `opacity-60` value directly (`boxDimmed && 'aria-disabled:opacity-60'` for the pickers,
+  `disabled && 'opacity-60'` for Attach) instead of suppressing their own opacity to 100%, since
+  the box no longer provides one shared dim for the whole bottom row -- the stopped-agent reason
+  and the independent mid-turn `notIdle` reason still never compound into a different-looking
+  dim, matching FR-065's existing no-double-dimming rule. The Approval pill itself
+  (`ApprovalModePill.tsx`) is untouched by any of this and was never wrapped in a dimming
+  container.
+- [X] T172 [US1] Gate round 4 fix (same round, WCAG 1.4.11): the Approval pill's own focus
+  indicator gets the same opaque `focus-visible:outline-ring` convention the Model/Reasoning
+  picker triggers already use (gate round 1, `PICKER_TRIGGER_CLASS`), dropping `badgeVariants`'
+  own translucent `ring-ring/50` (`focus-visible:ring-0 focus-visible:outline-2
+  focus-visible:outline-offset-2 focus-visible:outline-ring`). Two new `check-theme-contrast.mjs`
+  pairs close a pre-existing gap neither had before (`ring`/`composer-background` and
+  `border`/`composer-background`, the pill's resting edge and its new focus outline against the
+  specific surface it sits on, never checked against `--composer-background` before, only
+  against `--background`/`--popover`/`--muted`) -- measured 4.37 to 15.42:1 (ring) and 4.45 to
+  5.27:1 (border) across all three built-in themes, all above the 3:1 floor in both states.
+  `scripts/file-size-baseline.json`'s `check-theme-contrast.mjs` entry raised 923 -> 935 (the
+  file's own intentional growth for these two new, real, justified pairs, never laundering an
+  unrelated violation).
+
+  Verified: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent` (0
+  odd-indent), `pnpm check:file-size` (0 violations/311 files, baseline raised as above),
+  `node scripts/check-theme-contrast.mjs` (all 325 pairs across 3 themes PASS, up from 322 after
+  this round's own two new pairs plus #437's round earlier the same day), `pnpm check:parity`
+  (97/97, 23/23), `pnpm check:drag-regions` (0 violations/115 files). No Rust touched, so the
+  full `cargo`/`ci-local.mjs` suite was not re-run; the Tauri debug build WAS rebuilt (renderer-
+  only changes still need a fresh bundle) to drive the live check below.
+
+  Live-checked on an isolated scratch Tauri instance (fresh `REFRACT_DATA_DIR`/
+  `WEBVIEW2_USER_DATA_FOLDER`/`OMP_PROFILE`, a scratch git repo, driven through the real UI,
+  across a relaunch to reach the genuine "stopped, agent not yet restarted" state, same pattern
+  T170 used): **12/12 checks pass**, every one a real computed style or real keyboard-dispatched
+  focus read via CDP, not a screenshot guess -- the pill's own `opacity` reads `1` in BOTH the
+  enabled state (launch 1) and the disabled/stopped state (after the relaunch), while the field
+  block, Model picker, Reasoning picker, and Attach button all read `opacity: 0.6` in the stopped
+  state, and the box's own container reads `opacity: 1` throughout (never dims); real Tab
+  navigation (dispatched key events, never a scripted `.focus()`) reached the pill's trigger and
+  its `:focus-visible` state shows a real `2px solid` opaque outline (`outlineColor:
+  oklch(0.556 0 0)`, not `rgba(0, 0, 0, 0)`), confirming the ring-to-outline swap actually took
+  effect, not just typechecked. Screenshots `11-pill-keyboard-focused.png` (enabled state, the
+  pill's new outline visible) and `10-stopped-pill-bright.png` (stopped state, the pill visibly
+  brighter than the dimmed Model/Reasoning pickers beside it) recorded in the PR body; the
+  throwaway driver script and its scratch dir/profile were deleted after use.
