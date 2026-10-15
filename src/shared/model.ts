@@ -550,7 +550,8 @@ export interface AskQuestion { id: string; question: string; header?: string; op
 
 /** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart.
  * `kind: 'ask'` is the structured dialog (#572), built once `set_ask_dialog` is confirmed
- * enabled for this process; `deadlineAt` is epoch ms from the frame's `timeout` seconds. */
+ * enabled for this process; `deadlineAt` is epoch ms from the frame's own `timeout` milliseconds
+ * (OMP's wire value is already ms, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`). */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
   | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }

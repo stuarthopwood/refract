@@ -29,14 +29,18 @@ const RESOLVED_LABEL: Record<ResolvedKind, string> = {
  * the matching `ask` tool item lands. */
 export function ResolvedRequestSummary({ resolved, detail }: { resolved?: ResolvedKind; detail?: string }) {
   const label = resolved ? RESOLVED_LABEL[resolved] : 'Resolved'
-  const denied = resolved === 'denied' || resolved === 'cancelled'
-  return (
-    <CollapsedLine
-      icon={denied ? <XIcon className="size-3.5 shrink-0 text-destructive" /> : <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
-      label={label}
-      summary={detail}
-    />
-  )
+  // Gate-fix (round 1, Low, D22): a user's own Cancel is not an error, so it keeps the muted
+  // `--muted-foreground` XIcon every other icon in this row already uses -- only an actual Deny
+  // (a real tool-approval refusal) still reads as destructive.
+  const icon =
+    resolved === 'denied' ? (
+      <XIcon className="size-3.5 shrink-0 text-destructive" />
+    ) : resolved === 'cancelled' ? (
+      <XIcon className="size-3.5 shrink-0 text-muted-foreground" />
+    ) : (
+      <CheckIcon className="size-3.5 shrink-0 text-state-working" />
+    )
+  return <CollapsedLine icon={icon} label={label} summary={detail} />
 }
 
 interface AskOptionLike {
@@ -44,6 +48,7 @@ interface AskOptionLike {
 }
 
 interface AskQuestionLike {
+  id?: unknown
   question?: unknown
   options?: unknown
 }
@@ -69,19 +74,26 @@ function readAskOptions(options: unknown): string[] {
 
 /** #572: reads every question of the batch (previously only `questions[0]`, FR-045's answered
  * summary is now one row per call with a block per question, D21). Falls back to the flat
- * `question`/`options` shape for a pre-batch call. */
-function readAskQuestions(args: unknown): { question: string; options: string[] }[] {
+ * `question`/`options` shape for a pre-batch call. `id` is carried through so the answer side
+ * can match by id instead of array position (gate-fix, round 1, Medium: a short or reordered
+ * `details.results[]` used to show another question's answer under the wrong one). */
+function readAskQuestions(args: unknown): { id?: string; question: string; options: string[] }[] {
   const record = args && typeof args === 'object' ? (args as AskArgsLike) : {}
   if (Array.isArray(record.questions) && record.questions.length > 0) {
     return record.questions
       .filter((entry): entry is AskQuestionLike => !!entry && typeof entry === 'object')
-      .map((entry) => ({ question: typeof entry.question === 'string' ? entry.question : '', options: readAskOptions(entry.options) }))
+      .map((entry) => ({
+        id: typeof entry.id === 'string' ? entry.id : undefined,
+        question: typeof entry.question === 'string' ? entry.question : '',
+        options: readAskOptions(entry.options)
+      }))
   }
   const question = typeof record.question === 'string' ? record.question : ''
   return question ? [{ question, options: readAskOptions(record.options) }] : []
 }
 
 interface AskResultLike {
+  id?: unknown
   selectedOptions?: unknown
   customInput?: unknown
   timedOut?: unknown
@@ -104,30 +116,47 @@ interface AskAnswer {
 
 /** The per-question answer text for a resolved `ask` tool item (T073, FINDINGS item 22(a)-(c),
  * contracts/omp-usage.md "Chat line wire shapes"; #572 extends this to a batch's own
- * `details.results[]`, one entry per question). A cancelled or interrupted call never answered
- * any question, so every question shows that one word instead of attempting to read `details`. */
-function readAskAnswers(item: AskToolItem, questionCount: number): AskAnswer[] {
-  const count = Math.max(questionCount, 1)
+ * `details.results[]`, matched by `id`, one entry per question, D21). A cancelled or interrupted
+ * call never answered any question, so every question shows that one word instead of attempting
+ * to read `details`. `questionIds[i]` is the synthetic fallback `String(i)` for a legacy/flat
+ * call whose single question carries no real `id` -- never ambiguous, since there is only one. */
+function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
+  const count = Math.max(questionIds.length, 1)
   if (item.status === 'error') return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
   // Issue #510 slice 3 (PLAN.md row A0 evidence): "an unanswered ask renders as 'question not
   // answered'" -- the process died before the user's reply ever landed.
   if (item.status === 'interrupted') return Array.from({ length: count }, () => ({ text: 'Question not answered', timedOut: false }))
   const details =
-    item.details && typeof item.details === 'object' ? (item.details as { results?: unknown; selectedOptions?: unknown; customInput?: unknown }) : undefined
+    item.details && typeof item.details === 'object'
+      ? (item.details as { results?: unknown; selectedOptions?: unknown; customInput?: unknown; timedOut?: unknown })
+      : undefined
   if (details && Array.isArray(details.results) && details.results.length > 0) {
-    return details.results
-      .filter((result): result is AskResultLike => !!result && typeof result === 'object')
-      .map((result) => ({
+    const byId: Record<string, AskResultLike> = {}
+    for (const entry of details.results) {
+      if (entry && typeof entry === 'object') {
+        const result = entry as AskResultLike
+        if (typeof result.id === 'string') byId[result.id] = result
+      }
+    }
+    return questionIds.map((id) => {
+      const result = byId[id]
+      if (!result) return { text: 'None selected', timedOut: false }
+      return {
         text: formatAskAnswerText(
           Array.isArray(result.selectedOptions) ? result.selectedOptions.filter((o): o is string => typeof o === 'string') : [],
           typeof result.customInput === 'string' ? result.customInput : ''
         ),
         timedOut: result.timedOut === true
-      }))
+      }
+    })
   }
   const selectedOptions = details && Array.isArray(details.selectedOptions) ? details.selectedOptions.filter((o): o is string => typeof o === 'string') : []
   const customInput = details && typeof details.customInput === 'string' ? details.customInput : ''
-  return [{ text: formatAskAnswerText(selectedOptions, customInput, item.output), timedOut: false }]
+  // Gate-fix (round 1, Medium): `timedOut` sits at the TOP of a single-question call's `details`
+  // (`ask.md`'s flattened single-question shape), not nested under a non-existent `results[]` --
+  // reading it here is what lets `askCallStatus` ever show "Answered automatically" for one.
+  const timedOut = details?.timedOut === true
+  return [{ text: formatAskAnswerText(selectedOptions, customInput, item.output), timedOut }]
 }
 
 type AskCallStatus = 'answered' | 'answered-automatically' | 'cancelled' | 'not-answered'
@@ -225,7 +254,7 @@ interface AskQuestionRowProps {
 // unlike the `request` item this supersedes once it resolves.
 export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
   const questions = readAskQuestions(item.args)
-  const answers = readAskAnswers(item, questions.length)
+  const answers = readAskAnswers(item, questions.map((question, index) => question.id ?? String(index)))
   const name = userName ?? 'You'
   const status = askCallStatus(item, answers)
   const firstQuestion = questions[0]?.question ?? ''
@@ -285,6 +314,19 @@ export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
       </div>
     </CollapsedLine>
   )
+}
+
+const FALLBACK_RECOMMENDED_SUFFIX = ' (Recommended)'
+
+/** D19 (fallback path): the selector fallback appends a trailing " (Recommended)" to the label
+ * it expects back verbatim (`ask.md` l.28, 101), so the suffix is removed from what is SHOWN
+ * (replaced by the same muted D11 marker the dialog path uses) while the ORIGINAL label,
+ * suffix included, is still what gets sent. */
+function splitRecommendedSuffix(label: string): { displayLabel: string; recommended: boolean } {
+  if (label.endsWith(FALLBACK_RECOMMENDED_SUFFIX)) {
+    return { displayLabel: label.slice(0, -FALLBACK_RECOMMENDED_SUFFIX.length), recommended: true }
+  }
+  return { displayLabel: label, recommended: false }
 }
 
 interface RequestCardProps {
@@ -449,28 +491,41 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {request.inputKind === 'choice' && (
           <div className="flex flex-col gap-2">
-            {request.options.map((option, index) => (
-              <Button
-                key={option}
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                className="h-auto w-full flex-col items-start gap-0 whitespace-normal py-1.5 text-left"
-                onClick={() => void answer({ value: option }, 'answered', option)}
-              >
-                {/* `w-full`/`break-words`/`min-w-0` (#497): the button's `items-start` sizes each
-                 * flex-column child to its own content width (cross-axis `align-items: flex-start`
-                 * never stretches), so without `w-full` here `break-words` has no constrained box
-                 * to wrap inside and an unbreakable token (e.g. a long URL with no spaces) just
-                 * overflows the button -- live-verified at 380px before this line was added. */}
-                <span className="w-full min-w-0 break-words font-medium">{option}</span>
-                {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
-                 * before it reaches here) -- rendered as text, never as an object. */}
-                {request.optionDetails?.[index] && (
-                  <span className="w-full min-w-0 break-words font-normal text-muted-foreground">{request.optionDetails[index]}</span>
-                )}
-              </Button>
-            ))}
+            {request.options.map((option, index) => {
+              // D18: same card, same full-width row styling as the dialog path's option rows
+              // (`AskCard.tsx`'s `ASK_ROW_CLASS`), still a plain commit-on-click button with no
+              // indicator -- a `select` takes one value, so a radio/tick look here would imply
+              // an un-sent intermediate pick that does not exist on this path. D19: OMP's own
+              // trailing " (Recommended)" is stripped from what is shown (replaced by the same
+              // muted marker the dialog path uses) but the original label, suffix included, is
+              // still what gets sent back.
+              const { displayLabel, recommended } = splitRecommendedSuffix(option)
+              return (
+                <Button
+                  key={option}
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1.5 text-left hover:bg-muted"
+                  onClick={() => void answer({ value: option }, 'answered', displayLabel)}
+                >
+                  {/* `w-full`/`break-words`/`min-w-0` (#497): the button's `items-start` sizes each
+                   * flex-column child to its own content width (cross-axis `align-items: flex-start`
+                   * never stretches), so without `w-full` here `break-words` has no constrained box
+                   * to wrap inside and an unbreakable token (e.g. a long URL with no spaces) just
+                   * overflows the button -- live-verified at 380px before this line was added. */}
+                  <span className="w-full min-w-0 break-words font-medium">
+                    {displayLabel}
+                    {recommended && <span className="font-normal text-muted-foreground">, Recommended</span>}
+                  </span>
+                  {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
+                   * before it reaches here) -- rendered as text, never as an object. */}
+                  {request.optionDetails?.[index] && (
+                    <span className="w-full min-w-0 break-words font-normal text-muted-foreground">{request.optionDetails[index]}</span>
+                  )}
+                </Button>
+              )
+            })}
           </div>
         )}
         {request.inputKind === 'text' && (
@@ -496,7 +551,9 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
       </CardContent>
       <CardFooter>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+        {/* D18/roundtable: Cancel is outline, matching the dialog path's own footer, not ghost
+         * (components.md flags labelled ghost buttons). */}
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
           Cancel
         </Button>
       </CardFooter>

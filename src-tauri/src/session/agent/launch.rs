@@ -9,18 +9,18 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use super::launch_support::{
+    append_ask_dialog_unavailable_notice, assert_conversation_file_exists, fetch_all_messages,
+    reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
+    truncate, verify_reattach,
+};
+use super::MAX_MODEL_FIELD_LENGTH;
+use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
-
-use super::launch_support::{
-    assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
-    registry_store_error_message, send_set_ask_dialog, to_process_mode, truncate, verify_reattach,
-};
-use super::MAX_MODEL_FIELD_LENGTH;
-use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
@@ -264,7 +264,7 @@ impl SessionAgent {
                 return Err(AgentError::new("reattach-failed", detail));
             }
         };
-        send_set_ask_dialog(self, &proc).await;
+        let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
         // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session`
         // parameter (the registry's last known `last_message_count`) vs the freshly observed
         // `state_data`, before `sync_from_state` re-baselines it below -- see
@@ -311,8 +311,8 @@ impl SessionAgent {
                 transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
-        // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
-        // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
+        // After the merge above, not right after `send_set_ask_dialog` (gate-fix round 1 High).
+        append_ask_dialog_unavailable_notice(self, ask_dialog_enabled).await;
         if let Some(notice) = rebaseline_notice {
             self.append_notice(notice, "info").await;
         }

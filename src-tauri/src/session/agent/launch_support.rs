@@ -196,8 +196,13 @@ async fn fallback_to_get_messages_core<R: MessagesPageRequester>(proc: &R) -> (V
 /// `ask_dialog_enabled` (never persisted to the registry); anything but
 /// `{success:true, data:{enabled:true}}` -- an error, a timeout, or any other response shape --
 /// leaves Refract on the `select` fallback path for this process's life (D2), and only a later
-/// reattach/relaunch (a new process, hence a fresh `launch()` call) re-probes.
-pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess) {
+/// reattach/relaunch (a new process, hence a fresh `launch()` call) re-probes. Returns the
+/// resolved `enabled` value; the caller (not this function) decides whether and when to tell the
+/// user, since appending a notice here -- before the history merge -- was gate-fix round 1 High
+/// finding H3: `merge_from_history` keeps only unresolved requests and running/streaming items,
+/// so a notice appended before it is silently dropped on every launch where the history fetch
+/// completes.
+pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess) -> bool {
     let enabled = match proc
         .request(
             json!({ "type": "set_ask_dialog", "enabled": true }),
@@ -219,15 +224,25 @@ pub(super) async fn send_set_ask_dialog(agent: &SessionAgent, proc: &OmpProcess)
         Err(_) => false,
     };
     agent.state.lock().await.ask_dialog_enabled = enabled;
-    if !enabled {
-        agent
-            .append_notice(
-                "This version of OMP can't show an agent's questions together, so they arrive one at a time."
-                    .to_string(),
-                "info",
-            )
-            .await;
+    enabled
+}
+
+/// D20 (#572): the one notice when `send_set_ask_dialog` above resolved `enabled: false`. Split
+/// out of `launch.rs` (which was sitting at the 600-line cap with no headroom) purely to keep
+/// that call site a one-liner; the caller still decides WHEN to call this (after the history
+/// merge, never right after `send_set_ask_dialog` itself -- gate-fix round 1 High: an earlier
+/// pass called `append_notice` before the merge, which silently dropped it every time).
+pub(super) async fn append_ask_dialog_unavailable_notice(agent: &SessionAgent, enabled: bool) {
+    if enabled {
+        return;
     }
+    agent
+        .append_notice(
+            "This version of OMP can't show an agent's questions together, so they arrive one at a time."
+                .to_string(),
+            "info",
+        )
+        .await;
 }
 
 #[cfg(test)]

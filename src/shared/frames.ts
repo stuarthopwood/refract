@@ -120,7 +120,8 @@ export interface ExtensionUiRequestFrame {
   /** `method:'ask'` only (#572, after `set_ask_dialog` opts in): one entry per question of the
    * batch; `options` never include an "Other" entry, hosts always offer free text themselves. */
   questions?: Array<{ id: string; question: string; header?: string; options: Array<{ label: string; description?: string; preview?: string }>; multi?: boolean; recommended?: number }>;
-  /** `method:'ask'` only, in seconds, when `ask.timeout` is configured non-zero. */
+  /** `method:'ask'` only, in milliseconds (OMP's own `setTimeout` value, not seconds), when
+   * `ask.timeout` is configured non-zero. */
   timeout?: number;
   /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
   targetId?: string;

@@ -24,7 +24,7 @@
 // mouse click or typed text, never Tab/Arrow-key navigation through the radio/tab groups).
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -32,15 +32,16 @@ import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobOb
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// Hard rule for this lane: every cargo/tauri invocation below uses this shared target dir (never
-// the per-worktree default), 0 incremental, 4 build jobs -- set unconditionally, not only when
-// the caller's own shell happened to export it.
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR || 'C:/Users/shopwood/.cargo-target/refract';
-const BUILD_OUTPUT_DIR = path.join(CARGO_TARGET_DIR, 'debug');
+// Unset when the caller hasn't pointed at a shared cache: `cargo`/`tauri` then fall back to
+// their own default (`src-tauri/target`) -- gate-fix (round 1, code review Medium): a hard-coded
+// one-machine default here tied this harness to one machine, exactly the mistake
+// `verify-tauri.mjs:53-55` already records fixing once before.
+const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
+const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 
-// Literal path (not built from a variable): the one place this run's screenshots land, per this
-// lane's own instructions.
-const ASK_SHOT_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-572-ask-shots/';
+// Literal path (not built from a variable): the default screenshot dir, overridable via
+// `REFRACT_ASK_SHOT_DIR` for a run that needs its own evidence dir (e.g. a gate-fix re-run).
+const ASK_SHOT_DIR = process.env.REFRACT_ASK_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-572-ask-shots/';
 
 const PROMPT_MESSAGE = 'Please ask me the batch of questions now.';
 // The assistant's own streamed reply token, deliberately absent from PROMPT_MESSAGE above (same
@@ -96,7 +97,12 @@ function buildLauncher(dir) {
 function buildTauriDebugNoBundle() {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const env = { ...process.env, CARGO_TARGET_DIR, CARGO_INCREMENTAL: '0', CARGO_BUILD_JOBS: '4' };
+    const env = { ...process.env };
+    if (CARGO_TARGET_DIR) {
+      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+      env.CARGO_INCREMENTAL = '0';
+      env.CARGO_BUILD_JOBS = '4';
+    }
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
       env,
@@ -215,13 +221,17 @@ async function getRoleLabelInfo(cdp, role, label) {
   })()`);
 }
 
-function tabFinder(title) {
-  return `document.querySelector(${JSON.stringify(`[role="tab"][title="${title}"]`)})`;
+// Gate-fix (round 1, accessibility): the tab trigger no longer carries a native `title`
+// attribute (D7 -- a real Tooltip replaces it), so a tab is found by its own label span's text
+// instead -- the FIRST `span` child in document order is always the truncating label span
+// (`AskCard.tsx`'s own `TabsTrigger` renders it before the answered-state CheckIcon/sr-only span).
+function tabFinder(label) {
+  return `Array.from(document.querySelectorAll('[role="tab"]')).find((el) => { const span = el.querySelector('span'); return !!span && span.textContent.trim() === ${JSON.stringify(label)}; })`;
 }
 
-async function getTabInfo(cdp, title) {
+async function getTabInfo(cdp, label) {
   return cdp.evaluate(`(() => {
-    const el = ${tabFinder(title)};
+    const el = ${tabFinder(label)};
     return el ? { dataState: el.getAttribute('data-state'), ariaSelected: el.getAttribute('aria-selected') } : null;
   })()`);
 }
@@ -305,12 +315,14 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
 
     // --- The Ask card itself: wait for the two-question tab row. ---
     await cdp.waitFor(`document.querySelectorAll('[role="tab"]').length === 2`, { timeoutMs: 30_000, label: 'Ask card tab row rendered (2 tabs)' });
-    const tabTitles = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.getAttribute('title'))`);
+    const tabTitles = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).map((el) => { const span = el.querySelector('span'); return span ? span.textContent.trim() : null; })`);
     assert(JSON.stringify(tabTitles) === JSON.stringify(['Database', 'Features']), `tab row should read Database, Features in request order: ${JSON.stringify(tabTitles)}`);
     const databaseTab = await getTabInfo(cdp, 'Database');
     assert(databaseTab && databaseTab.dataState === 'active', `Database tab should be active by default (first question, never-opened tab row): ${JSON.stringify(databaseTab)}`);
     const sqliteRow = await getRoleLabelInfo(cdp, 'radio', 'SQLite');
-    assert(sqliteRow && sqliteRow.text.includes('(Recommended)'), `SQLite row should read "(Recommended)" (recommended:1 on the Database question): ${JSON.stringify(sqliteRow)}`);
+    // D11/D31 (gate round 1): the muted marker is a comma-separated word, "SQLite, Recommended" --
+    // never "(Recommended)" in parentheses.
+    assert(sqliteRow && sqliteRow.text.includes(', Recommended'), `SQLite row should read ", Recommended" (recommended:1 on the Database question): ${JSON.stringify(sqliteRow)}`);
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '01-tab-row-database-active.png'));
 
     // Click Postgres (NOT the recommended SQLite) -- a genuine user choice, not accepting the default.
@@ -456,6 +468,33 @@ async function main() {
     cdp = await connectCdp(port, launched.targetPid);
 
     await runAskChecks(cdp, evidenceDir, { repoDir, message: PROMPT_MESSAGE });
+
+    // Gate-fix (round 1, test review Medium): the scripted tape answers with a fixed reply
+    // regardless of what Refract actually sent, so the resolved summary rendering correctly
+    // proves only that `ask.jsonl`'s own scripted `details.results[]` matches what this script
+    // expects -- it does NOT by itself prove the D4 wire payload (`buildAnswers`'s real output).
+    // `REFRACT_FAKE_OMP_DEBUG_LOG` above already logs every RECV'd command verbatim; pull the
+    // real `extension_ui_response` out of it here so the exact payload can be quoted as evidence.
+    const debugLogText = readFileSync(debugLogPath, 'utf8');
+    const recvAnswerLine = debugLogText
+      .split('\n')
+      .find((line) => line.includes('RECV') && line.includes('"extension_ui_response"') && line.includes('"answers"'));
+    assert(!!recvAnswerLine, `no RECV extension_ui_response line with an "answers" payload found in ${debugLogPath}`);
+    const recvMatch = recvAnswerLine.match(/RECV (\{.*\}) \(waitingFor/);
+    assert(!!recvMatch, `RECV line did not match the expected "RECV <json> (waitingFor...)" shape: ${recvAnswerLine}`);
+    const sentPayload = JSON.parse(recvMatch[1]);
+    assert(sentPayload.type === 'extension_ui_response', `sent payload has the wrong type: ${JSON.stringify(sentPayload)}`);
+    assert(Array.isArray(sentPayload.answers) && sentPayload.answers.length === 2, `sent payload should carry exactly 2 answers: ${JSON.stringify(sentPayload)}`);
+    const [dbAnswer, featuresAnswer] = sentPayload.answers;
+    assert(dbAnswer.id === 'db' && JSON.stringify(dbAnswer.selectedOptions) === JSON.stringify(['Postgres']) && dbAnswer.customInput === undefined, `db answer did not match the real click (Postgres, no customInput): ${JSON.stringify(dbAnswer)}`);
+    assert(
+      featuresAnswer.id === 'features' &&
+        JSON.stringify(featuresAnswer.selectedOptions) === JSON.stringify(['Auth', 'Search']) &&
+        featuresAnswer.customInput === 'Beta',
+      `features answer did not match the real ticks/typing (Auth, Search, Other: Beta): ${JSON.stringify(featuresAnswer)}`
+    );
+    console.log(`REAL extension_ui_response sent by Refract (D4 wire payload, from ${debugLogPath}):`);
+    console.log(JSON.stringify(sentPayload));
 
     console.log(`verify-tauri-ask: ALL PASS. Evidence: ${evidenceDir}. Screenshots: ${ASK_SHOT_DIR}`);
   } finally {
