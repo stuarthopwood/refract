@@ -312,6 +312,8 @@ impl SessionAgent {
         }
         // After the merge above, not right after `send_set_ask_dialog` (gate-fix round 1 High).
         append_ask_dialog_unavailable_notice(self, ask_dialog_enabled).await;
+        // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
+        // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
         if let Some(notice) = rebaseline_notice {
             self.append_notice(notice, "info").await;
         }
