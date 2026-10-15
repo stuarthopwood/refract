@@ -308,11 +308,14 @@ pub fn run() {
     ipc::register_handlers(&mut dispatcher);
 
     // Debug builds only, same posture as `REFRACT_DATA_DIR` above: a scratch live check runs
-    // beside Stuart's own running Refract, and the single-instance plugin (keyed on the bundle
-    // identifier, not the data dir) would hand the scratch launch off to his window and exit.
-    // A scratch override already isolates every piece of state, so skip the plugin then.
+    // beside the user's own running Refract, and the single-instance plugin (keyed on the
+    // bundle identifier, not the data dir) would hand the scratch launch off to that window and
+    // exit. The override isolates Refract's own state only: the launcher must also set
+    // `WEBVIEW2_USER_DATA_FOLDER` (and a scratch `OMP_PROFILE`), as `scripts/verify-tauri*`
+    // do, and the plugin log file stays shared with the user's instance.
     #[cfg(debug_assertions)]
-    let scratch_instance = resolve_data_dir_override(std::env::var("REFRACT_DATA_DIR").ok()).is_some();
+    let scratch_instance =
+        resolve_data_dir_override(std::env::var("REFRACT_DATA_DIR").ok()).is_some();
     #[cfg(not(debug_assertions))]
     let scratch_instance = false;
 
