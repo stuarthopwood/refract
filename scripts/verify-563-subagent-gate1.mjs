@@ -32,10 +32,11 @@
 // inside this repo or Stuart's real `%APPDATA%/refract-tauri`/`~/.omp` data.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,13 +80,40 @@ function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
-function copyBuiltExe(destDir) {
+function sha256OfFile(filePath) {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/** Rebuilds the debug exe fresh, then copies it to `destDir` IMMEDIATELY -- the standing rule
+ * from this story's own earlier live check (the shared `CARGO_TARGET_DIR`'s own `debug/
+ * refract-tauri.exe` can be overwritten mid-session by a concurrent lane's own build). Confirms
+ * the source file's own mtime/hash are UNCHANGED from the instant the build finished to the
+ * instant the copy completed; if a concurrent write landed in that window (detected by the
+ * source's mtime/size/hash differing from what was read right after the build), the whole
+ * build-and-copy is retried from scratch, up to `maxAttempts` times, rather than trusting a
+ * copy that might have raced a concurrent writer mid-file. */
+function buildAndCopyExeFresh(destDir, { maxAttempts = 3 } = {}) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');
   const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
-  if (!existsSync(src)) throw new Error(`copyBuiltExe: built exe not found at ${src}`);
-  copyFileSync(src, dest);
-  return dest;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`verify-563-gate1: rebuilding the debug exe fresh (attempt ${attempt}/${maxAttempts}, this takes a few minutes)...`);
+    const buildResult = spawnSync_('pnpm', ['tauri', 'build', '--debug', '--no-bundle'], { cwd: REPO_ROOT, stdio: 'inherit', shell: true });
+    if (buildResult.status !== 0) throw new Error(`buildAndCopyExeFresh: pnpm tauri build failed (exit ${buildResult.status}${buildResult.error ? `, error: ${buildResult.error.message}` : ''})`);
+    if (!existsSync(src)) throw new Error(`buildAndCopyExeFresh: built exe not found at ${src} after a successful build`);
+    const preCopyStat = statSync(src);
+    const preCopyHash = sha256OfFile(src);
+    copyFileSync(src, dest);
+    const postCopyStat = statSync(src);
+    const postCopyHash = existsSync(src) ? sha256OfFile(src) : null;
+    const unchanged = postCopyHash === preCopyHash && postCopyStat.mtimeMs === preCopyStat.mtimeMs && postCopyStat.size === preCopyStat.size;
+    if (unchanged) {
+      console.log(`verify-563-gate1: built exe copied to ${dest} (private, never the shared CARGO_TARGET_DIR copy; sha256 ${preCopyHash.slice(0, 12)}…, confirmed unchanged through the copy)`);
+      return { dest, hash: preCopyHash };
+    }
+    console.warn(`verify-563-gate1: source exe changed between build and copy (attempt ${attempt}) -- a concurrent lane is rebuilding the shared target dir; rebuilding and copying again.`);
+  }
+  throw new Error(`buildAndCopyExeFresh: source exe kept changing across ${maxAttempts} rebuild attempts -- a concurrent lane is rebuilding continuously; try again once it is done.`);
 }
 
 async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile }) {
@@ -182,9 +210,8 @@ async function main() {
     console.log(`verify-563-gate1: shots dir ${SHOTS_DIR}`);
     console.log(`verify-563-gate1: CDP port ${port}`);
 
+    const { dest: exePath } = buildAndCopyExeFresh(exeDir);
     const launcherExe = buildLauncher(launcherDir);
-    const exePath = copyBuiltExe(exeDir);
-    console.log(`verify-563-gate1: built exe copied to ${exePath} (private, never the shared CARGO_TARGET_DIR copy)`);
 
     const launched = await launchBuiltExe(launcherExe, exePath, {
       port,
