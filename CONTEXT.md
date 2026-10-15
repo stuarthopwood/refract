@@ -56,8 +56,16 @@ _Avoid_: Session (in the agent's own sense), transcript
 The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently.
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
+**Stage**:
+The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal).
+_Avoid_: Batch (in UI text), gate, phase
+
+**Subagent chain**:
+The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563).
+_Avoid_: DAG, gate topology, pipeline
+
 **Subagent panel**:
-The right region's first occupant (spec 004), opened by activating the Subagents **Readout**: lists the current turn's subagents by name/task with a state icon plus the state word, and shows a selected one's live stream (text and tool calls) updating as it runs.
+The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: a tree of the **Session**'s subagents (issue #563; the **Session** is the root, started agents are the first level, their own child agents the next once the tracker knows the parent), each with a state icon plus the state word, and showing a selected one's live stream (text and tool calls) updating as it runs.
 _Avoid_: Subagent sidebar, task panel
 
 **Chat pane**:

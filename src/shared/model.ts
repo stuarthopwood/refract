@@ -345,8 +345,8 @@ export interface SessionReadout {
   // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are separate counts, not folded
   // together -- the chip's own wording must be able to distinguish "1 finished, 1 exited" from
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
-  // "0 finished" (SubagentsChip, ReadoutChips.tsx).
-  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden)
+  // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
+  subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
   todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
 }
 
@@ -396,7 +396,7 @@ export interface SubagentSummary {
    * `src/main/index.ts` at startup, awaited before any Session/`SessionAgent` ever attaches, so by
    * the time `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for
    * real, not merely assumed. */
-  status: 'running' | 'finished' | 'failed' | 'exited';
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
 }
@@ -464,10 +464,8 @@ export type TranscriptItem =
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
-      status: 'running' | 'done' | 'error' | 'exited';
-      /** Absent when built from history (no reliable wall clock to derive it from), matching
-       * the `thinking` item's `startedAt`. */
-      startedAt?: number;
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'exited';
+      startedAt?: number; // absent when built from history (no reliable wall clock to derive it from), matching the `thinking` item's `startedAt`
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
        * falling back to `.label`), shown as plain text on expansion once known. */
@@ -475,6 +473,7 @@ export type TranscriptItem =
       /** The batch call's own `details.progress[].id`/the later `details.jobs[].jobId`, used only
        * to correlate this row across the two frames; never rendered. */
       jobId?: string;
+      messageId: string; // owning assistant message's id (history `h{index}`, live real id); `groupSubagentStages` keys Stage membership on this, not timing (#563 gate round 2 addendum A)
     }
   | {
       /** An IRC-style message between a subagent and the main agent, or between subagents

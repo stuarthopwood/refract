@@ -85,7 +85,7 @@ interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null;        // null = no turn running (chip hidden); renderer computes elapsed
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden); gate fixes 2 finding 7: finished/exited/failed kept separate, never folded together
+  subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden); gate fixes 2 finding 7: finished/exited/failed kept separate, never folded together; issue #563 decision 15 adds `cancelled`, split out of `failed` (a cancel/abort is not a failure)
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 
@@ -122,7 +122,7 @@ interface SubagentSummary {
   toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
   specIndex: number;                        // this spec's position in the owning call's own tasks[] (gate fix, 2026-10-07): the correlation key reconcileSubagentsOnAttach uses against the chat transcript's own subagent row, since the two sides' id schemes never match
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
-  status: 'running' | 'finished' | 'failed' | 'exited'; // 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
+  status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited'; // 'cancelled': issue #563 decision 15, split out of 'failed' (a cancel/abort is not a failure); 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
   startedAt: number;
   durationMs?: number;                      // present once status is finished, failed, or exited, and startedAt was genuinely known (gate fix, 2026-10-07: never fabricated from a history row with no wall clock)
 }

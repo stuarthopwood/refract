@@ -8,13 +8,18 @@
 // mock): a read-only Readout is an icon plus text with no border or fill; one that opens
 // something (onActivate/href) is a quiet text control with a hover background, still no border.
 // This retires the earlier pill/chip look (CONTEXT.md "Status line").
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType, MouseEvent, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface ReadoutChipProps {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   children: ReactNode
-  onActivate?: () => void
+  /** Issue #563 gate remediation (L2/L6 across reviewers): widened to accept the click event so
+   * callers that open a panel pre-selected on a specific agent (e.g. `ReadoutChips.tsx`'s own
+   * Subagents Readout) can record `event.currentTarget` as the opener (FR-027) -- a plain
+   * `() => {...}` callback still satisfies this (JS/TS callback arity is contravariant-
+   * permissive), so no other existing caller breaks. */
+  onActivate?: (event: MouseEvent<HTMLButtonElement>) => void
   /** An external URL (e.g. the Pull request Readout, FR-006): renders a real `<a target="_blank">`
    * instead of a button, so the system browser opens it (the same pattern Markdown.tsx already
    * uses for external links) with no new IPC. */

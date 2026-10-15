@@ -592,3 +592,49 @@ was NOT independently live-exercised (same gap Phase 34 recorded: the scratch ha
 model never reports context-window usage at all, so this chip stays hidden in every live check
 here) -- confirmed by direct inspection of the changed comparison instead (`percent` is computed
 one line above `high` and used identically by both).
+
+## Phase 36: Convergence (renumbered from Phase 34 during the #877/#437/#563 merge, 2026-10-15 --
+origin/main already used Phase 34/35 for issue #437 and gate round 5)
+
+- [X] T130 [US3] Rewrite the Subagent panel (`SubagentPanel.tsx`) as a keyboard-operable
+  `role="tree"` (FR-024 to FR-026) in a vertical `ResizablePanelGroup` over the selected agent's
+  live stream, the tree above the stream with a keyboard-operable `ResizableHandle` ("Resize
+  agent tree and stream"). One level deep today (`buildSubagentTree`/`flattenSubagentTree`,
+  honest about #712's not-yet-subscribed child-agent data -- no placeholder grandchild row): a
+  roving tab stop, Up/Down/Home/End, single-character type-ahead, and Left/Right already wired
+  for a child row that cannot exist yet (a one-line change once #712 lands, not a rewrite).
+  Indentation is 16px per level, visually capped at 3 levels, with `aria-level` carrying the
+  true depth regardless. The selected row is marked by the shared 2px `--active-indicator` bar
+  (`SessionList.tsx`/`ManageSessionRow.tsx` precedent) instead of `bg-muted`; its status icon and
+  word now come from the shared `subagentStatus.tsx` module (`SubagentStatusIcon`), replacing the
+  panel's own now-superseded local `SubagentStateIcon`/`STATE_LABEL`; its duration uses the same
+  `formatDuration` the chat transcript's own `SubagentRow` already imports from `toolStatus.tsx`,
+  never a second formatter. Opening the panel pre-selected on an agent focuses that row once
+  mounted (an effect keyed on the store's `selectedId`). (#563)
+- [X] T131 [US3] Extend `subagent-store.ts`'s `openPanel`/`closePanel` and
+  `hosted-panel-actions.ts`'s `openHostedPanel` with an additive
+  `{ selectSubagentId?, opener? }` contract (FR-027, issue #563): a new `openerEl` field records
+  whichever control opened the panel this time (replaced wholesale on every `openPanel` call,
+  cleared back to `null` everywhere `sessionId` itself is cleared); closing the panel focuses
+  `openerEl` first when it is still connected to the document, falling back to the Subagents
+  chip only when it is not. `selectSubagentId` pre-selects an agent through the existing
+  `selectSubagent` fetch/cache path (no duplicated fetch logic) -- the route the chat pane's new
+  Stage/chain rows (a sibling slice, different files) use to open the panel already pointed at a
+  specific agent. Every other field and method of both modules keeps its exact prior behaviour.
+  (#563)
+
+Built and verified both files above in isolation (the chat-side Stage/chain rows that actually
+call `openPanel` with `selectSubagentId`/`opener` are a sibling slice, different files, landing
+separately): `pnpm typecheck` (`tsc --noEmit` on both `tsconfig.node.json` and
+`tsconfig.web.json`) clean; `pnpm check:drag-regions` (0 violations across 114 files),
+`pnpm check:indent` (0 odd-indent lines), and `pnpm check:theme-contrast` (all 313 pairs PASS,
+3 themes) all clean after these changes; `pnpm check:file-size` confirms both edited files stay
+nowhere near the 600-line soft cap (`SubagentPanel.tsx` 252 lines, `subagent-store.ts` 271
+lines) -- the pre-existing `src/shared/model.ts` one-line-over-baseline flag this script also
+reports predates this pass (untouched by it) and is out of scope here. Not independently driven
+this round: `pnpm build`/`pnpm check:ui-text` (both need a full Rust build, left for the single
+combined verification pass after the sibling chat-side slice also lands, per this story's own
+assignment, to avoid two agents racing a heavy build at once) and any live Electron/CDP exercise
+of the new tree's keyboard behaviour or the opener-based focus return -- the latter's real
+end-to-end trigger (a chat Stage/chain row's own "Show subagents panel" button) does not exist
+until that sibling slice lands.

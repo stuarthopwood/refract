@@ -70,7 +70,7 @@ export function ChatDisplaySection() {
               Show tool calls
             </label>
             <span id="transcript-display-tool-calls-description" className="text-xs text-muted-foreground">
-              Tool calls and subagents the agent runs. Approvals, questions, and failed or interrupted calls always show.
+              Tool calls and subagents the agent runs. Approvals, questions, failed or interrupted calls, and the subagent chain always show.
             </span>
           </div>
           <Switch

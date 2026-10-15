@@ -69,6 +69,25 @@ field whose bottom bar shows the mode, model, and agent.
 
 ### Session 2026-10-15
 
+- Q: Issue #563 (Decided, Skippy, delegated by Stuart 2026-10-15; ui-architect-v3 roundtable, full
+  minutes on the issue): the Subagent panel is a flat list today. Child issue #490 (cross-Session
+  Agents panel) and #712 (parent/child lifecycle data) are both not yet built. What does #563
+  alone change? -> A: The panel becomes a `role="tree"` (FR-024): the Session's own subagents, in
+  start order, each with its own child agents below once the tracker knows the parent -- none
+  today, since no parent id exists in the current data, so the tree is honestly one level deep
+  until #712 lands; no placeholder grandchild row is drawn. A vertical `ResizablePanelGroup`
+  splits the tree above the selected agent's live stream (the `FileExplorerPanel.tsx` precedent).
+  Full keyboard tree semantics (roving tab stop, arrow keys, Home/End, type-ahead) are built now
+  even though every row is a leaf today, so #712 lands onto a working contract instead of a
+  retrofit.
+- Q: Is a cancelled/aborted subagent distinct from a failed one? -> A: Yes (FR-026): both pipelines
+  (the Subagents chip/panel's own summary, and the chat transcript's own subagent row, spec 001
+  FR-067/FR-068) split `cancelled`/`aborted` out of `failed` into its own status, counted on its
+  own in every roll-up, never folded into "failed".
+- Q: Where does focus go when the panel closes, now that something other than the Subagents chip
+  (the chat's new Subagent chain row, spec 001 FR-068) can open it? -> A: FR-027: focus returns to
+  whichever control opened the panel if it still exists in the DOM, else to the Subagents chip.
+  Today's hard-coded chip-only target is superseded.
 - Q: Issue #564 (composer restyle, child of #549) moves the Approval mode pill out of this row
   and into the message box (spec 001 FR-065) -- what does the row become, and does FR-001's
   "the row holds the pill alone" fallback still apply? -> A: Renamed the status line (FR-023);
@@ -400,14 +419,15 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-007**: The Subagents chip MUST show the running count of the current turn's subagents
   while any are running; **SUPERSEDED, gate fixes 2 finding 7 (2026-10-07)**: once none are
   running, it is no longer a single "N finished" total of `finished`-or-`exited` ones -- it MUST
-  show a quiet, comma-joined total of whichever of `finished`/`exited`/`failed` are non-zero (for
-  example "1 finished, 1 exited", or "1 failed" when a turn's only subagents failed), worded
-  distinctly per status rather than folded into one misleading "finished" bucket (issue #536); it
-  MUST be hidden when the turn has started none. The RUNNING state MUST visibly stand out from
-  the quiet finished-only total (gate round 5, Layout/Visual Medium fix: the chip's own base
-  style is already the quiet muted colour every readout uses at rest, so a running-vs-finished
-  distinction needs the RUNNING state to go brighter, not the finished state to go quieter still,
-  which a literal reading of "quiet" above could otherwise be misread as).
+  show a quiet, comma-joined total of whichever of `finished`/`exited`/`failed`/`cancelled`
+  (issue #563: `cancelled` added, split out of `failed`) are non-zero (for example "1 finished, 1
+  exited", or "1 failed" when a turn's only subagents failed), worded distinctly per status
+  rather than folded into one misleading "finished" bucket (issue #536); it MUST be hidden when
+  the turn has started none. The RUNNING state MUST visibly stand out from the quiet
+  finished-only total (gate round 5, Layout/Visual Medium fix: the chip's own base style is
+  already the quiet muted colour every readout uses at rest, so a running-vs-finished
+  distinction needs the RUNNING state to go brighter, not the finished state to go quieter
+  still, which a literal reading of "quiet" above could otherwise be misread as).
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.
@@ -430,16 +450,18 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   screen.
 - **FR-016**: The Settings screen MUST be fully operable by keyboard, with a visible focus
   indicator at every control.
-- **FR-017**: Activating the Subagents chip MUST open the Subagents panel, listing the current
-  turn's subagents, each with its name or task and its state (running, finished, failed, or
-  exited — issue #489). **Amended by spec 013**: the panel opens through the shared right pane
-  shell (one permanent icon rail, one collapsible pane hosting every right-hand panel) rather
-  than a standalone right-hand region; this spec's own FR-018 to FR-020 (the panel's content and
-  behaviour) are unchanged.
+- **FR-017**: Activating the Subagents chip MUST open the Subagent panel: a `role="tree"` of the
+  Session's subagents (FR-024), each with its name or task and its state (running, finished,
+  failed, cancelled, or exited — issues #489, #563). **Amended by spec 013**: the panel opens
+  through the shared right pane shell (one permanent icon rail, one collapsible pane hosting
+  every right-hand panel) rather than a standalone right-hand region; this spec's own FR-018 to
+  FR-020 (the panel's content and behaviour) are unchanged.
 - **FR-018**: Selecting a subagent in that panel MUST show its live stream — what it is saying and
   which tools it is running — inside the panel.
 - **FR-019**: The subagent panel MUST be closeable, and closing it MUST leave the chat pane
-  unchanged.
+  unchanged; closing it MUST return keyboard focus to whichever control opened it, if that
+  control still exists, else to the Subagents chip (FR-027, issue #563; supersedes the earlier
+  always-the-chip target now that spec 001's Subagent chain row, FR-068, can open the panel too).
 - **FR-020**: A subagent finishing while its stream is open in the panel MUST update that
   subagent's shown state without closing the panel.
 - **FR-021**: The Todo progress chip MUST show how many of the agent's current tasks are done out
@@ -466,6 +488,30 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   Context window usage, Turn time, Current time) MUST show as an icon plus text with no border or
   fill; a readout that opens something (Pull request, Subagents) MUST show as a quiet text
   control with a hover background and no border, never a bordered or filled pill.
+- **FR-024** (renumbered from FR-023 during the #877/#563 merge, 2026-10-15 -- both stories
+  independently claimed FR-023; #877 merged first, so #563's own subagent-panel FRs move to the
+  next free numbers): The Subagent panel MUST show the Session's subagents as a `role="tree"`
+  (issue #563): the Session is the implicit root; the agents it started are the first level, in
+  start order; each of those agents' own child agents render below it once the tracker can tell
+  which agent started which (not derivable from today's data, so the tree MUST render exactly one
+  level deep, honestly, with no placeholder grandchild row, until a later story supplies that
+  data). The tree and the selected agent's live stream (FR-018) MUST sit in a vertical,
+  user-resizable split, the tree above the stream, with a keyboard-operable resize handle.
+- **FR-025** (renumbered from FR-024, see FR-024's own note): The subagent tree MUST be fully
+  keyboard-operable: a single roving tab stop, Up and Down moving between visible rows, Left and
+  Right collapsing/expanding or moving to a parent/child row, Home and End moving to the
+  first/last row, and single-character type-ahead jumping to the next row whose name starts with
+  the typed character. The selected row MUST be marked by a visible indicator distinct from
+  hover, never colour alone, and MUST carry `aria-level`, `aria-setsize`, and `aria-posinset`
+  reflecting the row's true position even where indentation is visually capped.
+- **FR-026** (renumbered from FR-025, see FR-024's own note): A subagent whose run was cancelled
+  or aborted MUST show a status distinct from one that failed (issue #563): neither the
+  Subagents chip's roll-up (FR-007) nor the subagent tree MUST ever count or label a
+  cancelled/aborted subagent as "failed".
+- **FR-027** (renumbered from FR-026, see FR-024's own note): Closing the Subagent panel MUST
+  return keyboard focus to whichever control activated it, if that control still exists in the
+  document, and MUST fall back to the Subagents chip only when it does not (issue #563; see
+  FR-019).
 
 ### Key Entities
 
@@ -477,12 +523,13 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   entry's earlier "chip" framing).
 - **Session readout settings**: the app-wide record of which readouts are shown or hidden, with
   the defaults in FR-013, persisted across restarts and applied to every open Session.
-- **Subagent panel**: the panel opened from the Subagents chip, listing the current turn's
-  subagents and showing the live stream of whichever one is selected; hosted inside the shared
-  right pane shell (spec 013), not a standalone side region.
-- **Subagent entry**: one row in the subagent panel: a name or task, a state (running, finished,
-  failed, or exited — a process confirmed gone with nothing known about its own work, issue
-  #489), and, when selected, its stream of output and tool calls.
+- **Subagent panel**: the panel opened from the Subagents chip, showing the Session's subagents
+  as a tree (FR-024) with a vertical split onto the live stream of whichever one is selected;
+  hosted inside the shared right pane shell (spec 013), not a standalone side region.
+- **Subagent entry**: one row in the subagent tree: a name or task, a state (running, finished,
+  failed, cancelled, or exited — a process confirmed gone with nothing known about its own work,
+  issues #489, #563), its own child agents when the tracker knows the parent (FR-024), and, when
+  selected, its stream of output and tool calls.
 
 ## Success Criteria *(mandatory)*
 
