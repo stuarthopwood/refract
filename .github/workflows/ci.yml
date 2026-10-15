@@ -59,11 +59,12 @@ jobs:
       - name: Check drag regions
         run: pnpm check:drag-regions
 
-      # Plain check:parity reports and never fails on missing channels; the parity gate
-      # (--gate) is switched on at #796. check:mermaid-contrast is not run here until #388
+      # Parity gate switched on at #796 (R13, Electron deleted): fails the build if any
+      # `IPC_REQUESTS`/`IPC_EVENTS`/theme-bootstrap channel in `src/shared/ipc.ts` has no Rust
+      # implementation under `src-tauri/src`. check:mermaid-contrast is not run here until #388
       # fixes its known failures.
       - name: Check IPC parity
-        run: pnpm check:parity
+        run: pnpm check:parity -- --gate
 
       - name: Check file size
         run: pnpm check:file-size

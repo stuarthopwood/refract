@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 // Issue #784 (Phase R, docs/PLAN.md R1): generated parity report for the renderer-facing IPC
 // contract (`src/shared/ipc.ts`'s `IPC_REQUESTS`, `IPC_EVENTS`, `THEME_BOOTSTRAP_CHANNEL`)
-// against the Rust (Tauri, `src-tauri/src`) backend, alongside the Electron source file and the
-// Phase R lane that owns it. Replaces the hand-kept `specs/016-tauri-rust-build/parity.md`
-// table, which could silently drift from the real channel list -- this script re-derives
-// everything from source on every run, so a channel added to `ipc.ts` later shows up as missing
-// automatically, with no table to remember to update.
+// against the Rust (Tauri, `src-tauri/src`) backend, alongside the Phase R lane that owns it.
+// Replaces the hand-kept `specs/016-tauri-rust-build/parity.md` table, which could silently
+// drift from the real channel list -- this script re-derives everything from source on every
+// run, so a channel added to `ipc.ts` later shows up as missing automatically, with no table to
+// remember to update.
+//
+// The Electron source-file column this report used to carry (`src/main`'s own
+// `ipcMain.handle`/`ipcMain.on` call sites) was removed at #796/R13: Electron was deleted, so
+// there is no longer an Electron side to cite. Rust implementation state is now the only thing
+// this script checks.
 //
 // Usage:
 //   node scripts/check-parity.mjs              print a plain-text table + totals
 //   node scripts/check-parity.mjs --markdown    print a GitHub-flavoured markdown table instead
-//   node scripts/check-parity.mjs --gate        exit 1 if any channel is not implemented (off by
-//                                                default; the parity gate, issue #796/R13, turns
-//                                                this on once the cutover is ready)
-// Exits 0 otherwise, even when channels are missing (report-only until `--gate`).
+//   node scripts/check-parity.mjs --gate        exit 1 if any channel is not implemented (the
+//                                                parity gate, switched on in CI at #796/R13)
+// Exits 0 otherwise, even when channels are missing (report-only without `--gate`).
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -23,7 +27,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const ipcTsPath = path.join(repoRoot, 'src/shared/ipc.ts');
 const tauriSrcDir = path.join(repoRoot, 'src-tauri/src');
-const mainSrcDir = path.join(repoRoot, 'src/main');
 
 const args = process.argv.slice(2);
 const markdown = args.includes('--markdown');
@@ -78,58 +81,15 @@ if (!bootstrapMatch) throw new Error(`check-parity: could not find THEME_BOOTSTR
 const themeBootstrapChannel = bootstrapMatch[1];
 
 // ---------------------------------------------------------------------------
-// 2. Electron source file per channel: scanned from `src/main`'s own `ipcMain.handle`/
-// `ipcMain.on`/`IPC_EVENTS.X` call sites (the exact pattern `src/main/ipc/register.ts` and every
-// area file use), not hand-copied -- stays correct if a handler moves files.
+// 2. Rust implementation state, scanned recursively under `src-tauri/src` so it never depends on
+// which file a `register(...)` call currently lives in (lanes are splitting `ipc/mod.rs` and
+// `session/agent.rs` into per-lane modules while this runs).
 // ---------------------------------------------------------------------------
-
-function findElectronSourcesForRequests() {
-  const map = new Map(); // IPC_REQUESTS key -> Set<relative file path>
-  for (const file of walk(mainSrcDir)) {
-    if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
-    const content = readFile(file);
-    const re = /ipcMain\.(?:handle|on)\(\s*IPC_REQUESTS\.([A-Z0-9_]+)/g;
-    let m;
-    while ((m = re.exec(content))) {
-      if (!map.has(m[1])) map.set(m[1], new Set());
-      map.get(m[1]).add(relPath(file));
-    }
-    if (/ipcMain\.on\(\s*THEME_BOOTSTRAP_CHANNEL/.test(content)) {
-      if (!map.has('THEME_BOOTSTRAP_CHANNEL')) map.set('THEME_BOOTSTRAP_CHANNEL', new Set());
-      map.get('THEME_BOOTSTRAP_CHANNEL').add(relPath(file));
-    }
-  }
-  return map;
-}
-
-function findElectronSourcesForEvents() {
-  const map = new Map(); // IPC_EVENTS key -> Set<relative file path>
-  for (const file of walk(mainSrcDir)) {
-    if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
-    const content = readFile(file);
-    const re = /IPC_EVENTS\.([A-Z0-9_]+)/g;
-    let m;
-    while ((m = re.exec(content))) {
-      if (!map.has(m[1])) map.set(m[1], new Set());
-      map.get(m[1]).add(relPath(file));
-    }
-  }
-  return map;
-}
 
 function formatSources(set) {
   if (!set || set.size === 0) return 'unknown';
   return [...set].sort().join('; ');
 }
-
-const electronReqSources = findElectronSourcesForRequests();
-const electronEventSources = findElectronSourcesForEvents();
-
-// ---------------------------------------------------------------------------
-// 3. Rust implementation state, scanned recursively under `src-tauri/src` so it never depends on
-// which file a `register(...)` call currently lives in (lanes are splitting `ipc/mod.rs` and
-// `session/agent.rs` into per-lane modules while this runs).
-// ---------------------------------------------------------------------------
 
 /** Strips a trailing `//` line comment from each line before scanning for `.register(...)` calls
  * (this codebase's `.register("...")` calls never put a `//` inside the string argument, so a
@@ -179,9 +139,9 @@ function stripCfgTestModules(content) {
 }
 
 /** Every string literal passed as the first argument to a `.register(...)` call, anywhere under
- * `src-tauri/src` -- the Rust `Dispatcher`'s channel registration, mirroring
- * `ipcMain.handle(IPC_REQUESTS.X, ...)` on the Electron side. Comments and `#[cfg(test)]` modules
- * are stripped first so neither a commented-out call nor a test-only registration counts. */
+ * `src-tauri/src` -- the Rust `Dispatcher`'s channel registration. Comments and `#[cfg(test)]`
+ * modules are stripped first so neither a commented-out call nor a test-only registration
+ * counts. */
 function findRustRegisteredRequests() {
   const registered = new Set();
   const registeredSources = new Map(); // registered string -> Set<relative file path>
@@ -259,9 +219,7 @@ function isEventSentDirectlyFromLaneFile(constName, value) {
 }
 
 /** FR-010/FR-011 (spec 016): the one non-`IPC_EVENTS`/non-`IPC_REQUESTS` channel. Implemented
- * once `lib.rs` injects `window.__REFRACT_THEME_BOOTSTRAP__` via a Tauri `initialization_script`,
- * the Rust equivalent of the Electron preload's synchronous `ipcMain.on(THEME_BOOTSTRAP_CHANNEL,
- * ...)` reply. */
+ * once `lib.rs` injects `window.__REFRACT_THEME_BOOTSTRAP__` via a Tauri `initialization_script`. */
 function isThemeBootstrapImplemented() {
   for (const file of walk(tauriSrcDir)) {
     if (!file.endsWith('.rs')) continue;
@@ -304,7 +262,7 @@ function rustEventConstNameForValue(value) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Lane ownership, derived from docs/PLAN.md "Phase R: Rust promotion" (the `#`/`Issue`/`Files
+// 3. Lane ownership, derived from docs/PLAN.md "Phase R: Rust promotion" (the `#`/`Issue`/`Files
 // touched` columns, read 2026-10-13). Each lane's own `.rs` file(s) and work description decide
 // which channels it owns; channels already implemented in the pre-split scaffold with no later
 // lane claiming their file (clipboard, conversations, readiness, the core session list/create)
@@ -432,7 +390,7 @@ const EVENT_LANES = {
 const THEME_BOOTSTRAP_LANE = 'R8'; // #791, theme.rs
 
 // ---------------------------------------------------------------------------
-// 5. Build the report rows.
+// 4. Build the report rows.
 // ---------------------------------------------------------------------------
 
 const rows = [];
@@ -441,7 +399,6 @@ for (const { key, value } of requests) {
   rows.push({
     channel: value,
     kind: 'request',
-    electronSource: formatSources(electronReqSources.get(key)),
     lane: REQUEST_LANES[key] ?? 'unassigned',
     implemented: rustRegisteredRequests.has(value),
   });
@@ -452,7 +409,6 @@ for (const { key, value } of events) {
   rows.push({
     channel: value,
     kind: 'event',
-    electronSource: formatSources(electronEventSources.get(key)),
     lane: EVENT_LANES[key] ?? 'unassigned',
     implemented: constName !== null && rustSentEventConsts.has(constName),
   });
@@ -461,7 +417,6 @@ for (const { key, value } of events) {
 rows.push({
   channel: themeBootstrapChannel,
   kind: 'bootstrap',
-  electronSource: formatSources(electronReqSources.get('THEME_BOOTSTRAP_CHANNEL')),
   lane: THEME_BOOTSTRAP_LANE,
   implemented: themeBootstrapImplemented,
 });
@@ -471,22 +426,22 @@ const eventRows = rows.filter((r) => r.kind === 'event');
 const bootstrapRow = rows.find((r) => r.kind === 'bootstrap');
 
 // ---------------------------------------------------------------------------
-// 6. Print.
+// 5. Print.
 // ---------------------------------------------------------------------------
 
 function printMarkdownTable(tableRows) {
-  console.log('| Channel | Kind | Electron source | Lane | Implemented |');
-  console.log('|---|---|---|---|---|');
+  console.log('| Channel | Kind | Lane | Implemented |');
+  console.log('|---|---|---|---|');
   for (const r of tableRows) {
-    console.log(`| \`${r.channel}\` | ${r.kind} | \`${r.electronSource}\` | ${r.lane} | ${r.implemented ? 'yes' : 'no'} |`);
+    console.log(`| \`${r.channel}\` | ${r.kind} | ${r.lane} | ${r.implemented ? 'yes' : 'no'} |`);
   }
 }
 
 function printPlainTable(tableRows) {
-  const header = ['Channel', 'Kind', 'Electron source', 'Lane', 'Implemented'];
-  const columns = ['channel', 'kind', 'electronSource', 'lane'];
+  const header = ['Channel', 'Kind', 'Lane', 'Implemented'];
+  const columns = ['channel', 'kind', 'lane'];
   const widths = columns.map((col, i) => Math.max(header[i].length, ...tableRows.map((r) => r[col].length)) + 2);
-  console.log(columns.map((col, i) => header[i].padEnd(widths[i])).join('') + header[4]);
+  console.log(columns.map((col, i) => header[i].padEnd(widths[i])).join('') + header[3]);
   for (const r of tableRows) {
     console.log(columns.map((col, i) => String(r[col]).padEnd(widths[i])).join('') + (r.implemented ? 'yes' : 'no'));
   }

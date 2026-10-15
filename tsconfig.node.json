@@ -1,12 +1,12 @@
 {
-  "include": ["electron.vite.config.ts", "tauri.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
+  "include": ["tauri.vite.config.ts", "src/shared/**/*"],
   "compilerOptions": {
     "composite": true,
     "target": "ES2023",
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["electron-vite/node", "node"],
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
