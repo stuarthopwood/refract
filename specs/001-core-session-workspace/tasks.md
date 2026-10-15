@@ -1521,3 +1521,108 @@ per the gate's own instruction to renumber after whichever PR merges first.)
 **Not exercised this phase** (stated plainly, not hidden): a live `ask` frame carrying a real, non-zero `timeout` (D16's deadline line is type-checked and renders from a given `deadlineAt`, but no live frame has ever shown one); the fallback path on a build where `set_ask_dialog` is genuinely unavailable (every OMP available to test is past the 18.4.7 minimum that introduced the command); `pnpm check:theme-contrast`'s 4.5:1 `foreground`/`background` pair stands in for a literal by-hand pixel measurement of the Obsidian checked glyph and the Dark (high contrast) card edge; a 320px forced-colours/OS-reduced-motion pass of the whole card (the wrap/forced-colours fixes were made and are inherited from shared primitives/tested classes, but not independently screenshotted at that exact viewport); keyboard-only, start-to-finish operation of the whole card end to end (gate round 3 adds a real keyboard Tab/Tab/Enter for the final Submit step specifically, to prove the D17 focus ring, not as a stand-in for full keyboard coverage of picking options, Next, or Cancel); focus specifically after Cancel or an OMP cancel/timeout (only Submit's own path was driven live; Cancel and an OMP cancel share the exact same code path, not a separately exercised one); the single-question card with no tab row; Next or the incomplete-note jump; the "Answered automatically"/"None selected"/"Question not answered" summary statuses and an OMP `cancel` with no "Request withdrawn" notice; auto-cancel of a malformed frame; picks surviving a Session switch (D27); a live `details.results[]`/`timedOut` shape; the Rust rejection paths in `validate_ask_answers`; the central picks-store clear in `init-stores.ts` beyond the happy-path Submit it is incidentally exercised by; a dark-theme screenshot of the restyled fallback card.
 
 This phase was written retroactively after the implementation above, in the same session that built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered this issue; the ui-architect-v3 roundtable decision comment on #572, posted 2026-10-15, recorded the scope before the PR, per Stuart's standing delegation to make UI decisions while away), then corrected in place after the five-reviewer gate's round 1 found four High and several Medium defects, round 2 found one shared High (D17) and several Medium/Low defects, round 3 found one shared Medium (a stale focus intent) plus a live-check-only-provable concern over the D17 target's focus ring (confirmed NOT clipped), and round 4 renumbered this phase and its tasks after PR #901 claimed the Phase 38 slot -- see the PR's own gate-round-1/2/3/4 commits for the exact diffs. `pnpm typecheck` (both tsconfigs), `node scripts/ci-local.mjs` (all 16 steps, including `cargo fmt`/`cargo clippy -D warnings`/`cargo test`), `pnpm check:ui-text`, `pnpm check:theme-contrast`, `pnpm check:file-size`, `pnpm verify:tauri` (US1/US4) and `node scripts/verify-tauri-ask.mjs` all ran clean after every round's fixes; the Ask card itself was live-checked end to end over CDP with real DOM input against the scratch Tauri debug build before and after each gate round, including a `document.activeElement` focus assertion added in round 2 and a real keyboard Tab/Tab/Enter Submit plus a `getComputedStyle`/close-up-screenshot focus-ring proof added in round 3, screenshots recorded in the PR body.
+
+## Phase 40: Convergence
+
+(Renumbered from Phase 39/T199-T206: PR #900 (#572) merged into `main` first and claimed Phase
+39/T199-T205, per Main's own merge instruction.)
+
+- [X] T206 [US5] Issue #731 (ui-architect-v3 roundtable, delegated by Stuart 2026-10-15): amend
+  spec 001 for the new derived **Unread response** display status -- FR-005, FR-006, the
+  Independent Test and Acceptance Scenario 4 wording, the Key Entities Session note, and a
+  `### Session 2026-10-15` Clarifications Q&A appended to the existing heading (shared with
+  #564/#877). `CONTEXT.md` gains **Session status** and **Unread response**. Decision 20's three
+  unread-behaviour gaps (window focus, restart persistence, front-pane visibility on
+  Settings/Manage sessions/Pull requests) are filed as the one follow-up issue it asks for,
+  **#904**, not fixed here.
+- [X] T207 [US5] `sessionDisplay.tsx`: add `SessionDisplayStatus` (`SessionStatus |
+  'unread-response'`) and `displayStatus()` (returns `'unread-response'` only when `status ===
+  'idle' && unread`); key `STATUS_LABEL` and `StateIcon`'s `status` prop by it. `StateIcon`:
+  idle becomes `CircleCheckIcon` (was the hollow `CircleIcon`; same grey, same glyph
+  `SubagentPanel.tsx`'s "finished" icon already uses, #563), new `unread-response` case renders
+  `MessageSquareTextIcon` in `text-state-unread-response`.
+- [X] T208 [US5] `SessionRow.tsx`: the status icon slot and its `sr-only` word key off
+  `displayStatus(session)`, not the raw `session.status`; the trailing amber unread dot and its
+  `sr-only` "Unread" span are deleted (reverses #482 item 6), reserving no row width.
+  `SessionDetailsCard.tsx` and `ManageSessionRow.tsx` (status column widened `6rem` to `8rem`)
+  call `displayStatus(session)` the same way; `manageSessionsHelpers.ts`'s `STATUS_ORDER` is
+  keyed by `SessionDisplayStatus` (needs-you 0, unread-response 1, working 2, idle 3, stopped
+  4) and `filterAndSortSessions`'s status sort calls `displayStatus` on each side.
+  `ChatHeader.tsx`/`closeChatPane.ts`/`StatusBar.tsx`/`Transcript.tsx` are left on the raw
+  `session.status` (a Chat pane's own Session is always in the visible set, so Unread response
+  there could only ever be a one-frame flash) -- type-only change, since `StateIcon`/
+  `STATUS_LABEL` now accept the wider `SessionDisplayStatus` and a `SessionStatus` value is
+  still a valid member of it.
+- [X] T209 [US5] `globals.css`: add `--state-unread-response: var(--severity-info)` to
+  `.theme-dark`, `.theme-obsidian` and `.theme-dark-high-contrast`, plus
+  `--color-state-unread-response` in `@theme inline`; update the `.theme-dark` comment that used
+  to say no session state means "info". `theme-contrast-pairs.mjs`: add `state-idle` and the new
+  `state-unread-response` at a 3:1 floor against `sidebar`/`sidebar-accent`/`background`/
+  `popover` in every theme (`state-idle` only had the `background` pair before).
+- [X] T210 [US5] Design docs: `foundations-icons.md`, `patterns.md` and
+  `product-look-and-feel.md`'s "Shared status icon" bullet describe the new idle/unread-response
+  icons and the info role; `product-layout.md`'s session-list row description drops "and an
+  unread dot". `docs/PLAN.md`'s Session status icons row records the PR and the shipped shape.
+- [X] T211 [US5] Live verification (CDP, scratch Tauri debug instance, `session.jsonl`
+  recorded-frame fake `omp`, three Sessions in one scratch repository): a #731-only DOM marker
+  (`.text-state-unread-response`) is absent before any turn and present once Session A finishes
+  a real approved turn while hidden (switched to Session B mid-stream, the real
+  `App.tsx`/`mod.rs` visible-set rule, never a state poke); Session A's icon has the
+  `<path>`-bearing `CircleCheckIcon` shape before the turn and the bell (`text-state-needs-you`)
+  during the pending approval; Manage sessions renders "Unread response" with no truncation in
+  the widened column; reopening Session A clears it back to Idle. A second instance (ellipsis
+  menu only, never the HoverCard-wrapped open button) proved **Stopped** (`Stop agent`,
+  `text-state-stopped`) on Dark and, after switching the real Theme submenu, on **Dark (high
+  contrast)** too; DevTools vision-deficiency emulation (deuteranopia/protanopia/tritanopia) and
+  `forced-colors: active` both keep the square (Stopped) and check-circle (Idle) glyphs visibly
+  distinct by shape, confirmed in the forced-colours screenshot. `pnpm typecheck` (0 errors),
+  `pnpm vitest` (148/148, no new tests), `node scripts/check-indent.mjs` (0 violations),
+  `node scripts/check-file-size.mjs` (0 cap violations), `node scripts/check-theme-contrast.mjs`
+  (every pair across all 3 themes PASS, including the new `state-unread-response`/`state-idle`
+  sidebar pairs) and the full `node scripts/ci-local.mjs` (16/16 steps) all ran clean.
+- [X] T212 [US5] Gate round 1 fixes (code-reviewer/a11y/architecture/tests, all PASS; three
+  Medium findings, all addressed): `StateIcon`'s shared className gains
+  `forced-colors:text-[CanvasText]` (sessionDisplay.tsx) -- an `<svg>` defaults to
+  `forced-color-adjust: preserve-parent-color`, so each glyph's own `text-state-*` colour
+  survived `forced-colors: active` instead of following CanvasText (the `AgentSpinner`/
+  `radio-group.tsx` precedent); confirmed in the built CSS
+  (`@media(forced-colors:active){...forced-colors\:text-\[CanvasText\]{color:canvastext}...}`).
+  Decision 20's follow-up issue filed as **#904** (enhancement, session-list, p3, triaged),
+  linked from the PR body, `docs/PLAN.md:223` and this file. The investigation record
+  (decisions 10 and 21: screenshots by name and sha256, the 8 new contrast pairs) posted as an
+  issue comment on #731, correcting decision 14's premise. `manageSessionsHelpers.ts:11-13` and
+  `sessionDisplay.tsx:17-19`'s comments corrected (sort order vs. display precedence; "will read"
+  not "read"); `CONTEXT.md`'s rejected term "response ready" removed from `product-layout.md`,
+  `docs/PLAN.md` rows #735/#748; `product-look-and-feel.md:18` gains "Unread response (info)"
+  in the State colour roles list; `product-layout.md`'s Manage sessions row corrected `6rem` to
+  `8rem` to match the shipped column width.
+- [X] T213 [US5] Gate round 2 live verification (two further scratch Tauri instances, exe hash
+  asserted before each run): the precedence rule staged live (a Session already showing Unread
+  response, stopped via its row menu without reopening it, shows Stopped -- decisions 5 and 14);
+  an 11-Session list (idle x7, Needs-you left pending, Unread response, Stopped, a
+  Working-attempt) at rest and hovered; a native CDP `clip`-region 1x-DPI crop of the bubble;
+  High contrast with Stopped/Idle (an earlier window) plus vision-deficiency and forced-colours
+  (pre-fix, the bug T212 fixes). **Blocked this round** by severe concurrent host contention on
+  the shared build machine (4-5 sibling `cargo`/`rustc`/`link` processes confirmed via
+  `Get-Process`, free memory down to about 3.5 of 16 GB, the scratch exe's own sha256 changing
+  between consecutive copies, the app itself repeatedly failing to reach a stable
+  session-attached state within 60s across six consecutive attempts): Obsidian with Needs-you
+  and Unread response shown together, a post-fix live re-capture of vision-deficiency/
+  forced-colours with Needs-you and Unread response visible, and a genuinely distinct "selected"
+  capture (the one taken came out byte-identical to "at rest", a test-script gap, not a second
+  real state -- flagged as such in the investigation record, not presented as two different
+  proofs). All three filed to the verification backlog, **#650**, for a re-run once the shared
+  machine is quieter.
+
+This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
+"Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
+roundtable rather than a live grill, per Stuart's standing delegation while away). A WebView2 CDP
+harness quirk ("Object reference chain is too long", `Runtime.evaluate`'s `returnByValue`
+choking on a raw-element finder expression passed to `waitFor` instead of a boolean one) cost
+several retries before being traced and fixed in round 1 of this story's own live checks. Opened
+as draft PR #902 (`feat/731-session-status-icons`); kept **Refs #731**, not **Closes**, since
+decision 21's live-verification list is not fully done (see T213's own blocked items, tracked in
+#650) -- switch to Closes once that backlog item clears. Renumbered from Phase 39/T199-T206 to
+Phase 40/T206-T213 on merging `origin/main` (PR #900/#572 claimed Phase 39/T199-T205 first), per
+Main's own merge instruction; every cross-reference (PR body, `docs/PLAN.md`, the #731
+investigation-record issue comment, the #650 backlog comment) updated to match.

@@ -22,7 +22,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
-import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
+import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from './sessionDisplay'
 import { useSessionRowActions } from './useSessionRowActions'
 
 export function SessionRow({
@@ -142,14 +142,14 @@ export function SessionRow({
                   {session.startProgress ? (
                     <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
                   ) : (
-                    <StateIcon status={session.status} />
+                    <StateIcon status={displayStatus(session)} />
                   )}
                   {/* Gate-fixes a11y Low finding (cycle 6): `describeStartProgressLabel` covers
                       'memory-deferred' too (previously hand-coded as only 'queued' vs
                       'Starting agent', silently misreporting "Starting agent" while the visible
                       text below says "waiting for memory to free up"). */}
                   <span className="sr-only">
-                    {session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[session.status]}
+                    {session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[displayStatus(session)]}
                   </span>
                   {isSplitOpen && isVisible && (
                     <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
@@ -195,10 +195,6 @@ export function SessionRow({
                     )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
-                  {session.unread && (
-                    <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
-                  )}
-                  {session.unread && <span className="sr-only">Unread</span>}
                 </button>
               </SessionDetailsCard>
             )}
