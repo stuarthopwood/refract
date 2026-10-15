@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
 import { initials } from '@/lib/initials'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
+import { AskCard } from './AskCard'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -42,13 +43,17 @@ interface AskOptionLike {
   label?: unknown
 }
 
+interface AskQuestionLike {
+  question?: unknown
+  options?: unknown
+}
+
 interface AskArgsLike {
   question?: unknown
   options?: unknown
   /** The real wire shape (live-verified, T077): a batch under `questions[]`, each with its own
-   * `question` and `options: [{ label }]` -- not the flat `question`/`options` FINDINGS item 22
-   * documented only for the ANSWER side (`details`). A multi-question batch renders only the
-   * first; OMP's own batching beyond one question is outside what this task covers. */
+   * `question` and `options: [{ label }]`. #572: every question in the batch now renders its own
+   * block (D21), not only the first. */
   questions?: unknown
 }
 
@@ -58,41 +63,98 @@ function readAskOption(option: unknown): string | undefined {
   return undefined
 }
 
-function readAskArgs(args: unknown): { question: string; options: string[] } {
-  const record = args && typeof args === 'object' ? (args as AskArgsLike) : {}
-  const first =
-    Array.isArray(record.questions) && record.questions.length > 0 && record.questions[0] && typeof record.questions[0] === 'object'
-      ? (record.questions[0] as AskArgsLike)
-      : record
-  const question = typeof first.question === 'string' ? first.question : typeof record.question === 'string' ? record.question : ''
-  const rawOptions = Array.isArray(first.options) ? first.options : Array.isArray(record.options) ? record.options : []
-  const options = rawOptions.map(readAskOption).filter((o): o is string => typeof o === 'string')
-  return { question, options }
+function readAskOptions(options: unknown): string[] {
+  return (Array.isArray(options) ? options : []).map(readAskOption).filter((option): option is string => typeof option === 'string')
 }
 
-interface AskDetailsLike {
+/** #572: reads every question of the batch (previously only `questions[0]`, FR-045's answered
+ * summary is now one row per call with a block per question, D21). Falls back to the flat
+ * `question`/`options` shape for a pre-batch call. */
+function readAskQuestions(args: unknown): { question: string; options: string[] }[] {
+  const record = args && typeof args === 'object' ? (args as AskArgsLike) : {}
+  if (Array.isArray(record.questions) && record.questions.length > 0) {
+    return record.questions
+      .filter((entry): entry is AskQuestionLike => !!entry && typeof entry === 'object')
+      .map((entry) => ({ question: typeof entry.question === 'string' ? entry.question : '', options: readAskOptions(entry.options) }))
+  }
+  const question = typeof record.question === 'string' ? record.question : ''
+  return question ? [{ question, options: readAskOptions(record.options) }] : []
+}
+
+interface AskResultLike {
   selectedOptions?: unknown
   customInput?: unknown
+  timedOut?: unknown
 }
 
-/** The answer text for a resolved `ask` tool item (T073, FINDINGS item 22(a)-(c),
- * contracts/omp-usage.md "Chat line wire shapes"): a cancelled ask is `status: 'error'` with an
- * empty `details`, read as the literal word "Cancelled" rather than OMP's fixed error sentence;
- * an unanswered ask (issue #510 slice 3) is `status: 'interrupted'`, read as "Question not
- * answered"; free text prefers `details.customInput` (the only reliable source for it); multiple
- * choice prefers `details.selectedOptions`, falling back to the tool's own output text. */
-function askAnswer(item: AskToolItem): string {
-  if (item.status === 'error') return 'Cancelled'
+/** D22: option labels joined with ", ", then "Other: <text>" last, or "None selected" when
+ * nothing was picked and nothing was typed. */
+function formatAskAnswerText(selectedOptions: string[], customInput: string, fallbackOutput?: string): string {
+  const parts: string[] = []
+  if (selectedOptions.length > 0) parts.push(selectedOptions.join(', '))
+  if (customInput.trim()) parts.push(`Other: ${customInput.trim()}`)
+  if (parts.length > 0) return parts.join(', ')
+  return fallbackOutput && fallbackOutput.length > 0 ? fallbackOutput : 'None selected'
+}
+
+interface AskAnswer {
+  text: string
+  timedOut: boolean
+}
+
+/** The per-question answer text for a resolved `ask` tool item (T073, FINDINGS item 22(a)-(c),
+ * contracts/omp-usage.md "Chat line wire shapes"; #572 extends this to a batch's own
+ * `details.results[]`, one entry per question). A cancelled or interrupted call never answered
+ * any question, so every question shows that one word instead of attempting to read `details`. */
+function readAskAnswers(item: AskToolItem, questionCount: number): AskAnswer[] {
+  const count = Math.max(questionCount, 1)
+  if (item.status === 'error') return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
   // Issue #510 slice 3 (PLAN.md row A0 evidence): "an unanswered ask renders as 'question not
-  // answered'" -- the process died before the user's reply ever landed, so there is nothing an
-  // `output`/`details` fallback below could show instead.
-  if (item.status === 'interrupted') return 'Question not answered'
-  const details = item.details && typeof item.details === 'object' ? (item.details as AskDetailsLike) : undefined
-  if (details && typeof details.customInput === 'string') return details.customInput
-  if (details && Array.isArray(details.selectedOptions)) {
-    return details.selectedOptions.filter((o): o is string => typeof o === 'string').join(', ')
+  // answered'" -- the process died before the user's reply ever landed.
+  if (item.status === 'interrupted') return Array.from({ length: count }, () => ({ text: 'Question not answered', timedOut: false }))
+  const details =
+    item.details && typeof item.details === 'object' ? (item.details as { results?: unknown; selectedOptions?: unknown; customInput?: unknown }) : undefined
+  if (details && Array.isArray(details.results) && details.results.length > 0) {
+    return details.results
+      .filter((result): result is AskResultLike => !!result && typeof result === 'object')
+      .map((result) => ({
+        text: formatAskAnswerText(
+          Array.isArray(result.selectedOptions) ? result.selectedOptions.filter((o): o is string => typeof o === 'string') : [],
+          typeof result.customInput === 'string' ? result.customInput : ''
+        ),
+        timedOut: result.timedOut === true
+      }))
   }
-  return item.output ?? ''
+  const selectedOptions = details && Array.isArray(details.selectedOptions) ? details.selectedOptions.filter((o): o is string => typeof o === 'string') : []
+  const customInput = details && typeof details.customInput === 'string' ? details.customInput : ''
+  return [{ text: formatAskAnswerText(selectedOptions, customInput, item.output), timedOut: false }]
+}
+
+type AskCallStatus = 'answered' | 'answered-automatically' | 'cancelled' | 'not-answered'
+
+function askCallStatus(item: AskToolItem, answers: AskAnswer[]): AskCallStatus {
+  if (item.status === 'error') return 'cancelled'
+  if (item.status === 'interrupted') return 'not-answered'
+  return answers.some((answer) => answer.timedOut) ? 'answered-automatically' : 'answered'
+}
+
+/** D22: an icon plus a word in the row's `meta` slot -- cancelling is never shown as an error. */
+function AskStatusMeta({ status }: { status: AskCallStatus }) {
+  if (status === 'cancelled') {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <XIcon aria-hidden className="size-3" />
+        Cancelled
+      </span>
+    )
+  }
+  if (status === 'not-answered') return <span>Question not answered</span>
+  return (
+    <span className="inline-flex items-center gap-1">
+      <CheckIcon aria-hidden className="size-3" />
+      {status === 'answered-automatically' ? 'Answered automatically' : 'Answered'}
+    </span>
+  )
 }
 
 /** FR-018 (issue #491): a question with more than one line shows its first line as a short
@@ -162,50 +224,64 @@ interface AskQuestionRowProps {
 // `output`/`details` the chosen answer, both of which survive a restart via `get_messages`,
 // unlike the `request` item this supersedes once it resolves.
 export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
-  const { question, options } = readAskArgs(item.args)
-  const answer = askAnswer(item)
+  const questions = readAskQuestions(item.args)
+  const answers = readAskAnswers(item, questions.length)
   const name = userName ?? 'You'
-  const { heading, body } = splitQuestionHeading(question)
+  const status = askCallStatus(item, answers)
+  const firstQuestion = questions[0]?.question ?? ''
+  const summary = questions.length > 1 ? `${firstQuestion} and ${questions.length - 1} more` : firstQuestion
 
   return (
     <CollapsedLine
       icon={<CircleQuestionMarkIcon className="size-3.5 shrink-0 text-muted-foreground" />}
       label="Asked user:"
-      summary={question}
+      summary={summary}
+      meta={<AskStatusMeta status={status} />}
     >
-      {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
-       * summary above instead of the ambient `--foreground` this previously inherited, which
-       * reads brighter than primary chat prose and inverted the secondary/bookkeeping hierarchy.
-       * Rendered through the shared Markdown component (FR-018, issue #491) with the same
-       * heading/body split as the live question card, so a question looks the same before and
-       * after answering. */}
-      {heading && (
-        <Markdown id={`${item.id}-ask-heading`} text={heading} className="font-medium text-muted-foreground" />
-      )}
-      <Markdown
-        id={`${item.id}-ask-body`}
-        text={body}
-        className="text-muted-foreground [&_p]:whitespace-pre-line"
-      />
-      {options.length > 0 && (
-        <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
-          {options.map((option) => (
-            <li key={option}>{option}</li>
-          ))}
-        </ul>
-      )}
-      <div className="flex items-start gap-2 pl-4">
-        <span
-          aria-hidden
-          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium"
-        >
-          {initials(name)}
-        </span>
-        <div className="text-sm">
-          <span className="text-muted-foreground">Answer: </span>
-          <span className="font-medium">{name}</span>
-          <span className="text-muted-foreground">: {answer}</span>
-        </div>
+      <div className="space-y-3">
+        {questions.map((question, index) => {
+          const { heading, body } = splitQuestionHeading(question.question)
+          const answer = answers[index] ?? answers[0]
+          return (
+            // eslint-disable-next-line react/no-array-index-key -- questions have no stable id on this read path
+            <div key={index} className="space-y-1">
+              {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
+               * summary above instead of the ambient `--foreground` this previously inherited, which
+               * reads brighter than primary chat prose and inverted the secondary/bookkeeping hierarchy.
+               * Rendered through the shared Markdown component (FR-018, issue #491) with the same
+               * heading/body split as the live question card, so a question looks the same before and
+               * after answering. */}
+              {heading && (
+                <Markdown id={`${item.id}-ask-heading-${index}`} text={heading} className="font-medium text-muted-foreground" />
+              )}
+              <Markdown
+                id={`${item.id}-ask-body-${index}`}
+                text={body}
+                className="text-muted-foreground [&_p]:whitespace-pre-line"
+              />
+              {question.options.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                  {question.options.map((option) => (
+                    <li key={option}>{option}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex items-start gap-2 pl-4">
+                <span
+                  aria-hidden
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium"
+                >
+                  {initials(name)}
+                </span>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Answer: </span>
+                  <span className="font-medium">{name}</span>
+                  <span className="text-muted-foreground">: {answer?.text ?? 'None selected'}</span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </CollapsedLine>
   )
@@ -221,6 +297,9 @@ interface RequestCardProps {
 // successful answer it swaps to the same one-line summary Transcript uses once the request is
 // no longer pending, so there is no gap waiting for the main process round trip.
 export function RequestCard({ sessionId, request }: RequestCardProps) {
+  if (request.kind === 'ask') {
+    return <AskCard sessionId={sessionId} request={request} />
+  }
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState<{ kind: ResolvedKind; detail?: string } | null>(null)

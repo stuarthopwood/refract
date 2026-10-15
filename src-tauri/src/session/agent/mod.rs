@@ -60,6 +60,7 @@ mod lane_support;
 mod launch;
 mod launch_support;
 mod requests;
+mod status;
 mod types;
 
 pub use commands::{
@@ -99,11 +100,7 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    // D1/D2 (#572): whether this process's `set_ask_dialog{enabled:true}` call succeeded;
-    // sent once per `launch()` (once per process life), in-memory only, never persisted to the
-    // registry. `false` (never retried for this process's life) once a reattach/relaunch starts
-    // a new process, `launch()` re-sends the probe and this is recomputed fresh.
-    ask_dialog_enabled: bool,
+    ask_dialog_enabled: bool, // D1/D2 (#572): `set_ask_dialog` result; in-memory only.
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
@@ -462,14 +459,6 @@ impl SessionAgent {
         }
         Self::insert_termination_and_progress_fields(obj, &state);
         payload
-    }
-
-    pub async fn status(&self) -> SessionStatus {
-        self.state.lock().await.status
-    }
-
-    pub async fn available_commands(&self) -> Vec<Value> {
-        self.state.lock().await.commands.clone()
     }
 
     // -----------------------------------------------------------------------------------------

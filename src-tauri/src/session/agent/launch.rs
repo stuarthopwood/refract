@@ -17,11 +17,9 @@ use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
     assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
-    registry_store_error_message, to_process_mode, truncate, verify_reattach,
+    registry_store_error_message, send_set_ask_dialog, to_process_mode, truncate, verify_reattach,
 };
-use super::{
-    AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
-};
+use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH};
 
 impl SessionAgent {
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
@@ -265,40 +263,7 @@ impl SessionAgent {
                 return Err(AgentError::new("reattach-failed", detail));
             }
         };
-        // D1/D2 (#572): sent once per process, right after reattach verification and before
-        // the Session goes Idle below. Kept in-memory only (`ask_dialog_enabled`, never
-        // persisted to the registry) and never retried for this process's life -- failure,
-        // error, timeout, or any response other than `data.enabled === true` leaves Refract on
-        // the `select` fallback path for good (D2); only a later reattach/relaunch (a new
-        // process, hence a fresh `launch()` call) re-probes.
-        let ask_dialog_enabled = match proc
-            .request(
-                json!({ "type": "set_ask_dialog", "enabled": true }),
-                DEFAULT_REQUEST_TIMEOUT_MS,
-            )
-            .await
-        {
-            Ok(response) => {
-                response
-                    .get("success")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                    && response
-                        .get("data")
-                        .and_then(|data| data.get("enabled"))
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false)
-            }
-            Err(_) => false,
-        };
-        self.state.lock().await.ask_dialog_enabled = ask_dialog_enabled;
-        if !ask_dialog_enabled {
-            self.append_notice(
-                "This version of OMP can't show an agent's questions together, so they arrive one at a time.".to_string(),
-                "info",
-            )
-            .await;
-        }
+        send_set_ask_dialog(self, &proc).await;
         // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session`
         // parameter (the registry's last known `last_message_count`) vs the freshly observed
         // `state_data`, before `sync_from_state` re-baselines it below -- see
