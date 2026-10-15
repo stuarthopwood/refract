@@ -40,6 +40,20 @@ export const PAIRS = [
   { fg: 'state-idle', bg: 'background', min: 3 },
   { fg: 'state-needs-you', bg: 'background', min: 3 },
   { fg: 'state-stopped', bg: 'background', min: 3 },
+  // Issue #731: the shared `StateIcon` renders both `state-idle` and the new
+  // `state-unread-response` on the session row (`sidebar`/`sidebar-accent` when selected or
+  // hovered), the chat header (`background`) and the session details hover card (`popover`) --
+  // the same four surfaces `agent-spinner-core` above is already checked against. `state-idle`
+  // only had the `background` pair before this issue; `sidebar`/`sidebar-accent`/`popover` were
+  // never checked for it either, so #567 decision 26 (the remaining `state-*` sidebar pairs)
+  // must not duplicate these four lines.
+  { fg: 'state-idle', bg: 'sidebar', min: 3 },
+  { fg: 'state-idle', bg: 'sidebar-accent', min: 3 },
+  { fg: 'state-idle', bg: 'popover', min: 3 },
+  { fg: 'state-unread-response', bg: 'sidebar', min: 3 },
+  { fg: 'state-unread-response', bg: 'sidebar-accent', min: 3 },
+  { fg: 'state-unread-response', bg: 'background', min: 3 },
+  { fg: 'state-unread-response', bg: 'popover', min: 3 },
   // These real component-boundary pairs were missing and measure as genuine failures --
   // `--input` (the border of every Input/Textarea/Select/outline-Toggle/outline-Button,
   // including the Appearance section's own Cancel button).

@@ -94,6 +94,7 @@
   --color-state-working: var(--state-working);
   --color-state-working-foreground: var(--state-working-foreground);
   --color-state-idle: var(--state-idle);
+  --color-state-unread-response: var(--state-unread-response);
   --color-state-needs-you: var(--state-needs-you);
   --color-state-needs-you-foreground: var(--state-needs-you-foreground);
   --color-state-stopped: var(--state-stopped);
@@ -197,6 +198,11 @@
   --state-working: oklch(0.696 0.17 162.48);
   --state-working-foreground: oklch(0.145 0 0);
   --state-idle: oklch(0.708 0 0);
+  /* Issue #731: Unread response (idle with an unseen reply) aliases `--severity-info`, the
+   * one existing "info" role -- not a second literal (#550's own "do not create a second set"
+   * rule). Contrast against sidebar/selected-or-hover row/chat background/details card: 8.35 /
+   * 7.05 / 9.23 / 8.35 (all clear the 3:1 non-text floor, `scripts/check-theme-contrast.mjs`). */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: oklch(0.769 0.188 70.08);
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: oklch(0.704 0.191 22.216);
@@ -244,10 +250,11 @@
   --accent-text: #7375F2;
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
-   * second set" rule). `--severity-info` is the one genuinely new colour (no existing OMP
-   * session state means "info" today), verified >=3:1 against both `--background` (9.24:1) and
-   * `--card`/`--popover` (8.36:1), the non-text floor every other severity/state colour here is
-   * already held to. */
+   * second set" rule). `--severity-info` was originally the one genuinely new colour with no
+   * existing OMP session state meaning "info" (verified >=3:1 against both `--background`
+   * (9.24:1) and `--card`/`--popover` (8.36:1), the non-text floor every other severity/state
+   * colour here is already held to) -- issue #731 now aliases `--state-unread-response` back
+   * onto it, the first session state this role covers. */
   --severity-success: var(--state-working);
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
@@ -418,6 +425,10 @@
   --state-working: var(--severity-success);
   --state-working-foreground: oklch(0.145 0 0);
   --state-idle: oklch(0.708 0 0);
+  /* Issue #731: Unread response aliases `--severity-info` (see `.theme-dark`'s own comment for
+   * the floor/method). Contrast against sidebar/selected-or-hover row/chat background/details
+   * card: 8.41 / 6.14 / 8.86 / 6.85. */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: var(--severity-warning);
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: var(--severity-error);
@@ -502,6 +513,10 @@
   --state-working: oklch(0.8 0.17 162);
   --state-working-foreground: oklch(0 0 0);
   --state-idle: oklch(0.85 0 0);
+  /* Issue #731: Unread response aliases `--severity-info` (see `.theme-dark`'s own comment for
+   * the floor/method). Contrast against sidebar/selected-or-hover row/chat background/details
+   * card: 12.21 / 9.21 / 12.45 / 11.80. */
+  --state-unread-response: var(--severity-info);
   --state-needs-you: oklch(0.85 0.17 70);
   --state-needs-you-foreground: oklch(0 0 0);
   --state-stopped: oklch(0.78 0.17 22);
