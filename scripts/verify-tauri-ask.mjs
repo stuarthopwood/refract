@@ -318,7 +318,10 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     const tabTitles = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).map((el) => { const span = el.querySelector('span'); return span ? span.textContent.trim() : null; })`);
     assert(JSON.stringify(tabTitles) === JSON.stringify(['Database', 'Features']), `tab row should read Database, Features in request order: ${JSON.stringify(tabTitles)}`);
     const databaseTab = await getTabInfo(cdp, 'Database');
-    assert(databaseTab && databaseTab.dataState === 'active', `Database tab should be active by default (first question, never-opened tab row): ${JSON.stringify(databaseTab)}`);
+    // Gate-fix (round 1): `data-state` is unreliable on this element (Tooltip's own asChild
+    // merge overwrites it with its own open/closed value), so the active tab is read from
+    // `aria-selected` instead, which Tabs sets independently and Tooltip never touches.
+    assert(databaseTab && databaseTab.ariaSelected === 'true', `Database tab should be active by default (first question, never-opened tab row): ${JSON.stringify(databaseTab)}`);
     const sqliteRow = await getRoleLabelInfo(cdp, 'radio', 'SQLite');
     // D11/D31 (gate round 1): the muted marker is a comma-separated word, "SQLite, Recommended" --
     // never "(Recommended)" in parentheses.
@@ -335,7 +338,7 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
 
     // Switch to the Features tab.
     await cdp.click(tabFinder('Features'));
-    await cdp.waitFor(`(() => { const el = ${tabFinder('Features')}; return !!el && el.getAttribute('data-state') === 'active'; })()`, {
+    await cdp.waitFor(`(() => { const el = ${tabFinder('Features')}; return !!el && el.getAttribute('aria-selected') === 'true'; })()`, {
       timeoutMs: 15_000,
       label: 'Features tab becomes active',
     });

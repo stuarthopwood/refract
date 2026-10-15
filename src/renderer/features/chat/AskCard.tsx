@@ -264,7 +264,13 @@ export function AskCard({ sessionId, request }: AskCardProps) {
                         <TabsTrigger
                           value={question.id}
                           aria-describedby={undefined}
-                          className="relative max-w-40 flex-none gap-1 rounded-none border-b-2 border-transparent shadow-none data-[state=active]:bg-muted data-[state=active]:shadow-none data-[state=active]:after:opacity-100 forced-colors:data-[state=active]:border-[Highlight] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground after:opacity-0"
+                          // Gate-fix (round 1, live-check regression): `TooltipTrigger asChild`
+                          // and `TabsTrigger` both set their own `data-state` on the same DOM
+                          // node, and Tooltip's own ("closed"/"open") wins the merge, clobbering
+                          // Tabs' own ("active"/"inactive") -- styling and tests both key off
+                          // `aria-selected` instead, which Radix Tabs sets independently and
+                          // Tooltip never touches (same variant `PanelTabBar.tsx` already uses).
+                          className="relative max-w-40 flex-none gap-1 rounded-none border-b-2 border-transparent shadow-none aria-selected:bg-muted aria-selected:shadow-none aria-selected:after:opacity-100 forced-colors:aria-selected:border-[Highlight] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground after:opacity-0"
                         >
                           <span className="min-w-0 truncate">{label}</span>
                           {answered && (
