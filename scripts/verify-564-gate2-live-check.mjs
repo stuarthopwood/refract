@@ -130,6 +130,7 @@ async function main() {
 
   let first;
   let second;
+  let sessionId;
   // Gate round 3 fix (LOW, code-reviewer): the whole run, including both launches and the
   // summary below, is now wrapped in one outer try/finally so the scratch profile this run
   // created is always removed -- even when a step above throws and escapes uncaught -- not left
@@ -167,7 +168,7 @@ async function main() {
     await first.cdp.clickByText('Create session', { inDialog: true });
     await first.cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
     await first.cdp.waitFor(`!!document.querySelector('textarea[aria-label="Message"]')`, { timeoutMs: 60_000, label: 'composer mounted' });
-    const sessionId = await first.cdp.evaluate(`window.refract.sessions.list().then(r => r.ok ? r.value[0]?.id : null)`);
+    sessionId = await first.cdp.evaluate(`window.refract.sessions.list().then(r => r.ok ? r.value[0]?.id : null)`);
     await first.cdp.waitFor(
       `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.status === 'idle')`,
       { timeoutMs: 60_000, label: 'session idle' },
@@ -362,12 +363,23 @@ async function main() {
       `Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'))?.textContent.trim()`,
     );
     record('The seeded stale "High" reads back before the agent restarts in this process', labelBeforeRestart === 'High', { labelBeforeRestart });
+    const sessionStateBeforeRestart = await third.cdp.evaluate(
+      `window.refract.sessions.list().then(r => r.ok ? r.value.find(s => s.id === ${JSON.stringify(sessionId)}) : r)`,
+    );
+    record('Session state before restart (diagnostic)', true, sessionStateBeforeRestart);
 
-    // Start the agent (a real turn against the unreachable provider, which will fail, but the
-    // start-time get_state/sync_from_state path still runs): `thinkingLevel` is absent (the fake
-    // model never reports it) and the stored value is a CONCRETE "high", not "inherit", so the
-    // round-3 fix must clear it.
-    void third.cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, 'hello')`);
+    // Restart the agent via `sessions.recover` (issue #786): unlike `sessions.resume` (gated
+    // server-side to `stopReason === 'agent-exited'` or `terminatedUnexpectedly`, which our
+    // harness's clean Job-Object kill never produces -- confirmed above, `sessions.resume`
+    // refused with "Session is not eligible to resume") or a real composer send (which
+    // `MessageInput.tsx`'s own `disabled` flag refuses here too, since this Session's fresh
+    // in-memory runtime in this new process carries no `stopReason` at all, so `notStarted`
+    // -- `stopReason === 'not-started'` -- is false), `sessions.recover` always restarts
+    // regardless of reason (`attach_snapshot_core(&state, &id, true)`, no eligibility gate).
+    // This IS a real, renderer-reachable IPC (the ChatPane banner's own "Recover" action), just
+    // reached directly rather than via that banner's specific visibility conditions.
+    const recoverResult = await third.cdp.evaluate(`window.refract.sessions.recover(${JSON.stringify(sessionId)})`);
+    record('sessions.recover started the agent', recoverResult?.ok === true, recoverResult);
     await third.cdp
       .waitFor(
         `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(sessionId)})?.status !== 'working')`,
@@ -375,6 +387,10 @@ async function main() {
       )
       .catch(() => {});
     await sleep(500);
+    const sessionStateAfterRestart = await third.cdp.evaluate(
+      `window.refract.sessions.list().then(r => r.ok ? r.value.find(s => s.id === ${JSON.stringify(sessionId)}) : r)`,
+    );
+    record('Session state after restart (diagnostic)', true, sessionStateAfterRestart);
     const labelAfterRestart = await third.cdp.evaluate(
       `Array.from(document.querySelectorAll('button')).find(e => (e.getAttribute('aria-label')||'').startsWith('Reasoning:'))?.textContent.trim()`,
     );
@@ -405,7 +421,21 @@ async function main() {
     // run's own scratch profile, never a bare variable or a default expansion.
     if (profile.startsWith('refract-564-gate2-')) {
       const profileDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile);
-      rmSync(profileDir, { recursive: true, force: true });
+      // A just-killed child's own file handles (antivirus scan, slow OS cleanup) can still hold
+      // this directory open for a moment -- retry briefly instead of crashing the whole run
+      // with an uncaught EPERM on an otherwise-successful pass.
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          rmSync(profileDir, { recursive: true, force: true });
+          break;
+        } catch (err) {
+          if (attempt === 5) {
+            console.error(`warning: could not remove scratch profile ${profileDir} after 5 attempts:`, err.message);
+            break;
+          }
+          await sleep(500);
+        }
+      }
     }
   }
 }
