@@ -444,7 +444,7 @@ impl SessionAgent {
                         // would silently kill the NEWER life's own PR-poll timer.
                         if is_current {
                             crate::session::readout::on_exit(&agent, code, requested).await;
-                            crate::session::subagents::on_exit(&agent, code, requested).await;
+                            crate::session::subagents::on_exit(&agent, code, requested, stop_requested).await;
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
                             crate::session::termination::on_exit(

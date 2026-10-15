@@ -261,10 +261,16 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
 // `pl-2` was dropped in favour of each ROW supplying its own 8px gap from the line (#565
 // decision 8), which this row's text never did, leaving "Stage N" flush against the spine.
 function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
+  // Gate round 3 (Low): the label used `stageSettleSummary` unconditionally, hiding the running
+  // state entirely while a Stage was still in flight ("Stage 1 of 2, 2 agents" instead of
+  // stating that it's running) -- mirrors `StageGroupRow`'s own running-vs-settled summary split.
+  const counts = summarizeSubagentStatuses(stage.items.map((item) => chatRowStatus(item.status)))
+  const status = overallStatus(counts)
+  const summaryText = status === 'running' ? stageRunningSummary(counts, stage.items.length) : stageSettleSummary(stage)
   return (
     <div
       role="group"
-      aria-label={`Stage ${stage.stageIndex} of ${stage.totalStages}, ${stageSettleSummary(stage)}`}
+      aria-label={`Stage ${stage.stageIndex} of ${stage.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
     >
       <span className="shrink-0 font-medium">Stage {stage.stageIndex}</span>
@@ -338,13 +344,14 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // while running, matching `Transcript.tsx`'s own `TurnTotalLine` tick (`forceTick` pattern) --
   // the comment below already claimed this, but nothing re-rendered this component on its own
   // until now, so `Date.now()` was only ever read once per OTHER state change. Also before the
-  // early return (hooks rule).
+  // early return (hooks rule). Gate round 3 (Low): also gated on `stages.length >= 2`, since a
+  // running turn with fewer Stages renders `null` below and never needs to re-render on a tick.
   const [, forceTick] = React.useReducer((count: number) => count + 1, 0)
   React.useEffect(() => {
-    if (!isRunning) return
+    if (!isRunning || stages.length < 2) return
     const interval = setInterval(forceTick, 1000)
     return () => clearInterval(interval)
-  }, [isRunning])
+  }, [isRunning, stages.length])
 
   if (stages.length < 2) return null
 
@@ -380,9 +387,14 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       defaultOpen={defaultOpen}
       className="mt-6 border-transparent hover:border-transparent"
       contentClassName="space-y-0 p-0"
-      // Gate round 2 (Low): also restates the running/failed/etc. word and duration `meta` shows
-      // visibly, since `aria-label` replaces the content name outright.
-      triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
+      // Gate round 2 (Low): also restates the running/failed/etc. word `meta` shows visibly,
+      // since `aria-label` replaces the content name outright. Gate round 3 (Medium): the
+      // duration is left OUT while running -- it ticks every second (`forceTick` above), and
+      // restating a ticking value in the accessible name would change a focused trigger's own
+      // name once a second (decision 19/21: the duration stays `aria-hidden` in `meta` and
+      // nothing should be announced per tick); it is restated only once settled, the instant it
+      // stops ticking.
+      triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${!isRunning && durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       action={<ChainShowPanelButton sessionId={sessionId} />}
     >
       <SpineList gap="stage">

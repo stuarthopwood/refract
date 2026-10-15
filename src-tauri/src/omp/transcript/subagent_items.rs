@@ -93,13 +93,18 @@ pub(super) fn upsert_subagent_items(
     items
 }
 
-/// `pending` (still running) is the only status FINDINGS item 22(e) actually observed; any other
-/// string is a plain completion/failure signal. Port of `mapProgressStatus`.
+/// `pending`/`running` (still running) are the only statuses FINDINGS item 22(e) actually
+/// observed as in-flight; any other string is a plain completion/failure signal. Port of
+/// `mapProgressStatus`. Gate round 3 fix (`agent://Main`): `running` used to fall into the
+/// `Some(_) => Done` catch-all below, so a spawn-time `progress[i].status: "running"` entry
+/// (the repo's own `subagents-background-turn.jsonl` fixture has exactly this shape) was drawn
+/// as a quiet Finished check while the agent was still working -- matches
+/// `subagents_progress.rs:50`'s own `lower == "pending" || lower == "running"` arm.
 fn map_progress_status(status: Option<&str>) -> SubagentStatus {
     match status {
         Some("cancelled") | Some("aborted") => SubagentStatus::Cancelled,
         Some("failed") | Some("error") => SubagentStatus::Error,
-        Some("pending") => SubagentStatus::Running,
+        Some("pending") | Some("running") => SubagentStatus::Running,
         None => SubagentStatus::Running,
         Some(_) => SubagentStatus::Done,
     }
