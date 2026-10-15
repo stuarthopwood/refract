@@ -1119,14 +1119,17 @@ point (T160's own read-back semantics, corrected mid-round).
   specific surface it sits on, never checked against `--composer-background` before, only
   against `--background`/`--popover`/`--muted`) -- measured 4.37 to 15.42:1 (ring) and 4.45 to
   5.27:1 (border) across all three built-in themes, all above the 3:1 floor in both states.
-  `scripts/file-size-baseline.json`'s `check-theme-contrast.mjs` entry raised 923 -> 935 (the
-  file's own intentional growth for these two new, real, justified pairs, never laundering an
-  unrelated violation).
+  `scripts/check-theme-contrast.mjs`'s own file-size ratchet violation (935 lines, over its
+  923-line baseline -- the ratchet is lower-only, #806) was fixed not by raising the baseline
+  but by extracting its `PAIRS` array (plus the comment block explaining it) into a new
+  `scripts/theme-contrast-pairs.mjs` module, a pure-data, behaviour-preserving move: the script
+  now imports `PAIRS` from there and iterates it exactly as before, dropping to 791 lines (under
+  its UNCHANGED 923 baseline); `scripts/file-size-baseline.json` is byte-identical to `main`.
 
   Verified: `pnpm typecheck` (clean), `pnpm test` (148/148, unchanged), `pnpm check:indent` (0
-  odd-indent), `pnpm check:file-size` (0 violations/311 files, baseline raised as above),
-  `node scripts/check-theme-contrast.mjs` (all 325 pairs across 3 themes PASS, up from 322 after
-  this round's own two new pairs plus #437's round earlier the same day), `pnpm check:parity`
+  odd-indent), `pnpm check:file-size` (0 violations/312 files, baseline unchanged from main),
+  `node scripts/check-theme-contrast.mjs` (all 325 pairs across 3 themes PASS, unchanged from
+  before the extraction -- confirming the move changed no behaviour), `pnpm check:parity`
   (97/97, 23/23), `pnpm check:drag-regions` (0 violations/115 files). No Rust touched, so the
   full `cargo`/`ci-local.mjs` suite was not re-run; the Tauri debug build WAS rebuilt (renderer-
   only changes still need a fresh bundle) to drive the live check below.
