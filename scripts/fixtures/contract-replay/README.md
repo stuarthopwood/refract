@@ -129,30 +129,34 @@ Electron-independent `EventEmitter`-style subscription -- `forwardEvent`'s windo
 separate, later step this never calls), not reconstructed snapshots the way the Rust trace has to
 (no live-window workaround needed on this side at all).
 
-### How it was produced
+### How it was produced (historical -- frozen at #796/R13)
 
 There is no live TS test reading this fixture (AGENTS.md's "no new tests while prototyping" rule
-covers `src/main`/TypeScript in full for this lane; the epic #797 exception for new tests is
-Rust-ports only). It is produced by a checked-in generator script,
+covered `src/main`/TypeScript in full for this lane; the epic #797 exception for new tests was
+Rust-ports only). It was produced by a checked-in generator script,
 `scripts/gen-contract-replay-electron-trace.mjs` (reusing the driving logic of the original
 gate-round-1 throwaway TS test, `src/main/ipc/contractReplay.test.ts` -- deleted per the
 no-new-tests rule above, but never reachable again after a squash merge to `main`, which is why
 gate-round-2 (MEDIUM #4, PR #834) replaced it with this checked-in script instead of a second
-throwaway one). The generator writes the normalized trace straight to this file (no manual
-copy-paste step); it is never auto-run by `pnpm test`/CI (lives under `scripts/`, outside
-`vitest.config.ts`'s own `include: ['src/**/*.test.ts']`, and isn't named `*.test.ts`/
-`*.spec.ts` either), and needs its own one-off vitest config
+throwaway one). The generator wrote the normalized trace straight to this file (no manual
+copy-paste step); it was never auto-run by `pnpm test`/CI (it lived under `scripts/`, outside
+`vitest.config.ts`'s own `include: ['src/**/*.test.ts']`, and wasn't named `*.test.ts`/
+`*.spec.ts` either), and needed its own one-off vitest config
 (`scripts/gen-contract-replay-electron-trace.vitest.config.mjs`) to be runnable at all, since an
-explicit CLI file argument alone does not override `vitest.config.ts`'s `include`. Regenerate:
+explicit CLI file argument alone does not override `vitest.config.ts`'s `include`. Regenerate
+(when it could still run, before #796):
 
 ```
 npx vitest run --config scripts/gen-contract-replay-electron-trace.vitest.config.mjs scripts/gen-contract-replay-electron-trace.mjs
 ```
 
-Eyeball the diff (if any) against `scripts/fixtures/omp-frames/session.jsonl` before committing --
-see the generator's own header comment for the full rationale. Regenerate it the same way if
-`src/main`'s IPC handlers or `SessionManager`/`SessionAgent` ever change in a way that should be
-reflected here.
+**The generator and its one-off vitest config were deleted at #796/R13 along with `src/main`,
+`src/preload` and the rest of the Electron build** -- there is no longer an Electron shell (or
+an `electron` package) to drive, so this fixture can never be regenerated on `main` again. It is
+now a permanently frozen golden file, exactly like the pre-#834 throwaway test's output would
+have been. If a real regression ever requires regenerating it, check out the `electron-final`
+tag (the last commit with the Electron build, tagged for this purpose) and run the command
+above from there; do not attempt to port the generator forward to the Rust-only tree.
 
 ### Normalization
 

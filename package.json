@@ -5,12 +5,9 @@
   "packageManager": "pnpm@10.33.0",
   "description": "Desktop workspace that drives omp --mode rpc-ui, one process per session worktree.",
   "type": "commonjs",
-  "main": "./out/main/index.js",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
-    "dev:electron": "electron-vite dev",
-    "build:electron": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "check:indent": "node scripts/check-indent.mjs",
     "test": "vitest run",
@@ -32,7 +29,6 @@
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
     "diff": "9.0.0",
-    "koffi": "3.3.2",
     "lucide-react": "1.49.0",
     "mermaid": "11.17.2",
     "radix-ui": "1.6.7",
@@ -56,8 +52,6 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "44.5.1",
-    "electron-vite": "5.0.0",
     "js-yaml": "4.3.2",
     "shadcn": "4.21.0",
     "tailwindcss": "4.3.3",
@@ -68,9 +62,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "electron",
-      "esbuild",
-      "koffi"
+      "esbuild"
     ]
   }
 }

@@ -251,3 +251,76 @@ All three can start the moment Phase 1's checkpoint (T001-T009) is confirmed.
   every checkpoint above is a manual run.
 - Every task names the exact Rust file(s) it owns and the Electron TypeScript file it ports, so no
   two tasks across Phase 2's three slices touch the same file.
+
+---
+
+## Phase 5: Convergence
+
+This phase was appended retroactively on 2026-10-15, after the R13 cutover code in this PR
+(branch `feat/796-r13-cutover`) had already been built and committed -- commits `3f1543f`
+(delete `src/main`/`src/preload`/`electron.vite.config.ts`), `2551daf` (regenerate
+`pnpm-lock.yaml`), `ea7a488` (constitution + current-state docs), `4eb81be` (two stale-mention
+fixups), `c1f99a0` (this spec's own Clarifications amendment), plus the `electron-final` rollback
+tag at `b6cc5bd`. `/speckit.converge` is being run against the finished branch to retroactively
+trace that work back to spec 016's intent, per #796's Spec Kit pickup plan, not to plan work still
+to do.
+
+**Purpose**: close the gap between spec.md's newly-amended cutover Clarifications (R13, #796,
+2026-10-15, "Decided: start the cutover now") and this task list, which never had tasks for the
+cutover itself -- Phases 1-4 above cover only the original milestone-1 build-out, dated
+2026-10-13, and stop at the parity/footprint measurement (T035-T036), before Electron deletion.
+
+**Depends on**: Phase 4 complete, plus every Phase R Rust lane (R2-R12b, `docs/PLAN.md`) landing
+the remaining channels Phase 4 did not cover, so the contract reached full parity (96 of 96
+requests, 23 of 23 events) before this phase's work removed the Electron side of the comparison.
+
+- [X] T037 Tag the last Electron commit `electron-final` (rollback), per spec.md Clarifications
+  "cut over now" (missing). **Done** -- annotated tag `electron-final` at `b6cc5bd`, pushed;
+  `git ls-remote --tags origin electron-final` resolves to `4290b29`.
+- [X] T038 Delete `src/main`, `src/preload`, `electron.vite.config.ts`, the
+  `electron`/`electron-vite` `devDependencies`, the `dev:electron`/`build:electron` scripts, and
+  the `package.json` `main` entry that pointed at the deleted build output, per spec.md
+  Clarifications "separate build/dev scripts" (superseded again 2026-10-15) (missing). **Done**
+  -- commit `3f1543f`; `git grep -n electron package.json` finds nothing.
+- [X] T039 Rewire every script/config that read the deleted Electron paths
+  (`check-parity.mjs`'s Electron-source column, `check-ui-text.mjs`'s `out/main`/`out/preload`
+  scan, `check-omp-schema-drift.mjs`'s `src/main/omp/*.ts` scan targets, `tsconfig.node.json`/
+  `tsconfig.web.json`'s `include`, `vitest.config.ts`'s stale comment) to work against
+  `src/shared/ipc.ts` and the Rust backend only, and switch on `check:parity --gate` in
+  `.github/workflows/ci.yml`, per FR-006/FR-012 and spec.md's "Carved out ... resolved" entry
+  (missing). **Done** -- commit `3f1543f`; `ci-local.mjs`'s "Check IPC parity" step passed with
+  `--gate` live (96 of 96 requests, 23 of 23 events, 0 missing).
+- [X] T040 Delete the Electron-only dev tools that can no longer function once the `electron`
+  package is gone (`measure-footprint(.mjs|-helpers.mjs)`,
+  `gen-contract-replay-electron-trace(.mjs|.vitest.config.mjs)`), and regenerate
+  `pnpm-lock.yaml` without `electron`/`electron-vite`, per spec.md Clarifications "cut over now"
+  (missing). **Done** -- commits `3f1543f`/`2551daf`; `pnpm install --frozen-lockfile` passed
+  against the regenerated lockfile.
+- [X] T041 Amend `.specify/memory/constitution.md` Principle V ("Electron Security Baseline" ->
+  "Tauri Security Baseline") and the Platform and Stack section, grounded against the real
+  `src-tauri/capabilities/default.json`, `tauri.conf.json`, `lib.rs` and `job_object.rs`, per
+  `constitution-amendment-draft.md` and spec.md Clarifications "cut over now" (missing). **Done**
+  -- commit `ea7a488`; `refract_request`/`is_allowed_navigation_url` confirmed live in
+  `src-tauri/src/lib.rs`; constitution bumped to 3.0.0 (MAJOR, Principle V redefined).
+- [X] T042 Update every current-state doc naming Electron as the live shell (`README.md`,
+  `AGENTS.md`, `docs/design/product-layout.md`, `docs/PLAN.md` rule 10 / the R13 row / the Rust
+  build row / the spec 016 row) to reflect the cutover, leaving dated historical notes (the
+  taskbar-icon fix, the footprint comparison, the merged-PR progress list) untouched, per spec.md
+  Clarifications "cut over now" (missing). **Done** -- commits `ea7a488`/`4eb81be`/`2dd8963` (plus
+  the review-fix commits on this PR for `src-tauri/Cargo.toml`, `capabilities/default.json`,
+  `lib.rs`, and the constitution's own external-link grant claim). **Known remaining stale spots,
+  deliberately not fixed here** (filed as a follow-up issue, not fixed in this PR): comments in
+  `src/tauri-bridge/index.ts`/`entry.ts`/`externalLinks.ts` mirroring the deleted
+  `src/preload/index.ts` (not touched -- collides with #564's in-flight edit to that same file);
+  `src/shared/ipc.ts`/`ipc-model.ts`'s `RefractApi` fields marked optional "because Electron never
+  ports" and `wordPredictionEnabled`'s "absent means enabled (Electron)" default; `AppMenuBar.tsx`
+  citing `src/main/menu.ts` and `modelRoleSuffix.ts` citing `electron.vite.config.ts` (both
+  renderer/shared files, out of this cleanup PR's scope per spec.md's own "removes no renderer or
+  shared code" acceptance line).
+
+**Checkpoint**: `git grep -n -i electron -- ':!docs/spike' ':!specs' ':!CHANGELOG*'` shows only
+justified historical/migration-code mentions (Rust comments documenting the one-time
+Electron-folder import, dated `docs/PLAN.md` rows, the frozen `contract_replay.rs` golden
+fixture, this spec's own History note) plus the renderer/shared known-remaining-stale-spots list
+above (tracked as a follow-up issue, not a live current-state claim this PR missed); `node
+scripts/ci-local.mjs` passes all 16 steps.

@@ -39,7 +39,6 @@ const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
 const ALLOWED_FILES = new Set([
   'src/shared/mermaidTheme.ts',
   'src/renderer/state/theme-store.ts',
-  'src/main/omp/loginProviders.ts',
   'src/renderer/lib/use-cleared-announcement.ts'
 ]);
 

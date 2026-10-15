@@ -9,7 +9,7 @@
 //
 // IMPORTANT -- read before trusting this script's "unexpected registration" table: Refract's own
 // `IPC_REQUESTS`/`IPC_EVENTS` (src/shared/ipc.ts) are a COMPLETELY DIFFERENT namespace from OMP's
-// RPC command surface. `IPC_REQUESTS`/`IPC_EVENTS` name Refract's own Tauri/Electron IPC channels
+// `IPC_REQUESTS`/`IPC_EVENTS` name Refract's own Tauri IPC channels
 // between its renderer and main/native process (e.g. `sessions.open`, `repositories.list`) -- they
 // are not, and were never meant to be, a 1:1 mirror of OMP's `negotiate_protocol`/`get_state`/
 // `prompt` RPC command set. The "channels with no same/similarly-named OMP command" table below is
@@ -21,7 +21,7 @@
 //
 // The actually useful drift signal is the second check: every OMP wire command name or frame/part
 // "type" tag that Refract's own OMP transport/transcript/session code references BY STRING LITERAL
-// (see `scanTargets` below -- both the TypeScript Electron-side modules and the Rust Tauri-side
+// (see `scanTargets` below -- the TypeScript shared frames module and the Rust Tauri-side
 // modules that talk to the real `omp` process), cross-checked against the vendored schema's own
 // declared vocabulary: its `x-rpc.commands[].name` list plus every `const`/`enum` discriminant
 // value anywhere in its `$defs`. These are the only strings OMP's own schema actually declares as
@@ -383,9 +383,9 @@ const sessionAgentDir = path.join(
 );
 const scanTargets = [
   path.join(repoRoot, "src", "shared", "frames.ts"),
-  path.join(repoRoot, "src", "main", "omp", "OmpProcess.ts"),
-  path.join(repoRoot, "src", "main", "omp", "SessionAgent.ts"),
-  path.join(repoRoot, "src", "main", "omp", "dialogs.ts"),
+  // src/main/omp/OmpProcess.ts, SessionAgent.ts and dialogs.ts were deleted at #796/R13
+  // (Electron cutover); their wire-literal references are already covered by the Rust files
+  // below (process.rs, transcript.rs, and every file in sessionAgentDir).
   path.join(repoRoot, "src-tauri", "src", "omp", "process.rs"),
   path.join(repoRoot, "src-tauri", "src", "omp", "transcript.rs"),
   // R3/#786 (PR #827) owns every file in this directory -- read-only here, grep-scanned for its

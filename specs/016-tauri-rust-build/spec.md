@@ -5,11 +5,12 @@ the Spec Kit record, not a literal git branch)
 
 **Created**: 2026-10-13
 
-**Status**: Promoted to the main build (epic #797, Stuart 2026-10-13). Milestone 1 is implemented;
-the Rust (Tauri v2) build is now the default (`pnpm dev`/`pnpm build`), and the Electron build
-(`src/main`, `src/preload`) is frozen to P0 bug fixes only. See `docs/PLAN.md` Phase R for the
-promotion lanes and the pending parity gate; the constitution amendment for this promotion is
-drafted in `constitution-amendment-draft.md` and ratified separately (#796).
+**Status**: Ratified as the architecture spec for Refract's desktop build (epic #797, parity gate
+#796, 2026-10-15). Milestone 1 is implemented; the Rust (Tauri v2) build is the only build
+(`pnpm dev`/`pnpm build`); the Electron build (`src/main`, `src/preload`) was deleted at the
+parity gate. See `docs/PLAN.md` Phase R for the promotion lanes; the constitution amendment for
+this promotion is landed in `.specify/memory/constitution.md` Principle V and the Technology
+section (drafted in `constitution-amendment-draft.md`, ratified by #796).
 
 **Input**: [issue://780](https://github.com/stuarthopwood/refract/issues/780) ("Experiment: Rust
 (Tauri v2) build of Refract with a Rust-native backend, separate from the Electron build") and
@@ -38,17 +39,37 @@ Stuart's decision comment on that issue, dated 2026-10-13.
 - **Q (issue://780, Stuart 2026-10-13)**: separate build/dev scripts? -> **yes**, `dev:tauri` /
   `build:tauri`; the existing Electron `dev` / `build` scripts are untouched. **Superseded
   2026-10-13 by promotion (epic #797, R1 #784)**: `dev`/`build` now run Tauri and the Electron
-  scripts moved to `dev:electron`/`build:electron`.
+  scripts moved to `dev:electron`/`build:electron`. **Superseded again 2026-10-15 by the cutover
+  (R13, issue #796)**: `dev:electron`/`build:electron` are deleted along with `src/main`,
+  `src/preload` and `electron.vite.config.ts`; `dev`/`build` are the only scripts.
+- **Q (issue #796, Stuart 2026-10-15, "Decided: start the cutover now")**: cut over now, or wait
+  for every item on the gate checklist (screenshot set, clean-profile install, security-baseline
+  checklist, footprint) to be individually recorded? -> **cut over now**. The trigger Stuart set
+  on 2026-10-14 (daily-driving the Rust build) was met: `pnpm check:parity` reported 97 of 97
+  requests and 23 of 23 events on 2026-10-15 (branch `feat/564-composer-restyle`; this branch's
+  own `pnpm check:parity --gate` run, taken after `src/main`'s channel-sourced rows were removed
+  from the report, shows 96 of 96 requests and 23 of 23 events -- the one-channel difference is
+  an in-flight sibling PR, not a regression). The gate checklist is accepted by that decision
+  rather than recorded item by item; the cleanup PR (this one) is verified instead by local CI
+  (`scripts/ci-local.mjs`; GitHub CI is disabled) plus a scratch live check of the Rust build
+  from the cutover branch. The last Electron commit is tagged `electron-final` (rollback). Runs
+  in parallel with #564 (composer restyle), which drops its Electron read-only fallback once
+  this lands. `src/tauri-bridge` keeps its current name in this PR (not renamed): #564 has an
+  in-flight edit to `src/tauri-bridge/index.ts`, and a rename would collide; the parent (not this
+  PR) decides whether/when to rename it.
 
-### Carved out, not blocking
+### Carved out, not blocking -- resolved at the cutover (R13, #796, 2026-10-15)
 
-- Full IPC parity (all 86 `IPC_REQUESTS` and 20 `IPC_EVENTS` entries): tracked row-by-row in
-  `parity.md`; only the milestone-1 subset is in scope for this spec's user stories.
-- Custom window chrome / caption overlay parity: milestone 1 ships native OS window decorations
+- Full IPC parity (originally scoped as all 86 `IPC_REQUESTS` and 20 `IPC_EVENTS` entries; the
+  contract has since grown to 96 requests and 23 events): **done** -- `pnpm check:parity --gate`
+  reports every channel implemented, and that gate is now enforced in CI
+  (`.github/workflows/ci.yml`).
+- Custom window chrome / caption overlay parity: milestone 1 shipped native OS window decorations
   (`decorations: true`); the renderer's own custom caption spacer may show a visible gap under
-  Tauri. Documented as a known, accepted difference (Assumptions), not a defect to fix here.
-- CDP-based automated verification: the existing Electron CDP verification tooling does not attach
-  to a Tauri/WebView2 process; manual verification only (`quickstart.md`).
+  Tauri. Still a known, accepted difference (Assumptions), not a defect to fix here.
+- CDP-based automated verification: resolved -- `scripts/verify-tauri-cdp.mjs` is the live
+  verification tooling (the Electron-only CDP recipe it replaced no longer exists; `src/main`
+  and `src/preload` were deleted at the cutover).
 
 ## User Scenarios & Testing *(mandatory)*
 

@@ -183,8 +183,9 @@ struct ManagedState {
 }
 
 /// The one Tauri command (FR-006): dispatches `channel`/`args` through the shared `Dispatcher`
-/// and always resolves with the `Result<T>` envelope itself (success and failure alike), exactly
-/// like `src/preload/index.ts`'s own `request<T>` helper does over `ipcRenderer.invoke`.
+/// and always resolves with the `Result<T>` envelope itself (success and failure alike), the
+/// same shape the now-deleted `src/preload/index.ts`'s own `request<T>` helper returned over
+/// `ipcRenderer.invoke` before the Electron build was cut over (#796).
 #[tauri::command]
 async fn refract_request(
     state: tauri::State<'_, ManagedState>,
