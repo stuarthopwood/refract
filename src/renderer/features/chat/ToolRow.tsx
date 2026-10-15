@@ -276,7 +276,12 @@ export function SubagentRow({ item }: SubagentRowProps) {
     </span>
   )
   return (
-    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta}>
+    // Gate round 3 fix (architect M4): this row is ALWAYS a `SpineList` member today (its only
+    // caller, `SubagentChainRow.tsx`'s non-solo branch) -- `border-0` removes `Collapsible`'s own
+    // unconditional border entirely (not just its colour, which `border-transparent` alone still
+    // left at 1px), dropping the unwanted hover box AND matching `SpineList.tsx`'s documented 8px
+    // gap exactly instead of a stray 9px.
+    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta} className="border-0">
       <SubagentBody item={item} />
     </CollapsedLine>
   )

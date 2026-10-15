@@ -10,10 +10,11 @@ export interface StageGroup {
   items: SubagentItem[]
   /** 1-based position among this turn's own Stages, in start order. */
   stageIndex: number
-  /** How many Stages this turn has in total -- a Stage group row's own header text ("Stage N")
-   * never shows when this is 1 and the Stage has exactly one agent (decision 1: "a single agent
-   * renders exactly like today's SubagentRow"); every other case gets a header (decision 1: "a
-   * single stage is fully summarised by its own group header"). */
+  /** How many Stages this turn has in total. Gate round 3 fix (architect Low): a Stage group
+   * row's own "Stage N" header is decided by agent count ALONE (`items.length === 1`, gate
+   * round 2 architect addendum B) with no exception for how many Stages the turn has -- this
+   * field exists for the header's OWN text ("Stage N of M") and the chain's "N stages" summary,
+   * never as a second condition gating whether the header renders at all. */
   totalStages: number
 }
 

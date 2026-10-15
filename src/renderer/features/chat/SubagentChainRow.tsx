@@ -1,9 +1,12 @@
 // Subagent chain row and Stage group row (issue #563 decisions 1-8, 14-21): the per-turn summary
-// of serial/parallel subagent batches. A Stage is the subagents started by one `task()` call, or
-// by `task()` calls issued together with nothing else between them in the transcript
-// (`groupSubagentStages.ts`). `StageGroupRow` renders one Stage in place, at its real position in
-// the log; `SubagentChainRow` renders once per turn, at the end, only when the turn has two or
-// more Stages. Both reuse the shared `SubagentStatusIcon`/`summarizeSubagentStatuses` (issue #563
+// of serial/parallel subagent batches. A Stage is a maximal run of `subagent` items that share
+// the same owning assistant message (`messageId`, gate round 2 architect addendum A) AND have
+// nothing else between them in the transcript except a hidden-bookkeeping-tool failure notice
+// (gate round 3, architect M5/M6: this combined rule, stated once here, is the single source of
+// truth every other doc location points back to -- see `groupSubagentStages.ts` for the actual
+// grouping code). `StageGroupRow` renders one Stage in place, at its real position in the log;
+// `SubagentChainRow` renders once per turn, at the end, only when the turn has two or more
+// Stages. Both reuse the shared `SubagentStatusIcon`/`summarizeSubagentStatuses` (issue #563
 // decision 14) and the shared `SpineList` connector (issue #565, steered in while building this).
 import * as React from 'react'
 import { BotIcon } from 'lucide-react'
@@ -28,15 +31,25 @@ import {
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
+// Gate round 3 fix (architect M1): `endedAt` used to be the max over only whichever items
+// happened to report BOTH `startedAt` and `durationMs`, silently skipping any settled member
+// missing one -- a cancelled/exited member with no recorded duration made the Stage/chain total
+// understated instead of absent. Now `endedAt` is `undefined` unless EVERY item has both fields;
+// `startedAt` is unaffected (still needed by the live running tick, which only ever needs it).
 function stageTimeRange(items: readonly SubagentItem[]): { startedAt?: number; endedAt?: number } {
   let startedAt: number | undefined
-  let endedAt: number | undefined
+  let maxEnd: number | undefined
+  let everyItemSettled = true
   for (const item of items) {
     if (item.startedAt != null && (startedAt === undefined || item.startedAt < startedAt)) startedAt = item.startedAt
-    const end = item.startedAt != null && item.durationMs != null ? item.startedAt + item.durationMs : undefined
-    if (end != null && (endedAt === undefined || end > endedAt)) endedAt = end
+    if (item.startedAt == null || item.durationMs == null) {
+      everyItemSettled = false
+      continue
+    }
+    const end = item.startedAt + item.durationMs
+    if (maxEnd === undefined || end > maxEnd) maxEnd = end
   }
-  return { startedAt, endedAt }
+  return { startedAt, endedAt: everyItemSettled ? maxEnd : undefined }
 }
 
 // "N running", "N failed", "N cancelled", "N exited" joined by commas, each only when non-zero
@@ -159,7 +172,12 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
         // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
         triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}
-        className="border-transparent hover:border-transparent"
+        // Gate round 3 fix (architect M4): `border-transparent hover:border-transparent` still
+        // carried `Collapsible`'s own unconditional `border` (1px solid, just invisible), adding
+        // a stray 1px to every measured gap. `border-0` removes the border entirely instead of
+        // merely hiding its colour, so this header's own measured geometry (and `SubagentRow`'s,
+        // below) now matches `SpineList.tsx`'s own documented 8px claim exactly.
+        className="border-0"
       >
         <SubagentBody item={item} />
       </CollapsedLine>
@@ -202,7 +220,7 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       // visibly, since `aria-label` replaces the content name outright -- otherwise a running
       // Stage's own accessible name carries no "Running" and no elapsed time at all.
       triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
-      className="border-transparent hover:border-transparent"
+      className="border-0"
       // #565 decision 8: the sole geometry in play once a `SpineList` is the content is its own
       // `ml-4`/`pt-1` -- `total` is always >= 2 here (a solo Stage returns early above).
       contentClassName="space-y-0 p-0"
@@ -391,7 +409,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       summaryWrap
       meta={meta}
       defaultOpen={defaultOpen}
-      className="mt-6 border-transparent hover:border-transparent"
+      className="mt-6 border-0"
       contentClassName="space-y-0 p-0"
       // Gate round 2 (Low): also restates the running/failed/etc. word `meta` shows visibly,
       // since `aria-label` replaces the content name outright. Gate round 3 (Medium): the
