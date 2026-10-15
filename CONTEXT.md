@@ -12,6 +12,10 @@ _Avoid_: Repository, repo, workspace (in UI text; code identifiers keep `reposit
 The remote copy of a **Project** on GitHub: what a **Project** is cloned from, and where its pull requests and issues live. A **Project** has zero or one **GitHub repository**.
 _Avoid_: Project (for the remote side), remote (alone)
 
+**Project colour**:
+An optional colour the developer chooses for a **Project**, shown on its header in the session list. A **Project** has none until one is chosen.
+_Avoid_: Accent, tag colour, label colour
+
 **Session**:
 One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
