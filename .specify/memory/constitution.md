@@ -112,14 +112,23 @@ sessions do not survive a process restart.
 - Same-window navigation MUST be restricted to the app's own origin (dev server in a dev build,
   the app's own custom-protocol origin in a release build), checked by scheme+host+port, not
   substring or prefix match (`src-tauri/src/lib.rs`'s `is_allowed_navigation_url`).
-- App windows MUST NOT load remote content. External links open in the system browser
-  (`opener:allow-open-url`/`opener:allow-default-urls` in `capabilities/default.json`).
+- App windows MUST NOT load remote content. External links open through a single scoped
+  `opener:allow-open-url` grant restricted to `http://**`/`https://**` (`capabilities/
+  default.json`) -- never `opener:default`/`allow-default-urls`, which also admit `mailto:`/
+  `tel:`. `src/tauri-bridge/externalLinks.ts`'s `installExternalLinkHandler` is the only
+  link-click interceptor: it always prevents the default `target="_blank"` action, then calls
+  the opener plugin's `open_url` command only when the href parses as `http:`/`https:`,
+  dropping anything else silently.
 - The renderer MUST reach the Rust backend through exactly one app-defined command,
-  `refract_request(channel, args)` (`src-tauri/src/lib.rs`), plus Tauri's own built-in
-  `core:default` permission set (event listen/emit, app/window queries;
-  `src-tauri/capabilities/default.json`). `refract_request` dispatches only to the string
-  channel names already defined in `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS`; no fs,
-  shell, or process plugin permission is granted to the webview.
+  `refract_request(channel, args)` (`src-tauri/src/lib.rs`). The only other renderer-callable
+  surface is the external-link route above, reached through the `plugin:opener|open_url`
+  command. Both are granted by `src-tauri/capabilities/default.json`, alongside Tauri's own
+  built-in `core:default` permission set (event listen/emit, app/window queries) -- accepted as
+  the one exception to "no capability the renderer does not use" above, since it is the
+  standard baseline every Tauri window needs, not a capability this app opted into.
+  `refract_request` dispatches only to the string channel names already defined in
+  `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS`; no fs, shell, or process plugin permission
+  is granted to the webview.
 - Agent, tool, and file output is untrusted. The renderer MUST NOT inject it as raw HTML, and
   markdown MUST be rendered through a sanitiser.
 - Every `omp` child process (and its descendants) MUST be contained by a kill-on-close Job
@@ -136,8 +145,8 @@ sessions do not survive a process restart.
 
 - Windows 11 is the only supported and tested OS for v1. OS-specific process control lives in
   one module (`src-tauri/src/process/`) so other platforms can be added later.
-- A Tauri v2 Rust backend (`src-tauri/`) plus a Vite + React renderer, all in TypeScript with
-  `strict: true` on the renderer side and Rust `edition = "2021"` on the backend side.
+- A Vite + React renderer in TypeScript (`strict: true`) and a Tauri v2 Rust backend
+  (`src-tauri/`, edition 2021).
 - OMP runs as a child process over stdio, so the app needs no Bun. No extension ships with the
   app (the earlier side-chat extension, `docs/spike/btw-ext.ts`, was never shipped and is
   superseded by the native `btw` RPC, amended 2026-10-11, spec 014; see Principle II).
