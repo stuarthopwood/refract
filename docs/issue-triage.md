@@ -66,13 +66,14 @@ route/type/state — no model call needed to produce it, even when the model cla
 - **`needs-triage`**, or a `duplicate_of` is set: says a human should triage (confirm or rule out
   the duplicate) first; lists no pipeline.
 - **`ready-for-agent`**: lists the pipeline for the route —
-  - `specify`: `/speckit.specify` (issue title/body as the feature description) → `/speckit.clarify`
+  - `specify`: `/grill-with-docs` (stress-test against CONTEXT.md, docs/adr and the code) →
+    `/speckit.specify` (issue title/body as the feature description) → `/speckit.clarify`
     → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement`
     (`/speckit.taskstoissues` is optional).
-  - `converge`: names the target feature directory (resolved from the issue's `spec:NNN` label
-    against the real `specs/` listing, falling back to `specs/001-core-session-workspace` when no
-    label is present and that directory exists) → amend its `spec.md` → `/speckit.converge` →
-    `/speckit.implement`.
+  - `converge`: `/grill-with-docs` (same stress-test) → names the target feature directory
+    (resolved from the issue's `spec:NNN` label against the real `specs/` listing, falling back
+    to `specs/001-core-session-workspace` when no label is present and that directory exists) →
+    amend its `spec.md` → `/speckit.converge` → `/speckit.implement`.
   - `none`: a one-line pickup hint by type (for example "reproduce with a failing test first" for
     a bug, "edit docs only" for documentation).
 - **`ready-for-human`**: lists the same route-specific pipeline, prefixed "After the human
