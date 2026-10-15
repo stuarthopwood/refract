@@ -255,7 +255,11 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
                     data-active={active}
                     onMouseEnter={() => setActiveIndex(index)}
                     onMouseDown={(event) => {
+                      // Gate round 1 fix: `preventDefault` alone (kept so focus never leaves the
+                      // filter field) does not stop a right- or middle-click from reaching this
+                      // handler -- only a primary-button press applies the selection.
                       event.preventDefault()
+                      if (event.button !== 0) return
                       void handleSelectRole(role.role)
                       setOpen(false)
                     }}
@@ -305,7 +309,9 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
                     data-active={active}
                     onMouseEnter={() => setActiveIndex(flatIndex)}
                     onMouseDown={(event) => {
+                      // Gate round 1 fix: same primary-button guard as the Roles option above.
                       event.preventDefault()
+                      if (event.button !== 0) return
                       void handleSelectModel(entry)
                       setOpen(false)
                     }}

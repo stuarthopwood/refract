@@ -777,8 +777,11 @@ not a prior `/speckit.plan`/`/speckit.tasks` pass (none existed for #564).
   pairs across 3 themes pass, unchanged by this phase), `pnpm check:drag-regions` (0 violations),
   `pnpm check:parity` (97 of 97 requests, 23 of 23 events), `pnpm check:versions` (all four
   manifests agree), `pnpm check:omp-schema -- --check-pin` and `--self-test` (no drift, self-test
-  passes), `cargo fmt --check` (clean, no Rust files touched by this story), `cargo test` (727
-  Rust tests plus the four integration suites, all pass, no Rust files touched by this story),
+  passes), `cargo fmt --check` (clean), `cargo test` (727 Rust tests plus the four integration
+  suites, all pass -- gate round 1 correction: an earlier version of this entry twice claimed
+  "no Rust files touched by this story", which was never accurate even then, since this story's
+  own earlier commit 1871f9b had already added Rust code (`model.setThinkingLevel`) before this
+  verification pass ever ran),
   `pnpm test` (Vitest; one `SessionAgent.test.ts` case failed with a Windows `EPERM` temp-file
   rename race under the full 30-file parallel run but passed in isolation and on a lone rerun --
   pre-existing flakiness, unrelated to this story, which never touches `SessionAgent.ts` or
@@ -815,7 +818,7 @@ built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #564; Stu
 
 **`/grill-with-docs` follow-up (same day, same session, after T137-T143 above landed)**: Stuart's
 "Decided (Stuart, 2026-10-15): `/grill-with-docs` session for this story" comment on #564 gave six
-further decisions. T144-T151 below implement them; `/speckit.implement` was run against this
+further decisions. T144-T150 below implement them; `/speckit.implement` was run against this
 phase per that comment, task by task, each `[X]` citing the actual code on this branch at the
 time it was marked, not a prior plan.
 
