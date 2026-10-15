@@ -1489,3 +1489,65 @@ scratch dir/profile (across every attempt) were deleted after use.
 - [X] T198 [US1] Update the docs: `docs/PLAN.md`'s Session list row records PR for #811 and the quiet window for #731/#735/#567.
 
 This phase was written retroactively after the implementation above (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #811; the pickup was delegated via the issue's own "Decided (Skippy...)" comment, 2026-10-15). `pnpm typecheck` (both tsconfigs, 0 errors), `pnpm check:indent` (0 odd-indent lines across 266 files), `pnpm check:file-size` (0 cap violations, baseline 17 -> 16 entries), and the existing `pnpm vitest` suite (148 pass, no new tests added per AGENTS.md's prototyping rule) all ran clean after the split. Verified in full via `node scripts/ci-local.mjs`: all 16/16 steps passed with no fixes needed (typecheck, vitest, indent, theme contrast, drag regions, IPC parity, file size, version consistency, OMP schema drift x2, Rust formatting, Rust tests, Rust lint, the Tauri debug build, and `check:ui-text`, which needs the built bundle this run produced). `pnpm verify:tauri`'s existing fake-omp CDP harness also passed (US1 readiness, US4 session+chat). A scratch live CDP check (scratch `REFRACT_DATA_DIR`, `WEBVIEW2_USER_DATA_FOLDER`, `REFRACT_IMPORT_SOURCE_DIR`, a lowercase scratch `OMP_PROFILE`, two scratch Projects, a few Sessions incl. one archived; confirmed afterward that Stuart's real `registry.json` hash was unchanged and no scratch process was left running) exercised 11 scenarios with PASS: adding two repositories, the header "+" quick-create and branch-picker buttons each creating a session, opening a Session row, a Project group header expand/collapse, rename via the row menu, archive into the cross-repository Archived group, the Archived group's own expand/collapse, restore back out of it, and keyboard Tab order through the group header, its three action buttons, and the rows -- confirming the rendered DOM and interaction behaviour are unchanged from `origin/main` (default/Dark theme; no theme override was set in that pass). Gate round 1 (code-reviewer, test-reviewer, accessibility-auditor, UI-architect) found one HIGH (the issue's own before/after-screenshot acceptance criterion had been skipped), one MEDIUM (a scenario-count mismatch and missing theme labelling in the PR body) and comment-only Lows (stale cross-file "above"/"below" references after the split, and a dropped blank line) -- all fixed: a real before/after pixel-diff comparison was built (`origin/main` vs this branch, each a separate debug Tauri build, driven over trusted CDP through an identical state sequence on both Dark and Dark high-contrast, 16 screenshots, 8 pairs diffed with `pixelmatch`, 0.14%-0.24% differing pixels per pair, every differing pixel traced to the test harness's own randomly-generated session/branch names, not a real difference -- verdict identical); the scenario count corrected to 11/11; the comment references repointed to their new files; a known trade-off (the hook's 33-binding interface) recorded as an issue comment for #731/#735/#567 to narrow later. Full results, per-scenario detail and screenshot references: PR #901's body.
+
+## Phase 39: Convergence (provisional numbering -- renumbered against `origin/main` just before merge per Main)
+- [X] T199 [US5] Issue #731 (ui-architect-v3 roundtable, delegated by Stuart 2026-10-15): amend
+  spec 001 for the new derived **Unread response** display status -- FR-005, FR-006, the
+  Independent Test and Acceptance Scenario 4 wording, the Key Entities Session note, and a
+  `### Session 2026-10-15` Clarifications Q&A appended to the existing heading (shared with
+  #564/#877). `CONTEXT.md` gains **Session status** and **Unread response**.
+- [X] T200 [US5] `sessionDisplay.tsx`: add `SessionDisplayStatus` (`SessionStatus |
+  'unread-response'`) and `displayStatus()` (returns `'unread-response'` only when `status ===
+  'idle' && unread`); key `STATUS_LABEL` and `StateIcon`'s `status` prop by it. `StateIcon`:
+  idle becomes `CircleCheckIcon` (was the hollow `CircleIcon`; same grey, same glyph
+  `SubagentPanel.tsx`'s "finished" icon already uses, #563), new `unread-response` case renders
+  `MessageSquareTextIcon` in `text-state-unread-response`.
+- [X] T201 [US5] `SessionRow.tsx`: the status icon slot and its `sr-only` word key off
+  `displayStatus(session)`, not the raw `session.status`; the trailing amber unread dot and its
+  `sr-only` "Unread" span are deleted (reverses #482 item 6), reserving no row width.
+  `SessionDetailsCard.tsx` and `ManageSessionRow.tsx` (status column widened `6rem` to `8rem`)
+  call `displayStatus(session)` the same way; `manageSessionsHelpers.ts`'s `STATUS_ORDER` is
+  keyed by `SessionDisplayStatus` (needs-you 0, unread-response 1, working 2, idle 3, stopped
+  4) and `filterAndSortSessions`'s status sort calls `displayStatus` on each side.
+  `ChatHeader.tsx`/`closeChatPane.ts`/`StatusBar.tsx`/`Transcript.tsx` are left on the raw
+  `session.status` (a Chat pane's own Session is always in the visible set, so Unread response
+  there could only ever be a one-frame flash) -- type-only change, since `StateIcon`/
+  `STATUS_LABEL` now accept the wider `SessionDisplayStatus` and a `SessionStatus` value is
+  still a valid member of it.
+- [X] T202 [US5] `globals.css`: add `--state-unread-response: var(--severity-info)` to
+  `.theme-dark`, `.theme-obsidian` and `.theme-dark-high-contrast`, plus
+  `--color-state-unread-response` in `@theme inline`; update the `.theme-dark` comment that used
+  to say no session state means "info". `theme-contrast-pairs.mjs`: add `state-idle` and the new
+  `state-unread-response` at a 3:1 floor against `sidebar`/`sidebar-accent`/`background`/
+  `popover` in every theme (`state-idle` only had the `background` pair before).
+- [X] T203 [US5] Design docs: `foundations-icons.md`, `patterns.md` and
+  `product-look-and-feel.md`'s "Shared status icon" bullet describe the new idle/unread-response
+  icons and the info role; `product-layout.md`'s session-list row description drops "and an
+  unread dot". `docs/PLAN.md`'s Session status icons row records the PR and the shipped shape.
+- [X] T204 [US5] Live verification (CDP, scratch Tauri debug instance, `session.jsonl`
+  recorded-frame fake `omp`, three Sessions in one scratch repository): a #731-only DOM marker
+  (`.text-state-unread-response`) is absent before any turn and present once Session A finishes
+  a real approved turn while hidden (switched to Session B mid-stream, the real
+  `App.tsx`/`mod.rs` visible-set rule, never a state poke); Session A's icon has the
+  `<path>`-bearing `CircleCheckIcon` shape before the turn and the bell (`text-state-needs-you`)
+  during the pending approval; Manage sessions renders "Unread response" with no truncation in
+  the widened column; reopening Session A clears it back to Idle. `pnpm typecheck` (0 errors),
+  `pnpm vitest` (148/148, no new tests), `node scripts/check-indent.mjs` (0 violations),
+  `node scripts/check-file-size.mjs` (0 cap violations), and `node
+  scripts/check-theme-contrast.mjs` (every pair across all 3 themes PASS, including the new
+  `state-unread-response`/`state-idle` sidebar pairs) all ran clean.
+
+This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
+"Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
+roundtable rather than a live grill, per Stuart's standing delegation while away). **Not
+exercised live**: the Obsidian/Dark-(high-contrast) theme switch, DevTools vision-deficiency
+(deuteranopia/protanopia/tritanopia) and `forced-colors: active` emulation on the live session
+list, and a Stopped-session screenshot -- a WebView2 CDP quirk this harness hit
+("Object reference chain is too long", `Runtime.evaluate`'s `returnByValue` choking on a
+raw-element finder expression passed to `waitFor` instead of a boolean one) was traced and fixed
+for the Manage sessions step, but time did not allow re-running the theme/emulation/stopped
+steps after the fix; the token values themselves are verified by `check-theme-contrast.mjs`
+against the real computed CSS (not hand-waved), and the `CircleCheckIcon`/`MessageSquareTextIcon`
+forced-colours shapes (solid disc, ring-with-check, bubble-with-lines, bell, empty square) are a
+property of `currentColor`-only glyphs already relied on by every existing session-state icon.
+

@@ -7,7 +7,7 @@ import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { StateIcon, STATUS_LABEL, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
+import { StateIcon, STATUS_LABEL, displayStatus, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
 /** The session details card (T069/T070): wraps the row's open button (`children`, passed through
@@ -65,8 +65,8 @@ export function SessionDetailsCard({
         <HoverCardContent>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
-              <StateIcon status={session.status} />
-              <span className="font-medium">{STATUS_LABEL[session.status]}</span>
+              <StateIcon status={displayStatus(session)} />
+              <span className="font-medium">{STATUS_LABEL[displayStatus(session)]}</span>
               <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

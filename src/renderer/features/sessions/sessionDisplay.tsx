@@ -1,18 +1,32 @@
-// Small display helpers shared between `SessionList.tsx` (the row) and `SessionDetailsCard.tsx`
+// Small display helpers shared between `SessionRow.tsx` (the row) and `SessionDetailsCard.tsx`
 // (the hover card), split out so neither file has to import the other.
 
-import { BellRingIcon, CircleIcon, SquareIcon } from 'lucide-react'
+import { BellRingIcon, CircleCheckIcon, MessageSquareTextIcon, SquareIcon } from 'lucide-react'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
-import type { DiffStat } from '../../../shared/ipc'
+import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { SessionStatus } from '../../../shared/model'
 
-export const STATUS_LABEL: Record<SessionStatus, string> = {
+/** Issue #731: a display-only status, never stored -- `idle` plus an unseen reply (`unread`)
+ * reads as **Unread response** instead of Idle. Derived in exactly one place (`displayStatus`
+ * below) so the icon, the word and every sort order stay in lockstep; nothing else may read
+ * `session.status` and `session.unread` separately to decide what to show. */
+export type SessionDisplayStatus = SessionStatus | 'unread-response'
+
+/** The one place a Session's raw `status`/`unread` pair becomes the status actually shown.
+ * `#735` (collapsed group header), `#748` (Show hidden badge) and `#846` (sleeping) all read
+ * this, not the raw fields. */
+export function displayStatus(s: Pick<SessionSummary, 'status' | 'unread'>): SessionDisplayStatus {
+  return s.status === 'idle' && s.unread ? 'unread-response' : s.status
+}
+
+export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   working: 'Working',
   idle: 'Idle',
   'needs-you': 'Needs you',
-  stopped: 'Stopped'
+  stopped: 'Stopped',
+  'unread-response': 'Unread response'
 }
 
 // ISO timestamps sort and compare lexically, so no Date parsing is needed until formatting.
@@ -27,20 +41,30 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
-// A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md "Look and feel").
-export function StateIcon({ status }: { status: SessionStatus }) {
+// A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md
+// "Look and feel"). Issue #731: idle is `CircleCheckIcon`, the same grey glyph the Subagent
+// panel's own "finished" icon uses (`SubagentPanel.tsx`, #563) -- a check means "turn ended,
+// nothing owed" in both places. Unread response is `MessageSquareTextIcon` (a speech bubble
+// with a tail and three text lines) in the new `--state-unread-response` info colour, distinct
+// from needs-you's amber and from the three-dot glyph foundations-motion.md reserves for
+// "waiting". No surface draws its own plain filled dot for this state any more (the trailing
+// dot removed from `SessionRow.tsx`) -- this icon is the only signal.
+export function StateIcon({ status }: { status: SessionDisplayStatus }) {
   const className = 'size-4 shrink-0'
   switch (status) {
     case 'working':
       return <AgentSpinner size={16} className={className} />
     case 'idle':
-      return <CircleIcon aria-hidden className={cn(className, 'text-state-idle')} />
+      return <CircleCheckIcon aria-hidden className={cn(className, 'text-state-idle')} />
     case 'needs-you':
       return <BellRingIcon aria-hidden className={cn(className, 'text-state-needs-you')} />
     case 'stopped':
       return <SquareIcon aria-hidden className={cn(className, 'text-state-stopped')} />
+    case 'unread-response':
+      return <MessageSquareTextIcon aria-hidden className={cn(className, 'text-state-unread-response')} />
   }
 }
+
 
 /** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past
  * 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared

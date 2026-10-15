@@ -51,7 +51,7 @@ Four written-down channels (agenda item 7), each with one job:
 
 ## Status
 
-Session states keep today's four icons, never colour alone: the animating brand mark for working, a hollow circle for idle, a bell for needs-you, and a square for stopped (`StateIcon`, `src/renderer/features/sessions/sessionDisplay.tsx`).
+Session display statuses keep five icons, never colour alone: the animating brand mark for working, a check in a circle for idle, a bell for needs-you, a square for stopped, and a speech bubble with a tail for Unread response (issue #731, idle with an unseen reply, drawn in place of the idle icon) (`StateIcon`, `src/renderer/features/sessions/sessionDisplay.tsx`).
 
 Notices and toasts share one severity set, also never colour alone: info circle, success check, warning triangle, error octagon, each paired with the severity word. Colour only reinforces the icon and the word. See "Toasts and notices" in [components.md](components.md).
 
