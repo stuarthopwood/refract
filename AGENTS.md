@@ -73,9 +73,10 @@ normally.
   (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
   first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main` except
   `check:mermaid-contrast`, which has known failures tracked in #388 and joins CI once they are fixed.
-- Security baseline for the Rust build: until #796 amends the constitution, the draft Principle V
-  in `specs/016-tauri-rust-build/constitution-amendment-draft.md` is binding for Rust lanes, not
-  just a reference.
+- Security baseline for the Rust build: constitution Principle V ("Tauri Security Baseline",
+  ratified 3.0.0, 2026-10-15, #796) is binding. `specs/016-tauri-rust-build/
+  constitution-amendment-draft.md` is the superseded pre-ratification draft, kept for history
+  only.
 - Per-lane Rust file ownership (which lane owns which `src-tauri/src/**` module, so no two lanes
   touch the same file) lives in `docs/PLAN.md`'s Phase R table, not duplicated here.
 

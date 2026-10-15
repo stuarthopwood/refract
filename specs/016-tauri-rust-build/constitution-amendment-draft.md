@@ -1,5 +1,11 @@
 # Constitution amendment draft: Tauri security baseline and stack (DRAFT)
 
+**Superseded**: ratified in `.specify/memory/constitution.md` 3.0.0 (2026-10-15, #796). Kept
+for history only -- the ratified text wins wherever the two differ (notably: the ratified
+external-link bullet grants only `opener:allow-open-url`, never `opener:default`/
+`allow-default-urls`, which this draft's own text below incorrectly names; the ratified text
+also adds the `core:default`/`plugin:opener|open_url` detail this draft never had).
+
 **Status**: DRAFT. Written by lane R1 (issue #784, epic #797) so other lanes can cite it while
 building; the amendment itself is a separate decision, issue #796 (the parity gate), which also
 ratifies it with a version bump per the Governance section's rule ("MINOR for a new principle or
