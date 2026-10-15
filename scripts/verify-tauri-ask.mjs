@@ -402,6 +402,19 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     const summaryRowText = await cdp.evaluate(`(() => { const el = ${askRowTriggerFinder()}; return el ? el.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
     assert(summaryRowText && summaryRowText.includes('Asked user:') && summaryRowText.includes('Which database? and 1 more'), `collapsed summary row text unexpected: ${JSON.stringify(summaryRowText)}`);
 
+    // D17 (gate round 2): focus must land on the collapsed "Asked user:" row's own trigger, not
+    // fall to <body> -- proves the ask-focus-intent handoff (AskCard -> ResolvedRequestSummary/
+    // AskQuestionRow) actually fires on a REAL unmount, not just by reading the source.
+    const focusAfterSubmit = await cdp.evaluate(
+      `(() => { const a = document.activeElement; return { isBody: a === document.body, accessibleName: a ? a.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : null }; })()`,
+    );
+    assert(!focusAfterSubmit.isBody, `focus fell to <body> after Submit (D17 regression): ${JSON.stringify(focusAfterSubmit)}`);
+    assert(
+      focusAfterSubmit.accessibleName && focusAfterSubmit.accessibleName.includes('Asked user:'),
+      `focus after Submit landed somewhere other than the "Asked user:" row: ${JSON.stringify(focusAfterSubmit)}`,
+    );
+    console.log(`verify-tauri-ask: focus after Submit landed on accessible name: ${JSON.stringify(focusAfterSubmit.accessibleName)}`);
+
     // Expand it and assert both questions' own Answer rows.
     await cdp.click(askRowTriggerFinder());
     await cdp.waitFor(`document.body.textContent.includes('Answer: Verify Tauri Ask: Postgres')`, {
