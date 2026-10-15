@@ -106,19 +106,7 @@ export interface SlashCommandDescriptor {
 // Dialogs (extension_ui_request / extension_ui_response), per "Dialogs"
 // ---------------------------------------------------------------------------
 
-export type ExtensionUiMethod =
-  | 'select'
-  | 'confirm'
-  | 'input'
-  | 'editor'
-  | 'ask'
-  | 'notify'
-  | 'setStatus'
-  | 'setWidget'
-  | 'setTitle'
-  | 'set_editor_text'
-  | 'open_url'
-  | 'cancel';
+export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'ask' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text' | 'open_url' | 'cancel';
 
 export interface ExtensionUiRequestFrame {
   type: 'extension_ui_request';
@@ -129,18 +117,10 @@ export interface ExtensionUiRequestFrame {
   optionDetails?: { description?: string }[];
   message?: string;
   notifyType?: 'info' | 'warning' | 'error';
-  /** Present only on `method: 'ask'` (#572, after `set_ask_dialog` opts the process in): one
-   * entry per question of the tool's whole batch. `options` here never include an "Other" entry
-   * (`omp://rpc.md` "Extension UI Sub-Protocol"); hosts always offer free text themselves. */
-  questions?: Array<{
-    id: string;
-    question: string;
-    header?: string;
-    options: Array<{ label: string; description?: string; preview?: string }>;
-    multi?: boolean;
-    recommended?: number;
-  }>;
-  /** Present only on `method: 'ask'`, in seconds, when `ask.timeout` is configured non-zero. */
+  /** `method:'ask'` only (#572, after `set_ask_dialog` opts in): one entry per question of the
+   * batch; `options` never include an "Other" entry, hosts always offer free text themselves. */
+  questions?: Array<{ id: string; question: string; header?: string; options: Array<{ label: string; description?: string; preview?: string }>; multi?: boolean; recommended?: number }>;
+  /** `method:'ask'` only, in seconds, when `ask.timeout` is configured non-zero. */
   timeout?: number;
   /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
   targetId?: string;
@@ -149,13 +129,9 @@ export interface ExtensionUiRequestFrame {
   [key: string]: unknown;
 }
 
-export type ExtensionUiAnswer =
-  | { value: string }
-  | { confirmed: boolean }
-  | { cancelled: true }
-  /** Answers an `ask` request (#572): one entry per question, in request order, each `id`
-   * copied exactly (`omp://rpc.md` "Extension UI Sub-Protocol"). */
-  | { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> };
+/** `{ answers }` answers an `ask` request (#572): one entry per question, in request order,
+ * each `id` copied exactly (`omp://rpc.md` "Extension UI Sub-Protocol"). */
+export type ExtensionUiAnswer = { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> };
 
 export interface ExtensionUiResponseCommand {
   type: 'extension_ui_response';
