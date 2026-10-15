@@ -52,7 +52,7 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
   const deletionsFull = FULL_NUMBER_FORMAT.format(changes.deletions)
   return (
     <ReadoutChip icon={FileDiffIcon}>
-      <span className="sr-only">{`${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} additions, ${deletionsFull} deletions`}</span>
+      <span className="sr-only">{`${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} ${changes.additions === 1 ? 'addition' : 'additions'}, ${deletionsFull} ${changes.deletions === 1 ? 'deletion' : 'deletions'}`}</span>
       <span aria-hidden>{formatDiffStat(changes)}</span>
     </ReadoutChip>
   )
