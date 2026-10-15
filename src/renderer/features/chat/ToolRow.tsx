@@ -6,6 +6,7 @@ import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import type { ToolGroup } from './groupToolItems'
+import { chatRowStatus, SubagentStatusIcon } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -230,7 +231,7 @@ export function SubagentRow({ item }: SubagentRowProps) {
   const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
   return (
     <CollapsedLine
-      icon={<StatusIcon status={item.status} />}
+      icon={<SubagentStatusIcon status={chatRowStatus(item.status)} />}
       label={item.name}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
     >

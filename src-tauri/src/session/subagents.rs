@@ -77,6 +77,9 @@ pub(super) enum SummaryStatus {
     Running,
     Finished,
     Failed,
+    /// Issue #563 decision 15: split out of `Failed` -- a cancelled/aborted subagent never did
+    /// anything wrong, so counting it as a failure overstated the batch's own result.
+    Cancelled,
     Exited,
 }
 
@@ -86,6 +89,7 @@ impl SummaryStatus {
             Self::Running => "running",
             Self::Finished => "finished",
             Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
             Self::Exited => "exited",
         }
     }
@@ -399,12 +403,14 @@ pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
             let mut finished = 0u32;
             let mut exited = 0u32;
             let mut failed = 0u32;
+            let mut cancelled = 0u32;
             for entry in &s.summaries {
                 match entry.status {
                     SummaryStatus::Running => running += 1,
                     SummaryStatus::Finished => finished += 1,
                     SummaryStatus::Exited => exited += 1,
                     SummaryStatus::Failed => failed += 1,
+                    SummaryStatus::Cancelled => cancelled += 1,
                 }
             }
             Some(json!({
@@ -412,6 +418,7 @@ pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
                 "finished": finished,
                 "exited": exited,
                 "failed": failed,
+                "cancelled": cancelled,
             }))
         })
         .await

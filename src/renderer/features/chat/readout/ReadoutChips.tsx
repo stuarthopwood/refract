@@ -18,7 +18,7 @@ import {
 import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { formatDiffStat } from '@/features/sessions/sessionDisplay'
-import { formatElapsed } from '../Transcript'
+import { formatElapsed } from '../formatElapsed'
 import { ReadoutChip } from './ReadoutChip'
 
 const NUMBER_FORMAT = new Intl.NumberFormat()
@@ -172,26 +172,29 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
 
 /** FR-007, FR-017; amended 2026-10-07 for issue #536: shows the running count while any of this
  * turn's subagents are still running, else a quiet comma-joined total of whichever of
- * `finished`/`exited`/`failed` are non-zero (gate fixes 2 finding 7: these are worded
- * distinctly -- "1 finished, 1 exited" -- never folded into one misleading "finished" bucket, and
- * a turn whose only subagents failed reads "1 failed", never a muted, misleading "0 finished");
- * hidden when the turn has started none. Activating it opens the Subagents panel (T021) with an
- * accessible name stating the shown count -- built from the SAME `phrase` the visible
- * `aria-hidden` text uses (gate finding 7 (round 1), WCAG 2.5.3 Label in Name): an accessible
- * name of "Open subagents panel (2 running)" does not CONTAIN the visible text "2 subagents
- * running", so a voice-control user saying the visible words could never target this chip;
- * reusing `phrase` verbatim inside the name makes that impossible to drift apart again. */
+ * `finished`/`exited`/`failed`/`cancelled` are non-zero (gate fixes 2 finding 7: these are
+ * worded distinctly -- "1 finished, 1 exited" -- never folded into one misleading "finished"
+ * bucket, and a turn whose only subagents failed reads "1 failed", never a muted, misleading
+ * "0 finished"; issue #563 decision 15: a cancelled/aborted subagent reads "1 cancelled", never
+ * folded into "failed"); hidden when the turn has started none. Activating it opens the
+ * Subagents panel (T021) with an accessible name stating the shown count -- built from the SAME
+ * `phrase` the visible `aria-hidden` text uses (gate finding 7 (round 1), WCAG 2.5.3 Label in
+ * Name): an accessible name of "Open subagents panel (2 running)" does not CONTAIN the visible
+ * text "2 subagents running", so a voice-control user saying the visible words could never
+ * target this chip; reusing `phrase` verbatim inside the name makes that impossible to drift
+ * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const onActivate = () => openHostedPanel('subagents', sessionId)
   if (subagentCount === null) return null
-  const { running, finished, exited, failed } = subagentCount
+  const { running, finished, exited, failed, cancelled } = subagentCount
   const phrase = (() => {
     if (running > 0) return `${running} subagent${running === 1 ? '' : 's'} running`
     const parts: string[] = []
     if (finished > 0) parts.push(`${finished} finished`)
     if (exited > 0) parts.push(`${exited} exited`)
     if (failed > 0) parts.push(`${failed} failed`)
+    if (cancelled > 0) parts.push(`${cancelled} cancelled`)
     return parts.join(', ')
   })()
   return (

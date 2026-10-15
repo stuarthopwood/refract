@@ -171,6 +171,7 @@ pub enum SubagentStatus {
     Running,
     Done,
     Error,
+    Cancelled, // #563 decision 15: split out of `Error` -- cancel/abort is not a failure.
     Exited,
 }
 
@@ -510,9 +511,8 @@ fn upsert_subagent_items(
 /// string is a plain completion/failure signal. Port of `mapProgressStatus`.
 fn map_progress_status(status: Option<&str>) -> SubagentStatus {
     match status {
-        Some("failed") | Some("error") | Some("cancelled") | Some("aborted") => {
-            SubagentStatus::Error
-        }
+        Some("cancelled") | Some("aborted") => SubagentStatus::Cancelled,
+        Some("failed") | Some("error") => SubagentStatus::Error,
         Some("pending") => SubagentStatus::Running,
         None => SubagentStatus::Running,
         Some(_) => SubagentStatus::Done,
@@ -642,12 +642,10 @@ fn apply_async_result_jobs(
                 return item;
             }
             // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
-            // (direct binary inspection, 2026-10-03): both, plus `'error'`/`'aborted'`, must map
-            // to `error`, never fall through to `done`.
-            let failed = matches!(
-                job_status,
-                Some("failed") | Some("error") | Some("cancelled") | Some("aborted")
-            );
+            // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: the latter two
+            // map to `error`; `cancelled`/`aborted` get their own status (decision 15, #563).
+            let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
+            let failed = matches!(job_status, Some("failed") | Some("error"));
             let error_text = job.get("errorText").and_then(Value::as_str);
             let result_text = job.get("resultText").and_then(Value::as_str);
             let schema_data = job.get("schema").and_then(|s| s.get("data"));
@@ -667,7 +665,7 @@ fn apply_async_result_jobs(
                 ..
             } = Arc::make_mut(&mut item)
             {
-                let new_result = if failed && error_text.is_some() {
+                let new_result = if (failed || is_cancelled) && error_text.is_some() {
                     error_text.map(String::from)
                 } else if let Some(r) = result_text {
                     Some(r.to_string())
@@ -678,7 +676,9 @@ fn apply_async_result_jobs(
                 } else {
                     result.clone()
                 };
-                *status = if failed {
+                *status = if is_cancelled {
+                    SubagentStatus::Cancelled
+                } else if failed {
                     SubagentStatus::Error
                 } else {
                     SubagentStatus::Done

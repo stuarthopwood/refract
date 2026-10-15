@@ -8,8 +8,12 @@ import type { PanelId } from './panel-registry'
 // cleanup (today only `subagents` has one; a future panel with no store of its own falls through
 // to the generic store call alone).
 
-export function openHostedPanel(id: PanelId, sessionId: string | null): void {
-  if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId)
+export function openHostedPanel(
+  id: PanelId,
+  sessionId: string | null,
+  options?: { selectSubagentId?: string; opener?: HTMLElement | null }
+): void {
+  if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId, options)
   useRightPaneStore.getState().openPanel(id)
 }
 

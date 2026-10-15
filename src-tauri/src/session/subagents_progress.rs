@@ -32,24 +32,26 @@ const MAX_STREAM_ROWS: usize = 500;
 /// Port of `transcript.ts`'s own `mapProgressStatus`, extended to settle a `SubagentSummary`
 /// (not just a chat-row `running|done|error`): every terminal status OMP sends (`"completed"`,
 /// `"finished"`, `"failed"`, `"cancelled"`, `"error"`, `"aborted"`, ...) maps to `Finished`/
-/// `Failed`; `"pending"`/`"running"`/absent stays `Running`. Critical gate fix (round 1): the
-/// previous version only ever recognised the literal string `"completed"` as terminal, so a real
-/// `omp`'s own `"finished"` (confirmed by `scripts/fixtures/omp-frames/subagents.jsonl`, written
-/// against the documented wire contract) was read as still-running forever.
+/// `Failed`/`Cancelled`; `"pending"`/`"running"`/absent stays `Running`. Critical gate fix
+/// (round 1): the previous version only ever recognised the literal string `"completed"` as
+/// terminal, so a real `omp`'s own `"finished"` (confirmed by
+/// `scripts/fixtures/omp-frames/subagents.jsonl`, written against the documented wire contract)
+/// was read as still-running forever. Issue #563 decision 15: `"cancelled"`/`"aborted"` used to
+/// fold into `Failed` -- split into their own `Cancelled` status, since neither means the
+/// subagent's own work went wrong.
 fn map_progress_status(status: &str) -> SummaryStatus {
     let lower = status.to_lowercase();
-    if lower.contains("fail")
-        || lower.contains("cancel")
-        || lower.contains("error")
-        || lower.contains("abort")
-    {
+    if lower.contains("cancel") || lower.contains("abort") {
+        return SummaryStatus::Cancelled;
+    }
+    if lower.contains("fail") || lower.contains("error") {
         return SummaryStatus::Failed;
     }
     if lower == "pending" || lower == "running" || lower.is_empty() {
         return SummaryStatus::Running;
     }
     // "completed", "finished", "done", or anything else OMP might send that isn't one of the
-    // recognised in-flight/failure words above: a terminal, successful status.
+    // recognised in-flight/failure/cancellation words above: a terminal, successful status.
     SummaryStatus::Finished
 }
 

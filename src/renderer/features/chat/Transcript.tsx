@@ -18,6 +18,9 @@ import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
+import { groupSubagentStages, isStageGroup, type StageGroupedItem } from './groupSubagentStages'
+import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
+import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow, SubagentRow } from './ToolRow'
 import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
@@ -60,18 +63,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
 
 function formatThinkingSeconds(ms: number): string {
   return `${Math.max(1, Math.round(ms / 1000))}`
-}
-
-// "28s", "1m 14s", "2h 3m" (T076, FR-046). Exported for spec 004's Turn time chip (T013), which
-// must match this exact formatting.
-export function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${seconds}s`
-  return `${seconds}s`
 }
 
 const THINKING_PREVIEW_CHARS = 120
@@ -138,7 +129,7 @@ function splitIntoTurns(items: TranscriptItem[]): Turn[] {
 }
 
 interface TranscriptRowProps {
-  item: GroupedTranscriptItem
+  item: StageGroupedItem
   sessionId: string | null
   pending: PendingRequest[]
   userName: string | undefined
@@ -150,9 +141,8 @@ interface TranscriptRowProps {
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
 function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
-  if (isToolGroup(item)) {
-    return <ToolGroupRow group={item} />
-  }
+  if (isStageGroup(item)) return <StageGroupRow group={item} />
+  if (isToolGroup(item)) return <ToolGroupRow group={item} />
 
   switch (item.kind) {
     case 'user': {
@@ -295,18 +285,19 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
 // around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
 // `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
 // direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
-const BOOKKEEPING_KINDS = new Set<GroupedTranscriptItem['kind']>([
-  'tool-group',
-  'thinking',
-  'advisory',
-  'notice',
-  'subagent',
-  'agent-message',
-  'skill-prompt'
-])
+const BOOKKEEPING_KINDS: Partial<Record<StageGroupedItem['kind'], true>> = {
+  'tool-group': true,
+  'stage-group': true,
+  thinking: true,
+  advisory: true,
+  notice: true,
+  subagent: true,
+  'agent-message': true,
+  'skill-prompt': true
+}
 
-function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
-  return BOOKKEEPING_KINDS.has(row.kind)
+function isBookkeepingRow(row: StageGroupedItem): boolean {
+  return BOOKKEEPING_KINDS[row.kind] === true
 }
 
 // Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
@@ -358,15 +349,20 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
 // `'hidden'`.
 type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
-function rowVisibility(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
+function rowVisibility(row: StageGroupedItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
   if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
   if (transcriptDisplay.toolCalls) return 'visible'
+  // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).
+  if (isStageGroup(row)) {
+    if (row.items.some((item) => item.status === 'error' || item.status === 'exited' || item.status === 'cancelled')) return 'visible'
+    return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
+  }
   if (isToolGroup(row)) {
     if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
     return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
   }
   if (row.kind === 'subagent') {
-    if (row.status === 'error' || row.status === 'exited') return 'visible'
+    if (row.status === 'error' || row.status === 'exited' || row.status === 'cancelled') return 'visible'
     return row.status === 'running' ? 'sr-only' : 'hidden'
   }
   return 'visible'
@@ -1015,7 +1011,7 @@ export function Transcript({
                   turn.userItem.at !== 0 &&
                   shouldShowTimeGapDivider(previousTurn.userItem.at, turn.userItem.at)
 
-                let previousRow: GroupedTranscriptItem | undefined
+                let previousRow: StageGroupedItem | undefined
 
                 // Issue #457 quality-gate fix (round 2): every hidden thinking item is stripped
                 // before grouping (not only a non-streaming one -- see `rowVisibility`'s own comment
@@ -1039,12 +1035,15 @@ export function Transcript({
                 // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
                 // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
-                const basePairs = groupToolItems(itemsForGrouping).map(
-                  (row): [GroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
+                // Issue #563: `stages` reads the unfiltered list -- the chain always shows (decision 5).
+                const groupedWithStages = groupSubagentStages(groupToolItems(itemsForGrouping))
+                const stages = groupedWithStages.filter(isStageGroup)
+                const basePairs = groupedWithStages.map(
+                  (row): [StageGroupedItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
                 )
                 const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
                 const rows = basePairs
-                  .map(([row, visibility], pairIndex): [GroupedTranscriptItem, RowVisibility] =>
+                  .map(([row, visibility], pairIndex): [StageGroupedItem, RowVisibility] =>
                     visibility === 'sr-only' && pairIndex !== lastSrOnlyIndex ? [row, 'hidden'] : [row, visibility]
                   )
                   .filter(([, visibility]) => visibility !== 'hidden')
@@ -1081,17 +1080,17 @@ export function Transcript({
                             messageId={row.id}
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
-                            {/* Quality-gate fix (round 3): no third branch -- `rowVisibility` only
-                                ever returns `'sr-only'` for a `ToolGroup` or a `'subagent'` row, so a
-                                row reaching here is always one of the two; a cast documents that
-                                instead of a dead-code fallback the type checker can't see is
-                                unreachable. */}
+                            {/* Quality-gate fix (round 3), extended issue #563: `rowVisibility`
+                                only ever returns `'sr-only'` for a `ToolGroup`, a `'subagent'`
+                                row or a `StageGroup`, so a cast documents the unreachable case. */}
                             <span className="sr-only">
-                              {isToolGroup(row)
-                                ? row.items[0]!.skill
-                                  ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
-                                  : `${toolStatusLabel('running')} ${row.tool}`
-                                : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
+                              {isStageGroup(row)
+                                ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
+                                : isToolGroup(row)
+                                  ? row.items[0]!.skill
+                                    ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
+                                    : `${toolStatusLabel('running')} ${row.tool}`
+                                  : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
                             </span>
                           </MessageScrollerItem>
                         )
@@ -1116,6 +1115,7 @@ export function Transcript({
                       )
                     })}
                     {announceThinking && <span className="sr-only">Thinking</span>}
+                    <SubagentChainRow stages={stages} sessionId={sessionId} />
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}
