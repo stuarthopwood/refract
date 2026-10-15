@@ -5,11 +5,12 @@ the Spec Kit record, not a literal git branch)
 
 **Created**: 2026-10-13
 
-**Status**: Promoted to the main build (epic #797, Stuart 2026-10-13). Milestone 1 is implemented;
-the Rust (Tauri v2) build is now the default (`pnpm dev`/`pnpm build`), and the Electron build
-(`src/main`, `src/preload`) is frozen to P0 bug fixes only. See `docs/PLAN.md` Phase R for the
-promotion lanes and the pending parity gate; the constitution amendment for this promotion is
-drafted in `constitution-amendment-draft.md` and ratified separately (#796).
+**Status**: Ratified as the architecture spec for Refract's desktop build (epic #797, parity gate
+#796, 2026-10-15). Milestone 1 is implemented; the Rust (Tauri v2) build is the only build
+(`pnpm dev`/`pnpm build`); the Electron build (`src/main`, `src/preload`) was deleted at the
+parity gate. See `docs/PLAN.md` Phase R for the promotion lanes; the constitution amendment for
+this promotion is landed in `.specify/memory/constitution.md` Principle V and the Technology
+section (drafted in `constitution-amendment-draft.md`, ratified by #796).
 
 **Input**: [issue://780](https://github.com/stuarthopwood/refract/issues/780) ("Experiment: Rust
 (Tauri v2) build of Refract with a Rust-native backend, separate from the Electron build") and

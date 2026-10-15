@@ -98,22 +98,46 @@ sessions do not survive a process restart.
   Raising the minor or major version further requires rerunning `docs/spike/resume-probe.mjs`
   and rechecking the FINDINGS rows Refract relies on.
 
-### V. Electron Security Baseline
+### V. Tauri Security Baseline
 
-- Every `BrowserWindow` MUST set `contextIsolation: true`, `nodeIntegration: false`, and
-  `sandbox: true`.
-- Only the main process spawns processes or touches the file system and git. The renderer
-  reaches them through a typed, allowlisted API exposed from the preload with `contextBridge`.
+- Every window MUST ship with a minimal `capabilities/*.json` grant: no capability the renderer
+  does not use (`src-tauri/capabilities/default.json`). Rust-side plugin calls the renderer
+  never invokes directly (for example `repositories.pickFolder`'s `app.dialog()`,
+  `clipboard.writeText`'s `app.clipboard()`) need no capability entry regardless, because they
+  are reached only through the one validated command below, never through a webview-exposed
+  plugin API.
+- `tauri.conf.json`'s `app.security.csp` MUST stay a restrictive allowlist (`default-src 'self'`,
+  no inline/remote script, `connect-src` limited to the app's own IPC origin), enforced by the
+  WebView2 content-security policy.
+- Same-window navigation MUST be restricted to the app's own origin (dev server in a dev build,
+  the app's own custom-protocol origin in a release build), checked by scheme+host+port, not
+  substring or prefix match (`src-tauri/src/lib.rs`'s `is_allowed_navigation_url`).
+- App windows MUST NOT load remote content. External links open in the system browser
+  (`opener:allow-open-url`/`opener:allow-default-urls` in `capabilities/default.json`).
+- The renderer MUST reach the Rust backend through exactly one app-defined command,
+  `refract_request(channel, args)` (`src-tauri/src/lib.rs`), plus Tauri's own built-in
+  `core:default` permission set (event listen/emit, app/window queries;
+  `src-tauri/capabilities/default.json`). `refract_request` dispatches only to the string
+  channel names already defined in `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS`; no fs,
+  shell, or process plugin permission is granted to the webview.
 - Agent, tool, and file output is untrusted. The renderer MUST NOT inject it as raw HTML, and
   markdown MUST be rendered through a sanitiser.
-- App windows MUST NOT load remote content. External links open in the system browser.
+- Every `omp` child process (and its descendants) MUST be contained by a kill-on-close Job
+  Object joined before any `omp` spawn (`src-tauri/src/process/job_object.rs`,
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), so a killed or crashed Refract process cannot leave a
+  live `omp` tree behind.
+- (History: this principle replaces the Electron-specific baseline that was in force from
+  ratification, 2026-09-30, through the Rust build's promotion and parity gate, issue #796,
+  2026-10-15, drafted at issues #784/#793; the superseded Electron text required every
+  `BrowserWindow` to set `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`,
+  and routed the renderer through a `contextBridge` preload allowlist.)
 
 ## Platform and Stack
 
 - Windows 11 is the only supported and tested OS for v1. OS-specific process control lives in
-  one main-process module so other platforms can be added later.
-- Electron main and preload processes plus a Vite + React renderer, all in TypeScript with
-  `strict: true`.
+  one module (`src-tauri/src/process/`) so other platforms can be added later.
+- A Tauri v2 Rust backend (`src-tauri/`) plus a Vite + React renderer, all in TypeScript with
+  `strict: true` on the renderer side and Rust `edition = "2021"` on the backend side.
 - OMP runs as a child process over stdio, so the app needs no Bun. No extension ships with the
   app (the earlier side-chat extension, `docs/spike/btw-ext.ts`, was never shipped and is
   superseded by the native `btw` RPC, amended 2026-10-11, spec 014; see Principle II).
@@ -136,4 +160,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-11
+**Version**: 3.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-15

@@ -48,7 +48,7 @@ On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tes
 - Reviewers (including `test-reviewer`) must not ask for new tests, and a missing test is not a reason to block a merge in this phase.
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
-- Exception (epic #797, Rust promotion, 2026-10-13): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer`, `src/main`, `src/preload` and `src/shared`.
+- Exception (epic #797, Rust promotion, 2026-10-13 to 2026-10-15): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer` and `src/shared` (`src/main` and `src/preload` no longer exist, deleted at the cutover, #796).
 - #795's gate suite may keep the contract replay as a CI test (Stuart, 2026-10-14).
 
 ## Docs-only PRs are always merged (HARD RULE)
@@ -61,12 +61,10 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)
 
-The Tauri v2 Rust build (`src-tauri/`) is promoted to be Refract's main build. `pnpm dev` and
-`pnpm build` run it; the Electron build moved to `pnpm dev:electron` and `pnpm build:electron`.
+The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron build (`src/main`,
+`src/preload`, electron-vite) was deleted (issue #796). `src/renderer` and `src/shared` continue
+normally.
 
-- **Electron main-process freeze (HARD RULE)**: `src/main` and `src/preload` get P0 bug fixes
-  only. New main-process features are built in Rust, in the lane that owns the file. `src/renderer`
-  and `src/shared` are shared by both shells and continue normally.
 - Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
   `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:mermaid-contrast`,
   `check:file-size`, and `pnpm check:parity` (generated IPC parity table, `src/shared/ipc.ts`
@@ -102,8 +100,8 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
 
 ## Verifying the Rust (Tauri) build (epic #797)
 
-The Rust build has its own shared build cache and its own live-verification mechanics, separate
-from the Electron CDP recipe above.
+The Rust build has its own shared build cache and its own live-verification mechanics, ported
+from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
 
 - Point `CARGO_TARGET_DIR` at the shared, already-populated cache for every `cargo`/`tauri`
   command (disk space is tight); never let `src-tauri/target` get created inside a worktree.

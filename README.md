@@ -22,8 +22,6 @@ pnpm install
 pnpm dev            # Tauri (Rust) build with hot reload
 pnpm build          # production build (tauri build --no-bundle), output in src-tauri/target/
 pnpm typecheck      # tsc --noEmit over the main and web projects
-pnpm dev:electron   # Electron build, frozen to P0 bug fixes only (see AGENTS.md)
-pnpm build:electron # Electron production build (electron-vite build), output in out/
 ```
 
 `pnpm dev`/`pnpm build` run `cargo` under the hood; point `CARGO_TARGET_DIR` at a shared build
@@ -32,26 +30,21 @@ cache if disk space is tight (this repo's own worktree instructions use
 `src-tauri/target` at once without one.
 
 There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
-binary directly: `src-tauri/target/release/refract-tauri.exe`. After `pnpm build:electron`, launch
-the Electron build directly:
-
-```
-node_modules/electron/dist/electron.exe .
-```
+binary directly: `src-tauri/target/release/refract-tauri.exe`.
 
 The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's atom icon (issue #494; for a notification, this is the toast's body icon only -- the toast header still reads "Electron" until a registered Start Menu shortcut gives Windows a display name to resolve, a known limitation out of this fix's scope); if an older taskbar entry is still pinned from before this fix, unpin and re-pin it once to clear Windows' icon cache.
 
 ## Where state lives
 
-Refract keeps no state in the repo. The Electron build's state is under its `userData` directory, which `src/main/index.ts` pins to `%APPDATA%/pinion` (the folder keeps the app's former name, Pinion, so state from before the rename carries over). `pnpm dev:electron` and `pnpm build:electron` runs share it; starting Electron with `--user-data-dir=<dir>` overrides the pin, which gives an isolated instance with its own single-instance lock. The Tauri build (`pnpm dev`/`pnpm build`, now the default per epic #797) keeps its own, separate data directory, `%APPDATA%\refract-tauri` (`src-tauri/src/lib.rs`'s `data_dir()`, `specs/016-tauri-rust-build/spec.md` FR-014), and imports the Electron state once rather than sharing it. Tauri has no `--user-data-dir` equivalent; `scripts/verify-tauri.mjs` points a scratch instance elsewhere with the `REFRACT_DATA_DIR` environment variable instead (unset in every normal run).
+Refract keeps no state in the repo. Everything is under `%APPDATA%\refract-tauri` (`src-tauri/src/lib.rs`'s `data_dir()`, `specs/016-tauri-rust-build/spec.md` FR-014). The Rust build imports a pre-existing Electron-build `userData` directory (`%APPDATA%/pinion`, the folder keeps the app's former name, Pinion) once at startup, if present, rather than sharing it (`src-tauri/src/store/import.rs`). Tauri has no `--user-data-dir` equivalent; `scripts/verify-tauri.mjs` points a scratch instance elsewhere with the `REFRACT_DATA_DIR` environment variable instead (unset in every normal run).
 
 | File | Holds |
 |---|---|
-| `registry.json` | Every Repository and Session Refract knows about (`src/main/store/registry.ts`). |
-| `settings.json` | The single app-wide Settings row, currently just Approval mode (`src/main/store/settings.ts`). |
-| `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src/main/process/pidRecords.ts`). |
+| `registry.json` | Every Repository and Session Refract knows about (`src-tauri/src/store/registry.rs`). |
+| `settings.json` | The single app-wide Settings row, currently just Approval mode (`src-tauri/src/store/settings.rs`). |
+| `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src-tauri/src/process/pid_records.rs`). |
 
-A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`; the folder also keeps the former name).
+A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src-tauri/src/git/worktrees.rs`; the folder also keeps the former name).
 
 ## Verification
 
