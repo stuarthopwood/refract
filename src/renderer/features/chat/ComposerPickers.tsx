@@ -5,23 +5,28 @@
 // is not running still shows its last value exactly as before.
 //
 // Rust (Tauri) build only: Stuart approved R13 (delete Electron) 2026-10-15, running concurrently
-// in a separate worktree, so these pickers target `window.refract.model` (lane RM, #454/#740/
-// #741/#762/#766/#760, #564) directly with no Electron-specific read-only fallback branch --
-// Electron's main process was frozen (rule 10) and is now being deleted outright, so a dead
-// fallback path for it would be wasted effort. `window.refract.model` stays typed optional in
-// `shared/ipc.ts` (unchanged here, out of scope); the non-null assertions below reflect that this
-// is the Rust build's own contract, not a runtime guess.
+// in a separate worktree, so these pickers target `window.refract.model` directly with no
+// Electron-specific fallback branch.
 //
-// Both pickers refuse to open while the Session is not idle (working or needs-you) -- the same
-// two statuses `request_rpc_if_idle` (src-tauri/src/session/agent/lane_support.rs) refuses
-// `set_model`/`set_thinking_level` for -- shown as an `aria-disabled` state with the reason folded
-// into the accessible name, rather than a silent failure once the underlying call itself would
-// refuse.
-import { useRef, useState } from 'react'
+// Disabled states (2026-10-15 grill, issue #564, decision 3): while the Session is working or
+// needs-you ("not idle"), the picker refuses to open with "Available once the session is idle."
+// in its accessible name, matching the underlying `request_rpc_if_idle` refusal
+// (src-tauri/src/session/agent/lane_support.rs). While the Session is stopped (no running
+// agent), the picker shows its last-known value but is ALSO disabled, with "Start the agent to
+// change the model/reasoning level." in its name -- nothing is stored for the next start, since
+// a disabled picker never calls the underlying IPC at all.
+//
+// Model picker (decision 6): the menu opens with a type-to-filter text field at the top (focus
+// starts there, via `onOpenAutoFocus`), a Roles group first (the Session's own role listing,
+// `model.listRoles`, applied through the existing `model.applyRole` action -- the same action
+// the Ctrl+R selector and `/role` already use), then the filtered catalog model list with the
+// current one ticked, scrolling once the list passes about 12 rows.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CheckIcon, CpuIcon, GaugeIcon, PaperclipIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
@@ -31,9 +36,14 @@ import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
 
-function useNotIdle(sessionId: string) {
+/** `notIdle`: the Session is working or needs-you -- the API's own mid-turn refusal rule.
+ * `stopped`: no agent is running at all; a picker still shows the last-known value but cannot
+ * change it either (decision 3). Either state disables the trigger, with its own reason text. */
+function usePickerDisabled(sessionId: string) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  return status === 'working' || status === 'needs-you'
+  const notIdle = status === 'working' || status === 'needs-you'
+  const stopped = status === 'stopped'
+  return { disabled: notIdle || stopped, notIdle, stopped }
 }
 
 const PICKER_TRIGGER_CLASS = cn(
@@ -41,34 +51,83 @@ const PICKER_TRIGGER_CLASS = cn(
   'h-6 shrink-0 gap-1.5 px-2.5 hover:bg-muted aria-expanded:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50'
 )
 
+/** Scrolls the model list once it passes about 12 rows (decision 6) rather than growing the menu
+ * to fit every one of the catalog's 91 chat models unbounded. */
+const MODEL_LIST_MAX_HEIGHT_CLASS = 'max-h-96 overflow-y-auto'
+
 export function ModelPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const notIdle = useNotIdle(sessionId)
+  const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   const modelLabel = formatModelLabel(session ?? {})
   const catalog = useModelRolesStore((s) => s.catalogs.chat)
   const catalogError = useModelRolesStore((s) => s.catalogErrors.chat)
   const loadCatalog = useModelRolesStore((s) => s.loadCatalog)
   const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState('')
+  const [roles, setRoles] = useState<Array<{ role: string; model: string | null; current: boolean }> | null>(null)
+  const [rolesError, setRolesError] = useState<string | null>(null)
+  const filterInputRef = useRef<HTMLInputElement>(null)
 
-  async function handleSelect(entry: ModelCatalogEntry) {
+  // Radix's `DropdownMenu.Content` has no public `onOpenAutoFocus` hook (unlike Dialog/
+  // AlertDialog) -- it manages initial focus internally (the first item). This effect wins the
+  // race by running after that, moving focus onto the filter field instead (decision 6: "focus
+  // starts there").
+  useEffect(() => {
+    if (open) filterInputRef.current?.focus()
+  }, [open])
+
+  const filteredCatalog = useMemo(() => {
+    const needle = filter.trim().toLowerCase()
+    const entries = catalog ?? []
+    if (!needle) return entries
+    return entries.filter((entry) => `${entry.provider} ${entry.name}`.toLowerCase().includes(needle))
+  }, [catalog, filter])
+
+  async function handleSelectModel(entry: ModelCatalogEntry) {
     const result = await window.refract.model!.setModel(sessionId, entry.provider, entry.id)
     if (!result.ok) notify({ code: result.error.code, message: result.error.message })
   }
 
-  const disabledSuffix = notIdle ? '. Available once the session is idle.' : ''
+  async function handleSelectRole(role: string) {
+    const result = await window.refract.model!.applyRole(sessionId, role)
+    if (!result.ok) notify({ code: result.error.code, message: result.error.message })
+  }
+
+  /** The role list's own `model` field is a raw `provider/id` selector (never a friendly name,
+   * #741); look it up against the already-loaded catalog for display, falling back to the raw
+   * selector when the catalog hasn't loaded yet or doesn't list it. */
+  function friendlyRoleModel(selector: string | null): string {
+    if (!selector) return 'unset'
+    const match = (catalog ?? []).find((entry) => `${entry.provider}/${entry.id}` === selector)
+    return match ? match.name : selector
+  }
+
+  const disabledSuffix = notIdle ? '. Available once the session is idle.' : stopped ? '. Start the agent to change the model.' : ''
   return (
     <DropdownMenu
       open={open}
       onOpenChange={(next) => {
-        if (notIdle) return
+        if (disabled) return
         setOpen(next)
-        if (next) void loadCatalog('chat')
+        if (next) {
+          void loadCatalog('chat')
+          setFilter('')
+          void window.refract.model!.listRoles(sessionId).then((result) => {
+            if (result.ok) {
+              setRoles(result.value.roles)
+              setRolesError(null)
+            } else {
+              setRoles([])
+              setRolesError(result.error.message)
+            }
+          })
+        }
       }}
     >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-disabled={notIdle}
+          aria-disabled={disabled}
           aria-label={`Model: ${modelLabel ?? 'not known yet'}${disabledSuffix}`}
           className={PICKER_TRIGGER_CLASS}
         >
@@ -76,19 +135,50 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
           <span className="max-w-40 truncate font-code">{modelLabel ?? 'Model not known yet'}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {catalogError && <DropdownMenuItem disabled>{catalogError}</DropdownMenuItem>}
-        {!catalogError && (catalog ?? []).length === 0 && <DropdownMenuItem disabled>Loading models…</DropdownMenuItem>}
-        {!catalogError &&
-          (catalog ?? []).map((entry) => {
-            const checked = modelLabel === `${entry.provider}/${entry.name}`
-            return (
-              <DropdownMenuItem key={entry.selector} onSelect={() => void handleSelect(entry)}>
-                <span className="min-w-0 flex-1 truncate font-code text-xs">{entry.name}</span>
-                {checked && <CheckIcon aria-hidden className="size-3.5" />}
+      <DropdownMenuContent align="start" className="w-72">
+        <div className="p-1">
+          <Input
+            ref={filterInputRef}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Filter models…"
+            aria-label="Filter models"
+            className="h-7"
+          />
+        </div>
+        {roles !== null && roles.length > 0 && (
+          <>
+            <DropdownMenuLabel>Roles</DropdownMenuLabel>
+            {roles.map((role) => (
+              <DropdownMenuItem key={role.role} onSelect={() => void handleSelectRole(role.role)}>
+                <span className="min-w-0 flex-1 truncate">
+                  {role.role}{' '}
+                  <span className="font-code text-xs text-muted-foreground">{friendlyRoleModel(role.model)}</span>
+                </span>
+                {role.current && <CheckIcon aria-hidden className="size-3.5" />}
               </DropdownMenuItem>
-            )
-          })}
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {rolesError && <DropdownMenuItem disabled>{rolesError}</DropdownMenuItem>}
+        <DropdownMenuLabel>Models</DropdownMenuLabel>
+        <div className={MODEL_LIST_MAX_HEIGHT_CLASS}>
+          {catalogError && <DropdownMenuItem disabled>{catalogError}</DropdownMenuItem>}
+          {!catalogError && filteredCatalog.length === 0 && (
+            <DropdownMenuItem disabled>{(catalog ?? []).length === 0 ? 'Loading models…' : 'No models match.'}</DropdownMenuItem>
+          )}
+          {!catalogError &&
+            filteredCatalog.map((entry) => {
+              const checked = modelLabel === `${entry.provider}/${entry.name}`
+              return (
+                <DropdownMenuItem key={entry.selector} onSelect={() => void handleSelectModel(entry)}>
+                  <span className="min-w-0 flex-1 truncate font-code text-xs">{entry.name}</span>
+                  {checked && <CheckIcon aria-hidden className="size-3.5" />}
+                </DropdownMenuItem>
+              )
+            })}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -96,7 +186,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
 
 export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const notIdle = useNotIdle(sessionId)
+  const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   const thinkingLabel = formatThinkingLevelLabel(session ?? {})
   const [open, setOpen] = useState(false)
 
@@ -105,19 +195,19 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
     if (!result.ok) notify({ code: result.error.code, message: result.error.message })
   }
 
-  const disabledSuffix = notIdle ? '. Available once the session is idle.' : ''
+  const disabledSuffix = notIdle ? '. Available once the session is idle.' : stopped ? '. Start the agent to change the reasoning level.' : ''
   return (
     <DropdownMenu
       open={open}
       onOpenChange={(next) => {
-        if (notIdle) return
+        if (disabled) return
         setOpen(next)
       }}
     >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-disabled={notIdle}
+          aria-disabled={disabled}
           aria-label={`Reasoning: ${thinkingLabel ?? 'not known yet'}${disabledSuffix}`}
           className={PICKER_TRIGGER_CLASS}
         >

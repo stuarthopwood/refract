@@ -1529,19 +1529,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
               rather than `bottom-1.5`, so the button stays centered as the textarea grows to
               multiple lines instead of drifting toward the bottom (morning UI feedback,
-              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but Stop
-              uses `variant="default"` (filled) against Send's `variant="outline"` (#564, Stuart's
-              decided scope, 2026-10-15: "Stop clearly distinct in weight from Send") -- the one
-              filled button on this surface while a turn is running (docs/design/components.md
-              "Button": one filled button per surface); Send itself never changes weight, so the
-              two are never both filled at once. */}
+              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but
+              each carries a different fill (2026-10-15 grill, issue #564, decision 5): Send is
+              `variant="default"`, the one accent-filled commit action on this surface
+              (docs/design/components.md "Button": "the single commit action... one filled
+              button per surface"); Stop is `variant="invert"`, a solid NEUTRAL fill (inverted
+              foreground-on-background), deliberately never red -- "stopping keeps the work, so
+              it is not destructive, and red is reserved for destructive and error states". The
+              two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
+              FR-011), a documented exception to "one filled button per surface": the two fills
+              are visually distinct colours conveying different intents, not a duplicated weight. */}
           <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="default"
+                    variant="invert"
                     size="icon-sm"
                     className="rounded-full"
                     aria-label="Stop"
@@ -1564,7 +1568,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="icon-sm"
                   className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"

@@ -9,6 +9,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // 2026-10-15 grill (issue #564, decision 5): a solid neutral fill (inverted
+        // foreground-on-background), never red/destructive -- stopping a turn keeps the work,
+        // so it reads as the opposite of a destructive action, not one. Used so far only by the
+        // composer's Stop button (MessageInput.tsx), which keeps Send on `outline` throughout so
+        // the two are never both filled at once.
+        invert: "bg-foreground text-background hover:bg-foreground",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
