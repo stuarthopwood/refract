@@ -111,6 +111,7 @@ export type ExtensionUiMethod =
   | 'confirm'
   | 'input'
   | 'editor'
+  | 'ask'
   | 'notify'
   | 'setStatus'
   | 'setWidget'
@@ -128,6 +129,19 @@ export interface ExtensionUiRequestFrame {
   optionDetails?: { description?: string }[];
   message?: string;
   notifyType?: 'info' | 'warning' | 'error';
+  /** Present only on `method: 'ask'` (#572, after `set_ask_dialog` opts the process in): one
+   * entry per question of the tool's whole batch. `options` here never include an "Other" entry
+   * (`omp://rpc.md` "Extension UI Sub-Protocol"); hosts always offer free text themselves. */
+  questions?: Array<{
+    id: string;
+    question: string;
+    header?: string;
+    options: Array<{ label: string; description?: string; preview?: string }>;
+    multi?: boolean;
+    recommended?: number;
+  }>;
+  /** Present only on `method: 'ask'`, in seconds, when `ask.timeout` is configured non-zero. */
+  timeout?: number;
   /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
   targetId?: string;
   // setWidget/setStatus/setTitle/set_editor_text/open_url carry method-specific fields
@@ -135,7 +149,13 @@ export interface ExtensionUiRequestFrame {
   [key: string]: unknown;
 }
 
-export type ExtensionUiAnswer = { value: string } | { confirmed: boolean } | { cancelled: true };
+export type ExtensionUiAnswer =
+  | { value: string }
+  | { confirmed: boolean }
+  | { cancelled: true }
+  /** Answers an `ask` request (#572): one entry per question, in request order, each `id`
+   * copied exactly (`omp://rpc.md` "Extension UI Sub-Protocol"). */
+  | { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> };
 
 export interface ExtensionUiResponseCommand {
   type: 'extension_ui_response';

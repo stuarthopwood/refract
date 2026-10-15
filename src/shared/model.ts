@@ -544,6 +544,18 @@ export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
  * regardless of this prefix, since an error is always a real outcome worth showing. */
 export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
 
+/** One question of an `ask`-tool batch, as OMP's `ask` extension_ui_request carries it
+ * (`omp://rpc.md` "Extension UI Sub-Protocol"). `preview` is rich-dialog-only and is never sent
+ * (`omp://tools/ask.md` l.25, 66), so it is intentionally not represented here. */
+export interface AskQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+  multi: boolean;
+  recommended?: number;
+}
+
 /** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
@@ -555,6 +567,18 @@ export type PendingRequest =
       options: string[];
       optionDetails?: (string | undefined)[];
       inputKind: 'choice' | 'text' | 'confirm';
+    }
+  | {
+      /** The structured dialog path (#572), built only once `set_ask_dialog` is confirmed
+       * enabled for this OMP process; a `select`/`input`/`editor`/`confirm` dialog raised by the
+       * `ask` tool on an older/unavailable OMP stays a plain `'question'` above (the fallback). */
+      kind: 'ask';
+      requestId: string;
+      questions: AskQuestion[];
+      /** Epoch ms OMP will answer every question with its recommended (or first) option if
+       * unanswered, computed as arrival time + the frame's `timeout` (seconds). Absent when the
+       * frame carried no `timeout`. */
+      deadlineAt?: number;
     };
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */

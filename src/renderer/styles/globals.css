@@ -782,7 +782,10 @@
 [data-slot='message-scroller-viewport'] { scrollbar-width: auto; scrollbar-color: auto; }
 [data-slot='message-scroller-viewport'][data-autoscrolling]::-webkit-scrollbar-thumb { background: transparent; }
 
-:is([role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='radio'], [role='tab'], [data-slot='toggle-group-item'], [data-choice-item]) { border-radius: 0; }
+/* #572 FR-054: `[role='checkbox']` added so the ask card's new tick-box rows are squared the
+ * same way every other choice/option/tab control already is -- a round dot against a square
+ * tick is the shape cue that tells single choice from multiple choice apart (decision D9). */
+:is([role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='radio'], [role='checkbox'], [role='tab'], [data-slot='toggle-group-item'], [data-choice-item]) { border-radius: 0; }
 
 /* The title bar merged into the app's own top row (spec 001 T100, FR-057): `.drag-region` marks
  * the left nav header and the chat header as the window's draggable area; `.no-drag-region`
