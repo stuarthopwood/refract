@@ -5,13 +5,14 @@ import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // Gate round 3 fix (Low, code-reviewer): named so it reads as "the width of the row's own
-// action buttons", not a bare magic number -- two 28px `icon-sm` buttons (the "+" quick-create
-// and the branch picker) plus the 22px "..." menu button, their `gap-1` spacing, and the row's
-// own trailing padding: (28 + 28 + 22) + (3 * 4) + 4 = 94px, rounded up with a small margin.
+// action buttons", not a bare magic number -- two 28px `icon-sm` buttons (RepositoryGroup.tsx's
+// own "+" quick-create and branch picker) plus the 22px "..." menu button, their `gap-1`
+// spacing, and the row's own trailing padding: (28 + 28 + 22) + (3 * 4) + 4 = 94px, rounded up
+// with a small margin.
 const GROUP_HEADER_ACTIONS_OFFSET_PX = 104
 
 // Issue #527 decision 1: the one trigger styling (chevron, size, case, padding) shared by a
-// Repository header and the cross-repository Archived header below, so the two headers cannot
+// Repository header and the cross-repository Archived header in ArchivedGroup.tsx, so the two headers cannot
 // drift apart from each other again. A Repository header passes its own rename support; the
 // Archived header (no rename, no actions) passes only a label.
 // Issue #528: an optional leading `icon` slot (aria-hidden, decorative) plus `tooltip` text --

@@ -7,6 +7,7 @@ import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+
 // The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
 // sorted by most recent activity, and one cross-repository Archived group at the bottom of the
 // list (issue #527). Its header (the Refract icon and name, spec 001 T100, FR-057) starts at the

@@ -19,7 +19,7 @@ import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus
 export function useSessionRowActions(session: SessionSummary, repository: Repository) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
   // reading, extended to this row's own marker); which pane specifically only matters to the
-  // click handler below, not this visual marker.
+  // click handler in `SessionRow.tsx`, not this visual marker.
   const isVisible = useSplitStore((state) => state.paneSessionIds.includes(session.id))
   const isFocusedPane = useSplitStore((state) => {
     const index = state.paneSessionIds.indexOf(session.id)
@@ -70,7 +70,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   // rename/list-focus above, there is nothing to focus yet at menu-close time).
   const createRequestedRef = useRef(false)
   // Code-review fix (gate round 2): set synchronously when either menu OPENS (see the
-  // `DropdownMenu`/`ContextMenu` `onOpenChange` below), not at close time -- a fast create that
+  // `DropdownMenu`/`ContextMenu` `onOpenChange` in `SessionRow.tsx`), not at close time -- a fast create that
   // settles before the menu's own close animation finishes used to read this back as `null`.
   const createOriginRef = useRef<'dropdown' | 'context' | null>(null)
   // A11y-review fix (gate round 2, LOW): the element that actually had focus when a right-click/

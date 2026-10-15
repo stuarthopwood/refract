@@ -41,7 +41,7 @@ export function RepositoryGroup({
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
-  // row's own rename (`SessionRow` above) -- the model the issue names to copy.
+  // row's own rename (`SessionRow.tsx`) -- the model the issue names to copy.
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(repository.name)
   // Quality-gate fix (a11y, Medium, 2026-10-08): a failed rename keeps the field open (never
@@ -204,6 +204,8 @@ export function RepositoryGroup({
               onKeyDown={handleTriggerKeyDown}
             />
           )}
+          {/* These three action buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` in
+              `GroupHeader.tsx` -- changing their size or count must update that constant too. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
