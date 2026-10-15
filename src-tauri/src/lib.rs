@@ -307,21 +307,7 @@ pub fn run() {
     let mut dispatcher = Dispatcher::new();
     ipc::register_handlers(&mut dispatcher);
 
-    let app = tauri::Builder::default()
-        // Issue #793: registered first, ahead of every other plugin -- a second launch should
-        // exit (after focusing the first window) as early as possible, doing no other startup
-        // work. No JS capability needed (`capabilities/default.json`'s own doc comment): this
-        // plugin has no JavaScript API at all.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let Some(window) = app.get_webview_window("main") else {
-                return;
-            };
-            if window.is_minimized().unwrap_or(false) {
-                let _ = window.unminimize();
-            }
-            let _ = window.show();
-            let _ = window.set_focus();
-        }))
+    let app = shell::single_instance::register(tauri::Builder::default())
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Security: Debug level also writes envelopes (now channel+outcome only, see
