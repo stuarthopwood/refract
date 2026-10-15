@@ -5,7 +5,9 @@ import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
+import { formatElapsed } from './formatElapsed'
 import type { ToolGroup } from './groupToolItems'
+import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -221,19 +223,15 @@ interface SubagentRowProps {
   item: SubagentItem
 }
 
-// One collapsed line per subagent a batch `task()` call started (T078, docs/DESIGN.md "Chat"):
-// never grouped by `groupToolItems` (T074), identity is the stable `item.id` (so a later
-// activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
-// the prompt and (once known) the result as plain text.
-export function SubagentRow({ item }: SubagentRowProps) {
+// The expansion content for one subagent row (prompt, then result once known as plain text):
+// split out so `StageGroupRow` (`SubagentChainRow.tsx`) can reuse it for its own solo-of-the-turn
+// case without ever going through `SubagentRow`'s own `CollapsedLine` wrapper (#563 remediation,
+// H2/H3: a Stage's content must never switch element type between solo and multi members).
+export function SubagentBody({ item }: SubagentRowProps) {
   const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
   const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
   return (
-    <CollapsedLine
-      icon={<StatusIcon status={item.status} />}
-      label={item.name}
-      meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
-    >
+    <>
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
         <div className="max-h-64 overflow-auto rounded-lg">
@@ -248,6 +246,43 @@ export function SubagentRow({ item }: SubagentRowProps) {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+// One collapsed line per subagent a batch `task()` call started (T078, docs/DESIGN.md "Chat"):
+// never grouped by `groupToolItems` (T074), identity is the stable `item.id` (so a later
+// activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
+// the prompt and (once known) the result as plain text.
+//
+// Quality-gate remediation (H1, unanimous): `icon=` is a `CollapsedLine` icon slot (a fixed
+// `size-3.5` box) -- `SubagentStatusGlyph` keeps its status word `sr-only` there (never visible,
+// it would overflow the box and paint over the label); the visible word is rendered HERE instead,
+// in `meta`, ahead of the duration, gated off for `finished` (decision 14: a quiet icon-plus-
+// duration row, never a loud "Finished" claim).
+export function SubagentRow({ item }: SubagentRowProps) {
+  const status = chatRowStatus(item.status)
+  const duration =
+    item.status !== 'running' && item.durationMs != null ? (
+      <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
+    ) : undefined
+  // Gate round 2 (Low, double-word fix): the status word here duplicates the icon slot's own
+  // `SubagentStatusGlyph` `sr-only` word (both sit inside this row's computed accessible name,
+  // e.g. "Failed alpha Failed 3s") -- `aria-hidden` keeps the visible word sighted-only.
+  const meta = (
+    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
+      {duration}
+    </span>
+  )
+  return (
+    // Gate round 3 fix (architect M4): this row is ALWAYS a `SpineList` member today (its only
+    // caller, `SubagentChainRow.tsx`'s non-solo branch) -- `border-0` removes `Collapsible`'s own
+    // unconditional border entirely (not just its colour, which `border-transparent` alone still
+    // left at 1px), dropping the unwanted hover box AND matching `SpineList.tsx`'s documented 8px
+    // gap exactly instead of a stray 9px.
+    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta} className="border-0">
+      <SubagentBody item={item} />
     </CollapsedLine>
   )
 }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::omp::diff::diff_transcript;
+use crate::omp::diff::{diff_transcript, SubagentFinalizeCause};
 use crate::omp::process::OmpProcess;
 use crate::omp::transcript::RequestResolution;
 
@@ -317,11 +317,21 @@ impl SessionAgent {
         }
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
-        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever.
+        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever. `cause` is
+        // decided from the SAME `requested`/`stop_requested` already captured above (#563
+        // decision 15): `requested && stop_requested` is this call's own branch below for "the
+        // user asked this session to stop" (`set_status(Stopped, ...)`); anything else -- a
+        // genuine crash, or `launch()`'s internal handshake-cleanup stop, which is not a user
+        // request either -- settles a still-running Subagent row to `Exited`, not `Cancelled`.
+        let finalize_cause = if requested && stop_requested {
+            SubagentFinalizeCause::UserStop
+        } else {
+            SubagentFinalizeCause::Crash
+        };
         {
             let mut state = self.state.lock().await;
             let before = state.transcript.items().to_vec();
-            state.transcript.finalize_live_items();
+            state.transcript.finalize_live_items(finalize_cause);
             let ops = diff_transcript(&before, state.transcript.items());
             if !ops.is_empty() {
                 self.coalescer.queue(ops);

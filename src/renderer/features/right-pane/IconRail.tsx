@@ -81,7 +81,7 @@ export function IconRail({ sessionId }: IconRailProps) {
                   aria-label={label}
                   tabIndex={panel.id === rovingId ? 0 : -1}
                   className="aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground"
-                  onClick={() => toggleHostedPanelFromRail(panel.id, sessionId)}
+                  onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
                   onFocus={() => setRovingId(panel.id)}
                   onKeyDown={(event) => handleKeyDown(event, panel.id)}
                 >

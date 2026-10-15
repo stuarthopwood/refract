@@ -24,6 +24,17 @@ export interface CollapsedLineProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultOpen?: boolean
+  /** Accessible name applied directly to the `CollapsibleTrigger` (e.g. "Stage 1 of 3, 4 agents,
+   * 3 finished, 1 failed"): unlike an sr-only span inside `children`, this stays reachable while
+   * collapsed -- Radix unmounts `CollapsibleContent` when closed, so a label placed there is
+   * invisible to assistive tech for the common collapsed/history case. Ignored when `children`
+   * is omitted (no trigger is rendered). */
+  triggerAriaLabel?: string
+  /** An action control (e.g. a "Show subagents panel" icon button) rendered as a SIBLING of the
+   * `CollapsibleTrigger`, never nested inside it -- a `<button>` cannot nest inside another
+   * interactive trigger. Stays in the always-mounted header row, reachable while collapsed.
+   * Ignored when `children` is omitted. */
+  action?: React.ReactNode
   /** Expansion content; omit entirely for a line with nothing to expand (it then renders as a
    * plain, non-interactive row with no chevron and no trigger). */
   children?: React.ReactNode
@@ -49,6 +60,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     open,
     onOpenChange,
     defaultOpen,
+    triggerAriaLabel,
+    action,
     children,
     className,
     contentClassName
@@ -63,13 +76,22 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const row = (
     <>
       <span className="flex size-3.5 shrink-0 items-center justify-center">{icon}</span>
-      {label !== undefined && <span className="shrink-0 font-medium">{label}</span>}
-      {summary !== undefined && (
+      {label !== undefined && (
+        <span className="min-w-0 max-w-full truncate font-medium" title={typeof label === 'string' ? label : undefined}>
+          {label}
+        </span>
+      )}
+      {summary !== undefined ? (
         <span
           className={cn('min-w-0 flex-1', summaryWrap ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
         >
           {summary}
         </span>
+      ) : (
+        // No summary (e.g. a plain member row inside a `SpineList`): a spacer still pushes
+        // meta/chevron to the far right so they line up with the header row's own trailing edge
+        // (#565 decision 11) instead of hugging the label.
+        <span className="min-w-0 flex-1" />
       )}
       {meta !== undefined && (
         <>
@@ -108,21 +130,29 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * square treatment -- once open, the content panel sits flush against this trigger's own
        * bottom edge, so its bottom corners go square instead of keeping a rounded highlight that
        * reads as a disconnected pill floating above the content. */}
-      <CollapsibleTrigger
-        ref={ref as React.Ref<HTMLButtonElement>}
-        className={cn(
-          // Gate round 3 (architect M-1, unanimous): this trigger sits inside
-          // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`), which
-          // establishes paint containment with no padding -- an outward `outline-offset-2` (the
-          // shadcn default) draws OUTSIDE this element's own box and was very likely clipped by
-          // that containment. `-2px` draws the ring INSIDE instead, matching the plain row above.
-          'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-          actualOpen && 'rounded-b-none'
-        )}
-      >
-        {row}
-        <ChevronRightIcon className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
-      </CollapsibleTrigger>
+      <div className="flex items-center gap-1">
+        <CollapsibleTrigger
+          ref={ref as React.Ref<HTMLButtonElement>}
+          aria-label={triggerAriaLabel}
+          className={cn(
+            // Gate round 3 (architect M-1, unanimous): this trigger sits inside
+            // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`),
+            // which establishes paint containment with no padding -- an outward
+            // `outline-offset-2` (the shadcn default) draws OUTSIDE this element's own box and
+            // was very likely clipped by that containment. `-2px` draws the ring INSIDE instead,
+            // matching the plain row above.
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+            actualOpen && 'rounded-b-none'
+          )}
+        >
+          {row}
+          <ChevronRightIcon className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+        </CollapsibleTrigger>
+        {/* Sibling of the trigger, never nested inside it -- a `<button>` cannot nest inside
+         * another interactive trigger (#563 remediation, round 2). Stays in this always-mounted
+         * header row, reachable while collapsed (never inside `CollapsibleContent`). */}
+        {action}
+      </div>
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
     </Collapsible>
   )

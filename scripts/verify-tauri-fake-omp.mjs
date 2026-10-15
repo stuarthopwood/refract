@@ -140,6 +140,22 @@ async function main() {
 
   async function handleCommand(cmd) {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
+    // Issue #572's `set_ask_dialog{enabled:true}` probe (`launch_support.rs`'s
+    // `send_set_ask_dialog`) is sent once per process right after launch. Most fixtures predate
+    // that probe and never list it in a `__wait__` entry, so it used to be silently dropped here
+    // and Refract blocked for its own full 60s request timeout waiting for a reply that never
+    // came, stalling every later tape step (including the ones the tape WAS waiting for) behind
+    // that timeout. A11y spot check (gate round 3): five tapes (session.jsonl, ask.jsonl,
+    // session-settle-before-start.jsonl, session-two-turns-answered.jsonl, session-two-turns-
+    // withheld.jsonl) DO script their own `set_ask_dialog` `__wait__`/response pair -- answering
+    // it out-of-band here too meant THEIR OWN scripted reply never got sent (this handler
+    // returned first), so their cursor never advanced and `get_messages_page` was dropped the
+    // same way. Fixed: only intercept when the tape is NOT currently waiting for it; a tape that
+    // IS waiting for it keeps answering it itself, exactly as before.
+    if (cmd.type === 'set_ask_dialog' && !waitingFor?.includes('set_ask_dialog')) {
+      emit({ id: cmd.id, type: 'response', command: 'set_ask_dialog', success: true, data: { enabled: true } });
+      return;
+    }
     if (!waitingFor || !waitingFor.includes(cmd.type)) {
       process.stderr.write(`verify-tauri-fake-omp: scenario "${scenarioName}" was not waiting for "${cmd.type}" (waiting for ${JSON.stringify(waitingFor)}); dropped\n`);
       return;

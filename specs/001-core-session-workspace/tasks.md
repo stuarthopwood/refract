@@ -1614,7 +1614,33 @@ investigation-record issue comment, the #650 backlog comment) updated to match.
 
 ## Phase 41: Convergence
 
-- [X] T214 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
+(Renumbered from Phase 37/T137-T143: PR #877 (#564) landed first and claimed Phase 37/T137-T196
+on `main`, then PR #901 (#811) claimed Phase 38/T197-T198, then PR #900 (#572) claimed Phase
+39/T199-T205, then PR #902 (#731) claimed Phase 40/T206-T213; this story's own local T137-T143
+numbering is renumbered here to the next free range on merge, per the gate's own established
+renumber-on-landing rule every other phase in this file already follows. FRs are unaffected --
+FR-067/FR-068 stay exactly as numbered.)
+
+- [X] T214 [US1] Group consecutive `subagent` transcript items into one Stage per `task()` call (or calls issued together, FR-064) with a new pure `groupSubagentStages.ts` (run after `groupToolItems`, mirroring its own "always wrap, even a run of one" rule); render it as a new `StageGroupRow` and, for a turn with two or more Stages, a `SubagentChainRow` at the end of the turn above `TurnTotalLine` (FR-065), both in a new `SubagentChainRow.tsx`. `Transcript.tsx` wires `rowVisibility`/`isBookkeepingRow`/the sr-only running-announcement span for the new `StageGroup` kind (failed/exited/cancelled stays visible, running is screen-reader only, matching the existing lone-`subagent` rule); `TurnTotalLine`'s own `formatElapsed` moved to a new `formatElapsed.ts` so the new components can import it without a circular dependency back into `Transcript.tsx`.
+- [X] T215 [US1] Shared subagent status vocabulary and connector: a new `subagentStatus.tsx` (`SubagentStatusIcon`/`SUBAGENT_STATUS_LABEL`/`chatRowStatus`/`summarizeSubagentStatuses`) extends the pre-#563 icon set with `cancelled`, reused by `SubagentRow` (`ToolRow.tsx`, updated to use it instead of the generic `toolStatus.tsx` `StatusIcon`), the new Stage/chain rows, and the Subagent panel (sibling slice). A new `SpineList.tsx` (steered in by Stuart mid-build, referencing issue #565 "guide rails") is the one shared 1px `border-divider` connector both the Stage group's member rows and the chain's own stage list use, so #565 can extend it later without touching this story's files.
+- [X] T216 [US1] Split `cancelled`/`aborted` out of `failed` into its own status (decision 15) in both existing status pipelines: `src-tauri/src/session/subagents.rs`/`subagents_progress.rs` (the `SummaryStatus`/`SubagentSummary` readout and panel pipeline) and `src-tauri/src/omp/transcript.rs` (the chat row's own `SubagentStatus`, both its `map_progress_status` and its `apply_async_result_jobs` job-status path) -- net zero/minimal line growth to respect `transcript.rs`'s zero-headroom file-size baseline. `src/shared/model.ts`'s two status unions and `SessionReadout.subagentCount` gain `cancelled`; `ReadoutChips.tsx`'s `SubagentsChip` roll-up phrase reports it as its own word, never folded into "failed".
+- [X] T217 [US1] Update the docs: amended this spec with FR-064/FR-065, a **Stage**/**Subagent chain** Key Entities pair, and a dated `### Session 2026-10-15` Clarifications section (the Stage-boundary inference, the `cancelled`-in-both-pipelines answer, the #712-scope-out answer, the `SpineList` steer, the agent-count-vs-Stage-count header rule, the chain-only click-to-open rule, and the panel-tree-root interpretation); amended spec 004's FR-007/FR-017/FR-019 and added FR-023 to FR-026 for the Subagent panel's tree/split/keyboard/Cancelled/focus-return (built by a sibling slice, same session); amended `CONTEXT.md` (**Stage**, **Subagent chain**, **Subagent panel**), `docs/design/product-chat.md` ("Grouped tool calls"/"Subagents" bullets) and `docs/design/product-layout.md` ("Subagent panel" bullet); `docs/PLAN.md`'s "UI refresh, second batch" row records #563 in progress with the branch and decision-record citation; `ChatDisplaySection.tsx`'s "Show tool calls" description names the subagent chain as an always-shown exception (decision 28).
+- [X] T218 [US1] Live CDP check (`scripts/verify-563-subagent-stage.mjs`, new, committed per this story's own driver-script precedent): a scratch Tauri debug instance driven over CDP with real `Input.insertText`/`Input.dispatchMouseEvent`/`Input.dispatchKeyEvent`, using the pre-existing `scripts/fixtures/omp-frames/subagents.jsonl` fake-omp tape (one `task()` batch, two subagents) rather than adding a new fixture. Confirmed live: the Stage group header ("Stage 1  2 agents", no "·" separator -- corrected by the quality-gate's code review finding and T219 below, which adds the separator) renders for a single Stage with 2+ agents even though it is the turn's only Stage (decision 1); expanding it reveals the `SpineList` member rows (alpha, beta); the Subagent panel's tree opens, lists both agents with their durations, and roving-tabindex ArrowDown moves the shared 2px active-indicator selection from one row to the other. **Re-verified with a targeted selector** (`[data-panel-close]`, `PanelTabBar.tsx`): closing the panel leaves the chat pane completely unchanged (FR-019) and correctly returns focus to the Subagents chip (`subagent-store.ts`'s pre-#563 chip fallback, unchanged) -- an earlier run's "focus stranded" finding was a test-selector artifact (a broad "button with close in its aria-label" guess hit an unrelated control), not a real regression. **Readout-chip timing isolated**: the Subagents chip is briefly absent right after the panel opens (257ms, measured live) but is pre-existing, unrelated latency -- `readout.rs`'s `run_readout_update` (lines 401-431) bundles `subagentCount` with a concurrent `diff_stat`/branch read behind one 100ms debounce (line 66) gating the whole chip row; `git diff d6ef2ca -- src-tauri/src/session/readout.rs` is empty, and `ReadoutChips.tsx`'s `subagentCount === null` gate (line 189) is unchanged by this story. **Not exercised at all** (the fixture has only one Stage): the Subagent chain row, and the chain-entry "pre-select in panel + opener-based focus return" path end to end.
+
+This phase was written retroactively after the implementation above, in the same session that built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #563; the issue's own final comment is the converged decision record, posted by delegated UX roundtable 2026-10-15). `node scripts/ci-local.mjs` (all 16 steps, `CARGO_TARGET_DIR`/`CARGO_INCREMENTAL=0`/`CARGO_BUILD_JOBS=4`): Install dependencies, Typecheck, Vitest, Check indentation, Check theme contrast, Check drag regions, Check IPC parity, Check file size, Check version consistency, Check OMP schema drift (plus its self-test), Rust formatting, Rust tests, Rust lint, Build (Tauri debug, no-bundle smoke), and Check UI text all PASS -- no new tests added per AGENTS.md's prototyping rule. `check:file-size` confirms `transcript.rs` (2083/2083) and `model.ts` (657/657) both land exactly on their existing baseline, never past it. **Live CDP check (T218) also run** -- see that task for the exact findings; screenshots at `C:/Users/shopwood/AppData/Local/Temp/refract-563-shots/` (`01` to `06`). A genuine cross-lane finding surfaced during the live check: the SHARED `CARGO_TARGET_DIR`'s `debug/refract-tauri.exe` was overwritten mid-session by a concurrent lane's own build, producing several false failures until a private, non-shared target dir was built for a trustworthy snapshot (removed afterward); Main broadcast a standing rule to every lane as a result (copy the built exe to a private scratch folder before every live check, verify it is yours, never a private `CARGO_TARGET_DIR`).
+
+**Quality-gate remediation (round 4, 2026-10-15)**
+- [X] T219 [US1] Fixed every Critical/High and the addressable Medium finding from the five-reviewer gate on PR #899 (code-reviewer FAIL 7 High, accessibility-auditor FAIL 3 High, test-reviewer FAIL 5 High, ui-architect-v3/its three specialists FAIL 1 Critical/5 High/16 Medium/9 Low; security-auditor PASS, unaffected): split `SubagentStatusGlyph` (icon, word always `sr-only`) out of `SubagentStatusIcon` so the visible status word no longer overflows `CollapsedLine`'s 14px icon slot (H1, every reviewer); gave `StageGroupRow` one stable `CollapsedLine` shape that never switches React element type as a second agent or Stage arrives, extracting `SubagentBody` out of `ToolRow.tsx`'s `SubagentRow` so the solo-of-turn case renders it directly with no nested `CollapsedLine` (H2/H3); corrected `SpineList`'s geometry to #565's binding recipe (`ml-4 border-l border-divider pt-1`, no `pl-2`) and added `aria-live="off"`; moved Stage boundary computation onto each turn's UNFILTERED `turn.items` (new `turnsWithStages` memo in `Transcript.tsx`) so grouping no longer depends on the "Show thinking" display toggle (H1/H4); moved the per-Stage settle announcement out of `role="log"` into a single out-of-log announcer (`useStageSettleAnnouncement.ts`, new, mirroring the existing `revealedAnnouncement` pattern) that reads every turn's unfiltered Stages so a Stage hidden by "Show tool calls" off still announces; added a `CollapsedLine` `action`/`triggerAriaLabel` contract so the chain's "Show subagents panel" button moved into the always-mounted header (not the collapsible body) at `icon-xs` (24px); fixed the Subagent panel's focus-on-open race (a new one-shot `focusRequestId` counter on `subagent-store.ts`, mirroring `sideChatFocusRequestId`, paired with `openHostedPanel` passing `{ focus: false }` to suppress `RightPaneShell`'s own generic content-focus effect) and the already-selected-agent no-op; propagated `opener` from the rail, launcher, and Readout chip (previously only the chain passed it); split `cancelled`-vs-crash in `finalize_live_transcript`/`finalize_live_items` (new `SubagentFinalizeCause` enum, `diff.rs`) so a user `stop()` settles a still-running subagent to `Cancelled` and a crash to `Exited`, never the old blanket `Error`; let a batch failure's own per-row `progress[i].status` win over the blanket `is_error` fallback in `apply_batch_task_result`. Removed the now-dead bare-`subagent`-kind code paths in `Transcript.tsx` (narrowed `StageGroupedItem` in `groupSubagentStages.ts` to exclude it, then used the resulting type errors as the removal checklist) and extracted `transcriptRowVisibility.ts`/`useStageSettleAnnouncement.ts` out of `Transcript.tsx` to keep it under its file-size baseline alongside the other changes. Re-ran `node scripts/ci-local.mjs` (same 16 steps as T218's own run) after a `cargo fmt` pass and manual line-budget trims to keep `transcript.rs` (2083/2083), `Transcript.tsx` (now 1110, under its 1179 baseline), and `check-theme-contrast.mjs` (923/923, two new contrast pairs for the Stage/chain status icons on `--muted`) at or under their existing baselines -- all 16 steps PASS, no new tests added per AGENTS.md's prototyping rule.
+
+**Superseded by T220 below**: this round was code-verified only when written; T220 records the real-`omp` live verification requested by Main afterward, which DID confirm the chain row, Stage grouping, and the Show-thinking-toggle independence fix live.
+
+- [X] T220 [US1] Real-`omp` live gate verification (Main's own follow-up request, same session): a NEW committed driver (`scripts/verify-563-subagent-gate1.mjs`) against REAL `omp` 18.10.1 (no fake, no PATH shim, no `OMP_PROFILE` override -- the ambient already-signed-in default profile, the established "a real model is needed" isolation posture `docs/spike/chat-lines-probe.mjs`/`get-subagents-probe.mjs` already use: scratch cwd/worktree/`REFRACT_DATA_DIR`, never Stuart's real Session list) and a real model (`github-copilot/claude-opus-5.5`), driving a scratch Session through three scenarios with deliberately tiny echo-only subagent prompts. **Confirmed live, clean run, screenshot `03-turn-a-chain-row.png`**: prompting the real model to call `task()` once with two subagents together (Uno, Dos) then `task()` again with one more (Tres) produced exactly "Subagents 2 stages, 3 agents" with "Stage 1" (Uno, Dos) and "Stage 2" (Tres) -- the chain row, Stage grouping, the quiet sr-only "Finished" icon (no visible word overlapping the name, H1), the header's action button, and the Spine geometry all render correctly against a genuine multi-Stage real-model turn, not just the one-Stage fake-omp fixture. **Confirmed live**: toggling "Show thinking" off and back on for that same settled turn left the Stage labels and chain summary byte-for-byte identical (the H1/H4 independence fix holds against a real multi-Stage turn). **Not independently confirmed this round** (see Not Exercised below for why): the chain-entry pre-select/focus/close-return round trip, and the Cancelled/Running status-word non-overlap layout proof -- both blocked first by two script-selector bugs (a false-positive "done"/"quattro" substring match against the user's OWN prompt text, and a case-sensitive `'tres'`/`'quattro'` compare where the real model capitalises subagent names as "Tres"/"Quattro"; both fixed, committed in the same script), then by this machine's own shared `CARGO_TARGET_DIR` being overwritten mid-session by a concurrent lane's own build (the same standing cross-lane collision this story's PR body already documented once before) -- confirmed by rebuilding fresh immediately before the one run that succeeded, and by the inconsistent pass/fail pattern across repeated identical runs afterward matching exactly that signature, not a flaky product behaviour. Screenshots and the raw per-run findings: `C:/Users/shopwood/AppData/Local/Temp/refract-563-gate1-shots/`. No new tests or fixtures added (AGENTS.md).
+
+**Final live run (gate round 3 follow-up, 2026-10-15)**: the chain-entry failures above were a driver bug, not timing. The chain mounts expanded while running (decision 6), and the driver's "expand" click collapsed it. With the driver reading `aria-expanded` first, all four entry-path checks passed on real `omp`: Tres pre-selected in the panel, focus on its tree row, a keyboard ArrowUp showing a solid 2px ring, and closing the panel returning focus to the entry. The PR therefore says **Closes #563**. Cancelled-after-Stop stays deferred (M2, accepted).
+
+## Phase 42: Convergence
+
+- [X] T221 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
   "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): a pinned Collapse all /
   Expand all toolbar row above the session list's scroll area (16px gap under Pull requests),
   two `icon-xs` ghost buttons in fixed order, `aria-disabled` (never native `disabled`) with an
@@ -1623,7 +1649,7 @@ investigation-record issue comment, the #650 backlog comment) updated to match.
   per-group toggles and the startup restore stay silent). "All" means every Repository group
   plus Archived while #527's own "hidden entirely while nothing anywhere is archived" rule shows
   it; Archived's own saved flag is left untouched while hidden.
-- [X] T215 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
+- [X] T222 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
   archivedOpen: boolean }`, default all-open/Archived-closed): `src/shared/model.ts`/`ipc.ts`,
   `src/tauri-bridge/index.ts`, `src-tauri/src/store/settings.rs` (shape, `KNOWN_FIELDS`,
   `serialize_for_disk`, `set_session_list_collapse`) and `src-tauri/src/ipc/settings.rs`
@@ -1632,44 +1658,64 @@ investigation-record issue comment, the #650 backlog comment) updated to match.
   sole writer, debounced ~300ms persist flushed on `beforeunload`/`pagehide`, a `restored` flag
   read once at startup alongside `settings.get`/`sessions.list` so `SessionList.tsx` never
   paints a group open and then snaps it shut once the persisted state arrives a moment later
-  than Repositories do, `isGroupOpen`/`toggleRepository`/`setArchivedOpen`/`collapseAll`/
+  than Repositories do, `isGroupOpen`/`setRepositoryOpen`/`setArchivedOpen`/`collapseAll`/
   `expandAll`/`openRepositoryGroup`/`pruneRepositories`. `init-stores.ts` restores the state and
   prunes removed-Repository ids after a successful `repositories.list`; `repositories-store.ts`
   prunes after a successful `remove`; `sessions-store.ts`'s `create()`/`restore()` (the one choke
   point every create entry -- the header "+", the branch picker, Ctrl+N, the row menu's own "New
   session from {branch}" item -- and the one restore entry already funnel through) call
-  `openRepositoryGroup` on success, covering decision 22's "a closed group reopens, and that open
+  `openRepositoryGroup` on success, covering decision 20's "a closed group reopens, and that open
   is saved, only when a create or a restore actually moves a row into it" without touching
   `SessionRow.tsx`/`useSessionRowActions.ts` (the #731/#811 headroom-constrained hook) at all.
-- [X] T216 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
+- [X] T223 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
   controlled (`open`/`onOpenChange`, replacing `defaultOpen` and the old uncontrolled-closed
-  Archived group). `GroupHeader.tsx`'s `GroupHeaderTrigger` gains `marker`/`containsOpenSession`
-  props: a Waiting marker (the shared `StateIcon`, `size-4`, `ml-auto flex shrink-0`, after the
-  label) shown only on a closed group, naming the most urgent state among its Sessions via a new
-  `groupWaitingState()` precedence helper in `sessionDisplay.tsx` (Needs you, then Terminated
-  unexpectedly, then Unread response -- #731's own state, merged in from `origin/main` and wired
-  into the same precedence list its own decision record anticipated); and a 2px
-  `bg-active-indicator` header bar (forced-colours `bg-[Highlight]`) on the Repository group
-  currently holding the visible Session while it is closed. Both combine into one accessible
-  name, never a second `aria-describedby` region.
-- [X] T217 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
+  Archived group), `onOpenChange` driven by Radix's own reported `open` value (gate round 1 fix,
+  Low: `RepositoryGroup.tsx` originally ignored it and blindly toggled). `GroupHeader.tsx`'s
+  `GroupHeaderTrigger` gains `marker`/`containsOpenSession` props: a Waiting marker (the shared
+  `StateIcon`, `size-4`, `ml-auto flex shrink-0`, after the label) shown only on a closed group,
+  naming the most urgent state among its NON-ARCHIVED Sessions via a new `groupWaitingState()`
+  precedence helper in `sessionDisplay.tsx` (Needs you, then Terminated unexpectedly, then
+  Unread response -- #731's own state, merged in from `origin/main` and wired into the same
+  precedence list its own decision record anticipated); and a 2px `bg-active-indicator` header
+  bar (forced-colours `bg-[Highlight]`) on the Repository group currently holding the visible
+  non-archived Session while it is closed. Both combine into one accessible name, never a second
+  `aria-describedby` region. **Gate round 1 fix (High, every specialist)**: both the marker and
+  the bar were computed from `RepositoryGroup`'s raw `sessions` prop, which (since #527) still
+  includes that Repository's archived Sessions -- an archived Session kept marking and
+  highlighting its old, now-empty-looking group for as long as it stayed closed. Fixed by
+  filtering to the same non-archived `active` list the rows themselves render, computed once and
+  shared by `containsVisibleSession`/`marker`/the rendered rows.
+- [X] T224 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
   `state-stopped`, `active-indicator`, `ring`, `muted-foreground` against `sidebar`/
   `sidebar-accent`) for the marker, the active bar and the toolbar's own focus ring, all of which
   render inside the session list's `bg-sidebar` surface and were previously checked only against
-  the page `background`.
-- [X] T218 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
+  the page `background`. **Gate round 1 fix (High, ui-visual-system-v3)**: decision 23's literal
+  `focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
+  focus-visible:outline-ring` string draws no visible ring at all on `Button` -- its base
+  `outline-none` (`button.tsx:7`) sets `outline-style: none` and the decision's own class list
+  never resets it, a trap the repo had already found and fixed once for the composer's own
+  buttons (`pickerShared.tsx`'s `COMPOSER_BUTTON_FOCUS_CLASS`, which adds `outline-solid`). Both
+  toolbar buttons now share one `SESSION_LIST_TOOLBAR_BUTTON_CLASS` built from
+  `COMPOSER_BUTTON_FOCUS_CLASS` plus `COMPOSER_DISABLED_HOVER_RESET_CLASS` (also fixes the Low
+  finding that a disabled toolbar button still showed hover feedback), replacing the two pasted
+  ~260-character class strings; #748's Show hidden button will reuse it.
+- [X] T225 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
   2026-10-09 Archived "not persisted across restarts" clarification in place, a new 2026-10-15
-  Clarifications Q&A, acceptance scenario 7 under User Story 5, provisional **FR-069** --
-  FR-064 to FR-066 taken by #564/#572, FR-067/FR-068 claimed by open PR #899, renumber before
-  merge), `data-model.md` (`SessionListCollapse` entity), `contracts/ipc.md`
-  (`settings.setSessionListCollapse` row), `CONTEXT.md` (**Group header**, **Waiting marker**),
-  `docs/design/product-layout.md` (the toolbar bullet, merged with #731's own session-list-row
-  wording update).
-- [X] T219 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
+  Clarifications Q&A, acceptance scenario 7 under User Story 5 corrected to the three-state
+  marker order, **FR-069** finalised once `origin/main` confirmed FR-067/FR-068), `data-model.md`
+  (`SessionListCollapse` entity), `contracts/ipc.md` (`settings.setSessionListCollapse` row),
+  `CONTEXT.md` (**Group header**, **Waiting marker**), `docs/design/product-layout.md` (the
+  toolbar bullet, merged with #731's own session-list-row wording update).
+- [X] T226 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
   repositories, the copied exe's sha256 asserted against the launched pid before each run,
-  `scripts/verify-tauri-735.mjs`, new) proved, against real DOM input (never
-  `window.refract.*` as a shortcut, except the one incidental `theme.set` call used only to
-  switch themes between screenshots): two Repository groups added and opened by default;
+  `scripts/verify-tauri-735.mjs`, rewritten in gate round 1 to assert a genuine mixed collapse
+  state -- one Repository closed, one open, one Session left archived with Archived open --
+  through a real quit and relaunch on the SAME scratch data dir, reading
+  `sessionListCollapse` back out of `<dataDir>/settings.json` rather than the dead
+  `window.__refractStores` DEV-only baseline the first driver asserted against, and failing
+  instead of silently falling back when a real click misses) proved, against real DOM input
+  (never `window.refract.*` as a shortcut, except the one incidental `theme.set` call used only
+  to switch themes between screenshots): two Repository groups added and opened by default;
   Collapse all/Expand all closing and opening every Repository group plus Archived together,
   including a real no-op second click (`aria-disabled`, the correct always-mounted reason text,
   never native `disabled`); the toolbar's keyboard reach immediately after Pull requests
@@ -1677,15 +1723,20 @@ investigation-record issue comment, the #650 backlog comment) updated to match.
   repository combobox steals focus on mount) via the real computed accessible name (CDP
   Accessibility domain, never `textContent`); a collapsed Repository group holding a Session
   with a genuinely pending approval (status `needs-you`) showing the Waiting marker, its real
-  accessible name reading "..., Needs you"; open-on-create (the header "+" quick-create reopened
-  a closed group) and open-on-restore (restoring an Archived Session reopened its own closed
-  Repository group); and the whole collapse/expand state surviving a real app quit and relaunch
-  on the SAME scratch data dir (a ~1.5s wait before the forceful Job-Object kill, since that kill
-  never fires `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would
-  otherwise never run). Screenshots (Dark and High contrast, the collapsed group with its
-  marker) recorded to `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node
-  scripts/ci-local.mjs` 16/16 PASS (including the full Rust test suite, clippy, and a Tauri
-  debug build) both before and after merging `origin/main`.
+  accessible name reading "..., Needs you"; that marker and the active-session bar NOT
+  reappearing on a Session's own former Repository group once it is archived (the gate round 1
+  regression proof); open-on-create (the header "+" quick-create reopened a closed group) and
+  open-on-restore (restoring an Archived Session reopened its own closed Repository group); the
+  mixed collapse state surviving a real app quit and relaunch on the SAME scratch data dir (a
+  ~1.5s wait before the forceful Job-Object kill, since that kill never fires
+  `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would otherwise never
+  run); and the toolbar's 2px focus outline actually rendering under keyboard focus (gate round 1
+  regression proof for T224's fix), checked via the CDP Accessibility domain's own focus report,
+  never a bare truthy check. Screenshots (Dark and High contrast, the collapsed group with its
+  marker, the mixed state before and after relaunch) recorded to
+  `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node scripts/ci-local.mjs` 16/16
+  PASS (including the full Rust test suite, clippy, and a Tauri debug build) both before and
+  after merging `origin/main`.
 
 **Not exercised this phase** (stated plainly, not hidden): the decision record's own verification
 list also names opening Settings and returning (confirming the collapse state survives the view
@@ -1696,7 +1747,7 @@ capture proving no visible flash of open groups before the persisted state loads
 gate's own correctness is a code-review claim here, not a captured absence-of-flash); the
 toolbar's two-line tooltip's own hover-visible rendering (its DOM structure and `aria-describedby`
 target were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot
-and #748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 28-29,
+and #748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 26-27,
 hooks only: `isGroupOpen` selector, first-button-slot order).
 
 This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
@@ -1707,10 +1758,29 @@ product-layout.md amendments used relative paths that resolved against an unrela
 worktree instead of this one (the worktree-path-resolution trap); caught during
 self-verification (a `git status` diff of zero in this worktree for files the subagent claimed
 to edit), that worktree's own 5 touched files were reverted to clean and the amendments were
-redone directly here. Opened as draft PR #905 (`feat/735-collapse-all`); kept **Refs #735**, not
-**Closes**, for the two "Not exercised" items named above, following the same standard #731's own
-Phase 40 entry set for a partially-verified decision record. Merged `origin/main` (PR #902/#731,
-which this story's own Waiting marker precedence and `sessionDisplay.tsx` both now build on)
-before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean afterward.
-Renumbered from provisional Phase 39/T214+ guesses to Phase 41/T214-T219 once `origin/main`
-confirmed tasks.md ends at Phase 40/T213 (per Main's own merge instruction).
+redone directly here. Opened as draft PR #905 (`feat/735-collapse-all`). A five-reviewer gate
+round (code-reviewer, test-reviewer, accessibility-auditor, security-auditor, ui-architect-v3)
+found 3 agreed High findings (the archived-Session leak into the marker and active bar, the
+toolbar focus ring never rendering, and the first live-check driver's restart proof being
+vacuous against a build that persisted nothing) plus Medium (spec FR-069/scenario 7 still naming
+two marker states) and Low findings (decision-number citations in comments using an internal
+63-121 scheme instead of the record's own 1-29, `RepositoryGroup.tsx` ignoring Radix's own
+`open` value, auto-open-on-restore firing even when focus does not move, a possible
+prune/restore race, and a disabled toolbar button still showing hover feedback); every High and
+Medium finding above is fixed in T223-T226 and this entry; the prune/restore race and the
+focus-independent auto-open remain accepted Low departures from the record, named in the table
+below rather than silently dropped. Kept **Refs #735**, not **Closes**, for the two "Not
+exercised" items named above, following the same standard #731's own Phase 40 entry set for a
+partially-verified decision record. Merged `origin/main` (PR #899/#563, which lands as this
+file's own Phase 41) before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16
+clean afterward. Renumbered from provisional Phase 41/T214-T219 to Phase 42/T221-T226 once
+`origin/main` confirmed tasks.md ends at Phase 41/T220 (per Main's own merge instruction).
+
+**Departures from the decision record** (named per the gate's own finding, not silently dropped):
+
+| Decision | Departure |
+|---|---|
+| D18 | The prune can race the restore and do nothing in theory; not fixed this round (Low, accepted). |
+| D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
+| D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue). |
+

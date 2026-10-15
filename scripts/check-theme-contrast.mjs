@@ -282,6 +282,7 @@ function resolvedLinear(propEntry, backdropEntry) {
   return compositeOverLinear(propEntry, backdropEntry)
 }
 
+
 // The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
 // `--divider` (never `--border`, which stays a real control edge everywhere in this cut -- see
 // PAIRS above). Not required by WCAG 1.4.11 because a decorative divider never identifies a
