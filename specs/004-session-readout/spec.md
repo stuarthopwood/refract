@@ -67,6 +67,52 @@ field whose bottom bar shows the mode, model, and agent.
   contract (confirmed live, `docs/spike/get-subagents-probe.mjs`, 2026-10-07) rather than a
   specific repro.
 
+### Session 2026-10-15
+
+- Q: Issue #564 (composer restyle, child of #549) moves the Approval mode pill out of this row
+  and into the message box (spec 001 FR-065) -- what does the row become, and does FR-001's
+  "the row holds the pill alone" fallback still apply? -> A: Renamed the status line (FR-023);
+  full chat width, figures tabular, Current time last at the right end when enabled; when nothing
+  is meaningful or enabled the status line now renders nothing at all, since the pill that used
+  to guarantee at least one item is gone.
+- Q: `/grill-with-docs` follow-up (issue #564): should the status line's readouts keep the
+  existing boxed/chip look (`ReadoutChip.tsx`'s `badgeVariants` pill), now that the Approval
+  pill is gone? -> A: No (decision 1): plain text, no box, per the zero-box rule and the mock -- a
+  read-only readout is an icon plus text with no border or fill; one that opens something (Pull
+  request, Subagents) is a quiet text button with a hover background and no border. CONTEXT.md's
+  **Readout chip** term is retired (moved to _Avoid_); the row is the **Status line**, each entry
+  a **Readout** (decision 2).
+- Q: Issue #437: the Context usage chip shows its figures in full with thousands separators and
+  the word "tokens" (for example "44,842/1,000,000 tokens (4%)"), and the old `compact()` helper
+  (`Intl.NumberFormat` with `notation: 'compact'`, used only by the Changes chip) is upper-case
+  and rounds without a fixed decimal count, so it cannot be reused as is. What replaces both, and
+  how far does the change reach? -> A: `/grill-with-docs` session, 2026-10-15. **Scope** (decision
+  1): one shared `k`/`m`/`b` formatter for the Changes Readout, the Context usage Readout, AND the
+  Session details card's diff line (`formatDiffStat`, spec 001 FR-039) -- so the hover card and
+  the status line never show the same figure two ways; it replaces `ReadoutChips.tsx`'s own
+  `compact()` entirely. **Threshold** (decision 2): one rule for every figure -- plain below
+  1,000, abbreviated from 1,000 up (1,234 reads "1.2k"); at most one decimal, trailing zero
+  dropped, round half up (decided earlier the same day, 2026-10-05: lower-case suffixes, no word
+  "tokens", example "44.8k/1m (4%)"). **Locale** (decision 3): English suffixes `k`/`m`/`b`
+  regardless of the system locale. **Wording and accessibility** (decision 4): the Context usage
+  Readout's visible text drops the word "tokens"; the full phrase, including the high-usage
+  warning state, reaches assistive technology through a real `sr-only` span next to `aria-hidden`
+  visual text (the pattern the Current time chip already uses), replacing the existing high-state
+  `accessibleName` on this chip's own role-less `<span>`, which several real screen readers (NVDA
+  in browse mode, often Narrator and JAWS) ignore there. Built inside PR #877 (#564's composer
+  status line), spec 004 is the right feature directory for this change, not spec 001.
+- Q: Gate round 5 (`agent://Arch877`, fifth-gate UI/UX review of PR #877): the Subagents chip's
+  running-vs-finished emphasis (`running === 0 ? 'text-muted-foreground' : undefined`) was a
+  no-op, since `ReadoutChip.tsx`'s own base class already carries `text-muted-foreground` --
+  neither state ever looked different from the other. Fix? -> A: `running > 0 ? 'text-foreground'
+  : undefined` (FR-007 amended): the RUNNING state goes brighter instead of attempting to make
+  the already-quiet finished state quieter still.
+- Q: Gate round 5: the Context usage Readout's high-usage warning tested `contextUsage.percent
+  >= 90` (the raw value) while the visible text showed `Math.round(contextUsage.percent)` -- a
+  raw 89.5 to 89.99 displayed "90%" with no warning at all. Fix? -> A: Test the rounded,
+  DISPLAYED percent instead (FR-003 amended): the warning must always agree with what the
+  developer actually reads.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -189,8 +235,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 
 ### Edge Cases
 
-- No readout is currently meaningful for a Session: the row still shows the Approval mode pill
-  alone (spec 001 FR-056) and nothing else; it is never an empty bar.
+- No readout is currently meaningful for a Session, or none are enabled in Settings: the status
+  line renders nothing at all -- no empty bar -- since the Approval mode pill that previously
+  guaranteed at least one item has moved into the message box (spec 001 FR-065, 2026-10-15, issue
+  #564; supersedes this bullet's earlier "the row still shows the Approval mode pill alone").
 - The agent is not running: Changes and Pull request keep their last read values, because both
   come from git and GitHub rather than from the agent; Context window usage shows its last known
   reading; Turn time and Subagents are hidden, because both only mean something for a turn in
@@ -200,8 +248,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - The Session's Base branch no longer exists, or its worktree is missing: the Changes chip shows
   "Not available" instead of a count or hiding, matching the Session details card (spec 001
   FR-039).
-- A change count is very large: it is shown abbreviated (for example "1.2k") rather than as an
-  unbounded exact number.
+- A change count (or the Context usage chip's token figures) is very large: it is shown
+  abbreviated by the shared `k`/`m`/`b` formatter (FR-002, FR-003) rather than as an unbounded
+  exact number -- 1,234 reads "1.2k". Rounding to one decimal can carry into the next suffix: for
+  example 999,950 rounds to 999.95k, which rounds again to 1000.0k at one decimal, so the
+  formatter carries up and shows "1m", never "1000k".
 - Many chips are shown at once in a narrow window: the row wraps onto a further line, or scrolls,
   and never hides or overlaps the message box.
 - A pull request lookup fails, or GitHub access is unavailable: the chip is simply not shown; no
@@ -309,16 +360,35 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-001**: An open Session MUST show a chip row directly above the message box. It always
   contains the Approval mode pill (spec 001 FR-056) as its first item, followed by only the
   readouts that are both enabled in Settings and currently meaningful for that Session; when no
-  readout is meaningful the row holds the pill alone.
+  readout is meaningful the row holds the pill alone. (Superseded by FR-023, 2026-10-15, issue
+  #564: the pill moves out of this row into the message box itself, spec 001 FR-065, and the row
+  is renamed the status line.)
 - **FR-002**: The Changes chip MUST show the number of files changed and the total lines added
   and removed for the Session's worktree against its Base branch, counting committed edits,
   uncommitted edits, and new untracked files — the same figure the Session details card shows
-  (spec 001 FR-039); large counts MUST be shown abbreviated; when the Base branch no longer
-  exists or the worktree is missing, the chip MUST show "Not available".
+  (spec 001 FR-039); each figure MUST be abbreviated past 1,000 by the one shared formatter
+  FR-003 also uses (2026-10-15 grill, issue #437), so the two never show the same count two
+  different ways; when the Base branch no longer exists or the worktree is missing, the chip
+  MUST show "Not available".
 - **FR-003**: The Context window usage chip MUST show the tokens used, the context window size,
   and the percentage used, for the Session's running agent; it MUST be hidden, or show "Not
   available", when the agent does not report this; as usage nears the window's limit, the chip
-  MUST visibly warn using text or an icon, never color alone.
+  MUST visibly warn using text or an icon, never color alone. The high-usage warning threshold
+  (gate round 5, Flow LOW fix) is evaluated against the ROUNDED percentage actually shown, not
+  the raw value underneath it -- a raw 89.5 to 89.99 rounds to the displayed "90%", and the
+  warning MUST agree with what the developer reads, not a value one percentage point below it.
+  The used-tokens and window-size
+  figures MUST be formatted by one shared lower-case `k`/`m`/`b` formatter (2026-10-15 grill,
+  issue #437, decided 2026-10-05/2026-10-15): plain below 1,000; at most one decimal above it,
+  with a trailing zero dropped (`1m`, never `1.0m`), rounded half up, carrying to the next larger
+  suffix when rounding would otherwise reach 1,000 of the current one (for example 999,950 reads
+  `1m`, never `1000k`); English suffixes regardless of system locale. This is the SAME formatter
+  FR-002's Changes chip and the Session details card's diff line use, so no figure is ever shown
+  two different ways across the app. The visible text drops the literal word "tokens" (for
+  example "44.8k/1m (4%)"); the full wording, including the high-usage warning state, MUST still
+  reach assistive technology, through a real `sr-only` phrase next to `aria-hidden` visual text
+  (the same pattern the Current time chip already uses) rather than an `aria-label` on this
+  chip's own role-less `<span>`, which several real screen readers ignore there.
 - **FR-004**: The Turn time chip MUST show the elapsed time of the Session's currently running
   turn, updating as the turn runs, and MUST be hidden whenever no turn is running.
 - **FR-005**: The Current time chip MUST show the local time to the minute, updating at least
@@ -333,7 +403,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   show a quiet, comma-joined total of whichever of `finished`/`exited`/`failed` are non-zero (for
   example "1 finished, 1 exited", or "1 failed" when a turn's only subagents failed), worded
   distinctly per status rather than folded into one misleading "finished" bucket (issue #536); it
-  MUST be hidden when the turn has started none.
+  MUST be hidden when the turn has started none. The RUNNING state MUST visibly stand out from
+  the quiet finished-only total (gate round 5, Layout/Visual Medium fix: the chip's own base
+  style is already the quiet muted colour every readout uses at rest, so a running-vs-finished
+  distinction needs the RUNNING state to go brighter, not the finished state to go quieter still,
+  which a literal reading of "quiet" above could otherwise be misread as).
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.
@@ -378,12 +452,29 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   grow the panel wider to fit it, and MUST use the same horizontal padding on the subagent list and
   stream as the panel's header; a code block or diff MAY still scroll horizontally inside its own
   box.
+- **FR-023**: The status line (renamed from the chip row, 2026-10-15, issue #564) MUST span the
+  full width of the chat column, directly between the transcript and the message box, and MUST
+  NOT include the Approval mode pill, which lives in the message box instead (spec 001 FR-065).
+  It MUST show only the readouts enabled in Settings and currently meaningful for the Session
+  (Changes, Todo progress, Context window usage, Turn time, Subagents, Pull request, Current
+  time), wrapping onto a further line rather than clipping (FR-009, unchanged) with its figures
+  shown as tabular numbers. When enabled, the Current time readout MUST be the line's last item,
+  at its right end. When no readout is both enabled and meaningful, the status line MUST render
+  nothing at all -- no empty bar -- since the Approval mode pill that previously guaranteed at
+  least one item no longer lives here. Every readout MUST be plain text, not a boxed chip
+  (2026-10-15 grill, issue #564, decision 1): a read-only readout (Changes, Todo progress,
+  Context window usage, Turn time, Current time) MUST show as an icon plus text with no border or
+  fill; a readout that opens something (Pull request, Subagents) MUST show as a quiet text
+  control with a hover background and no border, never a bordered or filled pill.
 
 ### Key Entities
 
-- **Readout chip**: one chip in the row, for one readout kind (Changes, Context window usage,
-  Turn time, Current time, Pull request, Subagents, Todo progress), shown only while that readout is enabled and
-  meaningful for the Session, and clickable only for Pull request and Subagents.
+- **Readout**: one entry in the status line, for one readout kind (Changes, Context window
+  usage, Turn time, Current time, Pull request, Subagents, Todo progress), shown only while that
+  readout is enabled and meaningful for the Session, plain text with no border or fill, and a
+  quiet text button (hover background, still no border) only for Pull request and Subagents,
+  which are the only two that open something (2026-10-15 grill, issue #564, supersedes this
+  entry's earlier "chip" framing).
 - **Session readout settings**: the app-wide record of which readouts are shown or hidden, with
   the defaults in FR-013, persisted across restarts and applied to every open Session.
 - **Subagent panel**: the panel opened from the Subagents chip, listing the current turn's

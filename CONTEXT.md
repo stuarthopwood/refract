@@ -44,16 +44,16 @@ _Avoid_: Permission level, yolo (internal OMP name for Auto)
 One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one of which is current; starting a fresh one keeps the same **Session** and **Worktree** and keeps the earlier ones reachable as history.
 _Avoid_: Session (in the agent's own sense), transcript
 
-**Readout chip**:
-One entry in the row above the message box (spec 004) showing one glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently.
-_Avoid_: Status chip, badge (for this row specifically)
+**Status line**:
+The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently.
+_Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
 **Subagent panel**:
-The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: lists the current turn's subagents by name/task with a state icon plus the state word, and shows a selected one's live stream (text and tool calls) updating as it runs.
+The right region's first occupant (spec 004), opened by activating the Subagents **Readout**: lists the current turn's subagents by name/task with a state icon plus the state word, and shows a selected one's live stream (text and tool calls) updating as it runs.
 _Avoid_: Subagent sidebar, task panel
 
 **Chat pane**:
-One half of the split chat area (spec 005): a complete chat for one **Session** -- header, transcript, message box, queued messages, pending approvals and questions, and the **Readout chip** row -- matching what a single, unsplit chat pane shows for that **Session**. One or two show at once; the same **Session** is never shown in two panes at the same time.
+One half of the split chat area (spec 005): a complete chat for one **Session** -- header, transcript, message box, queued messages, pending approvals and questions, and the **Status line** -- matching what a single, unsplit chat pane shows for that **Session**. One or two show at once; the same **Session** is never shown in two panes at the same time.
 _Avoid_: Chat panel, pane (alone, when a **Split** is in scope)
 
 **Split**:
@@ -113,7 +113,7 @@ A small, fully-rounded control showing one current state or mode at a glance, us
 _Avoid_: Badge, tag (for a control that opens a menu)
 
 **Chip**:
-A small, rounded-rectangle element showing one discrete fact or item, read-only or removable, usually grouped with others in a row (for example, a **Readout chip**, which is one specific named row of chips -- this entry defines the shape generically).
+A small, rounded-rectangle element showing one discrete fact or item, read-only or removable, usually grouped with others in a row (for example, a pasted-text chip in the composer's attachment strip -- this entry defines the shape generically). The **Status line**'s own entries are plain text, not this shape (2026-10-15 grill, issue #564): see **Status line**'s own _Avoid_ note.
 _Avoid_: Tag, token (ambiguous with a design token)
 
 **Row**:
@@ -148,14 +148,14 @@ One of a set of mutually exclusive selectable labels that switches which content
 _Avoid_: Filter (see **Filter tab**), section
 
 **Readout**:
-A compact, glanceable display of one live fact about something elsewhere in the app. Most readouts are plain text; some are also the entry point to an action, in which case they behave like a control (for example, a **Readout chip** that opens an external link or a panel).
-_Avoid_: Display, indicator
+A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
+_Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
 - The current spec (`specs/001-core-session-workspace/spec.md`) defines Session as "one conversation with the agent bound to one worktree". That contradicts the resolution above and must be corrected when the spec is next amended.
-- The new generic **Readout** term (#474 UI vocabulary) is not mutually exclusive with interactivity: a **Readout chip** is sometimes a real button or link (for example, Pull request, Subagents), not only plain text. Say **Readout** for the display pattern, **Readout chip** for this app's specific chip row that uses it.
+- The generic **Readout** term (#474 UI vocabulary) is not mutually exclusive with interactivity: a Readout is sometimes a real button or link (for example, Pull request, Subagents), not only plain text -- see **Status line**'s own distinction between the two. **Readout chip** (the row's older, boxed name) is retired as of the 2026-10-15 grill, issue #564: the row is now plain text, not chip-shaped, so **Status line** and **Readout** are the only current terms.
 
 ## Example dialogue
 

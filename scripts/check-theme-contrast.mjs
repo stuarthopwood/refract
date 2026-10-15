@@ -9,15 +9,14 @@
 // Exits 1 if any pair fails its WCAG minimum, 0 if every pair across every theme passes.
 // Methodology note: several of this app's `oklch()` severity/accent colours are outside the
 // sRGB gamut (their converted linear-sRGB channel is briefly >1 before the per-channel clamp
-// below), so this script clips them the same way a non-wide-gamut sRGB display does. A real
-// wide-gamut (P3) Chromium display may render those exact pixels slightly differently, so their
-// true on-screen luminance can differ a little from the clipped value this script computes.
-// Not a bug to fix now -- noted so a future pass can switch to CSS Color 4 chroma-reduction
-// gamut mapping if that gap ever matters in practice.
+// below), so this script clips them the same way a non-wide-gamut sRGB display does, and their
+// true on-screen luminance on a wide-gamut (P3) display can differ slightly from the clipped
+// value computed here -- not a bug to fix now, just a known small gap in a rare case.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PAIRS } from './theme-contrast-pairs.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
@@ -282,137 +281,6 @@ function resolvedLinear(propEntry, backdropEntry) {
   if (propEntry.alpha >= 1) return propEntry.linear.map(clamp01)
   return compositeOverLinear(propEntry, backdropEntry)
 }
-
-// ---- FR-007/FR-008 token pairs actually rendered by this codebase ----------------------------
-// `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
-// (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
-// text). `--divider` is NOT a control edge (#550: it is the soft decorative edge, read by no
-// component yet except where it IS a real rendered fill -- see DIVIDER_PAIRS's own comment
-// below). `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
-// rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
-// `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
-
-const PAIRS = [
-  { fg: 'foreground', bg: 'background', min: 4.5 },
-  { fg: 'card-foreground', bg: 'card', min: 4.5 },
-  { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
-  { fg: 'primary-foreground', bg: 'primary', min: 4.5 },
-  { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
-  { fg: 'muted-foreground', bg: 'background', min: 4.5 },
-  { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
-  { fg: 'destructive-foreground', bg: 'destructive', min: 4.5 },
-  { fg: 'chat-foreground', bg: 'background', min: 4.5 },
-  { fg: 'state-working-foreground', bg: 'state-working', min: 4.5 },
-  { fg: 'state-needs-you-foreground', bg: 'state-needs-you', min: 4.5 },
-  { fg: 'state-stopped-foreground', bg: 'state-stopped', min: 4.5 },
-  { fg: 'ring', bg: 'background', min: 3 },
-  { fg: 'scrollbar-thumb', bg: 'background', min: 3 },
-  { fg: 'active-indicator', bg: 'background', min: 3 },
-  { fg: 'destructive', bg: 'background', min: 3 },
-  { fg: 'state-working', bg: 'background', min: 3 },
-  { fg: 'state-idle', bg: 'background', min: 3 },
-  { fg: 'state-needs-you', bg: 'background', min: 3 },
-  { fg: 'state-stopped', bg: 'background', min: 3 },
-  // These real component-boundary pairs were missing and measure as genuine failures --
-  // `--input` (the border of every Input/Textarea/Select/outline-Toggle/outline-Button,
-  // including the Appearance section's own Cancel button).
-  { fg: 'input', bg: 'background', min: 3 },
-  // #550 (theme foundation, palette v2): the control-edge tokens (`--border`, the one every
-  // un-migrated component actually renders with, and `--border-strong`, its forward-looking
-  // alias -- #550's own divider-versus-control-edge rule) and the new semantic roles the
-  // contrast script must learn or it would silently pass a theme that never defines them (the
-  // 'token missing' path below still fires if any of these are absent).
-  { fg: 'border', bg: 'background', min: 3 },
-  { fg: 'border', bg: 'card', min: 3 },
-  { fg: 'border', bg: 'popover', min: 3 },
-  { fg: 'border', bg: 'muted', min: 3 },
-  { fg: 'border-strong', bg: 'background', min: 3 },
-  { fg: 'border-strong', bg: 'card', min: 3 },
-  { fg: 'border-strong', bg: 'popover', min: 3 },
-  { fg: 'border-strong', bg: 'muted', min: 3 },
-  { fg: 'accent-text', bg: 'background', min: 4.5 },
-  { fg: 'accent-text', bg: 'card', min: 4.5 },
-  { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
-  // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
-  // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
-  // (`Markdown.tsx`'s `linkClassName`), but never on `surface-hover`: every link/file-link
-  // surface it renders on -- the plain chat background/card/popover, and the composited user
-  // message bubble checked below -- is covered by a real gate entry. Before #579 migrates a
-  // link/text colour onto a hover row, either lighten `accent-text` further (it already has
-  // margin to spare against background/card/popover) or add this pair here once it passes.
-  { fg: 'severity-success', bg: 'background', min: 3 },
-  { fg: 'severity-success', bg: 'card', min: 3 },
-  { fg: 'severity-success', bg: 'popover', min: 3 },
-  { fg: 'severity-warning', bg: 'background', min: 3 },
-  { fg: 'severity-warning', bg: 'card', min: 3 },
-  { fg: 'severity-warning', bg: 'popover', min: 3 },
-  { fg: 'severity-error', bg: 'background', min: 3 },
-  { fg: 'severity-error', bg: 'card', min: 3 },
-  { fg: 'severity-error', bg: 'popover', min: 3 },
-  { fg: 'severity-info', bg: 'background', min: 3 },
-  { fg: 'severity-info', bg: 'card', min: 3 },
-  { fg: 'severity-info', bg: 'popover', min: 3 },
-  // `muted-foreground` and `destructive` are rendered as actual BODY TEXT (code-block/diff-path
-  // headers, inactive tab labels, notice text, dropdown-menu destructive items, alert
-  // descriptions), not just against the page `--background` the two pre-existing pairs above
-  // already covered -- against `--muted`/`--accent` (the shadcn "neutral highlight"
-  // hover/selected fills text sits on) and `--card`/`--popover` (dialog/menu surfaces)
-  // respectively.
-  { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
-  { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
-  { fg: 'muted-foreground', bg: 'card', min: 4.5 },
-  { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
-  { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
-  // Issue #630: `DiffView.tsx`'s new +N added-line count sits as real `text-xs` body text on
-  // the diff box's own `bg-muted` header (the same token the diff gutter's own insert tint
-  // already uses, chosen over a raw Tailwind palette colour precisely so it is gated here).
-  { fg: 'state-working', bg: 'muted', min: 4.5 },
-  { fg: 'destructive', bg: 'card', min: 4.5 },
-  { fg: 'destructive', bg: 'popover', min: 4.5 },
-  // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/
-  // `text-state-needs-you`) used to sit on `--card` (the readiness screen's own grey box).
-  // Only `destructive`/`card` had a 4.5:1 pair there already (just above); `state-needs-you`/
-  // `card` was never gated at 4.5:1 anywhere. Both tokens were gated against `--background`
-  // only at the 3:1 non-text floor (the pairs above, shared with the icon-only use of these
-  // same tokens). Removing the box puts the hint text directly on `--background`, so both now
-  // need their own real 4.5:1 text pair there too.
-  { fg: 'destructive', bg: 'background', min: 4.5 },
-  { fg: 'state-needs-you', bg: 'background', min: 4.5 },
-  // Issue #533: the composer's new empty-state hint overlay (icons plus "for commands" /
-  // "Markdown supported" text, `MessageInput.tsx`) renders `text-muted-foreground` directly on
-  // `--composer-background`, the composer field's own distinct per-theme fill (NOT the page
-  // `--background` the `muted-foreground`/`background` pair above already covers). That token
-  // already carried real text -- the old native placeholder and the typed draft itself -- this
-  // pair was simply missing from the gate, not newly rendered text; closes a pre-existing gap.
-  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5 },
-  // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
-  // every focus ring actually render, checked only against `--background` before -- dialogs
-  // and menus sit on `--popover`/`--muted`, not the page.
-  { fg: 'input', bg: 'popover', min: 3 },
-  { fg: 'input', bg: 'muted', min: 3 },
-  { fg: 'ring', bg: 'popover', min: 3 },
-  { fg: 'ring', bg: 'muted', min: 3 },
-  // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
-  // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
-  // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.
-  // Checked against every surface the mark actually renders on: the session list (`--sidebar`),
-  // that same row selected or hovered (`--sidebar-accent`, `SessionList.tsx` -- the icon is the
-  // only visible status cue there, the "Working" text is `sr-only`), the chat header
-  // (`--background`), and the session details hover card (`--popover`, `hover-card.tsx` -- NOT
-  // `--card`, corrected in round 5 after the A11y gate found the real surface).
-  // Quality-gate remediation (A11y HIGH, round 5): `--sidebar-accent` was missing from this list
-  // entirely and the original `#864DD6` measured under 3:1 against it in every theme (2.91 Dark
-  // / 2.54 Obsidian / 2.99 Dark HC); Stuart's `#9A68E4` fix (see `.theme-dark`'s own comment)
-  // clears it everywhere (3.94 / 3.43 / 4.05). `--card` is kept as a fourth pair even though
-  // `--popover` is the real card surface, since `--card` happens to equal `--popover` in Dark
-  // and Dark HC (not in Obsidian) and nothing currently regresses by also checking it.
-  { fg: 'agent-spinner-core', bg: 'sidebar', min: 3 },
-  { fg: 'agent-spinner-core', bg: 'sidebar-accent', min: 3 },
-  { fg: 'agent-spinner-core', bg: 'card', min: 3 },
-  { fg: 'agent-spinner-core', bg: 'popover', min: 3 },
-  { fg: 'agent-spinner-core', bg: 'background', min: 3 },
-]
 
 // The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
 // `--divider` (never `--border`, which stays a real control edge everywhere in this cut -- see

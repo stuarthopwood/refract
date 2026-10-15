@@ -94,6 +94,27 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 | `settings.get()` | `Settings` |
 | `settings.setApprovalMode(mode)` | `Settings`. Sets `pendingMode` on every live Session whose mode differs; the restart happens at each Session's next settle. |
 
+### Model (lane RM, issues #454/#740/#741/#762/#766/#760/#564)
+
+Per-Session model/role/reasoning actions over the live RPC connection (never OMP's persisted
+`modelRoles` config, which `settings.*`/`RefractApi.modelRoles` own instead); not part of this
+spec's own acceptance criteria (added by lane RM after spec 001 shipped), documented here so the
+channel list stays complete. Full reasoning lives in `src/shared/ipc-model.ts`'s own doc comments.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `model.setModel(sessionId, provider, modelId)` | `{ model: Model }` | The composer's model picker (#454). Session-scoped only (never writes `modelRoles`); pins the Session and clears any tracked role. |
+| `model.cycleModel(sessionId)` | `{ model: Model }` | Steps through catalog models (FINDINGS item 54: never `cycleOrder`'s roles); same pinning as `setModel`. |
+| `model.applyRole(sessionId, role)` | `{ model: Model; role: string }` | `/role`, Ctrl+R and a role chip click (#766); forwards OMP's native `/switch @<role>`. Un-pins the Session. |
+| `model.listRoles(sessionId)` | `{ roles: Array<{ role, model, current }>; currentRole; pinned }` | The Ctrl+R selector's own listing (#766): `cycleOrder` plus `"plan"`. |
+| `model.setThinkingLevel(sessionId, level)` | `{ thinkingLevel: string \| null }` | The composer's Reasoning picker (#564). Forwards OMP's `set_thinking_level` RPC after validating `level` against the closed set below in Rust (gate round 1: previously unvalidated); never touches model pinning or the tracked role. `level` is OMP's own `"inherit" \| "off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"`. `thinkingLevel` is `null` (gate round 1, amended by Stuart) when OMP's `get_state` does not report a level back for a SUCCESSFUL switch -- which happens both for `inherit` (always resolved to the literal `"inherit"` here instead, never `null`, since Default is a valid outcome regardless of whether the model echoes it) and for any OTHER level on a model that does not report reasoning effort at all (resolved to `null`, shown as "Reasoning not reported", never an error toast). |
+
+Every call above refuses with `not-idle` while the Session is working (FINDINGS "RM0 probe" item
+57: mid-turn `set_model` is not provably safe) and `agent-not-running` for a Session with no live
+process. Non-optional on `RefractApi` (gate round 1, 2026-10-15): Electron never ported this
+family, and Electron itself is gone (R13, #873) -- the Rust build (`src-tauri/`) is now the only
+implementation.
+
 ### Window (spec 001 T100, FR-057)
 
 | Method | Returns | Notes |
@@ -106,7 +127,7 @@ There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-c
 
 | Event | Payload | Purpose |
 |---|---|---|
-| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, terminatedUnexpectedly?, startProgress?, unread, launchedMode, pendingMode }` | List badges, the Approval mode pill above the message box. `terminatedUnexpectedly` (issue #510) is set only on a live transition to `stopped`; quality-gate fix (cycle 3): `undefined` on a `stopped` transition (for example a re-emit with no new value, such as `clearUnread`) means the renderer keeps whatever it already showed; a transition to a LIVE status resets it to `false`. `startProgress` (issue #512 requirement 1) mirrors the staged ready-wait live while a `start()`/`restart()` is in flight -- `{ kind: 'queued' }`, `{ kind: 'memory-deferred'; elapsedMs }`, or `{ kind: 'waiting' \| 'prompt' \| 'extended'; elapsedMs }` -- and is absent once it settles, success or failure either way; never a persisted Session state, only a transient overlay on top of `status`/`stopReason`. |
+| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, terminatedUnexpectedly?, startProgress?, unread, launchedMode, pendingMode }` | List badges, the Approval mode pill inside the message box's own bottom row (2026-10-15, issue #564; previously above it). `terminatedUnexpectedly` (issue #510) is set only on a live transition to `stopped`; quality-gate fix (cycle 3): `undefined` on a `stopped` transition (for example a re-emit with no new value, such as `clearUnread`) means the renderer keeps whatever it already showed; a transition to a LIVE status resets it to `false`. `startProgress` (issue #512 requirement 1) mirrors the staged ready-wait live while a `start()`/`restart()` is in flight -- `{ kind: 'queued' }`, `{ kind: 'memory-deferred'; elapsedMs }`, or `{ kind: 'waiting' \| 'prompt' \| 'extended'; elapsedMs }` -- and is absent once it settles, success or failure either way; never a persisted Session state, only a transient overlay on top of `status`/`stopReason`. |
 | `session:list-changed` | none | Renderer re-fetches `sessions.list()` (created, renamed, archived, deleted, reordered by activity). |
 | `transcript:patch` | `{ sessionId, ops: TranscriptOp[] }` | `TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] }`. Coalesced to at most one per 50 ms per Session; only sent for the Session the user is viewing, plus a final flush when a Session becomes visible. |
 | `queue:update` | `{ sessionId, followUp: string[]; steering: string[] }` | Queue chips. |

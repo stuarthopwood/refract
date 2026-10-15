@@ -1,7 +1,12 @@
 // Composer attachments (spec 009): pending images and oversized-text chips held only in the
 // renderer's own memory for the draft currently being composed (data-model.md "Held in memory").
 // Pure types and helpers; MessageInput.tsx owns the actual state and wiring, AttachmentStrip.tsx
-// and the preview modals own the presentation.
+// and the preview modals own the presentation. `attachImageFile` (the validate-plus-commit
+// sequence a pasted image and the composer's Attach button both need) moved to its own module,
+// `attachImage.ts` (gate round 2, code-reviewer LOW): it needs `@/state` (`notify`,
+// `useDraftStore`), and `state/draft-store.ts` imports types FROM this file, so having it here
+// too made an import cycle -- harmless only because `@/state` happened to load first; any entry
+// point loading this file first (a future unit test, say) would hit a load-time ReferenceError.
 import type { ImageContent, SupportedImageMimeType } from '../../../shared/frames'
 import {
   LARGE_PASTE_CHIP_THRESHOLD,
