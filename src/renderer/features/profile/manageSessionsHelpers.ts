@@ -5,12 +5,19 @@
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import type { SessionFilters } from '@/state/view-store'
+import { displayStatus } from '@/features/sessions/sessionDisplay'
+import type { SessionDisplayStatus } from '@/features/sessions/sessionDisplay'
 
-const STATUS_ORDER: Record<SessionSummary['status'], number> = {
+// Issue #731 decision 8: Manage sessions' own Status sort order -- needs-you, Unread response,
+// working, idle, stopped -- the same order #735's planned collapsed-group top-state badge will
+// use. This is a sort order, not the display precedence `displayStatus` itself encodes
+// (CONTEXT.md's Session status entry: Working, Needs you, Stopped, Unread response, Idle).
+const STATUS_ORDER: Record<SessionDisplayStatus, number> = {
   'needs-you': 0,
-  working: 1,
-  idle: 2,
-  stopped: 3
+  'unread-response': 1,
+  working: 2,
+  idle: 3,
+  stopped: 4
 }
 
 /** Filters, then sorts, `sessions` per `filters` -- never mutates the input array. Search matches
@@ -37,7 +44,7 @@ export function filterAndSortSessions(
       case 'repo':
         return (repoNameById.get(a.repositoryId) ?? '').localeCompare(repoNameById.get(b.repositoryId) ?? '')
       case 'status':
-        return STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+        return STATUS_ORDER[displayStatus(a)] - STATUS_ORDER[displayStatus(b)]
       case 'recent':
       default:
         return b.lastActivityAt.localeCompare(a.lastActivityAt)

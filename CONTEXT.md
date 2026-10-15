@@ -20,6 +20,14 @@ _Avoid_: Accent, tag colour, label colour
 One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
 
+**Session status**:
+The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Stopped, Unread response or Idle, in that order of precedence.
+_Avoid_: state dot, status badge
+
+**Unread response**:
+The **Session status** of an idle **Session** whose latest reply the developer has not seen, because it finished while the **Session** was not shown in a **Chat pane**. It clears when the **Session** is shown, and it is drawn by the shared status icon in place of Idle.
+_Avoid_: response ready, unread dot, response indicator, new message
+
 **Archive**:
 Hide a **Session** from the main list while keeping its **Worktree** and **Conversations** intact; reversible. The default way to finish with a **Session**.
 _Avoid_: Close, remove (ambiguous with delete)

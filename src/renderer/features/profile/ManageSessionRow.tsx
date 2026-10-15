@@ -34,7 +34,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
-import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { STATUS_LABEL, StateIcon, displayStatus, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
@@ -526,7 +526,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 // row instead of each shifting with its own content's length. Padding moved onto
                 // this button (off the wrapping `<li>`) so the hover fill below is entirely
                 // clickable, with no dead gutter.
-                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[6rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.5.3/4.1.2): no
                     `aria-label` here -- it previously replaced the button's whole content with
@@ -534,8 +534,8 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                     and last activity from screen-reader users entirely. The accessible name now
                     comes from this visible content, in the same order it is read. */}
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <StateIcon status={session.status} />
-                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[session.status]}</span>
+                  <StateIcon status={displayStatus(session)} />
+                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[displayStatus(session)]}</span>
                 </span>
                 {isVisible && <span className="sr-only">Shown in chat</span>}
                 <span className="flex min-w-0 flex-col">
