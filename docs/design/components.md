@@ -102,7 +102,7 @@ The zero-box rule (#556, settled against the AI Studio mock review #549, agenda 
 - Code blocks and tables.
 - Attachments and chips.
 
-Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a left rail or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead. Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). This is the rule the #556 zero-box sweep applies across the codebase (tracked separately; not fixed by this documentation change).
+Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a **Spine** (a neutral `border-divider` left rule hanging from a group header's own status icon, never coloured or animated, issue #565) or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead. Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). This is the rule the #556 zero-box sweep applies across the codebase (tracked separately; not fixed by this documentation change).
 
 Depth between in-flow surfaces (cards, panes, rows, the composer) comes from the surface ladder (background, then surface 1, 2, 3, each a step lighter), never a shadow. See "Elevation and shadows" and "Surface ladder and edges" in [foundations-tokens-theming.md](foundations-tokens-theming.md).
 

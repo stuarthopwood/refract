@@ -2,7 +2,7 @@ import * as React from 'react'
 import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from 'cn'
 import type { TranscriptItem } from '../../../shared/model'
-import { CollapsedLine } from './CollapsedLine'
+import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 
 type NoticeLevel = Extract<TranscriptItem, { kind: 'notice' }>['level']
 
@@ -72,7 +72,9 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       icon={icon}
       summary={text}
       summaryClassName={NOTICE_CLASS[level]}
-      contentClassName="pl-7"
+      // #565 decision 10/7: the label column moved from 30px to 32px when `CollapsedLine`'s
+      // icon slot widened 14px -> 16px; `pl-7` (28px) becomes `pl-8` (32px) to stay aligned.
+      contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
        * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
