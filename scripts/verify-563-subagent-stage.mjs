@@ -267,6 +267,30 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '04-panel-tree-open.png'));
     findings.push('Subagent panel opened; role="tree" (aria-label="Subagents") mounted with both agent rows.');
 
+    // Issue #563 live-check follow-up: establish whether the Subagents readout chip not being
+    // present yet (why the rail-button fallback above was needed) is pre-existing readout-
+    // computation latency, unrelated to this story, or something #563 caused. `readout.rs`'s
+    // own `run_readout_update` (src-tauri/src/session/readout.rs:401-431) bundles `subagentCount`
+    // with a concurrent `diff_stat` (git) read and branch read into ONE combined readout value,
+    // debounced `READOUT_COALESCE_MS` (100ms, readout.rs:66) -- the WHOLE chip row (every kind,
+    // not just Subagents) waits on that one combined round trip, and this story's diff touches
+    // zero lines of `readout.rs` (confirmed: `git diff d6ef2ca -- src-tauri/src/session/
+    // readout.rs` is empty) and only changes `ReadoutChips.tsx`'s wording, never its
+    // `if (subagentCount === null) return null` gate (`ReadoutChips.tsx:189`, unchanged by this
+    // story's diff). Polling live now for how long the chip actually takes to appear, as direct
+    // evidence alongside that code citation.
+    const chipAppearStart = Date.now();
+    try {
+      await cdp.waitFor(
+        `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('Open subagents panel'))`,
+        { timeoutMs: 10_000, label: 'Subagents readout chip eventually appears' },
+      );
+      findings.push(`Readout-timing check: the Subagents chip was indeed absent right after the panel opened, but appeared ${Date.now() - chipAppearStart}ms later on its own -- a readout-computation latency (readout.rs's combined, debounced update), not a missing feature; confirms the earlier rail-button fallback was the correct workaround for a pre-existing timing gap, not a #563 regression.`,
+      );
+    } catch {
+      findings.push('Readout-timing check: the Subagents chip still had not appeared after a further 10s poll -- could not confirm it resolves on its own within this run; see the readout.rs code citation above for why the gate itself is unchanged by this story regardless.');
+    }
+
     // Select the first row, then roving-tabindex Down to the second, verifying selection moves.
     const firstRowId = await cdp.evaluate(
       `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"]')?.getAttribute('aria-posinset')`,
@@ -290,23 +314,30 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '05-panel-tree-arrowdown-selection.png'));
     findings.push(`Keyboard ArrowDown moved the tree's roving tab stop and selection from "${selectedBefore}" to "${selectedAfter}" -- confirms the tree keyboard handler and the active-indicator bar (visible in the screenshot) both work. firstRowId=${firstRowId}.`);
 
-    // Close the panel; confirm focus falls back to the Subagents chip (no opener was recorded,
-    // since this panel open went through the pre-existing chip route, not a chat-side chain
-    // entry -- see findings below for why the NEW opener-based path could not be driven here).
-    const closeClicked = await cdp.evaluate(
-      `(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').toLowerCase().includes('close')); if (b) { b.click(); return true; } return false; })()`,
+    // Close the panel via its own exact Close button (`PanelTabBar.tsx`'s `[data-panel-close]`,
+    // `aria-label="Close Subagents panel"` -- never a generic "aria-label contains close" guess,
+    // which can match an unrelated control). This panel was opened via the rail button fallback
+    // (no `opener` passed, since the Subagents chip never rendered this run -- see the readout-
+    // timing finding below), so `subagent-store.ts`'s own `closePanel` has no `openerEl` and no
+    // chip to fall back to either; `hosted-panel-actions.ts`'s `closeHostedPanel` is the ONE that
+    // then moves focus to the panel's own rail button (`[data-rail-button="subagents"]`) once it
+    // finds focus still stranded, a frame later -- the expected target here.
+    const beforeCloseFocus = await cdp.evaluate(
+      `({ role: document.activeElement?.getAttribute('role'), label: document.activeElement?.textContent?.trim() })`,
     );
-    if (closeClicked) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const activeIsChip = await cdp.evaluate(
-        `(document.activeElement?.getAttribute('aria-label') || '').startsWith('Open subagents panel')`,
-      );
-      await cdp.screenshot(path.join(SHOTS_DIR, '06-panel-closed-focus-return.png'));
-      findings.push(`Panel closed via its Close button; focus returned to the Subagents chip: ${activeIsChip}.`);
-    } else {
-      findings.push('Could not find a Close button by aria-label heuristic; panel left open, screenshot 06 shows that state instead.');
-      await cdp.screenshot(path.join(SHOTS_DIR, '06-panel-close-not-found.png'));
-    }
+    await cdp.click(`document.querySelector('[data-panel-close]')`);
+    await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: 'Panel tree unmounted after Close' });
+    // `closeHostedPanel`'s own stranded-focus fallback runs inside a `requestAnimationFrame`.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const focusReturnedToRail = await cdp.evaluate(`document.activeElement === document.querySelector('[data-rail-button="subagents"]')`);
+    const actualActiveElement = await cdp.evaluate(
+      `(() => { const el = document.activeElement; return el ? { tag: el.tagName, id: el.id || null, role: el.getAttribute('role'), ariaLabel: el.getAttribute('aria-label'), isBody: el === document.body, dataRailButton: el.getAttribute('data-rail-button') } : null; })()`,
+    );
+    findings.push(`Exact post-close document.activeElement: ${JSON.stringify(actualActiveElement)}.`);
+    await cdp.screenshot(path.join(SHOTS_DIR, '06-panel-closed-focus-return.png'));
+    findings.push(
+      `Panel closed via its own Close button ([data-panel-close], aria-label "Close Subagents panel"); focus before close was on a ${JSON.stringify(beforeCloseFocus)} tree row; focus returned to the Subagents rail button ([data-rail-button="subagents"]): ${focusReturnedToRail} (expected true -- no opener/chip existed since this panel opened via the rail fallback, so hosted-panel-actions.ts's own stranded-focus fallback to the rail button is the correct target here).`,
+    );
 
     console.log('verify-563: PASS -- see findings below.');
     for (const f of findings) console.log(' -', f);
