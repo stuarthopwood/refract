@@ -32,7 +32,7 @@ cache if disk space is tight (this repo's own worktree instructions use
 There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
 binary directly: `src-tauri/target/release/refract-tauri.exe`.
 
-The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's atom icon (issue #494; for a notification, this is the toast's body icon only -- the toast header still reads "Electron" until a registered Start Menu shortcut gives Windows a display name to resolve, a known limitation out of this fix's scope); if an older taskbar entry is still pinned from before this fix, unpin and re-pin it once to clear Windows' icon cache.
+The taskbar, Alt+Tab and notifications show the Refract logo, not an Electron atom icon (issue #494, fixed on the since-deleted Electron build; not re-verified on the Tauri build, which never carried that icon to begin with); if an older taskbar entry is still pinned from before that fix, unpin and re-pin it once to clear Windows' icon cache.
 
 ## Where state lives
 
