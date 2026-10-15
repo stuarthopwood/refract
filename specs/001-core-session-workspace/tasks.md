@@ -705,3 +705,110 @@ This phase was written retroactively after the implementation above, as a qualit
 - [X] T136 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new FR-062 (#543) and FR-063 (#547), a dated `### Session 2026-10-13` Clarifications entry, US1 acceptance scenario 17, and a new Edge Cases bullet for a non-`skill://` path or malformed/missing `skill-prompt` `details`; `docs/PLAN.md`'s "Skill rows" and "Log rendering audit" rows record the PR.
 
 This phase was written retroactively after the implementation above, in the same session that built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue; decision comments posted on #543 and #547 recording the scope before the PR). `pnpm typecheck` (both tsconfigs), `pnpm check:indent` (0 odd-indent lines), the existing `pnpm vitest` suite (376 pass, no new tests added per AGENTS.md #605), `pnpm check:ui-text` (0 leaks), `pnpm check:theme-contrast` (all 313 pairs pass, unchanged by this phase), `pnpm check:drag-regions` (0 violations), and `pnpm build` all ran clean after the build (see the PR body for the exact live-check result, run or skipped by the free-memory bar at push time).
+
+## Phase 37: Convergence
+
+Written retroactively on 2026-10-15, after the composer restyle (#564) was already built on
+this branch: every `[X]` below cites the code as it stands on this branch at the time of writing,
+not a prior `/speckit.plan`/`/speckit.tasks` pass (none existed for #564).
+
+- [X] T137 [US1] Amend `spec.md` for the composer restyle (issue #564, child of #549): FR-041
+  marked superseded by FR-064; FR-056 marked amended by FR-065; new FR-064 (Model and Reasoning
+  pickers in the message box's bottom row) and FR-065 (Approval mode pill relocated into that
+  row, Stop's filled weight) appended after FR-063; US1 acceptance scenario 11 rewritten for the
+  new bottom row; a new Edge Cases bullet for the not-idle refusal; a dated
+  `### Session 2026-10-15` Clarifications entry recording Stuart's decisions (status line full
+  width, Current time at the right end, no branch name or mode dot, the Reasoning picker's scope
+  and its Rust-only target now that R13 deletes Electron concurrently, Stop's filled weight).
+  `contracts/ipc.md`'s `session:status` row description updated from "above the message box" to
+  "inside the message box's own bottom row". `quickstart.md` Story 1 steps 6 and 9 rewritten for
+  the new bottom row and Stop's weight.
+- [X] T138 [US1] Amend spec 004's `spec.md` (same issue, since the chip row's own FR-001 and the
+  readout spec's own Edge Cases bullet are directly contradicted by the pill's move): FR-001
+  marked superseded by FR-023; new FR-023 (the renamed status line: full width, ordering, Current
+  time last, no empty bar once the pill is gone) appended after FR-022; the "chip row still shows
+  the Approval mode pill alone" Edge Cases bullet rewritten for the new empty-when-nothing-
+  meaningful behaviour; a dated `### Session 2026-10-15` Clarifications entry. `quickstart.md`
+  Story 1 steps 1 and 2 reworded from "chip row" to "status line" and to drop the pill mention.
+- [X] T139 [US1] Add `src/renderer/features/chat/ComposerStatusLine.tsx` (new file): renders the
+  renamed status line (spec 004 FR-023) -- every readout chip FR-023 names except the Approval
+  mode pill, `tabular-nums` on the row, Current time last with `ml-auto` so it sits at the right
+  end when enabled. `src/renderer/features/chat/readout/ReadoutChips.tsx`'s `CurrentTimeChip`
+  gains an optional `className` prop, passed through to its own `ReadoutChip`, for exactly this.
+  `MessageInput.tsx`'s old inline chip-row `<div>` (Approval pill plus seven
+  `sessionReadout[...] && <Chip .../>` lines) is replaced with one `<ComposerStatusLine
+  sessionId={sessionId} />`; the now-unused `sessionReadout` selector and the `ReadoutChips`
+  import are removed from `MessageInput.tsx`.
+- [X] T140 [US1] Add `src/renderer/features/chat/ComposerPickers.tsx` (new file): `ModelPicker`
+  and `ReasoningPicker` (FR-064) -- each a `DropdownMenu`-backed labelled menu button matching
+  `ApprovalModePill.tsx`'s own badge-trigger styling, naming the Session's current value
+  (`formatModelLabel`/`formatThinkingLevelLabel`, unchanged from the old read-only line),
+  refusing to open (controlled `open`/`onOpenChange`, `aria-disabled` with the reason folded into
+  the accessible name) while the Session is `working` or `needs-you`; `ModelPicker` loads
+  `useModelRolesStore`'s `chat` catalog on first open and calls `window.refract.model.setModel`
+  on selection, `ReasoningPicker` lists `modelDisplay.ts`'s new `THINKING_LEVELS` and calls
+  `window.refract.model.setThinkingLevel`. Targets the Rust build only (Stuart approved R13,
+  delete Electron, 2026-10-15, running concurrently in a separate worktree): no Electron
+  read-only fallback branch was built, since one would be dead code the moment R13 lands.
+  `AttachButton` (FR-065) in the same file: a hidden native `<input type="file">` (images only)
+  plus a ghost icon button, feeding each chosen file through the exact same `buildImageAttachment`
+  validation and toast wording `MessageInput.tsx`'s own paste handler already uses (spec 009) --
+  renderer-only, no new IPC, so no main-process change either shell would need.
+  `src/renderer/lib/modelDisplay.ts` exports `THINKING_LEVEL_LABEL` (was module-private) and adds
+  `THINKING_LEVELS` (the closed `ThinkingLevel` union in display order, typed independently of
+  `THINKING_LEVEL_LABEL`'s own deliberately-untyped `Record<string, string>`, so the Reasoning
+  picker's `onSelect` stays correctly typed). `MessageInput.tsx`'s bottom row (the old
+  `CpuIcon`/`GaugeIcon` read-only line) is replaced with `<ApprovalModePill .../>` (moved here
+  from the status line, FR-065), `<ModelPicker .../>`, `<ReasoningPicker .../>`, and
+  `<AttachButton .../>`; the now-unused `modelSession`/`modelLabel`/`thinkingLabel` locals, the
+  `CpuIcon`/`GaugeIcon`/`PaperclipIcon` icon imports, and the `formatModelLabel`/
+  `formatThinkingLevelLabel` import are removed from `MessageInput.tsx` (both helpers are used
+  from `ComposerPickers.tsx` instead).
+- [X] T141 [US1] Give Stop a filled `variant="default"` (was `outline`, matching Send) so it reads
+  as clearly distinct in weight from Send while a turn is running (FR-065; docs/design/
+  components.md "Button": one filled button per surface, never both Send and Stop at once since
+  Send itself stays outline throughout). `docs/design/product-chat.md`'s "Message box" bullet
+  rewritten for the new bottom row (pickers and the Attach button in place of the read-only
+  line, the Approval pill here instead of above the box) and for Stop's new weight, replacing its
+  stale "share the exact same `variant="outline"` ... weight than the other" wording.
+- [X] T142 [US1] Update the docs and verify: `docs/PLAN.md`'s #564 row (status, PR link). Verified
+  so far (see the PR body for the exact command output): `pnpm typecheck` (both tsconfigs, clean),
+  `pnpm check:indent` (0 odd-indent lines across 364 files), `pnpm check:theme-contrast` (all 313
+  pairs across 3 themes pass, unchanged by this phase), `pnpm check:drag-regions` (0 violations),
+  `pnpm check:parity` (97 of 97 requests, 23 of 23 events), `pnpm check:versions` (all four
+  manifests agree), `pnpm check:omp-schema -- --check-pin` and `--self-test` (no drift, self-test
+  passes), `cargo fmt --check` (clean, no Rust files touched by this story), `cargo test` (727
+  Rust tests plus the four integration suites, all pass, no Rust files touched by this story),
+  `pnpm test` (Vitest; one `SessionAgent.test.ts` case failed with a Windows `EPERM` temp-file
+  rename race under the full 30-file parallel run but passed in isolation and on a lone rerun --
+  pre-existing flakiness, unrelated to this story, which never touches `SessionAgent.ts` or
+  `atomicJson.ts`). `pnpm check:file-size` initially reported two failures from this branch's own earlier commit
+  1871f9b (not main, so not actually pre-existing as first assumed -- corrected mid-session):
+  `src/shared/ipc.ts` grew from 900 to 901 lines, and `src-tauri/src/session/model.rs` grew from
+  600 to 650 adding `set_thinking_level`. Fixed, move-only, no behaviour change: `model.rs`'s
+  `set_thinking_level` moved to a new sibling file, `src-tauri/src/session/thinking_level.rs`
+  (declared in `session/mod.rs`), restoring `model.rs` to byte-identical content with its own
+  pre-1871f9b version (confirmed via a direct diff against `git show 1871f9b~1`); `model_support`'s
+  `post_notice` widened from `pub(super)` to `pub(in crate::session)` so the new sibling module can
+  call it; `ipc/model.rs`'s one call site now reads `thinking_level::set_thinking_level`. `ipc.ts`'s
+  one added line (`MODEL_SET_THINKING_LEVEL`) is offset by folding its preceding comment onto the
+  `MODEL_SET_MODEL` line as a trailing comment, landing back at exactly 900. `cargo fmt`,
+  `cargo test` (unchanged pass count) and `cargo clippy -D warnings` all re-run clean after the
+  split. `pnpm check:file-size` now reports 0 cap violations across 386 files. `MessageInput.tsx`
+  itself shrank (1632 to 1599 lines against its own 1632-line baseline, well inside the cap)
+  despite the new bottom row, since the chip-row/read-only-line removal outweighed the new
+  pickers/status-line/attach-button wiring; both new files (`ComposerStatusLine.tsx`,
+  `ComposerPickers.tsx`, `thinking_level.rs`) are comfortably under the 600-line cap. The Tauri debug build, `check:ui-text`, and a live CDP check on a scratch instance
+  are still to run; their results are recorded in the PR body, not retrofitted into this task.
+
+- [X] T143 [US1] Split `src-tauri/src/session/model.rs`'s `set_thinking_level` into its own file,
+  `src-tauri/src/session/thinking_level.rs` (declared in `session/mod.rs`), restoring `model.rs`
+  to exactly its pre-1871f9b content and size (see T142's evidence) -- a move, not a rewrite:
+  identical body and signature, the one call site in `ipc/model.rs` updated from
+  `model::set_thinking_level` to `thinking_level::set_thinking_level`, and
+  `model::model_support::post_notice`'s visibility widened from `pub(super)` to
+  `pub(in crate::session)` so the new sibling module can still call it.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #564; Stuart's own 2026-10-
+15 Decided comments on the issue, plus the mockup-stories review reply, are the decision record).

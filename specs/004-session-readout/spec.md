@@ -67,6 +67,15 @@ field whose bottom bar shows the mode, model, and agent.
   contract (confirmed live, `docs/spike/get-subagents-probe.mjs`, 2026-10-07) rather than a
   specific repro.
 
+### Session 2026-10-15
+
+- Q: Issue #564 (composer restyle, child of #549) moves the Approval mode pill out of this row
+  and into the message box (spec 001 FR-065) -- what does the row become, and does FR-001's
+  "the row holds the pill alone" fallback still apply? -> A: Renamed the status line (FR-023);
+  full chat width, figures tabular, Current time last at the right end when enabled; when nothing
+  is meaningful or enabled the status line now renders nothing at all, since the pill that used
+  to guarantee at least one item is gone.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -189,8 +198,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 
 ### Edge Cases
 
-- No readout is currently meaningful for a Session: the row still shows the Approval mode pill
-  alone (spec 001 FR-056) and nothing else; it is never an empty bar.
+- No readout is currently meaningful for a Session, or none are enabled in Settings: the status
+  line renders nothing at all -- no empty bar -- since the Approval mode pill that previously
+  guaranteed at least one item has moved into the message box (spec 001 FR-065, 2026-10-15, issue
+  #564; supersedes this bullet's earlier "the row still shows the Approval mode pill alone").
 - The agent is not running: Changes and Pull request keep their last read values, because both
   come from git and GitHub rather than from the agent; Context window usage shows its last known
   reading; Turn time and Subagents are hidden, because both only mean something for a turn in
@@ -309,7 +320,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-001**: An open Session MUST show a chip row directly above the message box. It always
   contains the Approval mode pill (spec 001 FR-056) as its first item, followed by only the
   readouts that are both enabled in Settings and currently meaningful for that Session; when no
-  readout is meaningful the row holds the pill alone.
+  readout is meaningful the row holds the pill alone. (Superseded by FR-023, 2026-10-15, issue
+  #564: the pill moves out of this row into the message box itself, spec 001 FR-065, and the row
+  is renamed the status line.)
 - **FR-002**: The Changes chip MUST show the number of files changed and the total lines added
   and removed for the Session's worktree against its Base branch, counting committed edits,
   uncommitted edits, and new untracked files — the same figure the Session details card shows
@@ -378,6 +391,16 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   grow the panel wider to fit it, and MUST use the same horizontal padding on the subagent list and
   stream as the panel's header; a code block or diff MAY still scroll horizontally inside its own
   box.
+- **FR-023**: The status line (renamed from the chip row, 2026-10-15, issue #564) MUST span the
+  full width of the chat column, directly between the transcript and the message box, and MUST
+  NOT include the Approval mode pill, which lives in the message box instead (spec 001 FR-065).
+  It MUST show only the readouts enabled in Settings and currently meaningful for the Session
+  (Changes, Todo progress, Context window usage, Turn time, Subagents, Pull request, Current
+  time), wrapping onto a further line rather than clipping (FR-009, unchanged) with its figures
+  shown as tabular numbers. When enabled, the Current time readout MUST be the line's last item,
+  at its right end. When no readout is both enabled and meaningful, the status line MUST render
+  nothing at all -- no empty bar -- since the Approval mode pill that previously guaranteed at
+  least one item no longer lives here.
 
 ### Key Entities
 
