@@ -163,12 +163,16 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
         icon={<SubagentStatusGlyph status={status} />}
         label={item.name}
         meta={meta}
-        // Gate round 3 fix (architect M9): a Stage that mounts with exactly one agent and later
-        // gains a sibling (becoming a multi-agent Stage) stays inside the SAME uncontrolled
-        // `CollapsedLine` the whole time (Radix only reads `defaultOpen` on mount) -- without this,
-        // it stayed collapsed through that transition while still running (decision 6 requires
-        // expanded while unsettled). Matches the non-solo branch's own `defaultOpen` below exactly.
-        defaultOpen={isRunning || status === 'failed' || status === 'cancelled' || status === 'exited'}
+        // Gate round 3 attempt at architect M9 was REVERTED (code/a11y spot check, High): setting
+        // `defaultOpen` here made every lone running/failed/cancelled/exited agent mount
+        // EXPANDED (Prompt block included), breaking FR-067's "renders identically to today's
+        // single-subagent row" (which mounts collapsed), FR-047 and SC-008. A solo row intentionally
+        // has no `defaultOpen` -- it always mounts collapsed, same as the non-solo-era bare
+        // `SubagentRow`. The one-to-many mid-run transition M9 wanted to fix (a Stage that starts
+        // solo and later gains a sibling while still running) is left unfixed; it would need this
+        // `CollapsedLine` turned controlled with an explicit `setOpen(true)` the instant
+        // `group.items.length` grows past 1 while running, not a `defaultOpen` prop, which Radix
+        // only ever reads once on mount.
         // Gate round 2 addendum B: "Stage N of M" lives ONLY in the accessible name, not the
         // visible label, so a solo Stage still reads identically to today's bare `SubagentRow`.
         triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${item.name}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${duration != null ? `, ${duration}` : ''}`}

@@ -362,10 +362,21 @@ async function main() {
       if (!hasStageGroupMarker) throw new Error('No [role="group"][aria-label^="Stage "] element found in the chain body -- the running build may not actually contain this PR\u2019s ChainStageLine markup.');
       findings.push(`Subagent chain row rendered: "${chainSummary}" -- confirms the real model followed the 2-parallel-then-1-serial instruction into two Stages within one turn; the chain's own [role="group"] Stage marker is present, confirming this build.`);
 
-      // Expand the chain (click its own collapsed trigger -- the "Subagents" labelled row).
-      await cdp.click(
-        `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button,[role="button"]')).find((el) => el.textContent.includes('Subagents')); })()`,
-      );
+      // Decision 6: the chain row defaults OPEN while any agent in the turn is running, failed,
+      // cancelled, or exited -- by the time this script polls for it, Stage 1 (uno/dos) has
+      // likely already settled but Stage 2 (tres) may still be running, so the chain can already
+      // be mounted EXPANDED. The `[role="group"][aria-label^="Stage "]` check just above only
+      // ever finds a match while expanded (Radix unmounts `CollapsibleContent` while collapsed),
+      // so reaching this point already proves the chain is open -- clicking its trigger
+      // unconditionally would COLLAPSE it instead, leaving `entryFinder` below searching
+      // unmounted content (the real cause of this check's prior failures, not a timing race).
+      // Read `aria-expanded` first; click only when it is genuinely "false".
+      const chainTriggerFinder = `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button,[role="button"]')).find((el) => el.textContent.includes('Subagents')); })()`;
+      const chainExpandedAlready = await cdp.evaluate(`${chainTriggerFinder}?.getAttribute('aria-expanded')`);
+      if (chainExpandedAlready !== 'true') {
+        await cdp.click(chainTriggerFinder);
+      }
+      findings.push(`Chain trigger aria-expanded before this step: ${JSON.stringify(chainExpandedAlready)} -- ${chainExpandedAlready === 'true' ? 'already open, left untouched' : 'was closed, clicked to open'}.`);
       await cdp.waitFor(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.toLowerCase().includes('uno') && t.textContent.toLowerCase().includes('tres'); })()`,
         { timeoutMs: 15_000, label: 'Chain expanded, entries visible' },

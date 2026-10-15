@@ -212,7 +212,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   onFocus={() => void selectSubagent(row.node.id)}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm outline-hidden',
+                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own forced-colours selected fallback, reused verbatim
                     // so both trees are visually consistent and the selected row survives Windows
@@ -225,15 +225,24 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // only ever reads that same custom property via `var(--tw-outline-style)`, so
                     // `outline-hidden` permanently won the cascade on that property regardless of
                     // focus state (round 3 architect finding M7, verified independently by Layout).
-                    // Gate round 3 fix: `focus-visible:outline-solid` (precedent:
-                    // `pickerShared.tsx`'s `COMPOSER_BUTTON_FOCUS_CLASS`) re-sets
-                    // `--tw-outline-style: solid` at the SAME specificity as `outline-hidden`'s own
-                    // class selector, so on `:focus-visible` it wins the cascade tie by coming
-                    // later in Tailwind's canonical utility order, painting a solid ring; outside
-                    // `:focus-visible`, `outline-hidden` still wins, keeping the row visually bare
-                    // AND its own `forced-colors` transparent-outline reservation for Windows High
-                    // Contrast -- unlike dropping `outline-hidden` outright, which would also have
-                    // dropped that reservation.
+                    // Gate round 3 code/a11y spot check (Medium): a round-3 fix had kept
+                    // `outline-hidden` alongside `focus-visible:outline-solid`, reasoning the
+                    // latter wins the cascade on `:focus-visible` by coming later in Tailwind's
+                    // canonical utility order -- the actual mechanism is specificity, not source
+                    // order (`.focus-visible\:outline-solid:focus-visible` is a class PLUS a
+                    // pseudo-class, strictly more specific than `.outline-hidden`'s bare class
+                    // selector, so it always wins regardless of utility ordering). The real
+                    // problem with keeping `outline-hidden`: its own `forced-colors` branch
+                    // (`outline: 2px solid transparent`) applies to EVERY row, not just the
+                    // focused one -- Windows High Contrast repaints that "transparent" outline
+                    // visibly on every row, making the genuinely focused row barely
+                    // distinguishable from its siblings. Dropped `outline-hidden` entirely; with
+                    // no base `outline-*` utility, `--tw-outline-style` keeps its universal
+                    // `solid` default, so `focus-visible:outline-2` paints on keyboard focus and
+                    // nothing paints otherwise (no UA default outline survives Tailwind's reset) --
+                    // matching every OTHER verified-working `focus-visible:outline-*` row in this
+                    // codebase (`CollapsedLine.tsx`, `ManageSessionRow.tsx`, `ProfileItem.tsx`,
+                    // `PullRequestRow.tsx`), none of which carry a base `outline-hidden` either.
                     'hover:bg-muted/50 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >
