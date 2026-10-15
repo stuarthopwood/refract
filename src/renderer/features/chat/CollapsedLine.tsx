@@ -34,21 +34,27 @@ export interface CollapsedLineProps {
 // The one shared collapsed-line baseline every chat output kind builds on (T080, docs/DESIGN.md
 // "Chat"): an icon slot, a label, a truncating one-line summary, a status/duration slot, and (if
 // `children` is given) a `Collapsible` expansion. A new output kind should start here instead of
-// growing its own one-off collapsed row.
-export function CollapsedLine({
-  icon,
-  label,
-  summary,
-  meta,
-  summaryClassName,
-  summaryWrap,
-  open,
-  onOpenChange,
-  defaultOpen,
-  children,
-  className,
-  contentClassName
-}: CollapsedLineProps) {
+// growing its own one-off collapsed row. Forwards a ref to whichever element can actually receive
+// focus (the plain row `div` with no `children`, or the `CollapsibleTrigger` button with them) --
+// gate round 2 (D17): the sole focus target `ResolvedRequestSummary`/`AskQuestionRow` hand focus
+// to once the Ask card's own resolution replaces it (`ask-focus-intent.ts`).
+export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(function CollapsedLine(
+  {
+    icon,
+    label,
+    summary,
+    meta,
+    summaryClassName,
+    summaryWrap,
+    open,
+    onOpenChange,
+    defaultOpen,
+    children,
+    className,
+    contentClassName
+  },
+  ref
+) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
   const isControlled = open !== undefined
   const actualOpen = isControlled ? open : uncontrolledOpen
@@ -70,7 +76,15 @@ export function CollapsedLine({
   )
 
   if (children === undefined) {
-    return <div className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm', className)}>{row}</div>
+    return (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        tabIndex={-1}
+        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset', className)}
+      >
+        {row}
+      </div>
+    )
   }
 
   return (
@@ -84,6 +98,7 @@ export function CollapsedLine({
        * bottom edge, so its bottom corners go square instead of keeping a rounded highlight that
        * reads as a disconnected pill floating above the content. */}
       <CollapsibleTrigger
+        ref={ref as React.Ref<HTMLButtonElement>}
         className={cn(
           'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
           actualOpen && 'rounded-b-none'
@@ -95,4 +110,4 @@ export function CollapsedLine({
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
     </Collapsible>
   )
-}
+})

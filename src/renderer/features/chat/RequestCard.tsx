@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
+import { consumeAskFocusPending, markAskFocusPending } from '@/state/ask-focus-intent'
 import { initials } from '@/lib/initials'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
@@ -26,8 +27,13 @@ const RESOLVED_LABEL: Record<ResolvedKind, string> = {
  * resolved before this Session was opened (Transcript, which then only has
  * `TranscriptItem.resolved`, not the original request detail). Built on the T080 baseline. A
  * resolved question never uses this any more (T073): it is superseded by `AskQuestionRow` once
- * the matching `ask` tool item lands. */
-export function ResolvedRequestSummary({ resolved, detail }: { resolved?: ResolvedKind; detail?: string }) {
+ * the matching `ask` tool item lands.
+ *
+ * `requestId` (gate round 2, D17): the BRIDGING row an Ask card's resolution swaps to before
+ * `AskQuestionRow` exists (or the row that stays if it never does). Consumes a pending focus
+ * intent `AskCard` recorded for this id on mount and focuses itself (`tabIndex={-1}`, via
+ * `CollapsedLine`); a no-op for every other caller. */
+export function ResolvedRequestSummary({ resolved, detail, requestId }: { resolved?: ResolvedKind; detail?: string; requestId?: string }) {
   const label = resolved ? RESOLVED_LABEL[resolved] : 'Resolved'
   // Gate-fix (round 1, Low, D22): a user's own Cancel is not an error, so it keeps the muted
   // `--muted-foreground` XIcon every other icon in this row already uses -- only an actual Deny
@@ -40,7 +46,18 @@ export function ResolvedRequestSummary({ resolved, detail }: { resolved?: Resolv
     ) : (
       <CheckIcon className="size-3.5 shrink-0 text-state-working" />
     )
-  return <CollapsedLine icon={icon} label={label} summary={detail} />
+  const rowRef = React.useRef<HTMLElement>(null)
+  React.useEffect(() => {
+    if (consumeAskFocusPending(requestId)) rowRef.current?.focus()
+  }, [requestId])
+  // Gate round 2 (D17, two-stage handoff): `AskQuestionRow` can supersede this row LATER, in a
+  // separate commit -- re-mark the intent on unmount if still focused, so it is not dropped twice.
+  React.useLayoutEffect(() => {
+    return () => {
+      if (document.activeElement === rowRef.current) markAskFocusPending(requestId)
+    }
+  }, [requestId])
+  return <CollapsedLine ref={rowRef} icon={icon} label={label} summary={detail} />
 }
 
 interface AskOptionLike {
@@ -242,6 +259,7 @@ const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 interface AskQuestionRowProps {
   item: AskToolItem
   userName?: string
+  requestId?: string // gate round 2 (D17): request id, for the focus intent consumed on mount
 }
 
 // The answered-question line (T073, FR-018, FR-045, docs/DESIGN.md "Chat"): a collapsed
@@ -252,7 +270,7 @@ interface AskQuestionRowProps {
 // agent's own `ask` tool item (T072): its `args` hold the question and options, its
 // `output`/`details` the chosen answer, both of which survive a restart via `get_messages`,
 // unlike the `request` item this supersedes once it resolves.
-export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
+export function AskQuestionRow({ item, userName, requestId }: AskQuestionRowProps) {
   const questions = readAskQuestions(item.args)
   const answers = readAskAnswers(item, questions.map((question, index) => question.id ?? String(index)))
   const name = userName ?? 'You'
@@ -260,8 +278,14 @@ export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
   const firstQuestion = questions[0]?.question ?? ''
   const summary = questions.length > 1 ? `${firstQuestion} and ${questions.length - 1} more` : firstQuestion
 
+  const triggerRef = React.useRef<HTMLElement>(null)
+  React.useEffect(() => {
+    if (consumeAskFocusPending(requestId)) triggerRef.current?.focus()
+  }, [requestId])
+
   return (
     <CollapsedLine
+      ref={triggerRef}
       icon={<CircleQuestionMarkIcon className="size-3.5 shrink-0 text-muted-foreground" />}
       label="Asked user:"
       summary={summary}
@@ -339,9 +363,6 @@ interface RequestCardProps {
 // successful answer it swaps to the same one-line summary Transcript uses once the request is
 // no longer pending, so there is no gap waiting for the main process round trip.
 export function RequestCard({ sessionId, request }: RequestCardProps) {
-  if (request.kind === 'ask') {
-    return <AskCard sessionId={sessionId} request={request} />
-  }
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState<{ kind: ResolvedKind; detail?: string } | null>(null)
@@ -353,6 +374,12 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     () => inferOutputBlock(request.kind === 'approval' ? request.details.join('\n') : ''),
     [request]
   )
+
+  // Gate round 2 (code review L7): checked only AFTER every hook above -- an early return before
+  // them made the hook count depend on `request.kind`, which can change across renders.
+  if (request.kind === 'ask') {
+    return <AskCard sessionId={sessionId} request={request} />
+  }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
     setBusy(true)
@@ -367,7 +394,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   if (resolved) {
-    return <ResolvedRequestSummary resolved={resolved.kind} detail={resolved.detail} />
+    return <ResolvedRequestSummary resolved={resolved.kind} detail={resolved.detail} requestId={request.requestId} />
   }
 
   if (request.kind === 'approval') {
@@ -506,7 +533,15 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   size="sm"
                   variant="outline"
                   disabled={busy}
-                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1.5 text-left hover:bg-muted"
+                  data-choice-item
+                  // Gate round 2 (architect M-a): the shared `outline` variant's own
+                  // `dark:bg-input/30 dark:border-input dark:hover:bg-input/50` survives
+                  // tailwind-merge alongside `bg-transparent hover:bg-muted` below (different
+                  // CSS properties, so nothing drops either side), filling and edging this row
+                  // like a button in every dark theme instead of like the dialog path's own
+                  // transparent rows. `data-choice-item` squares the corners (globals.css), same
+                  // as every other option row.
+                  className="h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal bg-transparent py-1.5 text-left hover:bg-muted dark:border-border dark:bg-transparent dark:hover:bg-muted"
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   {/* `w-full`/`break-words`/`min-w-0` (#497): the button's `items-start` sizes each
@@ -514,14 +549,14 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                    * never stretches), so without `w-full` here `break-words` has no constrained box
                    * to wrap inside and an unbreakable token (e.g. a long URL with no spaces) just
                    * overflows the button -- live-verified at 380px before this line was added. */}
-                  <span className="w-full min-w-0 break-words font-medium">
+                  <span className="w-full min-w-0 break-words text-sm font-medium">
                     {displayLabel}
                     {recommended && <span className="font-normal text-muted-foreground">, Recommended</span>}
                   </span>
                   {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
                    * before it reaches here) -- rendered as text, never as an object. */}
                   {request.optionDetails?.[index] && (
-                    <span className="w-full min-w-0 break-words font-normal text-muted-foreground">{request.optionDetails[index]}</span>
+                    <span className="w-full min-w-0 break-words text-xs font-normal text-muted-foreground">{request.optionDetails[index]}</span>
                   )}
                 </Button>
               )

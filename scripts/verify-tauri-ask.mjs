@@ -39,9 +39,10 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 
-// Literal path (not built from a variable): the default screenshot dir, overridable via
-// `REFRACT_ASK_SHOT_DIR` for a run that needs its own evidence dir (e.g. a gate-fix re-run).
-const ASK_SHOT_DIR = process.env.REFRACT_ASK_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-572-ask-shots/';
+// Default under `os.tmpdir()` (gate round 2, code review/Low: a literal path under Stuart's own
+// user directory tied this harness to one machine), overridable via `REFRACT_ASK_SHOT_DIR` for
+// a run that needs its own evidence dir (e.g. a gate-fix re-run).
+const ASK_SHOT_DIR = process.env.REFRACT_ASK_SHOT_DIR || path.join(tmpdir(), 'refract-572-ask-shots');
 
 const PROMPT_MESSAGE = 'Please ask me the batch of questions now.';
 // The assistant's own streamed reply token, deliberately absent from PROMPT_MESSAGE above (same

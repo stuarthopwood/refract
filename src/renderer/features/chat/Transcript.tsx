@@ -142,7 +142,7 @@ interface TranscriptRowProps {
   sessionId: string | null
   pending: PendingRequest[]
   userName: string | undefined
-  resolvedAskByRequestId: Map<string, ToolItem | undefined>
+  resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
 }
 
 // Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
@@ -216,7 +216,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
     case 'tool':
       if (item.tool === 'ask') {
         if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} />
+        return <AskQuestionRow item={item} userName={userName} requestId={[...resolvedAskByRequestId].find(([, v]) => v?.id === item.id)?.[0]} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
       // normally occur: `groupToolItems` wraps every run, including a run of one, in a
@@ -242,10 +242,10 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
         // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
         // race between the answer landing and that item's own `tool_execution_end`), fall back to
         // the plain one-line summary so the question is never shown as still pending.
-        const askItem = resolvedAskByRequestId.get(item.id)
+        const askItem = resolvedAskByRequestId.get(item.requestId)
         if (askItem && askItem.status !== 'running') return null
       }
-      return <ResolvedRequestSummary resolved={item.resolved} />
+      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} />
     }
 
     case 'notice':
@@ -485,7 +485,7 @@ export function Transcript({
   const resolvedAskByRequestId = React.useMemo(() => {
     const map = new Map<string, ToolItem | undefined>()
     items.forEach((item, index) => {
-      if (item.kind === 'request') map.set(item.id, findPrecedingAskItem(items, index))
+      if (item.kind === 'request') map.set(item.requestId, findPrecedingAskItem(items, index))
     })
     return map
   }, [items])

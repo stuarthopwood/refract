@@ -100,7 +100,11 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    ask_dialog_enabled: bool, // D1/D2 (#572): `set_ask_dialog` result; in-memory only.
+    // D1/D2 (#572): `set_ask_dialog` result; in-memory only. Gate round 2 (security Low):
+    // purely INFORMATIONAL -- the fallback decision uses `send_set_ask_dialog`'s own return
+    // value directly (`launch.rs`); nothing reads this field back.
+    #[allow(dead_code)]
+    ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
