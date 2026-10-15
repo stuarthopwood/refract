@@ -3,6 +3,7 @@
 
 import { BellRingIcon, CircleIcon, SquareIcon } from 'lucide-react'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
+import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import type { DiffStat } from '../../../shared/ipc'
 import type { SessionStatus } from '../../../shared/model'
@@ -41,10 +42,13 @@ export function StateIcon({ status }: { status: SessionStatus }) {
   }
 }
 
-/** `"N files changed +A -D"` (singular "file" for exactly one), with a trailing " (partial)" when
- * the diff stat's caps stopped counting before the real total. */
+/** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past
+ * 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared
+ * lower-case k/m/b formatter for this, the Changes Readout and the Context usage Readout, so the
+ * Session details card and the status line never show the same figure two ways), with a
+ * trailing " (partial)" when the diff stat's caps stopped counting before the real total. */
 export function formatDiffStat(stat: DiffStat): string {
   const noun = stat.files === 1 ? 'file' : 'files'
   const suffix = stat.partial ? ' (partial)' : ''
-  return `${stat.files} ${noun} changed +${stat.additions} -${stat.deletions}${suffix}`
+  return `${compactNumber(stat.files)} ${noun} changed +${compactNumber(stat.additions)} -${compactNumber(stat.deletions)}${suffix}`
 }
