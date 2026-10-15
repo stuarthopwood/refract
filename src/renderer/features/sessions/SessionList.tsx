@@ -130,12 +130,22 @@ export function SessionList() {
                   onClick={handleCollapseAll}
                 >
                   <ChevronsDownUpIcon aria-hidden />
+                  {/* Gate-fix precedent (GroupHeader.tsx's own `describedByPath` span): the
+                      aria-describedby target must stay mounted whether or not the tooltip is
+                      currently open -- a Radix TooltipContent is not always in the DOM, so a
+                      reason span living only inside it would leave `aria-describedby` pointing
+                      at nothing to assistive tech most of the time. */}
+                  {allCollapsed && (
+                    <span id={collapseAllReasonId} className="sr-only">
+                      All groups are collapsed
+                    </span>
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">
                 <div className="flex flex-col gap-1">
                   <span>Collapse all groups</span>
-                  {allCollapsed && <span id={collapseAllReasonId}>All groups are collapsed</span>}
+                  {allCollapsed && <span aria-hidden>All groups are collapsed</span>}
                 </div>
               </TooltipContent>
             </Tooltip>
@@ -151,12 +161,17 @@ export function SessionList() {
                   onClick={handleExpandAll}
                 >
                   <ChevronsUpDownIcon aria-hidden />
+                  {allExpanded && (
+                    <span id={expandAllReasonId} className="sr-only">
+                      All groups are expanded
+                    </span>
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">
                 <div className="flex flex-col gap-1">
                   <span>Expand all groups</span>
-                  {allExpanded && <span id={expandAllReasonId}>All groups are expanded</span>}
+                  {allExpanded && <span aria-hidden>All groups are expanded</span>}
                 </div>
               </TooltipContent>
             </Tooltip>
