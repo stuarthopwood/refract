@@ -1698,3 +1698,37 @@ Profile-menu UI (click `[data-profile-name-button]`, the Theme submenu, the name
 of the bridge call, and the two check fixes above, before a run's exit code can be trusted as
 live-check evidence; until then the PR says **Refs #565**, not **Closes**, and the full
 `node scripts/ci-local.mjs` run and the real-`omp` live check itself are both owed as follow-up.
+
+- [X] T244 [US1] Round-2 five-reviewer gate (G906) fixes: a G906Tests investigation found
+  `verify-565-spine.mjs`'s two bash calls never merged into one `ToolGroup` because the default
+  Approval mode ("Ask") makes each call wait for its own approval card, and `groupToolItems.ts`
+  decision 14 treats a pending-approval call as its own grouping boundary -- not a Thinking-row
+  interruption as first suspected. Driver rewritten to switch the scratch Session's own Approval
+  mode to Auto through the real pill before the multi-call turn, assert the first header's 16px
+  icon slot as the up-front #565 marker, keep a separate `failures` list that always fails the
+  run (vs. `notExercised` for genuine skips only), toggle expand/collapse by reading
+  `aria-expanded` rather than blind clicks, log `git rev-parse HEAD` beside the exe's sha256, and
+  check a member row's own motion (not only the `<ol>`'s) under reduced motion. Product-code
+  fixes from the same gate: the one-agent Stage's own solo body now gets
+  `contentClassName={LABEL_COLUMN_CONTENT_CLASS}` (`SubagentChainRow.tsx`, matching `SubagentRow`
+  -- it was still at the old `px-2` column); the three hand-copied `isNew ? 'motion-safe:...' :
+  undefined` fade blocks (`ToolGroupRow`, `StageGroupRow`, the chain's own stage list) replaced by
+  one exported `SpineItem` (`SpineList.tsx`) that captures `isNew` via `useState`'s lazy
+  initializer ONCE per `<li>`'s mount -- the inline version recomputed `isNew` on every re-render,
+  so a running row's own status tick could strip the fade class before its 150ms animation
+  finished playing; the auto-approve poller (a security gate Medium from round 1) is now moot,
+  removed entirely rather than hardened, since Auto mode means no approval card ever appears for
+  either scripted turn. The Clarifications entry's "Only four surfaces get one" line corrected to
+  include `#557`'s own future thought runs, per the decision record's own decision 13.
+  `node scripts/ci-local.mjs`: 16/16 steps PASS after each round of fixes.
+
+**Known gap at handoff (round 2)**: the rewritten driver's own `setApprovalMode` helper (click
+the Approval pill, click "Auto" in its menu, wait for the pill's own `aria-label` to read "Auto,
+approval mode") still does not reliably land -- the pill's `aria-label` never updated within the
+10s timeout in the one post-fix run attempted. The selectors match the component's real markup by
+inspection (`ApprovalModePill.tsx`); the live interaction itself (menu open, item click, or the
+store round trip) was not debugged further given session time. Until it is, the multi-call Spine
+geometry/`pl-8`/`role=list` assertions and the Dark/High-contrast screenshots of a genuine
+multi-member group remain unexercised live; the product code itself is verified by three
+independent reviewers' own geometry arithmetic plus the automated gates (typecheck, 361/361
+contrast pairs, `ci-local` 16/16) and is unchanged by this gap. **Refs #565**, not **Closes**.
