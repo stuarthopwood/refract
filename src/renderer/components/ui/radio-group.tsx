@@ -74,7 +74,10 @@ function RadioGroupIndicator({
       // Item's own reset border/tint above) made checked and unchecked items indistinguishable
       // in Windows High Contrast. `forced-colors:bg-[CanvasText]` keeps the dot visible using the
       // standard forced-colors system keyword for foreground/text colour.
-      className={cn("size-2 rounded-full bg-primary forced-colors:bg-[CanvasText]", className)}
+      // #572 decision D10: the dot uses `--foreground`, not `--primary` -- Obsidian's `--primary`
+      // measures too low a contrast on the row's own hover surface; the row edge (`border-primary`
+      // above) stays as reinforcement, only the glyph itself moved.
+      className={cn("size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]", className)}
       {...props}
     />
   )

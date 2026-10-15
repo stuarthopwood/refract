@@ -6,6 +6,7 @@ import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
+import { useAskPicksStore } from './ask-picks-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
@@ -87,6 +88,11 @@ export function initStores(): void {
   })
   window.refract.onRequestResolved(({ sessionId, requestId }) => {
     usePendingRequestsStore.getState().resolve(sessionId, requestId)
+    // #572 gate-fix (round 1, Medium): the one place every ask-dialog resolution path funnels
+    // through alike (a user Submit/Cancel, an OMP `cancel` frame, a timeout auto-answer, a turn
+    // settle) -- clearing only from AskCard's own Submit/Cancel handlers missed the others. A
+    // non-ask requestId simply has no entry to clear (no-op).
+    useAskPicksStore.getState().clear(sessionId, requestId)
   })
   window.refract.onCommandsUpdate(({ sessionId, commands }) => {
     useCommandsStore.getState().setForSession(sessionId, commands)

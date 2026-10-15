@@ -544,18 +544,18 @@ export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
  * regardless of this prefix, since an error is always a real outcome worth showing. */
 export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
 
-/** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
+/** One question of an `ask`-tool batch (`omp://rpc.md` "Extension UI Sub-Protocol"); `preview`
+ * is rich-dialog-only and never sent, so it is not represented here. */
+export interface AskQuestion { id: string; question: string; header?: string; options: { label: string; description?: string }[]; multi: boolean; recommended?: number; }
+
+/** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart.
+ * `kind: 'ask'` is the structured dialog (#572), built once `set_ask_dialog` is confirmed
+ * enabled for this process; `deadlineAt` is epoch ms from the frame's own `timeout` milliseconds
+ * (OMP's wire value is already ms, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`). */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
-  | {
-      kind: 'question';
-      requestId: string;
-      title: string;
-      message?: string;
-      options: string[];
-      optionDetails?: (string | undefined)[];
-      inputKind: 'choice' | 'text' | 'confirm';
-    };
+  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */
 export interface ConversationInfo {
