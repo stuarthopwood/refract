@@ -3,11 +3,12 @@
 // apart. Reads only `Session.lastModel`/`lastThinkingLevel` (T062): the persisted, registry-backed
 // last-known values, never a separate live-only source.
 import type { Session } from '../../shared/model'
+import type { ThinkingLevel } from '../../shared/ipc-model'
 
 // OMP's own `ThinkingLevel` string union (docs/spike/FINDINGS.md item 30): a closed set today,
 // but an unrecognised future value still renders (falls back to the raw string) instead of
 // disappearing.
-const THINKING_LEVEL_LABEL: Record<string, string> = {
+export const THINKING_LEVEL_LABEL: Record<string, string> = {
   off: 'Off',
   inherit: 'Inherit',
   minimal: 'Minimal',
@@ -17,6 +18,13 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
   xhigh: 'Extra high',
   max: 'Max'
 }
+
+/** Display order for the Reasoning picker's menu (#564): OMP's own closed `ThinkingLevel` union
+ * (`shared/ipc-model.ts`), so `handleSelect` below stays correctly typed -- deliberately NOT
+ * derived from `Object.keys(THINKING_LEVEL_LABEL)`, which keys as plain `string` (that record
+ * stays `Record<string, string>` on purpose, see its own comment above: it must also render an
+ * unrecognised future value, which this closed menu list never offers to pick). */
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ['off', 'inherit', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 /** "provider/model-name" for a Session's last known model, or `null` before any `get_state`
  * has ever reported one (T063). Split so a surface rendering model and effort as two

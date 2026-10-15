@@ -9,7 +9,7 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, CpuIcon, GaugeIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,21 +17,13 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
-import {
-  ChangesChip,
-  ContextUsageChip,
-  CurrentTimeChip,
-  PullRequestChip,
-  SubagentsChip,
-  TodoProgressChip,
-  TurnTimeChip
-} from './readout/ReadoutChips'
+import { ComposerStatusLine } from './ComposerStatusLine'
+import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import {
   buildChipLabel,
@@ -100,7 +92,6 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
@@ -109,13 +100,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
   // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
-  // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
-  // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
-  // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
-  // (docs/DESIGN.md "No bracket/parenthetical UI copy"); `null` until the first `get_state`.
-  const modelSession = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const modelLabel = formatModelLabel(modelSession ?? {})
-  const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   // Issue #540 (#591 cycle 3, full architectural replacement): chip identity/text/queue come
   // ONLY from the real `followUp`/`steering` arrays above via `deriveQueuedChips`
@@ -1351,21 +1335,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <span id={composerHintId} className="sr-only">
         {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
       </span>
-      {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
-          Approval mode pill is always the first item, FR-056; `flex-wrap` lets the row wrap onto
-          a further line at any window width rather than ever hiding or overlapping the box below
-          it (FR-009). Which readout chips render is gated by Settings (FR-012 to FR-014); each
-          chip independently hides itself when its own data is null (FR-002 to FR-007, FR-021). */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <ApprovalModePill sessionId={sessionId} />
-        {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
-        {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
-        {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
-        {sessionReadout['current-time'] && <CurrentTimeChip />}
-        {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
-        {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
-        {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
-      </div>
+      {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
+          2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
+          own bottom row below (spec 001 FR-065) instead of as this row's guaranteed first item. */}
+      <ComposerStatusLine sessionId={sessionId} />
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
       <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} containerRef={attachmentStripRef} />
@@ -1556,16 +1529,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
               rather than `bottom-1.5`, so the button stays centered as the textarea grows to
               multiple lines instead of drifting toward the bottom (morning UI feedback,
-              2026-10-04). Send and Stop share the exact same `variant="outline"` + `size="icon-sm"`
-              treatment -- only the icon inside differs -- so neither reads as a different size or
-              weight than the other. */}
+              2026-10-04). Send and Stop share the same `size="icon-sm"` round treatment, but Stop
+              uses `variant="default"` (filled) against Send's `variant="outline"` (#564, Stuart's
+              decided scope, 2026-10-15: "Stop clearly distinct in weight from Send") -- the one
+              filled button on this surface while a turn is running (docs/design/components.md
+              "Button": one filled button per surface); Send itself never changes weight, so the
+              two are never both filled at once. */}
           <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="default"
                     size="icon-sm"
                     className="rounded-full"
                     aria-label="Stop"
@@ -1608,23 +1584,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        {/* Model-in-use and thinking-level readout (T062/T063): a leading icon for each instead
-            of a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy").
-            */}
-        <div className="flex items-center gap-3 truncate px-2.5 pb-1 text-xs text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1 truncate">
-            <CpuIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{modelLabel ?? 'Model not known yet'}</span>
-          </span>
-          {thinkingLabel && (
-            <span className="flex min-w-0 shrink-0 items-center gap-1">
-              <GaugeIcon className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                <span className="sr-only">Thinking level: </span>
-                {thinkingLabel}
-              </span>
-            </span>
-          )}
+        {/* Composer bottom row (#564, spec 001 FR-065): the Approval mode pill moved here from
+            the status line above (#496), then the model and reasoning pickers (FR-064, replacing
+            the old read-only CpuIcon/GaugeIcon line), then the attach button. */}
+        <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-1">
+          <ApprovalModePill sessionId={sessionId} />
+          <ModelPicker sessionId={sessionId} />
+          <ReasoningPicker sessionId={sessionId} />
+          <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>
     </div>

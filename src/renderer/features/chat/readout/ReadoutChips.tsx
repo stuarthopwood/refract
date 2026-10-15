@@ -105,7 +105,7 @@ export function TurnTimeChip({ sessionId }: { sessionId: string }) {
  * routine tick is never announced) and a static accessible name read only on focus. Defaults
  * hidden (DEFAULT_SESSION_READOUT); visibility is the row's own settings gate, not this
  * component's concern. */
-export function CurrentTimeChip() {
+export function CurrentTimeChip({ className }: { className?: string } = {}) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined
@@ -121,7 +121,7 @@ export function CurrentTimeChip() {
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
   return (
-    <ReadoutChip icon={ClockIcon}>
+    <ReadoutChip icon={ClockIcon} className={className}>
       {/* High remediation (a11y): a plain, non-interactive, role-less <span> cannot be named by
           aria-label per ARIA 1.2 -- several real screen readers (NVDA in browse mode, often
           Narrator/JAWS) read visible content instead, and this span's only content used to be
