@@ -1732,3 +1732,42 @@ geometry/`pl-8`/`role=list` assertions and the Dark/High-contrast screenshots of
 multi-member group remain unexercised live; the product code itself is verified by three
 independent reviewers' own geometry arithmetic plus the automated gates (typecheck, 361/361
 contrast pairs, `ci-local` 16/16) and is unchanged by this gap. **Refs #565**, not **Closes**.
+
+- [X] T245 [US1] Round-3 fix (Main's own diagnosis): `settings.setApprovalMode` only ever sets
+  `pendingMode`, applied at a Session's NEXT settle (`contracts/ipc.md`) -- driving the real
+  Approval pill before a Session had ever gone through a turn had nothing to settle, so the pill
+  never actually updated. Fixed by seeding the scratch data dir's own `settings.json`
+  (`{"version":1,"approvalMode":"auto"}`) BEFORE the Session is created, so `omp` launches
+  already in Auto with no settle to wait for; a sanity assertion confirms the pill reads "Auto"
+  before turn (a). **This worked**: the resulting run (screenshots `00`-`07` in the shots folder,
+  `report.json`) confirmed LIVE, for the first time this story: the two bash calls merged into
+  ONE multi-call `ToolGroup` (no approval-card grouping boundary); the up-front 16px icon-slot
+  marker; the "1 failed" collapsed-summary text; the Spine line at 0.0px from the header icon's
+  own centre (decision 8); the member icon 9px right of the line; the `pl-8` member body padding
+  (decision 10); `role="list"` (decision 21); no root border (decision 18); the SpineList
+  unmounting on collapse (decision 17); real Obsidian and Dark-high-contrast screenshots via the
+  actual Profile-menu Theme submenu (decision 31, the H1 gate finding from round 1, now proven
+  live); no horizontal scroll at 360px (decision 30); and `tabular-nums` on turn (b)'s own solo
+  header duration (decision 33).
+  That SAME run surfaced two more driver bugs, both now fixed and typechecked but NOT yet
+  reconfirmed by a clean run (see below): (1) the reduced-motion check required a literal `0s`
+  transition duration, but `globals.css`'s own documented `prefers-reduced-motion` block sets a
+  0.01ms iteration, not a true 0 (`foundations-motion.md`) -- `getComputedStyle` reports that as
+  `1e-05s`, which the check now accepts (`parseFloat(d) <= 0.001`) instead of only exact `'0s'`;
+  (2) `setBashHeaderExpanded`'s own re-read used bracket indexing (`arr[-1]`), which is ALWAYS
+  `undefined` in JS for a negative index (only `.at(-1)` resolves "last") -- turn (b)'s own solo
+  group (addressed by index `-1`) could therefore never be confirmed expanded, timing out. Fixed
+  to use `.at()` consistently with `clickBashHeaderAt`.
+
+**Known gap at handoff (round 3, final)**: the confirming re-run (meant to prove both fixes above
+and complete the solo-group decision-13 check) failed on a `cargo` linker error, "not enough
+space on the disk" -- the shared `CARGO_TARGET_DIR` this story's own debug builds share with
+every other concurrent lane measured 8.8 GB, and free space on `C:` had fallen to under 1 GB.
+Per the standing rule, the shared target is never `cargo clean`ed; this story's own tiny (9 MB)
+leftover scratch exe dir was removed, which was not enough to restore headroom. This is an
+environment/disk-pressure failure, not a code defect -- the prior run's own real findings above
+already demonstrate the multi-call Spine working end to end; only the two now-fixed test-script
+bugs, and the final re-confirmation run, remain unproven. **Refs #565** pending that
+reconfirmation (recommended once shared disk pressure clears); the main agent should judge
+whether the prior run's own evidence, plus these two understood and fixed script bugs, meets the
+bar for **Closes #565**.
