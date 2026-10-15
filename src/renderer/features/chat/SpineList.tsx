@@ -10,6 +10,11 @@
 import * as React from 'react'
 import { cn } from 'cn'
 
+// #565 decision 8/11: once a `Collapsible`'s own content is a `SpineList`, the sole geometry in
+// play is the list's own `ml-4`/`pt-1` -- every host zeroes its `CollapsedLine`'s own
+// `contentClassName` to this value rather than copying the literal string by hand.
+export const SPINE_HOST_CONTENT_CLASS = 'space-y-0 p-0'
+
 export interface SpineListProps {
   /** `<li>` rows (or elements that render their own `<li>`); member icons keep their OWN `px-2`
    * from `CollapsedLine`'s trigger, giving an 8px gap to the right of the line (#565 decision 8). */
@@ -33,4 +38,19 @@ export function SpineList({ children, gap = 'member', className }: SpineListProp
       {children}
     </ol>
   )
+}
+
+/** One `<li>` inside a `SpineList`, used by every Spine host (`ToolGroupRow`, `StageGroupRow`,
+ * `SubagentChainRow`) instead of each copying the same inline `isNew ? '...' : undefined`
+ * className by hand. Gate finding (Main, round 2): a plain inline check recomputes `isNew` on
+ * EVERY re-render, so a status tick arriving mid-fade (the common case for a still-running
+ * item) re-renders this same mounted `<li>` with `isNew` now false (its id was already marked
+ * seen by the owning seen-set's own effect) and strips the animation class before the 150ms
+ * fade-in finishes playing, cutting it short. `useState`'s lazy initializer reads `isNew` only
+ * ONCE, on this `<li>`'s own first render, and never again for its whole mounted lifetime -- the
+ * fade class (or its absence) is then stable regardless of how many times the row re-renders
+ * while running (decision 26). */
+export function SpineItem({ isNew, children, className }: { isNew: boolean; children: React.ReactNode; className?: string }) {
+  const [fadesIn] = React.useState(isNew)
+  return <li className={cn(fadesIn && 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150', className)}>{children}</li>
 }

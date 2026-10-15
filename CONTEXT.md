@@ -65,16 +65,24 @@ The row between the transcript and the message box (spec 004), spanning the chat
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
 **Stage**:
-The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal).
+The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal). Two or more agents in a Stage are connected by a **Spine** (issue #565).
 _Avoid_: Batch (in UI text), gate, phase
 
 **Subagent chain**:
-The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563).
+The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its own stage-to-stage list is also connected by a **Spine** (issue #565).
 _Avoid_: DAG, gate topology, pipeline
 
 **Subagent panel**:
 The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: a tree of the **Session**'s subagents (issue #563; the **Session** is the root, started agents are the first level, their own child agents the next once the tracker knows the parent), each with a state icon plus the state word, and showing a selected one's live stream (text and tool calls) updating as it runs.
 _Avoid_: Subagent sidebar, task panel
+
+**Spine**:
+The 1px neutral `border-divider` line down the left of an expanded group row's members, marking that they belong to that header; decorative, state lives on each member's own icon, and it is never coloured or animated (issue #565). The **Stage** group and **Subagent chain** (above) use it as their shared connector.
+_Avoid_: rail (taken by Icon rail), guide rail, thread, timeline, connector
+
+**Tool group**:
+A run of consecutive calls to the same tool, shown as one row that expands to its calls down a **Spine**; a run of one is still a Tool group, with no Spine (issue #565).
+_Avoid_: thread, batch
 
 **Chat pane**:
 One half of the split chat area (spec 005): a complete chat for one **Session** -- header, transcript, message box, queued messages, pending approvals and questions, and the **Status line** -- matching what a single, unsplit chat pane shows for that **Session**. One or two show at once; the same **Session** is never shown in two panes at the same time.

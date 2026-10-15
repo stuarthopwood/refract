@@ -1640,7 +1640,149 @@ This phase was written retroactively after the implementation above, in the same
 
 ## Phase 42: Convergence
 
-- [X] T221 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
+(Renumbered from provisional Phase 43/T240-T245 to Phase 42/T221-T226 on confirming PR #905/#735
+had not yet landed Phase 42/FR-069 on `origin/main` at renumber time, per the gate's own
+renumber-on-landing rule.)
+
+- [X] T221 [US1] `CollapsedLine.tsx`: icon slot widened 14px -> 16px (`size-4`, icon stays
+  `size-3.5`, decision 7); the root `Collapsible`'s always-on `border border-transparent
+  hover:border-border` and the `rounded-b-none` it drove deleted outright (decision 18, settles
+  issue #430's nested-box bug) -- hover is now only the trigger's own ghost `hover:bg-muted`; the
+  meta slot gained `tabular-nums` (decision 33). A new `LABEL_COLUMN_CONTENT_CLASS` ('pl-8')
+  constant exported so the label-column body padding is defined once, not copied by hand.
+- [X] T222 [US1] `ToolRow.tsx`: `ToolGroupRow`'s multi-call branch now renders onto `<SpineList
+  gap="member">` (was a plain `space-y-1` div), each call wrapped in its own `<li>`; the outer
+  `CollapsedLine`'s `contentClassName` is conditional (`LABEL_COLUMN_CONTENT_CLASS` for a solo
+  call's body, a new `SPINE_HOST_CONTENT_CLASS` ('space-y-0 p-0', exported from `SpineList.tsx`)
+  for the multi/SpineList branch, mirroring `StageGroupRow`'s existing pattern); each nested
+  `ToolCallRow` and `SubagentRow` body now starts at the same label column (decision 10). A new
+  member streaming into a RUNNING group fades in once, 150ms, mirroring `StageGroupRow`'s own
+  seen-set (decision 26) -- #565 ships this on `ToolGroupRow` rather than leaving tool groups and
+  Stages inconsistent. `NoticeRow.tsx`'s long-notice body moves `pl-7` -> the same constant.
+- [X] T223 [US1] `scripts/theme-contrast-pairs.mjs`: added `destructive/muted` (4.5:1) and
+  `state-needs-you/muted` (4.5:1) -- the two genuinely new hover-tint pairs decision 32 needed;
+  `state-working/muted` and `ring/muted` were already gated at a stricter floor, so no redundant
+  entry was added for either. `node scripts/check-theme-contrast.mjs`: 361/361 pairs PASS across
+  all 3 themes. Docs updated: `CONTEXT.md` (new **Spine**/**Tool group** glossary entries, the
+  **Stage**/**Subagent chain** entries noted as using Spine), `docs/design/product-chat.md`
+  ("Grouped tool calls" and "Subagents" bullets), `docs/design/components.md` ("left rail" ->
+  Spine), `docs/design/foundations-motion.md` (Spine never animates), `docs/design/
+  accessibility.md` (new design-system checklist line). `specs/001-core-session-workspace/
+  spec.md` amended: FR-008 and FR-047 each gained a Spine clause, plus a new "Session 2026-10-15
+  (connected-log spine)" Clarifications section citing the decision record.
+- [X] T224 [US1] Quality gate: code-reviewer, accessibility-auditor, security-auditor,
+  test-reviewer and `ui-architect-v3` run as one parallel batch against the diff. No Critical or
+  High finding in the product code from any reviewer. Findings fixed: stale comments describing
+  the old `<div>`/`size-3.5`/border-0 shapes (`ToolRow.tsx`, `subagentStatus.tsx`,
+  `SubagentChainRow.tsx`), the now-dead `border-0` overrides left by deleting the root border
+  (`ToolRow.tsx`'s `SubagentRow`, `SubagentChainRow.tsx`'s Stage/chain rows -- the latter file is
+  outside #565's own stated scope, touched only for this zero-behaviour-change cleanup, recorded
+  here as the one explicit departure from the decision record's file list), two redundant
+  contrast pairs and a wrong rationale comment in `theme-contrast-pairs.mjs`, and "Spine
+  connector" wording simplified to "Spine" per the glossary's own `_Avoid_: connector` entry.
+  `ui-architect-v3` could not spawn its own three specialists (no nested task tool in its
+  sandbox) and reviewed the diff itself against the decision record directly instead; every
+  in-scope decision (7-11, 13, 15, 17-21, 23, 30, 32, 33) confirmed matching the code.
+
+**Known gap at handoff**: `scripts/verify-565-spine.mjs` (new, committed, a real-`omp` live CDP
+driver per this story's own driver-script precedent) was reviewed by the quality gate before its
+first full run completed, which caught three logic defects that would report a false failure (or
+log false evidence) on a correct build: the Spine x-offset assertion expected 16px from the
+header icon's edge instead of ~0px from its centre; the "group of one has no Spine" check never
+re-collapsed turn (a)'s own group before turn (b), so it always saw a stray `<ol>`; and the
+Dark/Obsidian/Dark-high-contrast screenshots called `window.refract.theme.preview(id)`, which
+only moves the title-bar overlay colour (`theme-store.ts`'s own CRITICAL-remediation comment),
+never the renderer's `<html>` class the CSS tokens actually key off. None of these are product
+code; `pnpm typecheck` (0 errors) and the existing Vitest suite are otherwise unaffected (no new
+tests, per AGENTS.md's prototyping rule). The script needs its theme-switch to drive the real
+Profile-menu UI (click `[data-profile-name-button]`, the Theme submenu, the named preset) instead
+of the bridge call, and the two check fixes above, before a run's exit code can be trusted as
+live-check evidence; until then the PR says **Refs #565**, not **Closes**, and the full
+`node scripts/ci-local.mjs` run and the real-`omp` live check itself are both owed as follow-up.
+
+- [X] T225 [US1] Round-2 five-reviewer gate (G906) fixes: a G906Tests investigation found
+  `verify-565-spine.mjs`'s two bash calls never merged into one `ToolGroup` because the default
+  Approval mode ("Ask") makes each call wait for its own approval card, and `groupToolItems.ts`
+  decision 14 treats a pending-approval call as its own grouping boundary -- not a Thinking-row
+  interruption as first suspected. Driver rewritten to switch the scratch Session's own Approval
+  mode to Auto through the real pill before the multi-call turn, assert the first header's 16px
+  icon slot as the up-front #565 marker, keep a separate `failures` list that always fails the
+  run (vs. `notExercised` for genuine skips only), toggle expand/collapse by reading
+  `aria-expanded` rather than blind clicks, log `git rev-parse HEAD` beside the exe's sha256, and
+  check a member row's own motion (not only the `<ol>`'s) under reduced motion. Product-code
+  fixes from the same gate: the one-agent Stage's own solo body now gets
+  `contentClassName={LABEL_COLUMN_CONTENT_CLASS}` (`SubagentChainRow.tsx`, matching `SubagentRow`
+  -- it was still at the old `px-2` column); the three hand-copied `isNew ? 'motion-safe:...' :
+  undefined` fade blocks (`ToolGroupRow`, `StageGroupRow`, the chain's own stage list) replaced by
+  one exported `SpineItem` (`SpineList.tsx`) that captures `isNew` via `useState`'s lazy
+  initializer ONCE per `<li>`'s mount -- the inline version recomputed `isNew` on every re-render,
+  so a running row's own status tick could strip the fade class before its 150ms animation
+  finished playing; the auto-approve poller (a security gate Medium from round 1) is now moot,
+  removed entirely rather than hardened, since Auto mode means no approval card ever appears for
+  either scripted turn. The Clarifications entry's "Only four surfaces get one" line corrected to
+  include `#557`'s own future thought runs, per the decision record's own decision 13.
+  `node scripts/ci-local.mjs`: 16/16 steps PASS after each round of fixes.
+
+**Known gap at handoff (round 2)**: the rewritten driver's own `setApprovalMode` helper (click
+the Approval pill, click "Auto" in its menu, wait for the pill's own `aria-label` to read "Auto,
+approval mode") still does not reliably land -- the pill's `aria-label` never updated within the
+10s timeout in the one post-fix run attempted. The selectors match the component's real markup by
+inspection (`ApprovalModePill.tsx`); the live interaction itself (menu open, item click, or the
+store round trip) was not debugged further given session time. Until it is, the multi-call Spine
+geometry/`pl-8`/`role=list` assertions and the Dark/High-contrast screenshots of a genuine
+multi-member group remain unexercised live; the product code itself is verified by three
+independent reviewers' own geometry arithmetic plus the automated gates (typecheck, 361/361
+contrast pairs, `ci-local` 16/16) and is unchanged by this gap. **Refs #565**, not **Closes**.
+
+- [X] T226 [US1] Round-3 fix (Main's own diagnosis): `settings.setApprovalMode` only ever sets
+  `pendingMode`, applied at a Session's NEXT settle (`contracts/ipc.md`) -- driving the real
+  Approval pill before a Session had ever gone through a turn had nothing to settle, so the pill
+  never actually updated. Fixed by seeding the scratch data dir's own `settings.json`
+  (`{"version":1,"approvalMode":"auto"}`) BEFORE the Session is created, so `omp` launches
+  already in Auto with no settle to wait for; a sanity assertion confirms the pill reads "Auto"
+  before turn (a). **This worked**: the resulting run (screenshots `00`-`07` in the shots folder,
+  `report.json`) confirmed LIVE, for the first time this story: the two bash calls merged into
+  ONE multi-call `ToolGroup` (no approval-card grouping boundary); the up-front 16px icon-slot
+  marker; the "1 failed" collapsed-summary text; the Spine line at 0.0px from the header icon's
+  own centre (decision 8); the member icon 9px right of the line; the `pl-8` member body padding
+  (decision 10); `role="list"` (decision 21); no root border (decision 18); the SpineList
+  unmounting on collapse (decision 17); real Obsidian and Dark-high-contrast screenshots via the
+  actual Profile-menu Theme submenu (decision 31, the H1 gate finding from round 1, now proven
+  live); no horizontal scroll at 360px (decision 30); and `tabular-nums` on turn (b)'s own solo
+  header duration (decision 33).
+  That SAME run surfaced two more driver bugs, both now fixed and typechecked but NOT yet
+  reconfirmed by a clean run (see below): (1) the reduced-motion check required a literal `0s`
+  transition duration, but `globals.css`'s own documented `prefers-reduced-motion` block sets a
+  0.01ms iteration, not a true 0 (`foundations-motion.md`) -- `getComputedStyle` reports that as
+  `1e-05s`, which the check now accepts (`parseFloat(d) <= 0.001`) instead of only exact `'0s'`;
+  (2) `setBashHeaderExpanded`'s own re-read used bracket indexing (`arr[-1]`), which is ALWAYS
+  `undefined` in JS for a negative index (only `.at(-1)` resolves "last") -- turn (b)'s own solo
+  group (addressed by index `-1`) could therefore never be confirmed expanded, timing out. Fixed
+  to use `.at()` consistently with `clickBashHeaderAt`.
+
+**Known gap at handoff (round 3, final)**: the confirming re-run (meant to prove both fixes above
+and complete the solo-group decision-13 check) failed on a `cargo` linker error, "not enough
+space on the disk" -- the shared `CARGO_TARGET_DIR` this story's own debug builds share with
+every other concurrent lane measured 8.8 GB, and free space on `C:` had fallen to under 1 GB.
+Per the standing rule, the shared target is never `cargo clean`ed; this story's own tiny (9 MB)
+leftover scratch exe dir was removed, which was not enough to restore headroom. This is an
+environment/disk-pressure failure, not a code defect -- the prior run's own real findings above
+already demonstrate the multi-call Spine working end to end; only the two now-fixed test-script
+bugs, and the final re-confirmation run, remain unproven. **Refs #565** pending that
+reconfirmation (recommended once shared disk pressure clears); the main agent should judge
+whether the prior run's own evidence, plus these two understood and fixed script bugs, meets the
+bar for **Closes #565**.
+
+**Resolution (Main, spot-check of the 00:44 evidence)**: accepted. The 00:44 run's own
+`report.json` was subsequently overwritten by the disk-failed reconfirmation attempt's own
+(incomplete) write; screenshots `00`-`07` (also timestamped 00:44, in the shots folder) are the
+real, kept evidence for that run -- the full multi-call Spine, pl-8, role=list, "1 failed" text,
+and the real Obsidian/Dark-high-contrast Theme-submenu screenshots, all confirmed live. **Closes
+#565.**
+
+## Phase 43: Convergence
+
+- [X] T227 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
   "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): a pinned Collapse all /
   Expand all toolbar row above the session list's scroll area (16px gap under Pull requests),
   two `icon-xs` ghost buttons in fixed order, `aria-disabled` (never native `disabled`) with an
@@ -1649,7 +1791,7 @@ This phase was written retroactively after the implementation above, in the same
   per-group toggles and the startup restore stay silent). "All" means every Repository group
   plus Archived while #527's own "hidden entirely while nothing anywhere is archived" rule shows
   it; Archived's own saved flag is left untouched while hidden.
-- [X] T222 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
+- [X] T228 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
   archivedOpen: boolean }`, default all-open/Archived-closed): `src/shared/model.ts`/`ipc.ts`,
   `src/tauri-bridge/index.ts`, `src-tauri/src/store/settings.rs` (shape, `KNOWN_FIELDS`,
   `serialize_for_disk`, `set_session_list_collapse`) and `src-tauri/src/ipc/settings.rs`
@@ -1667,7 +1809,7 @@ This phase was written retroactively after the implementation above, in the same
   `openRepositoryGroup` on success, covering decision 20's "a closed group reopens, and that open
   is saved, only when a create or a restore actually moves a row into it" without touching
   `SessionRow.tsx`/`useSessionRowActions.ts` (the #731/#811 headroom-constrained hook) at all.
-- [X] T223 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
+- [X] T229 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
   controlled (`open`/`onOpenChange`, replacing `defaultOpen` and the old uncontrolled-closed
   Archived group), `onOpenChange` driven by Radix's own reported `open` value (gate round 1 fix,
   Low: `RepositoryGroup.tsx` originally ignored it and blindly toggled). `GroupHeader.tsx`'s
@@ -1685,7 +1827,7 @@ This phase was written retroactively after the implementation above, in the same
   highlighting its old, now-empty-looking group for as long as it stayed closed. Fixed by
   filtering to the same non-archived `active` list the rows themselves render, computed once and
   shared by `containsVisibleSession`/`marker`/the rendered rows.
-- [X] T224 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
+- [X] T230 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
   `state-stopped`, `active-indicator`, `ring`, `muted-foreground` against `sidebar`/
   `sidebar-accent`) for the marker, the active bar and the toolbar's own focus ring, all of which
   render inside the session list's `bg-sidebar` surface and were previously checked only against
@@ -1699,14 +1841,14 @@ This phase was written retroactively after the implementation above, in the same
   `COMPOSER_BUTTON_FOCUS_CLASS` plus `COMPOSER_DISABLED_HOVER_RESET_CLASS` (also fixes the Low
   finding that a disabled toolbar button still showed hover feedback), replacing the two pasted
   ~260-character class strings; #748's Show hidden button will reuse it.
-- [X] T225 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
+- [X] T231 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
   2026-10-09 Archived "not persisted across restarts" clarification in place, a new 2026-10-15
   Clarifications Q&A, acceptance scenario 7 under User Story 5 corrected to the three-state
   marker order, **FR-069** finalised once `origin/main` confirmed FR-067/FR-068), `data-model.md`
   (`SessionListCollapse` entity), `contracts/ipc.md` (`settings.setSessionListCollapse` row),
   `CONTEXT.md` (**Group header**, **Waiting marker**), `docs/design/product-layout.md` (the
   toolbar bullet, merged with #731's own session-list-row wording update).
-- [X] T226 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
+- [X] T232 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
   repositories, the copied exe's sha256 asserted against the launched pid before each run,
   `scripts/verify-tauri-735.mjs`, rewritten in gate round 1 to assert a genuine mixed collapse
   state -- one Repository closed, one open, one Session left archived with Archived open --
@@ -1733,16 +1875,16 @@ This phase was written retroactively after the implementation above, in the same
   ~1.5s wait before the forceful Job-Object kill, since that kill never fires
   `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would otherwise never
   run); and the toolbar's focus outline actually rendering under keyboard focus (gate round 1
-  regression proof for T224's fix), checked via computed style (`getComputedStyle`, not the CDP
+  regression proof for T230's fix), checked via computed style (`getComputedStyle`, not the CDP
   Accessibility domain -- that domain reports accessible names/roles, not rendered box styles;
   gate round 2 fixed this mislabel and also fixed the reading itself to settle to decision 23's
-  exact 2px solid value, after an earlier reading mid-transition misreported 3px -- see T227),
+  exact 2px solid value, after an earlier reading mid-transition misreported 3px -- see T233),
   never a bare truthy check. Screenshots (Dark and High contrast, the collapsed group with its
   marker, the mixed state before and after relaunch) recorded to
   `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node scripts/ci-local.mjs` 16/16
   PASS (including the full Rust test suite, clippy, and a Tauri debug build) both before and
   after merging `origin/main`.
-- [X] T227 [US5] Gate round 2 remediation (five-reviewer, 2026-10-15): Code and Tests FAILed on
+- [X] T233 [US5] Gate round 2 remediation (five-reviewer, 2026-10-15): Code and Tests FAILed on
   one High (Closes vs Refs: decision 29's Settings round trip and prune checks were still
   unexercised); Security, Accessibility and Architect PASSed. Fixed:
   - `scripts/verify-tauri-735.mjs`/`verify-tauri-session-list-helpers.mjs`: a third scratch
@@ -1798,7 +1940,7 @@ two-line tooltip's own hover-visible rendering (its DOM structure and `aria-desc
 were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot and
 #748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 26-27, hooks
 only: `isGroupOpen` selector, first-button-slot order). Decision 29's own Settings round trip and
-prune, previously listed here as unexercised, are now both live-proved in T227 above.
+prune, previously listed here as unexercised, are now both live-proved in T233 above.
 
 This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
 "Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
@@ -1817,19 +1959,19 @@ two marker states) and Low findings (decision-number citations in comments using
 63-121 scheme instead of the record's own 1-29, `RepositoryGroup.tsx` ignoring Radix's own
 `open` value, auto-open-on-restore firing even when focus does not move, a possible
 prune/restore race, and a disabled toolbar button still showing hover feedback); every High and
-Medium finding above was fixed in T223-T226; the prune/restore race and the focus-independent
+Medium finding above was fixed in T229-T232; the prune/restore race and the focus-independent
 auto-open were recorded as accepted Low departures in the table below rather than silently
 dropped. Kept **Refs #735**, not **Closes**, for decision 29's Settings round trip and prune --
-named but not yet exercised. Merged `origin/main` (PR #899/#563, which lands as this file's own
-Phase 41) before this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean
-afterward. Renumbered from provisional Phase 41/T214-T219 to Phase 42/T221-T226 once
-`origin/main` confirmed tasks.md ends at Phase 41/T220 (per Main's own merge instruction).
+named but not yet exercised. Merged `origin/main` (PR #899/#563, which lands as Phase 41) before
+this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean afterward.
 
 A gate round 2 found one remaining High (the Closes/Refs mismatch above, plus the two decision-29
-items still unexercised) and several Medium/Low findings; T227 fixes all of them and switches
-this entry to **Closes #735** -- see T227's own entry for the full list. D18 (the prune/restore
+items still unexercised) and several Medium/Low findings; T233 fixes all of them and switches
+this entry to **Closes #735** -- see T233's own entry for the full list. D18 (the prune/restore
 race) is fixed there too and dropped from the table below; D20 and D23 stand as recorded,
-accepted departures.
+accepted departures. Renumbered from provisional Phase 42/T221-T227 to Phase 43/T227-T233 once
+`origin/main` landed PR #906/#565 as Phase 42/T221-T226 (per Main's own merge instruction);
+merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/16 clean.
 
 **Departures from the decision record** (named per the gate's own finding, not silently dropped):
 
@@ -1837,3 +1979,4 @@ accepted departures.
 |---|---|
 | D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
 | D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |
+
