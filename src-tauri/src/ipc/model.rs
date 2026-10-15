@@ -13,6 +13,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::session::model;
+use crate::session::thinking_level;
 use crate::session::SessionManager;
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
@@ -94,7 +95,7 @@ pub fn model_set_thinking_level(state: AppState, args: Vec<Value>) -> HandlerFut
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        let result = model::set_thinking_level(&agent, level)
+        let result = thinking_level::set_thinking_level(&agent, level)
             .await
             .map_err(map_model_error)?;
         Ok(result)
