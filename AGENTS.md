@@ -66,13 +66,17 @@ The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron bui
 normally.
 
 - Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
-  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:mermaid-contrast`,
-  `check:file-size`, and `pnpm check:parity` (generated IPC parity table, `src/shared/ipc.ts`
-  against `src-tauri/src`).
+  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:file-size`, and `pnpm
+  check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
   For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
-  first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main` except
-  `check:mermaid-contrast`, which has known failures tracked in #388 and joins CI once they are fixed.
+  first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main`.
+  `check:mermaid-contrast` is NOT in that list: it already had known failures tracked in #388,
+  and since #796 (the Electron build deleted) it can no longer run at all -- it `require('electron')`s
+  a real Electron renderer to capture Mermaid diagram colours, and there is no `electron` package
+  left in this repo to load. The script and its `check:mermaid-contrast` npm command stay
+  (an obvious entry point once someone picks this up), but need a Tauri/WebView2-based capture
+  rework, not just the pre-existing fixes, before it can run or join CI; see #388.
 - Security baseline for the Rust build: constitution Principle V ("Tauri Security Baseline",
   ratified 3.0.0, 2026-10-15, #796) is binding. `specs/016-tauri-rust-build/
   constitution-amendment-draft.md` is the superseded pre-ratification draft, kept for history
