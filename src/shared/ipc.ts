@@ -367,7 +367,7 @@ export const IPC_REQUESTS = {
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
-  MODEL_SET_MODEL: 'model.setModel', // Lane RM: `model: {...}` (ipc-model.ts)
+  MODEL_SET_MODEL: 'model.setModel',
   MODEL_CYCLE_MODEL: 'model.cycleModel',
   MODEL_APPLY_ROLE: 'model.applyRole',
   MODEL_LIST_ROLES: 'model.listRoles',
