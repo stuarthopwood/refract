@@ -72,9 +72,13 @@ _Avoid_: Home pane, dashboard, start page
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
 
+**Issues view**:
+The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
+_Avoid_: Issues page, issue log, issue tracker
+
 **Filter tab**:
-One of the five tabs a **Pull requests view**'s list offers -- Open, Authored by me, Assigned to me, Involves me, Review requested (spec 003) -- narrowing which pull requests the list shows; exactly one is active at a time, defaulting to Open.
-_Avoid_: Filter, category
+One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: Open, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to Open.
+_Avoid_: Filter, category, "Created by me" (say Authored by me)
 
 **Review thread**:
 A comment thread anchored to a location in a pull request's diff (spec 003), with a resolved or unresolved state; resolving and unresolving are both explicit, reversible actions, never inferred from a reply.
