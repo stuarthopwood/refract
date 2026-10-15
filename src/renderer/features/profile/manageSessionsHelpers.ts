@@ -8,9 +8,10 @@ import type { SessionFilters } from '@/state/view-store'
 import { displayStatus } from '@/features/sessions/sessionDisplay'
 import type { SessionDisplayStatus } from '@/features/sessions/sessionDisplay'
 
-// Issue #731: Unread response sorts right after needs-you, ahead of working -- the same
-// precedence order `displayStatus`'s own callers use everywhere else (`StateIcon`, a
-// collapsed group header's #735 top-state badge).
+// Issue #731 decision 8: Manage sessions' own Status sort order -- needs-you, Unread response,
+// working, idle, stopped -- the same order #735's planned collapsed-group top-state badge will
+// use. This is a sort order, not the display precedence `displayStatus` itself encodes
+// (CONTEXT.md's Session status entry: Working, Needs you, Stopped, Unread response, Idle).
 const STATUS_ORDER: Record<SessionDisplayStatus, number> = {
   'needs-you': 0,
   'unread-response': 1,

@@ -15,8 +15,8 @@ import type { SessionStatus } from '../../../shared/model'
 export type SessionDisplayStatus = SessionStatus | 'unread-response'
 
 /** The one place a Session's raw `status`/`unread` pair becomes the status actually shown.
- * `#735` (collapsed group header), `#748` (Show hidden badge) and `#846` (sleeping) all read
- * this, not the raw fields. */
+ * `#735` (collapsed group header), `#748` (Show hidden badge) and `#846` (sleeping) will all
+ * read this, not the raw fields. */
 export function displayStatus(s: Pick<SessionSummary, 'status' | 'unread'>): SessionDisplayStatus {
   return s.status === 'idle' && s.unread ? 'unread-response' : s.status
 }
@@ -50,7 +50,13 @@ export function formatRelativeTime(iso: string): string {
 // "waiting". No surface draws its own plain filled dot for this state any more (the trailing
 // dot removed from `SessionRow.tsx`) -- this icon is the only signal.
 export function StateIcon({ status }: { status: SessionDisplayStatus }) {
-  const className = 'size-4 shrink-0'
+  // Quality-gate remediation (A11y Medium, gate round on #731): an <svg> defaults to
+  // `forced-color-adjust: preserve-parent-color`, and each glyph below sets its own `color`
+  // (`text-state-*`), so under Windows forced colours every glyph kept the app's own hue
+  // instead of following CanvasText -- the exact gap this rule exists to close (same
+  // CanvasText precedent as `AgentSpinner`, globals.css, and `radio-group.tsx`). The shapes
+  // alone (disc, check-in-ring, speech bubble, bell, square) still carry the distinction.
+  const className = 'size-4 shrink-0 forced-colors:text-[CanvasText]'
   switch (status) {
     case 'working':
       return <AgentSpinner size={16} className={className} />
@@ -64,7 +70,6 @@ export function StateIcon({ status }: { status: SessionDisplayStatus }) {
       return <MessageSquareTextIcon aria-hidden className={cn(className, 'text-state-unread-response')} />
   }
 }
-
 
 /** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past
  * 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared

@@ -1495,7 +1495,10 @@ This phase was written retroactively after the implementation above (no prior `/
   spec 001 for the new derived **Unread response** display status -- FR-005, FR-006, the
   Independent Test and Acceptance Scenario 4 wording, the Key Entities Session note, and a
   `### Session 2026-10-15` Clarifications Q&A appended to the existing heading (shared with
-  #564/#877). `CONTEXT.md` gains **Session status** and **Unread response**.
+  #564/#877). `CONTEXT.md` gains **Session status** and **Unread response**. Decision 20's three
+  unread-behaviour gaps (window focus, restart persistence, front-pane visibility on
+  Settings/Manage sessions/Pull requests) are filed as the one follow-up issue it asks for,
+  **#904**, not fixed here.
 - [X] T200 [US5] `sessionDisplay.tsx`: add `SessionDisplayStatus` (`SessionStatus |
   'unread-response'`) and `displayStatus()` (returns `'unread-response'` only when `status ===
   'idle' && unread`); key `STATUS_LABEL` and `StateIcon`'s `status` prop by it. `StateIcon`:
@@ -1541,22 +1544,49 @@ This phase was written retroactively after the implementation above (no prior `/
   `node scripts/check-file-size.mjs` (0 cap violations), `node scripts/check-theme-contrast.mjs`
   (every pair across all 3 themes PASS, including the new `state-unread-response`/`state-idle`
   sidebar pairs) and the full `node scripts/ci-local.mjs` (16/16 steps) all ran clean.
+- [X] T205 [US5] Gate round 1 fixes (code-reviewer/a11y/architecture/tests, all PASS; three
+  Medium findings, all addressed): `StateIcon`'s shared className gains
+  `forced-colors:text-[CanvasText]` (sessionDisplay.tsx) -- an `<svg>` defaults to
+  `forced-color-adjust: preserve-parent-color`, so each glyph's own `text-state-*` colour
+  survived `forced-colors: active` instead of following CanvasText (the `AgentSpinner`/
+  `radio-group.tsx` precedent); confirmed in the built CSS
+  (`@media(forced-colors:active){...forced-colors\:text-\[CanvasText\]{color:canvastext}...}`).
+  Decision 20's follow-up issue filed as **#904** (enhancement, session-list, p3, triaged),
+  linked from the PR body, `docs/PLAN.md:223` and this file. The investigation record
+  (decisions 10 and 21: screenshots by name and sha256, the 8 new contrast pairs) posted as an
+  issue comment on #731, correcting decision 14's premise. `manageSessionsHelpers.ts:11-13` and
+  `sessionDisplay.tsx:17-19`'s comments corrected (sort order vs. display precedence; "will read"
+  not "read"); `CONTEXT.md`'s rejected term "response ready" removed from `product-layout.md`,
+  `docs/PLAN.md` rows #735/#748; `product-look-and-feel.md:18` gains "Unread response (info)"
+  in the State colour roles list; `product-layout.md`'s Manage sessions row corrected `6rem` to
+  `8rem` to match the shipped column width.
+- [X] T206 [US5] Gate round 2 live verification (two further scratch Tauri instances, exe hash
+  asserted before each run): the precedence rule staged live (a Session already showing Unread
+  response, stopped via its row menu without reopening it, shows Stopped -- decisions 5 and 14);
+  an 11-Session list (idle x7, Needs-you left pending, Unread response, Stopped, a
+  Working-attempt) at rest and hovered; a native CDP `clip`-region 1x-DPI crop of the bubble;
+  High contrast with Stopped/Idle (an earlier window) plus vision-deficiency and forced-colours
+  (pre-fix, the bug T205 fixes). **Blocked this round** by severe concurrent host contention on
+  the shared build machine (4-5 sibling `cargo`/`rustc`/`link` processes confirmed via
+  `Get-Process`, free memory down to about 3.5 of 16 GB, the scratch exe's own sha256 changing
+  between consecutive copies, the app itself repeatedly failing to reach a stable
+  session-attached state within 60s across six consecutive attempts): Obsidian with Needs-you
+  and Unread response shown together, a post-fix live re-capture of vision-deficiency/
+  forced-colours with Needs-you and Unread response visible, and a genuinely distinct "selected"
+  capture (the one taken came out byte-identical to "at rest", a test-script gap, not a second
+  real state -- flagged as such in the investigation record, not presented as two different
+  proofs). All three filed to the verification backlog, **#650**, for a re-run once the shared
+  machine is quieter.
 
 This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
 "Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
 roundtable rather than a live grill, per Stuart's standing delegation while away). A WebView2 CDP
 harness quirk ("Object reference chain is too long", `Runtime.evaluate`'s `returnByValue`
 choking on a raw-element finder expression passed to `waitFor` instead of a boolean one) cost
-several retries before being traced and fixed. **Not exercised live**: the Obsidian theme on the
-full five-state list (attempted, timed out once on a cold IPC round trip after the Stopped/High
-contrast pass; not required by the brief, which asks for Dark and High contrast) and a combined
-screenshot of all five states (working/needs-you/unread-response/idle/stopped) in one single
-list at once -- the two live-check passes each captured a subset (idle x3, working, needs-you,
-unread-response, Manage sessions in pass one; idle, stopped, the same two in High contrast,
-vision-deficiency and forced-colours in pass two) rather than all five simultaneously, since the
-`session.jsonl` fixture only scripts one turn per `OmpProcess` and a second Session's own
-`Stop agent` action was driven in a separate instance to avoid retriggering the Session-row
-HoverCard the first pass's `displayStatus` assertions already depended on. Opened as draft
-PR #902 (`feat/731-session-status-icons`).
+several retries before being traced and fixed in round 1 of this story's own live checks. Opened
+as draft PR #902 (`feat/731-session-status-icons`); kept **Refs #731**, not **Closes**, since
+decision 21's live-verification list is not fully done (see T206's own blocked items, tracked in
+#650) -- switch to Closes once that backlog item clears.
+
 
 
