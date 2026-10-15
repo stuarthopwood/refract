@@ -7,7 +7,7 @@
 // Usage: CARGO_TARGET_DIR=<shared dir> node scripts/verify-564-gate2-live-check.mjs (requires a
 // prior `pnpm tauri build --debug --no-bundle`).
 
-import { mkdirSync, existsSync, copyFileSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
@@ -131,12 +131,7 @@ async function main() {
   let first;
   let second;
   let sessionId;
-  // Gate round 3 fix (LOW, code-reviewer): the whole run, including both launches and the
-  // summary below, is now wrapped in one outer try/finally so the scratch profile this run
-  // created is always removed -- even when a step above throws and escapes uncaught -- not left
-  // for manual cleanup.
   try {
-    try {
     // --- Launch 1: add repository, create/open a Session, exercise the Model picker and the
     // Default-persistence fix across a settle. ---
     first = await launchAndConnect(9391, 'target1.pid');
@@ -413,31 +408,9 @@ async function main() {
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length} of ${results.length} passed`);
   console.log(`scratch dir (to remove after this run): ${scratchRoot}`);
-  console.log(`isolated profile: ${path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile)} (removed automatically below)`);
+  console.log(`isolated profile (to remove after this run): ${path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile)}`);
   console.log(`screenshots: ${SHOTS_DIR}`);
   if (failed.length > 0) process.exitCode = 1;
-  } finally {
-    // Safe-deletion rule: only ever delete a path built from a name we just asserted is this
-    // run's own scratch profile, never a bare variable or a default expansion.
-    if (profile.startsWith('refract-564-gate2-')) {
-      const profileDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile);
-      // A just-killed child's own file handles (antivirus scan, slow OS cleanup) can still hold
-      // this directory open for a moment -- retry briefly instead of crashing the whole run
-      // with an uncaught EPERM on an otherwise-successful pass.
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        try {
-          rmSync(profileDir, { recursive: true, force: true });
-          break;
-        } catch (err) {
-          if (attempt === 5) {
-            console.error(`warning: could not remove scratch profile ${profileDir} after 5 attempts:`, err.message);
-            break;
-          }
-          await sleep(500);
-        }
-      }
-    }
-  }
 }
 
 await main();

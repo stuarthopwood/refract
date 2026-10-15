@@ -164,12 +164,19 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   function handleFilterKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setActiveIndex((index) => Math.min(index + 1, Math.max(optionCount - 1, 0)))
+      // Gate round 3 fix (LOW, code-reviewer): steps from the clamped/VISIBLE index, not the raw
+      // `activeIndex` (which can sit outside the current activatable range -- for example a role
+      // index left over from before a filter narrowed the range to models only), and stays
+      // within [activatableStart, activatableEnd) so arrowing can never land on a role while
+      // filtering, nor run past the last filtered match.
+      if (activatableEnd <= activatableStart) return
+      setActiveIndex(Math.min((clampedActiveIndex ?? activatableStart - 1) + 1, activatableEnd - 1))
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setActiveIndex((index) => Math.max(index - 1, 0))
+      if (activatableEnd <= activatableStart) return
+      setActiveIndex(Math.max((clampedActiveIndex ?? activatableStart) - 1, activatableStart))
       return
     }
     if (event.key === 'Enter') {
@@ -268,7 +275,14 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
                     id={optionId(index)}
                     role="option"
                     data-active={active}
-                    onMouseEnter={() => setActiveIndex(index)}
+                    // Gate round 3 fix (LOW, code-reviewer): a role is never in the activatable
+                    // range while filtering (only matched models are), so hovering one must
+                    // leave the keyboard index alone instead of pointing it at a row that isn't
+                    // reachable by Enter -- a mouse move while the field still has keyboard focus
+                    // must never fight the user's own typed intent.
+                    onMouseEnter={() => {
+                      if (!filter.trim()) setActiveIndex(index)
+                    }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
                       // Gate round 2 fix (MEDIUM, WCAG 2.5.2): selection moved here from
