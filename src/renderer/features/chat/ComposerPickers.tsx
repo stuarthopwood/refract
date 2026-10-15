@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GaugeIcon, PaperclipIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
 import { attachImageFile } from './attachImage'
 import { notify, useSessionsStore } from '@/state'
@@ -23,7 +24,7 @@ import { PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './p
 
 export { ModelPicker } from './ModelPicker'
 
-export function ReasoningPicker({ sessionId }: { sessionId: string }) {
+export function ReasoningPicker({ sessionId, boxDimmed }: { sessionId: string; boxDimmed: boolean }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   const { open, onOpenChange } = usePickerOpenState(disabled)
@@ -50,7 +51,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               // not) -- suppressed so a screen reader never says either twice; the Tooltip
               // itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              className={PICKER_TRIGGER_CLASS}
+              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-100')}
             >
               <GaugeIcon aria-hidden className="size-3" />
               <span>{label}</span>
@@ -114,7 +115,10 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             // just repeat this button's own accessible name ("Attach images" both places) -- a
             // screen reader would say it twice. Suppressed; the tooltip still shows visually.
             aria-describedby={undefined}
-            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+            // Composer-dimming fix (Stuart, 2026-10-15): no own opacity -- `disabled` here is
+            // exactly MessageInput.tsx's own box-dim condition, so the box's single `opacity-60`
+            // already covers this button; a second opacity-50 on top of it read too faint.
+            className="aria-disabled:cursor-not-allowed"
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()

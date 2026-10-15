@@ -60,7 +60,7 @@ import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
-export function ModelPicker({ sessionId }: { sessionId: string }) {
+export function ModelPicker({ sessionId, boxDimmed }: { sessionId: string; boxDimmed: boolean }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   const { open, setOpen, onOpenChange } = usePickerOpenState(disabled)
@@ -226,7 +226,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
               // disabled reason when not) -- suppressed so a screen reader never says either
               // twice; the Tooltip itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              className={PICKER_TRIGGER_CLASS}
+              className={cn(PICKER_TRIGGER_CLASS, boxDimmed && 'aria-disabled:opacity-100')}
             >
               <CpuIcon aria-hidden className="size-3" />
               <span className={cn('max-w-40 truncate', modelLabelIsRaw && 'font-code')}>{modelLabel ?? 'Model not known yet'}</span>

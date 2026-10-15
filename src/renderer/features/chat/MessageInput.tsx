@@ -1358,7 +1358,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           inside as round icon-only buttons, and the provider/model/effort readout along the
           bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
           field, not just the text area, shows the focus state. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877): the box no longer
+          grows a grey fill on its own text area while disabled (`Textarea`'s vendored
+          `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the WHOLE box
+          (this field and its bottom row alike) dims as one unit instead, with a single container
+          `opacity-60` here (never a Tailwind colour-opacity modifier like `bg-x/50`), matching
+          the house "dimmed but still visible" convention (`docs/design/product-layout.md`
+          "Check again"). Behaviour is unchanged: `disabled` is exactly the same boolean that
+          already drove the native `disabled` attribute below. The WCAG 1.4.11 3:1 control-edge
+          rule applies to the enabled border only; a disabled control is exempt. */}
+      <div
+        className={cn(
+          'flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50',
+          disabled && 'opacity-60'
+        )}
+      >
         <div className="relative flex items-end">
           {showSlashMenu && (
             <SlashMenu
@@ -1409,7 +1423,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
+            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent dark:disabled:bg-transparent"
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1569,7 +1583,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   // `hover:bg-send/80` opacity modifier violated the design rules' own "never a
                   // Tailwind opacity modifier on a token class" -- `button.tsx`'s `secondary`
                   // variant's own `color-mix` pattern instead).
-                  className="rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  className={cn(
+                    'rounded-full bg-send text-send-foreground hover:bg-[color-mix(in_oklch,var(--send),var(--background)_15%)] aria-disabled:cursor-not-allowed',
+                    // Composer-dimming fix (Stuart, 2026-10-15): own opacity only for the OTHER
+                    // three refusal reasons (starting, a pending attachment read, empty text) --
+                    // while `disabled` itself is the reason, the box's own opacity-60 already
+                    // covers this button; `disabled` can never be true at the same time as
+                    // `starting` (that only runs through the `!disabled` notStarted branch).
+                    !disabled && 'aria-disabled:opacity-50'
+                  )}
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
                   aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
@@ -1592,8 +1614,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             the old read-only CpuIcon/GaugeIcon line), then the attach button. */}
         <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-1">
           <ApprovalModePill sessionId={sessionId} />
-          <ModelPicker sessionId={sessionId} />
-          <ReasoningPicker sessionId={sessionId} />
+          <ModelPicker sessionId={sessionId} boxDimmed={disabled} />
+          <ReasoningPicker sessionId={sessionId} boxDimmed={disabled} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>
       </div>

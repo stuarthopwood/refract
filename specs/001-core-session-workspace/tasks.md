@@ -1062,3 +1062,36 @@ point (T160's own read-back semantics, corrected mid-round).
   relaunch, the keyboard-active row, and the fresh/unconfirmed "Reasoning not reported" states
   with real CDP input, and screenshots, are recorded in the PR body, not retrofitted into this
   task.
+- [X] T169 [US1] Composer-dimming fix (Stuart, 2026-10-15, reviewing PR #877, FR-065): removed the
+  message box's own per-field grey background/opacity on the disabled text area (the vendored
+  `Textarea` component's `disabled:bg-input/50 disabled:opacity-50 dark:disabled:bg-input/80`
+  overridden to `disabled:bg-transparent disabled:opacity-100 dark:disabled:bg-transparent`) and
+  replaced it with one container `opacity-60` on the whole box (`MessageInput.tsx`'s own
+  `disabled` flag), covering the text field and its bottom row together. The Attach button's own
+  `aria-disabled:opacity-50` (identical condition, `disabled` passed straight through) is dropped
+  entirely; the Model and Reasoning pickers now take a `boxDimmed` prop (`disabled` from
+  MessageInput, the SAME boolean, passed down rather than re-derived) and suppress their own
+  `aria-disabled:opacity-50` only while it is true, keeping it for their independent `notIdle`
+  (mid-turn) disable reason, which the box never dims for. Re-deriving `boxDimmed` locally in
+  each picker from `usePickerDisabled`'s own `stopped`/a new `stopReason` read was tried first and
+  reverted: `useSessionsStore`'s `SessionSummary.stopReason` and the `SessionRuntimeView`-based
+  `stopReason` prop `ChatPane` feeds `MessageInput` are two genuinely different, independently
+  computed values (confirmed live: after a relaunch the former read `"not-started"` while the
+  latter's absence is exactly what makes `MessageInput`'s own `disabled` true) -- passing the one
+  authoritative value down as a prop avoids relying on two sources staying in sync.
+- [X] T170 [US1] Update the docs and verify: spec 001 gains a 2026-10-15 Clarification (the
+  grey-background-to-single-opacity decision, the no-double-dimming rule, the behaviour-unchanged
+  guarantee) and FR-065 is amended with the same box-dimming requirement. `pnpm typecheck`
+  (`tsconfig.node.json` + `tsconfig.web.json`, clean), `pnpm test` (148/148), `pnpm check:indent`
+  (0 odd-indent), `pnpm check:ui-text` (0 leaks/371 files, run after `pnpm tauri build --debug
+  --no-bundle`) all pass; no Rust touched, so `ci-local.mjs` was not re-run in full. A scratch
+  live check (isolated `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`OMP_PROFILE`, a scratch git
+  repo, driven through the real UI, across a relaunch to reach the genuine "stopped, agent not
+  yet restarted" state a plain `sessions.stopAgent` call does NOT reproduce -- confirmed live that
+  call alone leaves `stopReason: 'not-started'`, keeping the composer enabled) proves, with real
+  computed styles read via CDP: the enabled composer has no box opacity and no textarea disabled
+  styling; the disabled composer's box reads `opacity: 0.6` with the `opacity-60` class present,
+  the textarea has no background/opacity of its own and shows the `"The agent is stopped."`
+  placeholder; the Attach, Model and Reasoning triggers all read `opacity: 1` (no second dim).
+  Screenshots `8-stopped-dimmed.png` and `9-enabled.png` (Dark, the app's own default theme) are
+  recorded in the PR body alongside the exact pass/fail lines, not retrofitted into this task.
