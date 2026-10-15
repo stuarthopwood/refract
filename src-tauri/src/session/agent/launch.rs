@@ -12,9 +12,8 @@ use serde_json::{json, Value};
 use super::launch_support::{
     append_ask_dialog_unavailable_notice, assert_conversation_file_exists, fetch_all_messages,
     reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
-    truncate, verify_reattach,
+    verify_reattach,
 };
-use super::MAX_MODEL_FIELD_LENGTH;
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};

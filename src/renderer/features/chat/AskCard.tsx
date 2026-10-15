@@ -10,8 +10,7 @@ import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { focusPaneContent, isFocusStranded } from '@/lib/focus'
-import { consumeAskFocusPending, markAskFocusPending } from '@/state/ask-focus-intent'
+import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
@@ -171,23 +170,21 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   // Cancel, an OMP `cancel`, a timeout): the button that was clicked keeps focus through the
   // `aria-disabled` busy state (never literally `disabled`), so it is still focused right up to
   // whichever commit finally unmounts this instance, regardless of which path triggered it.
+  // Gate round 3 (unanimous): the intent is keyed by `${sessionId}:${request.requestId}`, not the
+  // bare request id, so a stale intent can never be claimed by the wrong Session's own row.
+  const intentKey = `${sessionId}:${request.requestId}`
+
   React.useLayoutEffect(() => {
     return () => {
       if (!cardRootRef.current?.contains(document.activeElement)) return
-      markAskFocusPending(request.requestId)
-      const sessionPane = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
-      // Give the row that actually replaces this card (`ResolvedRequestSummary`/`AskQuestionRow`,
-      // both wired in `RequestCard.tsx` to consume this same intent on mount) one frame to claim
-      // it and focus itself; if nothing did (an orphaned resolution with no row rendered for this
-      // id at all), rescue focus into the Session's own chat pane rather than leaving it stranded.
-      requestAnimationFrame(() => {
-        if (consumeAskFocusPending(request.requestId) && isFocusStranded(document.activeElement, sessionPane)) {
-          focusPaneContent(sessionPane)
-        }
-      })
+      // `markAskFocusPendingWithFallback` (shared with `ResolvedRequestSummary`'s own bridge
+      // re-arm, `RequestCard.tsx`) arms the intent, gives the row that actually replaces this
+      // card one frame to claim it and focus itself, and otherwise rescues focus into the
+      // Session's own chat pane -- never stealing it from somewhere it is still validly resting.
+      markAskFocusPendingWithFallback(intentKey, sessionId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request.requestId, sessionId])
+  }, [intentKey, sessionId])
 
   async function submit() {
     setBusyAction('submit')
@@ -381,14 +378,19 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   const noteId = `${safeId}-incomplete-note`
   const hintId = `${safeId}-hint`
   const describedBy = showIncompleteNote ? noteId : undefined
+  // Gate round 3 (a11y L-b): the multi-choice group's own hint paragraph was never actually
+  // linked to the group -- wired in now, alongside the incomplete note when that is also showing.
+  const multiDescribedBy = showIncompleteNote ? `${hintId} ${noteId}` : hintId
   const otherValue = otherSentinelFor(question.options)
 
-  /** Gate round 2 (architect M-e, merging the earlier M3 IME gap): Enter must never resubmit
-   * while a send is already in flight (the input stays focusable, `readOnly` not `disabled`,
-   * through the busy state -- round 1's fix for keeping focus through an error), and must never
-   * fire mid-IME-composition (a composing Enter commits the candidate, it does not submit). */
+  /** Gate round 2 (architect M-e, merging the earlier M3 IME gap); gate round 3 (architect L-a):
+   * Enter must never resubmit while a send is already in flight (the input stays focusable,
+   * `readOnly` not `disabled`, through the busy state -- round 1's fix for keeping focus through
+   * an error), must never fire mid-IME-composition (a composing Enter commits the candidate, it
+   * does not submit), and must never retry in a loop from a held-down key (`event.repeat`) after
+   * a send error leaves the card focused and usable again. */
   function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter' && !event.nativeEvent.isComposing && !busy) onEnterInOther()
+    if (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.repeat && !busy) onEnterInOther()
   }
 
   return (
@@ -418,7 +420,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
       )}
       <CardContent className="space-y-2">
         {question.multi ? (
-          <div role="group" aria-labelledby={heading ? headingId : undefined} aria-label={heading ? undefined : question.question} aria-describedby={describedBy} className="flex flex-col gap-2">
+          <div role="group" aria-labelledby={heading ? headingId : undefined} aria-label={heading ? undefined : question.question} aria-describedby={multiDescribedBy} className="flex flex-col gap-2">
             {question.options.map((option, index) => {
               const checked = draft.selectedOptions.includes(option.label)
               const labelId = `${safeId}-opt-${index}-label`

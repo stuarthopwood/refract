@@ -20,8 +20,11 @@
 //
 // Not covered here (left for a future round): a real, signed-in `omp`'s own `ask.timeout`
 // handling (`ask.jsonl` carries no `timeout` key, matching `docs/spike/FINDINGS.md` item 59's
-// live probe at its disabled default) and keyboard-only operation (every interaction below is a
-// mouse click or typed text, never Tab/Arrow-key navigation through the radio/tab groups).
+// live probe at its disabled default), and keyboard-only operation of the radio/tab groups
+// themselves (every pick above is a mouse click or typed text, never Tab/Arrow-key navigation
+// through the option rows) -- gate round 3 adds real keyboard Tab+Enter for ONLY the final
+// Submit step, specifically to prove the D17 focus-ring target is not clipped, not as a stand-in
+// for full keyboard coverage of the whole card.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync } from 'node:fs';
@@ -241,6 +244,31 @@ function askRowTriggerFinder() {
   return `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.includes('Asked user:'))`;
 }
 
+/** Gate round 3: the REAL computed accessible name of `document.activeElement`, read through the
+ * CDP Accessibility domain (`Accessibility.getPartialAXTree` against the live element's own
+ * `objectId`) -- never `textContent`, which joins adjacent flex-item spans with no separator and
+ * is not what a screen reader actually announces. Returns `null` for both `name`/`role` when
+ * nothing is focused or the element yields no AX node (e.g. focus is on `<body>`). */
+async function getActiveElementAccessibleName(cdp) {
+  await cdp.send('Accessibility.enable');
+  const evalResult = await cdp.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false });
+  const objectId = evalResult.result?.objectId;
+  if (!objectId) return { name: null, role: null };
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
+  const node = nodes?.[0];
+  return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
+}
+
+/** Gate round 3 (architect M-1): a real keyboard Tab (`Input.dispatchKeyEvent`, `type: 'keyDown'`
+ * so the browser's own default focus-move action runs, not just a synthetic DOM event), used to
+ * drive the final Submit via keyboard instead of a mouse click -- the only way to prove the D17
+ * target's own `:focus-visible` ring is not clipped, since Chromium suppresses `:focus-visible`
+ * after a mouse-driven focus regardless of what the CSS says. */
+async function pressTab(cdp) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+}
+
 /** Polls `[aria-label="Transcript"]`'s own trailing text until it ends with `finalToken`, only
  * accepting that final state if an EARLIER poll already observed a strict, non-empty, proper
  * prefix of it first (same reasoning as `verify-tauri.mjs`'s own helper of the same name: proves
@@ -384,7 +412,18 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
       `!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Submit')`,
       { timeoutMs: 15_000, label: 'Primary button reads Submit (both questions complete)' },
     );
-    await cdp.clickByText('Submit', { tag: 'button' });
+    // Gate round 3 (architect M-1): drive Submit via REAL keyboard (Tab, Tab, Enter) from the
+    // Other input's own focus, not a mouse click -- Chromium suppresses `:focus-visible` after a
+    // mouse-driven focus (which is exactly why the earlier mouse-click screenshot showed no
+    // ring, expected there but not proof either way for the keyboard path this decision record
+    // actually cares about). Tab order: Other input -> Cancel -> Submit.
+    await pressTab(cdp)
+    await pressTab(cdp)
+    const focusedIsSubmitButton = await cdp.evaluate(
+      `!!document.activeElement && document.activeElement.tagName === 'BUTTON' && document.activeElement.textContent.trim() === 'Submit'`,
+    );
+    assert(focusedIsSubmitButton, 'Tab, Tab from the Other input did not land keyboard focus on the Submit button');
+    await cdp.pressEnter();
     await cdp.screenshot(path.join(ASK_SHOT_DIR, '04-submit-clicked.png'));
 
     // The card resolves: its own Cancel/Submit footer is gone (no tab row, no Submit/Next button
@@ -405,15 +444,22 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     // D17 (gate round 2): focus must land on the collapsed "Asked user:" row's own trigger, not
     // fall to <body> -- proves the ask-focus-intent handoff (AskCard -> ResolvedRequestSummary/
     // AskQuestionRow) actually fires on a REAL unmount, not just by reading the source.
-    const focusAfterSubmit = await cdp.evaluate(
-      `(() => { const a = document.activeElement; return { isBody: a === document.body, accessibleName: a ? a.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : null }; })()`,
+    //
+    // Gate round 3 (test review L-b): the earlier version checked `textContent.includes('Asked
+    // user:')`, which would ALSO pass if focus had landed on the transcript viewport (the user's
+    // own echoed prompt plus "Asked user:" both sit inside it) -- this now asserts strict element
+    // identity against the same `askRowTriggerFinder()` the rest of this script already uses.
+    const focusIsTheRow = await cdp.evaluate(`document.activeElement === ${askRowTriggerFinder()}`);
+    const focusedTextContent = await cdp.evaluate(
+      `(() => { const a = document.activeElement; return a ? a.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80) : null; })()`,
     );
-    assert(!focusAfterSubmit.isBody, `focus fell to <body> after Submit (D17 regression): ${JSON.stringify(focusAfterSubmit)}`);
-    assert(
-      focusAfterSubmit.accessibleName && focusAfterSubmit.accessibleName.includes('Asked user:'),
-      `focus after Submit landed somewhere other than the "Asked user:" row: ${JSON.stringify(focusAfterSubmit)}`,
-    );
-    console.log(`verify-tauri-ask: focus after Submit landed on accessible name: ${JSON.stringify(focusAfterSubmit.accessibleName)}`);
+    assert(focusedTextContent !== null, `focus fell to <body> after Submit (D17 regression): textContent ${JSON.stringify(focusedTextContent)}`);
+    assert(focusIsTheRow, `focus after Submit landed on an element other than the "Asked user:" row's own trigger: textContent ${JSON.stringify(focusedTextContent)}`);
+    // Gate round 3 (architect M-3, code review): `textContent` joins adjacent spans with no
+    // separator and is NOT the accessible name despite round 2's field calling it that -- read
+    // the real, computed accessible name through the CDP Accessibility domain instead.
+    const focusedAxName = await getActiveElementAccessibleName(cdp);
+    console.log(`verify-tauri-ask: focus after Submit -- element is the Asked-user row: ${focusIsTheRow}; textContent: ${JSON.stringify(focusedTextContent)}; real accessible name (AX tree): ${JSON.stringify(focusedAxName)}`);
 
     // Expand it and assert both questions' own Answer rows.
     await cdp.click(askRowTriggerFinder());

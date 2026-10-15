@@ -216,7 +216,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
     case 'tool':
       if (item.tool === 'ask') {
         if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} requestId={[...resolvedAskByRequestId].find(([, v]) => v?.id === item.id)?.[0]} />
+        return <AskQuestionRow item={item} userName={userName} requestId={[...resolvedAskByRequestId].find(([, v]) => v?.id === item.id)?.[0]} sessionId={sessionId ?? undefined} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
       // normally occur: `groupToolItems` wraps every run, including a run of one, in a
@@ -245,7 +245,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
         const askItem = resolvedAskByRequestId.get(item.requestId)
         if (askItem && askItem.status !== 'running') return null
       }
-      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} />
+      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} sessionId={sessionId ?? undefined} />
     }
 
     case 'notice':

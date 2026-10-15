@@ -71,7 +71,16 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {summary}
         </span>
       )}
-      {meta !== undefined && <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>}
+      {meta !== undefined && (
+        <>
+          {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
+           * summary straight into the meta slot with no separator ("...and 1 more Answered"),
+           * which can sound like part of the question's own text rather than a status word. Not
+           * whitespace-only, so it survives collapsing. */}
+          <span className="sr-only">, </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
+        </>
+      )}
     </>
   )
 
@@ -80,7 +89,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       <div
         ref={ref as React.Ref<HTMLDivElement>}
         tabIndex={-1}
-        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset', className)}
+        // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
+        // still shows a focus indicator in forced-colours mode, matching the trigger below.
+        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -100,7 +111,12 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       <CollapsibleTrigger
         ref={ref as React.Ref<HTMLButtonElement>}
         className={cn(
-          'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+          // Gate round 3 (architect M-1, unanimous): this trigger sits inside
+          // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`), which
+          // establishes paint containment with no padding -- an outward `outline-offset-2` (the
+          // shadcn default) draws OUTSIDE this element's own box and was very likely clipped by
+          // that containment. `-2px` draws the ring INSIDE instead, matching the plain row above.
+          'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
           actualOpen && 'rounded-b-none'
         )}
       >

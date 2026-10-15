@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
-import { consumeAskFocusPending, markAskFocusPending } from '@/state/ask-focus-intent'
+import { consumeAskFocusPending, markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
+import { isFocusStranded } from '@/lib/focus'
 import { initials } from '@/lib/initials'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
@@ -24,16 +25,14 @@ const RESOLVED_LABEL: Record<ResolvedKind, string> = {
 }
 
 /** The one-line row an approval collapses to, whether resolved just now (RequestCard) or
- * resolved before this Session was opened (Transcript, which then only has
- * `TranscriptItem.resolved`, not the original request detail). Built on the T080 baseline. A
- * resolved question never uses this any more (T073): it is superseded by `AskQuestionRow` once
- * the matching `ask` tool item lands.
+ * resolved before this Session was opened (Transcript). A resolved question never uses this any
+ * more (T073): superseded by `AskQuestionRow` once the matching `ask` tool item lands.
  *
- * `requestId` (gate round 2, D17): the BRIDGING row an Ask card's resolution swaps to before
- * `AskQuestionRow` exists (or the row that stays if it never does). Consumes a pending focus
- * intent `AskCard` recorded for this id on mount and focuses itself (`tabIndex={-1}`, via
- * `CollapsedLine`); a no-op for every other caller. */
-export function ResolvedRequestSummary({ resolved, detail, requestId }: { resolved?: ResolvedKind; detail?: string; requestId?: string }) {
+ * `requestId`/`sessionId` (gate round 2 D17; gate round 3: keyed by `${sessionId}:${requestId}`):
+ * the BRIDGING row an Ask card's resolution swaps to before `AskQuestionRow` exists. Consumes a
+ * pending intent on mount and focuses itself, but only when focus is stranded (gate round 3
+ * Medium, all reviewers: unconditional `.focus()` could steal focus on a later mount). */
+export function ResolvedRequestSummary({ resolved, detail, requestId, sessionId }: { resolved?: ResolvedKind; detail?: string; requestId?: string; sessionId?: string }) {
   const label = resolved ? RESOLVED_LABEL[resolved] : 'Resolved'
   // Gate-fix (round 1, Low, D22): a user's own Cancel is not an error, so it keeps the muted
   // `--muted-foreground` XIcon every other icon in this row already uses -- only an actual Deny
@@ -46,17 +45,19 @@ export function ResolvedRequestSummary({ resolved, detail, requestId }: { resolv
     ) : (
       <CheckIcon className="size-3.5 shrink-0 text-state-working" />
     )
+  const intentKey = requestId && sessionId ? `${sessionId}:${requestId}` : undefined
   const rowRef = React.useRef<HTMLElement>(null)
-  React.useEffect(() => {
-    if (consumeAskFocusPending(requestId)) rowRef.current?.focus()
-  }, [requestId])
-  // Gate round 2 (D17, two-stage handoff): `AskQuestionRow` can supersede this row LATER, in a
-  // separate commit -- re-mark the intent on unmount if still focused, so it is not dropped twice.
+  React.useLayoutEffect(() => {
+    if (consumeAskFocusPending(intentKey) && isFocusStranded(document.activeElement, null)) rowRef.current?.focus()
+  }, [intentKey])
+  // Gate round 2 (D17, two-stage handoff): `AskQuestionRow` can supersede this row LATER -- re-
+  // mark the intent on unmount if still focused. Gate round 3: shares the one-frame claim-or-drop
+  // expiry (`markAskFocusPendingWithFallback`) instead of an unbounded re-mark.
   React.useLayoutEffect(() => {
     return () => {
-      if (document.activeElement === rowRef.current) markAskFocusPending(requestId)
+      if (document.activeElement === rowRef.current) markAskFocusPendingWithFallback(intentKey, sessionId)
     }
-  }, [requestId])
+  }, [intentKey, sessionId])
   return <CollapsedLine ref={rowRef} icon={icon} label={label} summary={detail} />
 }
 
@@ -259,7 +260,8 @@ const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 interface AskQuestionRowProps {
   item: AskToolItem
   userName?: string
-  requestId?: string // gate round 2 (D17): request id, for the focus intent consumed on mount
+  requestId?: string // gate round 2/3: the focus intent key, see ResolvedRequestSummary's doc comment
+  sessionId?: string
 }
 
 // The answered-question line (T073, FR-018, FR-045, docs/DESIGN.md "Chat"): a collapsed
@@ -270,7 +272,7 @@ interface AskQuestionRowProps {
 // agent's own `ask` tool item (T072): its `args` hold the question and options, its
 // `output`/`details` the chosen answer, both of which survive a restart via `get_messages`,
 // unlike the `request` item this supersedes once it resolves.
-export function AskQuestionRow({ item, userName, requestId }: AskQuestionRowProps) {
+export function AskQuestionRow({ item, userName, requestId, sessionId }: AskQuestionRowProps) {
   const questions = readAskQuestions(item.args)
   const answers = readAskAnswers(item, questions.map((question, index) => question.id ?? String(index)))
   const name = userName ?? 'You'
@@ -278,10 +280,11 @@ export function AskQuestionRow({ item, userName, requestId }: AskQuestionRowProp
   const firstQuestion = questions[0]?.question ?? ''
   const summary = questions.length > 1 ? `${firstQuestion} and ${questions.length - 1} more` : firstQuestion
 
+  const intentKey = requestId && sessionId ? `${sessionId}:${requestId}` : undefined
   const triggerRef = React.useRef<HTMLElement>(null)
-  React.useEffect(() => {
-    if (consumeAskFocusPending(requestId)) triggerRef.current?.focus()
-  }, [requestId])
+  React.useLayoutEffect(() => {
+    if (consumeAskFocusPending(intentKey) && isFocusStranded(document.activeElement, null)) triggerRef.current?.focus()
+  }, [intentKey])
 
   return (
     <CollapsedLine
@@ -394,7 +397,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   if (resolved) {
-    return <ResolvedRequestSummary resolved={resolved.kind} detail={resolved.detail} requestId={request.requestId} />
+    return <ResolvedRequestSummary resolved={resolved.kind} detail={resolved.detail} requestId={request.requestId} sessionId={sessionId} />
   }
 
   if (request.kind === 'approval') {
