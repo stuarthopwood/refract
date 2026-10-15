@@ -22,7 +22,6 @@ use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
-
 impl SessionAgent {
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
     /// already-live process as a no-op (simplified "join the in-flight attempt" behaviour: the
