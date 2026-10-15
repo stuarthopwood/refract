@@ -26,8 +26,8 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import {
+  attachImageFile,
   buildChipLabel,
-  buildImageAttachment,
   buildImagePathAttachment,
   describeAttachFailureReason,
   EMPTY_ATTACHMENTS,
@@ -44,7 +44,6 @@ import {
 } from './attachments'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
-import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -982,19 +981,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (imageFile) {
       // FR-001: never let any image data reach the textarea's own text value.
       event.preventDefault()
-      const result = await buildImageAttachment(imageFile)
-      if (!result.ok) {
-        notify({
-          code: result.reason === 'too-large' ? 'image-too-large' : 'invalid-argument',
-          message:
-            result.reason === 'too-large'
-              ? `Image is too large to attach (over the ${formatByteSize(MAX_IMAGE_INPUT_BYTES)} limit); nothing was attached.`
-              : 'That image could not be read; nothing was attached.'
-        })
-        return
-      }
-      useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-      announceAttachment(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
+      await attachImageFile(sessionId, imageFile)
       return
     }
 
@@ -1552,7 +1539,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     aria-keyshortcuts="Control+Shift+X"
                     onClick={() => void handleStop()}
                   >
-                    <SquareIcon />
+                    {/* Gate round 1 fix: `SquareIcon` is an outline-only glyph at this size, read
+                        by a reviewer as "an outlined square" on a solid fill -- `fill-current`
+                        makes it a solid stop glyph instead. */}
+                    <SquareIcon className="fill-current" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -1570,7 +1560,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   type="button"
                   variant="default"
                   size="icon-sm"
-                  className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  // 2026-10-15 grill decision 5, gate round 1 fix: Send's own `--send` token
+                  // overrides `variant="default"`'s `--primary` fill, which resolves to a
+                  // near-white neutral in Dark and Dark (high contrast) -- almost identical to
+                  // Stop's `invert` fill there, failing "visibly distinct in weight". `--send`
+                  // is chromatic (indigo) in every built-in theme instead.
+                  className="rounded-full bg-send text-send-foreground hover:bg-send/80 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
                   aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}

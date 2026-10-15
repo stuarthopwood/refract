@@ -9,11 +9,9 @@
 // Exits 1 if any pair fails its WCAG minimum, 0 if every pair across every theme passes.
 // Methodology note: several of this app's `oklch()` severity/accent colours are outside the
 // sRGB gamut (their converted linear-sRGB channel is briefly >1 before the per-channel clamp
-// below), so this script clips them the same way a non-wide-gamut sRGB display does. A real
-// wide-gamut (P3) Chromium display may render those exact pixels slightly differently, so their
-// true on-screen luminance can differ a little from the clipped value this script computes.
-// Not a bug to fix now -- noted so a future pass can switch to CSS Color 4 chroma-reduction
-// gamut mapping if that gap ever matters in practice.
+// below), so this script clips them the same way a non-wide-gamut sRGB display does, and their
+// true on-screen luminance on a wide-gamut (P3) display can differ slightly from the clipped
+// value computed here -- not a bug to fix now, just a known small gap in a rare case.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -297,6 +295,8 @@ const PAIRS = [
   { fg: 'card-foreground', bg: 'card', min: 4.5 },
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
   { fg: 'primary-foreground', bg: 'primary', min: 4.5 },
+  { fg: 'send-foreground', bg: 'send', min: 3 },
+  { fg: 'send', bg: 'composer-background', min: 3 },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },

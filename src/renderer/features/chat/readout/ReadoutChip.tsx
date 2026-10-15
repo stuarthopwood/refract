@@ -26,7 +26,14 @@ export interface ReadoutChipProps {
 
 export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className }: ReadoutChipProps) {
   const baseClasses = cn('inline-flex h-6 shrink-0 items-center gap-1.5 text-xs text-muted-foreground', className)
-  const interactiveClasses = cn(baseClasses, 'rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground')
+  // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
+  // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
+  // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),
+  // the codebase's own `outline-ring` convention (`CollapsedLine.tsx`).
+  const interactiveClasses = cn(
+    baseClasses,
+    'rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  )
 
   if (href) {
     return (

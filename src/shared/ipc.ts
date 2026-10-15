@@ -758,9 +758,9 @@ export interface RefractApi extends UpdatesApi {
     listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
   };
 
-  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s
-   * own `ModelApi` has the full reasoning); optional (Electron never ports this family). */
-  model?: ModelApi;
+  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s own
+   * `ModelApi` has the full reasoning); non-optional since Electron is gone (R13, gate round 1). */
+  model: ModelApi;
 
   window: {
     /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,

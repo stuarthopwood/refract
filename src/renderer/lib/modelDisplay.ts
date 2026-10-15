@@ -40,10 +40,15 @@ export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | 
   return `${provider}/${name ?? id}`
 }
 
-/** The human label for a Session's last known thinking level, or `null` if none has been
- * reported yet. */
-export function formatThinkingLevelLabel(session: Pick<Session, 'lastThinkingLevel'>): string | null {
-  if (!session.lastThinkingLevel) return null
+/** The human label for a Session's last known thinking level: `null` before any model has ever
+ * been seen at all; "Not reported by this model" (gate round 1, 2026-10-15, amended by Stuart)
+ * once a model IS known but the last `get_state` carried no reasoning level back for a
+ * successfully-applied non-`inherit` request (`thinking_level.rs`'s own documented read-back
+ * gap -- `lastThinkingLevel` is only ever written alongside `lastModel`, `sync_from_state`'s own
+ * guard, so the two together tell the two states apart without a third persisted field); the
+ * resolved label otherwise. */
+export function formatThinkingLevelLabel(session: Pick<Session, 'lastModel' | 'lastThinkingLevel'>): string | null {
+  if (!session.lastThinkingLevel) return session.lastModel ? 'Not reported by this model' : null
   // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
   // inherited Object.prototype properties for a key like "constructor" or "toString" --
   // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,

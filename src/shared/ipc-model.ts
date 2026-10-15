@@ -39,7 +39,9 @@ export interface RoleChangeSummary {
  * entry and `docs/spike/FINDINGS.md`'s Spec 003 gate-probe item 1): the ONLY values OMP's
  * `set_thinking_level` RPC accepts for `ModelApi.setThinkingLevel` below. Same union `frames.ts`'s
  * own `thinkingLevel` field documents, carried there as a plain `string` (a read-only passthrough,
- * never validated against this list) -- this type constrains the OUTBOUND argument only. */
+ * never validated against this list there) -- this type constrains the OUTBOUND argument, which
+ * the Rust handler NOW ALSO validates against the identical closed set before sending anything to
+ * OMP (gate round 1, 2026-10-15: previously unchecked, forwarded verbatim). */
 export type ThinkingLevel = 'off' | 'inherit' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** Per-Session model/role/reasoning actions over the live RPC connection (never OMP's config --
@@ -49,8 +51,9 @@ export type ThinkingLevel = 'off' | 'inherit' | 'minimal' | 'low' | 'medium' | '
  * (FINDINGS "RM0 probe" item 57's own closing entry: mid-turn `set_model` is not provably safe
  * on `omp` 18.10.1, a regression from a clean 18.8.0 pass) -- refused outright, never queued,
  * except #740's own Settings-triggered role reapply, which is not driven through this API at all
- * (it runs Session-side on its own next settle). Optional on `RefractApi`: `src/main`/`src/preload`
- * (Electron, frozen) never port this family -- the Rust build is the only implementation. */
+ * (it runs Session-side on its own next settle). The Rust build is the only implementation --
+ * Electron never ported this family, and Electron itself is gone (R13, 2026-10-15, #873), so
+ * `RefractApi.model` below is no longer optional. */
 export interface ModelApi {
   /** `set_model { provider, modelId }`: Session-scoped only (OMP's own description, "for this
    * session only" -- never writes `modelRoles`); pins the Session (a later Settings role
@@ -81,8 +84,18 @@ export interface ModelApi {
     }>
   >;
   /** `set_thinking_level { level }` (#564, the composer's Reasoning picker): session-scoped
-   * only, forwarding OMP's own RPC verbatim -- never pins the Session or touches its tracked
-   * role (unlike `setModel`/`cycleModel`/`applyRole`, reasoning effort is orthogonal to which
-   * model/role is selected). Same refusal rules as `setModel` (`'not-idle'` while working). */
-  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<Result<{ thinkingLevel: string }>>;
+   * only, forwarding OMP's own RPC after validating `level` against the closed set above --
+   * never pins the Session or touches its tracked role (unlike `setModel`/`cycleModel`/
+   * `applyRole`, reasoning effort is orthogonal to which model/role is selected). Same refusal
+   * rules as `setModel` (`'not-idle'` while working). The resolved `thinkingLevel` is `null`
+   * (gate round 1, 2026-10-15, amended by Stuart) when OMP's `get_state` does not report a level
+   * back for a successful switch -- which OMP does both for `'inherit'` itself (resolved instead
+   * to `null` here ONLY if the request was for a different level the model did not confirm; a
+   * successful `'inherit'` request always resolves to the literal string `'inherit'`, never
+   * `null`, since Default is always a valid outcome regardless of whether the model echoes it)
+   * and for any OTHER level on a model that does not report reasoning effort at all. `null` MUST
+   * NOT be treated as an error: the renderer shows "Not reported by this model" for it, never a
+   * toast, since the underlying `set_thinking_level` RPC itself already succeeded. */
+  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<Result<{ thinkingLevel: string | null }>>;
 }
+

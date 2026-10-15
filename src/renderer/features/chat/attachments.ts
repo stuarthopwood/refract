@@ -1,7 +1,10 @@
 // Composer attachments (spec 009): pending images and oversized-text chips held only in the
 // renderer's own memory for the draft currently being composed (data-model.md "Held in memory").
-// Pure types and helpers; MessageInput.tsx owns the actual state and wiring, AttachmentStrip.tsx
-// and the preview modals own the presentation.
+// Mostly pure types and helpers; MessageInput.tsx owns most state and wiring, AttachmentStrip.tsx
+// and the preview modals own the presentation. The one exception is `attachImageFile` below
+// (gate round 1, 2026-10-15, code-reviewer MEDIUM): the exact validate-plus-commit sequence a
+// pasted image and the composer's Attach button (ComposerPickers.tsx) both need, so it lives
+// here, the one place already shared by both callers, rather than as a second independent copy.
 import type { ImageContent, SupportedImageMimeType } from '../../../shared/frames'
 import {
   LARGE_PASTE_CHIP_THRESHOLD,
@@ -10,6 +13,7 @@ import {
   matchesImageSignature,
   SUPPORTED_IMAGE_MIME_TYPES
 } from '../../../shared/images'
+import { notify, useDraftStore } from '@/state'
 
 export interface PendingImageAttachment {
   kind: 'image'
@@ -157,6 +161,28 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
 /** FR-006: the wire-level shape sent as one entry of the outgoing command's `images` array. */
 export function toImageContent(attachment: PendingImageAttachment): ImageContent {
   return { type: 'image', data: attachment.base64, mimeType: attachment.mimeType }
+}
+
+/** Validates `file` via `buildImageAttachment` and either toasts the rejection reason or commits
+ * the resulting attachment to the draft store and announces it -- the single path both a pasted
+ * clipboard image (`MessageInput.tsx`'s own `handlePaste`) and the composer's Attach button
+ * (`ComposerPickers.tsx`'s `AttachButton`) go through, so neither the toast wording nor the
+ * draft-store write can drift between the two (gate round 1, code-reviewer MEDIUM finding: they
+ * used to be two independent four-line copies of this exact sequence). */
+export async function attachImageFile(sessionId: string, file: File): Promise<void> {
+  const result = await buildImageAttachment(file)
+  if (!result.ok) {
+    notify({
+      code: result.reason === 'too-large' ? 'image-too-large' : 'invalid-argument',
+      message:
+        result.reason === 'too-large'
+          ? `Image is too large to attach (over the ${formatByteSize(MAX_IMAGE_INPUT_BYTES)} limit); nothing was attached.`
+          : 'That image could not be read; nothing was attached.'
+    })
+    return
+  }
+  useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+  useDraftStore.getState().announceAttachment(sessionId, `Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
 }
 
 // ---------------------------------------------------------------------------

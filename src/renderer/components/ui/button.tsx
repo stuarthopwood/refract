@@ -12,9 +12,13 @@ const buttonVariants = cva(
         // 2026-10-15 grill (issue #564, decision 5): a solid neutral fill (inverted
         // foreground-on-background), never red/destructive -- stopping a turn keeps the work,
         // so it reads as the opposite of a destructive action, not one. Used so far only by the
-        // composer's Stop button (MessageInput.tsx), which keeps Send on `outline` throughout so
-        // the two are never both filled at once.
-        invert: "bg-foreground text-background hover:bg-foreground",
+        // composer's Stop button (MessageInput.tsx), which sits beside Send's own dedicated
+        // `--send` accent fill (gate round 1, 2026-10-15: Send no longer shares `--primary`,
+        // which reads as a near-identical near-white neutral to THIS fill in two of the three
+        // built-in themes) -- the two are never the same colour, so they stay visually distinct
+        // even though both are solid. `hover:bg-foreground/85` (gate round 1 fix: previously
+        // `hover:bg-foreground`, identical to the resting fill, gave no hover feedback at all).
+        invert: "bg-foreground text-background hover:bg-foreground/85",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
