@@ -27,7 +27,8 @@
 // for full keyboard coverage of the whole card.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -129,6 +130,13 @@ function copyBuiltExe(destDir) {
   const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(src)) throw new Error(`copyBuiltExe: built exe not found at ${src}`);
   copyFileSync(src, dest);
+  // Gate round 3: logged, not compared against anything stored -- a sibling lane's own gate
+  // round once found a copied exe whose embedded JS bundle was stale (cargo's own asset
+  // embedding keyed off a directory mtime that a content-only change does not always bump), so
+  // this hash is the evidence a reviewer needs to confirm two runs actually built different code
+  // rather than silently reusing a cached binary.
+  const hash = createHash('sha256').update(readFileSync(dest)).digest('hex');
+  console.log(`verify-tauri-ask: copied exe sha256 ${hash} (${dest})`);
   return dest;
 }
 
@@ -424,7 +432,6 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     );
     assert(focusedIsSubmitButton, 'Tab, Tab from the Other input did not land keyboard focus on the Submit button');
     await cdp.pressEnter();
-    await cdp.screenshot(path.join(ASK_SHOT_DIR, '04-submit-clicked.png'));
 
     // The card resolves: its own Cancel/Submit footer is gone (no tab row, no Submit/Next button
     // left anywhere), and the transcript's own `ask` tool item supersedes it with the collapsed
@@ -459,7 +466,28 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
     // separator and is NOT the accessible name despite round 2's field calling it that -- read
     // the real, computed accessible name through the CDP Accessibility domain instead.
     const focusedAxName = await getActiveElementAccessibleName(cdp);
-    console.log(`verify-tauri-ask: focus after Submit -- element is the Asked-user row: ${focusIsTheRow}; textContent: ${JSON.stringify(focusedTextContent)}; real accessible name (AX tree): ${JSON.stringify(focusedAxName)}`);
+    // Gate round 3 (architect M-1): is the focus ring actually visible, and if not, why -- taken
+    // HERE (focus already confirmed on the row), not right after pressEnter, since the earlier
+    // screenshot could race the backend round trip and capture a transitional frame.
+    const ringDiag = await cdp.evaluate(`(() => {
+      const el = document.activeElement;
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { matchesFocusVisible: el.matches(':focus-visible'), outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, outlineColor: cs.outlineColor, outlineOffset: cs.outlineOffset };
+    })()`);
+    console.log(`verify-tauri-ask: focus after Submit -- element is the Asked-user row: ${focusIsTheRow}; textContent: ${JSON.stringify(focusedTextContent)}; real accessible name (AX tree): ${JSON.stringify(focusedAxName)}; focus-ring diagnostic: ${JSON.stringify(ringDiag)}`);
+    await cdp.screenshot(path.join(ASK_SHOT_DIR, '04-submit-clicked.png'));
+    // Gate round 3 (architect M-1): a tight `clip` around the row's own bounding rect, scaled up
+    // -- the full-window screenshot above renders this row at under 30px tall, too small for a
+    // 2px ring to read reliably by eye even when the computed style above confirms it is there.
+    const rowRect = await cdp.evaluate(
+      `(() => { const el = ${askRowTriggerFinder()}; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+    );
+    const { data: closeUpData } = await cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: Math.max(rowRect.x - 8, 0), y: Math.max(rowRect.y - 8, 0), width: rowRect.width + 16, height: rowRect.height + 16, scale: 3 },
+    });
+    writeFileSync(path.join(ASK_SHOT_DIR, '04b-submit-focus-ring-closeup.png'), Buffer.from(closeUpData, 'base64'));
 
     // Expand it and assert both questions' own Answer rows.
     await cdp.click(askRowTriggerFinder());
