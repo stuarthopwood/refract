@@ -18,7 +18,9 @@
 // (or a prior `pnpm tauri build --debug --no-bundle`) already produced, rebuilding it fresh here
 // too (cheap once Rust is unchanged -- only the frontend changed, so this is a vite rebuild plus
 // an incremental cargo link) and copying it to a PRIVATE scratch dir immediately, confirmed
-// byte-unchanged through the copy, per the standing cross-lane shared-target lesson.
+// byte-unchanged through the copy, per the standing cross-lane shared-target lesson. The copy's
+// own sha256 is asserted again right after CDP attaches (`assertExeUnchanged`) -- the "exe under
+// test is the one this run built" proof every finding below depends on.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
@@ -35,11 +37,21 @@ const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug')
 const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-565-shots/';
 
 const TURN_A_PROMPT =
-  "Make exactly TWO separate bash tool calls, one after the other, never combined into one call: first run `echo spine-one`, then second run a command that DELIBERATELY fails, such as `exit 7`. Wait for both calls to finish. Then reply with exactly the single word 'spine565a' and nothing else.";
+  "Make exactly TWO separate bash tool calls, one after the other, never combined into one call: first run exactly `echo spine-one`, then second run exactly `exit 7` (which deliberately fails). Wait for both calls to finish. Then reply with exactly the single word 'spine565a' and nothing else.";
 const TURN_B_PROMPT =
-  "Make exactly ONE bash tool call: run `echo spine-solo`. Then reply with exactly the single word 'spine565b' and nothing else.";
+  "Make exactly ONE bash tool call: run exactly `echo spine-solo`. Then reply with exactly the single word 'spine565b' and nothing else.";
 const TURN_A_SENTINEL = 'spine565a';
 const TURN_B_SENTINEL = 'spine565b';
+// Gate finding (security, Medium): the auto-approve poller only clicks Approve for a request that
+// names the `bash` tool AND whose own target matches exactly what the two prompts above ask for --
+// never a blanket "click every Approve button" (the #563 precedent this script copied).
+const ALLOWED_APPROVAL_TARGET_RE = /^(echo spine-(one|solo)|exit 7)$/;
+// #565-only DOM marker (gate finding): matches a `ToolGroupRow` header by its EXACT label text
+// ("bash"), never a substring match against a button's whole textContent -- a streaming Thinking
+// row's own trigger can contain the word "bash" in its preview text and sits earlier in the DOM,
+// which a loose `.includes('bash')` match would click or measure instead (gate finding, Medium).
+const BASH_HEADER_FINDER =
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && label.textContent.trim() === 'bash'; })`;
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -139,15 +151,35 @@ function assertExeUnchanged(exePath, expectedHash, label) {
   if (actualHash !== expectedHash) {
     throw new Error(`assertExeUnchanged (${label}): ${exePath} hash is ${actualHash.slice(0, 12)}…, expected ${expectedHash.slice(0, 12)}… -- the exe under test changed after launch; this run's findings cannot be trusted.`);
   }
+  console.log(`verify-565-spine: exe sha256 ${expectedHash.slice(0, 12)}… confirmed unchanged (${label}).`);
 }
 
+/** Background poller: clicks Approve ONLY for a pending request that names the `bash` tool and
+ * whose own target is exactly one of this script's two prompts' own commands -- never a blanket
+ * "click every Approve" (gate finding, security Medium: the #563 precedent this copied approved
+ * anything the model asked for). An unexpected request is left pending and logged, which makes
+ * the run fail loudly via the sentinel-wait timeout below instead of silently rubber-stamping it. */
 function startAutoApprove(cdp) {
   let stopped = false;
   const loop = (async () => {
     while (!stopped) {
       try {
-        const hasApprove = await cdp.evaluate(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`);
-        if (hasApprove) await cdp.clickByText('Approve');
+        const info = await cdp.evaluate(`(() => {
+          const approveBtn = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve');
+          if (!approveBtn) return null;
+          const title = document.querySelector('[data-slot="card-title"]');
+          const desc = document.querySelector('[data-slot="card-description"]');
+          return { title: title ? title.textContent.trim() : null, target: desc ? desc.textContent.trim() : null };
+        })()`);
+        if (info) {
+          const expectedTool = info.title === 'Allow tool: bash';
+          const expectedTarget = typeof info.target === 'string' && ALLOWED_APPROVAL_TARGET_RE.test(info.target.trim());
+          if (expectedTool && expectedTarget) {
+            await cdp.clickByText('Approve');
+          } else {
+            console.warn(`verify-565-spine: NOT auto-approving an unexpected request (title=${JSON.stringify(info.title)}, target=${JSON.stringify(info.target)}) -- left pending.`);
+          }
+        }
       } catch {
         // transient; retried next tick
       }
@@ -162,17 +194,13 @@ function startAutoApprove(cdp) {
   };
 }
 
-/** Finds the `ToolGroupRow` header trigger by its visible tool name (`bash`), scoped to the
- * transcript -- never a generic first-button match, so this fails loudly if the group never
- * rendered instead of silently clicking something unrelated. */
-async function findToolGroupTrigger(cdp) {
-  return cdp.evaluate(
-    `(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return false; const btn = Array.from(t.querySelectorAll('button')).find((el) => el.textContent.includes('bash')); return !!btn; })()`,
-  );
+async function countBashHeaders(cdp) {
+  return cdp.evaluate(`(${BASH_HEADER_FINDER}).length`);
 }
 
-async function clickToolGroupTrigger(cdp) {
-  await cdp.click(`(() => { const t = document.querySelector('[aria-label="Transcript"]'); if (!t) return null; return Array.from(t.querySelectorAll('button')).find((el) => el.textContent.includes('bash')); })()`);
+/** Clicks the bash `ToolGroupRow` header at `index` (supports negative indices, "last" = -1). */
+async function clickBashHeaderAt(cdp, index) {
+  await cdp.click(`(${BASH_HEADER_FINDER}).at(${index})`);
 }
 
 async function getAccessibleNameAndRole(cdp, selectorExpr) {
@@ -183,6 +211,30 @@ async function getAccessibleNameAndRole(cdp, selectorExpr) {
   const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
   const node = nodes?.[0];
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
+}
+
+/** Drives the REAL Profile-menu UI (gate finding H1: `window.refract.theme.preview(id)` only
+ * moves the title-bar overlay colour, never the renderer's `<html>` class the CSS tokens key off
+ * -- `theme-store.ts`'s own CRITICAL-remediation comment) -- click the profile button, the
+ * "Theme" submenu trigger, then the named preset; waits for the real `<html>` class to confirm. */
+async function switchTheme(cdp, themeId, themeName) {
+  await cdp.click(`document.querySelector('[data-profile-name-button]')`);
+  await cdp.waitFor(
+    `!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`,
+    { timeoutMs: 10_000, label: 'Profile menu open, Theme submenu trigger visible' },
+  );
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`);
+  await cdp.waitFor(
+    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
+    { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` },
+  );
+  await cdp.click(
+    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`,
+  );
+  await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
+    timeoutMs: 15_000,
+    label: `<html> class theme-${themeId} applied (real store round trip, not just the title-bar preview)`,
+  });
 }
 
 async function main() {
@@ -258,10 +310,7 @@ async function main() {
     // Best-effort Running-state screenshot (real model timing is not controllable): capture
     // once the group header first appears, before it necessarily settles. Non-fatal if missed.
     try {
-      await cdp.waitFor(
-        `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && Array.from(t.querySelectorAll('button')).some((el) => el.textContent.includes('bash')); })()`,
-        { timeoutMs: 20_000, label: 'bash group header first appears (best-effort running capture)' },
-      );
+      await cdp.waitFor(`(${BASH_HEADER_FINDER}).length > 0`, { timeoutMs: 20_000, label: 'bash group header first appears (best-effort running capture)' });
       await cdp.screenshot(path.join(SHOTS_DIR, '00-dark-running.png'));
       findings.push("Captured a best-effort 'running' screenshot before turn (a) settled.");
     } catch {
@@ -282,131 +331,161 @@ async function main() {
     const turnATranscriptHtml = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.outerHTML ?? ''`);
     writeFileSync(path.join(SHOTS_DIR, 'turn-a-transcript.html'), turnATranscriptHtml);
 
-    const hasGroup = await findToolGroupTrigger(cdp);
-    if (!hasGroup) {
+    const headerCountAfterA = await countBashHeaders(cdp);
+    if (headerCountAfterA < 1) {
       await cdp.screenshot(path.join(SHOTS_DIR, '99-diag-turn-a-no-group.png'));
-      throw new Error('verify-565-spine: no bash ToolGroupRow trigger found after turn (a) settled -- see turn-a-transcript.html');
+      throw new Error(`verify-565-spine: expected at least 1 bash ToolGroupRow header after turn (a), found ${headerCountAfterA} -- see turn-a-transcript.html`);
     }
-    findings.push('Multi-call bash ToolGroupRow rendered after turn (a).');
+    // The real model can stream a Thinking row (or other output) between the two bash calls,
+    // which `groupToolItems.ts`'s own documented boundary rule splits into two separate solo
+    // groups instead of one multi-call group -- real-model timing/narration is not controllable
+    // the way a fake-omp tape is. Find whichever header's own collapsed summary actually shows
+    // the "+ N other(s)" multi-call text; if none does, the multi-call scenario itself was not
+    // exercised this run (recorded below), but the solo-group checks (decision 13) still are.
+    const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\bother(s)?\\b/.test(el.textContent))`);
+    const groupExercised = multiGroupIndex !== -1;
+    if (!groupExercised) {
+      notExercised.push(`The real model split its two bash calls into ${headerCountAfterA} separate groups instead of one multi-call group (likely a Thinking row streamed between them) -- decision 8/10's multi-call Spine geometry, the "N failed" collapsed-summary text, and the member-body padding could not be exercised this run; see turn-a-transcript.html.`);
+    } else {
+      findings.push(`Multi-call bash ToolGroupRow rendered after turn (a) (header index ${multiGroupIndex} of ${headerCountAfterA}, exact label match, not a substring).`);
+    }
 
-    // #565-only marker: the group's collapsed summary must name the failure in TEXT, and the
-    // member list must NOT be in the DOM yet (collapsed by default, decision 15).
-    const collapsedSummaryHasFailure = await cdp.evaluate(
-      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && /1 failed/.test(t.textContent); })()`,
-    );
-    if (!collapsedSummaryHasFailure) notExercised.push('Collapsed group summary did not contain "1 failed" text -- see turn-a-transcript.html.');
-    else findings.push('Collapsed group names the failure in text ("...1 failed"), never colour alone (decision 16).');
+    const expandIndex = groupExercised ? multiGroupIndex : 0;
+
+    if (groupExercised) {
+      // #565-only marker: the group's collapsed summary must name the failure in TEXT, and the
+      // member list must NOT be in the DOM yet (collapsed by default, decision 15).
+      const collapsedSummaryHasFailure = await cdp.evaluate(
+        `(${BASH_HEADER_FINDER})[${multiGroupIndex}].textContent.includes('1 failed')`,
+      );
+      if (!collapsedSummaryHasFailure) notExercised.push('Collapsed group summary did not contain "1 failed" text -- see turn-a-transcript.html.');
+      else findings.push('Collapsed group names the failure in text ("...1 failed"), never colour alone (decision 16).');
+    }
 
     const olPresentCollapsed = await cdp.evaluate(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`);
     if (olPresentCollapsed) throw new Error('verify-565-spine: a SpineList <ol> is present in the DOM while the group is still COLLAPSED -- decision 17 requires it unmounted until expanded.');
-    findings.push('SpineList is unmounted while the group is collapsed (decision 17).');
+    findings.push('SpineList is unmounted while every group is collapsed (decision 17).');
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-collapsed-failed-group.png'));
 
-    // ---- Expand the group: measure the Spine's real geometry ----
-    await clickToolGroupTrigger(cdp);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`, { timeoutMs: 10_000, label: 'SpineList <ol> mounted after expand' });
+    // ---- Expand the (multi-call, if one exists) group: measure the Spine's real geometry ----
+    await clickBashHeaderAt(cdp, expandIndex);
+    if (groupExercised) {
+      await cdp.waitFor(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`, { timeoutMs: 10_000, label: 'SpineList <ol> mounted after expand' });
+    } else {
+      await sleep(500);
+    }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-dark-expanded-failed-group.png'));
 
-    const geometry = await cdp.evaluate(`(() => {
-      const t = document.querySelector('[aria-label="Transcript"]');
-      const header = Array.from(t.querySelectorAll('button')).find((el) => el.textContent.includes('bash'));
-      const headerIcon = header ? header.querySelector('span') : null;
-      const ol = t.querySelector('ol.border-l');
-      const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
-      const firstMemberIcon = members[0] ? members[0].querySelector('span') : null;
-      const r = (el) => (el ? el.getBoundingClientRect() : null);
-      return {
-        headerIconLeft: r(headerIcon)?.left ?? null,
-        headerIconWidth: r(headerIcon)?.width ?? null,
-        olLeft: r(ol)?.left ?? null,
-        memberCount: members.length,
-        firstMemberIconLeft: r(firstMemberIcon)?.left ?? null,
-      };
-    })()`);
-    if (geometry.olLeft == null || geometry.headerIconLeft == null) {
-      throw new Error(`verify-565-spine: could not measure Spine geometry -- header icon or <ol> missing (${JSON.stringify(geometry)})`);
-    }
-    const headerIconToLine = geometry.olLeft - geometry.headerIconLeft;
-    if (headerIconToLine < 12 || headerIconToLine > 20) {
-      notExercised.push(`Spine line x-offset from the header icon measured ${headerIconToLine}px, expected ~16px (ml-4) -- geometry drifted from decision 8; see turn-a-transcript.html.`);
-    } else {
-      findings.push(`Spine line measured ${headerIconToLine}px right of the header's own icon (decision 8 expects 16px, ml-4).`);
-    }
-    if (geometry.headerIconWidth == null || geometry.headerIconWidth < 15 || geometry.headerIconWidth > 17) {
-      notExercised.push(`Header icon slot measured ${geometry.headerIconWidth}px wide, expected 16px (decision 7, size-4).`);
-    } else {
-      findings.push(`Icon slot measured ${geometry.headerIconWidth}px (decision 7: 14px -> 16px).`);
-    }
-    if (geometry.memberCount !== 2) {
-      throw new Error(`verify-565-spine: expected 2 SpineList members after turn (a), found ${geometry.memberCount}.`);
-    }
-    if (geometry.firstMemberIconLeft != null) {
-      const lineToMemberIcon = geometry.firstMemberIconLeft - geometry.olLeft;
-      if (lineToMemberIcon < 5 || lineToMemberIcon > 11) {
-        notExercised.push(`Member icon measured ${lineToMemberIcon}px right of the Spine line, expected ~8px (px-2); see turn-a-transcript.html.`);
-      } else {
-        findings.push(`Member icon measured ${lineToMemberIcon}px right of the Spine line (decision 8 expects 8px, px-2).`);
+    if (groupExercised) {
+      const geometry = await cdp.evaluate(`(() => {
+        const t = document.querySelector('[aria-label="Transcript"]');
+        const header = (${BASH_HEADER_FINDER})[${multiGroupIndex}];
+        const headerIcon = header ? header.querySelector('span') : null;
+        const ol = t.querySelector('ol.border-l');
+        const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
+        const firstMemberIcon = members[0] ? members[0].querySelector('span') : null;
+        const r = (el) => (el ? el.getBoundingClientRect() : null);
+        return {
+          headerIconLeft: r(headerIcon)?.left ?? null,
+          headerIconWidth: r(headerIcon)?.width ?? null,
+          olLeft: r(ol)?.left ?? null,
+          memberCount: members.length,
+          firstMemberIconLeft: r(firstMemberIcon)?.left ?? null,
+        };
+      })()`);
+      if (geometry.olLeft == null || geometry.headerIconLeft == null) {
+        throw new Error(`verify-565-spine: could not measure Spine geometry -- header icon or <ol> missing (${JSON.stringify(geometry)})`);
       }
+      if (geometry.headerIconWidth == null || geometry.headerIconWidth < 15 || geometry.headerIconWidth > 17) {
+        notExercised.push(`Header icon slot measured ${geometry.headerIconWidth}px wide, expected 16px (decision 7, size-4).`);
+      } else {
+        findings.push(`Icon slot measured ${geometry.headerIconWidth}px (decision 7: 14px -> 16px).`);
+      }
+      // Gate finding (test-reviewer/code-reviewer HIGH, corroborated by ui-architect-v3): the
+      // Spine's own x is the header icon's CENTRE, not its left edge -- `ml-4` (16px) is measured
+      // from the `CollapsibleContent`'s own left edge (zeroed padding, same x as the trigger's own
+      // left edge), while the icon itself sits 8px further in (the trigger's `px-2`) and is 16px
+      // wide, so its centre is ALSO at root+16. Expect ~0px between the two, not ~16px.
+      const iconCentre = geometry.headerIconLeft + geometry.headerIconWidth / 2;
+      const lineToIconCentre = geometry.olLeft - iconCentre;
+      if (Math.abs(lineToIconCentre) > 3) {
+        notExercised.push(`Spine line sits ${lineToIconCentre.toFixed(1)}px right of the header icon's own centre, expected ~0px (decision 8: the line hangs from the icon's centre) -- see turn-a-transcript.html.`);
+      } else {
+        findings.push(`Spine line measured ${lineToIconCentre.toFixed(1)}px from the header icon's own centre (decision 8: the Spine hangs from the icon).`);
+      }
+      if (geometry.memberCount < 2) {
+        notExercised.push(`Expected 2+ SpineList members in the multi-call group, found ${geometry.memberCount}.`);
+      } else if (geometry.firstMemberIconLeft != null) {
+        const lineToMemberIcon = geometry.firstMemberIconLeft - geometry.olLeft;
+        if (lineToMemberIcon < 5 || lineToMemberIcon > 11) {
+          notExercised.push(`Member icon measured ${lineToMemberIcon}px right of the Spine line, expected ~8px (px-2); see turn-a-transcript.html.`);
+        } else {
+          findings.push(`Member icon measured ${lineToMemberIcon}px right of the Spine line (decision 8 expects 8px, px-2).`);
+        }
+      }
+
+      // ---- Member body padding (decision 10: pl-8) ----
+      await cdp.click(`(() => { const ol = document.querySelector('[aria-label="Transcript"] ol.border-l'); const li = ol ? ol.querySelector('li') : null; return li ? li.querySelector('button') : null; })()`);
+      const memberBodyPadding = await cdp.evaluate(`(() => {
+        const content = document.querySelector('[aria-label="Transcript"] ol.border-l [data-slot="collapsible-content"]');
+        return content ? getComputedStyle(content).paddingLeft : null;
+      })()`);
+      if (memberBodyPadding !== '32px') {
+        notExercised.push(`Member expanded body computed padding-left is ${memberBodyPadding}, expected 32px (pl-8, decision 10).`);
+      } else {
+        findings.push('Member expanded body starts at pl-8 (32px), the label column (decision 10).');
+      }
+      await cdp.screenshot(path.join(SHOTS_DIR, '03-dark-member-body-expanded.png'));
+
+      // ---- Accessible semantics: <ol> MUST read "list", never "tree" (decision 21) ----
+      const olAx = await getAccessibleNameAndRole(cdp, `document.querySelector('[aria-label="Transcript"] ol.border-l')`);
+      if (olAx.role !== 'list') {
+        throw new Error(`verify-565-spine: SpineList <ol> accessible role measured "${olAx.role}", decision 21 requires exactly "list" (never "tree", which belongs only to the Subagent panel).`);
+      }
+      findings.push('SpineList exposes role "list" in the accessibility tree, never "tree" (decision 21).');
     }
 
-    // ---- Icon slot / tabular-nums / hover-border-removal checks on the header trigger ----
+    // ---- Hover-border-removal check on the header trigger's own Collapsible root (checked
+    // regardless of whether a multi-call group exists -- every ToolGroupRow shares this root) ----
     const headerChecks = await cdp.evaluate(`(() => {
-      const t = document.querySelector('[aria-label="Transcript"]');
-      const header = Array.from(t.querySelectorAll('button')).find((el) => el.textContent.includes('bash'));
+      const header = (${BASH_HEADER_FINDER})[${expandIndex}];
       if (!header) return null;
       const root = header.closest('[data-slot="collapsible"]');
       const rootStyle = root ? getComputedStyle(root) : null;
-      const metaSpan = Array.from(header.querySelectorAll('span')).find((s) => /\\d+(ms|s)$|^\\d/.test(s.textContent.trim()) && getComputedStyle(s).fontVariantNumeric.includes('tabular'));
-      return {
-        rootBorderWidth: rootStyle ? rootStyle.borderWidth : null,
-        hasTabularNumsMeta: !!metaSpan,
-      };
+      return { rootBorderWidth: rootStyle ? rootStyle.borderWidth : null };
     })()`);
     if (!headerChecks) throw new Error('verify-565-spine: could not locate the bash group header a second time for style checks.');
-    if (headerChecks.rootBorderWidth !== '0px' && headerChecks.rootBorderWidth != null) {
+    if (headerChecks.rootBorderWidth == null) {
+      notExercised.push('Could not find the Collapsible root to measure its border-width (decision 18).');
+    } else if (headerChecks.rootBorderWidth !== '0px') {
       notExercised.push(`Collapsible root computed border-width is ${headerChecks.rootBorderWidth}, expected 0px (decision 18 removed the always-on border).`);
     } else {
       findings.push('Collapsible root carries no border at rest (decision 18, settles #430).');
     }
 
-    // ---- Member body padding (decision 10: pl-8) ----
-    await cdp.click(`(() => { const t = document.querySelector('[aria-label="Transcript"]'); const ol = t.querySelector('ol.border-l'); if (!ol) return null; const li = ol.querySelector('li'); return li ? li.querySelector('button') : null; })()`);
-    const memberBodyPadding = await cdp.evaluate(`(() => {
-      const t = document.querySelector('[aria-label="Transcript"]');
-      const content = t.querySelector('ol.border-l [data-slot="collapsible-content"]');
-      return content ? getComputedStyle(content).paddingLeft : null;
-    })()`);
-    if (memberBodyPadding !== '32px') {
-      notExercised.push(`Member expanded body computed padding-left is ${memberBodyPadding}, expected 32px (pl-8, decision 10).`);
-    } else {
-      findings.push('Member expanded body starts at pl-8 (32px), the label column (decision 10).');
-    }
-    await cdp.screenshot(path.join(SHOTS_DIR, '03-dark-member-body-expanded.png'));
-
-    // ---- Accessible semantics: <ol> reads "list", never "tree" (decision 21) ----
-    const olAx = await getAccessibleNameAndRole(cdp, `document.querySelector('[aria-label="Transcript"] ol.border-l')`);
-    if (olAx.role !== 'list') {
-      notExercised.push(`SpineList <ol> accessible role measured "${olAx.role}", expected "list" (decision 21).`);
-    } else {
-      findings.push('SpineList exposes role "list" in the accessibility tree, never "tree" (decision 21).');
-    }
-
     // ---- Collapse it back, then Dark/Obsidian/High-contrast screenshots ----
-    await clickToolGroupTrigger(cdp);
+    await clickBashHeaderAt(cdp, expandIndex);
     await cdp.waitFor(`!document.querySelector('[aria-label="Transcript"] ol.border-l')`, { timeoutMs: 10_000, label: 'SpineList <ol> unmounted after collapse' });
-    findings.push('Collapsing the group unmounts the SpineList again (decision 17).');
+    if (groupExercised) findings.push('Collapsing the group unmounts the SpineList again (decision 17).');
 
-    await cdp.evaluate(`(async () => { await window.refract.theme.preview('obsidian'); return true; })()`);
-    await sleep(300);
-    await clickToolGroupTrigger(cdp);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`, { timeoutMs: 10_000, label: 'Obsidian: expanded' });
-    await cdp.screenshot(path.join(SHOTS_DIR, '04-obsidian-expanded.png'));
-    findings.push('Obsidian theme screenshot captured, group expanded.');
+    // Gate-fix attempt (H1): drives the real Profile-menu Theme submenu instead of the
+    // title-bar-only IPC preview. Not yet proven reliable end to end (the click/submenu timing
+    // needs further work) -- wrapped so a failure here degrades to a recorded gap instead of
+    // aborting every OTHER check below, which do not depend on switching theme.
+    try {
+      await switchTheme(cdp, 'obsidian', 'Obsidian');
+      await clickBashHeaderAt(cdp, expandIndex);
+      await sleep(500);
+      await cdp.screenshot(path.join(SHOTS_DIR, '04-obsidian-expanded.png'));
+      findings.push('Obsidian theme screenshot captured (real <html> class confirmed, not just the title-bar preview), group expanded.');
 
-    await cdp.evaluate(`(async () => { await window.refract.theme.preview('dark-high-contrast'); return true; })()`);
-    await sleep(300);
-    await cdp.screenshot(path.join(SHOTS_DIR, '05-dark-high-contrast-expanded.png'));
-    findings.push('Dark (high contrast) theme screenshot captured, group expanded.');
+      await switchTheme(cdp, 'dark-high-contrast', 'Dark (high contrast)');
+      await cdp.screenshot(path.join(SHOTS_DIR, '05-dark-high-contrast-expanded.png'));
+      findings.push('Dark (high contrast) theme screenshot captured (real <html> class confirmed), group expanded.');
+    } catch (err) {
+      notExercised.push(`Could not drive the real Profile-menu Theme submenu this run (${err.message}) -- Obsidian/Dark-high-contrast screenshots not captured; the title-bar-only window.refract.theme.preview() IPC call is confirmed insufficient (theme-store.ts's own CRITICAL-remediation comment) but the real-UI click path still needs debugging.`);
+      await switchTheme(cdp, 'dark', 'Dark').catch(() => {});
+    }
 
     // ---- Narrow width (360px) and reduced motion ----
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -417,19 +496,33 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '06-360px-expanded.png'));
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
-    await cdp.evaluate(`(async () => { await window.refract.theme.preview('dark'); return true; })()`);
-    await sleep(300);
+    await switchTheme(cdp, 'dark', 'Dark').catch((err) => notExercised.push(`Could not confirm reset to Dark theme before reduced-motion check (${err.message}) -- the reduced-motion screenshot below may still be in the attempted-but-failed theme.`));
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-    const spineTransition = await cdp.evaluate(`(() => {
+    const spineMotion = await cdp.evaluate(`(() => {
       const ol = document.querySelector('[aria-label="Transcript"] ol.border-l');
       if (!ol) return null;
       const s = getComputedStyle(ol);
       return { transitionDuration: s.transitionDuration, animationName: s.animationName };
     })()`);
-    if (!spineTransition) notExercised.push('Could not measure the Spine <ol> transition/animation under reduced motion (element not found).');
-    else findings.push(`Spine has no transition/animation under reduced motion (transitionDuration=${spineTransition.transitionDuration}, animationName=${spineTransition.animationName}), matching decision 27 (it never animates regardless).`);
+    if (!spineMotion) {
+      notExercised.push('Could not measure the Spine <ol> transition/animation under reduced motion (element not found).');
+    } else {
+      const allZeroTransition = spineMotion.transitionDuration.split(',').every((d) => d.trim() === '0s');
+      const noAnimation = spineMotion.animationName === 'none';
+      if (allZeroTransition && noAnimation) {
+        findings.push(`Spine genuinely has no transition/animation under reduced motion (transitionDuration=${spineMotion.transitionDuration}, animationName=${spineMotion.animationName}), matching decision 27.`);
+      } else {
+        notExercised.push(`Spine <ol> computed transitionDuration=${spineMotion.transitionDuration}, animationName=${spineMotion.animationName} under reduced motion -- decision 27 expects none at all.`);
+      }
+    }
     await cdp.screenshot(path.join(SHOTS_DIR, '07-dark-reduced-motion.png'));
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+
+    // ---- Collapse turn (a)'s group before turn (b) (gate finding, HIGH): leaving it expanded
+    // made the later "group of one has no Spine" check always see a stray <ol> and misreport a
+    // decision-13 failure on a correct build. ----
+    await clickBashHeaderAt(cdp, 0);
+    await cdp.waitFor(`!document.querySelector('[aria-label="Transcript"] ol.border-l')`, { timeoutMs: 10_000, label: "Turn (a)'s group re-collapsed before turn (b)" });
 
     // ---- Turn (b): exactly one bash call -> solo ToolGroupRow, no Spine, no <ol> ----
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
@@ -440,18 +533,33 @@ async function main() {
     );
     const turnBTranscriptHtml = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.outerHTML ?? ''`);
     writeFileSync(path.join(SHOTS_DIR, 'turn-b-transcript.html'), turnBTranscriptHtml);
-    // Expand the LAST bash trigger (turn b's own solo group, not turn a's).
-    await cdp.click(`(() => { const t = document.querySelector('[aria-label="Transcript"]'); const btns = Array.from(t.querySelectorAll('button')).filter((el) => el.textContent.includes('bash')); return btns[btns.length - 1]; })()`);
-    await sleep(500);
-    const soloHasOl = await cdp.evaluate(`(() => {
-      const t = document.querySelector('[aria-label="Transcript"]');
-      const ols = Array.from(t.querySelectorAll('ol.border-l'));
-      return ols.length;
+
+    const headerCountAfterB = await countBashHeaders(cdp);
+    if (headerCountAfterB !== headerCountAfterA + 1) {
+      await cdp.screenshot(path.join(SHOTS_DIR, '99-diag-turn-b-no-group.png'));
+      throw new Error(`verify-565-spine: expected ${headerCountAfterA + 1} bash ToolGroupRow headers after turn (b) (turn a's ${headerCountAfterA}, still collapsed, plus turn b's own new solo group), found ${headerCountAfterB} -- see turn-b-transcript.html`);
+    }
+
+    // #565 decision 33 (tabular-nums): turn (b)'s own solo header HAS a `meta` duration slot
+    // (the multi-call header from turn (a) does not -- `ToolRow.tsx`'s `meta` is `solo &&`).
+    const soloMetaCheck = await cdp.evaluate(`(() => {
+      const header = (${BASH_HEADER_FINDER}).at(-1);
+      if (!header) return null;
+      const metaSpan = Array.from(header.querySelectorAll('span')).find((s) => /\\d/.test(s.textContent) && getComputedStyle(s).fontVariantNumeric.includes('tabular'));
+      return { hasTabularNumsMeta: !!metaSpan, metaText: metaSpan ? metaSpan.textContent.trim() : null };
     })()`);
-    // Turn (a)'s own group is collapsed at this point (never re-expanded), so any <ol> found now
-    // belongs only to a genuinely multi-member group; turn (b)'s solo expansion must add none.
-    if (soloHasOl > 0) {
-      notExercised.push(`A SpineList <ol> was found (count=${soloHasOl}) after expanding turn (b)'s solo bash call -- decision 13 requires no Spine for a group of one; see turn-b-transcript.html.`);
+    if (!soloMetaCheck || !soloMetaCheck.hasTabularNumsMeta) {
+      notExercised.push(`Turn (b)'s solo header meta slot did not expose tabular-nums text (decision 33); measured ${JSON.stringify(soloMetaCheck)}.`);
+    } else {
+      findings.push(`Turn (b)'s solo header meta ("${soloMetaCheck.metaText}") uses tabular-nums (decision 33).`);
+    }
+
+    // Expand turn (b)'s own solo group (the LAST bash header) and confirm decision 13: no Spine.
+    await clickBashHeaderAt(cdp, -1);
+    await sleep(500);
+    const soloOlCount = await cdp.evaluate(`document.querySelectorAll('[aria-label="Transcript"] ol.border-l').length`);
+    if (soloOlCount > 0) {
+      notExercised.push(`A SpineList <ol> was found (count=${soloOlCount}) after expanding turn (b)'s solo bash call -- decision 13 requires no Spine for a group of one; see turn-b-transcript.html.`);
     } else {
       findings.push("A group of exactly one call (turn b's solo bash) renders with no SpineList and no <ol> (decision 13).");
     }
