@@ -295,7 +295,15 @@ test("renderPickupPlan lists no pipeline for needs-info or needs-triage/duplicat
 
 test("renderPickupPlan lists the full specify pipeline in order for a ready-for-agent issue", () => {
   const plan = renderPickupPlan({ state: "ready-for-agent", route: "specify" });
-  const order = ["/speckit.specify", "/speckit.clarify", "/speckit.plan", "/speckit.tasks", "/speckit.analyze", "/speckit.implement"];
+  const order = [
+    "/grill-with-docs",
+    "/speckit.specify",
+    "/speckit.clarify",
+    "/speckit.plan",
+    "/speckit.tasks",
+    "/speckit.analyze",
+    "/speckit.implement",
+  ];
   let lastIndex = -1;
   for (const step of order) {
     const i = plan.indexOf(step);
@@ -310,6 +318,7 @@ test("renderPickupPlan names the resolved converge feature directory, or a gener
   assert.match(named, /`specs\/002-issue-triage-automation`/);
   assert.match(named, /speckit\.converge/);
   assert.match(named, /speckit\.implement/);
+  assert.ok(named.indexOf("/grill-with-docs") < named.indexOf("speckit.converge"), "grill-with-docs should appear before speckit.converge");
 
   const fallback = renderPickupPlan({ state: "ready-for-agent", route: "converge" }, null);
   assert.match(fallback, /the relevant existing feature directory/);

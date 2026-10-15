@@ -156,3 +156,17 @@ there). A malformed title silently breaks both the version bump and the changelo
   "Breaking changes" `CHANGELOG.md` section is built from PR titles only, so a major release can
   ship with no Breaking changes section listed if the breaking PR's own title didn't also use
   `!`. Use `!` in the title too whenever a change is actually breaking.
+
+## Grill first, then the full Spec Kit plan (HARD RULE)
+
+On 2026-10-15 the user decided every Refract story starts with a `/grill-with-docs` session (the
+main agent interviews Stuart against `CONTEXT.md`, `docs/adr` and the code, one question at a
+time with a recommended answer, updating `CONTEXT.md` and ADRs inline), and its outcomes feed the
+Spec Kit steps. Then the issue's whole Spec Kit pickup plan runs in order, with no step skipped:
+
+- Converge route: amend the spec, `/speckit.converge`, `/speckit.implement`.
+- Specify route: `/speckit.specify`, `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`,
+  `/speckit.analyze`, `/speckit.implement`.
+- The grill is run by the main agent with Stuart, never by a delegated worker — workers cannot
+  ask Stuart questions; the main agent passes the grill's outcomes to the worker in its brief.
+- Put this rule in every delegation brief.
