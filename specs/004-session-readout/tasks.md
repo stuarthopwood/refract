@@ -512,3 +512,35 @@ simulated through `window.__refractStores`, the same route as every prior pass);
 (mouse `:hover`) display of the `title` tooltip itself was not captured (the attribute's presence
 and value were read directly from the DOM instead, which is what a screen reader/assistive
 technology also exposes, independent of mouse hover).
+
+## Phase 34: Convergence for issue #437
+
+**Goal**: close the gap between the amended FR-002/FR-003 (2026-10-15 grill: one shared
+lower-case `k`/`m`/`b` number formatter for the Changes Readout, the Context usage Readout, and
+the Session details card's diff line, replacing the upper-case/variable-decimal
+`Intl.NumberFormat(..., { notation: 'compact' })` helper `ReadoutChips.tsx` uses today only for
+the Changes chip) and the code, which still shows the old format in both places and has no
+shared module at all.
+
+- [ ] T130 [US1] Add `src/renderer/lib/compactNumber.ts`: one `compactNumber(n: number): string`
+  export. Plain below 1,000; above it, abbreviate with lower-case `k`/`m`/`b` (English suffixes
+  regardless of locale), at most one decimal, trailing zero dropped (`1m`, never `1.0m`), round
+  half up; when rounding to one decimal would reach 1,000 of the current tier, carry into the
+  next larger tier instead (999,950 -> `1m`, never `1000k`).
+- [ ] T131 [US1] `sessionDisplay.tsx`'s `formatDiffStat` uses `compactNumber` for `stat.files`,
+  `stat.additions`, and `stat.deletions` (singular/plural "file"/"files" still keyed off the RAW
+  `stat.files` value, unaffected by abbreviation). This is the Session details card's own figure
+  (`SessionDetailsCard.tsx`), so it now abbreviates there too, matching the status line.
+- [ ] T132 [US1] `ReadoutChips.tsx`'s `ChangesChip` calls `formatDiffStat` unconditionally for the
+  real-`DiffStat` case (the separate large-count branch and the local `compact()`/
+  `COMPACT_NUMBER_FORMAT`/`COMPACT_THRESHOLD` helpers are removed entirely, now that
+  `formatDiffStat` itself abbreviates).
+- [ ] T133 [US1] `ReadoutChips.tsx`'s `ContextUsageChip`: visible text becomes
+  `"{compactNumber(used)}/{compactNumber(window)} ({percent}%)"` (drops the word "tokens"); the
+  existing `NUMBER_FORMAT` constant is removed once nothing else in the file uses it. Both the
+  normal and the high-usage state get a real `sr-only` span carrying the full phrase ("Context
+  usage{ high|}: {used} of {window} tokens used, {percent} percent") next to the existing
+  `aria-hidden` visual span, the same pattern `CurrentTimeChip`/`TodoProgressChip` already use;
+  the chip's own `accessibleName` prop (passed to `ReadoutChip`'s role-less `<span>` fallback,
+  which several real screen readers ignore `aria-label` on) is dropped for this chip.
+
