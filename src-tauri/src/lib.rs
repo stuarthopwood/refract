@@ -307,12 +307,22 @@ pub fn run() {
     let mut dispatcher = Dispatcher::new();
     ipc::register_handlers(&mut dispatcher);
 
-    let app = tauri::Builder::default()
+    // Debug builds only, same posture as `REFRACT_DATA_DIR` above: a scratch live check runs
+    // beside Stuart's own running Refract, and the single-instance plugin (keyed on the bundle
+    // identifier, not the data dir) would hand the scratch launch off to his window and exit.
+    // A scratch override already isolates every piece of state, so skip the plugin then.
+    #[cfg(debug_assertions)]
+    let scratch_instance = resolve_data_dir_override(std::env::var("REFRACT_DATA_DIR").ok()).is_some();
+    #[cfg(not(debug_assertions))]
+    let scratch_instance = false;
+
+    let mut builder = tauri::Builder::default();
+    if !scratch_instance {
         // Issue #793: registered first, ahead of every other plugin -- a second launch should
         // exit (after focusing the first window) as early as possible, doing no other startup
         // work. No JS capability needed (`capabilities/default.json`'s own doc comment): this
         // plugin has no JavaScript API at all.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let Some(window) = app.get_webview_window("main") else {
                 return;
             };
@@ -321,7 +331,9 @@ pub fn run() {
             }
             let _ = window.show();
             let _ = window.set_focus();
-        }))
+        }));
+    }
+    let app = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Security: Debug level also writes envelopes (now channel+outcome only, see
