@@ -306,10 +306,21 @@ requests, 23 of 23 events) before this phase's work removed the Electron side of
   `AGENTS.md`, `docs/design/product-layout.md`, `docs/PLAN.md` rule 10 / the R13 row / the Rust
   build row / the spec 016 row) to reflect the cutover, leaving dated historical notes (the
   taskbar-icon fix, the footprint comparison, the merged-PR progress list) untouched, per spec.md
-  Clarifications "cut over now" (missing). **Done** -- commits `ea7a488`/`4eb81be`.
+  Clarifications "cut over now" (missing). **Done** -- commits `ea7a488`/`4eb81be`/`2dd8963` (plus
+  the review-fix commits on this PR for `src-tauri/Cargo.toml`, `capabilities/default.json`,
+  `lib.rs`, and the constitution's own external-link grant claim). **Known remaining stale spots,
+  deliberately not fixed here** (filed as a follow-up issue, not fixed in this PR): comments in
+  `src/tauri-bridge/index.ts`/`entry.ts`/`externalLinks.ts` mirroring the deleted
+  `src/preload/index.ts` (not touched -- collides with #564's in-flight edit to that same file);
+  `src/shared/ipc.ts`/`ipc-model.ts`'s `RefractApi` fields marked optional "because Electron never
+  ports" and `wordPredictionEnabled`'s "absent means enabled (Electron)" default; `AppMenuBar.tsx`
+  citing `src/main/menu.ts` and `modelRoleSuffix.ts` citing `electron.vite.config.ts` (both
+  renderer/shared files, out of this cleanup PR's scope per spec.md's own "removes no renderer or
+  shared code" acceptance line).
 
 **Checkpoint**: `git grep -n -i electron -- ':!docs/spike' ':!specs' ':!CHANGELOG*'` shows only
 justified historical/migration-code mentions (Rust comments documenting the one-time
 Electron-folder import, dated `docs/PLAN.md` rows, the frozen `contract_replay.rs` golden
-fixture, and this spec's own History note), none a live current-state claim; `node
+fixture, this spec's own History note) plus the renderer/shared known-remaining-stale-spots list
+above (tracked as a follow-up issue, not a live current-state claim this PR missed); `node
 scripts/ci-local.mjs` passes all 16 steps.
