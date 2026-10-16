@@ -329,6 +329,25 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         )
       : undefined
 
+  // Gate round 2 (Main, G909Arch): an explicit accessible name, matching decision 15's own
+  // illustrated form ("Failed bash, 2 calls, 1 failed, 15.9 seconds"), bypassing the browser's
+  // content-based name computation entirely -- that computation inserts its own space at every
+  // sibling-element boundary regardless of nesting, which produced a doubled space before the
+  // meta separator's comma ("...+ 2 others , 1 failed") no amount of DOM restructuring removed.
+  const soloSummaryText = skillName !== undefined ? skillName : last.target
+  const triggerAriaLabel = solo
+    ? [`${toolStatusLabel(status)} ${label} ${soloSummaryText}`, typeof meta === 'string' ? meta : undefined]
+        .filter((part): part is string => !!part)
+        .join(', ')
+    : [
+        `${toolStatusLabel(status)} ${label}`,
+        `${group.items.length} calls`,
+        failedCount > 0 ? `${failedCount} failed` : undefined,
+        interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined
+      ]
+        .filter((part): part is string => !!part)
+        .join(', ')
+
   return (
     <CollapsedLine
       icon={<StatusIcon status={status} />}
@@ -337,6 +356,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       summary={summary}
       summaryWrap={summaryWrap}
       meta={meta}
+      triggerAriaLabel={triggerAriaLabel}
       // #570 decisions 6, 9: the group's own Error line while collapsed is the LATEST failed
       // member (replaced by each failed member's own line once expanded -- `hideDetailWhenOpen`
       // only for a multi-call group; a solo call's line has no such condition, decision 6, since
