@@ -69,8 +69,16 @@ The row between the transcript and the message box (spec 004), spanning the chat
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
 
 **Stage**:
-The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal). Two or more agents in a Stage are connected by a **Spine** (issue #565).
-_Avoid_: Batch (in UI text), gate, phase
+The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message, numbered in turn order (issue #563; gate round 2 architect addendum A: keyed on that message's own id, not on transcript adjacency -- reopened history carries no subagent timing to split a later serial call on a different signal). Two or more agents in a Stage are connected by a **Spine** (issue #565). Its name is the first line of its batch brief, after its number ("Stage 1 · Quality gate for #923", issue #941).
+_Avoid_: Batch (in UI text), gate, phase (a phase is a **Todo phase**)
+
+**Todo phase**:
+A named group of tasks in the agent's own todo list (OMP `todoPhases`). Pending todo phases are what **Up next** lists; a todo phase is planned work, never a **Stage**.
+_Avoid_: Stage, step
+
+**Up next**:
+The muted list of the agent's pending **Todo phases** shown after a turn's **Stages** (issue #941). Live state only, so a reopened Conversation does not show it.
+_Avoid_: Upcoming stages, queue
 
 **Subagent chain**:
 The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its own stage-to-stage list is also connected by a **Spine** (issue #565).
