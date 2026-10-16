@@ -417,8 +417,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         {error && (
           <CardContent>
             <Alert variant="destructive" box="inline">
-              <OctagonXIcon aria-hidden />
-              <AlertDescription>{error}</AlertDescription>
+              <OctagonXIcon aria-hidden /><AlertDescription>{error}</AlertDescription>
             </Alert>
           </CardContent>
         )}
@@ -585,8 +584,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {error && (
           <Alert variant="destructive" box="inline">
-            <OctagonXIcon aria-hidden />
-            <AlertDescription>{error}</AlertDescription>
+            <OctagonXIcon aria-hidden /><AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
       </CardContent>
