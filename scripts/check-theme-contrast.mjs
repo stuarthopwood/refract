@@ -757,45 +757,6 @@ for (const [themeId, props] of Object.entries(themes)) {
     bgHex: linearToHex(bubbleLinear),
   })
 }
-
-// ---- issue #559 decision 28, gate round 1 fix: `SearchField`'s own `<Input>` (the session list
-// search box) sits inside `bg-sidebar`. `Input`'s own base class (`ui/input.tsx`) is NOT flat --
-// `.dark` is always applied to `<html>` regardless of the active theme (`theme-store.ts`'s own
-// `applyThemeClass`), so its default `dark:bg-input/30` always renders, in every built-in theme.
-// That translucent fill composited over `--sidebar` measured under 4.5:1 for `muted-foreground`
-// (the placeholder and both icons) in Dark (2.55:1) and Obsidian (2.61:1) -- a real finding, not
-// a hypothetical. Fixed in `SearchField.tsx` by forcing the field opaque (`bg-background
-// dark:bg-background`), the same fix shadcn's own (unused) `SidebarInput` primitive already
-// applies for exactly this reason (`ui/sidebar.tsx`). The real rendered surface is now the flat
-// `--background` token the baseline `muted-foreground`/`background` pair above already covers by
-// value, but this entry checks it under the search field's own specific label, matching the
-// file's established convention of re-checking an existing token pair under a new rendering
-// context's name (e.g. `state-idle`/`sidebar` alongside `state-idle`/`background`).
-for (const [themeId, props] of Object.entries(themes)) {
-  const background = props['background']
-  const mutedForeground = props['muted-foreground']
-  if (!background || !mutedForeground) {
-    checkedCount++
-    failCount++
-    rows.push({ themeId, fg: 'muted-foreground', bg: 'search-field (bg-background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
-    continue
-  }
-  const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(background.linear))
-  const pass = ratio >= 4.5
-  checkedCount++
-  if (!pass) failCount++
-  rows.push({
-    themeId,
-    fg: 'muted-foreground',
-    bg: 'search-field (bg-background)',
-    min: 4.5,
-    ratio,
-    pass,
-    fgHex: linearToHex(mutedForeground.linear),
-    bgHex: linearToHex(background.linear),
-  })
-}
-
 // ---- print the table ---------------------------------------------------------------------
 
 const header = ['theme', 'pair', 'ratio', 'min', 'result']
