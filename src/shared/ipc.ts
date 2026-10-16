@@ -275,12 +275,7 @@ export interface PullRequestListResult {
  * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
  * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
 export interface SubmitReviewInput {
-  // Gate round 3 fix (#568 decision 10 amendment): `ReviewVerdict` gained a `dismissed` value
-  // for an already-submitted review that was later dismissed (#568, FR-008 regression fix) --
-  // that is never a choice a user can SUBMIT a new review as (`ReviewDialog.tsx`'s own
-  // `VERDICTS` array only ever offers comment/approve/request-changes), so this field stays
-  // narrowed to the three real submittable verdicts.
-  verdict: Exclude<ReviewVerdict, 'dismissed'>;
+  verdict: Exclude<ReviewVerdict, 'dismissed'>; // dismissed: real post-submit verdict, never submittable (#568 decision 10)
   body?: string;
   expectedHeadSha: string;
 }
