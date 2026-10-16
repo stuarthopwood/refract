@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
 import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
@@ -22,6 +23,20 @@ import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
+
+// #567 decision 6: shared by the "+" quick-create, branch picker, and "..." menu buttons below
+// -- hidden at rest (kept in the Tab order by opacity, never `hidden`/`display:none`, unlike
+// `SessionRow.tsx`'s own trailing-slot swap, which the decision does not ask for here), shown on
+// `group-hover`/`group-focus-within` (hovering or focusing anywhere in the header), this
+// button's own `aria-expanded` (branch picker, "..." menu), and always under `(hover: none)`.
+// The `creating`/`active.length === 0` override (applied per-button below, since only this
+// function's own closure has those values) keeps them visible while a Session is being created
+// or the group has no active Sessions to hover over in the first place.
+const HEADER_ACTION_BUTTON_CLASS = cn(
+  'text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-sidebar-border hover:text-foreground',
+  'group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
+  '[@media(hover:none)]:opacity-100'
+)
 
 export function RepositoryGroup({
   repository,
@@ -220,15 +235,22 @@ export function RepositoryGroup({
             />
           )}
           {/* These three action buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` in
-              `GroupHeader.tsx` -- changing their size or count must update that constant too. */}
+              `GroupHeader.tsx` -- changing their size or count must update that constant too.
+              #567 decision 6: ghost `icon-xs` (24px, 12px icons), hidden at rest and revealed by
+              opacity -- never losing their place in the Tab order -- on hover anywhere in the
+              header (`group-hover`), focus anywhere in it (`group-focus-within`), this control's
+              own `aria-expanded` (the branch picker and the "..." menu), while a create is in
+              flight, whenever the group has no active Sessions to hover over in the first place,
+              and always under a `(hover: none)` pointer (a touch screen has no hover to reveal
+              them). Ctrl+N's own focus-visible handles the "focus reveals the plus" rule below. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon-xs"
                 aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
                 aria-disabled={creating || undefined}
-                className="aria-disabled:opacity-50"
+                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
                 // Quality-gate fix (round 2, Sec/Code/Verif Medium): no `aria-keyshortcuts`
                 // here -- unlike `ChatHeader.tsx`'s Ctrl+W button or `MessageInput.tsx`'s
                 // Ctrl+Shift+X button (each the ONE control its own chord always activates),
@@ -264,7 +286,12 @@ export function RepositoryGroup({
               repository={repository}
               trigger={
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label={`New session from a branch in ${repository.name}`}>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={`New session from a branch in ${repository.name}`}
+                    className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
+                  >
                     <GitBranchPlusIcon aria-hidden />
                   </Button>
                 </TooltipTrigger>
@@ -274,14 +301,15 @@ export function RepositoryGroup({
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 ref={menuTriggerRef}
-                type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label={`Repository actions for ${repository.name}`}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
-                <EllipsisVerticalIcon aria-hidden className="size-3.5" />
-              </button>
+                <EllipsisVerticalIcon aria-hidden />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
@@ -306,7 +334,7 @@ export function RepositoryGroup({
           </DropdownMenu>
         </div>
         <CollapsibleContent>
-          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
+          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
             {active.map((session) => (
               <SessionRow key={session.id} session={session} repository={repository} />
             ))}

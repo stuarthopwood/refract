@@ -19,11 +19,16 @@ export function SessionDetailsCard({
   session,
   repository,
   worktreeMissing,
+  activityDescription,
   children
 }: {
   session: SessionSummary
   repository: Repository
   worktreeMissing: boolean
+  /** #567 decision 16: the row's own line-2 text, when it is not the branch (the start-progress
+   *  or "Terminated unexpectedly" text `SessionRow.tsx` shows instead) -- leads the accessible
+   *  description below so it is never silently dropped just because it does not fit on line 2. */
+  activityDescription?: string
   children: ReactElement<{ 'aria-describedby'?: string }>
 }) {
   // T069: fetched fresh each time the details card opens, never cached across opens.
@@ -41,7 +46,18 @@ export function SessionDetailsCard({
   // are otherwise only ever shown inside the card, so they are duplicated here as a plain-text,
   // visually-hidden description linked to the trigger via `aria-describedby` (not pointed at the
   // card content itself, which may not exist yet at focus time).
-  const descriptionText = `From ${session.baseBranch}. ${session.worktreePath}${worktreeMissing ? ' (missing)' : ''}`
+  // #567 decision 16: "{activity text}. {branch} from {base}. Last active {long time}. {path}" --
+  // replaces the shorter `From {base}. {path}` form, now that the row's own accessible name
+  // (`SessionRow.tsx`'s `aria-label`) no longer carries the branch, base, or last-active time
+  // itself; this description is the one place they still reach assistive technology.
+  const descriptionText = [
+    activityDescription,
+    `${session.branch} from ${session.baseBranch}`,
+    `Last active ${formatRelativeTime(session.lastActivityAt)}`,
+    `${session.worktreePath}${worktreeMissing ? ' (missing)' : ''}`
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('. ')
 
   // T069: fetches a fresh diff stat and re-lists Sessions (so a since-deleted worktree's
   // `stopReason` is current, not a stale cached value) every time the card opens.

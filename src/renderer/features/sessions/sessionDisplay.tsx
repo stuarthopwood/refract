@@ -41,6 +41,24 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+// #567 decision 11: the row's own visible time ("now", "5m", "3h", "2d", then a short date from
+// 7 days on), distinct from `formatRelativeTime`'s long "ago" form above, which other surfaces
+// (`SessionDetailsCard.tsx`, `ManageSessionRow.tsx`, the Pull requests view) keep using
+// unchanged. The visible text this feeds is `aria-hidden`; the long form goes in the row's own
+// accessible description instead (`SessionDetailsCard.tsx`'s `descriptionText`).
+const SHORT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
+export function formatRelativeTimeShort(iso: string): string {
+  const deltaMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(deltaMs / 60_000)
+  if (minutes < 1) return 'now'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d`
+  return SHORT_DATE_FORMAT.format(new Date(iso))
+}
+
 /** #735 decision 21 (and #748's own future "Show hidden" badge, which will reuse this helper): the single most
  * urgent state among a Group's listed Sessions, in precedence order -- Needs you, then
  * Terminated unexpectedly, then Unread response (#731, now landed). Working, idle and an

@@ -129,12 +129,20 @@ export function SessionList() {
         variant="ghost"
         aria-current={view === 'pull-requests' ? 'page' : undefined}
         className={cn(
-          'mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium',
+          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
         aria-label="Pull requests"
         onClick={handleOpenPullRequests}
       >
+        {/* #567 decision 18: "A selected nav entry gets the 2px bar plus the fill", the same
+            selected cue a Session row and a Group header's own visible-Session bar use. */}
+        {view === 'pull-requests' && (
+          <span
+            aria-hidden
+            className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
+          />
+        )}
         <GitPullRequestIcon aria-hidden className="size-4" />
         Pull requests
       </Button>
@@ -218,8 +226,14 @@ export function SessionList() {
       )}
       {/* #447: the only way to add another repository once the first-run screen is gone. A
           persistent footer so it is always reachable; the dialog keeps its own validation and
-          returns focus here on close. */}
-      <div className="shrink-0 border-t border-sidebar-border p-2">
+          returns focus here on close. #567 decision 20: one soft `border-divider` above the
+          whole footer block (this div, plus `ProfileItem.tsx` rendered right after it in
+          `App.tsx` -- `ProfileItem.tsx`'s own `border-t` is removed so the two surfaces don't
+          draw a double line), replacing the previous `border-sidebar-border`. Order (Add
+          project, profile item, then #560's future alert rows) already falls out of render
+          order: this footer's own Add repository button, then `App.tsx`'s sibling
+          `<ProfileItem />` right below it. */}
+      <div className="shrink-0 border-t border-divider p-2">
         <AddRepositoryDialog
           trigger={
             <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium">

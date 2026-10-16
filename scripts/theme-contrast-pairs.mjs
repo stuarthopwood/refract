@@ -194,4 +194,19 @@ export const PAIRS = [
   // The toolbar's two ghost buttons default to `text-muted-foreground` (real icon/label text,
   // not icon-only against background), same floor `muted-foreground`/`background` uses above.
   { fg: 'muted-foreground', bg: 'sidebar', min: 4.5 },
+  // #567 decision 26: the remaining sidebar pairs the restyled session row and group header
+  // actually render -- `sidebar-foreground` (the row's own title text) and `destructive` (the
+  // row's "Terminated unexpectedly" line 2) at the 4.5:1 text floor; `state-working` (the
+  // working spinner's resting colour, distinct from `agent-spinner-core`'s own working-fill
+  // check above) and `severity-info` at the 3:1 icon floor. `muted-foreground`/`sidebar-accent`
+  // was missing too -- only its `sidebar` pair existed above (the toolbar's own comment).
+  { fg: 'muted-foreground', bg: 'sidebar-accent', min: 4.5 },
+  { fg: 'sidebar-foreground', bg: 'sidebar', min: 4.5 },
+  { fg: 'sidebar-foreground', bg: 'sidebar-accent', min: 4.5 },
+  { fg: 'destructive', bg: 'sidebar', min: 4.5 },
+  { fg: 'destructive', bg: 'sidebar-accent', min: 4.5 },
+  { fg: 'state-working', bg: 'sidebar', min: 3 },
+  { fg: 'state-working', bg: 'sidebar-accent', min: 3 },
+  { fg: 'severity-info', bg: 'sidebar', min: 3 },
+  { fg: 'severity-info', bg: 'sidebar-accent', min: 3 },
 ]

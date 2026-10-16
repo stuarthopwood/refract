@@ -39,7 +39,8 @@ export function ArchivedGroup({
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setArchivedOpen(open)}>
         <div className="group flex items-center gap-1 px-1">
           <GroupHeaderTrigger
-            label={`Archived (${sorted.length})`}
+            label="Archived"
+            count={sorted.length}
             icon={ArchiveIcon}
             marker={marker}
             containsOpenSession={containsOpenSession}
@@ -52,14 +53,13 @@ export function ArchivedGroup({
           <div aria-hidden className="shrink-0" style={{ width: GROUP_HEADER_ACTIONS_OFFSET_PX }} />
         </div>
         <CollapsibleContent>
-          <ul aria-label="Archived sessions" className="flex flex-col gap-0.5 py-1">
+          <ul aria-label="Archived sessions" className="flex flex-col gap-0 py-1">
             {sorted.map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 // Non-null: `rows` above already filtered to sessions with a resolvable repository.
                 repository={repositoriesById.get(session.repositoryId)!}
-                showRepository
               />
             ))}
           </ul>
