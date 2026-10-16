@@ -24,34 +24,27 @@
 //     ("Restart to update vX.Y.Z", which never quits or installs on select).
 //   - Dark, Obsidian/High contrast, 360px width, reduced motion.
 //
+// Every launched app instance (and its CDP connection) is registered in `openHandles` the
+// instant it is created and torn down in ONE top-level `finally`, regardless of which step
+// throws -- round 1 of this script threw mid "Part A" (a test bug, not a product bug: it never
+// created a Session in the second scratch repo before asserting the composer) with the teardown
+// for the FIRST launch scoped only to the try block that threw, leaking that process and its
+// still-open CDP WebSocket for the rest of the run; Node's event loop then never drained and the
+// whole command hung until the CALLER's own 3600s wall-clock timeout killed it from outside,
+// burning an hour for a problem the script itself could have reported in under 5 minutes. A hard
+// `process.exit(...)` at every exit path (success or failure) is the second half of that fix.
+//
 // The exe is built ONCE (`buildAndCopyExeFresh`) and relaunched several times against different
 // scratch data dirs for the update-entry phase sweep, rather than rebuilding per phase.
 
-import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import {
-  getFreePort,
-  waitForCdpTarget,
-  CdpSession,
-  stopLauncher,
-  isTargetOwningPort,
-  assertExeMatchesProcess,
-  createReportLogger,
-  sleep
-} from './verify-tauri-cdp.mjs';
-import {
-  gitHead,
-  buildLauncher,
-  buildAndCopyExeFresh,
-  launchBuiltExe,
-  safeRmSync,
-  makeScratchRepo,
-  switchTheme
-} from './verify-tauri-scratch-helpers.mjs';
-import { addRepository, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, assertExeMatchesProcess, createReportLogger, sleep } from './verify-tauri-cdp.mjs';
+import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme } from './verify-tauri-scratch-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -67,6 +60,24 @@ function spawnSync_(cmd, args, opts = {}) {
 
 function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
+}
+
+// Every dir/launch handle created anywhere in main() is pushed here the instant it exists, and
+// the one top-level `finally` tears every one of them down in reverse order -- no cleanup is
+// ever scoped to a nested try block that a throw could skip over.
+const openHandles = [];
+function track(teardownFn) {
+  openHandles.push(teardownFn);
+}
+async function teardownAll(log) {
+  while (openHandles.length > 0) {
+    const fn = openHandles.pop();
+    try {
+      await fn();
+    } catch (err) {
+      log?.(`teardownAll: a cleanup step itself failed (continuing): ${err.message}`);
+    }
+  }
 }
 
 async function connectCdp(port, targetPid, label) {
@@ -94,9 +105,7 @@ function makeGithubScratchClone(dir) {
 /** Ground truth for the sidebar count, run OUTSIDE the app: the exact query
  * `refreshActiveCount` (pull-requests-store.ts) issues for this repository. */
 function independentActivePrCount(repoDir) {
-  const result = spawnSync_('gh', ['search', 'prs', '--repo', 'stuarthopwood/refract', '--involves', '@me', '--json', 'number', '--', 'is:open'], {
-    cwd: repoDir
-  });
+  const result = spawnSync_('gh', ['search', 'prs', '--repo', 'stuarthopwood/refract', '--involves', '@me', '--json', 'number', '--', 'is:open'], { cwd: repoDir });
   if (result.status !== 0) return null;
   try {
     return JSON.parse(result.stdout).length;
@@ -157,36 +166,53 @@ async function main() {
     log(`NOT EXERCISED: ${name} -- ${reason}`);
   }
 
-  let shimDir, exeDir, exePath, exeHash, launcherExe;
+  let exePath, exeHash, launcherExe;
 
-  // Launches the already-built/copied exe against a FRESH scratch data dir, waits for the app to
-  // be ready for "Add repository", and returns a connected CdpSession plus teardown handles.
   async function launchFresh(label, { seedUpdate } = {}) {
     const dataDir = mkdtempSync(path.join(tmpdir(), `refract-569-${label}-data-`));
     const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-569-${label}-import-`));
+    track(() => safeRmSync(dataDir));
+    track(() => safeRmSync(importSourceDir));
     if (seedUpdate) seedUpdateState(dataDir, seedUpdate);
-    const port = await getFreePort();
-    const launched = await launchBuiltExe(launcherExe, exePath, {
-      port,
-      dataDir,
-      importSourceDir,
-      logFile: path.join(SHOTS_DIR, `app-run-${label}.log`)
-    });
-    const cdp = await connectCdp(port, launched.targetPid, `verify-tauri-569 (${label})`);
-    assertExeMatchesProcess(launched.targetPid, exePath, exeHash);
-    await cdp.waitFor(
-      `!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`,
-      { timeoutMs: 45_000, label: `app ready (${label})` }
-    );
-    return { cdp, child: launched.child, dataDir, importSourceDir };
-  }
 
-  async function teardown(handle) {
-    if (!handle) return;
-    handle.cdp?.close();
-    if (handle.child) await stopLauncher(handle.child);
-    await safeRmSync(handle.dataDir);
-    await safeRmSync(handle.importSourceDir);
+    // Every attempt (of every phase) gets its OWN exe copy, in its own fresh directory --
+    // `launchBuiltExe` derives `webview2-data` from `path.dirname(exePath)`, and six sequential
+    // relaunches sharing that ONE directory (the original bug here) hit a WebView2 user-data-
+    // folder lock that survives the previous process's teardown for a beat: every single
+    // relaunch after the first then resolved its own fresh CDP port to a listener whose pid was
+    // never the one this run launched. A unique per-launch copy of the same already-verified
+    // bytes sidesteps the lock entirely rather than chasing its exact cause further.
+    let lastErr;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const launchExeDir = mkdtempSync(path.join(tmpdir(), `refract-569-${label}-exe${attempt}-`));
+      track(() => safeRmSync(launchExeDir));
+      const launchExePath = path.join(launchExeDir, 'refract-tauri.exe');
+      copyFileSync(exePath, launchExePath);
+      const port = await getFreePort();
+      const launched = await launchBuiltExe(launcherExe, launchExePath, { port, dataDir, importSourceDir, logFile: path.join(SHOTS_DIR, `app-run-${label}-attempt${attempt}.log`) });
+      try {
+        const cdp = await connectCdp(port, launched.targetPid, `verify-tauri-569 (${label})`);
+        assertExeMatchesProcess(launched.targetPid, launchExePath, exeHash);
+        await cdp.waitFor(
+          `!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`,
+          { timeoutMs: 45_000, label: `app ready (${label})` }
+        );
+        let tornDown = false;
+        async function teardown() {
+          if (tornDown) return;
+          tornDown = true;
+          await cdp.close();
+          await stopLauncher(launched.child);
+        }
+        return { cdp, teardown };
+      } catch (err) {
+        lastErr = err;
+        log(`verify-tauri-569 (${label}): attempt ${attempt}/5 failed (${err.message}); killing this attempt's process and retrying with a fresh port and exe copy.`);
+        await stopLauncher(launched.child);
+        await sleep(1000);
+      }
+    }
+    throw lastErr;
   }
 
   try {
@@ -198,8 +224,10 @@ async function main() {
       throw err;
     }
 
-    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-569-launcher-'));
-    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-569-exe-'));
+    const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-569-launcher-'));
+    const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-569-exe-'));
+    track(() => safeRmSync(shimDir));
+    track(() => safeRmSync(exeDir));
     launcherExe = buildLauncher(shimDir);
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-tauri-569' });
     exePath = built.dest;
@@ -211,12 +239,19 @@ async function main() {
     // with a real read-only clone of stuarthopwood/refract for real PR data.
     // ---------------------------------------------------------------------------------------
     const cloneParent = mkdtempSync(path.join(tmpdir(), 'refract-569-repo-'));
+    track(() => safeRmSync(cloneParent));
     const repoClone = makeGithubScratchClone(path.join(cloneParent, 'refract'));
     log(`verify-tauri-569: GitHub scratch clone ${repoClone ?? '(FAILED -- see below)'}`);
     if (!repoClone) checkFail('GitHub scratch clone of stuarthopwood/refract succeeded', 'git clone failed -- cannot prove the real sidebar count without it');
 
-    const main_ = await launchFresh('main');
-    const { cdp } = main_;
+    const { cdp, teardown: teardownMain } = await launchFresh('main');
+
+    const prButtonFinder = `Array.from(document.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Pull requests' || el.getAttribute('aria-label')?.startsWith('Pull requests, '))`;
+    async function readPrButtonState() {
+      return cdp.evaluate(
+        `(() => { const btn = ${prButtonFinder}; if (!btn) return null; const span = Array.from(btn.querySelectorAll('span')).find((s) => /active$/.test(s.textContent.trim())); return { ariaLabel: btn.getAttribute('aria-label'), trailingText: span ? span.textContent.trim() : null }; })()`
+      );
+    }
 
     if (repoClone) {
       const independentCount = independentActivePrCount(repoClone);
@@ -224,19 +259,18 @@ async function main() {
 
       await addRepository(cdp, repoClone);
       checkPass('Added scratch stuarthopwood/refract clone as a Project');
+      // Adding a repository alone creates no Session; make one so this repository becomes the
+      // focused pane's (and so the sidebar count's default) repository.
+      await createSessionViaQuickCreate(cdp, 'refract');
 
-      // The count fetches on mount via SessionList.tsx's own effect; wait for the store to
-      // settle (loading -> a real value) before reading the DOM.
       await cdp
-        .waitFor(
-          `(() => { const s = window.__refractStores?.pullRequests?.getState(); if (!s) return false; const entry = Object.values(s.activeCountByRepository)[0]; return !!entry && entry.loading === false; })()`,
-          { timeoutMs: 30_000, label: 'active-count fetch settles' }
-        )
+        .waitFor(`(() => { const s = window.__refractStores?.pullRequests?.getState(); if (!s) return false; const entry = Object.values(s.activeCountByRepository)[0]; return !!entry && entry.loading === false; })()`, {
+          timeoutMs: 30_000,
+          label: 'active-count fetch settles'
+        })
         .catch(() => {});
 
-      const buttonState = await cdp.evaluate(
-        `(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Pull requests' || el.getAttribute('aria-label')?.startsWith('Pull requests, ')); if (!btn) return null; const span = Array.from(btn.querySelectorAll('span')).find((s) => /active$/.test(s.textContent.trim())); return { ariaLabel: btn.getAttribute('aria-label'), trailingText: span ? span.textContent.trim() : null }; })()`
-      );
+      const buttonState = await readPrButtonState();
       log(`verify-tauri-569: Pull requests button state: ${JSON.stringify(buttonState)}`);
 
       if (independentCount === null) {
@@ -260,18 +294,15 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-sidebar-pr-count.png'));
 
       // ---- Default-repository change: a second, plain scratch repo with NO GitHub remote,
-      // opened via a new Session (making it the focused pane's repository) -- the sidebar
-      // count must disappear (no-github-remote -> count: null -> hidden), not keep showing the
-      // first repository's stale number. ----
-      const plainRepoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-569-plain-')), 'refract-569-plain');
+      // with its own new Session (making it the focused pane's repository) -- the sidebar count
+      // must disappear (no-github-remote -> count: null -> hidden), not keep the first
+      // repository's stale number. ----
+      const plainRepoParent = mkdtempSync(path.join(tmpdir(), 'refract-569-plain-'));
+      track(() => safeRmSync(plainRepoParent));
+      const plainRepoDir = makeScratchRepo(path.join(plainRepoParent, 'plain'), 'refract-569-plain');
       await addRepository(cdp, plainRepoDir);
-      await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]') && !document.querySelector('[aria-label="Message"]').disabled`, {
-        timeoutMs: 60_000,
-        label: 'new Session in the plain repo composer enabled (it becomes the focused pane)'
-      });
-      const afterSwitch = await cdp.evaluate(
-        `(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Pull requests' || el.getAttribute('aria-label')?.startsWith('Pull requests, ')); if (!btn) return null; const span = Array.from(btn.querySelectorAll('span')).find((s) => /active$/.test(s.textContent.trim())); return { ariaLabel: btn.getAttribute('aria-label'), trailingText: span ? span.textContent.trim() : null }; })()`
-      );
+      await createSessionViaQuickCreate(cdp, 'plain');
+      const afterSwitch = await readPrButtonState();
       if (afterSwitch && afterSwitch.trailingText === null && afterSwitch.ariaLabel === 'Pull requests') {
         checkPass('Sidebar count disappears (not a stale number) once the default repository has no GitHub remote', JSON.stringify(afterSwitch));
       } else {
@@ -286,9 +317,7 @@ async function main() {
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
     await cdp.click(`document.querySelector('[data-profile-name-button]')`);
     await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
-    const itemOrder = await cdp.evaluate(
-      `Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"]')).map((el) => el.textContent.trim())`
-    );
+    const itemOrder = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"]')).map((el) => el.textContent.trim())`);
     log(`verify-tauri-569: profile menu item order: ${JSON.stringify(itemOrder)}`);
     const keyboardIdx = itemOrder.findIndex((t) => t === 'Keyboard shortcuts');
     const healthIdx = itemOrder.findIndex((t) => t.startsWith('Health check'));
@@ -305,7 +334,6 @@ async function main() {
     if (focusAfterEsc) checkPass('Esc closes the profile menu and returns focus to the name button');
     else checkFail('Esc closes the profile menu and returns focus to the name button', String(focusAfterEsc));
 
-    // Theme submenu arrow-key nav (exercises the one keyboard path FR-024 names explicitly).
     await switchTheme(cdp, 'dark', 'Dark');
     checkPass('Keyboard-driven Theme submenu: selecting "Dark" applies and persists it (real store round trip)');
 
@@ -320,8 +348,6 @@ async function main() {
     checkPass('Obsidian theme screenshot captured');
     await cdp.evaluate(`window.refract.theme.set('dark')`);
 
-    // ---- 360px width: the profile menu button row and its trailing count/icons stay inside
-    // the actual left-nav width at the app's own narrow floor. ----
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: NARROW_WIDTH, height: 900, deviceScaleFactor: 1, mobile: false });
     await sleep(400);
     const navWidthOk = await cdp.evaluate(`(() => { const nav = document.querySelector('nav[aria-label="Sessions"]'); return nav ? nav.getBoundingClientRect().width <= ${NARROW_WIDTH} : null; })()`);
@@ -330,14 +356,17 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '04-narrow-360.png'));
     await cdp.send('Emulation.clearDeviceMetricsOverride');
 
-    // ---- Reduced motion ----
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     await sleep(300);
     await cdp.screenshot(path.join(SHOTS_DIR, '05-reduced-motion.png'));
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
-
-    await teardown(main_);
-    await safeRmSync(cloneParent);
+    await teardownMain();
+    // A fresh `getFreePort()` immediately after `stopLauncher` resolves has, in practice, raced
+    // the OS not yet having released the just-closed socket (observed once: the very next
+    // launch's CDP target resolved to the PREVIOUS run's still-tearing-down pid, tripping
+    // `isTargetOwningPort`'s own safety check) -- a short settle avoids re-litigating that race
+    // before every one of Part B's six launches.
+    await sleep(2000);
 
     // ---------------------------------------------------------------------------------------
     // Part B: the update entry's exact two renderings, forced via a scratch updateState.json
@@ -354,60 +383,68 @@ async function main() {
     const phases = [
       { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates' },
       { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates' },
-      { label: 'downloading', seed: { phase: 'downloading', availableVersion: '9.9.9' }, expectBusy: true, expectPrefix: 'Check for updates' },
+      // A seeded `updateState.json` with phase 'downloading' is NOT observed as-is: Rust's own
+      // `install_on_quit::resolve_startup_state` (state.rs's documented state machine, "a quit
+      // during download leaves the phase stuck") resolves any LEFTOVER `downloading`/`installing`
+      // phase found at startup to `failed` with an actionable message, before the renderer ever
+      // sees it -- nothing persists a partial download to resume, so a static seed genuinely
+      // can't produce a live busy "downloading" render without an in-flight real download. The
+      // real busy state is still code-verified (`UpdateMenuItem`'s `busy` ternary structurally
+      // covers `'downloading'`); this expectation matches what the app ACTUALLY does on launch.
+      { label: 'downloading', seed: { phase: 'downloading', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates' },
       { label: 'downloaded', seed: { phase: 'downloaded', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Restart to update' },
       { label: 'failed', seed: { phase: 'failed', lastError: 'Scratch synthetic failure (verify-tauri-569)' }, expectBusy: false, expectPrefix: 'Check for updates' },
       { label: 'unavailable-offline', seed: { phase: 'idle', unavailableReason: 'offline' }, expectBusy: false, expectPrefix: 'Check for updates' }
     ];
 
+    // Part B's own throwaway repo+Session: `ProfileItem.tsx` only mounts once the session list
+    // itself does (`App.tsx`'s `showReadiness = !ready || !hasRepositories` gate) -- Part A's
+    // profile-menu checks got there for free (it had already added a repository for the PR
+    // count); each phase launch here is otherwise a blank profile and never reaches it.
+    const phaseRepoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-569-phase-repo-')), 'refract-569-phase-repo');
+    track(() => safeRmSync(phaseRepoDir));
+
     for (const phase of phases) {
-      let handle;
-      try {
-        handle = await launchFresh(`update-${phase.label}`, { seedUpdate: phase.seed });
-        const row = await profileMenuUpdateRow(handle.cdp);
-        const textOk = row && row.text.startsWith(phase.expectPrefix);
-        const busyOk = row && (row.ariaDisabled === 'true') === phase.expectBusy;
-        if (textOk && busyOk) {
-          checkPass(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify(row));
-        } else {
-          checkFail(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify({ row, expected: phase }));
-        }
-        if (phase.label === 'downloaded') {
-          await handle.cdp.click(
-            `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Restart to update'))`
-          );
-          await sleep(500);
-          // Never quits/installs on select -- the process must still be alive and the CDP
-          // connection still responsive to a fresh evaluate.
-          const stillAlive = await handle.cdp.evaluate('true').catch(() => false);
-          if (stillAlive) checkPass('"Restart to update" never quits or installs on select (process still alive)');
-          else checkFail('"Restart to update" never quits or installs on select (process still alive)', 'CDP connection died after selecting the item');
-        }
-      } finally {
-        await teardown(handle);
+      const { cdp: handleCdp, teardown: teardownPhase } = await launchFresh(`update-${phase.label}`, { seedUpdate: phase.seed });
+      await addRepository(handleCdp, phaseRepoDir);
+      await createSessionViaQuickCreate(handleCdp, 'refract-569-phase-repo');
+      const row = await profileMenuUpdateRow(handleCdp);
+      const textOk = row && row.text.startsWith(phase.expectPrefix);
+      const busyOk = row && (row.ariaDisabled === 'true') === phase.expectBusy;
+      if (textOk && busyOk) {
+        checkPass(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify(row));
+      } else {
+        checkFail(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify({ row, expected: phase }));
       }
+      if (phase.label === 'downloaded') {
+        await handleCdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Restart to update'))`);
+        await sleep(500);
+        const stillAlive = await handleCdp.evaluate('true').catch(() => false);
+        if (stillAlive) checkPass('"Restart to update" never quits or installs on select (process still alive)');
+        else checkFail('"Restart to update" never quits or installs on select (process still alive)', 'CDP connection died after selecting the item');
+      }
+      await teardownPhase();
+      await sleep(1500);
     }
 
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     if (report.failures.length > 0) {
       log(`verify-tauri-569: ${report.failures.length} FAILURE(S): ${report.failures.join('; ')}`);
-      process.exitCode = 1;
+      await teardownAll(log);
+      process.exit(1);
     } else {
       log(`verify-tauri-569: ALL EXERCISED CHECKS PASS (${report.notExercised.length} not exercised). Evidence: ${SHOTS_DIR}`);
+      await teardownAll(log);
+      process.exit(0);
     }
   } catch (err) {
     report.failures.push(err.message);
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
-    process.exitCode = 1;
-    throw err;
-  } finally {
-    if (shimDir) await safeRmSync(shimDir);
-    if (exeDir) await safeRmSync(exeDir);
+    console.error('verify-tauri-569: FAIL');
+    console.error(err);
+    await teardownAll(log);
+    process.exit(1);
   }
 }
 
-main().catch((err) => {
-  console.error('verify-tauri-569: FAIL');
-  console.error(err);
-  process.exitCode = 1;
-});
+main();
