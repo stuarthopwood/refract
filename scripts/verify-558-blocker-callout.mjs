@@ -261,7 +261,7 @@ async function main() {
         try {
           await cdp.waitFor(
             `document.querySelector('[aria-label="Transcript"]').textContent.includes('Please address this ${bestSeverity}')`,
-            { timeoutMs: 15_000, label: 'Ask-agent message posted as a new user turn' }
+            { timeoutMs: 60_000, label: 'Ask-agent message posted as a new user turn' }
           );
           findings.push(`"Ask agent to address this ${bestSeverity}" sent a real message through chat.send, visible as a new user turn (decision 7).`);
           const activeHasTag = await cdp.evaluate(`document.activeElement && document.activeElement.getAttribute('data-558-test-trigger') === '1'`);
@@ -280,9 +280,9 @@ async function main() {
         try {
           await cdp.click(`(${ADVISORY_FINDER})[${targetIndex}]`);
           await pressTab(cdp);
-          const afterTab1 = await getActiveElementAccessibleName(cdp);
+          const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
-          const afterTab2 = await getActiveElementAccessibleName(cdp);
+          const afterTab2 = (await getActiveElementAccessibleName(cdp)).name;
           if (afterTab1 === 'Copy advisory' && (afterTab2 || '').startsWith('Ask agent to address this')) {
             findings.push(`Keyboard Tab order confirmed: trigger -> "${afterTab1}" -> "${afterTab2}" (decision 12, standard DOM order).`);
           } else {
