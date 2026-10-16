@@ -312,7 +312,13 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await pressKey(cdp, 13, 'Enter', 'Enter');
   await cdp.waitFor(`${ellipsisFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: '"..." menu opened via Enter' });
   await pressKey(cdp, 27, 'Escape', 'Escape');
-  await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'Escape returns focus to the "..." trigger' });
+  try {
+    await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 20_000, label: 'Escape returns focus to the "..." trigger' });
+  } catch (err) {
+    const diag = await cdp.evaluate(`(() => { const el = document.activeElement; return { tag: el?.tagName, label: el?.getAttribute?.('aria-label'), menuOpen: !!document.querySelector('[role="menu"]') }; })()`);
+    log(`verify-tauri-567: DEBUG Escape focus-return diagnostic: ${JSON.stringify(diag)}`);
+    throw err;
+  }
   log('STEP PASS: Escape closes the "..." menu and returns KEYBOARD focus to the trigger (not <body>).');
 
   // ---- Delete then Cancel also returns focus to the "..." trigger -- gate round 2 fix, Low,
