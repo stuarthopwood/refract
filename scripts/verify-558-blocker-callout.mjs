@@ -265,8 +265,14 @@ async function main() {
         // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent (BEFORE
         // Ask-agent itself runs, since sending introduces a new reply turn that can shift
         // which row this turn's own advisory now is) ----
+        // A direct `.focus()`, never a click: the row is ALREADY open here (a blocker
+        // auto-opens, a concern was just manually opened above), and `CollapsibleTrigger` is a
+        // TOGGLE button -- clicking it again would collapse it, unmounting Copy/Ask-agent and
+        // sending the next two Tabs into whatever transcript row happens to follow instead (the
+        // exact "Thought for 1s" / "Done bash..." wrong targets an earlier run hit, and the
+        // reason this collapsed row's own Ask-agent button went missing for the step after it).
         try {
-          await cdp.click(`(${ADVISORY_FINDER})[${targetIndex}]`);
+          await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
           await pressTab(cdp);
           const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
@@ -276,10 +282,13 @@ async function main() {
           } else {
             failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
           }
-          await pressEscape(cdp);
+          // Return focus to the trigger (a plain .focus(), same reasoning as above) so the row
+          // is left exactly as the Ask-agent step below expects it: open, trigger focused.
+          await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
         } catch (err) {
           notExercised.push(`Keyboard Tab-order check did not complete (${err.message}).`);
         }
+
 
         // ---- Ask agent to address this <severity>: real chat.send, real new user turn ----
         // A REAL pointer click (Input.dispatchMouseEvent via cdp.click), not a raw `.click()`
@@ -287,8 +296,8 @@ async function main() {
         // user interaction would -- needed for the focus-return check below to mean anything.
         const transcriptTextBefore = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]').textContent`);
         const askButtonFinder = `(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return Array.from(wrapper.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Ask agent to address this')); })()`;
-        await cdp.click(askButtonFinder);
         try {
+          await cdp.click(askButtonFinder);
           await cdp.waitFor(
             `document.querySelector('[aria-label="Transcript"]').textContent.includes('Please address this ${bestSeverity}')`,
             { timeoutMs: 60_000, label: 'Ask-agent message posted as a new user turn' }
