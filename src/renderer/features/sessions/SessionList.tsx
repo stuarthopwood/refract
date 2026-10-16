@@ -129,7 +129,7 @@ export function SessionList() {
         variant="ghost"
         aria-current={view === 'pull-requests' ? 'page' : undefined}
         className={cn(
-          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium',
+          'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
         aria-label="Pull requests"
@@ -236,7 +236,7 @@ export function SessionList() {
       <div className="shrink-0 border-t border-divider p-2">
         <AddRepositoryDialog
           trigger={
-            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent">
               <FolderPlusIcon aria-hidden className="size-4" />
               Add repository
             </Button>

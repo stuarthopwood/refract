@@ -75,9 +75,28 @@ export function formatRelativeTimeShort(iso: string): string {
 // accurate; the visible, `aria-hidden` short time (`formatRelativeTimeShort` above) and the
 // hover card's own visible long form (`formatRelativeTime`, not read by assistive tech per this
 // file's own comment) are unaffected and keep ticking live.
-const ABSOLUTE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+//
+// Gate round 2 fix (High, three independent reviewers: the departure from decisions 11/16's own
+// "Last active {long time}" was shipped without being recorded on #567, AND the departure's own
+// implementation was wrong): the first cut was hour:minute only, with no date at all, so a
+// Session idle for days read as "Last active 14:05" -- indistinguishable from one active minutes
+// ago, while the sighted short time plainly showed "3d" or "12 Oct". Now day-aware: "Today HH:MM"
+// on the current calendar day, else "{day} {month} HH:MM" (matching the visible short date's own
+// `en-GB` day-then-month style above), with the year appended only when it differs from today's.
+// Recorded on #567 as a departure from decisions 11 and 16 (gate round 2, 2026-10-16): the
+// motive (a stable, non-churning description) stands; the format is now accurate, not merely
+// stable.
+const ABSOLUTE_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+const ABSOLUTE_TIME_OF_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
 export function formatAbsoluteTime(iso: string): string {
-  return ABSOLUTE_TIME_FORMAT.format(new Date(iso))
+  const date = new Date(iso)
+  const now = new Date()
+  const timeOfDay = ABSOLUTE_TIME_OF_DAY_FORMAT.format(date)
+  const sameDay =
+    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  if (sameDay) return `Today ${timeOfDay}`
+  const yearSuffix = date.getFullYear() !== now.getFullYear() ? ` ${date.getFullYear()}` : ''
+  return `${ABSOLUTE_DATE_FORMAT.format(date)}${yearSuffix} ${timeOfDay}`
 }
 
 /** #735 decision 21 (and #748's own future "Show hidden" badge, which will reuse this helper): the single most

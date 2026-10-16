@@ -3,11 +3,71 @@
 // file-size cap (`scripts/check-file-size.mjs`). Depends only on a `CdpSession`-shaped `cdp`
 // (see `verify-tauri-cdp.mjs`), never on anything specific to the #735 story itself.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 function assertTrue(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
+}
+
+/** Isolated proof of the trailing slot's opacity swap (time at rest, the row's "..." trigger on
+ * hover) -- gate round 2 fix, High, N1 (three independent reviewers plus the facilitator's own
+ * disclosed spot-check): round 1's fix scoped every reveal rule, even the base visibility,
+ * inside `[@media(hover:hover)]`, so a touch-only pointer could never reveal or tap the "..."
+ * trigger at all, regressing decision 12's "Under hover:none, both show". Also statically
+ * verifies the fix's own `@media(hover:none)` CSS rule exists (a live touch-emulation proof was
+ * attempted and found not possible in this harness -- see the function body's own comment).
+ * Extracted from `verify-tauri-567.mjs` to keep it under the #806 600-line file-size cap. */
+export async function proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, { rowFinder, ellipsisFinder }) {
+  // Clears any lingering keyboard focus too, not just the pointer: `group-focus-within` (the
+  // same reveal rule Tab/Shift+Tab focus on the open button legitimately uses) would otherwise
+  // still show the "..." here, since the Focus ring check just before this one leaves the open
+  // button focused via real Shift+Tab.
+  await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+  const trailingCellFinder = `${ellipsisFinder}.closest('span.relative')`;
+  const trailingTimeFinder = `${trailingCellFinder}.querySelector('span[aria-hidden]')`;
+  await cdp.waitFor(`parseFloat(getComputedStyle(${ellipsisFinder}).opacity) < 0.5`, { timeoutMs: 5_000, label: '"..." hidden at rest (hover cleared)' });
+  const trailingAtRest = await cdp.evaluate(`(() => ({ buttonOpacity: getComputedStyle(${ellipsisFinder}).opacity, timeVisibility: getComputedStyle(${trailingTimeFinder}).visibility }))()`);
+  log(`verify-tauri-567: trailing slot AT REST: ${JSON.stringify(trailingAtRest)}`);
+  assertTrue(parseFloat(trailingAtRest.buttonOpacity) < 0.5 && trailingAtRest.timeVisibility === 'visible', `at rest the time must show and "..." must hide (decision 12), got ${JSON.stringify(trailingAtRest)}`);
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${rowFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `hover target: ${rowFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  await cdp.waitFor(`parseFloat(getComputedStyle(${ellipsisFinder}).opacity) > 0.5`, { timeoutMs: 5_000, label: '"..." revealed on hover' });
+  const trailingOnHover = await cdp.evaluate(`(() => ({ buttonOpacity: getComputedStyle(${ellipsisFinder}).opacity, timeVisibility: getComputedStyle(${trailingTimeFinder}).visibility }))()`);
+  log(`verify-tauri-567: trailing slot ON HOVER: ${JSON.stringify(trailingOnHover)}`);
+  assertTrue(parseFloat(trailingOnHover.buttonOpacity) > 0.5 && trailingOnHover.timeVisibility === 'hidden', `on hover "..." must show and the time must hide (decision 12's swap), got ${JSON.stringify(trailingOnHover)}`);
+  log('STEP PASS: trailing slot opacity swap isolated and proven both ways (time at rest, "..." on hover).');
+  await cdp.screenshot(path.join(evidenceDir, '03-row-hover-trailing-slot.png'));
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+
+  // `Emulation.setEmulatedMedia`'s `features` parameter (the documented way to emulate
+  // `(hover: none)`/`(pointer: coarse)`) is accepted without error by WebView2's own CDP
+  // endpoint (confirmed live: the command returns `{}`, no CDP error) but has no observable
+  // effect here -- `window.matchMedia('(hover: none)').matches` stayed `false` even 500ms after
+  // the call, so a live behavioural proof under an emulated touch pointer is not possible with
+  // this harness. Falls back to a static proof instead: finds the actual `@media` rule the
+  // running page's own bundled CSS generated for this exact button (by class-selector match,
+  // independent of which media condition currently applies), and asserts it is scoped to a
+  // `hover: none` condition and sets `pointer-events: auto` (decision 12's "both show" requires
+  // the button be tappable, not merely visible) -- proving the rule exists and is correctly
+  // wired, even though the live rendered behaviour under a real touch pointer could not be
+  // driven end-to-end in this environment.
+  const hoverNoneRule = await cdp.evaluate(
+    `(() => { const el = ${ellipsisFinder}; function walk(rules) { for (const rule of rules || []) { if (rule.media && /hover\\s*:\\s*none/.test(rule.media.mediaText)) { for (const inner of rule.cssRules || []) { try { if (inner.selectorText && el.matches(inner.selectorText) && /pointer-events\\s*:\\s*auto/.test(inner.style.cssText)) return { media: rule.media.mediaText, selector: inner.selectorText, css: inner.style.cssText }; } catch {} } } if (rule.cssRules) { const found = walk(rule.cssRules); if (found) return found; } } return null; } for (const sheet of document.styleSheets) { try { const found = walk(sheet.cssRules); if (found) return found; } catch {} } return null; })()`
+  );
+  writeFileSync(path.join(evidenceDir, 'hover-none-css-rule.json'), JSON.stringify(hoverNoneRule, null, 2));
+  log(`verify-tauri-567: static (hover:none) CSS rule for the "..." trigger: ${JSON.stringify(hoverNoneRule)}`);
+  assertTrue(
+    hoverNoneRule && /pointer-events\s*:\s*auto/.test(hoverNoneRule.css),
+    `the "..." trigger's own bundled CSS must carry an @media(hover:none)-scoped pointer-events:auto rule (decision 12's regression fix, N1), found ${JSON.stringify(hoverNoneRule)}`
+  );
+  log(
+    'STEP PASS (code-verified, not live-driven -- see the comment above): the "..." trigger\'s own @media(hover:none) CSS rule exists and sets pointer-events:auto.'
+  );
 }
 
 function readJson(filePath) {

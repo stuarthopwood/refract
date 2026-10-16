@@ -247,8 +247,10 @@ export function RepositoryGroup({
               containsOpenSession={containsOpenSession}
             />
           )}
-          {/* These three action buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` in
-              `GroupHeader.tsx` -- changing their size or count must update that constant too.
+          {/* These three action buttons' total width feeds BOTH `GROUP_HEADER_ACTIONS_OFFSET_PX`
+              (this header's own tooltip `sideOffset`) AND `GROUP_HEADER_ACTIONS_WIDTH_PX`
+              (`ArchivedGroup.tsx`'s matching spacer) in `GroupHeader.tsx` -- changing their size
+              or count must update BOTH constants, or the #908 marker-column drift returns.
               #567 decision 6: ghost `icon-xs` (24px, 12px icons), hidden at rest and revealed by
               opacity -- never losing their place in the Tab order -- on hover anywhere in the
               header (`group-hover`), focus anywhere in it (`group-focus-within`), this control's
@@ -352,7 +354,13 @@ export function RepositoryGroup({
             // with no Sessions used to render nothing at all under its header. One indented,
             // muted line, no action of its own -- the header's own "+" stays visible via the
             // `active.length === 0` override on `HEADER_ACTION_BUTTON_CLASS` above.
-            <p className="py-1 pl-6 text-xs text-muted-foreground">No sessions yet</p>
+            // Gate round 2 fix (Low, architect L-e): decision 24's own exact text, "No sessions
+            // yet", describes a Project that has never had one at all (`sessions.length === 0`);
+            // a Project whose only Sessions are archived still HAS Sessions, so "yet" there was
+            // inaccurate -- "No active sessions" instead, recorded on #567.
+            <p className="py-1 pl-6 text-xs text-muted-foreground">
+              {sessions.length === 0 ? 'No sessions yet' : 'No active sessions'}
+            </p>
           ) : (
             <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
               {active.map((session) => (

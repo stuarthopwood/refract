@@ -8,9 +8,10 @@ import type { GroupWaitingState } from './sessionDisplay'
 
 // #567 decision 6: named so it reads as "the width of the row's own action buttons", not a bare
 // magic number -- three 24px `icon-xs` ghost buttons (RepositoryGroup.tsx's own "+" quick-
-// create, branch picker, and "..." menu, replacing the previous mixed 28px/28px/22px sizes) and
-// the header's own `gap-1` between the trigger and each (3 gaps x 4px): (24*3) + (3*4) = 84...
-// plus the FINAL gap before the row's own trailing `px-1` padding closes it out, 4px, giving
+// create, branch picker, and "..." menu, replacing the previous mixed 28px/28px/22px sizes),
+// the header's own `gap-1` between the trigger and each of them (3 real gaps, trigger-to-first
+// and between each pair after it, 4px apiece): 3*24 + 3*4 = 84px, PLUS the header row's own
+// trailing `px-1` PADDING (not a fourth gap) that closes the row out, 4px more, giving
 // `sideOffset`'s own 88px (a tooltip sits OUTSIDE the trigger, past the actions AND that
 // trailing padding, so it needs the full distance to the header's own right edge).
 //

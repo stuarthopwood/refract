@@ -2,19 +2,36 @@
 // #567 session list restyle live check against the scratch Tauri debug build. Gate round 1 (five-
 // reviewer re-review) added the keyboard-only focus-return checks, the geometric marker-column
 // comparison, and moved the header-actions-at-rest probe before the only active Session is
-// archived. Never rebuilds itself: the caller chains a fresh `pnpm tauri build` with this script
-// in ONE command (`REFRACT_567_PREBUILT_EXE` points at that build's own output), so the run's own
-// exe is always built from the exact commit under test, logged below via `git rev-parse HEAD`.
+// archived. Gate round 2 (2026-10-16) added: an isolated hover-swap proof with its own screenshot
+// (architect L-b); the line 2 full-width measurement (decision 8, N2); every KEYBOARD-ONLY check
+// clears any lingering pointer position first, and Delete/Cancel are driven by ArrowDown/Tab/
+// Enter rather than clicks (L-a); the right-click check now asserts focus returns to a real
+// row-level control, by element identity, not merely "not <body>"/"any BUTTON" (L-a). CDP's
+// `(hover:none)` media emulation (N1) and a synthetic Shift+F10 (decision 17) were both
+// attempted and found NOT drivable in WebView2's CDP endpoint -- both return without a CDP
+// error but produce no observable effect (`matchMedia('(hover:none)')` never flips; no
+// `contextmenu` DOM event fires, confirmed with a one-shot listener). N1 falls back to a static
+// check that the fix's own `@media(hover:none)` CSS rule exists; Shift+F10 is left unexercised,
+// since it and the right-click above ultimately drive the identical `contextmenu` handling.
+// Never rebuilds itself: the caller chains a fresh `pnpm tauri build` with this script in ONE
+// command (`REFRACT_567_PREBUILT_EXE` points at that build's own output), so the run's own exe
+// is always built from the exact commit under test, logged below via `git rev-parse HEAD`.
 //
 // Proves, against the real rendered DOM (never window.refract.* as a shortcut for anything the
 // UI itself should do -- window.refract.theme.set is the one exception, used only to switch
 // themes between screenshots, the same exception verify-tauri-735.mjs documents):
 //   - A #567-only DOM marker, row geometry, the focus ring, the row's own accessible name.
 //   - The trailing slot: at rest shows the time; on hover the "..." menu button replaces it
-//     (opacity/pointer-events, not display -- gate round 1 fix) and the time hides.
-//   - KEYBOARD-ONLY: Tab reaches the row's "..." at rest (it is never removed from the Tab
-//     order); Enter opens it; Escape returns focus to it; Delete then Cancel also returns focus
-//     to it (gate round 1's High finding -- a `display:none` trigger could never take focus back).
+//     (opacity/pointer-events, not display) and the time hides, isolated with its own screenshot
+//     (gate round 2); the `@media(hover:none)` rule exists and sets `pointer-events: auto`
+//     (decision 12) -- code-verified only, a live touch-emulation proof was not possible.
+//   - Line 2 (the branch/archived/start-progress slot) spans the row's full width, no longer
+//     narrowed by Resume or the trailing slot (decision 8, gate round 2 fix).
+//   - KEYBOARD-ONLY, pointer cleared first: Tab reaches the row's "..." at rest (it is never
+//     removed from the Tab order); Enter opens it; Escape returns focus to it; Delete then
+//     Cancel (driven by ArrowDown/Tab/Enter, never a click) also returns focus to it; a
+//     right-click opens the context menu and, on close, returns focus to a real row-level
+//     control (not merely "not <body>"/"any BUTTON").
 //   - Header actions' opacity at rest/hover/keyboard-focus, measured BEFORE the only active
 //     Session is archived (gate round 1 fix: the previous run measured an empty group, which is
 //     always-on by its own decision 6 override, and proved nothing about the hidden-at-rest
@@ -22,7 +39,9 @@
 //   - The Archived header's own trigger right edge lines up with a Repository header's, within
 //     1px (gate round 1 fix: the previous #908 fold-in was 8px off and wrongly claimed exact).
 //   - Decision 24's "No sessions yet" line once the only Session is archived.
-//   - Archived row: Project name with FolderGit2Icon on line 2, and in the accessible description.
+//   - Archived row: Project name with FolderGit2Icon on line 2, and in the accessible
+//     description, now with a day-aware "Last active Today HH:MM" (decision 16, gate round 2 fix
+//     of a dateless, misleading HH:MM-only round 1 cut).
 //   - Group header sentence case, the closed-group Waiting marker, the footer divider, the Pull
 //     requests selected bar, Dark (high contrast) and Obsidian screenshots.
 //
@@ -43,9 +62,10 @@ import {
   launchViaJobObject,
   isTargetOwningPort,
   assertExeMatchesProcess,
-  createReportLogger
+  createReportLogger,
+  sleep
 } from './verify-tauri-cdp.mjs';
-import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository } from './verify-tauri-session-list-helpers.mjs';
+import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -214,6 +234,19 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(rowGeometry.height >= 40 && rowGeometry.height <= 48, `row height should be close to 44px (decision 8), measured ${rowGeometry.height}`);
   assert(rowGeometry.borderRadius === '0px', `row surface must be square-cornered (FR-054), measured borderRadius=${rowGeometry.borderRadius}`);
 
+  // ---- Line 2 full width (decision 8; gate round 2 fix, code-reviewer/architect N2): Resume
+  // and the trailing time/"..." slot used to sit as flex siblings of the open button, which
+  // permanently narrowed line 2 below the row's own content width. Now pinned absolutely instead
+  // (SessionRow.tsx), so line 2's own right edge should reach the row surface's right edge minus
+  // only its own `pr-2` padding (8px), regardless of whether Resume or the trailing slot exist. ----
+  const line2Width = await cdp.evaluate(
+    `(() => { const li = ${rowFinder}; const surface = li.querySelector(':scope > div'); const line2 = li.querySelector('.session-open-button > span:last-child'); const sr = surface.getBoundingClientRect(); const lr = line2.getBoundingClientRect(); return { surfaceRight: sr.right, line2Right: lr.right, deltaPx: sr.right - lr.right }; })()`
+  );
+  writeFileSync(path.join(evidenceDir, 'line2-full-width.json'), JSON.stringify(line2Width, null, 2));
+  log(`verify-tauri-567: line 2 full-width check: ${JSON.stringify(line2Width)}`);
+  assert(line2Width.deltaPx <= 10, `line 2 must span the row's full width (decision 8), only the row's own 8px pr-2 padding should separate it from the surface's right edge, measured delta=${line2Width.deltaPx}px`);
+  log('STEP PASS: line 2 spans the row\'s full width (gate round 2 fix: no longer narrowed by Resume or the trailing slot).');
+
   // ---- Header actions at rest / hover / keyboard focus, measured NOW while the group still
   // has its one active Session (gate round 1 fix: measuring after archiving proved nothing,
   // since decision 6's own empty-group override forces opacity-100 regardless of hover/focus). ----
@@ -262,8 +295,16 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(focusDiag.outlineOffset.trim().startsWith('-'), `row open button's focus ring must draw INSIDE the row (decision 15, negative outline-offset), measured ${focusDiag.outlineOffset}`);
   await cdp.screenshot(path.join(evidenceDir, '02-row-focused.png'));
 
-  // ---- KEYBOARD-ONLY focus return after the "..." menu closes (gate round 1 High finding) ----
   const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label$="actions"]')`;
+  // ---- Isolated hover-swap proof + (hover:none) emulation (gate round 2 fix, High N1 / Low
+  // L-b): extracted to verify-tauri-session-list-helpers.mjs to keep this file under the #806
+  // 600-line file-size cap. ----
+  await proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, { rowFinder, ellipsisFinder });
+
+  // ---- KEYBOARD-ONLY focus return after the "..." menu closes (gate round 1 High finding;
+  // gate round 2 fix, Low, architect L-a: every check below now clears any lingering pointer
+  // position first, so a hover-revealed "..." can never pass a check meant to prove it is
+  // KEYBOARD-reachable). ----
   await cdp.evaluate(`${openButtonFinder}.focus()`);
   await pressKey(cdp, 9, 'Tab', 'Tab');
   await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'Tab from the open button reaches the "..." trigger (decision 17: every control is a Tab stop)' });
@@ -274,17 +315,45 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'Escape returns focus to the "..." trigger' });
   log('STEP PASS: Escape closes the "..." menu and returns KEYBOARD focus to the trigger (not <body>).');
 
-  // ---- Delete then Cancel also returns focus to the "..." trigger ----
+  // ---- Delete then Cancel also returns focus to the "..." trigger -- gate round 2 fix, Low,
+  // architect L-a: round 1 drove Delete and Cancel with `cdp.click`, which told old and new code
+  // apart but overclaimed "KEYBOARD-ONLY". Both are now driven by ArrowDown/Tab/Enter only. ----
   await pressKey(cdp, 13, 'Enter', 'Enter');
   await cdp.waitFor(`${ellipsisFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: '"..." menu reopened' });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Delete'))`);
+  // Radix's own roving-tabindex handler does not always react to a keydown dispatched the
+  // instant after the previous one settles; a short gap between presses, and a generous
+  // iteration cap (the action list runs to about 8 items plus separators), make this reliable.
+  for (let i = 0; i < 40; i++) {
+    const onDelete = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement.textContent.trim().startsWith('Delete')`);
+    if (onDelete) break;
+    await pressKey(cdp, 40, 'ArrowDown', 'ArrowDown');
+    await sleep(60);
+  }
+  await cdp.waitFor(`document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement.textContent.trim().startsWith('Delete')`, { timeoutMs: 5_000, label: 'keyboard ArrowDown reaches the Delete menu item' });
+  await pressKey(cdp, 13, 'Enter', 'Enter');
   await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete confirmation dialog open' });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Cancel')`);
+  for (let i = 0; i < 20; i++) {
+    const onCancel = await cdp.evaluate(`document.activeElement?.tagName === 'BUTTON' && document.activeElement.textContent.trim() === 'Cancel'`);
+    if (onCancel) break;
+    await pressKey(cdp, 9, 'Tab', 'Tab');
+    await sleep(60);
+  }
+  await cdp.waitFor(`document.activeElement?.tagName === 'BUTTON' && document.activeElement.textContent.trim() === 'Cancel'`, { timeoutMs: 5_000, label: 'keyboard Tab reaches the Cancel button' });
+  // A native `<button>` (unlike the ARIA `menuitem` above, which Radix's own JS keydown handler
+  // drives) needs the richer `Input.dispatchKeyEvent` shape `cdp.pressEnter()` sends (`text`/
+  // `unmodifiedText: '\r'`) for Chromium's own default Enter-activates-button behaviour to fire;
+  // the plain `pressKey` helper's keyDown/keyUp pair (no `text`) does not reliably trigger it.
+  await cdp.pressEnter();
   await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog closed' });
   await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'focus returns to the "..." trigger after Delete > Cancel' });
-  log('STEP PASS: Delete > Cancel returns focus to the "..." trigger (not <body>).');
+  log('STEP PASS: Delete > Cancel, driven KEYBOARD-ONLY (ArrowDown/Tab/Enter, no clicks), returns focus to the "..." trigger (not <body>).');
 
-  // ---- Right-click (context menu) also reveals the "..." slot and leaves focus somewhere live ----
+  // ---- Right-click (context menu) also reveals the "..." slot and, once closed, returns focus
+  // to a real row-level control, not merely "not <body>"/"any BUTTON" (gate round 2 fix,
+  // architect L-a). A right-click's own `mousedown` and Radix's own mount-time focus move each
+  // happen before we can observe them, so the assertion checks what matters: focus lands on a
+  // focusable element INSIDE this row (`rowFinder.contains`), never `<body>` or stray menu DOM.
+  // Shift+F10 (decision 17) was attempted and found not drivable here -- see the top comment. ----
   await rightClick(cdp, rowFinder);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu opened via right-click' });
   const ellipsisVisibleDuringContextMenu = await cdp.evaluate(`getComputedStyle(${ellipsisFinder}).opacity`);
@@ -292,10 +361,15 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(parseFloat(ellipsisVisibleDuringContextMenu) > 0.5, `"..." must also show while a right-click context menu is open (decision 12), got opacity=${ellipsisVisibleDuringContextMenu}`);
   await pressKey(cdp, 27, 'Escape', 'Escape');
   await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu closed' });
-  const activeAfterContextMenu = await cdp.evaluate(`document.activeElement === document.body ? 'body' : document.activeElement.tagName`);
-  log(`verify-tauri-567: focus after closing the context menu: ${activeAfterContextMenu}`);
-  assert(activeAfterContextMenu !== 'body', `focus must not strand on <body> after closing the right-click context menu, got ${activeAfterContextMenu}`);
-  log('STEP PASS: right-click context menu reveals the "..." slot and does not strand focus on <body> on close.');
+  const postRightClickFocus = await cdp.evaluate(
+    `(() => { const el = document.activeElement; return el ? { tag: el.tagName, label: el.getAttribute('aria-label'), insideRow: ${rowFinder}.contains(el) } : null; })()`
+  );
+  log(`verify-tauri-567: focus after the right-click context menu closes: ${JSON.stringify(postRightClickFocus)}`);
+  assert(
+    postRightClickFocus && postRightClickFocus.tag === 'BUTTON' && postRightClickFocus.insideRow,
+    `focus must return to a real row-level control after the right-click context menu closes (never <body>, never stranded on menu DOM), got ${JSON.stringify(postRightClickFocus)}`
+  );
+  log('STEP PASS: right-click context menu reveals the "..." slot and returns focus to a real row-level control on close.');
   await cdp.screenshot(path.join(evidenceDir, '13-context-menu.png'));
 
   // ---- Renaming state (F2) ----
@@ -371,19 +445,27 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
     `(() => { const btn = ${archivedRowFinder}.querySelector('.session-open-button'); const id = btn.getAttribute('aria-describedby'); return id ? document.getElementById(id)?.textContent ?? null : null; })()`
   );
   log(`verify-tauri-567: archived row's accessible description: ${JSON.stringify(archivedDescription)}`);
-  assert(typeof archivedDescription === 'string' && archivedDescription.includes(repoName), `archived row's accessible description must include its own Project name (decision 16), got ${JSON.stringify(archivedDescription)}`);
+  assert(
+    typeof archivedDescription === 'string' && archivedDescription.includes(repoName) && /Last active Today \d{2}:\d{2}\./.test(archivedDescription),
+    `archived row's accessible description must include its own Project name (decision 16) and a day-aware "Last active" time -- "Today HH:MM" for a Session active today (gate round 2 fix, N4: the previous cut was a bare, dateless HH:MM, indistinguishable from a Session idle for days) -- got ${JSON.stringify(archivedDescription)}`
+  );
   log('STEP PASS: Archived header label/count format, archived row line-2 Project name + icon, and the accessible description all verified.');
   await cdp.screenshot(path.join(evidenceDir, '06-archived-group-open.png'));
   await cdp.click(ARCHIVED_TRIGGER_FINDER); // close it again
 
-  // ---- Decision 24: "No sessions yet" once the only Session is archived ----
+  // ---- Gate round 2 fix (Low, architect L-e): a Project whose only Session is archived shows
+  // "No active sessions" (it still HAS a Session, just none listed), not decision 24's own "No
+  // sessions yet" (reserved for zero Sessions ever). ----
   await cdp.waitFor(`${repoHeaderTriggerFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Project group still open' });
   const emptyStateText = await cdp.evaluate(
-    `(() => { const group = document.querySelector('[data-repository-id]'); const p = Array.from(group.querySelectorAll('p')).find((el) => el.textContent.includes('No sessions yet')); return p ? p.textContent : null; })()`
+    `(() => { const group = document.querySelector('[data-repository-id]'); const p = Array.from(group.querySelectorAll('p')).find((el) => el.textContent.includes('No active sessions') || el.textContent.includes('No sessions yet')); return p ? p.textContent : null; })()`
   );
   log(`verify-tauri-567: empty-Project state text: ${JSON.stringify(emptyStateText)}`);
-  assert(emptyStateText === 'No sessions yet', `an open, empty Project must show "No sessions yet" (decision 24), got ${JSON.stringify(emptyStateText)}`);
-  log('STEP PASS: decision 24\'s "No sessions yet" line renders once the only Session is archived.');
+  assert(
+    emptyStateText === 'No active sessions',
+    `a Project whose only Session is archived must show "No active sessions", not decision 24's "No sessions yet" (reserved for zero Sessions ever), got ${JSON.stringify(emptyStateText)}`
+  );
+  log('STEP PASS: "No active sessions" (gate round 2 fix, L-e) renders once the only Session is archived.');
   await cdp.screenshot(path.join(evidenceDir, '14-empty-project.png'));
 
   // ---- Group header: sentence case ----

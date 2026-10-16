@@ -32,15 +32,27 @@ import { useSessionRowActions } from './useSessionRowActions'
 // calls `menuTriggerRef.current.focus()` silently did nothing and stranded focus on `<body>`;
 // Shift+Tab also skipped it (decision 17: "every control is a Tab stop"). Kept in the DOM and
 // focusable at all times instead: `opacity`/`pointer-events` swap, absolutely positioned over the
-// time's own cell (decision 12's "takes that slot") rather than removed from flow. The reveal
-// rules are scoped inside `[@media(hover:hover)]` so a touch pointer (no hover at all) never
-// engages them -- "Under hover:none, both show" then falls out as the plain, un-hidden default,
-// with no separate override needed. `group-has-[[data-slot="context-menu-trigger"][data-state=
-// "open"]]` catches Shift+F10's context menu (Radix's `ContextMenuTrigger` sets `data-state`, not
-// `aria-expanded`, unlike the dropdown's own trigger).
+// time's own cell under `[@media(hover:hover)]` (decision 12's "takes that slot") rather than
+// removed from flow. `group-has-[[data-slot="context-menu-trigger"][data-state="open"]]` catches
+// Shift+F10's context menu (Radix's `ContextMenuTrigger` sets `data-state`, not `aria-expanded`,
+// unlike the dropdown's own trigger).
+//
+// Gate round 2 fix (High, code/a11y/architect: regression of decision 12 "Under hover:none, both
+// show"): the round 1 commit scoped every reveal rule -- even the base `opacity-0 pointer-events-
+// none` visibility -- inside `[@media(hover:hover)]`, so on a touch-only pointer (no hover concept
+// at all) the trigger stayed invisible and untappable forever; its own `absolute` overlay on top
+// of the time also meant the two could never have "both shown" even once revealed. Its own
+// `[@media(hover:none)]` branch below undoes both: `static` puts it back in normal flow beside
+// the time instead of over it, and `opacity-100`/`pointer-events-auto` make it visible and
+// tappable, while `[@media(hover:hover)]` keeps the original overlay swap for a mouse/trackpad
+// unchanged.
+const ROW_ACTION_HOVER_CLASS =
+  'text-muted-foreground hover:bg-sidebar-border dark:hover:bg-sidebar-border hover:text-foreground'
 const TRAILING_MENU_BUTTON_CLASS = cn(
-  'absolute inset-y-0 right-0 opacity-0 pointer-events-none text-muted-foreground',
-  'hover:bg-sidebar-border dark:hover:bg-sidebar-border hover:text-foreground aria-expanded:bg-sidebar-border',
+  'opacity-0 pointer-events-none',
+  ROW_ACTION_HOVER_CLASS,
+  'aria-expanded:bg-sidebar-border',
+  '[@media(hover:hover)]:absolute [@media(hover:hover)]:inset-y-0 [@media(hover:hover)]:right-0',
   '[@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto',
   '[@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto',
   '[@media(hover:hover)]:group-has-[[aria-expanded="true"]]:opacity-100',
@@ -48,12 +60,13 @@ const TRAILING_MENU_BUTTON_CLASS = cn(
   '[@media(hover:hover)]:group-has-[[data-slot="context-menu-trigger"][data-state="open"]]:opacity-100',
   '[@media(hover:hover)]:group-has-[[data-slot="context-menu-trigger"][data-state="open"]]:pointer-events-auto',
   'focus-visible:opacity-100 focus-visible:pointer-events-auto',
+  '[@media(hover:none)]:static [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto',
   COMPOSER_BUTTON_FOCUS_CLASS
 )
-// The time's own cell defines the trailing slot's size; the menu button above overlays it.
-// `invisible` (not `hidden`) keeps its layout box reserved, so the slot never resizes when the
-// button takes it over. Same `[@media(hover:hover)]`-scoped reveal rules as the button above, so
-// the two never disagree about which is showing.
+// The time's own cell defines the trailing slot's size under `[@media(hover:hover)]`; the menu
+// button above overlays it there. `invisible` (not `hidden`) keeps its layout box reserved, so the
+// overlay swap never resizes anything. Under `[@media(hover:none)]` neither rule fires, so the
+// time stays visible by default -- exactly the other half of "both show" (decision 12).
 const TRAILING_TIME_CLASS = cn(
   'text-xs tabular-nums text-muted-foreground',
   '[@media(hover:hover)]:group-hover:invisible [@media(hover:hover)]:group-focus-within:invisible',
@@ -163,16 +176,23 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
               (`data-choice-item` on the `<li>` above, FR-054) -- this div, not the open button's
               own `data-choice-item`, is the one actually painting the hover/selected background,
               so it carries the row's own padding too. `items-start` (not `items-center`) pins
-              Resume and the trailing time/"..." cell to line 1's own height, next to it, instead
-              of centring them across the whole 44px row (gate round 1 fix, architect/layout).
-              `min-h-11` keeps the row at its full height while renaming (gate round 1 fix, Low:
-              a lone `<input>` used to shrink it to about 38px). Row `pl-6` (not the decision's
-              own literal `pl-3`): the UX architect's gate ruling on decision 8 changes the
-              header trigger to `gap-1 px-1` (`GroupHeader.tsx`) so its own Project icon starts at
-              24px, and widens this row to match, so the status icon finally lines up under it. */}
+              the open button to line 1's own height, instead of centring it across the whole
+              44px row (gate round 1 fix, architect/layout). `min-h-11` keeps the row at its full
+              height while renaming (gate round 1 fix, Low: a lone `<input>` used to shrink it to
+              about 38px). Row `pl-6` (not the decision's own literal `pl-3`): the UX architect's
+              gate ruling on decision 8 changes the header trigger to `gap-1 px-1`
+              (`GroupHeader.tsx`) so its own Project icon starts at 24px, and widens this row to
+              match, so the status icon finally lines up under it.
+              Gate round 2 fix (Medium, code-reviewer/architect N2, L-c): `relative` now anchors
+              Resume and the trailing time/"..." slot as one `absolute right-2 top-1` group below
+              (past the open button), pinned to line 1's own height only -- they used to be flex
+              siblings of the open button here, which permanently narrowed line 2 below decision
+              8's own "full row width" (by the slot's reserved space, more with Resume mounted).
+              Line 1's own `pr-28` reserves the matching space instead, so line 2 (no such
+              padding) spans the row again. */}
           <div
             className={cn(
-              'flex w-full min-h-11 items-start gap-1 pl-6 pr-2 py-1',
+              'relative flex w-full min-h-11 items-start gap-1 pl-6 pr-2 py-1',
               isVisible ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent'
             )}
           >
@@ -219,11 +239,13 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
                   data-session-open={session.id}
                   className="session-open-button flex min-w-0 flex-1 flex-col gap-0 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                 >
-                  {/* #567 decision 8: line 1 -- the state icon (16px) and the truncating title.
-                      The time and the "..." menu button both live in the trailing cell below,
-                      OUTSIDE this button, so line 2 (the branch) keeps the full row width on
-                      every row, not just the ones without Resume (gate round 1 fix, Medium). */}
-                  <span className="flex min-w-0 items-center gap-2">
+                  {/* #567 decision 8: line 1 -- the state icon (16px) and the truncating title,
+                      with its own `pr-28` reserving room for the Resume/time/"..." group pinned
+                      absolutely over line 1 only (gate round 2 fix, Medium, code-reviewer/
+                      architect N2: that group used to be a flex sibling of this whole button,
+                      which left line 2 narrower than decision 8's own "full row width" on every
+                      row). Line 2 below has no such padding, so it spans the row. */}
+                  <span className="flex min-w-0 items-center gap-2 pr-28">
                     {session.startProgress ? (
                       <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
                     ) : (
@@ -261,81 +283,100 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
             <span role="status" className="sr-only">
               {resuming ? `Resuming ${session.name}…` : ''}
             </span>
-            {canResume && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    ref={resumeButtonRef}
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Resume ${session.name}`}
-                    aria-disabled={resuming || undefined}
-                    className={cn('aria-disabled:opacity-50', COMPOSER_BUTTON_FOCUS_CLASS)}
-                    onClick={() => void handleResume()}
-                  >
-                    {resuming ? (
-                      <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
-                    ) : (
-                      <RotateCwIcon aria-hidden className="size-3" />
+            {/* Gate round 2 fix (Medium, code-reviewer/architect N2, L-c): Resume and the
+                trailing time/"..." slot used to be flex siblings of the open button (sharing its
+                row with line 1 AND line 2), which permanently narrowed line 2 below decision 8's
+                own "full row width" -- by the slot's reserved space, more with Resume mounted.
+                Pinned instead to `absolute right-2 top-1` on the row (now `relative` above),
+                anchored to line 1's own height only; line 1's own `pr-28` reserves the matching
+                space so nothing overlaps, and line 2 (no such padding) spans the row again.
+                `h-5 items-center` here (was `h-4` on the inner cell alone) centres both Resume
+                and the time/"..." cell on the same baseline (gate round 2 fix, Low, L-c: they
+                used to sit about 2px below line 1). */}
+            <span className="absolute right-2 top-1 flex h-5 items-center gap-1">
+              {canResume && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      ref={resumeButtonRef}
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`Resume ${session.name}`}
+                      aria-disabled={resuming || undefined}
+                      className={cn('aria-disabled:opacity-50', ROW_ACTION_HOVER_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
+                      onClick={() => void handleResume()}
+                    >
+                      {resuming ? (
+                        <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+                      ) : (
+                        <RotateCwIcon aria-hidden className="size-3" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Resume {session.name}</TooltipContent>
+                </Tooltip>
+              )}
+              {/* #567 decision 12's trailing slot: the time at rest, the "..." menu button
+                  taking its place on hover, focus inside the row, or an open menu, under
+                  `[@media(hover:hover)]` (gate round 1 fix, High: the button used to be removed
+                  from flow entirely at rest, which broke keyboard focus-return and Shift+Tab).
+                  Under `[@media(hover:none)]` (a touch pointer, no hover concept at all) the
+                  button instead stays in normal flow beside the time -- decision 12's "Under
+                  hover:none, both show" (gate round 2 fix, High: round 1 scoped even the base
+                  visibility inside `[@media(hover:hover)]`, so touch could never reveal or tap
+                  it at all -- see the class constants' own comments). `relative` anchors the
+                  hover:hover overlay to this cell specifically, not the whole absolutely-
+                  positioned group above; `gap-1` only matters under hover:none, once the button
+                  is back in flow beside the time. */}
+              <span className="relative flex min-h-4 min-w-6 shrink-0 items-center justify-end gap-1">
+                <span aria-hidden className={TRAILING_TIME_CLASS}>
+                  {formatRelativeTimeShort(session.lastActivityAt)}
+                </span>
+                <DropdownMenu
+                  onOpenChange={(open) => {
+                    if (!open) return
+                    const settled = settledCreateRef.current
+                    settledCreateRef.current = null
+                    createRequestedRef.current = false
+                    settled?.()
+                    // Gate round 2 fix (Low): mirrors the create cleanup above -- see the
+                    // matching ContextMenu comment.
+                    const settledRestore = settledRestoreRef.current
+                    settledRestoreRef.current = null
+                    restoreRequestedRef.current = false
+                    settledRestore?.()
+                    createOriginRef.current = 'dropdown'
+                  }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      ref={menuTriggerRef}
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`${session.name} actions`}
+                      className={TRAILING_MENU_BUTTON_CLASS}
+                    >
+                      <EllipsisVerticalIcon aria-hidden className="size-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                    {actions.map((action, index) =>
+                      action.kind === 'separator' ? (
+                        <DropdownMenuSeparator key={`sep-${index}`} />
+                      ) : (
+                        <DropdownMenuItem
+                          key={action.key}
+                          variant={action.variant}
+                          disabled={action.disabled}
+                          onSelect={action.onSelect}
+                        >
+                          <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
+                        </DropdownMenuItem>
+                      )
                     )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Resume {session.name}</TooltipContent>
-              </Tooltip>
-            )}
-            {/* #567 decision 12's trailing slot: the time at rest, the "..." menu button taking
-                its place on hover, focus inside the row, or an open menu (gate round 1 fix,
-                High: the button used to be removed from flow entirely at rest, which broke
-                keyboard focus-return and Shift+Tab -- see the class constants' own comments).
-                `relative` so the absolutely-positioned button overlays this cell, not the row. */}
-            <span className="relative flex h-4 min-w-6 shrink-0 items-center justify-end">
-              <span aria-hidden className={TRAILING_TIME_CLASS}>
-                {formatRelativeTimeShort(session.lastActivityAt)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </span>
-              <DropdownMenu
-                onOpenChange={(open) => {
-                  if (!open) return
-                  const settled = settledCreateRef.current
-                  settledCreateRef.current = null
-                  createRequestedRef.current = false
-                  settled?.()
-                  // Gate round 2 fix (Low): mirrors the create cleanup above -- see the matching
-                  // ContextMenu comment.
-                  const settledRestore = settledRestoreRef.current
-                  settledRestoreRef.current = null
-                  restoreRequestedRef.current = false
-                  settledRestore?.()
-                  createOriginRef.current = 'dropdown'
-                }}
-              >
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    ref={menuTriggerRef}
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`${session.name} actions`}
-                    className={TRAILING_MENU_BUTTON_CLASS}
-                  >
-                    <EllipsisVerticalIcon aria-hidden className="size-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
-                  {actions.map((action, index) =>
-                    action.kind === 'separator' ? (
-                      <DropdownMenuSeparator key={`sep-${index}`} />
-                    ) : (
-                      <DropdownMenuItem
-                        key={action.key}
-                        variant={action.variant}
-                        disabled={action.disabled}
-                        onSelect={action.onSelect}
-                      >
-                        <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-                      </DropdownMenuItem>
-                    )
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
             </span>
           </div>
         </ContextMenuTrigger>
