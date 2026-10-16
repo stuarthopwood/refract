@@ -31,6 +31,7 @@ import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
+import { useAdvisoryAnnouncement } from './useAdvisoryAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -406,11 +407,8 @@ export function Transcript({
   )
 
   // Issue #563 decision 3 + gate round 2 architect addendum A: Stage boundaries key on each
-  // `subagent` item's own `messageId` (groupSubagentStages.ts), not on position, so they no
-  // longer depend on filtering order -- "Show thinking" off can safely drop thinking items
-  // BEFORE grouping again, restoring `groupToolItems`'s original "merges across a hidden
-  // thinking item" behaviour (#457) that briefly regressed when both groupers ran on the
-  // unfiltered list to protect Stage boundaries, a protection the `messageId` key no longer needs.
+  // `subagent` item's own `messageId` (groupSubagentStages.ts), not position, so "Show thinking"
+  // off can drop thinking items before grouping, matching groupToolItems' pre-#457 behaviour.
   const turnsWithStages = React.useMemo(
     () =>
       visibleTurns.map((turn) => {
@@ -428,6 +426,7 @@ export function Transcript({
   // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
   // -- the single out-of-log announcer, rendered as a sibling of `revealedAnnouncement` below.
   const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
+  const advisoryAnnouncement = useAdvisoryAnnouncement(turnsWithStages) // #558 gate round 1 High fix
 
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
@@ -1065,6 +1064,7 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
+        <span role="status" aria-live="polite" className="sr-only">{advisoryAnnouncement}</span>
         <Button
           ref={buttonRef}
           type="button"

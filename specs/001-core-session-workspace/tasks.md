@@ -2515,43 +2515,72 @@ live-measured at 0px; its other four items are untouched.
   (product code unchanged since), including the growth/focus criterion the round 1 gate found
   unproven.
 
-## Phase 48: Convergence (provisional numbering, T290+/FR-090+ reserved to avoid collision with concurrent lanes; parent renumbers before merge)
+## Phase 47: Convergence (provisional numbering, T248+ reserved to avoid collision with concurrent lanes; parent renumbers before merge)
 
-- [X] T290 [US1] #558 blocker callout (Decided, Skippy, delegated by Stuart 2026-10-16;
+- [X] T248 [US1] #558 blocker callout (Decided, Skippy, delegated by Stuart 2026-10-16;
   `ui-architect-v3` roundtable, full decision record on the issue): a blocker advisory read as
   one truncated line, identical to a nit, with no file:line extraction, no actions, and no
   collapsing of long concern runs. `AdvisoryRow.tsx` now wraps its `CollapsedLine` output in a
-  local 3px left-accent-bar wrapper -- `border-l-[3px] border-transparent` reserved
-  unconditionally so toggling the colour never shifts layout, swapped to
-  `border-l-severity-error` for a blocker (always) or `border-l-severity-warning` for a concern
-  (only while expanded); `CollapsedLine.tsx` itself is untouched, no new prop added. A blocker
-  defaults open (`defaultOpen`) live or reopened from history alike, with no focus steal on
-  auto-expansion (a polite live-region announcement only). The expanded body (note, guidance,
-  unchanged from before) gains: any `path:line`/`path:line:column` location(s) the note or
+  local wrapper `div` drawing a 3px left accent bar as an absolutely-positioned `before:`
+  pseudo-element (zero layout impact, so the icon stays on the shared 24px grid in every
+  state) -- the error colour on a blocker row AT ALL TIMES, collapsed or expanded; the warning
+  colour on a concern row only while expanded; `CollapsedLine.tsx` itself is untouched, no new
+  prop added. A blocker defaults open (`useState` initializer) live or reopened from history
+  alike, with no focus steal on auto-expansion -- one out-of-log status announcement
+  (`useAdvisoryAnnouncement.ts`, modelled on `useStageSettleAnnouncement.ts`), never a per-row
+  live region, never re-announced for an id already seen. The expanded body, in order, shows
+  the note, the guidance, then any `path:line`/`path:line:column` location(s) the note or
   guidance names, extracted by a new pure `src/renderer/lib/advisory-locations.ts` (a
-  conservative, allowlisted-code-extension regex, global match, de-duplicated by path:line
-  pair -- never a bare `\w+` host/URL false positive), shown as monospace copyable text; the
+  conservative, allowlisted-code-extension regex with a corrected lookbehind anchor so a drive
+  letter, a relative or absolute path prefix survives intact, length-capped against
+  backtracking, de-duplicated by `path:line` pair), shown as monospace copyable text; the
   shared icon-only `CopyButton` ("Copy advisory"/"Advisory copied": note, guidance and every
-  location, a strict superset of what Ask-agent sends); and an outline
-  "Ask agent to address this blocker"/"...concern" button that composes a plain-text message
-  (quoting the note, naming the advisor/severity, listing locations) and sends it through the
-  existing `window.refract.chat.send(sessionId, message)` path unchanged -- the same path a
-  normal user message takes, so busy/queue/steer behaviour applies automatically -- posted as a
-  real user turn; focus returns to the row's own `CollapsibleTrigger` once the send completes
-  (no unmount occurs, a plain ref-based `.focus()`). A nit gets none of this: no accent bar, no
-  Copy/Ask-agent actions, same plain expanded body as before. A new pure
-  `groupAdvisoryItems.ts` (modelled on `groupThoughtItems.ts`, never crossing a turn) collapses
-  a run of six or more consecutive concern-severity advisories (nothing else between them,
-  blockers and nits never included) to the newest five in original order plus a
-  `<Button variant="ghost" size="sm">+ Show {N} more advisor concerns</Button>` that permanently
-  reveals the rest on click (no re-collapse, matching `CappedCodeBlock`'s own "Show all"
-  precedent); a run of five or fewer renders individually, ungrouped, exactly as before.
-  `Transcript.tsx` composes `groupAdvisoryItems` into the existing
-  `groupToolItems`/`groupThoughtItems`/`groupSubagentStages` chain. `ADVISORY_CLASS`'s
-  `blocker`/`concern` literals (`text-destructive`/`text-state-needs-you`) renamed to
-  `text-severity-error`/`text-severity-warning` (CSS aliases of identical values in every
-  theme, matching `statusGlyph.ts`/`ToolRow.tsx`'s own convention; `nit` stays
-  `text-muted-foreground`, no `--severity-nit` token exists). Spec 001 FR-051 amended, a
-  Clarifications entry added (Session 2026-10-16, blocker callout); `CONTEXT.md` gained three
-  glossary entries (Advisory accent bar, Advisory location, Advisory concern run);
-  `docs/design/product-chat.md`'s Advisory notes bullet amended; `docs/PLAN.md` row added.
+  location); and an outline "Ask agent to address this blocker"/"...concern" button, gated on
+  the Session's own status exactly as the composer's own send control is (a not-yet-started
+  Session is opened first; a stopped-for-another-reason Session disables the button with a
+  visible reason), that composes a plain-text message -- the whole advisor payload bounded in
+  one `<advisory>...</advisory>` block, with any literal closing tag inside the payload broken
+  so it can never close the block early -- and sends it through the existing
+  `window.refract.chat.send(sessionId, message)` path unchanged, posted as a real user turn;
+  focus returns to the row's own trigger once the send completes, unless the developer has
+  since moved focus elsewhere. A nit gets none of this: no accent bar, no Copy/Ask-agent
+  actions, same plain expanded body as before. A new pure `groupAdvisoryItems.ts` (modelled on
+  `groupThoughtItems.ts`) ALWAYS wraps every run of consecutive concern-severity advisories,
+  including a run of one, into an `AdvisoryRun` (`CONCERN_RUN_THRESHOLD = 5`, exported so the
+  threshold is a single source of truth); `AdvisoryRunRow` shows every row with no control at a
+  run of five or fewer, or the newest five plus a `+ Show N more advisor concerns` button
+  (placed above the rows, the hidden ones being the older ones) at six or more, moving focus to
+  the first newly revealed row's own trigger on activation. `Transcript.tsx` composes
+  `groupAdvisoryItems` into the existing `groupToolItems`/`groupThoughtItems`/
+  `groupSubagentStages` chain. `ADVISORY_CLASS`'s `blocker`/`concern` literals renamed to the
+  `text-severity-error`/`text-severity-warning` token classes (CSS aliases of identical values
+  in every theme). Spec 001 FR-051 amended, two Clarifications entries added (Session
+  2026-10-16, blocker callout, plus a gate round 1 amendment); `CONTEXT.md`'s three glossary
+  entries corrected to match; `docs/design/product-chat.md`'s Advisory notes bullet amended;
+  `docs/PLAN.md` row added; `scripts/theme-contrast-pairs.mjs` gained explicit
+  `severity-warning` 4.5:1 text pairs (decision 11 now renders that token as label/summary
+  text, previously gated only at the 3:1 non-text floor).
+
+- [X] T249 [US1] Gate round 1 remediation (five-reviewer, 2026-10-16): Security and Tests
+  PASSed; Code, Accessibility and `ui-architect-v3` FAILed on two shared High findings, fixed
+  above (T248's own description already reflects the fixed state): (1) the blocker's own
+  mount-time `aria-live` span sat inside the transcript's `role="log"`, double-announcing a
+  live arrival and re-announcing on every remount (Session switch, history reopen, "Load
+  earlier") -- moved to one out-of-log announcer. (2) "+ Show N more" unmounted on activation,
+  dropping keyboard focus to `<body>` -- fixed with a `useLayoutEffect` focus move, the same
+  defect "Load N earlier turns" was fixed for in this same file. Mediums also fixed: the
+  accent-bar technique changed from a permanently-reserved `border-l-[3px]` (which shifted
+  every row 3px off the shared icon grid) to a zero-layout-impact `before:` pseudo-element; a
+  blocker's stripe now shows even while collapsed (a departure from the first pass, reconciling
+  decision 1's own two readings); concern runs are now always-wrapped rather than only above
+  five, since decision 10's "focus stability is a non-issue" premise was false (decision 13
+  deliberately returns focus to a concern's own trigger); the location regex's leading `\b`
+  chopped path prefixes (`C:\Repos\x\foo.ts:42` became `Repos\x\foo.ts:42`) -- replaced with a
+  lookbehind that also rejects a URL's own host segment with no separate check needed;
+  de-duplication now keys on the `path:line` pair, not the raw matched text; Ask-agent now
+  mirrors the composer's own send-gating (`MessageInput.tsx`), bounds its payload in one
+  delimited block (security), wraps the send in `try/finally`, and only refocuses the trigger
+  if the user has not moved on; the body content column, order (note, guidance, locations) and
+  wrap behaviour at 360px now match every other `CollapsedLine` consumer
+  (`contentClassName={LABEL_COLUMN_CONTENT_CLASS}`). `node scripts/ci-local.mjs` 16/16 PASS;
+  `pnpm typecheck` clean; `check:theme-contrast` 427/427.

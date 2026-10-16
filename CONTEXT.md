@@ -200,7 +200,7 @@ A compact, glanceable display of one live fact about something elsewhere in the 
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
 **Advisory accent bar**:
-The 3px left stripe on an expanded blocker (always, error colour) or expanded concern (warning colour) advisory row -- a local sibling class on `AdvisoryRow`'s own wrapper `div`, reserved (transparent) in every other state so toggling it never shifts layout; never a `CollapsedLine` primitive prop (issue #558).
+The 3px left stripe on a BLOCKER row (always, even collapsed, error colour) or an EXPANDED concern row (warning colour) -- drawn as an absolutely-positioned `before:` pseudo-element on `AdvisoryRow`'s own local wrapper `div` (zero layout impact, so the icon stays on the shared 24px grid in every state); never a `CollapsedLine` primitive prop (issue #558, gate round 1).
 _Avoid_: severity box, blocker card, alert stripe
 
 **Advisory location**:
@@ -208,7 +208,7 @@ A `path:line` (optionally `:column`) the advisory's note or guidance names, extr
 _Avoid_: file reference, source pointer
 
 **Advisory concern run**:
-Six or more consecutive concern-severity advisories in one turn with nothing else between them, shown as the newest five plus a "+ Show N more advisor concerns" one-way reveal button -- a run of five or fewer stays ungrouped. Blockers and nits are never part of a run (issue #558).
+Every run of consecutive concern-severity advisories in one turn with nothing else between them (even a run of one, always wrapped -- issue #558 gate round 1, matching **Tool group**/**Thought run**'s own "always wrap" rule): a run of five or fewer renders unchanged, with no control; a run of six or more shows the newest five plus a "+ Show N more advisor concerns" one-way reveal button, placed above the rows (the hidden ones are the older ones). Blockers and nits are never part of a run.
 _Avoid_: concern group, advisory batch
 
 ## Flagged ambiguities

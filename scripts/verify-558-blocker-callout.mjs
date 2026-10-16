@@ -2,19 +2,20 @@
 // Live CDP check for issue #558 (blocker/concern advisory callout: accent bar, locations,
 // Copy advisory, "Ask agent to address this"), required before the draft PR.
 //
-// Drives a REAL `omp` (ambient already-signed-in default profile -- `advisor.enabled` is
-// already `true` there, confirmed via `omp config list` before this script was written; no
-// scratch OMP_PROFILE override, matching #570/#557's own isolation posture: only Refract's
-// OWN data, `REFRACT_DATA_DIR`, is scratch). Real model tokens, small prompts.
+// Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
+// override, matching #570/#557's own isolation posture: only Refract's OWN data,
+// `REFRACT_DATA_DIR`, is scratch). Real model tokens, small prompts.
 //
-// Advisory SEVERITY is the advisor model's own judgement call, never caller-controlled: this
-// script sends a warm-up turn (the advisor's `immuneTurns` skips the very first turn) then a
-// few turns deliberately shaped to read as risky to a code-review advisor (a hardcoded secret,
-// a confirmation-free recursive delete, a SQL-injection pattern), and records whatever severity
-// actually appears. #558's blocker-ONLY behaviours (default-open, error-colour accent, "...
-// blocker" wording) are asserted live only if a real blocker actually materialises; otherwise
-// they are noted as code-verified only (typecheck + 148 vitest + the component's own
-// severity-keyed branches already exercised by the type system).
+// #917: RPC hosts start the advisor runtime DISABLED unless the host opts in, and Refract
+// never opts in, nor does `/advisor` exist in `SUPPORTED_OMP_COMMANDS` for a developer to turn
+// it on by hand -- so no `<advisory>` note can arrive in this script's own scratch Session
+// today. It still sends a warm-up turn plus a few turns shaped to read as risky to a
+// code-review advisor, in case #917 is resolved by the time this runs, and records whatever
+// severity actually appears (never forced). #558's severity-specific behaviour (default-open,
+// accent colour, locations, Copy, Ask-agent, focus-return, keyboard order, the concern-run
+// reveal) is asserted live only if a real advisory actually materialises; otherwise it is
+// code-reviewed only, with no unit or live-advisory coverage -- see the PR body's own
+// "Not exercised" list.
 //
 // The exe under test is rebuilt immediately before this script runs and checked against the
 // just-built renderer bundle for three #558-only strings before anything else is trusted.
@@ -89,14 +90,16 @@ async function readAdvisorySeverities(cdp) {
   return cdp.evaluate(`(${ADVISORY_FINDER}).map((el) => el.querySelector('span.font-medium').textContent.trim().toLowerCase())`);
 }
 
-/** The wrapper div's own `border-left-color`, via real computed style -- never guessed from a
- * class name. `null` for a nit (no wrapper div exists at all, decision 14). */
+// Gate round 1: the accent bar is drawn as an absolutely-positioned `::before` pseudo-element
+// (zero layout impact, so the icon stays on-grid), not a real border -- read its own
+// background-color via `getComputedStyle(el, '::before')`. `null` for a nit (no wrapper div
+// exists at all, decision 14).
 async function readAccentBorderColor(cdp, index) {
-  return cdp.evaluate(`(() => { const el = (${ADVISORY_FINDER})[${index}]; const wrapper = el.closest('[data-advisory-severity]'); return wrapper ? getComputedStyle(wrapper).borderLeftColor : null; })()`);
+  return cdp.evaluate(`(() => { const el = (${ADVISORY_FINDER})[${index}]; const wrapper = el.closest('[data-advisory-severity]'); return wrapper ? getComputedStyle(wrapper, '::before').backgroundColor : null; })()`);
 }
 
 async function probeTokenBorderColor(cdp, className) {
-  return cdp.evaluate(`(() => { const probe = document.createElement('span'); probe.className = ${JSON.stringify(className)}; probe.style.position = 'fixed'; document.body.appendChild(probe); const c = getComputedStyle(probe).borderLeftColor; probe.remove(); return c; })()`);
+  return cdp.evaluate(`(() => { const probe = document.createElement('span'); probe.style.position = 'fixed'; probe.className = ${JSON.stringify(className)}; document.body.appendChild(probe); const c = getComputedStyle(probe, '::before').backgroundColor; probe.remove(); return c; })()`);
 }
 
 async function main() {
@@ -208,7 +211,7 @@ async function main() {
     }
 
     if (bestSeverity === null) {
-      notExercised.push('No real advisory of any severity appeared across all three risky-action turns -- every #558 behaviour below is code-verified only (typecheck, 148 vitest, severity-keyed branches).');
+      notExercised.push('No real advisory of any severity appeared across all three risky-action turns -- every #558 severity-specific behaviour below (default-open with no focus steal, exactly-once announcement, accent-bar colour, location extraction, Copy, Ask-agent send plus focus-return, keyboard Tab order, the nit no-new-chrome path, five-or-fewer concerns rendering individually with no wrapper, and the 6+ concern-run reveal) is code-reviewed only, with no unit or live-advisory coverage.');
     } else {
       findings.push(`Best severity observed live: "${bestSeverity}" (blocker is the ideal outcome but is the advisor model's own call, not forced).`);
       const severities = await readAdvisorySeverities(cdp);
@@ -233,13 +236,13 @@ async function main() {
         }
 
         const measuredColor = await readAccentBorderColor(cdp, targetIndex);
-        const tokenColor = await probeTokenBorderColor(cdp, bestSeverity === 'blocker' ? 'border-l-severity-error' : 'border-l-severity-warning');
+        const tokenColor = await probeTokenBorderColor(cdp, bestSeverity === 'blocker' ? "before:bg-severity-error before:content-['']" : "before:bg-severity-warning before:content-['']");
         if (measuredColor !== tokenColor) failures.push(`Accent bar border-left-color measured ${measuredColor}, expected the live ${bestSeverity === 'blocker' ? '--severity-error' : '--severity-warning'} token value ${tokenColor} (decision 1).`);
         else findings.push(`Accent bar paints the real ${bestSeverity === 'blocker' ? '--severity-error' : '--severity-warning'} token colour (${measuredColor}), decision 1.`);
 
         const locationsText = await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return Array.from(wrapper.querySelectorAll('.font-mono.text-xs')).map((el) => el.textContent.trim()); })()`);
         if (locationsText.length > 0) findings.push(`Location(s) extracted and shown as monospace text: ${JSON.stringify(locationsText)} (decisions 4-5).`);
-        else notExercised.push('The advisor\'s own note text did not happen to name a path:line this run (advisor phrasing is not caller-controlled); location extraction is code-verified only (unit-tested regex, advisory-locations.ts).');
+        else notExercised.push('The advisor\'s own note text did not happen to name a path:line this run (advisor phrasing is not caller-controlled); location extraction (and both a note-only and a note-plus-guidance location together) is code-reviewed only, no unit or live coverage.');
 
         // ---- Copy advisory: real OS clipboard ----
         const copyBefore = readOsClipboardText();
