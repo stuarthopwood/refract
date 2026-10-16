@@ -164,15 +164,16 @@
   slash-command set (FR-032), session-scoped and not persisted; typing `/advisor on` enables the
   advisor for that Session, `/advisor off` disables it, `/advisor status` shows its state as a
   transcript notice, and the slash-command menu lists `advisor` with the short description OMP's
-  own `get_available_commands` supplies for it. No Settings toggle and no cost readout
-  (`advisor_cost_changed` stays unread) for now.
+  own `get_available_commands` supplies for it. No Settings toggle for now.
 - Q: Decided (Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision
   record on the issue): does this toggle need any new UI (an indicator, a dedicated message kind,
   a cost readout)? → A: No. `fast`, `slow` and `extended-context` -- the other session-scoped
   on/off/status commands -- carry no indicator anywhere in Refract today, so `/advisor` needs no
   parity addition; its reply already renders through the existing forwarded-command path (a
   `command_output` frame becomes a transcript `notice` row, the same as `/usage show` or
-  `/session info`). No new component, store or message kind was added.
+  `/session info`). No new component, store or message kind was added. No dedicated cost readout
+  yet (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead.
+  Whether a standing readout is wanted is open (Stuart).
 - Q: `/advisor` was one of the probe's own denylisted names (`docs/spike/slash-commands-probe.mjs`
   `DENYLIST`), so the T092/18.5.1 run this allowlist is built from never sent it -- does FR-032's
   "verified to run" bar still hold? → A: Yes, satisfied a different way: issue #917's own live

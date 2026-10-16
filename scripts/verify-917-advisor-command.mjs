@@ -9,10 +9,13 @@
 // Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
 // override, matching #558/#570/#557's own isolation posture: only Refract's OWN data,
 // `REFRACT_DATA_DIR`, is scratch). Checks, in order: the slash-command menu lists `advisor`
-// with a non-empty description (FR-032), `/advisor status` produces a visible reply,
-// `/advisor on` produces a visible reply, a real turn runs and is recorded whether a real
-// advisory row arrives (the advisor's own judgement, never forced or guaranteed by this
-// script), then `/advisor off` produces a visible reply.
+// with a non-empty description (FR-032); `/advisor off` then `/advisor status` (expecting
+// "disabled") proves the off direction; `/advisor on` then `/advisor status` (expecting
+// "enabled") proves the on direction -- each reply is asserted against its own exact pattern,
+// not just a loose "/advisor/i" substring match; a real turn runs with the advisor left on and
+// is recorded whether a real advisory row arrives (the advisor's own judgement, never forced or
+// guaranteed by this script); `/advisor off` runs once more at the end to leave the Session in a
+// known state.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -33,8 +36,10 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 
 // `NoticeRow` (a `command.send` reply becomes a `command_output` -> `notice` transcript item,
 // `ui-architect-v3`'s own correction to this story's brief) is the one `CollapsedLine` consumer
-// whose icon slot carries an sr-only "Info:"/"Warning:"/"Error:" label (`NOTICE_LABEL`) --
-// unlike the whole-transcript textContent length this script used in an earlier draft, counting
+// whose icon slot carries an sr-only "Info:" label (`NOTICE_LABEL.info`) -- every `command.send`
+// reply observed live renders at `level: Info` (never `Warning`/`Error`), so counting only
+// `Info:` rows avoids ever mismatching an unrelated warning/error notice as an advisor reply.
+// Unlike the whole-transcript textContent length this script used in an earlier draft, counting
 // and reading THESE specific rows survives `react-virtuoso`'s windowing (only mounted, visible
 // rows are ever queried) and whatever reflow an adjacent row's own re-render causes elsewhere.
 // `CollapsedLine` renders the icon-slot span and the summary span as siblings, as DIRECT
@@ -44,7 +49,7 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // on the right container either way, unlike `.closest('div')`, which skips past a button-rooted
 // long notice to an OUTER wrapper div that does not hold the summary as a direct child.
 const NOTICE_FINDER =
-  `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => ['Info:', 'Warning:', 'Error:'].includes((el.textContent ?? '').trim())).map((el) => el.parentElement?.parentElement).filter(Boolean)`;
+  `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => (el.textContent ?? '').trim() === 'Info:').map((el) => el.parentElement?.parentElement).filter(Boolean)`;
 
 async function countNotices(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).length`);
@@ -67,12 +72,15 @@ async function clearComposer(cdp) {
 }
 
 /** Sends `command`, then waits for a NEWLY-mounted notice (index >= the pre-send count) whose
- * text mentions "advisor" -- not simply the latest notice by index, because this ambient
- * signed-in profile's own session occasionally mounts an unrelated system notice (e.g. its own
- * MCP tool list) within the same short window, which can race ahead of the real `/advisor`
- * reply and would otherwise be misread as the command's own output. Keeps polling past an
- * unrelated new notice instead of accepting the first growth alone. */
-async function sendSlashCommand(cdp, command) {
+ * text matches `expectedPattern` -- a per-command exact pattern (`/Advisor enabled\./`,
+ * `/Advisor disabled\./`, `/^Advisor is (enabled|disabled)/`), not simply the latest notice by
+ * index or a loose "mentions advisor" substring test, because this ambient signed-in profile's
+ * own session occasionally mounts an unrelated system notice (e.g. its own MCP tool list) within
+ * the same short window, which can race ahead of the real `/advisor` reply and would otherwise
+ * be misread as the command's own output. Keeps polling past an unrelated new notice instead of
+ * accepting the first growth alone. Throws (rather than returning a wrong match) when the
+ * pattern never appears within the deadline. */
+async function sendSlashCommand(cdp, command, expectedPattern) {
   await clearComposer(cdp);
   const before = await countNotices(cdp);
   await cdp.typeIntoByLabel('Message', command);
@@ -80,11 +88,11 @@ async function sendSlashCommand(cdp, command) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const texts = await allNoticeTexts(cdp);
-    const match = texts.slice(before).find((t) => /advisor/i.test(t));
+    const match = texts.slice(before).find((t) => expectedPattern.test(t));
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`sendSlashCommand: no notice mentioning "advisor" appeared within 30s for "${command}"`);
+  throw new Error(`sendSlashCommand: no notice matching ${expectedPattern} appeared within 30s for "${command}"`);
 }
 
 async function main() {
@@ -176,15 +184,31 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-slash-menu.png'));
     await clearComposer(cdp);
 
-    // ---- /advisor status ----
-    const statusReply = await sendSlashCommand(cdp, '/advisor status');
-    findings.push(`"/advisor status" produced a visible reply: ${JSON.stringify(statusReply.slice(0, 300))}`);
-    await cdp.screenshot(path.join(SHOTS_DIR, '01-advisor-status.png'));
+    // ---- /advisor off, then /advisor status (expect "disabled") -- proves the off direction ----
+    const offReply1 = await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
+    findings.push(`"/advisor off" produced: ${JSON.stringify(offReply1)}`);
+    await cdp.screenshot(path.join(SHOTS_DIR, '01-advisor-off.png'));
 
-    // ---- /advisor on ----
-    const onReply = await sendSlashCommand(cdp, '/advisor on');
-    findings.push(`"/advisor on" produced a visible reply: ${JSON.stringify(onReply.slice(0, 300))}`);
-    await cdp.screenshot(path.join(SHOTS_DIR, '02-advisor-on.png'));
+    const statusAfterOff = await sendSlashCommand(cdp, '/advisor status', /^Advisor is (enabled|disabled)/);
+    if (!/^Advisor is disabled/.test(statusAfterOff)) {
+      failures.push(`"/advisor status" after "/advisor off" reported "${statusAfterOff}", expected it to start with "Advisor is disabled".`);
+    } else {
+      findings.push(`"/advisor status" after off confirms disabled: ${JSON.stringify(statusAfterOff)}`);
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '02-advisor-status-disabled.png'));
+
+    // ---- /advisor on, then /advisor status (expect "enabled") -- proves the on direction ----
+    const onReply = await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
+    findings.push(`"/advisor on" produced: ${JSON.stringify(onReply)}`);
+    await cdp.screenshot(path.join(SHOTS_DIR, '03-advisor-on.png'));
+
+    const statusAfterOn = await sendSlashCommand(cdp, '/advisor status', /^Advisor is (enabled|disabled)/);
+    if (!/^Advisor is enabled/.test(statusAfterOn)) {
+      failures.push(`"/advisor status" after "/advisor on" reported "${statusAfterOn}", expected it to start with "Advisor is enabled".`);
+    } else {
+      findings.push(`"/advisor status" after on confirms enabled: ${JSON.stringify(statusAfterOn)}`);
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '04-advisor-status-enabled.png'));
 
     // ---- A real turn, and whether a real advisory row arrives (never forced) ----
     const ADVISORY_FINDER =
@@ -204,18 +228,22 @@ async function main() {
         `(() => { const items = (${ADVISORY_FINDER}); const el = items[items.length - 1]; return el.querySelector('span.font-medium')?.textContent?.trim() ?? null; })()`
       );
       findings.push(`A real advisory row arrived after the turn (severity "${severity}") -- the advisor is confirmed running for this Session.`);
-      await cdp.screenshot(path.join(SHOTS_DIR, '03-advisory-arrived.png'));
+      await cdp.screenshot(path.join(SHOTS_DIR, '05-advisory-arrived.png'));
     } catch {
       notExercised.push(
         'No advisory row arrived within 60s of the turn settling -- the advisor\'s own judgement decides whether a turn warrants a note, never caller-controlled or guaranteed; stated plainly rather than assumed.'
       );
     }
-    await cdp.screenshot(path.join(SHOTS_DIR, '04-after-turn.png'));
+    await cdp.screenshot(path.join(SHOTS_DIR, '06-after-turn.png'));
 
-    // ---- /advisor off ----
-    const offReply = await sendSlashCommand(cdp, '/advisor off');
-    findings.push(`"/advisor off" produced a visible reply: ${JSON.stringify(offReply.slice(0, 300))}`);
-    await cdp.screenshot(path.join(SHOTS_DIR, '05-advisor-off.png'));
+    // ---- /advisor off (final) -- leaves the Session in a known state ----
+    const offReply2 = await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
+    findings.push(`"/advisor off" (final) produced: ${JSON.stringify(offReply2)}`);
+    await cdp.screenshot(path.join(SHOTS_DIR, '07-advisor-off-final.png'));
+
+    notExercised.push(
+      'Session scope and non-persistence ("session-scoped; not persisted to config", omp://advisor-watchdog.md) were not independently proven live -- this run never opened a second Session or re-read the on-disk config file to confirm the toggle neither leaked to a sibling Session nor survived a restart; taken on the documented behaviour.'
+    );
 
     const report = { gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));

@@ -29,9 +29,11 @@
 // a real signed-in profile (a scratch Session running `/advisor status`, `/advisor on`, a real
 // turn, then `/advisor off`) -- the same verified-before-listed bar FR-032 sets for a probe run,
 // just run by hand once instead of through `slash-commands-probe.mjs` (`omp://advisor-watchdog.md`
-// already documents the exact three subcommands; the live check instead confirms Refract's own
-// forwarding path and that OMP's real `chat.commands` descriptor for a signed-in profile lists
-// them). No Settings toggle and no cost readout: both stay out of this story's decided scope.
+// documents on/off/status among others -- `dump`, `dump raw` and `configure` stay refused, not in
+// this allowlist; the live check instead confirms Refract's own forwarding path and that OMP's
+// real `chat.commands` descriptor for a signed-in profile lists on/off/status). No Settings
+// toggle. No dedicated cost readout yet (`advisor_cost_changed` stays unread); `/advisor status`
+// reports spend on demand instead. Whether a standing readout is wanted is open (Stuart).
 //
 // Critical remediation (issue #129, 2026-10-03): the allowlist used to be keyed on the
 // command's top-level NAME ONLY, so an unverified SUBCOMMAND of an allowed parent -- one the

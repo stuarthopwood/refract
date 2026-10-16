@@ -2624,14 +2624,15 @@ live-measured at 0px; its other four items are untouched.
   bucket) -- included anyway by explicit decision, verified instead by this story's own live
   check against a real signed-in profile. `src-tauri/src/session/agent/commands.rs`'s
   `supported_omp_subcommands` gains the matching `"advisor" => Some(&["on", "off", "status"])`
-  arm for TS/Rust parity (the IPC parity gate compares both sides). No renderer change: a
-  `ui-architect-v3` roundtable (Decided, Skippy, delegated by Stuart 2026-10-16) confirmed the
-  other session-scoped on/off/status commands (`fast`, `slow`, `extended-context`) carry no
-  indicator anywhere in Refract, so `/advisor` needs no new component, store or message kind --
-  its reply already renders through the existing forwarded-command path (a `command_output`
-  frame becomes a transcript `notice` row, same as `/usage show`/`/session info`). No Settings
-  toggle and no cost readout (`advisor_cost_changed` stays unread): both out of this story's
-  decided scope.
+  arm for TS/Rust parity (kept in step by hand; no automated check covers this table). No
+  renderer change: a `ui-architect-v3` roundtable (Decided, Skippy, delegated by Stuart
+  2026-10-16) confirmed the other session-scoped on/off/status commands (`fast`, `slow`,
+  `extended-context`) carry no indicator anywhere in Refract, so `/advisor` needs no new
+  component, store or message kind -- its reply already renders through the existing
+  forwarded-command path (a `command_output` frame becomes a transcript `notice` row, same as
+  `/usage show`/`/session info`). No Settings toggle. No dedicated cost readout yet
+  (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead.
+  Whether a standing readout is wanted is open (Stuart).
 - [X] T252 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with a dated
   `### Session 2026-10-16 (advisor command)` Clarifications entry recording the decision, the
   `ui-architect-v3` confirmation, and the probe-bypass rationale; `contracts/omp-usage.md`'s

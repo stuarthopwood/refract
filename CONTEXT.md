@@ -200,7 +200,7 @@ A compact, glanceable display of one live fact about something elsewhere in the 
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
 **Advisor**:
-omp's optional reviewer subsystem that watches a Session's turns and emits the notes shown as **Advisory accent bar**/**Advisory location**/**Advisory concern run** rows -- a distinct thing from those rows themselves. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle and no cost readout in Refract today.
+omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle. No dedicated cost readout yet (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead. Whether a standing readout is wanted is open (Stuart).
 _Avoid_: Advisory (the note the Advisor produces, not the subsystem itself), reviewer
 
 **Advisory accent bar**:
