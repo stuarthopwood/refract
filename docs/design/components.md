@@ -107,13 +107,13 @@ The zero-box rule (#556, settled against the AI Studio mock review #549, agenda 
 - The composer.
 - Decision cards (approval, question).
 - Dialogs and floating layers.
-- Code blocks, diffs and tables.
+- Code blocks, inline code, diffs and tables.
 - Rendered diagrams (code-block family, e.g. `Markdown.tsx`'s Mermaid `<img>`).
-- Attachments and chips.
+- Attachments and chips, including the pasted-text preview dialog (`TextPreviewModal.tsx`, code-block family).
 
 Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a **Spine** (a neutral `border-divider` left rule hanging from a group header's own status icon, never coloured or animated, issue #565) or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead.
 
-Stuart's own "Self vs. other layout" rule (2026-10-04, in [product-chat.md](product-chat.md)) makes the user's own message bubble a standing exception: its fill marks authorship, not a card around content. **2026-10-16 delegated addition:** it is never nested inside another box, and only Markdown's code-family surfaces (code blocks, inline code, tables, rendered diagrams) render inside it.
+Stuart's own "Self vs. other layout" rule (2026-10-04, in [product-chat.md](product-chat.md)) makes the user's own message bubble a standing exception: its fill marks authorship, not a card around content. **2026-10-16 delegated addition (Skippy, delegated by Stuart, #556):** it is never nested inside another box, and only Markdown's code-family surfaces (code blocks, inline code, tables, rendered diagrams) render inside it.
 
 Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). Swept 2026-10-16, #556 (full account in PLAN.md's "Zero-box" decision).
 

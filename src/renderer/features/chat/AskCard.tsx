@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { CheckIcon, Loader2Icon } from 'lucide-react'
+import { CheckIcon, Loader2Icon, OctagonXIcon } from 'lucide-react'
 import type { ChatAnswer } from '../../../shared/ipc'
 import type { AskQuestion, PendingRequest } from '../../../shared/model'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -319,6 +319,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         {error && (
           <CardContent>
             <Alert variant="destructive" box="inline">
+              <OctagonXIcon aria-hidden />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           </CardContent>
