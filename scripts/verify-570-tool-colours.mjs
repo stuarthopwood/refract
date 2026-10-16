@@ -301,9 +301,30 @@ async function main() {
     } else {
       notExercised.push('Could not read the group header\'s accessible name via the AX tree.');
     }
+    // Gate round 2 (Main): a doubled space before the comma separator ("...+ 2 others , 1
+    // failed") was measured in round 1 -- an accname-algorithm artifact from the separator
+    // sitting as its own sibling node. Assert the fix, not just eyeball the name above.
+    if (groupHeaderAx.name && groupHeaderAx.name.includes(' , ')) {
+      failures.push(`Group header accessible name "${groupHeaderAx.name}" still has a doubled space before the comma separator (gate round 2 fix did not take effect).`);
+    } else if (groupHeaderAx.name) {
+      findings.push('Group header accessible name has no doubled space before the comma separator (gate round 2 fix confirmed).');
+    }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-collapsed-failed-group.png'));
 
     // ---- Expand: header's own Error line must disappear; each member shows its own ----
+    // Gate round 2 (G909A11y/G909Arch N6): mark the header's own Error line <p> BEFORE
+    // collapsing/expanding, so a later check can prove it is the SAME DOM node throughout (kept
+    // mounted, only `hidden` toggled) rather than unmounted and remounted on each toggle -- the
+    // exact re-announce-on-collapse bug this round fixed.
+    const detailMarker = await cdp.evaluate(`(() => {
+      const header = (${BASH_HEADER_FINDER})[0];
+      const id = header ? header.getAttribute('aria-describedby') : null;
+      const detail = id ? document.getElementById(id) : null;
+      if (!detail) return null;
+      const marker = 'verify570-' + Math.random().toString(36).slice(2);
+      detail.setAttribute('data-verify-marker', marker);
+      return marker;
+    })()`);
     await setBashHeaderExpanded(cdp, 0, true);
     await cdp.screenshot(path.join(SHOTS_DIR, '02-dark-expanded-failed-group.png'));
     const expandedCheck = await cdp.evaluate(`(() => {
@@ -318,8 +339,18 @@ async function main() {
         const detail = describedby ? document.getElementById(describedby) : null;
         return { labelColor: label ? getComputedStyle(label).color : null, hasDetail: !!detail, detailText: detail ? detail.textContent.trim() : null };
       });
-      return { stillDescribed, memberCount: members.length, memberInfo };
+      const markedNode = document.querySelector('[data-verify-marker]');
+      return { stillDescribed, memberCount: members.length, memberInfo, markerStillMounted: !!markedNode, markerHidden: markedNode ? markedNode.hasAttribute('hidden') : null };
     })()`);
+    if (detailMarker && !expandedCheck.markerStillMounted) {
+      failures.push('Gate round 2 (N6): the group header\'s Error line <p> was REMOVED from the DOM on expand (should stay mounted, only hidden) -- the re-announce-on-collapse fix did not take effect.');
+    } else if (detailMarker && !expandedCheck.markerHidden) {
+      failures.push('Gate round 2 (N6): the group header\'s Error line <p> stayed mounted on expand but is not `hidden` -- decision 9 requires it invisible while expanded.');
+    } else if (detailMarker) {
+      findings.push('Gate round 2 (N6): the group header\'s Error line <p> stays mounted (same node, marked) and is `hidden` while expanded, never unmounted.');
+    } else {
+      notExercised.push('Could not mark the group header\'s Error line <p> before expanding (N6 persistence check skipped).');
+    }
     if (expandedCheck.stillDescribed) failures.push(`Group header still has aria-describedby="${expandedCheck.stillDescribed}" once EXPANDED -- decision 9 requires the header's own Error line (and its description) to disappear once expanded.`);
     else findings.push('Group header\'s own Error line/aria-describedby is gone once expanded (decision 9, hideDetailWhenOpen).');
     if (expandedCheck.memberCount !== 3) failures.push(`Expected 3 members in the expanded group, found ${expandedCheck.memberCount}.`);
@@ -332,6 +363,15 @@ async function main() {
     if (okMembers.some((m) => m.hasDetail)) failures.push('A successful member row shows an Error line -- only a failed member should.');
     else findings.push('Successful member rows show no Error line.');
     await setBashHeaderExpanded(cdp, 0, false);
+    if (detailMarker) {
+      const recollapsedCheck = await cdp.evaluate(`(() => {
+        const marked = document.querySelector('[data-verify-marker="${detailMarker}"]');
+        return { found: !!marked, hidden: marked ? marked.hasAttribute('hidden') : null };
+      })()`);
+      if (!recollapsedCheck.found) failures.push('Gate round 2 (N6): the SAME marked Error line <p> is gone after re-collapsing -- it was unmounted and a fresh node took its place (the exact re-announce bug, since a fresh node is a new role="log" addition).');
+      else if (recollapsedCheck.hidden) failures.push('Gate round 2 (N6): the Error line <p> is still `hidden` after re-collapsing -- decision 9 requires it visible again while collapsed.');
+      else findings.push('Gate round 2 (N6): the SAME marked Error line <p> (not a fresh node) reappears, visible, after re-collapsing -- the re-announce-on-collapse fix holds across a full expand/collapse cycle.');
+    }
 
     // ---- Turn (b): solo failing bash call ----
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
