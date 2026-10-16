@@ -61,6 +61,7 @@ pub struct GhSearchEntry {
     pub number: u64,
     pub title: String,
     pub state: String,
+    #[serde(default)]
     pub is_draft: bool,
     pub author: GhActor,
     pub url: String,

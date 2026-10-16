@@ -1,6 +1,6 @@
-// Solid-fill state pill for a pull request's open/draft/closed/merged state (research.md
-// decision 5). Reuses `PULL_REQUEST_STATE_DISPLAY`'s existing icon+label map rather than
-// redefining it -- this component only adds the per-state fill colour.
+// Solid-fill state pill for a pull request's open/draft/closed/merged state (#568 decision 5).
+// Reuses `PULL_REQUEST_STATE_DISPLAY`'s existing icon+label map rather than redefining it --
+// this component only adds the per-state fill colour.
 import { PULL_REQUEST_STATE_DISPLAY } from './PullRequestRow'
 import type { PullRequestState } from '../../../shared/github'
 import { cn } from '@/lib/utils'

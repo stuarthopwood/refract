@@ -26,27 +26,88 @@ header actions for New session, Review, and merge/checks status."
 
 ### Session 2026-10-16
 
+- Q: Should the list row keep its bordered-button chrome? -> A: No - rows become a true
+  `divide-y` flat list (zero-box rule), with the shared `bg-active-indicator` left-edge bar (the
+  same selected cue `SessionRow.tsx`/`SessionList.tsx`/`GroupHeader.tsx` already use) marking the
+  selected row instead of a border/fill, and a new 3-line layout (title+number; a metadata line
+  of state, check, repository and time; an author line).
+- Q: Does the metadata line use the mock's literal monospace styling? -> A: No - the mock's
+  "mono line" instruction is rejected in favour of the written typography rule (monospace is
+  reserved for code-shaped data only); the metadata line and the author line render in the App
+  font. Mono stays reserved for the detail header's own branch tokens, which are genuinely
+  code-shaped.
 - Q: Does the pull request detail view need to surface a reviewer-consensus summary? -> A: Yes -
   a new FR-031: the Overview tab shows counts of approved / changes-requested / commented above
   the pull request body, whenever at least one review exists. Placement is the top of the
   Overview tab; counts are derived client-side from the existing timeline review verdicts, using
-  only each reviewer's most recent verdict; no new IPC field is added.
+  each reviewer's standing opinionated verdict (approve/request-changes), never a later
+  comment-only review, and excluding the pull request's own author; no new IPC field is added.
 - Q: Should the pull request state badge change shape for this restyle? -> A: Yes - a solid-fill
   `StatePill` replaces the outline `Badge` used today, adding a new `--pr-merged` purple token;
-  Open, Draft and Closed alias the existing severity/state tokens rather than adding new colours
-  for them.
+  Open, Draft and Closed copy the matching severity/state token VALUES (not `var()` aliases to
+  them) rather than adding new colours.
 - Q: Is the `isDraft` search-field data bug (drafts showing as Open on the four relation tabs)
   in scope? -> A: Yes - `SEARCH_FIELDS` is fixed to request `isDraft` so those four searches
-  correctly report Draft instead of silently Open.
+  correctly report Draft instead of silently Open; Draft only applies while the pull request's
+  own state is OPEN, so a closed or merged draft still reads as Closed/Merged.
 - Q: Should the list row's and detail view's two existing Refresh controls stay separate? -> A:
   No - both call sites are unified behind one shared `RefreshButton` component.
+- Q: What does the larger detail title and the lighter action-button layout look like? -> A: The
+  title grows to `text-lg`, up to two lines; Merge stays the one filled/primary button, and New
+  session and Review become ghost buttons on the same row (no new row added) so the title leads.
 - Q: Should the Overview/Changes tab pair adopt an underline style, and does that affect the
   five filter tabs? -> A: The Overview/Changes pair gets a local underline style scoped to this
   view only; the five filter tabs keep their existing pill style unchanged (an app-wide tab
-  convention is deferred to issue #499).
+  convention is deferred to issue #394, not #499 - #499 owns only the filter tabs' own
+  selection-mechanism redesign).
 - Q: Is the `PullRequestsView.tsx` header's `border-b` divider still needed? -> A: No - it is
   removed, closing out a previously-flagged inconsistency with the rest of the app's panel
-  headers.
+  headers. The mock's "Done" close button is explicitly rejected, not built: Pull requests is a
+  permanent left-nav view entry with no dismissible-panel equivalent in Refract today.
+- Q: Does the Overview tab's commit row move out of the chronological timeline, matching the
+  mock's own separate placement? -> A: No - the commit row stays inside the existing
+  chronological `Timeline` component, with no structural change; the mock's separate-looking
+  placement most plausibly reflects its own single-commit example pull request, not a reordering
+  mandate.
+- Q: Do any of the restyled surfaces need their own forced-colors (Windows High Contrast)
+  handling? -> A: Yes - the `StatePill` and the selected row's active-indicator bar both get an
+  explicit `forced-colors:` fallback (matching the existing active-indicator-bar pattern), so
+  state is never carried by hue alone once the system repaints author colours away.
+
+#### Gate round 1 amendments (2026-10-16)
+
+The five-reviewer quality gate on the first build found the underline-tab decision's own class
+string produced a box, not an underline, plus several smaller departures. Amending this
+session's own record rather than re-opening earlier sessions:
+
+- Decision 3 (tab style), amended: the call-site override must ALSO zero the shared
+  `TabsTrigger`'s own base `border` (all four sides) before re-applying a bottom-only 2px border,
+  or the base class's 1px all-sides border wins visually. The corrected override is
+  `border-0 border-b-2 border-transparent data-[state=active]:border-b-accent-text
+  hover:border-b-border`, kept in one shared constant so the Overview and Changes triggers can't
+  drift apart; `tabs.tsx` itself stays untouched.
+- Metadata-line separators: the record's own `· ` (space-dot-space) instruction does not survive
+  being split across sibling flex items (each one's leading/trailing whitespace collapses) -
+  the separator is a bare, `aria-hidden` middle-dot span with a `gap-1` on the flex container
+  providing the visual spacing instead, and the line keeps `flex-wrap` so it still wraps at
+  narrow widths rather than clipping.
+- Decision 1's row hover, amended: `hover:bg-accent/50` (an opacity-modified token class)
+  contradicts the written rule against Tailwind opacity modifiers on token classes;
+  `hover:bg-surface-hover` is the correct token.
+- Decision 5, clarified further: the literal-value instruction for Open/Draft/Closed was not
+  followed in the first build (they were `var()` aliases); fixed to literal copies in all three
+  theme blocks.
+- Decision 6, amended: `isDraft` alone is not sufficient - GitHub keeps `isDraft: true` on a
+  draft that was later closed without being marked ready, so the fix also gates on the pull
+  request's own state being OPEN (see the Q/A entry above).
+- Decision 7's action row, amended: the header action cluster's `shrink-0` must become
+  `min-w-0` so its own `flex-wrap` can take over at narrow widths - otherwise the three action
+  buttons overflow the detail pane invisibly instead of wrapping.
+- FR-031, amended: "most recent review verdict" is read as the reviewer's most recent
+  OPINIONATED verdict (approve or request-changes); a later comment-only review never overrides
+  a standing approval or changes-requested, matching GitHub's own review semantics. A review
+  that is later dismissed (and never replaced) excludes that reviewer from the rollup entirely,
+  handled server-side in `build_timeline`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -285,8 +346,10 @@ creation rules from spec 001.
 - **FR-030**: Every status shown in the list or detail view (check status, pull request state,
   review outcome) MUST be conveyed by an icon or text, never by color alone.
 - **FR-031**: The pull request detail Overview tab MUST show a reviewer-consensus summary (counts
-  of approved / changes-requested / commented, derived from each reviewer's most recent review
-  verdict) above the PR body, when at least one review exists.
+  of approved / changes-requested / commented, derived from each reviewer's most recent
+  opinionated verdict -- approve or request-changes, never superseded by a later comment-only
+  review -- and excluding the pull request's own author) above the PR body, when at least one
+  review exists.
 
 ### Key Entities
 

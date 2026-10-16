@@ -56,7 +56,7 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      className="relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {selected && (
         <span
@@ -68,12 +68,12 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
         <span className="min-w-0 flex-1 truncate">{pullRequest.title}</span>
         <span className="shrink-0 text-xs font-normal text-muted-foreground">#{pullRequest.number}</span>
       </span>
-      <span className="flex items-center text-xs text-muted-foreground">
+      <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <StateIcon aria-hidden className="size-3.5" />
           {state.label}
         </span>
-        <span>{' \u00b7 '}</span>
+        <span aria-hidden="true">{'\u00b7'}</span>
         <span className="flex items-center gap-1">
           <CheckIcon
             aria-hidden
@@ -85,9 +85,9 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
           />
           {check.label}
         </span>
-        <span>{' \u00b7 '}</span>
+        <span aria-hidden="true">{'\u00b7'}</span>
         <span className="truncate">{pullRequest.repository}</span>
-        <span>{' \u00b7 '}</span>
+        <span aria-hidden="true">{'\u00b7'}</span>
         <span className="tabular-nums">{formatRelativeTime(pullRequest.updatedAt)}</span>
       </span>
       <span className="truncate text-xs text-muted-foreground">{authorLabel}</span>

@@ -46,6 +46,17 @@ fn map_pull_request_state_maps_draft_open_closed_merged() {
         map_pull_request_state("MERGED", false),
         PullRequestState::Merged
     ));
+    // Gate round 1 fix (#568 decision 6): a draft that was closed without being marked ready
+    // still carries `isDraft: true` on GitHub's own search surface, so `is_draft` alone must
+    // not override a non-OPEN state.
+    assert!(matches!(
+        map_pull_request_state("CLOSED", true),
+        PullRequestState::Closed
+    ));
+    assert!(matches!(
+        map_pull_request_state("MERGED", true),
+        PullRequestState::Merged
+    ));
 }
 
 fn check_run(status: Option<&str>, conclusion: Option<&str>, state: Option<&str>) -> GhCheckRun {

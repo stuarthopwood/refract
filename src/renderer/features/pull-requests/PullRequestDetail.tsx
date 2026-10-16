@@ -35,6 +35,21 @@ import { StatePill } from './StatePill'
 import { RefreshButton } from './RefreshButton'
 import { ReviewConsensus } from './ReviewConsensus'
 
+// Gate round 1 fix (#568 decision 3 amended): the trigger's own base class already carries
+// `border border-transparent` (tabs.tsx), a 1px border on all four sides that `cn`'s tailwind-
+// merge never strips from a plain, non-merged className string -- `data-[state=active]:border-
+// accent-text` and `hover:border-border` then coloured all four sides into a box, not the
+// decided underline. `border-0` zeroes every side's width first; the more specific `border-b-2`
+// utility (and the bottom-only colour variants) still win the bottom edge in Tailwind's own
+// generated layer order, so only the bottom border ever paints. One shared constant (not two
+// pasted copies) so the Overview and Changes triggers can never drift apart again. Forced-
+// colors fallback mirrors the active-indicator bar's own pattern (StatePill.tsx, PullRequestRow
+// .tsx): the resting edge reads as `Canvas` (invisible, matching the surrounding chrome) and the
+// active edge reads as the system `Highlight` colour, so forced-colors mode can still tell the
+// two tabs apart once the box problem above is fixed.
+const PR_DETAIL_TAB_TRIGGER_CLASS =
+  'rounded-none border-0 border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-b-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-b-border hover:text-foreground forced-colors:border-b-[Canvas] forced-colors:data-[state=active]:border-b-[Highlight]'
+
 // research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
 // `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
 // polled (FR-006, FR-028). Confirmed a small fraction (4.8%) of the account's rate-limit budget
@@ -197,10 +212,11 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
             <p className="text-xs text-muted-foreground">
-              {detail.headBranch} into {detail.baseBranch} by {detail.author.name ?? detail.author.login}
+              <span className="font-code">{detail.headBranch}</span> into <span className="font-code">{detail.baseBranch}</span> by{' '}
+              {detail.author.name ?? detail.author.login}
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {/* High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged
                 was never visibly conveyed in the detail header at all. Issue #568 decision 5:
                 solid StatePill (not the outline Badge this used to be). */}
@@ -293,22 +309,16 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
             touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
         <TabsList className="mx-3 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
-          <TabsTrigger
-            value="overview"
-            className="rounded-none border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-border hover:text-foreground"
-          >
+          <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
             Overview
           </TabsTrigger>
-          <TabsTrigger
-            value="changes"
-            className="rounded-none border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-border hover:text-foreground"
-          >
+          <TabsTrigger value="changes" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
             Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
           </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
           <div className="p-3">
-            <ReviewConsensus timeline={detail.timeline} />
+            <ReviewConsensus timeline={detail.timeline} authorLogin={detail.author.login} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
           </div>
           <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />
