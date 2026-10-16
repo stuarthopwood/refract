@@ -97,8 +97,7 @@ async function sendRealTurn(cdp, sentinel) {
  * `sessionFile` as soon as it is first learned -- unlike `currentConversation`, which the Rust
  * side (`sync_from_state.rs`) only persists once `messageCount > 0`, `sessionDir` has no such
  * gate, so it is already populated by the time the composer is enabled, well before any slash
- * command or real turn has been sent); `__advisor*.jsonl` lives inside a per-Conversation
- * artifacts folder under it, resolved separately by `getArtifactsDir` below. */
+ * command or real turn has been sent). */
 async function getSessionDir(cdp) {
   return cdp.waitFor(
     `(async () => { const result = await window.refract.sessions.list(); if (!result.ok) return null; const s = result.value[0]; return s?.sessionDir ?? null; })()`,
@@ -106,53 +105,38 @@ async function getSessionDir(cdp) {
   );
 }
 
-/** The per-Conversation ARTIFACTS SUBDIRECTORY inside `sessionDir` -- discovered live to be a
- * folder sharing the Conversation file's own basename (no `.jsonl`), NOT `sessionDir` itself:
- * `sessionDir` directly holds `<timestamp>_<uuid>.jsonl` (the Conversation) alongside a
- * same-named (no extension) folder, and `__advisor.jsonl` lives INSIDE that folder, not beside
- * the `.jsonl` file as `omp://advisor-watchdog.md`'s "<session>/__advisor.jsonl" wording reads
- * at a glance (an earlier version of this probe searched `sessionDir` directly and found
- * nothing in either phase because of this). Polls because the Conversation file, and so this
- * folder, may not exist yet in the first moment after Session creation. */
-async function getArtifactsDir(sessionDir, timeoutMs = 30_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const conversationFile = readdirSync(sessionDir).find((f) => f.endsWith('.jsonl') && !f.startsWith('__advisor'));
-      if (conversationFile) {
-        const dir = path.join(sessionDir, conversationFile.slice(0, -'.jsonl'.length));
-        if (existsSync(dir)) return dir;
-      }
-    } catch {
-      // sessionDir may not exist yet either; keep polling
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error(`getArtifactsDir: no Conversation artifacts folder appeared under ${sessionDir} within ${timeoutMs}ms`);
-}
-
-/** Total size (bytes) and line count across every `__advisor*.jsonl` in `dir` right now -- 0/0
- * when none exist yet (the advisor has never been built for this Session, e.g. it starts
- * disabled and no turn has run with it on yet). Reads the REAL host filesystem directly (Node
- * `fs`, not the renderer), since this file lives under OMP's own session store, not Refract's
- * own scratch data dir. */
-function measureAdvisorFiles(dir) {
-  let files = [];
+/** Total size (bytes) and line count across every `__advisor*.jsonl` belonging to THIS Session
+ * right now -- `folderExists: false`, 0/0 when the advisor has not produced a single finalized
+ * review yet (confirmed live: right after an off-phase turn with no review run, `sessionDir`
+ * holds ONLY the Conversation's own `.jsonl` file -- no sibling artifacts folder exists at all
+ * yet). The folder appears LAZILY, created only once the advisor actually writes to it: it
+ * shares the current Conversation file's own basename (no `.jsonl`), inside `sessionDir`, NOT
+ * beside the `.jsonl` file the way `omp://advisor-watchdog.md`'s own "<session>/__advisor.jsonl"
+ * wording reads at a glance. Re-derives the folder name fresh on every call (never cached), so a
+ * caller polling this across a real turn self-heals the instant the folder is created. Reads the
+ * REAL host filesystem directly (Node `fs`, not the renderer): this lives under OMP's own
+ * session store, not Refract's own scratch data dir, so it survives this probe's own cleanup. */
+function measureAdvisorFiles(sessionDir) {
+  let conversationFile;
   try {
-    files = readdirSync(dir).filter((f) => /^__advisor.*\.jsonl$/.test(f));
+    conversationFile = readdirSync(sessionDir).find((f) => f.endsWith('.jsonl') && !f.startsWith('__advisor'));
   } catch {
-    return { files: [], totalBytes: 0, totalLines: 0 };
+    return { folderExists: false, files: [], totalBytes: 0, totalLines: 0 };
   }
+  if (!conversationFile) return { folderExists: false, files: [], totalBytes: 0, totalLines: 0 };
+  const artifactsDir = path.join(sessionDir, conversationFile.slice(0, -'.jsonl'.length));
+  if (!existsSync(artifactsDir)) return { folderExists: false, files: [], totalBytes: 0, totalLines: 0 };
+  const files = readdirSync(artifactsDir).filter((f) => /^__advisor.*\.jsonl$/.test(f));
   let totalBytes = 0;
   let totalLines = 0;
   for (const f of files) {
-    const full = path.join(dir, f);
+    const full = path.join(artifactsDir, f);
     const stat = statSync(full);
     totalBytes += stat.size;
     const content = readFileSync(full, 'utf8');
     totalLines += content.split('\n').filter((l) => l.trim().length > 0).length;
   }
-  return { files, totalBytes, totalLines };
+  return { folderExists: true, files, totalBytes, totalLines };
 }
 
 /** Polls `measureAdvisorFiles(dir)` until it shows growth past `baseline` (bytes or lines) or
@@ -243,20 +227,18 @@ async function main() {
     findings.push(`"/advisor status" literal reply right after off (nothing in between): ${JSON.stringify(statusAfterOff)}`);
 
     // The Conversation file (and so its artifacts folder, where __advisor*.jsonl would live) does
-    // NOT exist yet after slash commands alone -- confirmed live: `getArtifactsDir` timed out
-    // after off+status with no real turn sent. Only a REAL turn creates it, so the "before"
-    // baseline for the off-phase is definitionally zero (nothing could exist before the first
-    // thing that creates the folder at all), and the directory is resolved AFTER this turn runs.
-    const beforeOffTurn = { files: [], totalBytes: 0, totalLines: 0 };
+    // NOT exist yet after slash commands alone -- confirmed live: `sessionDir` held ONLY the
+    // Conversation's own `.jsonl` file after off+status with no real turn sent. Only a REAL turn
+    // creates it, so the "before" baseline for the off-phase is definitionally zero (nothing
+    // could exist before the first thing that creates the folder at all).
+    const beforeOffTurn = { folderExists: false, files: [], totalBytes: 0, totalLines: 0 };
     await sendRealTurn(cdp, 't917boff');
     findings.push('A real turn completed while the advisor was OFF (the first real turn this Session has had).');
     const sessionDir = await getSessionDir(cdp);
-    const artifactsDir = await getArtifactsDir(sessionDir);
     findings.push(`Session dir: ${sessionDir}`);
-    findings.push(`Conversation artifacts dir (where __advisor*.jsonl actually lives): ${artifactsDir}`);
-    const afterOffTurn = await pollForGrowth(artifactsDir, beforeOffTurn, 45_000);
+    const afterOffTurn = await pollForGrowth(sessionDir, beforeOffTurn, 45_000);
     findings.push(
-      `__advisor*.jsonl after the off-phase turn (polled up to 45s; baseline was definitionally zero, nothing existed before the first real turn): files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
+      `__advisor*.jsonl after the off-phase turn (polled up to 45s; baseline was definitionally zero, nothing existed before the first real turn): folderExists=${afterOffTurn.folderExists} files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
     );
     const grewWhileOff = afterOffTurn.totalBytes > beforeOffTurn.totalBytes || afterOffTurn.totalLines > beforeOffTurn.totalLines;
 
@@ -266,17 +248,17 @@ async function main() {
     // actually expected against ----
     const onReply = await sendSlashCommand(cdp, '/advisor on');
     findings.push(`"/advisor on" literal reply: ${JSON.stringify(onReply)}`);
-    const beforeOnTurn = measureAdvisorFiles(artifactsDir);
+    const beforeOnTurn = measureAdvisorFiles(sessionDir);
     findings.push(
-      `__advisor*.jsonl before the on-phase turns: files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
+      `__advisor*.jsonl before the on-phase turns: folderExists=${beforeOnTurn.folderExists} files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
     );
     await sendRealTurn(cdp, 't917bwarmup');
     findings.push('Warm-up turn completed (advisor.immuneTurns skips reviewing this one, per verify-558-blocker-callout.mjs\'s own precedent).');
     await sendRealTurn(cdp, 't917bon');
     findings.push('Second (non-warm-up) real turn completed while the advisor was ON.');
-    const afterOnTurn = await pollForGrowth(artifactsDir, beforeOnTurn, 60_000);
+    const afterOnTurn = await pollForGrowth(sessionDir, beforeOnTurn, 60_000);
     findings.push(
-      `__advisor*.jsonl after the on-phase turns (polled up to 60s): files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
+      `__advisor*.jsonl after the on-phase turns (polled up to 60s): folderExists=${afterOnTurn.folderExists} files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
     );
     const grewWhileOn = afterOnTurn.totalBytes > beforeOnTurn.totalBytes || afterOnTurn.totalLines > beforeOnTurn.totalLines;
 
@@ -304,7 +286,6 @@ async function main() {
       gitHead: gitHeadSha,
       exeSha256: exeHash,
       sessionDir,
-      artifactsDir,
       beforeOffTurn,
       afterOffTurn,
       beforeOnTurn,
