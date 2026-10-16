@@ -21,6 +21,12 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "fast" => Some(&["on", "ultra", "off", "status"]),
         "slow" => Some(&["on", "off", "status"]),
         "extended-context" => Some(&["on", "off", "status"]),
+        // Issue #917, Decided (Stuart, 2026-10-16): deliberately included despite never being
+        // probed (the probe's own DENYLIST names it, `omp-usage.md`'s "needs-decision" bucket) --
+        // verified instead by issue #917's own live check against a real signed-in profile. Kept
+        // in parity with `slash-commands.ts`'s own `SUPPORTED_OMP_COMMANDS`, which carries the
+        // full rationale.
+        "advisor" => Some(&["on", "off", "status"]),
         "prewalk" => Some(&["restart"]),
         "effort" => Some(&[
             "off", "minimal", "low", "medium", "high", "xhigh", "max", "auto",
