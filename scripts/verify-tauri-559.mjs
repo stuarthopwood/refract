@@ -189,6 +189,17 @@ async function readAnnouncement(cdp, { timeoutMs = 30_000 } = {}) {
   return cdp.waitFor(`(${ANNOUNCE_REGION})?.textContent?.trim() || ''`, { timeoutMs, label: 'search announcement region non-empty' });
 }
 
+/** Ctrl+N's own fallback text (`announceQuickCreateFallback`, `lib/quickCreateFallback.ts`)
+ *  goes through the APP-LEVEL `useChatAreaAnnouncer` (App.tsx's single global
+ *  `aria-live="polite"` region, shared with #735's Collapse/Expand announcements) -- a
+ *  DIFFERENT region from the search field's own local one `readAnnouncement` reads, so it needs
+ *  its own finder: the first `aria-live="polite"` region that is NOT nested inside the search
+ *  field's own `data-session-search-region` wrapper. */
+const CHAT_AREA_ANNOUNCE_REGION = `Array.from(document.querySelectorAll('[aria-live="polite"]')).find((el) => !el.closest('[data-session-search-region]'))`;
+async function readChatAreaAnnouncement(cdp, { timeoutMs = 10_000 } = {}) {
+  return cdp.waitFor(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent?.trim() || ''`, { timeoutMs, label: 'chat area announcement region non-empty' });
+}
+
 async function connectCdp(port, targetPid) {
   const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
   const cdp = await CdpSession.connect(wsUrl);
@@ -287,7 +298,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.evaluate(`document.activeElement?.blur()`);
   await pressKey(cdp, 78, 'n', 'KeyN', 2); // Ctrl+N (modifiers bitmask: Ctrl = 2)
   await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT})`, { timeoutMs: 10_000, label: 'Ctrl+N focuses the search field once it is the reason no Project is visible' });
-  const ctrlNAnnouncement = await readAnnouncement(cdp);
+  const ctrlNAnnouncement = await readChatAreaAnnouncement(cdp);
   assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N's own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
   log('STEP PASS: Ctrl+N, when the search hides every Project (and no Session pane is open yet to resolve one directly), focuses the search field and announces the correct, filter-aware fallback text.');
   await cdp.click(CLEAR_BUTTON);
