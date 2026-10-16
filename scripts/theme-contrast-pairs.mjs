@@ -136,6 +136,12 @@ export const PAIRS = [
   // rely on an alias that could be split apart later without this file noticing.
   { fg: 'severity-error', bg: 'background', min: 4.5 },
   { fg: 'severity-error', bg: 'muted', min: 4.5 },
+  // #558 gate round 1 (Low): `severity-warning` label/summary text now renders in this role
+  // (decision 11) and was previously gated only at the 3:1 non-text floor, passing today purely
+  // because it aliases `state-needs-you` (already gated at 4.5) -- the same "check the token
+  // actually rendered" rule the #570 comment above states.
+  { fg: 'severity-warning', bg: 'background', min: 4.5 },
+  { fg: 'severity-warning', bg: 'muted', min: 4.5 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/

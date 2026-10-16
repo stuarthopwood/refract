@@ -2514,3 +2514,102 @@ live-measured at 0px; its other four items are untouched.
   acceptance criterion in the issue, and FR-009/FR-047/FR-052, is proved live against 9989523
   (product code unchanged since), including the growth/focus criterion the round 1 gate found
   unproven.
+
+## Phase 47: Convergence
+
+- [X] T248 [US1] #558 blocker callout (Decided, Skippy, delegated by Stuart 2026-10-16;
+  `ui-architect-v3` roundtable, full decision record on the issue): a blocker advisory read as
+  one truncated line, identical to a nit, with no file:line extraction, no actions, and no
+  collapsing of long concern runs. `AdvisoryRow.tsx` now wraps its `CollapsedLine` output in a
+  local wrapper `div` drawing a 3px left accent bar as an absolutely-positioned `before:`
+  pseudo-element (zero layout impact, so the icon stays on the shared 24px grid in every
+  state) -- the error colour on a blocker row AT ALL TIMES, collapsed or expanded; the warning
+  colour on a concern row only while expanded; `CollapsedLine.tsx` itself is untouched, no new
+  prop added. A blocker defaults open (`useState` initializer) live or reopened from history
+  alike, with no focus steal on auto-expansion -- the row's own mount into the transcript's
+  `role="log"` is decision 9's one polite announcement (gate round 2 correction: an earlier
+  separate out-of-log hook, `useAdvisoryAnnouncement.ts`, was deleted outright after it turned
+  out to still re-announce on a Session/Conversation switch and still double-read a live
+  arrival; see T249). The expanded body, in order, shows
+  the note, the guidance, then any `path:line`/`path:line:column` location(s) the note or
+  guidance names, extracted by a new pure `src/renderer/lib/advisory-locations.ts` (a
+  conservative, allowlisted-code-extension regex with a corrected lookbehind anchor so a drive
+  letter, a relative or absolute path prefix survives intact, length-capped against
+  backtracking, de-duplicated by `path:line` pair), shown as monospace copyable text; the
+  shared icon-only `CopyButton` ("Copy advisory"/"Advisory copied": note, guidance and every
+  location); and an outline "Ask agent to address this blocker"/"...concern" button, gated on
+  the Session's own status exactly as the composer's own send control is (a not-yet-started
+  Session is opened first; a stopped-for-another-reason Session disables the button with a
+  visible reason), that composes a plain-text message -- the whole advisor payload bounded in
+  one `<advisory>...</advisory>` block, with any literal closing tag inside the payload broken
+  so it can never close the block early -- and sends it through the existing
+  `window.refract.chat.send(sessionId, message)` path unchanged, posted as a real user turn;
+  focus returns to the row's own trigger once the send completes, unless the developer has
+  since moved focus elsewhere. A nit gets none of this: no accent bar, no Copy/Ask-agent
+  actions, same plain expanded body as before. A new pure `groupAdvisoryItems.ts` (modelled on
+  `groupThoughtItems.ts`) ALWAYS wraps every run of consecutive concern-severity advisories,
+  including a run of one, into an `AdvisoryRun` (`CONCERN_RUN_THRESHOLD = 5`, exported so the
+  threshold is a single source of truth); `AdvisoryRunRow` shows every row with no control at a
+  run of five or fewer, or the newest five plus a `+ Show N more advisor concerns` button
+  (placed above the rows, the hidden ones being the older ones) at six or more, moving focus to
+  the first newly revealed row's own trigger on activation. `Transcript.tsx` composes
+  `groupAdvisoryItems` into the existing `groupToolItems`/`groupThoughtItems`/
+  `groupSubagentStages` chain. `ADVISORY_CLASS`'s `blocker`/`concern` literals renamed to the
+  `text-severity-error`/`text-severity-warning` token classes (CSS aliases of identical values
+  in every theme). Spec 001 FR-051 amended, two Clarifications entries added (Session
+  2026-10-16, blocker callout, plus a gate round 1 amendment); `CONTEXT.md`'s three glossary
+  entries corrected to match; `docs/design/product-chat.md`'s Advisory notes bullet amended;
+  `docs/PLAN.md` row added; `scripts/theme-contrast-pairs.mjs` gained explicit
+  `severity-warning` 4.5:1 text pairs (decision 11 now renders that token as label/summary
+  text, previously gated only at the 3:1 non-text floor).
+
+- [X] T249 [US1] Gate round 1 remediation (five-reviewer, 2026-10-16): Security and Tests
+  PASSed; Code, Accessibility and `ui-architect-v3` FAILed on two shared High findings, fixed
+  above (T248's own description already reflects the fixed state): (1) the blocker's own
+  mount-time `aria-live` span sat inside the transcript's `role="log"`, double-announcing a
+  live arrival and re-announcing on every remount (Session switch, history reopen, "Load
+  earlier") -- moved to one out-of-log announcer. (2) "+ Show N more" unmounted on activation,
+  dropping keyboard focus to `<body>` -- fixed with a `useLayoutEffect` focus move, the same
+  defect "Load N earlier turns" was fixed for in this same file. Mediums also fixed: the
+  accent-bar technique changed from a permanently-reserved `border-l-[3px]` (which shifted
+  every row 3px off the shared icon grid) to a zero-layout-impact `before:` pseudo-element; a
+  blocker's stripe now shows even while collapsed (a departure from the first pass, reconciling
+  decision 1's own two readings); concern runs are now always-wrapped rather than only above
+  five, since decision 10's "focus stability is a non-issue" premise was false (decision 13
+  deliberately returns focus to a concern's own trigger); the location regex's leading `\b`
+  chopped path prefixes (`C:\Repos\x\foo.ts:42` became `Repos\x\foo.ts:42`) -- replaced with a
+  lookbehind that also rejects a URL's own host segment with no separate check needed;
+  de-duplication now keys on the `path:line` pair, not the raw matched text; Ask-agent now
+  mirrors the composer's own send-gating (`MessageInput.tsx`), bounds its payload in one
+  delimited block (security), wraps the send in `try/finally`, and only refocuses the trigger
+  if the user has not moved on; the body content column, order (note, guidance, locations) and
+  wrap behaviour at 360px now match every other `CollapsedLine` consumer
+  (`contentClassName={LABEL_COLUMN_CONTENT_CLASS}`). `node scripts/ci-local.mjs` 16/16 PASS;
+  `pnpm typecheck` clean; `check:theme-contrast` 427/427.
+
+- [X] T250 [US1] Gate rounds 2 and 3 remediation (five-reviewer each, 2026-10-16): round 2
+  (Code/Tests/A11y/architect unanimous) found two new Highs the round 1 live run never checked
+  the CONTENT of: (H-A) round 1's own out-of-log `useAdvisoryAnnouncement` hook still
+  re-announced on a Session/Conversation switch (`seenRef` never reset) and on "Load earlier"
+  (read the windowed turn list), and still double-read a live arrival -- deleted entirely; the
+  row's own mount into `role="log"` is decision 9's one announcement by construction. (H-B) the
+  `<advisory>` tag wrapper was parsed as a raw CommonMark HTML block by the sanitised Markdown
+  renderer and silently dropped from the posted user bubble (live-proven via screenshot) --
+  replaced with a fenced block, length-capped, advisor name inside. Round 2 ALSO shipped a
+  `FocusHandoffOnUnmount` wrapper meant to hand focus to "+ Show" when a sixth concern hides the
+  oldest visible row, conditionally applied only at the overflow boundary -- round 3 (Code/Tests
+  High) found this wrapper actually stole focus on EVERY re-render of an overflowed run (its
+  cleanup was keyed to an inline callback, a new identity each render), still dropped focus on
+  the FIRST overflow (unwrapped below the threshold), and remounted row 0 at the boundary by
+  swapping element type. Fixed by wrapping every visible row unconditionally, with an
+  empty-dependency cleanup reading the callback through a ref. Round 3 also fixed: the
+  advisor-name ask-agent fence now omits the line entirely when unset (not "Advisor: unknown");
+  the quoted note's own fence uses a dedicated `advisor-note` info string (`Markdown.tsx`'s
+  `code` renderer wraps only this one, every other fence keeps scrolling sideways unchanged); a
+  queued (not yet sent) Ask-agent now announces "Queued for agent" via the existing
+  `revealedAnnouncement` span, no new one added; the payload truncation no longer splits a
+  surrogate pair; the Ask-agent button reverted to `COMPOSER_DISABLED_OPACITY_CLASS` alone (the
+  hover-reset class was stripping the outline button's own hover fill); the location regex's own
+  comment reconciled its "wrong path is worse than none" principle with the space-containing-path
+  and no-space-after-label limitations it still accepts. `node scripts/ci-local.mjs` 16/16 PASS
+  both rounds.

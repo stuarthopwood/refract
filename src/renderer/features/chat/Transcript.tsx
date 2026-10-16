@@ -15,11 +15,12 @@ import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySetti
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
-import { AdvisoryRow } from './AdvisoryRow'
+import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
+import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 import { groupToolItems, isToolGroup, isThoughtRun } from './groupToolItems'
 import { groupThoughtItems } from './groupThoughtItems'
 import { ThoughtRunRow } from './ThoughtRunRow'
-import { groupSubagentStages, isStageGroup, type StageGroup, type StageGroupedItem } from './groupSubagentStages'
+import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
@@ -126,18 +127,22 @@ function splitIntoTurns(items: TranscriptItem[]): Turn[] {
 }
 
 interface TranscriptRowProps {
-  item: StageGroupedItem
+  item: AdvisoryGroupedTranscriptItem
   sessionId: string | null
   pending: PendingRequest[]
   userName: string | undefined
   resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
+  /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
+  onAdvisoryReveal: () => void
+  onQueuedAnnounce: (text: string) => void
 }
 
 // Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
@@ -200,7 +205,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
       return <AgentMessageRow item={item} />
 
     case 'advisory':
-      return <AdvisoryRow item={item} />
+      return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} onQueuedAnnounce={onQueuedAnnounce} />
 
     case 'request': {
       const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
@@ -404,22 +409,17 @@ export function Transcript({
   )
 
   // Issue #563 decision 3 + gate round 2 architect addendum A: Stage boundaries key on each
-  // `subagent` item's own `messageId` (groupSubagentStages.ts), not on position, so they no
-  // longer depend on filtering order -- "Show thinking" off can safely drop thinking items
-  // BEFORE grouping again, restoring `groupToolItems`'s original "merges across a hidden
-  // thinking item" behaviour (#457) that briefly regressed when both groupers ran on the
-  // unfiltered list to protect Stage boundaries, a protection the `messageId` key no longer needs.
+  // `subagent` item's own `messageId` (groupSubagentStages.ts), not position, so "Show thinking"
+  // off can drop thinking items before grouping, matching groupToolItems' pre-#457 behaviour.
   const turnsWithStages = React.useMemo(
     () =>
       visibleTurns.map((turn) => {
         const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
         // Issue #557: `groupThoughtItems` wraps every run of consecutive, non-empty thinking
-        // items (even a run of one) into a `ThoughtRun` -- run after `groupToolItems` (whose own
-        // `ToolGroup` items pass through untouched, since none has `kind: 'thinking'`) and
-        // before `groupSubagentStages` (whose own `StageGroup`/pass-through items are likewise
-        // untouched, since none has `kind: 'subagent'`); order between the two groupers does not
-        // matter functionally, since each only ever rewrites items of its own kind.
-        const groupedWithStages = groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)))
+        // items (even a run of one) into a `ThoughtRun`; order against `groupToolItems` and
+        // `groupSubagentStages` does not matter, since each only rewrites items of its own kind.
+        // Issue #558: `groupAdvisoryItems` runs last, over every already-grouped item in the turn.
+        const groupedWithStages = groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems))))
         return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
       }),
     [visibleTurns, transcriptDisplay.thinking]
@@ -428,7 +428,6 @@ export function Transcript({
   // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
   // -- the single out-of-log announcer, rendered as a sibling of `revealedAnnouncement` below.
   const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
-
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
   // `isFirstRow` tracks the very first rendered row across the whole transcript (no margin at
@@ -928,7 +927,7 @@ export function Transcript({
                   turn.userItem.at !== 0 &&
                   shouldShowTimeGapDivider(previousTurn.userItem.at, turn.userItem.at)
 
-                let previousRow: StageGroupedItem | undefined
+                let previousRow: AdvisoryGroupedTranscriptItem | undefined
 
                 // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
                 // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
@@ -946,11 +945,11 @@ export function Transcript({
                 // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
                 const basePairs = groupedWithStages.map(
-                  (row): [StageGroupedItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
+                  (row): [AdvisoryGroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
                 )
                 const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
                 const rows = basePairs
-                  .map(([row, visibility], pairIndex): [StageGroupedItem, RowVisibility] =>
+                  .map(([row, visibility], pairIndex): [AdvisoryGroupedTranscriptItem, RowVisibility] =>
                     visibility === 'sr-only' && pairIndex !== lastSrOnlyIndex ? [row, 'hidden'] : [row, visibility]
                   )
                   .filter(([, visibility]) => visibility !== 'hidden')
@@ -1018,6 +1017,7 @@ export function Transcript({
                             pending={pending}
                             userName={userName}
                             resolvedAskByRequestId={resolvedAskByRequestId}
+                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
                       )

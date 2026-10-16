@@ -3,25 +3,26 @@
 // render loop only ever calls, never inlines.
 import type { TranscriptDisplaySettings } from '../../../shared/model'
 import { isStageGroup } from './groupSubagentStages'
-import type { StageGroupedItem } from './groupSubagentStages'
 import { isToolGroup } from './groupToolItems'
+import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 
 // Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
 // as compact, secondary material and must not inherit the full rhythm the turns/real messages
 // around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
 // `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
 // direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
-const BOOKKEEPING_KINDS: Partial<Record<StageGroupedItem['kind'], true>> = {
+const BOOKKEEPING_KINDS: Partial<Record<AdvisoryGroupedTranscriptItem['kind'], true>> = {
   'tool-group': true,
   'stage-group': true,
   'thought-run': true,
+  'advisory-run': true,
   advisory: true,
   notice: true,
   'agent-message': true,
   'skill-prompt': true
 }
 
-export function isBookkeepingRow(row: StageGroupedItem): boolean {
+export function isBookkeepingRow(row: AdvisoryGroupedTranscriptItem): boolean {
   return BOOKKEEPING_KINDS[row.kind] === true
 }
 
@@ -75,8 +76,13 @@ export function isBookkeepingRow(row: StageGroupedItem): boolean {
 // to `'hidden'`.
 export type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
-export function rowVisibility(row: StageGroupedItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
+export function rowVisibility(row: AdvisoryGroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
   if (row.kind === 'thought-run') return transcriptDisplay.thinking ? 'visible' : 'hidden'
+  // #558: every concern run (including a run of one, always wrapped by `groupAdvisoryItems`) is
+  // never hidden by "Show tool calls" off -- matches a plain `advisory` item's own "never
+  // hidden" rule below (`groupToolItems` only ever groups `tool` items, so neither kind is ever
+  // part of the filtered `ToolGroup`/`StageGroup` set this function otherwise governs).
+  if (row.kind === 'advisory-run') return 'visible'
   if (transcriptDisplay.toolCalls) return 'visible'
   // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).
   if (isStageGroup(row)) {
