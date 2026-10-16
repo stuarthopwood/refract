@@ -338,6 +338,8 @@ async function main() {
     }
     await pressArrow(cdp, 'Left');
     await sleep(200);
+    notExercised('ArrowLeft backs out of the Theme submenu onto the Theme trigger', 'sent as a transition step before Esc, but the resulting focus target was not independently asserted here');
+    notExercised('Tab/Shift+Tab reaching the update row specifically', 'only ArrowDown/ArrowUp roving-menu navigation was exercised; Tab out of and back into the menu at the update row itself was not driven');
 
     await pressEscape(cdp);
     await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu closed by Esc' });
@@ -353,7 +355,7 @@ async function main() {
     await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu closed again' });
 
     await switchTheme(cdp, 'dark', 'Dark');
-    checkPass('Keyboard-driven Theme submenu: selecting "Dark" applies and persists it (real store round trip)');
+    checkPass('Pointer-driven Theme submenu: selecting "Dark" applies it (real store round trip; persistence across a relaunch not re-proven here)');
 
     await cdp.evaluate(`window.refract.theme.set('dark-high-contrast')`);
     await cdp.waitFor(`document.documentElement.className.includes('dark-high-contrast')`, { timeoutMs: 10_000, label: 'high-contrast theme applied' });
@@ -407,14 +409,6 @@ async function main() {
     // 'idle' (with or without unavailableReason) and 'available' are NOT no-op targets and may
     // be overwritten before this script reads them.
     // ---------------------------------------------------------------------------------------
-    async function profileMenuUpdateRow(cdpSession) {
-      await cdpSession.click(`document.querySelector('[data-profile-name-button]')`);
-      await cdpSession.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
-      return cdpSession.evaluate(
-        `(() => { const items = Array.from(document.querySelectorAll('[role="menuitem"]')); const row = items.find((el) => el.textContent.trim().startsWith('Check for updates') || el.textContent.trim().startsWith('Restart to update') || el.textContent.trim().startsWith('Checking for updates') || el.textContent.trim().startsWith('Downloading update') || el.textContent.trim().startsWith('Installing update')); if (!row) return null; return { text: row.textContent.trim(), ariaDisabled: row.getAttribute('aria-disabled') }; })()`
-      );
-    }
-
     const phases = [
       { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
       { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
@@ -457,7 +451,7 @@ async function main() {
       const textOk = row && row.text.startsWith(phase.expectPrefix);
       const busyOk = row && (row.ariaDisabled === 'true') === phase.expectBusy;
       if (phase.seedMayBeOverwritten && !(textOk && busyOk)) {
-        notExercised(`Update entry phase "${phase.label}" renders correctly`, `the seed may have been overwritten by the real automatic startup check before this ran (idle is not a documented no-op target); observed ${JSON.stringify(row)}`);
+        notExercised(`Update entry phase "${phase.label}" renders correctly`, `the seed may have been overwritten by the real automatic startup check before this ran ("${phase.label}" is not a documented no-op target); observed ${JSON.stringify(row)}`);
       } else if (textOk && busyOk) {
         checkPass(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify(row) + (phase.note ? ` (${phase.note})` : ''));
       } else {

@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
 import { updateUnavailableReasonText } from '@/lib/updateStatus'
-import { notify, useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
+import { useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'

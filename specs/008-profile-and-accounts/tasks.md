@@ -179,14 +179,15 @@ correctly and are fully keyboard-accessible.
 - [X] T024b (#569) [US4] Wire the real update entry in `ProfileMenu.tsx` once spec 006 ships `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)"): replace the reserved slot (between Keyboard shortcuts and Health check) with the real two-state label ("Check for updates" / "Restart to update <version>") against that shipped shape (FR-021). Depends on spec 006.
   -- Spec 006's updates store/IPC shipped since this task was filed (R11, issue #794, PRs
   #829/#832/#837/#853) -- the reserved-slot comment was stale. Implemented as a self-contained
-  `UpdateMenuItem` (reads `useUpdateStore` directly, like `ThemeSubmenu`), exactly the two FR-021
+  `UpdateMenuItem` (reads `useUpdateStore` directly, like `ThemeSubmenu`), the FR-021
   renderings (never the status bar's own idle/checking/available/downloading/failed/unavailable
   detail, which stays StatusBar.tsx's alone): "Restart to update" plus a plain trailing version
   when a download is waiting for the next quit (selecting it only confirms with a toast, never
   quits or installs), "Check for updates" otherwise (`aria-disabled` while a check/download/
   install is already running, matching the file's own "GitHub unavailable, Checking…" pattern).
-  `pnpm typecheck` passes. Live keyboard/visual verification pending the parent's live check
-  (issue #569 decision record, "Live checks").
+  `pnpm typecheck` passes. Live keyboard/visual verification done on `feat/569-profile-menu`
+  (PR #920, gitHead `d616816`, `scripts/verify-tauri-569.mjs`: all 6 seeded phases render
+  correctly, "Restart to update" shows its confirmation toast and the phase stays `downloaded`).
   -- Gate round 2 fix: "Check for updates" is now reserved for the ready-to-act state; the three
   busy phases (checking/downloading/installing) each show their own verb ("Checking for
   updates…"/"Downloading update…"/"Installing update…") instead of the generic label, with no
