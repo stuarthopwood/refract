@@ -218,13 +218,18 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   // has its one active Session (gate round 1 fix: measuring after archiving proved nothing,
   // since decision 6's own empty-group override forces opacity-100 regardless of hover/focus). ----
   const plusFinder = `document.querySelector('[data-quick-create-session]')`;
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 }); // clear any lingering hover first
+  // `createSessionViaQuickCreate` clicked the "+" button itself, which Chromium leaves
+  // focused -- `group-focus-within` would otherwise keep the header actions revealed and this
+  // "at rest" probe would prove nothing (the actual bug that produced this fix in the first
+  // place: a false PASS from an unintentionally-focused or -hovered element).
+  await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 }); // clear any lingering hover too
   await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) < 0.5`, { timeoutMs: 5_000, label: 'header + hidden at rest (active Session present)' });
   const headerAtRest = await cdp.evaluate(`(() => { const r = ${plusFinder}.getBoundingClientRect(); return { opacity: getComputedStyle(${plusFinder}).opacity, width: r.width, height: r.height }; })()`);
   log(`verify-tauri-567: header "+" AT REST (active Session present): ${JSON.stringify(headerAtRest)}`);
   assert(parseFloat(headerAtRest.opacity) < 0.5, `header "+" must be hidden at rest while the group has an active Session (decision 6), got opacity=${headerAtRest.opacity}`);
   assert(Math.round(headerAtRest.width) === 24 && Math.round(headerAtRest.height) === 24, `header action buttons must be 24px icon-xs (decision 6), got ${JSON.stringify(headerAtRest)}`);
-  await hoverRow(cdp, `document.querySelector('[data-repository-id]')`);
+  await hoverRow(cdp, `document.querySelector('[data-repository-id] .group')`);
   await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) > 0.5`, { timeoutMs: 5_000, label: 'header + revealed on hover' });
   log('STEP PASS: header "+" hidden at rest with an active Session present, revealed on hover (opacity 0 -> 1).');
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
@@ -274,7 +279,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`${ellipsisFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: '"..." menu reopened' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Delete'))`);
   await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete confirmation dialog open' });
-  await cdp.clickByText('Cancel', { inDialog: true });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Cancel')`);
   await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog closed' });
   await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'focus returns to the "..." trigger after Delete > Cancel' });
   log('STEP PASS: Delete > Cancel returns focus to the "..." trigger (not <body>).');
