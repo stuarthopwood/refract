@@ -1,4 +1,5 @@
-import { CheckCircle2Icon, LoaderCircleIcon, UnplugIcon, XCircleIcon } from 'lucide-react'
+import { cn } from 'cn'
+import { STATUS_GLYPH, type StatusGlyphKey } from './statusGlyph'
 
 // Quality-gate remediation (Low, round 2): split out of `ToolRow.tsx` so it and
 // `ToolCallDialog.tsx` -- which previously imported these three back out of `ToolRow.tsx` while
@@ -37,23 +38,29 @@ export function toolStatusLabel(status: RowStatus): string {
 // Reused by `ToolCallDialog.tsx`'s own small header (#628 Formatted tab): the one place a status
 // renders as an icon, so the two surfaces can never disagree.
 //
-// #570 decisions 1-5: colour now carries meaning, never decoration -- `running` (working colour)
-// and `error` (error colour) are the only two coloured states; `done`, `exited`, and `interrupted`
-// stay fully neutral (`text-state-idle`/`text-muted-foreground`), since a chromatic success colour
-// "teaches the wrong meaning" (`docs/PLAN.md` #768) and an interrupted/exited call has nothing
-// known to have gone wrong. This exact icon/colour map matches `subagentStatus.tsx`'s own
-// `SubagentStatusGlyphIcons` (issue #563, shipped first): the two stay separate modules (this
-// `RowStatus` carries `interrupted`, that `SubagentRowStatus` carries `cancelled` instead) but
-// render identically for every state they share, so a status has one shape and colour everywhere.
-// Every icon is `aria-hidden` (decorative; the sr-only word below is the real accessible text).
+// #570 decisions 1-5, consolidated gate round 1 (G909Code Medium, decision 3 "one status map"):
+// colour now carries meaning, never decoration -- `running` (working colour) and `error` (error
+// colour) are the only two coloured states; `done`, `exited`, and `interrupted` stay fully
+// neutral, since a chromatic success colour "teaches the wrong meaning" (`docs/PLAN.md` #768)
+// and an interrupted/exited call has nothing known to have gone wrong. The icon/colour pairs
+// themselves come from `statusGlyph.ts`'s shared `STATUS_GLYPH` table (the SAME one
+// `subagentStatus.tsx`'s `SubagentStatusGlyphIcons` reads, issue #563, which chose these pairs
+// first), not a second hand-written copy, so the two can never drift apart. Every icon is
+// `aria-hidden` (decorative; the sr-only word below is the real accessible text).
+const GLYPH_KEY_BY_STATUS: Record<RowStatus, StatusGlyphKey> = {
+  running: 'running',
+  done: 'neutral-done',
+  error: 'error',
+  exited: 'neutral-muted',
+  interrupted: 'neutral-muted'
+}
+
 export function StatusIcon({ status }: { status: RowStatus }) {
   const label = toolStatusLabel(status)
+  const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
   return (
     <>
-      {status === 'running' && <LoaderCircleIcon aria-hidden className="size-3.5 shrink-0 animate-spin text-state-working" />}
-      {status === 'error' && <XCircleIcon aria-hidden className="size-3.5 shrink-0 text-severity-error" />}
-      {(status === 'exited' || status === 'interrupted') && <UnplugIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-      {status === 'done' && <CheckCircle2Icon aria-hidden className="size-3.5 shrink-0 text-state-idle" />}
+      <Icon aria-hidden className={cn('size-3.5 shrink-0', className)} />
       <span className="sr-only">{label}</span>
     </>
   )

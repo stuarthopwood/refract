@@ -1,46 +1,61 @@
 #!/usr/bin/env node
-// Live CDP check for issue #570 (tool row colour treatment), gate requirement.
+// Live CDP check for issue #570 (tool row colour treatment), gate round 1 requirement.
 //
 // Drives a REAL `omp` (resolved from PATH, ambient already-signed-in default profile, no
 // `OMP_PROFILE` override), the same isolation posture `verify-565-spine.mjs`/this repo's own
 // `docs/spike/*-probe.mjs` scripts already use: scratch cwd/worktree/`REFRACT_DATA_DIR` never
 // touch Stuart's real Session list. Spends real model tokens, tiny echo-only prompts only.
 //
-// DISK NOTE: the shared CARGO_TARGET_DIR measured under the project's 6GB build-disk floor right
-// before this run (5.3GB free), so this script does NOT rebuild -- it reuses the exe `node
-// scripts/ci-local.mjs`'s own "Build (Tauri debug, no bundle smoke)" step already produced at the
-// commit carrying all of #570's code (toolStatus.tsx/CollapsedLine.tsx/ToolRow.tsx), confirmed by
-// `git log` to predate the later #905 merge commit, which touched no file this story's own
-// `errorLine()`/`StatusIcon`/`CollapsedLine` detail rendering depends on. Copied to a private
-// scratch dir and sha256-pinned immediately, same proof `verify-565-spine.mjs` already relies on.
+// The exe under test is tied to the commit two ways (gate round 1, test-reviewer Low): rebuild
+// immediately before this script runs (never a reused, possibly sibling-lane-clobbered exe --
+// gate round 1's own first rerun lost exactly this race once), and assert a #570-only string
+// (`hideDetailWhenOpen`) is present in the built renderer bundle before trusting anything else.
 //
 // Three turns, one scratch Session (Approval mode seeded to Auto so no approval-card grouping
 // boundary ever exists, same root-cause fix `verify-565-spine.mjs` already applied):
-//   (a) three bash calls, the SECOND deliberately failing, the THIRD deliberately slow -- a
-//       window where the group is still "running" (third call in flight) but already has one
-//       failed member, to catch decision 12's "N failed" meta colour showing mid-run while the
-//       header's own icon/label stay neutral until the group SETTLES.
+//   (a) three bash calls, the SECOND deliberately failing (with no output, to directly exercise
+//       gate round 1's exit-code fallback fix) and the THIRD deliberately slow -- a window where
+//       the group is still "running" (third call in flight) but already has one failed member,
+//       to catch decision 12's "N failed" meta colour showing mid-run while the header's own
+//       icon/label stay neutral until the group SETTLES.
 //   (b) a solo failing bash call -- decision 6's Error line must show whether collapsed or
 //       expanded, decision 4's icon+label colour, decision 10's no-duplicate-in-expansion.
-//   (c) a slow bash call, stopped before it finishes -- an `interrupted` status, which decision 5
-//       says MUST stay fully neutral, never red.
+//   (c) a slow bash call, stopped (Stop button) before it finishes -- PURELY DIAGNOSTIC (gate
+//       round 1, G909Arch M3 [INFERENCE]): `model.ts`'s own doc comment on `'interrupted'`
+//       (ToolItem status) says that status is derived from `detectUnexpectedTermination` on a
+//       Conversation whose PROCESS has actually died, never from an ordinary graceful Stop --
+//       so this turn does not assert a specific resulting status, it only RECORDS whatever the
+//       row settles to (colour, label, status word) for the record.
 
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import {
+  gitHead,
+  buildLauncher,
+  makeScratchRepo,
+  buildAndCopyExeFresh,
+  launchBuiltExe,
+  safeRmSync,
+  assertExeUnchanged,
+  getAccessibleNameAndRole,
+  switchTheme
+} from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-570-shots/';
+// Gate round 1 (code-reviewer Low): a hard-coded user path. Overridable; defaults to a fresh,
+// timestamped folder under the OS temp dir so a rerun never mixes its own screenshots with a
+// stale prior run's (the exact confusion gate round 1's test-reviewer/G909Arch findings caught:
+// shot 00 from an earlier session, shot 05 claimed but never written).
+const SHOTS_DIR = process.env.REFRACT_570_SHOTS_DIR || path.join(tmpdir(), 'refract-570-gate1-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const TURN_A_PROMPT =
-  "Make exactly THREE separate bash tool calls, strictly in this order, waiting for each one to finish before starting the next: first run exactly `sleep 1 && echo t570-one`, second run exactly `exit 9` (which deliberately fails), third run exactly `sleep 4 && echo t570-three`. After all three finish, reply with exactly the single word 't570a' and nothing else.";
+  "Make exactly THREE separate bash tool calls, strictly in this order, waiting for each one to finish before starting the next: first run exactly `sleep 1 && echo t570-one`, second run exactly `exit 9` (which deliberately fails with no output), third run exactly `sleep 8 && echo t570-three` (a longer sleep, to widen the window where the group is still running with one already-failed member). After all three finish, reply with exactly the single word 't570a' and nothing else.";
 const TURN_B_PROMPT =
   "Make exactly ONE bash tool call: run exactly `ls /definitely-not-a-real-path-570-live` (it will fail). Wait for it to finish. Then reply with exactly the single word 't570b' and nothing else.";
 const TURN_C_PROMPT =
@@ -52,104 +67,6 @@ const TURN_B_SENTINEL = 't570b';
 // trigger can contain the word "bash" in its preview text and sits earlier in the DOM).
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && label.textContent.trim() === 'bash'; })`;
-
-function spawnSync_(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
-}
-
-function gitHead() {
-  const result = spawnSync_('git', ['-C', REPO_ROOT, 'rev-parse', 'HEAD']);
-  return result.status === 0 ? result.stdout.trim() : `<git rev-parse failed: ${result.stderr}>`;
-}
-
-function buildLauncher(dir) {
-  mkdirSync(dir, { recursive: true });
-  const src = path.join(__dirname, 'verify-tauri-launcher.rs');
-  const out = path.join(dir, 'verify-tauri-launcher.exe');
-  const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
-  if (result.status !== 0) throw new Error(`buildLauncher: rustc failed (exit ${result.status}):\n${result.stderr}`);
-  return out;
-}
-
-function makeScratchRepo(dir) {
-  mkdirSync(dir, { recursive: true });
-  const run = (args) => {
-    const result = spawnSync_('git', ['-C', dir, ...args]);
-    if (result.status !== 0) throw new Error(`makeScratchRepo: git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
-    return result;
-  };
-  run(['init', '-q', '-b', 'main']);
-  run(['-c', 'user.name=verify-570-tool-colours', '-c', 'user.email=verify-570-tool-colours@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  return dir;
-}
-
-function sha256OfFile(filePath) {
-  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
-}
-
-/** Copies the EXISTING debug exe (no rebuild -- shared disk is under the project's 6GB build
- * floor) and confirms it is byte-unchanged through the copy, the same proof `verify-565-spine.mjs`
- * uses for its own freshly-rebuilt exe. Fails loudly if the source is missing or still being
- * written by a concurrent lane. */
-function copyExistingExe(destDir) {
-  mkdirSync(destDir, { recursive: true });
-  const dest = path.join(destDir, 'refract-tauri.exe');
-  const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
-  if (!existsSync(src)) throw new Error(`copyExistingExe: no exe found at ${src} -- run node scripts/ci-local.mjs or pnpm tauri build --debug --no-bundle first.`);
-  const preCopyHash = sha256OfFile(src);
-  const preCopyStat = statSync(src);
-  copyFileSync(src, dest);
-  const postCopyHash = sha256OfFile(src);
-  const postCopyStat = statSync(src);
-  const unchanged = postCopyHash === preCopyHash && postCopyStat.mtimeMs === preCopyStat.mtimeMs && postCopyStat.size === preCopyStat.size;
-  if (!unchanged) throw new Error('copyExistingExe: source exe changed between hash and copy -- a concurrent lane is rebuilding; rerun once it settles.');
-  console.log(`verify-570: reused existing debug exe (${src}, built ${preCopyStat.mtime.toISOString()}), copied to ${dest} (sha256 ${preCopyHash.slice(0, 12)}…, confirmed unchanged through the copy).`);
-  return { dest, hash: preCopyHash };
-}
-
-async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile }) {
-  const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
-  mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(path.dirname(exePath), 'target.pid');
-  const env = {
-    ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-  };
-  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
-  if (logFile) {
-    const stream = createWriteStream(logFile);
-    child.stdout.pipe(stream, { end: false });
-    child.stderr.pipe(stream, { end: false });
-  }
-  return { child, targetPid };
-}
-
-async function safeRmSync(dir) {
-  if (!dir) return;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      if (attempt === 2) {
-        console.warn(`verify-570: could not remove scratch dir ${dir} (left on disk): ${err.message}`);
-        return;
-      }
-      await sleep(1000);
-    }
-  }
-}
-
-function assertExeUnchanged(exePath, expectedHash, label) {
-  const actualHash = sha256OfFile(exePath);
-  if (actualHash !== expectedHash) {
-    throw new Error(`assertExeUnchanged (${label}): ${exePath} hash is ${actualHash.slice(0, 12)}…, expected ${expectedHash.slice(0, 12)}… -- the exe under test changed after launch; this run's findings cannot be trusted.`);
-  }
-  console.log(`verify-570: exe sha256 ${expectedHash.slice(0, 12)}… confirmed unchanged (${label}).`);
-}
 
 async function countBashHeaders(cdp) {
   return cdp.evaluate(`(${BASH_HEADER_FINDER}).length`);
@@ -195,36 +112,23 @@ async function readHeaderColours(cdp, index) {
   })()`);
 }
 
-async function getAccessibleNameAndRole(cdp, selectorExpr) {
-  await cdp.send('Accessibility.enable');
-  const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
-  const objectId = evalResult.result?.objectId;
-  if (!objectId) return { name: null, role: null };
-  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
-  const node = nodes?.[0];
-  return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
-}
 
-async function switchTheme(cdp, themeId, themeName) {
-  await cdp.click(`document.querySelector('[data-profile-name-button]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
-  const themeTriggerFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`;
-  await cdp.waitFor(`!!(${themeTriggerFinder})`, { timeoutMs: 10_000, label: 'Theme submenu trigger visible' });
-  const rect = await cdp.evaluate(`(() => { const el = ${themeTriggerFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
-  await sleep(400);
-  await cdp.click(themeTriggerFinder);
-  await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
-    { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` },
-  );
-  await cdp.click(
-    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`,
-  );
-  await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
-    timeoutMs: 15_000,
-    label: `<html> class theme-${themeId} applied (real store round trip, not just the title-bar preview)`,
-  });
+// Gate round 1 (test-reviewer Low): tie the exe under test to the actual commit, not merely to a
+// comment's own assertion. `hideDetailWhenOpen` (CollapsedLine.tsx) exists only from this story's
+// own commits onward -- grepping the just-built renderer bundle for it is a real, cheap proof
+// that THIS build really contains #570's code, independent of git log reasoning about timing.
+function assertBundleContainsStory570Marker() {
+  const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
+  if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory570Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
+  const files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
+  for (const file of files) {
+    const text = readFileSync(path.join(assetsDir, file), 'utf8');
+    if (text.includes('hideDetailWhenOpen')) {
+      console.log(`verify-570: confirmed #570-only marker 'hideDetailWhenOpen' present in the built renderer bundle (${file}).`);
+      return;
+    }
+  }
+  throw new Error("assertBundleContainsStory570Marker: 'hideDetailWhenOpen' not found in any built renderer asset -- this build does not contain #570's code.");
 }
 
 async function main() {
@@ -239,20 +143,21 @@ async function main() {
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-570-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-570-import-'));
-    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-570-repo-')));
+    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-570-repo-')), 'verify-570-tool-colours');
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-570-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-570-launcher-'));
     mkdirSync(SHOTS_DIR, { recursive: true });
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
     const port = await getFreePort();
-    gitHeadSha = gitHead();
+    gitHeadSha = gitHead(REPO_ROOT);
 
     console.log(`verify-570: git HEAD ${gitHeadSha}`);
     console.log(`verify-570: data dir ${dataDir}`);
     console.log(`verify-570: shots dir ${SHOTS_DIR}`);
     console.log(`verify-570: CDP port ${port}`);
 
-    const built = copyExistingExe(exeDir);
+    const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-570' });
+    assertBundleContainsStory570Marker();
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
@@ -266,7 +171,7 @@ async function main() {
     if (!isTargetOwningPort(port, targetPid)) {
       throw new Error(`verify-570: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
     }
-    assertExeUnchanged(exePath, exeHash, 'post-launch');
+    assertExeUnchanged(exePath, exeHash, 'post-launch', 'verify-570');
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
@@ -371,11 +276,30 @@ async function main() {
       if (!groupColoursSettled.detailText) failures.push('Settled failed group header: no Error line (aria-describedby target) found while collapsed -- decision 9 requires the latest failed member\'s line.');
       else {
         findings.push(`Settled group header Error line (collapsed): "${groupColoursSettled.detailText}".`);
+        // Gate round 1 (code-reviewer/G909Arch High): the ORIGINAL cut showed OMP's own
+        // "(no output)" placeholder here and threw away the exit code. Assert the fix, not just
+        // log it: the failing call in turn (a) is a silent `exit 9`, so the line must now read
+        // the exit-code fallback, never the placeholder and never a bare "Failed.".
+        if (groupColoursSettled.detailText === '(no output)') failures.push('Settled group header Error line still reads OMP\'s own "(no output)" placeholder -- the gate round 1 exit-code fallback fix did not take effect.');
+        else if (groupColoursSettled.detailText === 'Failed.') failures.push('Settled group header Error line reads the generic "Failed." fallback -- the call\'s own exit code (9) was known and should have been shown instead.');
+        else if (!/Exited with code 9/.test(groupColoursSettled.detailText)) failures.push(`Settled group header Error line reads "${groupColoursSettled.detailText}", expected it to contain "Exited with code 9" (the exit 9 call's own exit status, gate round 1 fix).`);
+        else findings.push('Settled group header Error line correctly shows the exit-code fallback ("Exited with code 9"), not OMP\'s "(no output)" placeholder (gate round 1 fix confirmed live).');
         if (groupColoursSettled.detailColor !== errorColor) failures.push(`Group header Error line measured ${groupColoursSettled.detailColor}, expected the error colour ${errorColor}.`);
         else findings.push('Group header Error line paints in the error colour.');
         if (groupColoursSettled.ariaDescribedby !== groupColoursSettled.detailId) failures.push('Header aria-describedby does not resolve to the rendered Error line\'s own id.');
         else findings.push('Header trigger\'s aria-describedby correctly names the Error line\'s id (decision 15).');
       }
+    }
+    // Gate round 1 (accessibility-auditor Low): measure the REAL accessible name via the AX
+    // tree, not just worked out from the DOM, to confirm the new meta separator actually reads
+    // as distinct words rather than a joined "1 failed2 interrupted".
+    const groupHeaderAx = await getAccessibleNameAndRole(cdp, `(${BASH_HEADER_FINDER})[0]`);
+    if (groupHeaderAx.name && /\d failed\d/.test(groupHeaderAx.name.replace(/\s+/g, ''))) {
+      failures.push(`Group header accessible name "${groupHeaderAx.name}" still joins two counts with no separating word boundary.`);
+    } else if (groupHeaderAx.name) {
+      findings.push(`Group header accessible name (measured via Accessibility.getPartialAXTree): "${groupHeaderAx.name}".`);
+    } else {
+      notExercised.push('Could not read the group header\'s accessible name via the AX tree.');
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-collapsed-failed-group.png'));
 
@@ -421,8 +345,11 @@ async function main() {
     const soloCollapsed = await readHeaderColours(cdp, soloIndex);
     if (!soloCollapsed || soloCollapsed.labelColor !== errorColor) failures.push(`Solo failed call: header label measured ${soloCollapsed?.labelColor}, expected ${errorColor} (decision 4).`);
     else findings.push(`Solo failed call: header label/icon paint in the error colour (${soloCollapsed.labelColor}), decision 4.`);
+    const FOOTER_LEAK_PATTERN = /^(?:Wall time: |\(no output\)$)/;
     if (!soloCollapsed?.detailText) failures.push('Solo failed call: no Error line found while collapsed (decision 6).');
-    else findings.push(`Solo failed call Error line (collapsed): "${soloCollapsed.detailText}" (expect the stderr line, e.g. "ls: cannot access ...", not the bash wrapper's trailing footer -- decision 7).`);
+    else if (FOOTER_LEAK_PATTERN.test(soloCollapsed.detailText)) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}" -- OMP's own wrapper footer/placeholder leaked through (decision 7).`);
+    else if (!soloCollapsed.detailText.includes('cannot access')) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}", expected the real stderr line ("ls: cannot access ...").`);
+    else findings.push(`Solo failed call Error line (collapsed) correctly shows the real stderr line: "${soloCollapsed.detailText}" (decision 7).`);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-dark-solo-failed-collapsed.png'));
 
     await setBashHeaderExpanded(cdp, soloIndex, true);
@@ -458,66 +385,115 @@ async function main() {
       failures.push(`Could not drive the real Profile-menu Theme submenu (${err.message}).`);
     }
 
-    // ---- Narrow width (360px chat): no horizontal overflow, Error line still present ----
+    // ---- Narrow width (360px chat): no horizontal overflow, Error line still present+clamped ----
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const narrowOverflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
     if (narrowOverflow) failures.push('A horizontal scrollbar appeared at 360px width.');
     else findings.push('No horizontal scroll at 360px width (decision 18).');
+    // Gate round 1 (test-reviewer Low): the comment claimed this but the check never measured
+    // the Error line itself at 360px -- the group is still expanded here, so its own failed
+    // MEMBER carries the line (the header's own is hidden while open, decision 9).
+    const narrowDetailCheck = await cdp.evaluate(`(() => {
+      const ol = document.querySelector('[aria-label="Transcript"] ol.border-l');
+      const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
+      const failedMember = members.find((li) => { const btn = li.querySelector('button'); const id = btn ? btn.getAttribute('aria-describedby') : null; return id && document.getElementById(id); });
+      const btn = failedMember ? failedMember.querySelector('button') : null;
+      const detail = btn ? document.getElementById(btn.getAttribute('aria-describedby')) : null;
+      return {
+        found: !!detail,
+        lineClamp: detail ? getComputedStyle(detail).webkitLineClamp || getComputedStyle(detail).getPropertyValue('-webkit-line-clamp') : null,
+        overflowing: detail ? detail.scrollHeight > detail.clientHeight + 2 : null,
+      };
+    })()`);
+    if (!narrowDetailCheck.found) failures.push('At 360px, the expanded group\'s failed member has no Error line (decision 6/9).');
+    else if (narrowDetailCheck.lineClamp !== '2') failures.push(`At 360px, the Error line's computed line-clamp is "${narrowDetailCheck.lineClamp}", expected "2" (decision 8).`);
+    else findings.push('At 360px, the expanded group\'s failed member Error line is present and clamped to 2 lines (decisions 6, 8, 9).');
     await cdp.screenshot(path.join(SHOTS_DIR, '08-360px-expanded.png'));
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
     try {
+      // Escape first: the previous Theme-submenu interaction can leave the profile dropdown
+      // open (gate round 1's own first rerun hit exactly this -- the menu never closed, which
+      // then made every later click target the menu overlay instead of the page underneath).
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+      await sleep(300);
       await switchTheme(cdp, 'dark', 'Dark');
     } catch (err) {
       notExercised.push(`Could not confirm reset to Dark theme before reduced-motion check (${err.message}).`);
     }
 
     // ---- Reduced motion: decision 13, "no motion and no colour transition: instant" ----
-    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-    const labelTransition = await cdp.evaluate(`(() => {
-      const header = (${BASH_HEADER_FINDER})[0];
-      const label = header ? header.querySelector('span.font-medium') : null;
-      return label ? getComputedStyle(label).transitionProperty : null;
-    })()`);
-    if (labelTransition && labelTransition !== 'none' && labelTransition.includes('color')) failures.push(`Failed-row label computed transitionProperty includes "color" (${labelTransition}) -- decision 13 requires an instant colour change, no transition.`);
-    else findings.push(`Failed-row label has no colour transition (${labelTransition ?? 'label not found'}), decision 13.`);
-    await cdp.screenshot(path.join(SHOTS_DIR, '09-dark-reduced-motion.png'));
-    await cdp.send('Emulation.setEmulatedMedia', { features: [] });
-    await setBashHeaderExpanded(cdp, 0, false);
-
-    // ---- Turn (c), run LAST: stop mid-flight -> interrupted, must stay neutral
-    // (decision 5). Moved to the very end: stopping a mid-flight tool call can leave the
-    // Session in a recovering/stopped state, which must never block the earlier, more load-
-    // bearing assertions (colour/Error line/theme/width/motion) above.
     try {
-      // ---- Turn (c): stop mid-flight -> interrupted, must stay neutral (decision 5) ----
-      await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
-      await cdp.clickByLabel('Send message');
-      let interruptedChecked = false;
-      try {
-        await cdp.waitFor(`(${BASH_HEADER_FINDER}).length > ${headerCountAfterB}`, { timeoutMs: 20_000, label: 'Turn (c) bash header appears' });
-        await sleep(500);
-        await cdp.clickByLabel('Stop');
-        await cdp.waitFor(
-          `(() => { const h = (${BASH_HEADER_FINDER}).at(-1); return h && /interrupted/i.test(h.getAttribute('aria-label') || h.querySelector('[class*="sr-only"]')?.textContent || ''); })()`,
-          { timeoutMs: 20_000, label: 'Turn (c) bash call reaches interrupted status' },
-        );
-        const interruptedColours = await readHeaderColours(cdp, -1);
-        if (interruptedColours.labelColor === errorColor) failures.push(`Interrupted call: header label painted the error colour (${interruptedColours.labelColor}) -- decision 5 requires it stay fully neutral, never red.`);
-        else findings.push(`Interrupted call: header label stayed neutral (${interruptedColours.labelColor}), decision 5.`);
-        interruptedChecked = true;
-        await cdp.screenshot(path.join(SHOTS_DIR, '05-dark-interrupted.png'));
-      } catch (err) {
-        notExercised.push(`Could not reliably produce/observe an interrupted bash call (${err.message}).`);
-      }
-      if (!interruptedChecked) notExercised.push('Interrupted-call colour check not completed.');
-
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      const labelTransition = await cdp.evaluate(`(() => {
+        const header = (${BASH_HEADER_FINDER})[0];
+        const label = header ? header.querySelector('span.font-medium') : null;
+        return label ? getComputedStyle(label).transitionProperty : null;
+      })()`);
+      if (labelTransition && labelTransition !== 'none' && labelTransition.includes('color')) failures.push(`Failed-row label computed transitionProperty includes "color" (${labelTransition}) -- decision 13 requires an instant colour change, no transition.`);
+      else findings.push(`Failed-row label has no colour transition (${labelTransition ?? 'label not found'}), decision 13.`);
+      await cdp.screenshot(path.join(SHOTS_DIR, '09-dark-reduced-motion.png'));
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
     } catch (err) {
-      notExercised.push(`Turn (c) interrupted-call check aborted the rest of its own block (${err.message}).`);
+      notExercised.push(`Reduced-motion check could not complete (${err.message}).`);
+    }
+    try {
+      await setBashHeaderExpanded(cdp, 0, false);
+    } catch (err) {
+      notExercised.push(`Could not collapse the group back down before turn (c) (${err.message}) -- harmless, turn (c) does not depend on this group's own open state.`);
     }
 
-    const report = {
+    // ---- Turn (c), run LAST, PURELY DIAGNOSTIC (gate round 1, G909Arch M3): stop a bash call
+    // mid-flight and RECORD whatever status it settles to -- no assertion of a specific value.
+    // `model.ts`'s own doc comment on `'interrupted'` ties that status to
+    // `detectUnexpectedTermination` on a Conversation whose PROCESS has actually died, not to an
+    // ordinary graceful Stop, so asserting "must reach interrupted" here would test the wrong
+    // thing. Moved to the very end: stopping a mid-flight call can leave the Session in a
+    // recovering/stopped state, which must never block the earlier, load-bearing assertions
+    // (colour/Error line/theme/width/motion) above.
+    try {
+      await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
+      await cdp.clickByLabel('Send message');
+      await cdp.waitFor(`(${BASH_HEADER_FINDER}).length > ${headerCountAfterB}`, { timeoutMs: 20_000, label: 'Turn (c) bash header appears' });
+      await sleep(500);
+      await cdp.clickByLabel('Stop');
+      // Give the stop + any settle time to land, then record whatever the row actually shows --
+      // not a specific expected value -- so M3's open question gets a real, observed answer.
+      await sleep(3000);
+      const stoppedRowInfo = await cdp.evaluate(`(() => {
+        const h = (${BASH_HEADER_FINDER}).at(-1);
+        if (!h) return null;
+        const label = h.querySelector('span.font-medium');
+        const srWord = h.querySelector('span.sr-only');
+        const describedby = h.getAttribute('aria-describedby');
+        const detail = describedby ? document.getElementById(describedby) : null;
+        return {
+          labelColor: label ? getComputedStyle(label).color : null,
+          srStatusWord: srWord ? srWord.textContent.trim() : null,
+          hasErrorLine: !!detail,
+          detailText: detail ? detail.textContent.trim() : null,
+        };
+      })()`);
+      await cdp.screenshot(path.join(SHOTS_DIR, '05-dark-after-stop-mid-flight.png'));
+      if (!stoppedRowInfo) {
+        notExercised.push('Turn (c): no bash header found after Stop -- could not observe the post-Stop state at all.');
+      } else {
+        findings.push(`Turn (c), 3s after clicking Stop mid-flight (M3, diagnostic only, no specific value asserted): status word "${stoppedRowInfo.srStatusWord}", label colour ${stoppedRowInfo.labelColor}, Error line ${stoppedRowInfo.hasErrorLine ? `present ("${stoppedRowInfo.detailText}")` : 'absent'}.`);
+        if (stoppedRowInfo.labelColor === errorColor) {
+          // Informational, NOT a script failure: #570's own code (toolStatus.tsx's
+          // 'interrupted'/'exited' branches) is unmodified here, and the gate explicitly scoped
+          // M3 as "no code change in this PR" -- a pre-existing #510/#490 question, surfaced for
+          // the record, never a #570 regression this script should fail on.
+          findings.push(`Turn (c), M3 CONFIRMED (not merely [INFERENCE]): a user-initiated Stop produced the FULL error-colour treatment (label ${stoppedRowInfo.labelColor}, status word "${stoppedRowInfo.srStatusWord}") -- decision 5's reasoning ("nothing is known to have gone wrong") argues this should stay neutral. PRE-EXISTING #510 behaviour, unmodified by #570; a gap for #510/#490 to resolve, not scored as a #570 failure.`);
+        } else {
+          findings.push(`Turn (c): a user-initiated Stop did NOT produce the error colour (stayed ${stoppedRowInfo.labelColor}) -- M3's [INFERENCE] does not reproduce in this run.`);
+        }
+      }
+    } catch (err) {
+      notExercised.push(`Turn (c) diagnostic (M3) could not complete (${err.message}).`);
+    }const report = {
       gitHead: gitHeadSha,
       exeSha256: exeHash,
       neutralColor,

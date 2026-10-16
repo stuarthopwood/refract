@@ -179,8 +179,17 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       </div>
       {showDetail && (
         // #570 decisions 6-8: app font (a message, not code), text-xs, clamped at two lines,
-        // no tint/border/box; plain text node, no markup or links.
-        <p id={detailId} className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-xs text-severity-error [overflow-wrap:anywhere]')}>
+        // no tint/border/box; plain text node, no markup or links. `dir="auto"` (gate round 1,
+        // security Low): tool output may legitimately contain RTL text (a path or message in
+        // another script); letting the browser infer direction from the first strong character
+        // per element, rather than inheriting the page's own LTR, keeps that text readable
+        // without giving a bidi-override character (already stripped in `errorLine()`) anywhere
+        // to hide behind.
+        <p
+          id={detailId}
+          dir="auto"
+          className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-xs text-severity-error [overflow-wrap:anywhere]')}
+        >
           {detail}
         </p>
       )}

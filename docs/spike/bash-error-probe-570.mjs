@@ -11,7 +11,7 @@ import os from 'node:os'
 const OMP = process.env.PINION_OMP || 'omp'
 const T0 = Date.now()
 const ROOT = path.join(os.tmpdir(), 'pinion-570-bash-fail-probe', new Date().toISOString().replace(/[:.]/g, '-'))
-for (const d of ['repo', 'session-dir']) fs.mkdirSync(path.join(ROOT, d), { recursive: true })
+for (const d of ['repo', 'session-dir-stderr-failure', 'session-dir-silent-failure-no-output']) fs.mkdirSync(path.join(ROOT, d), { recursive: true })
 try {
   execFileSync('git', ['init', '-q'], { cwd: path.join(ROOT, 'repo') })
 } catch (e) {
@@ -120,24 +120,43 @@ class OmpProc {
   }
 }
 
-;(async () => {
-  const proc = new OmpProc({ sessionDir: path.join(ROOT, 'session-dir'), cwd: path.join(ROOT, 'repo') })
-  await proc.ready()
-  const prompt =
-    "Run exactly ONE bash tool call: `ls /definitely-not-a-real-path-570`. It will fail. Wait for it to finish, then reply with exactly the single word 'probe570done' and nothing else."
-  const r = await proc.promptOnce(prompt)
-  const endFrames = proc.frames.filter((f) => f.type === 'tool_execution_end')
-  console.log('tool_execution_end frames:', endFrames.length)
-  for (const f of endFrames) {
-    console.log(JSON.stringify({ toolName: f.toolName, isError: f.isError, content: f.result?.content, details: f.result?.details }, null, 2))
+// Two scenarios, each its own fresh OmpProc/scratch session-dir (never reused across scenarios,
+// so one scenario's turn can never bleed into another's): (a) a real stderr failure, (b) a
+// SILENT failure with no stdout or stderr at all -- the exact shape gate round 1 (G909Code High)
+// found `errorLine()`'s first cut got wrong (it kept OMP's own `(no output)` placeholder and
+// dropped the exit code).
+const SCENARIOS = [
+  {
+    name: 'stderr-failure',
+    prompt:
+      "Run exactly ONE bash tool call: `ls /definitely-not-a-real-path-570`. It will fail. Wait for it to finish, then reply with exactly the single word 'probe570done' and nothing else."
+  },
+  {
+    name: 'silent-failure-no-output',
+    prompt:
+      "Run exactly ONE bash tool call: `exit 9`. It will fail with no stdout or stderr output at all, only a non-zero exit code. Wait for it to finish, then reply with exactly the single word 'probe570doneb' and nothing else."
   }
-  if (endFrames.length === 0) console.log('stage:', r.stage, JSON.stringify(r).slice(0, 2000))
-  proc.child.stdin.end()
-  await Promise.race([proc.exitPromise, new Promise((res) => setTimeout(res, 10000))])
-  try {
-    proc.child.kill()
-  } catch {}
-  console.log('scratch root (scratch, safe to delete):', ROOT)
+]
+
+;(async () => {
+  for (const scenario of SCENARIOS) {
+    console.log(`\n--- scenario: ${scenario.name} ---`)
+    const proc = new OmpProc({ sessionDir: path.join(ROOT, `session-dir-${scenario.name}`), cwd: path.join(ROOT, 'repo') })
+    await proc.ready()
+    const r = await proc.promptOnce(scenario.prompt)
+    const endFrames = proc.frames.filter((f) => f.type === 'tool_execution_end')
+    console.log('tool_execution_end frames:', endFrames.length)
+    for (const f of endFrames) {
+      console.log(JSON.stringify({ toolName: f.toolName, isError: f.isError, content: f.result?.content, details: f.result?.details }, null, 2))
+    }
+    if (endFrames.length === 0) console.log('stage:', r.stage, JSON.stringify(r).slice(0, 2000))
+    proc.child.stdin.end()
+    await Promise.race([proc.exitPromise, new Promise((res) => setTimeout(res, 10000))])
+    try {
+      proc.child.kill()
+    } catch {}
+  }
+  console.log('\nscratch root (scratch, safe to delete):', ROOT)
 })().catch((e) => {
   console.error('PROBE ERROR', e)
   process.exitCode = 1

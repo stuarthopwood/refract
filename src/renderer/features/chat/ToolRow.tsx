@@ -29,44 +29,85 @@ function quietSummary(output: string | undefined): string | undefined {
   return output
 }
 
-// #570 decision 7 (live probe, docs/spike/FINDINGS.md): a failed call's own Error line. OMP's own
-// `bash` wrapper always appends a trailing footer after the real stderr/stdout -- a `Wall time:
-// ...s` line, then `Command exited with code N` (or a timeout variant), with a literal
-// `(no output)` placeholder line when the command printed nothing at all -- so for `bash` that
-// footer is stripped from the END first, then the LAST remaining line is taken (stderr and the
-// exit cause arrive at the end); every other tool takes its FIRST non-empty line instead. Control
-// sequences (CSI/OSC) are stripped first so a stray terminal colour code never leaks into the
-// plain-text row.
+// #570 decision 7 (live probe, docs/spike/bash-error-probe-570.mjs, FINDINGS item 60), AMENDED
+// after gate round 1 (G909Arch H1, G909Code, G909A11y): the ORIGINAL cut also stripped OMP's own
+// `Command exited with code N`/timed-out line, so a silent failure (`exit 9`, `grep -q`, a failed
+// `test`) showed OMP's literal `(no output)` placeholder instead of the one fact that actually
+// explains the failure -- the exit code. Fixed: only `Wall time: Ns` (OMP's own exact pattern,
+// `^Wall time: \d+(?:\.\d+)? seconds$`) is stripped from the end; the exit-code or timeout line
+// that follows it is read FIRST, as the fallback, before the cut -- any notice line OMP inserts
+// between them (for example "Timeout clamped to ...") is skipped over, never mistaken for the
+// real error. A lone `(no output)` left after the cut is also wrapper chrome, not content: when
+// nothing real remains, the fallback (the exit code or timeout line, or `item.details.exitCode`
+// when the text itself lacks one) is shown instead; "Failed." is reserved for a call with no
+// output AND no exit/timeout information at all. Every other tool is unaffected: no footer, no
+// fallback, just its own FIRST non-empty line. Control sequences (CSI/OSC), C0 controls, and
+// bidi-override characters are stripped first so a stray terminal code or a spoofing override
+// never leaks into the plain-text row (security hardening, gate round 1).
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
-const BASH_FOOTER_LINE = /^(?:Wall time: .+|Command (?:exited with code -?\d+|timed out\b.*))$/
+// eslint-disable-next-line no-control-regex -- deliberately matching C0 controls/DEL/bidi overrides to strip them
+const UNSAFE_CHARS_PATTERN = /[\u0000-\u0008\u000B-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g
+const WALL_TIME_LINE = /^Wall time: \d+(?:\.\d+)? seconds$/
+const EXIT_CODE_LINE = /^Command exited with code (-?\d+)$/
+const TIMEOUT_LINE = /^Command timed out after (\d+) seconds$/
+const TIMEOUT_BRACKETED = /\[Command timed out after (\d+) seconds\]/
 
 function errorLine(item: ToolItem): string {
   const raw = item.output
   if (!raw) return 'Failed.'
-  let lines = raw
-    .replace(ANSI_PATTERN, '')
-    .split(/\r?\n/)
+  const cleaned = raw.replace(ANSI_PATTERN, '').replace(UNSAFE_CHARS_PATTERN, '')
+  let lines = cleaned
+    .split(/\r\n|\n|\r/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
+  let fallback: string | undefined
   if (item.tool === 'bash') {
-    while (lines.length > 0 && BASH_FOOTER_LINE.test(lines[lines.length - 1]!)) lines = lines.slice(0, -1)
+    const wallTimeIndex = lines.findIndex((line) => WALL_TIME_LINE.test(line))
+    if (wallTimeIndex !== -1) {
+      for (const line of lines.slice(wallTimeIndex)) {
+        const exitMatch = line.match(EXIT_CODE_LINE)
+        if (exitMatch) {
+          fallback = `Exited with code ${exitMatch[1]}`
+          break
+        }
+        const timeoutMatch = line.match(TIMEOUT_LINE)
+        if (timeoutMatch) {
+          fallback = `Command timed out after ${timeoutMatch[1]} seconds`
+          break
+        }
+      }
+      lines = lines.slice(0, wallTimeIndex)
+    }
+    if (!fallback) {
+      const bracketedTimeout = cleaned.match(TIMEOUT_BRACKETED)
+      if (bracketedTimeout) fallback = `Command timed out after ${bracketedTimeout[1]} seconds`
+    }
+    if (!fallback) {
+      const details = item.details as { exitCode?: number } | undefined
+      if (typeof details?.exitCode === 'number') fallback = `Exited with code ${details.exitCode}`
+    }
+    // OMP's own placeholder for a call that printed nothing at all: wrapper chrome, never the
+    // actual error (that is exactly what the fallback above is for).
+    if (lines.length > 0 && lines[lines.length - 1] === '(no output)') lines = lines.slice(0, -1)
   }
-  if (lines.length === 0) return 'Failed.'
+  if (lines.length === 0) return fallback ?? 'Failed.'
   const line = item.tool === 'bash' ? lines[lines.length - 1]! : lines[0]!
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
 }
 
 // The expansion content for one tool call (#628, #630): an edit's diff (capped, with its own
-// Expand/Collapse, `DiffView`'s `capped` prop), a failed call's own error text (plain, never
-// boxed -- hiding Arguments/Output must never hide a failure), a successful write's "Wrote N
-// lines to <path>" line, or a short successful call's own one-line result -- never a boxed
-// Arguments/Output/content block (moved into the "View full call" dialog, `ToolCallDialog.tsx`,
-// which still renders every argument and the output through the shared `CodeBlock`, T083,
-// FR-050). Split out from the row wrapper so `ToolGroupRow` can reuse the same content for a
-// solo call (no nested `CollapsedLine`) and for each call inside a multi-call group (its own
-// nested `CollapsedLine` via `ToolCallRow` below) without ever changing the *wrapper* element
-// type at a given tree position. `dialogOpen`/`onDialogOpenChange` are controlled from
-// `ToolGroupRow` (quality-gate remediation, Medium): see that component's own comment for why.
+// Expand/Collapse, `DiffView`'s `capped` prop), a successful write's "Wrote N lines to <path>"
+// line, or a short successful call's own one-line result -- never a boxed Arguments/Output/
+// content block (moved into the "View full call" dialog, `ToolCallDialog.tsx`, which still
+// renders every argument and the output through the shared `CodeBlock`, T083, FR-050). A failed
+// call's own error text is NOT part of this expansion (#570 decision 10): it is the Error line,
+// a baseline fixture rendered by `CollapsedLine` itself under the row, visible whether the row is
+// collapsed or expanded, never duplicated here. Split out from the row wrapper so `ToolGroupRow`
+// can reuse the same content for a solo call (no nested `CollapsedLine`) and for each call inside
+// a multi-call group (its own nested `CollapsedLine` via `ToolCallRow` below) without ever
+// changing the *wrapper* element type at a given tree position. `dialogOpen`/`onDialogOpenChange`
+// are controlled from `ToolGroupRow` (quality-gate remediation, Medium): see that component's own
+// comment for why.
 function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
   // Quality-gate remediation (Sec, Medium): `item.write`/`item.output` are both populated from
   // the call's own arguments or a partial result while it is still running (`transcript.ts`),
@@ -162,9 +203,11 @@ interface ToolGroupRowProps {
 // always hands this a `ToolGroup`, even for a run of one). A one-item group's `CollapsedLine` gets
 // the same label/summary/meta a lone call used to show, with that call's own body as the content
 // (no "+ N others" summary, no extra nesting). A multi-item group's own status is running while
-// any call runs, else failed when any call failed; the summary is the last call's target plus
-// "+ N others" (", N failed" appended, text not colour, when any failed), and only the *children*
-// of this one `CollapsedLine` -- never its own presence or type -- switch to the per-call list.
+// any call runs, else failed when any call failed; the summary is just the last call's target
+// plus "+ N others" -- the failed/interrupted counts live in the never-shrinking `meta` slot
+// instead (#570 decision 12, text AND colour: "N failed" reads in the error colour) -- and only
+// the *children* of this one `CollapsedLine` -- never its own presence or type -- switch to the
+// per-call list.
 //
 // Quality-gate remediation (A11y, High round 3; Medium round 2): `openDialogItemId` (which
 // call's "View full call" dialog, if any, is open) is held HERE, above the solo/multi switch
@@ -252,7 +295,18 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       ? (
           <>
             {failedCount > 0 && <span className="text-severity-error">{failedCount} failed</span>}
-            {interruptedCount > 0 && <span className={failedCount > 0 ? 'ml-2' : undefined}>{interruptedCount} interrupted</span>}
+            {failedCount > 0 && interruptedCount > 0 && (
+              // Gate round 1 (code-reviewer/accessibility-auditor Medium): two bare sibling spans
+              // with only a CSS margin between them read as one joined word to a screen reader
+              // ("1 failed2 interrupted") -- the #632 meta grammar instead: a visible middle dot,
+              // `aria-hidden` (decorative), plus an sr-only ", " so the two counts stay distinct
+              // words in both the visual and the accessible name.
+              <>
+                <span aria-hidden="true"> · </span>
+                <span className="sr-only">, </span>
+              </>
+            )}
+            {interruptedCount > 0 && <span>{interruptedCount} interrupted</span>}
           </>
         )
       : undefined
@@ -268,8 +322,23 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       // #570 decisions 6, 9: the group's own Error line while collapsed is the LATEST failed
       // member (replaced by each failed member's own line once expanded -- `hideDetailWhenOpen`
       // only for a multi-call group; a solo call's line has no such condition, decision 6, since
-      // there is no separate "expanded body" of other members to replace it with).
-      detail={lastFailedItem ? errorLine(lastFailedItem) : undefined}
+      // there is no separate "expanded body" of other members to replace it with). Gate round 1
+      // (G909Arch M2): the header's own visible target names the LAST call, which is not always
+      // the one this Error line is about -- prefixed, muted, with the failing call's own target
+      // whenever it differs from `last` (decision 9 addendum), so the line is never read as
+      // belonging to a call that actually succeeded.
+      detail={
+        lastFailedItem
+          ? lastFailedItem === last
+            ? errorLine(lastFailedItem)
+            : (
+                <>
+                  <span className="text-muted-foreground">{lastFailedItem.target}: </span>
+                  {errorLine(lastFailedItem)}
+                </>
+              )
+          : undefined
+      }
       hideDetailWhenOpen={!solo}
       // #565 decision 10 (solo): the lone call's own body starts at the label column.
       // #565 decision 8 (multi): the only geometry once a `SpineList` is the content is its own
