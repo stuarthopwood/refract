@@ -24,6 +24,9 @@ export interface CollapsedLineProps {
   meta?: React.ReactNode
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
+  /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
+   * label and icon render in the error colour, #570 decision 4; the target stays muted). */
+  labelClassName?: string
   /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in,
    * because the chat's own rows are deliberately one-line, but a narrow side panel (the
    * Subagents panel) needs a long path or paragraph visible instead of losing its useful tail. */
@@ -42,6 +45,16 @@ export interface CollapsedLineProps {
    * interactive trigger. Stays in the always-mounted header row, reachable while collapsed.
    * Ignored when `children` is omitted. */
   action?: React.ReactNode
+  /** #570 decisions 6/9: a failed tool call's own Error line, rendered as a `<p>` sibling of the
+   * trigger -- inside the `Collapsible` root, outside `CollapsibleContent` and the button --
+   * aligned to the label column (`pl-8 pr-2`). Linked to the trigger via `aria-describedby`.
+   * Ignored when `children` is omitted (no trigger to describe). */
+  detail?: React.ReactNode
+  /** #570 decision 9: a multi-call group's own header shows its latest failed member's Error
+   * line only while COLLAPSED (replaced by each failed member's own line once expanded); a solo
+   * call's or a member's own Error line has no such condition and stays visible either way.
+   * Opt-in per caller, since most `detail` callers want it unconditionally. */
+  hideDetailWhenOpen?: boolean
   /** Expansion content; omit entirely for a line with nothing to expand (it then renders as a
    * plain, non-interactive row with no chevron and no trigger). */
   children?: React.ReactNode
@@ -63,12 +76,15 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     summary,
     meta,
     summaryClassName,
+    labelClassName,
     summaryWrap,
     open,
     onOpenChange,
     defaultOpen,
     triggerAriaLabel,
     action,
+    detail,
+    hideDetailWhenOpen,
     children,
     className,
     contentClassName
@@ -79,6 +95,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const isControlled = open !== undefined
   const actualOpen = isControlled ? open : uncontrolledOpen
   const setOpen = onOpenChange ?? setUncontrolledOpen
+  const detailId = React.useId()
+  const showDetail = detail !== undefined && (!hideDetailWhenOpen || !actualOpen)
 
   const row = (
     <>
@@ -86,7 +104,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly. */}
       <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
-        <span className="min-w-0 max-w-full truncate font-medium" title={typeof label === 'string' ? label : undefined}>
+        <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}
@@ -140,6 +158,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
           aria-label={triggerAriaLabel}
+          aria-describedby={showDetail ? detailId : undefined}
           className={cn(
             // Gate round 3 (architect M-1, unanimous): this trigger sits inside
             // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`),
@@ -158,6 +177,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
          * header row, reachable while collapsed (never inside `CollapsibleContent`). */}
         {action}
       </div>
+      {showDetail && (
+        // #570 decisions 6-8: app font (a message, not code), text-xs, clamped at two lines,
+        // no tint/border/box; plain text node, no markup or links.
+        <p id={detailId} className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-xs text-severity-error [overflow-wrap:anywhere]')}>
+          {detail}
+        </p>
+      )}
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
     </Collapsible>
   )
