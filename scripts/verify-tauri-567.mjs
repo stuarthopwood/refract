@@ -65,7 +65,7 @@ import {
   createReportLogger,
   sleep
 } from './verify-tauri-cdp.mjs';
-import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone } from './verify-tauri-session-list-helpers.mjs';
+import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone, proveResumeHoverCenteringAndNarrowWidth } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -472,6 +472,12 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   const headerCase = await cdp.evaluate(`getComputedStyle(${repoHeaderTriggerFinder}).textTransform`);
   log(`verify-tauri-567: group header text-transform: ${headerCase}`);
   assert(headerCase === 'none', `group header must be sentence case, never uppercase (decision 4), got textTransform=${headerCase}`);
+
+  // ---- Gate round 3 fixes, live (four independent reviewers): Resume's own hover fill, the
+  // "..." trigger's vertical centring on line 1, and decision 25's 220px narrow-width minimum --
+  // extracted to verify-tauri-session-list-helpers.mjs to keep this file under the #806
+  // 600-line file-size cap. ----
+  await proveResumeHoverCenteringAndNarrowWidth(cdp, log, { repoName, rowFinder });
 
   // ---- Collapsed group with a Waiting marker ----
   await createSessionViaQuickCreate(cdp, repoName);

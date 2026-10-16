@@ -52,7 +52,7 @@ const TRAILING_MENU_BUTTON_CLASS = cn(
   'opacity-0 pointer-events-none',
   ROW_ACTION_HOVER_CLASS,
   'aria-expanded:bg-sidebar-border',
-  '[@media(hover:hover)]:absolute [@media(hover:hover)]:inset-y-0 [@media(hover:hover)]:right-0',
+  '[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2 [@media(hover:hover)]:right-0',
   '[@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto',
   '[@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto',
   '[@media(hover:hover)]:group-has-[[aria-expanded="true"]]:opacity-100',
@@ -240,12 +240,27 @@ export function SessionRow({ session, repository }: { session: SessionSummary; r
                   className="session-open-button flex min-w-0 flex-1 flex-col gap-0 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                 >
                   {/* #567 decision 8: line 1 -- the state icon (16px) and the truncating title,
-                      with its own `pr-28` reserving room for the Resume/time/"..." group pinned
+                      with its own padding reserving room for the Resume/time/"..." group pinned
                       absolutely over line 1 only (gate round 2 fix, Medium, code-reviewer/
                       architect N2: that group used to be a flex sibling of this whole button,
                       which left line 2 narrower than decision 8's own "full row width" on every
-                      row). Line 2 below has no such padding, so it spans the row. */}
-                  <span className="flex min-w-0 items-center gap-2 pr-28">
+                      row). Line 2 below has no such padding, so it spans the row.
+                      Gate round 3 fix (Medium, four independent reviewers): a flat `pr-28`
+                      (112px, the group's own worst case: Resume + time + "..." all shown at
+                      once) starved the title down to about five characters at decision 25's own
+                      220px minimum, far more than the group ever needs under `[@media(hover:
+                      hover)]` (only one of time/"..." shows at a time there). Sized to the real
+                      content instead: `pr-10` (time or "..." alone, whichever is wider) or
+                      `pr-16` with Resume mounted (+24px, +4px gap), under `[@media(hover:hover)]`;
+                      `[@media(hover:none)]` widens further to the true additive case (time AND
+                      "..." both shown together) -- `pr-17` (68px) without Resume, `pr-24` (96px,
+                      the clean existing Tailwind size) with it. */}
+                  <span
+                    className={cn(
+                      'flex min-w-0 items-center gap-2',
+                      canResume ? 'pr-16 [@media(hover:none)]:pr-24' : 'pr-10 [@media(hover:none)]:pr-17'
+                    )}
+                  >
                     {session.startProgress ? (
                       <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
                     ) : (

@@ -275,3 +275,87 @@ export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, r
 
   return { repoARecord };
 }
+
+/** Gate round 3 fixes, live (four independent reviewers): Resume's own hover fill (gate round 2,
+ * N3), the "..." trigger's vertical centring on line 1 (`top-1/2 -translate-y-1/2`, was
+ * `inset-y-0`), and decision 25's 220px narrow-width minimum -- a flat `pr-28` on line 1 had
+ * starved the title to about five characters there; now sized to the real content (`pr-10`/
+ * `pr-16`, wider under `[@media(hover:none)]`). Measures the session-list panel dragged to its
+ * own `minSize={220}` floor (`App.tsx`), without and with a Resume button mounted, asserting the
+ * title never overlaps the absolutely-positioned trailing group either way. Extracted from
+ * `verify-tauri-567.mjs` to keep it under the #806 600-line file-size cap. */
+export async function proveResumeHoverCenteringAndNarrowWidth(cdp, log, { repoName, rowFinder }) {
+  const resizeHandleFinder = `document.querySelector('[aria-label="Resize session list"]')`;
+  async function dragResizeHandleBy(deltaX) {
+    const rect = await cdp.waitFor(
+      `(() => { const el = ${resizeHandleFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+      { timeoutMs: 10_000, label: 'session list resize handle' }
+    );
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + deltaX / 2, y: rect.y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x + deltaX, y: rect.y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x + deltaX, y: rect.y, button: 'left' });
+  }
+  function measureLine1() {
+    return cdp.evaluate(
+      `(() => { const row = ${rowFinder}; const surface = row.querySelector(':scope > div'); const nameSpan = row.querySelector('.session-open-button > span:first-child span.truncate'); const trailingGroup = surface.querySelector('.absolute.right-2.top-1'); const sr = surface.getBoundingClientRect(); const nr = nameSpan.getBoundingClientRect(); const tr = trailingGroup ? trailingGroup.getBoundingClientRect() : null; return { surfaceWidth: sr.width, titleWidth: nr.width, overlap: tr ? nr.right > tr.left : false }; })()`
+    );
+  }
+  await createSessionViaQuickCreate(cdp, repoName);
+  await dragResizeHandleBy(-400); // far past the 220px floor; `minSize` clamps it there
+  await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width < 250`, { timeoutMs: 10_000, label: 'session list clamped near its 220px minSize floor' });
+  const narrowNoResume = await measureLine1();
+  log(`verify-tauri-567: 220px-minimum measurement, no Resume: ${JSON.stringify(narrowNoResume)}`);
+  assertTrue(!narrowNoResume.overlap, `the title must never overlap the trailing group at the 220px minimum, no Resume, got ${JSON.stringify(narrowNoResume)}`);
+  assertTrue(narrowNoResume.titleWidth > 40, `the title must keep meaningfully more than decision 25's old ~36px floor without Resume, got ${narrowNoResume.titleWidth}px`);
+
+  // Stop the agent (a clean, user-initiated Stop -- `canResumeSession` then reads `status:
+  // 'stopped'` with no special `stopReason`) so the Resume button mounts, then re-measure the
+  // same row at the same clamped width with Resume present too.
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${rowFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `hover target: ${rowFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  const resumeEllipsisFinder = `${rowFinder}.querySelector('button[aria-label$="actions"]')`;
+  await cdp.waitFor(`getComputedStyle(${resumeEllipsisFinder}).opacity > 0.5`, { timeoutMs: 5_000, label: '"..." visible before Stop agent' });
+  await cdp.click(resumeEllipsisFinder);
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Stop agent')`, { timeoutMs: 10_000, label: 'row menu open with Stop agent item' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Stop agent')`);
+  const resumeButtonFinder = `${rowFinder}.querySelector('button[aria-label^="Resume "]')`;
+  await cdp.waitFor(`!!${resumeButtonFinder}`, { timeoutMs: 15_000, label: 'Resume button mounted after Stop agent' });
+  const narrowWithResume = await measureLine1();
+  log(`verify-tauri-567: 220px-minimum measurement, with Resume: ${JSON.stringify(narrowWithResume)}`);
+  assertTrue(!narrowWithResume.overlap, `the title must never overlap the trailing group at the 220px minimum, with Resume, got ${JSON.stringify(narrowWithResume)}`);
+  log('STEP PASS: line 1 never overlaps the trailing group at the 220px minimum, with or without Resume.');
+
+  // Resume hover fill (gate round 2 fix, N3): `ROW_ACTION_HOVER_CLASS` shared with the "..."
+  // trigger -- was previously indistinguishable from ghost's own half-strength dark hover.
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+  const resumeAtRest = await cdp.evaluate(`getComputedStyle(${resumeButtonFinder}).backgroundColor`);
+  const resumeRect = await cdp.waitFor(
+    `(() => { const el = ${resumeButtonFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `hover target: ${resumeButtonFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: resumeRect.x, y: resumeRect.y });
+  const resumeOnHover = await cdp.evaluate(`getComputedStyle(${resumeButtonFinder}).backgroundColor`);
+  log(`verify-tauri-567: Resume background at rest vs on hover: ${JSON.stringify({ resumeAtRest, resumeOnHover })}`);
+  assertTrue(resumeAtRest !== resumeOnHover, `Resume must show a hover fill distinct from its at-rest background (gate round 2 fix, N3), got the same colour both times: ${resumeAtRest}`);
+  log('STEP PASS: Resume shows a distinct hover fill (gate round 2 fix, N3, live-verified).');
+
+  // Vertical centring (gate round 3 fix, Low): the "..." trigger used to hang about 4px below
+  // line 1's own centre (`inset-y-0` stretching a `size-6` button inside a shorter `min-h-4`
+  // cell, top-anchored); now `top-1/2 -translate-y-1/2`, measured against line 1's own icon/
+  // title span (always visible, unlike the time it replaces on hover).
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  const centering = await cdp.evaluate(
+    `(() => { const btn = ${resumeEllipsisFinder}; const line1 = ${rowFinder}.querySelector('.session-open-button > span:first-child'); const br = btn.getBoundingClientRect(); const lr = line1.getBoundingClientRect(); const buttonCentre = br.top + br.height / 2; const line1Centre = lr.top + lr.height / 2; return { buttonCentre, line1Centre, deltaPx: Math.abs(buttonCentre - line1Centre) }; })()`
+  );
+  log(`verify-tauri-567: "..." vertical centring vs line 1: ${JSON.stringify(centering)}`);
+  assertTrue(centering.deltaPx <= 1, `the "..." trigger must sit within 1px of line 1's own vertical centre (gate round 3 fix, Low), measured delta=${centering.deltaPx}px`);
+  log('STEP PASS: the "..." trigger is vertically centred on line 1 within 1px (gate round 3 fix).');
+
+  // Restore the session list to its normal width before the theme screenshots below.
+  await dragResizeHandleBy(400);
+  await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width > 250`, { timeoutMs: 10_000, label: 'session list restored to normal width' });
+}
