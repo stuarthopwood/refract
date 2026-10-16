@@ -1362,7 +1362,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 role="region"
                 tabIndex={0}
                 aria-label="Start failure details"
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words px-1 py-0.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 {startFailureDetails}
               </pre>

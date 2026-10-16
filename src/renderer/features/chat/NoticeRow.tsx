@@ -79,7 +79,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
        * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
        * this previously set explicitly, which reads brighter than primary chat prose. */}
-      <div className="max-h-60 overflow-y-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap text-muted-foreground">{text}</div>
+      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground">{text}</div>
     </CollapsedLine>
   )
 }
