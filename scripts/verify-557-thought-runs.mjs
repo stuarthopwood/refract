@@ -23,29 +23,43 @@
 //
 // One scratch Session, two turns:
 //   (a) the ordered reasoning prompt above -> ideally a 2+ member `ThoughtRunRow` header
-//       ("Thought process", step count, union duration once settled); growing live, expand/
-//       collapse, keyboard, themes, narrow width, reduced motion, Thinking off, reopened history.
+//       ("Thought process", step count, union duration once settled); growing live with keyboard
+//       focus proven across the exact growth moment, expand/collapse, keyboard, themes, narrow
+//       width, reduced motion, Thinking off, reopened history.
 //   (b) a single, non-reasoning-heavy prompt -> exactly one thinking item -> today's own
 //       unchanged row (decision 7: no header, no Spine), the run-of-one fallback path.
 //
 // Reuses the shared `CARGO_TARGET_DIR` debug exe this session's own `node scripts/ci-local.mjs`
 // already produced, rebuilding it fresh here too and copying it to a PRIVATE scratch dir
 // immediately, confirmed byte-unchanged through the copy. The copy's own sha256, and the checked-
-// out git HEAD, are logged and asserted right after CDP attaches.
+// out git HEAD, are logged and asserted right after CDP attaches. Shared build/launch/teardown
+// helpers come from `verify-tauri-scratch-helpers.mjs` (issue #570 gate round 1's own #806
+// file-size split) rather than a second hand-copied set here.
 
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import {
+  gitHead,
+  buildLauncher,
+  makeScratchRepo,
+  sha256OfFile,
+  buildAndCopyExeFresh,
+  launchBuiltExe,
+  safeRmSync,
+  assertExeUnchanged,
+  getAccessibleNameAndRole,
+  switchTheme,
+} from './verify-tauri-scratch-helpers.mjs';
 // Gate round 1 (code/a11y/architect Low): the repo's own shared Tab/Escape senders set `key`/
 // `code` (Chromium only moves focus on a Tab keydown whose `key` is literally `"Tab"`); this
 // script's own hand-rolled `Input.dispatchKeyEvent` calls did not, which silently downgraded the
 // Tab-into-member check to "not exercised" with a wrong guessed cause.
 import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
+const SCRIPT_LABEL = 'verify-557-thought-runs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
@@ -71,64 +85,6 @@ const THOUGHT_HEADER_FINDER =
 const SOLO_THOUGHT_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); const t = label && label.textContent.trim(); return t === 'Thinking' || t === 'Thought' || (t && t.startsWith('Thought for ')); })`;
 
-function spawnSync_(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
-}
-
-function gitHead() {
-  const result = spawnSync_('git', ['-C', REPO_ROOT, 'rev-parse', 'HEAD']);
-  return result.status === 0 ? result.stdout.trim() : `<git rev-parse failed: ${result.stderr}>`;
-}
-
-function buildLauncher(dir) {
-  mkdirSync(dir, { recursive: true });
-  const src = path.join(__dirname, 'verify-tauri-launcher.rs');
-  const out = path.join(dir, 'verify-tauri-launcher.exe');
-  const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
-  if (result.status !== 0) throw new Error(`buildLauncher: rustc failed (exit ${result.status}):\n${result.stderr}`);
-  return out;
-}
-
-function makeScratchRepo(dir) {
-  mkdirSync(dir, { recursive: true });
-  const run = (args) => {
-    const result = spawnSync_('git', ['-C', dir, ...args]);
-    if (result.status !== 0) throw new Error(`makeScratchRepo: git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
-    return result;
-  };
-  run(['init', '-q', '-b', 'main']);
-  run(['-c', 'user.name=verify-557-thought-runs', '-c', 'user.email=verify-557-thought-runs@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'init']);
-  return dir;
-}
-
-function sha256OfFile(filePath) {
-  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
-}
-
-function buildAndCopyExeFresh(destDir, { maxAttempts = 3 } = {}) {
-  mkdirSync(destDir, { recursive: true });
-  const dest = path.join(destDir, 'refract-tauri.exe');
-  const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`verify-557-thought-runs: rebuilding the debug exe fresh (attempt ${attempt}/${maxAttempts})...`);
-    const buildResult = spawnSync_('pnpm', ['tauri', 'build', '--debug', '--no-bundle'], { cwd: REPO_ROOT, stdio: 'inherit', shell: true });
-    if (buildResult.status !== 0) throw new Error(`buildAndCopyExeFresh: pnpm tauri build failed (exit ${buildResult.status}${buildResult.error ? `, error: ${buildResult.error.message}` : ''})`);
-    if (!existsSync(src)) throw new Error(`buildAndCopyExeFresh: built exe not found at ${src} after a successful build`);
-    const preCopyStat = statSync(src);
-    const preCopyHash = sha256OfFile(src);
-    copyFileSync(src, dest);
-    const postCopyStat = statSync(src);
-    const postCopyHash = existsSync(src) ? sha256OfFile(src) : null;
-    const unchanged = postCopyHash === preCopyHash && postCopyStat.mtimeMs === preCopyStat.mtimeMs && postCopyStat.size === preCopyStat.size;
-    if (unchanged) {
-      console.log(`verify-557-thought-runs: built exe copied to ${dest} (private copy; sha256 ${preCopyHash.slice(0, 12)}…, confirmed unchanged through the copy)`);
-      return { dest, hash: preCopyHash };
-    }
-    console.warn(`verify-557-thought-runs: source exe changed between build and copy (attempt ${attempt}) -- a concurrent lane is rebuilding; retrying.`);
-  }
-  throw new Error(`buildAndCopyExeFresh: source exe kept changing across ${maxAttempts} rebuild attempts.`);
-}
-
 function assertBundleContainsStory557Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory557Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -136,55 +92,11 @@ function assertBundleContainsStory557Marker() {
   for (const file of files) {
     const text = readFileSync(path.join(assetsDir, file), 'utf8');
     if (text.includes('thought-run')) {
-      console.log(`verify-557-thought-runs: confirmed #557-only marker 'thought-run' present in the built renderer bundle (${file}).`);
+      console.log(`${SCRIPT_LABEL}: confirmed #557-only marker 'thought-run' present in the built renderer bundle (${file}).`);
       return;
     }
   }
   throw new Error("assertBundleContainsStory557Marker: no built asset contains 'thought-run' -- this build does not actually contain #557's own code.");
-}
-
-async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile }) {
-  const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
-  mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(path.dirname(exePath), 'target.pid');
-  const env = {
-    ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-  };
-  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
-  if (logFile) {
-    const stream = createWriteStream(logFile);
-    child.stdout.pipe(stream, { end: false });
-    child.stderr.pipe(stream, { end: false });
-  }
-  return { child, targetPid };
-}
-
-async function safeRmSync(dir) {
-  if (!dir) return;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      if (attempt === 2) {
-        console.warn(`verify-557-thought-runs: could not remove scratch dir ${dir} (left on disk): ${err.message}`);
-        return;
-      }
-      await sleep(1000);
-    }
-  }
-}
-
-function assertExeUnchanged(exePath, expectedHash, label) {
-  const actualHash = sha256OfFile(exePath);
-  if (actualHash !== expectedHash) {
-    throw new Error(`assertExeUnchanged (${label}): ${exePath} hash is ${actualHash.slice(0, 12)}…, expected ${expectedHash.slice(0, 12)}… -- the exe under test changed after launch; this run's findings cannot be trusted.`);
-  }
-  console.log(`verify-557-thought-runs: exe sha256 ${expectedHash.slice(0, 12)}… confirmed unchanged (${label}).`);
 }
 
 async function countThoughtHeaders(cdp) {
@@ -207,38 +119,6 @@ async function setThoughtHeaderExpanded(cdp, index, wantOpen) {
   );
 }
 
-async function getAccessibleNameAndRole(cdp, selectorExpr) {
-  await cdp.send('Accessibility.enable');
-  const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
-  const objectId = evalResult.result?.objectId;
-  if (!objectId) return { name: null, role: null };
-  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
-  const node = nodes?.[0];
-  return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
-}
-
-async function switchTheme(cdp, themeId, themeName) {
-  await cdp.click(`document.querySelector('[data-profile-name-button]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
-  const themeTriggerFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`;
-  await cdp.waitFor(`!!(${themeTriggerFinder})`, { timeoutMs: 10_000, label: 'Theme submenu trigger visible' });
-  const rect = await cdp.evaluate(`(() => { const el = ${themeTriggerFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
-  await sleep(400);
-  await cdp.click(themeTriggerFinder);
-  await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
-    { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` },
-  );
-  await cdp.click(
-    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`,
-  );
-  await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
-    timeoutMs: 15_000,
-    label: `<html> class theme-${themeId} applied`,
-  });
-}
-
 async function main() {
   let dataDir, importSourceDir, repoDir, exeDir, exeDir2, launcherDir;
   let child;
@@ -252,19 +132,19 @@ async function main() {
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-557-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-557-import-'));
-    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-557-repo-')));
+    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-557-repo-')), SCRIPT_LABEL);
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-557-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-557-launcher-'));
     mkdirSync(SHOTS_DIR, { recursive: true });
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
     const port = await getFreePort();
-    gitHeadSha = gitHead();
+    gitHeadSha = gitHead(REPO_ROOT);
 
-    console.log(`verify-557-thought-runs: git HEAD ${gitHeadSha}`);
-    console.log(`verify-557-thought-runs: data dir ${dataDir}`);
-    console.log(`verify-557-thought-runs: shots dir ${SHOTS_DIR}`);
+    console.log(`${SCRIPT_LABEL}: git HEAD ${gitHeadSha}`);
+    console.log(`${SCRIPT_LABEL}: data dir ${dataDir}`);
+    console.log(`${SCRIPT_LABEL}: shots dir ${SHOTS_DIR}`);
 
-    const built = buildAndCopyExeFresh(exeDir);
+    const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: SCRIPT_LABEL });
     const exePath = built.dest;
     exeHash = built.hash;
     assertBundleContainsStory557Marker();
@@ -277,9 +157,9 @@ async function main() {
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
     if (!isTargetOwningPort(port, targetPid)) {
-      throw new Error(`verify-557-thought-runs: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
+      throw new Error(`${SCRIPT_LABEL}: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
     }
-    assertExeUnchanged(exePath, exeHash, 'post-launch');
+    assertExeUnchanged(exePath, exeHash, 'post-launch', SCRIPT_LABEL);
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
@@ -311,7 +191,7 @@ async function main() {
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
     const sessionId = await cdp.evaluate(`window.refract.sessions.list().then((r) => (r.ok ? r.value[0]?.id : null))`);
-    if (!sessionId) throw new Error('verify-557-thought-runs: could not read the scratch Session id back from window.refract.sessions.list()');
+    if (!sessionId) throw new Error(`${SCRIPT_LABEL}: could not read the scratch Session id back from window.refract.sessions.list()`);
 
     const setModelResp = await cdp.evaluate(
       `window.refract.model.setModel(${JSON.stringify(sessionId)}, ${JSON.stringify(REASONING_MODEL.provider)}, ${JSON.stringify(REASONING_MODEL.id)})`,
@@ -439,9 +319,6 @@ async function main() {
         findings.push('Settled thought-run header meta never reads "0s" (gate round 1 fix: the header total now shares the members\' own 1s floor).');
       }
 
-      const olPresentCollapsed = await cdp.evaluate(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`);
-      // A Stage/tool group from the SAME turn could also contribute an <ol>; scope to whether
-      // this specific thought header's own sibling content holds one while collapsed.
       const thoughtOlWhileCollapsed = await cdp.evaluate(`(() => {
         const header = (${THOUGHT_HEADER_FINDER})[0];
         const root = header.closest('[data-slot="collapsible"]');
@@ -625,7 +502,7 @@ async function main() {
     // rebuilding -- a plain copy into a fresh scratch dir so this second launch never locks the
     // same exe path the first (now-stopped) launcher still held.
     copyFileSync(exePath, exePath2);
-    if (sha256OfFile(exePath2) !== exeHash) throw new Error('verify-557-thought-runs: the exe copy for the relaunch does not match the hash already verified for turn (a)/(b).');
+    if (sha256OfFile(exePath2) !== exeHash) throw new Error(`${SCRIPT_LABEL}: the exe copy for the relaunch does not match the hash already verified for turn (a)/(b).`);
     const port2 = await getFreePort();
     const launched2 = await launchBuiltExe(launcherExe, exePath2, { port: port2, dataDir, importSourceDir, logFile: path.join(exeDir2, 'app2.log') });
     child = launched2.child;
@@ -674,16 +551,16 @@ async function main() {
 
     const report = { gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, multiRunExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
-    console.log('\n=== verify-557-thought-runs: FAILURES (always fail the run) ===');
+    console.log(`\n=== ${SCRIPT_LABEL}: FAILURES (always fail the run) ===`);
     if (failures.length === 0) console.log('(none)');
     for (const f of failures) console.log(`- ${f}`);
-    console.log('\n=== verify-557-thought-runs: FINDINGS ===');
+    console.log(`\n=== ${SCRIPT_LABEL}: FINDINGS ===`);
     for (const f of findings) console.log(`- ${f}`);
-    console.log('\n=== verify-557-thought-runs: NOT EXERCISED (genuine skips only) ===');
+    console.log(`\n=== ${SCRIPT_LABEL}: NOT EXERCISED (genuine skips only) ===`);
     if (notExercised.length === 0) console.log('(none)');
     for (const n of notExercised) console.log(`- ${n}`);
     console.log(`\nScreenshots and report.json: ${SHOTS_DIR}`);
-    console.log(`verify-557-thought-runs: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
+    console.log(`${SCRIPT_LABEL}: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
     process.exitCode = failures.length > 0 ? 1 : 0;
   } catch (err) {
     try {
@@ -691,21 +568,21 @@ async function main() {
     } catch {
       // best-effort only
     }
-    console.error('verify-557-thought-runs: FAILED:', err?.stack ?? err);
+    console.error(`${SCRIPT_LABEL}: FAILED:`, err?.stack ?? err);
     process.exitCode = 1;
   } finally {
     if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
-    await safeRmSync(dataDir);
-    await safeRmSync(importSourceDir);
-    await safeRmSync(repoDir);
-    await safeRmSync(exeDir);
-    await safeRmSync(exeDir2);
-    await safeRmSync(launcherDir);
+    await safeRmSync(dataDir, SCRIPT_LABEL);
+    await safeRmSync(importSourceDir, SCRIPT_LABEL);
+    await safeRmSync(repoDir, SCRIPT_LABEL);
+    await safeRmSync(exeDir, SCRIPT_LABEL);
+    await safeRmSync(exeDir2, SCRIPT_LABEL);
+    await safeRmSync(launcherDir, SCRIPT_LABEL);
   }
 }
 
 main().catch((err) => {
-  console.error('verify-557-thought-runs: unhandled error:', err?.stack ?? err);
+  console.error(`${SCRIPT_LABEL}: unhandled error:`, err?.stack ?? err);
   process.exitCode = 1;
 });
