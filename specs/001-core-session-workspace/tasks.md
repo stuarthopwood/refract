@@ -1779,3 +1779,63 @@ bar for **Closes #565**.
 real, kept evidence for that run -- the full multi-call Spine, pl-8, role=list, "1 failed" text,
 and the real Obsidian/Dark-high-contrast Theme-submenu screenshots, all confirmed live. **Closes
 #565.**
+
+## Phase 44: Convergence
+
+- [X] T240 [US1] #570 tool row colour treatment (Decided, Skippy, delegated by Stuart 2026-10-15;
+  `ui-architect-v3` roundtable, full decision record on the issue): amended spec 001 per the
+  record's own section 5 -- FR-008 (neutral icon/label for running/done/interrupted/exited, red
+  icon/label and the new Error line for a failed call, a multi-call group's own settled-status
+  colour rule and meta-slot counts), FR-047 (ties the existing generic "warning or error line"
+  clause to FR-061's own named Error line for tool rows specifically), FR-061 (the failed-call
+  error text renamed the Error line and moved out of the expanded body into the collapsed row
+  itself, unconditionally; the expansion no longer repeats it), a new Clarifications "Session
+  2026-10-16" entry (three Q/A matching the decision record's colour/icon map, Error line
+  placement and derivation, and group collapsed/expanded behaviour), acceptance scenario 18 (US1),
+  and three Edge Cases (`(no output)` placeholder, ANSI stripping, a still-running group with an
+  already-failed member). `git diff --numstat origin/main -- specs/001-core-session-workspace/tasks.md`
+  confirmed 0 deletions before this phase was appended.
+
+- [X] T241 [US1] Probe first (decision record's own "Ready to build" note: FR-061's wording
+  assumed, as an [INFERENCE], that a failed `bash` call's own output ends with its useful line --
+  the probe was required to confirm or flip this before the Error line's `bash` derivation was
+  built). `docs/spike/bash-error-probe-570.mjs` (scratch `--session-dir`/cwd under `os.tmpdir()`,
+  real signed-in default profile, `--approval-mode=yolo`, two isolated tiny turns) ran against the
+  real signed-in `omp 18.10.1` and captured two real `tool_execution_end` frames for a failing
+  `bash` call: `ls /definitely-not-a-real-path-570` (real stderr) and `exit 7` (no output at all).
+  Both flipped the assumption: OMP's own bash wrapper always appends a trailing `Wall time: Ns`
+  then `Command exited with code N` footer AFTER the real content (or a literal `(no output)`
+  placeholder when there is none), so the real error sits BEFORE that footer, not at the raw
+  string's own last line. Recorded as `docs/spike/FINDINGS.md` item 60. `ToolRow.tsx`'s
+  `errorLine()` strips that known two-line footer from the end before taking the new last line
+  for `bash` (first line, unaffected, for every other tool).
+
+- [X] T242 [US1] Built per the decision record's section 6 ("Files the build will touch"):
+  `toolStatus.tsx`'s `StatusIcon` now renders the identical icon/colour per state as
+  `subagentStatus.tsx`'s own map (#563, already shipped first): `LoaderCircleIcon`
+  `text-state-working` (running), `CheckCircle2Icon` `text-state-idle` (done, fully neutral --
+  "failure loud, success quiet"), `XCircleIcon` `text-severity-error` (error), `UnplugIcon`
+  `text-muted-foreground` (interrupted/exited); every icon `aria-hidden`. `CollapsedLine.tsx`
+  gained `labelClassName` (a failed row's label joins its icon in the error colour, the target
+  stays muted) and `detail`/`hideDetailWhenOpen` (the Error line: a `<p>` sibling of the trigger,
+  inside the `Collapsible` root, at the label column `pl-8 pr-2`, linked to the trigger via
+  `aria-describedby`, mounting inside the transcript's own existing `role="log"` region so it is
+  announced once as that log's own addition with no second live region; `hideDetailWhenOpen` lets
+  a multi-call group's own header show its latest failed member's line only while collapsed,
+  replaced by each failed member's own line once expanded, while a solo call's or a member's own
+  line stays visible either way). `ToolRow.tsx`: `ToolCallBody`'s old boxed error `<p>` is deleted
+  (no longer duplicated inside the expansion); `ToolCallRow` (a group member) and `ToolGroupRow`
+  (solo and the group header) both pass `labelClassName`/`detail` for a failed item, and
+  `ToolGroupRow`'s own summary no longer appends ", N failed"/", N interrupted" as text -- those
+  counts move into the row's never-shrinking `meta` slot, "N failed" in the error colour the
+  instant any member fails (even mid-run; the header's own icon/label turn red only once the
+  group's SETTLED status is failed, matching the existing running-beats-failed worst-state order),
+  "N interrupted" staying neutral. Docs updated per section 5: `product-chat.md` (bullets 14-15),
+  `foundations-icons.md` (a new Chat Status icons bullet distinct from the session-list
+  `StateIcon`), `CONTEXT.md` (new **Status icon** and **Error line** glossary entries; "a state
+  icon" in the Subagent panel entry corrected to "a **Status icon**"). `check:theme-contrast`'s
+  existing `destructive`/`muted` (4.5:1) and `state-idle`/`muted` (3:1) pairs already numerically
+  cover `severity-error` (the two tokens share an identical value in every built-in theme,
+  `globals.css`), so no new PAIRS entries were needed -- confirmed by a clean 361/361 run.
+  `pnpm typecheck` clean; `node scripts/ci-local.mjs`: 16/16 steps PASS, including the Tauri debug
+  build and `check:ui-text` (0 leaks across 371 files).
