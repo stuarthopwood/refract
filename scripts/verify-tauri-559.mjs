@@ -37,7 +37,7 @@
 //
 // Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-735.mjs.
 
-import { mkdtempSync, mkdirSync, rmSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, existsSync, createWriteStream, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -69,7 +69,7 @@ import {
   proveCreatedSessionHiddenAnnouncement,
   SEARCH_INPUT_FINDER
 } from './verify-tauri-session-list-helpers.mjs';
-import { gitHead, sha256OfFile, buildLauncher, makeScratchRepo, safeRmSync, citeScreenshots } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, sha256OfFile, buildLauncher, makeScratchRepo, safeRmSync, citeScreenshots, clearKnownOutputFiles } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -142,9 +142,7 @@ async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourc
 
 function worktreesDirFor(repoDir) { return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir)); }
 
-function readJson(filePath) {
-  return JSON.parse(readFileSync(filePath, 'utf8'));
-}
+function readJson(filePath) { return JSON.parse(readFileSync(filePath, 'utf8')); }
 
 // Both announcement checks below wait for the EXACT (or matching) text to appear, rather than
 // reading "whatever is there now" -- a region that already holds a PREVIOUS announcement (for
@@ -224,8 +222,7 @@ async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
 
 async function clickMenuItem(cdp, text) {
   const finder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(text)})`;
-  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` });
-  await cdp.click(finder);
+  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` }); await cdp.click(finder);
 }
 
 /** Wraps the shared `addRepository` helper with failure diagnostics (a screenshot plus the
@@ -498,12 +495,15 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
 }
 
 async function main() {
-  // Gate round 3 fix (ui-architect-v3 Low, finding 7): a stale screenshot from an earlier,
-  // failed attempt (for example `99-diag-add-repository-A-failure.png`) used to sit alongside
-  // this run's own evidence forever -- `SHOT_DIR` is a fixed, literal path (never a variable
-  // root), so removing its own prior contents here is safe.
-  rmSync(SHOT_DIR, { recursive: true, force: true });
-  mkdirSync(SHOT_DIR, { recursive: true });
+  // Gate round 4 fix (Main's safety finding, MUST): `SHOT_DIR` can be redirected anywhere via
+  // `REFRACT_559_SHOT_DIR` -- recursively deleting it was building a delete target from a
+  // variable, exactly what the safe-deletion rule bans. Clears only this script's own known
+  // output files by literal name instead (see `clearKnownOutputFiles`'s own guard).
+  clearKnownOutputFiles(SHOT_DIR, 'refract-559-', [
+    '01-dark-no-matches.png', '02-dark-one-match-forced-open.png', '03-high-contrast-filtered.png',
+    '99-diag-row-actions-menu-failure.png', '99-diag-add-repository-A-failure.png', '99-diag-add-repository-B-failure.png',
+    'report.json', 'report.txt', 'app.log', 'fake-omp-invocations.log'
+  ]);
   const log = createReportLogger(path.join(SHOT_DIR, 'report.txt'));
   let shimDir, dataDir, importSourceDir, repoADir, repoBDir, exeDir;
   let child, cdp;

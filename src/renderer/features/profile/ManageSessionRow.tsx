@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import { toast } from 'sonner'
-import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'; import { createdSessionAnnouncement } from '@/features/sessions/createdSessionAnnouncement'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -335,7 +335,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
         const finish = () => {
           const stay = useViewStore.getState().view === 'manage-sessions' && isStillHere()
           if (!stay) {
-            useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+            useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
             return
           }
           useViewStore.getState().openChat(repository.id)
@@ -348,7 +348,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
             // same "always-connected" nav target `handleOpen` above implicitly relies on via
             // `focusSessionPane`'s own internal fallback chain.
             if (!(focusedSessionId && focusSessionPane(focusedSessionId))) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
               focusSessionsNav()
             }
           })

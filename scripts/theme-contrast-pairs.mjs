@@ -2,8 +2,11 @@
 // scripts/check-theme-contrast.mjs (gate round 4 follow-up, #806 file-size ratchet: the script
 // had grown past its own recorded baseline for legitimate new pairs, and the ratchet is lower-
 // only -- a baseline entry may never be RAISED, so the growth was moved out into its own module
-// instead). Pure data, no behaviour change: `check-theme-contrast.mjs` imports `PAIRS` from here
-// and iterates it exactly as it did when the array lived inline.
+// instead). `check-theme-contrast.mjs` imports `PAIRS` from here and iterates it exactly as it
+// did when the array lived inline; the two composited checks below (search field, user-bubble
+// links) moved out alongside it for the same reason, carrying their own small copy of the
+// alpha-compositing math so this module never needs to import back from the script it was
+// extracted out of.
 //
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
@@ -235,6 +238,53 @@ export const PAIRS = [
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]
 
+// ---- shared alpha-compositing math (duplicated, not imported, from check-theme-contrast.mjs's
+// own copy: importing back from the script this module was extracted out of to dodge its
+// file-size ratchet would recreate the exact coupling the extraction was meant to remove).
+function clamp01(x) {
+  return Math.min(1, Math.max(0, x))
+}
+
+function srgbGammaDecode(c) {
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+function srgbGammaEncode(c) {
+  const clamped = Math.min(1, Math.max(0, c))
+  return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
+}
+
+// Quality-gate remediation (HIGH, check-theme-contrast.mjs's own original fix, duplicated here
+// verbatim): browsers alpha-composite in gamma-encoded sRGB space, not linear light -- blending
+// in linear space understates how much a semi-transparent token lets the backdrop show through.
+function compositeOverLinear(fg, bg) {
+  return fg.linear.map((c, i) => {
+    const fgGamma = srgbGammaEncode(clamp01(c))
+    const bgGamma = srgbGammaEncode(clamp01(bg.linear[i]))
+    return srgbGammaDecode(clamp01(fg.alpha * fgGamma + (1 - fg.alpha) * bgGamma))
+  })
+}
+
+function resolvedLinear(propEntry, backdropEntry) {
+  if (propEntry.alpha >= 1) return propEntry.linear.map(clamp01)
+  return compositeOverLinear(propEntry, backdropEntry)
+}
+
+function relativeLuminance([r, g, b]) {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrastRatio(lumA, lumB) {
+  const lighter = Math.max(lumA, lumB)
+  const darker = Math.min(lumA, lumB)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function linearToHex([r, g, b]) {
+  const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
+  return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
+}
+
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
 // default translucent fill (`bg-transparent dark:bg-input/30`, `SearchField.tsx`'s own comment)
 // -- `.dark` is always applied to `<html>` regardless of the active theme, so `dark:bg-input/30`
@@ -244,41 +294,63 @@ export const PAIRS = [
 // Dark/Obsidian, not a flat 30% an earlier (reverted) calculation wrongly assumed (that cut
 // treated `--input` as opaque, landing on 2.55:1/2.61:1 and an unnecessary opaque-fill "fix").
 // Exported as a function, not a plain `PAIRS` entry, since this module holds only simple
-// token-name pairs and this needs real alpha-compositing math -- kept here, not inline in
-// `check-theme-contrast.mjs`, so that file's own file-size ratchet (a hard, lower-only
-// baseline) is never touched by a legitimate new composited pair (the same reason this whole
-// module exists, per its own header comment). Takes the already-parsed `themes` map and the
-// four color-math primitives `check-theme-contrast.mjs` already exports, rather than
-// duplicating or re-importing CSS-parsing logic here.
-export function searchFieldContrastRows(themes, { resolvedLinear, contrastRatio, relativeLuminance, linearToHex }) {
+// token-name pairs and this needs real alpha-compositing math.
+export function searchFieldContrastRows(themes) {
   const rows = []
-  let checked = 0
-  let failed = 0
   for (const [themeId, props] of Object.entries(themes)) {
     const input = props['input']
     const sidebar = props['sidebar']
     const mutedForeground = props['muted-foreground']
     if (!input || !sidebar || !mutedForeground) {
-      checked++
-      failed++
       rows.push({ themeId, fg: 'muted-foreground', bg: 'search-field (input*0.3 on sidebar)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
     const fieldLinear = resolvedLinear({ raw: 'input*0.3', alpha: input.alpha * 0.3, linear: input.linear }, sidebar)
     const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fieldLinear))
-    const pass = ratio >= 4.5
-    checked++
-    if (!pass) failed++
     rows.push({
       themeId,
       fg: 'muted-foreground',
       bg: 'search-field (input*0.3 on sidebar)',
       min: 4.5,
       ratio,
-      pass,
+      pass: ratio >= 4.5,
       fgHex: linearToHex(mutedForeground.linear),
       bgHex: linearToHex(fieldLinear),
     })
   }
-  return { rows, checked, failed }
+  return rows
+}
+
+// ---- issue #610 (hyperlinks): a link/file-link rendered inside a user message composites
+// `--accent-text` (Markdown.tsx's `linkClassName`) over the user bubble's own translucent fill
+// (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
+// `--background` -- the plain-background/card/popover PAIRS entries above never actually
+// exercise this composited case. Checked the same way the destructive-footer block above
+// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
+// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
+// `--accent-text` against that blended result.
+export function userBubbleLinkContrastRows(themes) {
+  const rows = []
+  for (const [themeId, props] of Object.entries(themes)) {
+    const accent = props['accent']
+    const background = props['background']
+    const accentText = props['accent-text']
+    if (!accent || !background || !accentText) {
+      rows.push({ themeId, fg: 'accent-text', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background)
+    const ratio = contrastRatio(relativeLuminance(accentText.linear), relativeLuminance(bubbleLinear))
+    rows.push({
+      themeId,
+      fg: 'accent-text',
+      bg: 'user-bubble (accent/50 on background)',
+      min: 4.5,
+      ratio,
+      pass: ratio >= 4.5,
+      fgHex: linearToHex(accentText.linear),
+      bgHex: linearToHex(bubbleLinear),
+    })
+  }
+  return rows
 }
