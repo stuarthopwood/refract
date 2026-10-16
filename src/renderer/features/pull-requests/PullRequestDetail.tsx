@@ -8,7 +8,6 @@
 // requests show `reviewDisabledReason`/`mergeDisabledReason` next to each disabled action
 // (FR-019), and a not-mergeable pull request shows that reason instead of offering Merge (FR-020).
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCwIcon } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,11 +26,14 @@ import { Markdown } from '@/features/chat/Markdown'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
-import { CHECK_STATE_DISPLAY, PULL_REQUEST_STATE_DISPLAY } from './PullRequestRow'
+import { CHECK_STATE_DISPLAY } from './PullRequestRow'
 import { Timeline } from './Timeline'
 import { ChangesTab } from './ChangesTab'
 import { ReviewDialog } from './ReviewDialog'
 import { MergeDialog } from './MergeDialog'
+import { StatePill } from './StatePill'
+import { RefreshButton } from './RefreshButton'
+import { ReviewConsensus } from './ReviewConsensus'
 
 // research.md "Polling interval and rate-limit headroom": re-calls `detail()` every 15s while
 // `checkState === 'pending'`, stops once checks finish or this view closes; `list()` is never
@@ -178,8 +180,6 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const title = `pull request #${detail.number}`
   const check = CHECK_STATE_DISPLAY[detail.checkState]
   const CheckIcon = check.icon
-  const state = PULL_REQUEST_STATE_DISPLAY[detail.state]
-  const StateIcon = state.icon
   // "Also fix" remediation: `mergeableState === 'unknown'` (GitHub still computing mergeability)
   // used to collapse into the same "not mergeable" message as a real conflict; it gets its own
   // "still checking" text instead, and only disables Merge when nothing else already explains why.
@@ -193,7 +193,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       <div className="shrink-0 border-b border-border p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 ref={headingRef} tabIndex={-1} className="truncate text-base font-semibold outline-none">
+            <h2 ref={headingRef} tabIndex={-1} className="line-clamp-2 text-lg font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -202,29 +202,28 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {/* High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged
-                was never visibly conveyed in the detail header at all. */}
-            <Badge variant="outline" className="gap-1">
-              <StateIcon aria-hidden className="size-3.5" />
-              {state.label}
-            </Badge>
-            <Badge variant="outline" className="gap-1">
-              <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
+                was never visibly conveyed in the detail header at all. Issue #568 decision 5:
+                solid StatePill (not the outline Badge this used to be). */}
+            <StatePill state={detail.state} />
+            {/* Issue #568 decision 5: check status stays a plain icon+word (no pill chrome),
+                turning red only on failure -- reusing #570's "colour signals failure only"
+                policy, same treatment `PullRequestRow.tsx`'s own metadata line just adopted. */}
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CheckIcon
+                aria-hidden
+                className={cn(
+                  'size-3.5',
+                  detail.checkState === 'pending' && 'animate-spin',
+                  detail.checkState === 'failed' && 'text-severity-error'
+                )}
+              />
               {check.label}
-            </Badge>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => void load()}
-              disabled={loading}
-              aria-label="Refresh this pull request"
-              title="Refresh this pull request"
-            >
-              <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
-            </Button>
+            </span>
+            <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
             <Button
               ref={newSessionButtonRef}
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={handleNewSessionClick}
               disabled={newSessionBusy || detail.state !== 'open'}
               title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
@@ -234,7 +233,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             <Button
               ref={reviewButtonRef}
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => setReviewOpen(true)}
               disabled={detail.reviewDisabledReason !== null}
               title={detail.reviewDisabledReason ?? undefined}
@@ -282,13 +281,34 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
         )}
       </div>
+      {/* Issue #568 decision 3: underline tabs as a call-site-local override only -- the
+          shared `tabs.tsx` primitive and its default pill classes stay untouched, since the
+          same primitive also renders the five filter tabs in `PullRequestList.tsx` (deferred
+          to #499). Focus-visible classes are left completely alone; only box/border/colour
+          utilities are overridden here. */}
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <TabsList className="mx-3 mt-2 w-fit shrink-0">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="changes">Changes</TabsTrigger>
+        {/* drag-regions-allow: the underline tab strip's own `border-b` (needed for the visual
+            underline look, decision 3) happens to match this script's window-chrome-header
+            heuristic (`border-b` + `shrink-0`), but this row sits deep in the content area, well
+            below `PullRequestsView.tsx`'s own separate `h-10` drag-region strip -- it never
+            touches `App.tsx`'s drag strip despite the coincidental shape; drag-regions-allow: see above. */}
+        <TabsList className="mx-3 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none border-b border-border bg-transparent p-0">
+          <TabsTrigger
+            value="overview"
+            className="rounded-none border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-border hover:text-foreground"
+          >
+            Overview
+          </TabsTrigger>
+          <TabsTrigger
+            value="changes"
+            className="rounded-none border-b-2 border-transparent px-1 py-1.5 text-muted-foreground shadow-none data-[state=active]:border-accent-text data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none hover:border-border hover:text-foreground"
+          >
+            Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
           <div className="p-3">
+            <ReviewConsensus timeline={detail.timeline} />
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
           </div>
           <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />

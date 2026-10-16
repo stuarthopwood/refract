@@ -24,6 +24,30 @@ header actions for New session, Review, and merge/checks status."
   detail, scoped to the selected repository.
 - Q: Should a pull request offer "New session" (User Story 4)? -> A: Keep it.
 
+### Session 2026-10-16
+
+- Q: Does the pull request detail view need to surface a reviewer-consensus summary? -> A: Yes -
+  a new FR-031: the Overview tab shows counts of approved / changes-requested / commented above
+  the pull request body, whenever at least one review exists. Placement is the top of the
+  Overview tab; counts are derived client-side from the existing timeline review verdicts, using
+  only each reviewer's most recent verdict; no new IPC field is added.
+- Q: Should the pull request state badge change shape for this restyle? -> A: Yes - a solid-fill
+  `StatePill` replaces the outline `Badge` used today, adding a new `--pr-merged` purple token;
+  Open, Draft and Closed alias the existing severity/state tokens rather than adding new colours
+  for them.
+- Q: Is the `isDraft` search-field data bug (drafts showing as Open on the four relation tabs)
+  in scope? -> A: Yes - `SEARCH_FIELDS` is fixed to request `isDraft` so those four searches
+  correctly report Draft instead of silently Open.
+- Q: Should the list row's and detail view's two existing Refresh controls stay separate? -> A:
+  No - both call sites are unified behind one shared `RefreshButton` component.
+- Q: Should the Overview/Changes tab pair adopt an underline style, and does that affect the
+  five filter tabs? -> A: The Overview/Changes pair gets a local underline style scoped to this
+  view only; the five filter tabs keep their existing pill style unchanged (an app-wide tab
+  convention is deferred to issue #499).
+- Q: Is the `PullRequestsView.tsx` header's `border-b` divider still needed? -> A: No - it is
+  removed, closing out a previously-flagged inconsistency with the rest of the app's panel
+  headers.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse pull requests (Priority: P1)
@@ -260,6 +284,9 @@ creation rules from spec 001.
   operable by keyboard, with a visible focus indicator at every step.
 - **FR-030**: Every status shown in the list or detail view (check status, pull request state,
   review outcome) MUST be conveyed by an icon or text, never by color alone.
+- **FR-031**: The pull request detail Overview tab MUST show a reviewer-consensus summary (counts
+  of approved / changes-requested / commented, derived from each reviewer's most recent review
+  verdict) above the PR body, when at least one review exists.
 
 ### Key Entities
 

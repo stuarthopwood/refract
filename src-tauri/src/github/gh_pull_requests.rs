@@ -61,13 +61,14 @@ pub struct GhSearchEntry {
     pub number: u64,
     pub title: String,
     pub state: String,
+    pub is_draft: bool,
     pub author: GhActor,
     pub url: String,
     pub updated_at: String,
     pub labels: Vec<GhLabel>,
 }
 
-const SEARCH_FIELDS: &str = "number,title,state,author,url,updatedAt,labels";
+const SEARCH_FIELDS: &str = "number,title,state,isDraft,author,url,updatedAt,labels";
 
 /// One of the 4 built-in narrowing qualifiers this feature offers: `--author @me` /
 /// `--assignee @me` / `--involves @me` / `--review-requested @me`.

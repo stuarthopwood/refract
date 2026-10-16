@@ -228,9 +228,10 @@ pub(super) async fn list_pull_requests(
         .map(|(entry, check_state)| PullRequestSummary {
             number: entry.number,
             title: entry.title,
-            // The search surface has no `isDraft`/mergedAt distinction: a merged pull request may
-            // show here as 'closed' rather than 'merged' -- a documented, known simplification.
-            state: map_pull_request_state(&entry.state, false),
+            // Search results now carry `isDraft` directly (issue #529/#568 decision 6): a draft
+            // pull request maps to `PullRequestState::Draft` here exactly as it does on the Open
+            // tab, instead of silently showing as `Open`.
+            state: map_pull_request_state(&entry.state, entry.is_draft),
             check_state: map_check_state(check_state.as_deref()),
             repository: repo_label.to_string(),
             updated_at: entry.updated_at,

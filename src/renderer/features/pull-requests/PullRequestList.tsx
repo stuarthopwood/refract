@@ -3,15 +3,13 @@
 // "last updated" label, and the no-github-remote/gh-unavailable/rate-limited error states as an
 // actionable message in place of the list.
 import { useEffect } from 'react'
-import { RefreshCwIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { usePullRequestsStore } from '@/state'
 import type { FilterTab } from '../../../shared/github'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
-import { cn } from '@/lib/utils'
 import { PullRequestRow } from './PullRequestRow'
+import { RefreshButton } from './RefreshButton'
 
 const TABS: Array<{ value: FilterTab; label: string }> = [
   { value: 'open', label: 'Open' },
@@ -76,16 +74,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
           aria-label="Filter pull requests by title or label"
           className="h-8 flex-1"
         />
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={() => void refresh(repositoryId)}
-          aria-label="Refresh pull requests"
-        >
-          <RefreshCwIcon aria-hidden className={cn('size-3.5', state.loading && 'animate-spin')} />
-          Refresh
-        </Button>
+        <RefreshButton loading={state.loading} onClick={() => void refresh(repositoryId)} label="Refresh pull requests" />
       </div>
       <div className="text-xs text-muted-foreground" aria-live="polite">
         {state.fetchedAt ? `Last updated ${formatRelativeTime(state.fetchedAt)}` : state.loading ? 'Loading...' : ''}
@@ -98,7 +87,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
         ) : state.items.length === 0 && !state.loading ? (
           <div className="p-3 text-sm text-muted-foreground">No pull requests match this tab.</div>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col divide-y divide-divider">
             {state.items.map((pr) => (
               <PullRequestRow
                 key={pr.number}

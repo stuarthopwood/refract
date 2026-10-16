@@ -217,4 +217,14 @@ export const PAIRS = [
   { fg: 'state-working', bg: 'sidebar-accent', min: 3 },
   { fg: 'severity-info', bg: 'sidebar', min: 3 },
   { fg: 'severity-info', bg: 'sidebar-accent', min: 3 },
+  // Issue #568/#529: the pull request StatePill (solid fill, icon + word) -- its own text
+  // colour against its own fill, in every theme. `pr-open`/`pr-closed` alias existing already-
+  // gated fills (`state-working`/`destructive`), but the ALIAS NAME itself was never a PAIRS
+  // entry before, so this still needs its own row per #570's own "check the token actually
+  // rendered, not an alias" rule (decision 3 there). `pr-draft` (achromatic grey) and
+  // `pr-merged` (new purple) had no prior pairing at all.
+  { fg: 'pr-open-foreground', bg: 'pr-open', min: 4.5 },
+  { fg: 'pr-draft-foreground', bg: 'pr-draft', min: 4.5 },
+  { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
+  { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]

@@ -142,6 +142,53 @@
 
 ---
 
+## Phase 8: Convergence -- #568 restyle (issue #568)
+
+**Goal**: converge the ui-architect-v3 roundtable's 12 decisions (#568, delegated by Stuart
+2026-10-16) into this feature's existing surfaces, folding in #529 (state pills), #531
+(title/button layout) and #532 (shared Refresh control) as part of the same restyle, without a
+new IPC field or any structural change to the Markdown-rendered PR body.
+
+**Independent test**: full live check per the issue's own decision record "Live checks" list.
+
+- [ ] T031 [P] (#568) Row restyle: `divide-y` flat row shape replacing the rounded-md bordered
+  box, the shared active-indicator bar on the selected row, a 3-line layout (title; metadata
+  line of state, check, repo, time; author line), and the font split (App font for metadata and
+  author, mono reserved for branch names) (decisions 1-2).
+- [ ] T032 [P] (#568) `StatePill`: a new solid-fill pill component replacing the outline `Badge`
+  for pull request state, the new `--pr-open`/`--pr-draft`/`--pr-closed`/`--pr-merged` tokens
+  (already landed in `globals.css` and `theme-contrast-pairs.mjs`), and the `isDraft` search-field
+  data fix in `gh_pull_requests.rs`/`mod.rs` so the four relation-tab searches report Draft
+  instead of silently Open (decisions 5-6).
+- [ ] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
+  lighter secondary action buttons so the title leads (decision 7).
+- [ ] T034 [P] (#568) Shared `RefreshButton` component unifying the pull request list's and
+  detail view's two existing refresh call sites: ghost, icon-only, tooltip, spinning while
+  loading, disabled while loading (decision 8).
+- [ ] T035 [P] (#568) Overview/Changes tab pair: a local underline-style `className` override on
+  the shared `Tabs` primitive scoped to this view only, leaving the five filter tabs' default
+  pill styling untouched (decision 3); remove `PullRequestsView.tsx`'s header `border-b` divider
+  (decision 9).
+- [ ] T036 (#568) Reviewer-consensus rollup (FR-031): derive counts of approved /
+  changes-requested / commented from `Timeline.tsx`'s existing `review` entries, taking each
+  reviewer's latest verdict only, and render them above the PR body at the top of the Overview
+  tab; no new IPC field (decision 10) (depends on T015, T019).
+- [ ] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
+  `CONTEXT.md` and `docs/PLAN.md` to record the convergence, then verify live: the issue's own
+  decision record "Live checks" list.
+
+**Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
+passes; full live check per the issue's own decision record "Live checks" list (a selected row's
+active-indicator bar vs an unselected row; a draft PR on a non-Open filter tab shows "Draft", not
+"Open", after the `isDraft` fix; Merged / Open / Draft / Closed pills in Dark, Obsidian and High
+Contrast; failed-check icon turns red, passed/pending/none stay neutral; keyboard focus moved via
+arrow/Tab between rows; Overview tab reviewer-consensus line renders only when reviews exist,
+with mixed verdicts; underline tabs keyboard nav; `RefreshButton` spinner/disabled state at both
+call sites; 360px pane width and 400% zoom on the restyled row and detail header; reduced motion
+-- no unexpected row-selection transition).
+
+---
+
 ## Dependencies & Execution Order
 
 - **Phase 1 (Setup/probes)**: no dependencies; T001 to T005 run in parallel.

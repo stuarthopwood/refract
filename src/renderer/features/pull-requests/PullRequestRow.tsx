@@ -56,28 +56,41 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      className={cn(
-        'flex w-full flex-col gap-1 rounded-md border border-transparent px-3 py-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-        selected && 'border-border bg-accent'
-      )}
+      className="relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
+      {selected && (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
+        />
+      )}
       <span className="flex items-center gap-1.5 font-medium">
         <span className="min-w-0 flex-1 truncate">{pullRequest.title}</span>
         <span className="shrink-0 text-xs font-normal text-muted-foreground">#{pullRequest.number}</span>
       </span>
-      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span className="flex items-center text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <StateIcon aria-hidden className="size-3.5" />
           {state.label}
         </span>
+        <span>{' \u00b7 '}</span>
         <span className="flex items-center gap-1">
-          <CheckIcon aria-hidden className={cn('size-3.5', pullRequest.checkState === 'pending' && 'animate-spin')} />
+          <CheckIcon
+            aria-hidden
+            className={cn(
+              'size-3.5',
+              pullRequest.checkState === 'pending' && 'animate-spin',
+              pullRequest.checkState === 'failed' && 'text-severity-error'
+            )}
+          />
           {check.label}
         </span>
+        <span>{' \u00b7 '}</span>
         <span className="truncate">{pullRequest.repository}</span>
-        <span>{formatRelativeTime(pullRequest.updatedAt)}</span>
-        <span className="truncate">{authorLabel}</span>
+        <span>{' \u00b7 '}</span>
+        <span className="tabular-nums">{formatRelativeTime(pullRequest.updatedAt)}</span>
       </span>
+      <span className="truncate text-xs text-muted-foreground">{authorLabel}</span>
     </button>
   )
 }
