@@ -23,6 +23,10 @@ interface ToolCallBodyProps {
 // (#628, e.g. "Queued for ... (was parked; revived)."); a longer or multi-line result needs
 // "View full call" instead, never a misleading truncated first line.
 const QUIET_SUMMARY_MAX_CHARS = 200
+// Gate round 2 (G909Arch N1): the group-detail attribution prefix (the failing call's own
+// target, muted) is capped well short of the Error line's own 200-character budget, so a long
+// command never pushes the actual error text out of the 2-line clamp.
+const ATTRIBUTION_PREFIX_MAX_CHARS = 40
 
 function quietSummary(output: string | undefined): string | undefined {
   if (!output || output.includes('\n') || output.length > QUIET_SUMMARY_MAX_CHARS) return undefined
@@ -52,17 +56,27 @@ const EXIT_CODE_LINE = /^Command exited with code (-?\d+)$/
 const TIMEOUT_LINE = /^Command timed out after (\d+) seconds$/
 const TIMEOUT_BRACKETED = /\[Command timed out after (\d+) seconds\]/
 
+// Gate round 2 (G909Arch N3/N4/N8): split into lines FIRST (so a bare `\r` -- a progress-bar
+// redraw -- still acts as its own line break, not a dead branch in the split regex stripped away
+// before it could ever match) and only strip ANSI/control characters PER LINE afterward. Shared
+// by `errorLine()` and the group-detail attribution prefix below, so both go through the exact
+// same cleaning.
+function sanitizeLines(raw: string): string[] {
+  return raw
+    .split(/\r\n|\n|\r/)
+    .map((line) => line.replace(ANSI_PATTERN, '').replace(UNSAFE_CHARS_PATTERN, '').trim())
+    .filter((line) => line.length > 0)
+}
+
 function errorLine(item: ToolItem): string {
   const raw = item.output
-  if (!raw) return 'Failed.'
-  const cleaned = raw.replace(ANSI_PATTERN, '').replace(UNSAFE_CHARS_PATTERN, '')
-  let lines = cleaned
-    .split(/\r\n|\n|\r/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+  let lines = raw ? sanitizeLines(raw) : []
   let fallback: string | undefined
   if (item.tool === 'bash') {
-    const wallTimeIndex = lines.findIndex((line) => WALL_TIME_LINE.test(line))
+    // Gate round 2 (G909Arch/G909Code N3): the LAST `Wall time:` line, not the first -- a
+    // command whose own real output happens to print a matching line must not have its genuine
+    // trailing footer missed, and the real footer is always the final occurrence.
+    const wallTimeIndex = lines.findLastIndex((line) => WALL_TIME_LINE.test(line))
     if (wallTimeIndex !== -1) {
       for (const line of lines.slice(wallTimeIndex)) {
         const exitMatch = line.match(EXIT_CODE_LINE)
@@ -78,11 +92,14 @@ function errorLine(item: ToolItem): string {
       }
       lines = lines.slice(0, wallTimeIndex)
     }
-    if (!fallback) {
-      const bracketedTimeout = cleaned.match(TIMEOUT_BRACKETED)
+    if (!fallback && raw) {
+      const bracketedTimeout = raw.match(TIMEOUT_BRACKETED)
       if (bracketedTimeout) fallback = `Command timed out after ${bracketedTimeout[1]} seconds`
     }
     if (!fallback) {
+      // Gate round 2 (G909Code N8): read BEFORE the `lines.length === 0` check below, not after
+      // -- a bash call with no output at all (`raw` falsy) must still fall through to this,
+      // never short-circuit straight to "Failed." while a real exit code is known.
       const details = item.details as { exitCode?: number } | undefined
       if (typeof details?.exitCode === 'number') fallback = `Exited with code ${details.exitCode}`
     }
@@ -236,9 +253,10 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
     openDialogItemIdState != null && group.items.some((item) => item.id === openDialogItemIdState) ? openDialogItemIdState : null
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
-  // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group's own summary names
-  // failed calls but silently dropped interrupted ones, so a sighted user could not tell which
-  // (or how many) calls were cut off without expanding the group.
+  // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group used to name failed
+  // calls but silently drop interrupted ones, so a sighted user could not tell which (or how
+  // many) calls were cut off without expanding the group (gate round 1, #570: both counts now
+  // live in the meta slot instead of the summary text, "N failed" in the error colour).
   const interruptedCount = group.items.filter((item) => item.status === 'interrupted').length
   // #570 decisions 6, 9: the group header's own Error line while collapsed is the LATEST failed
   // member's (replaced by each failed member's own line once expanded, decision 9's
@@ -331,12 +349,24 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         lastFailedItem
           ? lastFailedItem === last
             ? errorLine(lastFailedItem)
-            : (
-                <>
-                  <span className="text-muted-foreground">{lastFailedItem.target}: </span>
-                  {errorLine(lastFailedItem)}
-                </>
-              )
+            : (() => {
+                // Gate round 2 (G909Arch N1): the prefix used to be the raw, uncapped target --
+                // inside the same `line-clamp-2`, a target of about 90+ characters (easily hit
+                // by a real command string) could fill both lines and clip the actual error text
+                // entirely, the one thing decision 6 exists to keep visible. Sanitized the same
+                // way as the error text (ANSI/control-char stripped), capped short, and dropped
+                // outright when empty rather than rendering a bare "undefined: ".
+                const prefix = sanitizeLines(lastFailedItem.target)[0]
+                const truncatedPrefix = prefix && prefix.length > ATTRIBUTION_PREFIX_MAX_CHARS ? `${prefix.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…` : prefix
+                return truncatedPrefix ? (
+                  <>
+                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}: </bdi>
+                    {errorLine(lastFailedItem)}
+                  </>
+                ) : (
+                  errorLine(lastFailedItem)
+                )
+              })()
           : undefined
       }
       hideDetailWhenOpen={!solo}

@@ -96,7 +96,18 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const actualOpen = isControlled ? open : uncontrolledOpen
   const setOpen = onOpenChange ?? setUncontrolledOpen
   const detailId = React.useId()
-  const showDetail = detail !== undefined && (!hideDetailWhenOpen || !actualOpen)
+  // Gate round 2 (G909A11y/G909Arch N6): a multi-call group's own Error line used to unmount
+  // entirely on expand and remount on re-collapse -- the remount is a genuine DOM insertion
+  // inside the transcript's `role="log"` region, so a user's OWN collapse re-announced an
+  // already-known failure as if it were new (decision 15 wants exactly one announcement per
+  // failure, not one per toggle). Fixed: the `<p>` stays MOUNTED for as long as `detail` itself
+  // is defined (a hidden member's own line also attaches/detaches rows elsewhere already, so
+  // this is never rendered for a row with no failure at all); only its visibility toggles via
+  // the native `hidden` attribute, which removes it from the accessibility tree without an
+  // actual node removal/insertion for Chromium's own live-region mutation detection to catch.
+  const detailMounted = detail !== undefined
+  const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
+  const showDetail = detailMounted && !detailVisuallyHidden
 
   const row = (
     <>
@@ -121,15 +132,22 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <span className="min-w-0 flex-1" />
       )}
       {meta !== undefined && (
-        <>
+        // Gate round 2 (G909Arch/Main): the separator used to be its own top-level sibling span
+        // between the summary and the meta span; Chromium's own accessible-name-from-content
+        // algorithm inserts a space between EVERY sibling node it concatenates, independent of
+        // the separator's own text -- with the summary's own text ending in no whitespace of its
+        // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
+        // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
+        // removes the extra boundary that caused it.
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not
            * whitespace-only, so it survives collapsing. */}
           <span className="sr-only">, </span>
           {/* #565 decision 33: `tabular-nums` keeps a duration's digits aligned down a Spine. */}
-          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{meta}</span>
-        </>
+          {meta}
+        </span>
       )}
     </>
   )
@@ -177,7 +195,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
          * header row, reachable while collapsed (never inside `CollapsibleContent`). */}
         {action}
       </div>
-      {showDetail && (
+      {detailMounted && (
         // #570 decisions 6-8: app font (a message, not code), text-xs, clamped at two lines,
         // no tint/border/box; plain text node, no markup or links. `dir="auto"` (gate round 1,
         // security Low): tool output may legitimately contain RTL text (a path or message in
@@ -188,7 +206,17 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <p
           id={detailId}
           dir="auto"
-          className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-xs text-severity-error [overflow-wrap:anywhere]')}
+          // Gate round 2 (G909Arch N2): `dir="auto"` lets the browser infer direction from the
+          // first strong character, which can right-align the WHOLE line (including the `pl-8`
+          // label-column gutter) when the error text happens to start RTL -- `text-left` pins
+          // the text's own alignment to the label column regardless of its inferred direction.
+          //
+          // Gate round 2 (G909A11y/G909Arch N6): `hidden` (not a conditional unmount) while a
+          // multi-call group is expanded, so the node stays in the DOM across every collapse and
+          // re-announcing an already-known failure on the user's own re-collapse (see
+          // `detailMounted`'s own comment above).
+          hidden={detailVisuallyHidden}
+          className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-left text-xs text-severity-error [overflow-wrap:anywhere]')}
         >
           {detail}
         </p>

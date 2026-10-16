@@ -130,7 +130,7 @@ export const PAIRS = [
   // Issue #570, gate round 1 (accessibility-auditor/test-reviewer Low): `ToolGroupRow`'s own
   // "N failed" meta text and a failed row's own label/Error line now render `text-severity-
   // error` directly (never `text-destructive`), on both the row background and this hover tint.
-  // `severity-error` was previously gated only at the 3:1 icon floor (line 109 above); the two
+  // `severity-error` was previously gated only at the 3:1 icon floor (its `bg: 'background'`/`bg: 'muted'` pairs earlier in this file); the two
   // tokens share an identical value in every built-in theme (`globals.css`), so this passes
   // today purely because of that alias, but the gate must check the token actually RENDERED, not
   // rely on an alias that could be split apart later without this file noticing.
