@@ -65,7 +65,7 @@ import {
   createReportLogger,
   sleep
 } from './verify-tauri-cdp.mjs';
-import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone, proveResumeHoverCenteringAndNarrowWidth } from './verify-tauri-session-list-helpers.mjs';
+import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone, proveCenteringAndNarrowWidth } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -477,7 +477,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   // "..." trigger's vertical centring on line 1, and decision 25's 220px narrow-width minimum --
   // extracted to verify-tauri-session-list-helpers.mjs to keep this file under the #806
   // 600-line file-size cap. ----
-  await proveResumeHoverCenteringAndNarrowWidth(cdp, log, { repoName, rowFinder });
+  await proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFinder });
 
   // ---- Collapsed group with a Waiting marker ----
   await createSessionViaQuickCreate(cdp, repoName);

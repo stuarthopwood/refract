@@ -2312,3 +2312,49 @@ the "Today HH:MM" branch occurs naturally); forced-colours rendering of the new 
 the shared minute tick's own live redraw; the short-date ("12 Oct") form after 7 days; Resume's own
 hover fill (no stopped/resumable Session was created in this run's flow); the 220px narrow-width
 truncation (decision 25), not re-measured after this round's `pr-28`/`right-2` changes.
+
+- [X] T243 [US5] Gate round 3 remediation (five-reviewer, 2026-10-16, PR #910): Code, Tests, A11y
+  and `ui-architect-v3` all PASSed; one short follow-up round before merge. Fixed: **(1)**
+  `SessionRow.tsx`'s line 1 used a flat `pr-28` (112px, the trailing group's own worst case --
+  Resume, the time, and the "..." all shown together under `[@media(hover:none)]`) even under
+  `[@media(hover:hover)]`, where only one of the time/"..." ever shows at once -- starving the
+  title to about five characters at decision 25's own 220px minimum, far more than the group ever
+  needs there. Sized to the real content instead: `pr-10` (or `pr-16` with Resume mounted) under
+  hover:hover; `[@media(hover:none)]` widens further to the true additive case, `pr-17` (68px)
+  without Resume or `pr-24` (96px) with it. **(2)** The "..." trigger hung about 4px below line
+  1's own centre (`inset-y-0` stretching a `size-6` button inside a shorter `min-h-4` cell,
+  top-anchored -- CSS keeps the explicit height and ignores `bottom` when both are set alongside
+  `top`) -- `top-1/2 -translate-y-1/2` centres it regardless of the cell's own height. **(3)**
+  Dropped FR-070's "provisional numbering, parent confirms the final number before merge" note
+  now that #570's own merge settled FR-069 as the ceiling; records the actual renumbering reason
+  instead, matching the existing FR-067/FR-068 precedent. Posted the code-verified-only items
+  (the `(hover:none)`/Shift+F10 CDP gap, the dated `formatAbsoluteTime` branch, forced colours,
+  the minute tick, the short-date form) on #650.
+
+  **Live re-verification** (`scripts/verify-tauri-567.mjs`, rebuilt and re-run from this commit):
+  the session-list panel dragged to its own `minSize={220}` floor (`App.tsx`) -- a precise drag
+  distance computed from the panel's own measured width before dragging, not a large fixed
+  offset, which gate round 3's own first attempt found overshoots the floor and triggers the
+  panel's `collapsible`/`collapsedSize={0}` snap instead of clamping at 220px (a harness bug,
+  not a product one) -- measures the title never overlapping the trailing group (89px of title
+  kept, against the old ~36px floor); the "..." trigger's vertical centre within 1px (measured
+  0px) of line 1's own centre.
+
+  **Resume's own "with Resume" sizing (`pr-16`/`pr-24`) and hover fill stay code-verified, not
+  live** -- gate round 3 attempted to create a genuinely resumable Session live (via the row's own
+  Stop agent action) and found it does not work: `shared/canResumeSession.ts` requires
+  `stopReason: 'agent-exited'` or `terminatedUnexpectedly`, never set by a deliberate, user-
+  initiated Stop (confirmed by reading that source, then by a live attempt -- `canResume` stayed
+  `false` and no Resume button ever mounted). A genuinely resumable Session needs an actual
+  unexpected exit; the fake-omp engine's own `__exit__`/`exit.jsonl` crash directive exists for
+  exactly this (`scripts/fixtures/omp-frames/README.md`), but is wired only into fake-omp-driven
+  scripts, and this script drives a real, ambient `omp` throughout -- switching it over for one
+  session is a nontrivial harness change, out of scope for this round. `pr-16`/`pr-24` are
+  instead confirmed compiled into the running bundle's own CSS at the expected
+  `calc(var(--spacing) * 16/24)` (64px/96px) values. `node scripts/ci-local.mjs` 16/16 PASS.
+  Evidence (screenshots, `report.txt`, JSON diagnostics) kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate3-shots/`.
+
+**Closes #567** (five-reviewer gate PASS across Code, Tests, A11y and `ui-architect-v3`; Security
+PASSed every round). **Refs #908** stands: only the marker-column item is folded in and
+live-measured at 0px; its other four items are untouched.
