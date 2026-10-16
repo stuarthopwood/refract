@@ -19,6 +19,24 @@ function formatThinkingSeconds(ms: number): string {
 // (unchanged from the pre-#557 solo row, `Transcript.tsx`).
 const THINKING_PREVIEW_CHARS = 120
 
+// Shared by `ThoughtItemRow` and `ThoughtRunRow`'s own solo/multi header branches (code-reviewer
+// gate round 2, Low: the icon JSX and the label string were each hand-duplicated at three call
+// sites and had already drifted apart once during gate remediation). `thoughtIcon` takes the
+// bare `streaming` flag (not a whole item) so the multi header -- which has no single item to
+// ask, only `allFinished` -- can reuse it as `thoughtIcon(!allFinished)`.
+function thoughtIcon(streaming: boolean) {
+  return streaming ? (
+    <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
+  ) : (
+    <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
+  )
+}
+
+function thoughtLabel(item: ThinkingItem): string {
+  const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
+  return item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
+}
+
 /** One member's own row inside a run of two or more, sitting on a `SpineList` `<li>` (decision
  * 11 -- the run never relabels a member "Step N"): "Thinking" with a live preview while it
  * streams, "Thought for Ns" once done, or "Thought" with no timing for a reopened history item
@@ -30,18 +48,10 @@ const THINKING_PREVIEW_CHARS = 120
  * ALSO be the solo run's own top-level return, which switched `ThoughtRunRow`'s rendered element
  * type the moment a second thought arrived and remounted the row, losing focus and open state. */
 function ThoughtItemRow({ item, defaultOpen }: { item: ThinkingItem; defaultOpen?: boolean }) {
-  const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
-  const label = item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
   return (
     <CollapsedLine
-      icon={
-        item.streaming ? (
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-        ) : (
-          <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        )
-      }
-      label={label}
+      icon={thoughtIcon(item.streaming)}
+      label={thoughtLabel(item)}
       summary={item.streaming ? item.text.slice(-THINKING_PREVIEW_CHARS) : undefined}
       defaultOpen={defaultOpen}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
@@ -94,11 +104,11 @@ export interface ThoughtRunRowProps {
 // row dropped to `<body>`, an expanded solo row snapped shut, and the lifted `open` state could
 // never carry over to decide member 1's own starting state. Fixed by never branching on `solo`
 // at the TOP of this component -- only the `CollapsedLine` props themselves branch, exactly like
-// `ToolGroupRow`. "Trade-offs resolved" 1: the header never spins itself -- a live thought is
-// just another member inside, and the header's own icon/label instead swap to "Thinking" plus
-// that member's own live preview while ANY member streams (decision 9), settling to "Thought
-// process" with a step count and (once every member's own bounds are known) total duration once
-// every member has finished (decision 8).
+// `ToolGroupRow`. "Trade-offs resolved" 1: the header shows the spinner and "Thinking" with the
+// live member's own preview while ANY member streams (decision 9) -- a live thought is just
+// another member inside; the header itself never becomes a SEPARATE spinning row of its own.
+// Settles to "Thought process" with a step count and (once every member's own bounds are known)
+// total duration once every member has finished (decision 8).
 export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
   const solo = group.items.length === 1
   const isRunning = group.items.some((item) => item.streaming)
@@ -149,8 +159,7 @@ export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
 
   // ---- Solo props (decision 7: exactly today's pre-#557 row) ----
   const soloItem = group.items[0]!
-  const soloDuration = soloItem.startedAt != null && soloItem.endedAt != null ? soloItem.endedAt - soloItem.startedAt : undefined
-  const soloLabel = soloItem.streaming ? 'Thinking' : soloDuration != null ? `Thought for ${formatThinkingSeconds(soloDuration)}s` : 'Thought'
+  const soloLabel = thoughtLabel(soloItem)
 
   // ---- Multi props (decisions 8-10, 18-19) ----
   const durationMs = allFinished ? unionDurationMs(group.items) : undefined
@@ -203,19 +212,7 @@ export function ThoughtRunRow({ group }: ThoughtRunRowProps) {
 
   return (
     <CollapsedLine
-      icon={
-        solo ? (
-          soloItem.streaming ? (
-            <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-          ) : (
-            <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          )
-        ) : allFinished ? (
-          <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-        )
-      }
+      icon={solo ? thoughtIcon(soloItem.streaming) : thoughtIcon(!allFinished)}
       label={solo ? soloLabel : allFinished ? 'Thought process' : 'Thinking'}
       summary={
         solo

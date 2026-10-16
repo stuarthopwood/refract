@@ -306,7 +306,7 @@ async function main() {
     } else {
       findings.push(`Multi-member ThoughtRunRow header rendered after turn (a) (${headerCountAfterA} header(s) -- decision 7/8: a run of 2+ gets "Thought process").`);
 
-      const metaTextSettled = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].querySelector('.tabular-nums')?.closest('span')?.textContent.trim() ?? (${THOUGHT_HEADER_FINDER})[0].textContent`);
+      const metaTextSettled = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].querySelector('.tabular-nums')?.innerText.trim() ?? (${THOUGHT_HEADER_FINDER})[0].innerText`);
       if (!/\d+ steps/.test(metaTextSettled)) failures.push(`Settled thought-run header meta does not contain "N steps" (measured: "${metaTextSettled}") -- decision 8.`);
       else findings.push(`Settled thought-run header meta reads "${metaTextSettled.trim()}" (decision 8: step count, plus total time once every member is timed).`);
       // Gate round 1 (code/a11y/architect Medium): the header used to apply no floor to its own
@@ -535,7 +535,7 @@ async function main() {
         if (headerCountReopened < 1) {
           notExercised.push(`Reopened history: no thought-run header found after restart (expected the turn (a) run to replay); see reopened-transcript.html.`);
         } else {
-          const metaTextReopened = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].textContent`);
+          const metaTextReopened = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].querySelector('.tabular-nums')?.innerText.trim() ?? (${THOUGHT_HEADER_FINDER})[0].innerText`);
           const hasTime = /\d+(\.\d+)?s\b/.test(metaTextReopened) || /\d+m\s*\d+s/.test(metaTextReopened);
           if (hasTime) failures.push(`Reopened (history) thought-run header still shows a time ("${metaTextReopened.trim()}") -- decision 10 requires step-count-only, since history replay (capture_timing=false) carries no bounds.`);
           else findings.push(`Reopened (history) thought-run header reads "${metaTextReopened.trim()}" -- step count only, no time (decision 10/FR-009).`);

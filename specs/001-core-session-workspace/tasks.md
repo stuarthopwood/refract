@@ -2505,7 +2505,12 @@ live-measured at 0px; its other four items are untouched.
   every thought row entirely (never `sr-only`), restoring it with no reload; "Show tool calls"
   off leaves thought-run visibility unaffected; reopening the SAME `REFRACT_DATA_DIR` after a
   real restart replayed the run with step-count-only meta (no time), matching `capture_timing:
-  false` on history replay. A separate turn with a tiny non-reasoning prompt rendered the
-  unchanged pre-#557 solo row (no header, no Spine). **Closes #557**: every acceptance criterion
-  in the issue, and FR-009/FR-047/FR-052, is proved live against this exact pushed git HEAD,
-  including the growth/focus criterion the round 1 gate found unproven.
+  false` on history replay. Turn (b), a separate turn with a tiny non-reasoning prompt meant to
+  exercise the unchanged pre-#557 solo row (no header, no Spine), was **not exercised this run**
+  (see `report.json`'s own `notExercised`); the one-thought path WAS seen live as the focused,
+  expanded solo row at the start of the growth check above (driver
+  `verify-557-thought-runs.mjs:226-232`), and its markup matches the pre-#557 row by
+  construction (no code path change for `solo`'s single-thought branch). **Closes #557**: every
+  acceptance criterion in the issue, and FR-009/FR-047/FR-052, is proved live against 9989523
+  (product code unchanged since), including the growth/focus criterion the round 1 gate found
+  unproven.
