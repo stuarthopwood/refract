@@ -111,12 +111,12 @@ export interface Settings {
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
-  // #514: lets the developer turn off path-based image-attach detection entirely (every pasted
-  // image path still works until turned off here); default true, immediate-apply, no migration.
-  detectImagePathsOnPaste: boolean;
+  detectImagePathsOnPaste: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration.
   wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
+  sessionListCollapse: SessionListCollapse; // #735: per-Repository/Archived collapse state; `session-list-store.ts` is the sole writer.
 }
-
+export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
+export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });
 /** Issue #457: two independent view filters for the chat transcript, applied in the renderer
  * (never main's `HIDDEN_TOOLS` path -- that path removes a tool call from the transcript
  * entirely, before it ever reaches the renderer, which would also hide the always-visible

@@ -1,0 +1,217 @@
+// Session-list-specific CDP driving helpers shared by `verify-tauri-735.mjs` (and any future
+// session-list live-check script) -- extracted from that file to keep it under the #806 600-line
+// file-size cap (`scripts/check-file-size.mjs`). Depends only on a `CdpSession`-shaped `cdp`
+// (see `verify-tauri-cdp.mjs`), never on anything specific to the #735 story itself.
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+function assertTrue(cond, message) {
+  if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+/** Computed accessible name of the FIRST element matching `finderExpr`, via CDP Accessibility
+ * domain -- never textContent, which is not what a screen reader announces and would not
+ * distinguish the combined aria-label this story builds (label + marker + "contains open
+ * session"). `null` when nothing matches or it carries no AX node. */
+export async function getAccessibleName(cdp, finderExpr) {
+  await cdp.send('Accessibility.enable');
+  const evalResult = await cdp.send('Runtime.evaluate', { expression: finderExpr, returnByValue: false });
+  const objectId = evalResult.result?.objectId;
+  if (!objectId) return null;
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
+  return nodes?.[0]?.name?.value ?? null;
+}
+
+export async function getActiveElementAccessibleName(cdp) {
+  await cdp.send('Accessibility.enable');
+  const evalResult = await cdp.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false });
+  const objectId = evalResult.result?.objectId;
+  if (!objectId) return { name: null, role: null };
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
+  const node = nodes?.[0];
+  return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
+}
+
+export async function pressTab(cdp) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+}
+
+export async function pressEscape(cdp) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+}
+
+export function groupTriggerFinder(repoName) {
+  // Repository headers are wrapped in a Tooltip (`asChild`), whose own `data-slot`/`data-state`
+  // overwrite the inner CollapsibleTrigger's (GroupHeader.tsx's own documented reason for keying
+  // off `aria-expanded` instead, never `data-state`, once a trigger is a Tooltip's child too) --
+  // so finding by `aria-label` (always starts with the repo name) and reading `aria-expanded`
+  // is the only selector immune to that override. Archived carries no tooltip, so its own
+  // `data-slot="collapsible-trigger"` is untouched and still the more specific match.
+  return `Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(repoName)}))`;
+}
+export const ARCHIVED_TRIGGER_FINDER = `document.querySelector('[data-archived-group] [data-slot="collapsible-trigger"]')`;
+
+export async function groupState(cdp, finderExpr) {
+  return cdp.evaluate(`(() => { const el = ${finderExpr}; if (!el) return null; return el.getAttribute('aria-expanded') === 'true' ? 'open' : 'closed'; })()`);
+}
+
+/** Whether the Repository group's (or Archived's) own 2px `bg-active-indicator` header bar is
+ * present in the DOM right now -- the gate round 1 regression target: an archived Session must
+ * never leave this bar on its OLD Repository's header. */
+export async function hasActiveBar(cdp, repoName) {
+  return cdp.evaluate(
+    `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)})); return !!group?.querySelector('[class*="bg-active-indicator"]'); })()`
+  );
+}
+export async function archivedHasActiveBar(cdp) {
+  return cdp.evaluate(`!!document.querySelector('[data-archived-group] [class*="bg-active-indicator"]')`);
+}
+
+export async function clickQuickCreate(cdp, repoName) {
+  // The header "+" quick-create button stays rendered (and clickable) even while the group is
+  // collapsed -- only CollapsibleContent (the row list) is conditionally mounted by Radix.
+  const finder = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('[data-quick-create-session]')`;
+  await cdp.click(finder);
+}
+
+/** Clicks the header "+" quick-create button and waits for BOTH a new row to actually appear in
+ * that Repository's own list AND the composer to be enabled. The composer-only wait alone
+ * passes even when the click was silently dropped (e.g. by the in-flight `creatingRepositoryIds`
+ * guard), because an earlier Session's own composer already satisfies it -- gate round 2 fix,
+ * test-reviewer Medium: a dropped second create went undetected exactly this way in round 1. */
+export async function createSessionViaQuickCreate(cdp, repoName) {
+  const rowSelector = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelectorAll('li').length ?? 0`;
+  const before = await cdp.evaluate(rowSelector);
+  await clickQuickCreate(cdp, repoName);
+  await cdp.waitFor(
+    `(() => { const count = ${rowSelector}; const msg = document.querySelector('[aria-label="Message"]'); return count > ${before} && !!msg && !msg.disabled; })()`,
+    { timeoutMs: 60_000, label: `Session created in ${repoName} (row count ${before} -> ${before + 1}), composer enabled` }
+  );
+}
+
+/** Archives the FIRST (most-recently-active, so the just-created one) Session row inside the
+ * named Repository group's own `<li>` list, via its row menu. */
+export async function archiveFirstRowIn(cdp, repoName) {
+  await cdp.click(
+    `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`
+  );
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'Row menu open with Archive item' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
+}
+
+/** Restores the ONLY Session row currently inside Archived, via its row menu. Opens Archived
+ * first if it is closed. */
+export async function restoreOnlyArchivedRow(cdp) {
+  if ((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'closed') {
+    await cdp.click(ARCHIVED_TRIGGER_FINDER);
+    await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + `.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Archived opened to reach the restore action' });
+  }
+  await cdp.click(`document.querySelector('[data-archived-group]')?.querySelector('li button[aria-label$=" actions"]')`);
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`, { timeoutMs: 10_000, label: 'Archived row menu open with Restore item' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`);
+}
+
+/** Adds a scratch repository through the Add repository dialog -- the Readiness screen's own
+ * primary button on an empty profile, or the session list footer's "Add repository" control
+ * once at least one Repository already exists. */
+export async function addRepository(cdp, dir) {
+  await cdp.click(
+    `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository')`
+  );
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+  await cdp.click(`document.querySelector('[role="dialog"] input')`);
+  await cdp.send('Input.insertText', { text: dir });
+  await cdp.clickByText('Add repository', { inDialog: true });
+  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add repository dialog closed' });
+}
+
+/** Removes a Repository (which must already own zero Sessions) via its header's "..." menu and
+ * the confirmation dialog's "Remove" action -- decision 29's prune check: proves a removed
+ * Repository's id actually leaves `settings.json`, not just that the renderer forgets it. */
+export async function removeRepository(cdp, repoName) {
+  await cdp.click(`document.querySelector('[aria-label=${JSON.stringify(`Repository actions for ${repoName}`)}]')`);
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove repository…')`, {
+    timeoutMs: 10_000,
+    label: 'Row menu open with Remove repository item'
+  });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Remove repository…')`);
+  await cdp.waitFor(`!!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 10_000, label: 'Remove repository dialog open' });
+  await cdp.click(`Array.from(document.querySelectorAll('[data-slot="alert-dialog-action"]')).find((el) => el.textContent.trim() === 'Remove')`);
+  await cdp.waitFor(`!document.querySelector('[data-slot="alert-dialog-content"]')`, { timeoutMs: 15_000, label: 'Remove repository dialog closed' });
+}
+
+/** Opens the Settings screen via the profile item's own cog, then returns via its "Back to
+ * chat" button -- decision 29's Settings round trip: `App.tsx` remounts the whole session list
+ * on this view swap, so this proves the collapse state survives that remount, not just a plain
+ * re-render. */
+export async function openSettingsAndReturn(cdp) {
+  await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
+  await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
+  await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+  await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
+}
+
+/** Builds the genuinely mixed, non-default collapse state (gate round 1's own fix for "a build
+ * that saves nothing would pass too") AND runs decision 29's two remaining live checks on top of
+ * it: the Settings round trip and the prune. Repository A ends closed, Repository B stays open
+ * (the default), Archived ends open holding the one Session (A2) archived here. Repository C
+ * (empty, already collapsed by `runChecks`) is removed as the prune target. Returns
+ * `{ repoARecord }` (from registry.json) so the caller's own final pre-quit settings.json
+ * assertion does not need to re-derive it. */
+export async function buildMixedStateAndCheckDecision29(cdp, log, { repoAName, repoBName, repoCName, repoADir, repoCDir, dataDir }) {
+  await archiveFirstRowIn(cdp, repoAName);
+  await cdp.waitFor(`${groupTriggerFinder(repoAName)} !== undefined`, { timeoutMs: 15_000, label: 'Repository A still rendered after archiving Session A2' });
+  await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 15_000, label: 'Archived group re-mounted after archiving Session A2' });
+  if ((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'closed') {
+    await cdp.click(ARCHIVED_TRIGGER_FINDER);
+    await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + `.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Archived opened for the mixed-state proof' });
+  }
+  assertTrue((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Repository A must still be open right after archiving Session A2');
+  await cdp.click(groupTriggerFinder(repoAName));
+  await cdp.waitFor(`${groupTriggerFinder(repoAName)}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Repository A collapsed for the mixed-state proof' });
+  assertTrue((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Repository B must be open for the mixed-state proof');
+  assertTrue((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'open', 'Archived must be open for the mixed-state proof');
+  const archivedRowCount = await cdp.evaluate(`document.querySelectorAll('[data-archived-group] ul[aria-label="Archived sessions"] li').length`);
+  assertTrue(archivedRowCount === 1, `Archived must list exactly the one Session (A2) kept archived (got: ${archivedRowCount})`);
+  log('STEP PASS: built the mixed collapse state (Repository A closed, Repository B open, Archived open with one Session archived, Repository C still closed).');
+
+  // Decision 29, check 1: the Settings round trip -- `App.tsx` remounts the whole session list
+  // on this view swap.
+  await openSettingsAndReturn(cdp);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 30_000, label: 'Repository A group re-rendered after the Settings round trip' });
+  assertTrue((await groupState(cdp, groupTriggerFinder(repoAName))) === 'closed', 'Repository A must still be closed after the Settings round trip (nothing re-expanded)');
+  assertTrue((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Repository B must still be open after the Settings round trip');
+  assertTrue((await groupState(cdp, ARCHIVED_TRIGGER_FINDER)) === 'open', 'Archived must still be open after the Settings round trip');
+  assertTrue((await groupState(cdp, groupTriggerFinder(repoCName))) === 'closed', 'Repository C must still be closed after the Settings round trip');
+  log('STEP PASS: decision 29 Settings round trip -- the mixed collapse state survived opening Settings and returning to chat (a full list remount).');
+
+  // Decision 29, check 2: the prune -- Repository C owns zero Sessions and is already collapsed.
+  const registryBeforeRemove = readJson(path.join(dataDir, 'registry.json'));
+  const repoARecord = registryBeforeRemove.repositories.find((r) => r.path === repoADir || path.basename(r.path) === repoAName);
+  const repoCRecord = registryBeforeRemove.repositories.find((r) => r.path === repoCDir || path.basename(r.path) === repoCName);
+  assertTrue(repoARecord, `registry.json must contain Repository A (searched path ${repoADir})`);
+  assertTrue(repoCRecord, `registry.json must contain Repository C (searched path ${repoCDir})`);
+  await removeRepository(cdp, repoCName);
+  await cdp.waitFor(groupTriggerFinder(repoCName) + ' === undefined', { timeoutMs: 15_000, label: 'Repository C group gone from the DOM after removal' });
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const settingsAfterPrune = readJson(path.join(dataDir, 'settings.json'));
+  const collapseAfterPrune = settingsAfterPrune.sessionListCollapse;
+  assertTrue(
+    Array.isArray(collapseAfterPrune.collapsedRepositoryIds) && !collapseAfterPrune.collapsedRepositoryIds.includes(repoCRecord.id),
+    `Repository C's id must be pruned from settings.json after removal (got: ${JSON.stringify(collapseAfterPrune.collapsedRepositoryIds)}, Repository C id: ${repoCRecord.id})`
+  );
+  assertTrue(
+    collapseAfterPrune.collapsedRepositoryIds.includes(repoARecord.id) && collapseAfterPrune.archivedOpen === true,
+    `Repository C's removal must not disturb Repository A's own collapsed id or Archived's open flag (got: ${JSON.stringify(collapseAfterPrune)})`
+  );
+  log(`STEP PASS: decision 29 prune -- removing Repository C (id ${repoCRecord.id}) dropped its id from settings.json on disk without disturbing Repository A's or Archived's own saved state.`);
+
+  return { repoARecord };
+}

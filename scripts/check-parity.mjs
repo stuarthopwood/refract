@@ -333,6 +333,7 @@ const REQUEST_LANES = {
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'R8',
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'R8',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'R6', // #772's off switch, registered in ipc/settings.rs
+  SETTINGS_SET_SESSION_LIST_COLLAPSE: 'R8', // #735, registered in ipc/settings.rs
   MODEL_ROLES_LIST: 'R8', // #791, "model roles" in R8's own work description
   MODEL_ROLES_SET: 'R8',
   MODEL_ROLES_LIST_CATALOG: 'R8',
