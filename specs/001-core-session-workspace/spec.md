@@ -156,6 +156,37 @@
 ### Session 2026-10-16 (session search)
 
 - Q: Issue #559 (Decided, Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision record on the issue): the session list has no way to filter it, and `#735`'s own decision record (decision 26) already reserved a slot for this story between Pull requests and the Collapse all/Expand all toolbar. What does the field do, and how does it interact with each group's own saved collapsed/expanded state? → A: A single text field (the shared `SearchField` component, `docs/design/components.md`), filtering live, case-insensitively, against a Session's own name, branch, or its Project's name. Filtering narrows what the list already shows -- it never reveals a Hidden Session (`#748`, not yet built) or an archived Session whose Project no longer resolves. A Project group renders only once at least one of its own non-archived Sessions matches, showing only the matching rows; the Archived group is searched the same way, against each row's own Project name. While a query is active, every matching group is shown open regardless of the user's own saved collapse choice, through a new ephemeral, never-persisted override in `session-list-store.ts` -- every Group header and the Collapse all/Expand all toolbar stay fully interactive during a search (a toggle while searching only edits the override, not the saved layout), and the saved layout returns exactly unchanged the moment the query empties. A group a search hides still counts toward the toolbar's own "is this a no-op" computation (`#735` decision 11, unchanged). The query itself lives in `session-list-store.ts`, not `Settings` -- it is never persisted to disk, survives a Session switch and a Settings/Manage-sessions round trip within one app run, and is empty again after a relaunch. Zero matches show a compact empty state ("No sessions match", a Clear filter button); the result count is announced politely, debounced while typing, the same pattern `ManageSessionsScreen.tsx` already uses for its own, separate search. No new keyboard shortcut is added to focus the field in this story (Tab reaches it, second in the nav's own order per `#735` decision 13); Ctrl+N's existing "no repository resolved" fallback, when the search itself is the reason the quick-create button is not on screen, now focuses the search field and asks for the filter to be cleared instead of its older, now-inaccurate "open the session list" wording.
+### Session 2026-10-16 (advisor command)
+
+- Q: Issue #917 (Decided, Stuart, 2026-10-16): omp's advisor subsystem never reaches a Session
+  because `/advisor` is not in the slash-command allowlist, even though the advisor is already
+  real and reachable in Refract (a live blocker advisory arrived during the #558 live check,
+  since the Refract-launched omp profile already carries `advisor.enabled: true`). How should a
+  developer turn it on or off? → A: Option 1, a per-Session `/advisor` toggle, not a Settings
+  toggle: `/advisor on`, `/advisor off` and `/advisor status` are added to the supported
+  slash-command set (FR-032), session-scoped and not persisted; typing `/advisor on` enables the
+  advisor for that Session, `/advisor off` disables it, `/advisor status` shows its state as a
+  transcript notice, and the slash-command menu lists `advisor` with the short description OMP's
+  own `get_available_commands` supplies for it. No Settings toggle for now.
+- Q: Decided (Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision
+  record on the issue): does this toggle need any new UI (an indicator, a dedicated message kind,
+  a cost readout)? → A: No. `fast`, `slow` and `extended-context` -- the other session-scoped
+  on/off/status commands -- carry no indicator anywhere in Refract today, so `/advisor` needs no
+  parity addition; its reply already renders through the existing forwarded-command path (a
+  `command_output` frame becomes a transcript `notice` row, the same as `/usage show` or
+  `/session info`). No new component, store or message kind was added (cost readout decided
+  separately below).
+- Q: `/advisor` was one of the probe's own denylisted names (`docs/spike/slash-commands-probe.mjs`
+  `DENYLIST`), so the T092/18.5.1 run this allowlist is built from never sent it -- does FR-032's
+  "verified to run" bar still hold? → A: Yes, satisfied a different way: issue #917's own live
+  check against a real signed-in profile (`/advisor status`, `/advisor on`, a real turn, `/advisor
+  off`) stands in for the probe run, the same bar applied to every other entry just run by hand
+  once instead of through the probe script (`contracts/omp-usage.md` "Slash command
+  classification" records the detail).
+- Q: Decided (Stuart, 2026-10-16): no cost readout for `/advisor` (`advisor_cost_changed` stays
+  unread; `/advisor status`'s own reply surfaces spend on demand instead, which is sufficient).
+  A persistent on/off indicator for the advisor's Session-scoped state is a separate idea,
+  tracked as its own issue (#937), not part of #917.
 
 ## User Scenarios & Testing *(mandatory)*
 

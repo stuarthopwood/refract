@@ -176,6 +176,20 @@ effect), so none needed to be dropped under FR-032's "cannot run to a visible re
 (`dialogs.ts`); none of the 56 needed new main-process or renderer code beyond the T093 filter
 itself.
 
+**Issue #917, Decided (Stuart, 2026-10-16): `advisor` is added to the supported set despite
+staying counted in the 138 `needs-decision`** -- it is one of the DENYLIST's own named entries
+(`docs/spike/slash-commands-probe.mjs`'s `DENYLIST` regex), so this T092/18.5.1 run never sent it
+and its row above is unchanged by this decision. The mirror image of the `switch` exclusion just
+above: `switch` ran clean but was deliberately held back pending a decision; `advisor` never ran
+at all, but Stuart's decision adds it anyway, because the subsystem is already real and reachable
+in Refract (a live blocker advisory arrived during the #558 live check, since the Refract-launched
+omp profile already carries `advisor.enabled: true`) and the only gap was Refract's own missing
+on/off/status switch. `omp://advisor-watchdog.md` documents the exact three subcommands this adds
+(`on`, `off`, `status`); issue #917's own live check against a real signed-in profile (`/advisor
+status`, `/advisor on`, a real turn, `/advisor off`) stands in for the probe run FR-032 otherwise
+requires, confirming both that OMP's real `chat.commands` descriptor for a signed-in profile lists
+those three subcommands and that Refract's own forwarding path produces a visible result for each.
+
 ## Failure handling
 
 | Failure | Handling |

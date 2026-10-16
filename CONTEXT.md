@@ -199,6 +199,10 @@ _Avoid_: Filter (see **Filter tab**), section
 A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
+**Advisor**:
+omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked separately as issue #937.
+_Avoid_: Advisory (the note the Advisor produces, not the subsystem itself), reviewer
+
 **Advisory accent bar**:
 The 3px left stripe on a BLOCKER row (always, even collapsed, error colour) or an EXPANDED concern row (warning colour) -- drawn as an absolutely-positioned `before:` pseudo-element on `AdvisoryRow`'s own local wrapper `div` (zero layout impact, so the icon stays on the shared 24px grid in every state); never a `CollapsedLine` primitive prop (issue #558, gate round 1).
 _Avoid_: severity box, blocker card, alert stripe
