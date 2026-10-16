@@ -15,6 +15,14 @@ import type { GroupWaitingState } from './sessionDisplay'
 // own, can reserve the same width as a spacer -- otherwise its trigger's `ml-auto` marker lands
 // a full actions-width further right than every Repository header's own marker, breaking
 // decision 21's "one column" rule.
+//
+// Folds in #908's "Archived marker column" follow-up: before this story, the three action
+// buttons were a mixed 28/28/22px (about 94px real width) while this constant stayed 104px (a
+// stale 94px-plus-margin estimate), so Archived's own marker sat about 10px left of a
+// Repository header's. Unifying all three buttons to 24px and recomputing this constant from
+// their real size (88px, matching exactly, no added margin) removes the mismatch at its root --
+// one shared constant now equals the real column width by construction, so #908 did not need a
+// second, separately-named constant to fix the alignment itself.
 export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
 
 // Issue #527 decision 1: the one trigger styling (chevron, size, case, padding) shared by a

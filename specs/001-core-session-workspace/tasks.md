@@ -2021,7 +2021,11 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   move from a mix of `icon-sm`/a raw 22px button to shared `Button variant="ghost" size="icon-
   xs"`, hidden at rest and revealed by opacity on `group-hover`/`group-focus-within`/their own
   `aria-expanded`/`creating`/an empty active-Session list, always shown under `(hover: none)`
-  (decision 6); its own row list's `gap-0.5` also drops to `gap-0`. `SessionList.tsx`: the Pull
+  (decision 6) -- unifying all three to 24px, folded with recomputing `GROUP_HEADER_ACTIONS_
+  OFFSET_PX` from their real size, resolves #908's "Archived marker column" follow-up (the old
+  mixed 28/28/22px actions column, about 94px real, against a stale 104px constant, put
+  Archived's own Waiting marker about 10px left of a Project header's); its own row list's
+  `gap-0.5` also drops to `gap-0`. `SessionList.tsx`: the Pull
   requests nav entry gains the shared 2px active-indicator bar when selected, alongside its
   existing fill (decision 18); the footer's own `border-sidebar-border` becomes `border-divider`
   (decision 20). `ProfileItem.tsx`: its own `border-t` removed, since the footer above it now
