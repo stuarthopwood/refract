@@ -40,6 +40,10 @@ _Avoid_: Remove, discard
 The collapsible header above one Project's Sessions in the session list, shared by the Archived group.
 _Avoid_: repository header, section header
 
+**Activity line**:
+The second line of a Session row: what the agent is doing right now while it is working or waiting (#526), otherwise the Session's branch.
+_Avoid_: status line (from PR #877 on, **Status line** is the composer row), sub-line, codename.
+
 **Waiting marker**:
 The status icon on a collapsed Group header showing the most urgent state among the Sessions it hides: Needs you, then Terminated unexpectedly, then Unread response.
 _Avoid_: badge, dot, hidden-state marker (Hidden is #748's term), alert (#560's term)

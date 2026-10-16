@@ -27,6 +27,20 @@ The starter bundle (Latin subset, WOFF2, about 223 KB total) is Inter, Atkinson 
 
 Reserve the `Code` font for code-shaped data only: code, paths, commands, branch names, IDs, hashes, and token and file counts that must align in a column. Never use it for general metadata or labels — those stay in the `App`/`Chat` font at normal case (agenda item 10).
 
+## Session list type ladder
+
+Decided by the ui-architect-v3 roundtable, 2026-10-15 (issue #567, the type-scale open question): no 10px or 11px text anywhere in the session list, only Tailwind's own `text-sm`/`text-xs` steps.
+
+| Element | Classes |
+| --- | --- |
+| Row title | `text-sm font-normal text-sidebar-foreground` -- weight never changes when the row is selected, so the text never reflows. |
+| Row second line (Activity line) | `text-xs text-muted-foreground` |
+| Row time | `text-xs tabular-nums text-muted-foreground` |
+| Group header label | `text-xs font-medium text-muted-foreground` |
+
+Hand-measured reason for dropping the mock's own grey: muted text on a selected/hovered row's fill measures 5.8:1 (Dark), 5.1:1 (Obsidian) and 9.8:1 (Dark, high contrast) using `--muted-foreground`; the mock's own `#737373` measures 3.2:1 to 3.8:1 on the same fills, under the 4.5:1 text floor.
+
+
 ## Spacing grid
 
 Use a 4px grid with five allowed steps for padding, margin, and gap; control and icon sizes follow the control-height and icon-size ladders instead, not this grid. Never use an arbitrary pixel value in a component; the #474 audit found raw values (`p-1.5`, `p-0.5`, `gap-1.5`, `size-2.5`) outside this scale.
