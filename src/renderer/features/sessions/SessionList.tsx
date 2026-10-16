@@ -16,6 +16,8 @@ import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessio
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { matchesSessionSearch, searchSessions, showingCountLabel } from './sessionDisplay'
+import { createdSessionAnnouncement } from './createdSessionAnnouncement'
+import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
 
 // Gate round 1 fix (High, ui-visual-system-v3): decision 23's literal focus class string
 // (`focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
@@ -164,7 +166,7 @@ export function SessionList() {
       if (session.archivedAt || previousIds.has(session.id)) continue
       const repository = repositoriesById.get(session.repositoryId)
       if (repository && !matchesSessionSearch(session, repository.name, trimmedQuery)) {
-        useChatAreaAnnouncer.getState().announce(`Created session ${session.name}, hidden by the session filter`)
+        useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(session))
       }
     }
   }, [sessions, hasQuery, trimmedQuery])
@@ -275,8 +277,9 @@ export function SessionList() {
               // Gate round 1 fix (code-reviewer Medium): a stable hook on the input itself,
               // not a descendant-structure lookup (`[data-session-search-region] input`) a
               // future #934 `ListToolbar` embedding could break -- `App.tsx`'s Ctrl+N fallback
-              // (`features/sessions/quickCreateFallback.ts`) selects it directly.
-              inputProps={{ 'data-session-search-input': '' }}
+              // (`features/sessions/quickCreateFallback.ts`) and the shared focus-redirect hook
+              // (`useFocusSearchOnStrandedUnmount.ts`) both select it directly.
+              inputProps={{ [SESSION_SEARCH_INPUT_ATTR]: '' }}
             />
             <div aria-live="polite" aria-atomic="true" className="sr-only">
               {searchAnnouncement}

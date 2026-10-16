@@ -2688,3 +2688,23 @@ turn, `/advisor off`, and the slash menu listing).
   layout.md`'s session list paragraph gains the search field's own line; `docs/design/
   components.md` records that the proposed `SearchField` (#934 decision 5) is now built, by
   this story; `docs/PLAN.md` gets this story's own row.
+
+**Gate rounds 2-3 addendum**: Main's five-reviewer gate (round 1) found the `typeSearch` live-
+check helper only ever appending via `Input.insertText`, never clearing first, which doubled
+earlier text onto later queries and broke screenshot 03; fixed with real Ctrl+A/Backspace key
+events first. Branch matching, case-insensitivity, a query surviving a Session switch, Shift+Tab,
+and zero matches hiding Archived (once one exists) were claimed but never actually driven live --
+all five are now real live steps. `useSessionRowActions.ts` gained the #900 focus-redirect
+pattern for a Session row's own rename. Round 2 (ui-architect-v3) then found: the Project half of
+that same #900 fix was still open (a Project rename left focus on `<body>`, fixed by a new shared
+`useFocusSearchOnStrandedUnmount` hook used by both `useSessionRowActions.ts` and
+`RepositoryGroup.tsx`, gated on a non-empty query); the "real contrast bug" PR claim was wrong
+(`--input` is itself translucent, so `dark:bg-input/30` composites far lighter than 30% -- the
+field's own default fill actually clears 4.5:1 comfortably; the opaque `bg-background` override
+was reverted, and `theme-contrast-pairs.mjs` gained the real composited `searchFieldContrastRows`
+check instead); the hidden-create announcement could be silently replaced by a plainer one from
+a racing call site, fixed with one shared `createdSessionAnnouncement()` used everywhere; Esc on
+the SearchField wrapper (not just the input), `inputProps`'s `Omit`-narrowed type, one shared
+`sessionSearchSelector.ts` for the `data-session-search-input` hook, a stale screenshot sitting in
+the evidence folder, and a tooltip-ghost in screenshot 03 were all fixed; a D20/D28 amendment
+comment was posted on #559 and the PR body's Departures section corrected.

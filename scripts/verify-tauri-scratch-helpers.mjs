@@ -50,6 +50,12 @@ export function sha256OfFile(filePath) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
 }
 
+/** Cites each named screenshot by file AND its own sha256, so a reviewer can confirm the exact
+ *  file they viewed is the one this run produced -- for `report.json`, not console output. */
+export function citeScreenshots(dir, names) {
+  return names.map((name) => ({ name, sha256: sha256OfFile(path.join(dir, name)) }));
+}
+
 export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAttempts = 3, label = 'verify' } = {}) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');

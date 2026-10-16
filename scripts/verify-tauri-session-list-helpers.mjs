@@ -396,8 +396,13 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
 
 // Issue #559's own session search field -- generic markers any future session-list live check
 // can reuse without re-deriving the selector (#806 file-size split: moved out of
-// `verify-tauri-559.mjs` once it grew past the cap, gate round 2).
-export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-region] input')`;
+// `verify-tauri-559.mjs` once it grew past the cap, gate round 2). Gate round 3 fix (finding
+// 11): the SAME `data-session-search-input` attribute the real app's own `SessionList.tsx`
+// (`inputProps`) and `quickCreateFallback.ts`/`useFocusSearchOnStrandedUnmount.ts`
+// (`sessionSearchSelector.ts`'s `SESSION_SEARCH_INPUT_SELECTOR`) already use, not a
+// descendant-structure lookup through the region wrapper that could drift from the app's own
+// selector unnoticed.
+export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-input]')`;
 
 /** Types into the search field via a real click plus `Input.insertText`. Clears any EXISTING
  *  text first via real key events (Ctrl+A then Backspace) -- `Input.insertText` only ever
@@ -486,4 +491,56 @@ export async function proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName,
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Session-switch check' });
 
   return { renamedTwiceName };
+}
+
+/** Issue #559 gate round 3 (ui-architect-v3 finding 1): the Project half of the #900 focus-
+ *  redirect fix -- a rename that makes a WHOLE Project group stop matching an active
+ *  Project-NAME query (the only way renaming can make a group, not just one row, its own sole
+ *  match) unmounts the group on a later render; proves `RepositoryGroup.tsx`'s own
+ *  `useFocusSearchOnStrandedUnmount(groupRootRef)` call moves focus to the search field, the
+ *  same as the Session row's own half already proved by `proveRenameMatchingAndSessionSwitch`
+ *  above. Renames `repoBName`'s own Project permanently (nothing after this call in
+ *  `verify-tauri-559.mjs` depends on that name any more). */
+export async function proveProjectRenameFocusRedirect(cdp, log, { repoBName }) {
+  await typeIntoSessionSearch(cdp, repoBName);
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B matches its own Project-name query before the Project-rename check' });
+  const triggerFinder = groupTriggerFinder(repoBName);
+  await cdp.evaluate(`(${triggerFinder})?.focus()`);
+  await cdp.waitFor(`document.activeElement === (${triggerFinder})`, { timeoutMs: 5_000, label: 'Project B trigger focused before renaming' });
+  await pressKey(cdp, 113, 'F2', 'F2');
+  await cdp.waitFor(`!!document.querySelector('input[aria-label="Repository name"]')`, { timeoutMs: 5_000, label: 'repository rename input mounted after F2' });
+  await cdp.click(`document.querySelector('input[aria-label="Repository name"]')`);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2);
+  await pressKey(cdp, 8, 'Backspace', 'Backspace');
+  await cdp.send('Input.insertText', { text: 'zzz-project-renamed-out-of-filter-zzz' });
+  await pressKey(cdp, 13, 'Enter', 'Enter');
+  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT_FINDER})`, {
+    timeoutMs: 15_000,
+    label: 'focus redirected to the search field once the renamed Project (and its whole group) unmounts (#900 pattern, Project half)'
+  });
+  assertTrue((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B must actually be gone -- its new name no longer matches the active Project-name query');
+  log('STEP PASS: renaming a Project out of the active filter (a Project-name query) moves focus to the search field instead of <body>, once the whole group actually unmounts.');
+  await typeIntoSessionSearch(cdp, '');
+}
+
+/** Issue #559 gate round 3 (ui-architect-v3 finding 5): proves the hidden-create announcement
+ *  live -- creates a Session from a VISIBLE Project's own quick-create "+" while a query
+ *  matching only an existing row (never the Project's own name) is active, so the new Session's
+ *  own generated name matches neither the query, its branch, nor the Project name, and must be
+ *  announced as hidden rather than silently dropped. Uses the bare `clickQuickCreate` (not
+ *  `createSessionViaQuickCreate`), which waits for a new ROW to appear -- it never would here,
+ *  by design -- confirming success via the composer enabling and the announcement text itself
+ *  instead. */
+export async function proveCreatedSessionHiddenAnnouncement(cdp, log, { repoAName, query, chatAreaAnnounceRegionFinder }) {
+  await typeIntoSessionSearch(cdp, query);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A visible for the hidden-create announcement check' });
+  await clickQuickCreate(cdp, repoAName);
+  await cdp.waitFor(`(() => { const msg = document.querySelector('[aria-label="Message"]'); return !!msg && !msg.disabled; })()`, { timeoutMs: 60_000, label: 'new Session created (composer enabled), even though hidden by the filter' });
+  const text = await cdp.waitFor(
+    `(() => { const t = (${chatAreaAnnounceRegionFinder})?.textContent?.trim() || ''; return /hidden by the session filter/.test(t) ? t : false; })()`,
+    { timeoutMs: 10_000, label: 'announcer reads "Created session ..., hidden by the session filter"' }
+  );
+  log(`STEP PASS: creating a Session from a visible Project's own quick-create "+" while active query does not match it announces ${JSON.stringify(text)}.`);
+  await typeIntoSessionSearch(cdp, '');
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the hidden-create announcement check' });
 }

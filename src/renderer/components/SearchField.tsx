@@ -33,8 +33,14 @@ export interface SearchFieldProps {
   /** Gate round 1 fix (code-reviewer Medium): extra attributes spread onto the `<input>` itself
    *  (for example a stable `data-*` hook), so a caller never has to find this field by its
    *  wrapper's own descendant structure -- #934's own future `ListToolbar` embedding could
-   *  change that structure. */
-  inputProps?: InputHTMLAttributes<HTMLInputElement> & { [attribute: `data-${string}`]: string }
+   *  change that structure. Gate round 3 fix (finding 10): the props every behaviour above
+   *  depends on are omitted from what a caller can pass, so a future `onKeyDown`/`role`/
+   *  `className`/`value`/`onChange`/`aria-label` here can never silently remove Esc-clears or
+   *  the field's own accessible name -- the component itself owns those, always.
+   */
+  inputProps?: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onKeyDown' | 'aria-label' | 'role' | 'className'> & {
+    [attribute: `data-${string}`]: string
+  }
 }
 
 export function SearchField({ value, onValueChange, label, placeholder, tooltipSide = 'top', className, inputRef, inputProps }: SearchFieldProps) {
@@ -50,7 +56,11 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
     resolvedRef.current?.focus()
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+  // Gate round 3 fix (ui-architect-v3 Low, finding 9): attached to the WRAPPER, not just the
+  // `<input>` -- Esc while the in-field Clear button has focus used to do nothing (the handler
+  // only ever saw keydowns that landed directly on the input itself); a keydown on either child
+  // element bubbles to this div, so Esc now clears from both.
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (event.key !== 'Escape' || !hasValue || event.nativeEvent.isComposing) return
     event.preventDefault()
     event.stopPropagation()
@@ -58,7 +68,7 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
   }
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative', className)} onKeyDown={handleKeyDown}>
       <SearchIcon aria-hidden className="pointer-events-none absolute left-[9px] top-2 size-4 text-muted-foreground" />
       <Input
         ref={resolvedRef}
@@ -68,21 +78,22 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
         spellCheck={false}
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
-        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         aria-label={label}
         aria-describedby={hasValue ? clearHintId : undefined}
-        // Issue #559 decision 28, gate round 1 fix (a11y-auditor/contrast script, code-reviewer
-        // Medium): `Input`'s own base class is `bg-transparent dark:bg-input/30`, and `.dark` is
-        // always applied regardless of the active theme (`theme-store.ts`'s `applyThemeClass`) --
-        // so inside this field's own `bg-sidebar` host, the real rendered surface is ALWAYS
-        // `--input` at 30% opacity composited over `--sidebar`, which measures under 4.5:1 for
-        // `muted-foreground` (the placeholder and both icons) in Dark and Obsidian (2.55:1 /
-        // 2.61:1, `scripts/check-theme-contrast.mjs`). Forced opaque instead, the same fix
-        // shadcn's own (unused) `SidebarInput` primitive already applies for exactly this
-        // reason (`ui/sidebar.tsx`'s `bg-background`) -- both the base and `dark:` variant are
-        // overridden so neither can win the cascade.
-        className="h-8 bg-background pl-8 pr-8 text-sm dark:bg-background forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+        // Issue #559 decision 28 (gate round 3 correction, ui-visual-system-v3 Medium): `Input`'s
+        // own default fill (`bg-transparent dark:bg-input/30`) is kept -- an earlier "fix" here
+        // forced it opaque based on a wrong contrast reading. `--input` is ITSELF translucent
+        // (36% in Dark/Obsidian, 38% in Dark high contrast, `globals.css`'s own border-floor
+        // comment), so `dark:bg-input/30` composites at `input's own alpha * 0.3` (roughly 11%
+        // white over `--sidebar`), not a flat 30% -- the field's `muted-foreground` text and
+        // icons measure roughly 5.1:1 (Dark), 5.2:1 (Obsidian) and 10.3:1 (Dark high contrast)
+        // against that real composited fill, comfortably over the 4.5:1 floor. Gated by the
+        // `search-field (input*0.3 on sidebar)` pair in `scripts/check-theme-contrast.mjs`
+        // (`theme-contrast-pairs.mjs`'s own `searchFieldContrastRows`), not a token this field
+        // invents -- SearchField stays on the one Input-fill convention every other text field
+        // in the app already uses, rather than starting a second, opaque one.
+        className="h-8 pl-8 pr-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
         {...inputProps}
       />
       {hasValue && (

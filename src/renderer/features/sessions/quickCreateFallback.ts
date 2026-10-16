@@ -11,13 +11,16 @@
 // the two cases apart. Now: the filter wording fires only when BOTH (a) no quick-create button
 // exists in the DOM at all (every Project group is actually absent, the search-hides-everything
 // case) AND (b) focusing the search field genuinely worked (not inert, not absent). Any other
-// reason focus could not reach a target -- the nav collapsed, zero Projects at all -- falls
-// through to the original "Open the session list…" wording.
+// reason focus could not reach a target -- the nav collapsed -- falls through to the original
+// "Open the session list…" wording. (Gate round 3 fix, finding 11: zero Projects at all cannot
+// reach this function -- `App.tsx`'s own Ctrl+N handler returns earlier whenever
+// `showReadiness` is true, the Readiness screen showing instead of the session list then.)
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { SESSION_SEARCH_INPUT_SELECTOR } from './sessionSearchSelector'
 
 export function announceQuickCreateFallback(): void {
   const quickCreateButton = document.querySelector('[data-quick-create-session]')
-  const searchInput = document.querySelector<HTMLInputElement>('[data-session-search-input]')
+  const searchInput = document.querySelector<HTMLInputElement>(SESSION_SEARCH_INPUT_SELECTOR)
   if (!quickCreateButton && searchInput) {
     searchInput.focus()
     if (document.activeElement === searchInput) {

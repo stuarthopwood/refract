@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS } from './theme-contrast-pairs.mjs'
+import { PAIRS, searchFieldContrastRows } from './theme-contrast-pairs.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
@@ -88,7 +88,7 @@ function srgbGammaEncode(c) {
   return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
 }
 
-function linearToHex([r, g, b]) {
+export function linearToHex([r, g, b]) {
   const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
   return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
 }
@@ -267,17 +267,17 @@ function compositeOverLinear(fg, bg) {
   })
 }
 
-function relativeLuminance([r, g, b]) {
+export function relativeLuminance([r, g, b]) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-function contrastRatio(lumA, lumB) {
+export function contrastRatio(lumA, lumB) {
   const lighter = Math.max(lumA, lumB)
   const darker = Math.min(lumA, lumB)
   return (lighter + 0.05) / (darker + 0.05)
 }
 
-function resolvedLinear(propEntry, backdropEntry) {
+export function resolvedLinear(propEntry, backdropEntry) {
   if (propEntry.alpha >= 1) return propEntry.linear.map(clamp01)
   return compositeOverLinear(propEntry, backdropEntry)
 }
@@ -728,9 +728,9 @@ for (const [themeId, props] of Object.entries(themes)) {
 // (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
 // `--background` -- the plain-background/card/popover PAIRS entries above never actually
 // exercise this composited case. Checked the same way the destructive-footer block above
-// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
-// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
-// `--accent-text` against that blended result.
+// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's own
+// `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
+// `--accent-text` against that blend.
 for (const [themeId, props] of Object.entries(themes)) {
   const accent = props['accent']
   const background = props['background']
@@ -757,7 +757,8 @@ for (const [themeId, props] of Object.entries(themes)) {
     bgHex: linearToHex(bubbleLinear),
   })
 }
-// ---- print the table ---------------------------------------------------------------------
+// Issue #559 decision 28 (gate round 3 correction): the real composited D28 pair (muted-foreground over the field's own translucent Input fill on --sidebar) -- math lives in theme-contrast-pairs.mjs's searchFieldContrastRows, not here, to keep this file (#806) at its own baseline.
+const sf = searchFieldContrastRows(themes, { resolvedLinear, contrastRatio, relativeLuminance, linearToHex }); rows.push(...sf.rows); checkedCount += sf.checked; failCount += sf.failed
 
 const header = ['theme', 'pair', 'ratio', 'min', 'result']
 const widths = [18, 38, 8, 5, 6]

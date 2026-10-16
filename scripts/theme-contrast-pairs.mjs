@@ -234,3 +234,51 @@ export const PAIRS = [
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]
+
+// Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
+// default translucent fill (`bg-transparent dark:bg-input/30`, `SearchField.tsx`'s own comment)
+// -- `.dark` is always applied to `<html>` regardless of the active theme, so `dark:bg-input/30`
+// always renders, in every built-in theme. A real PAIRS entry cannot express this: `--input` is
+// ITSELF translucent (its own `alpha` is already < 1 once parsed from `oklch(1 0 0 / 36%)`),
+// so `bg-input/30` composites at `input.alpha * 0.3` -- roughly 11% white over `--sidebar` in
+// Dark/Obsidian, not a flat 30% an earlier (reverted) calculation wrongly assumed (that cut
+// treated `--input` as opaque, landing on 2.55:1/2.61:1 and an unnecessary opaque-fill "fix").
+// Exported as a function, not a plain `PAIRS` entry, since this module holds only simple
+// token-name pairs and this needs real alpha-compositing math -- kept here, not inline in
+// `check-theme-contrast.mjs`, so that file's own file-size ratchet (a hard, lower-only
+// baseline) is never touched by a legitimate new composited pair (the same reason this whole
+// module exists, per its own header comment). Takes the already-parsed `themes` map and the
+// four color-math primitives `check-theme-contrast.mjs` already exports, rather than
+// duplicating or re-importing CSS-parsing logic here.
+export function searchFieldContrastRows(themes, { resolvedLinear, contrastRatio, relativeLuminance, linearToHex }) {
+  const rows = []
+  let checked = 0
+  let failed = 0
+  for (const [themeId, props] of Object.entries(themes)) {
+    const input = props['input']
+    const sidebar = props['sidebar']
+    const mutedForeground = props['muted-foreground']
+    if (!input || !sidebar || !mutedForeground) {
+      checked++
+      failed++
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'search-field (input*0.3 on sidebar)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const fieldLinear = resolvedLinear({ raw: 'input*0.3', alpha: input.alpha * 0.3, linear: input.linear }, sidebar)
+    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fieldLinear))
+    const pass = ratio >= 4.5
+    checked++
+    if (!pass) failed++
+    rows.push({
+      themeId,
+      fg: 'muted-foreground',
+      bg: 'search-field (input*0.3 on sidebar)',
+      min: 4.5,
+      ratio,
+      pass,
+      fgHex: linearToHex(mutedForeground.linear),
+      bgHex: linearToHex(fieldLinear),
+    })
+  }
+  return { rows, checked, failed }
+}

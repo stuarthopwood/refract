@@ -64,9 +64,12 @@ import {
   createSessionViaQuickCreate,
   addRepository,
   typeIntoSessionSearch as typeSearch,
-  proveRenameMatchingAndSessionSwitch
+  proveRenameMatchingAndSessionSwitch,
+  proveProjectRenameFocusRedirect,
+  proveCreatedSessionHiddenAnnouncement,
+  SEARCH_INPUT_FINDER
 } from './verify-tauri-session-list-helpers.mjs';
-import { gitHead, sha256OfFile, buildLauncher, makeScratchRepo, safeRmSync } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, sha256OfFile, buildLauncher, makeScratchRepo, safeRmSync, citeScreenshots } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -74,23 +77,17 @@ const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 const SHOT_DIR = process.env.REFRACT_559_SHOT_DIR || path.join(tmpdir(), 'refract-559-shots');
 
-const SEARCH_INPUT = `document.querySelector('[data-session-search-region] input')`;
+const SEARCH_INPUT = SEARCH_INPUT_FINDER;
 const CLEAR_BUTTON = `document.querySelector('[data-session-search-region] button[aria-label="Clear filter"]')`;
 const ANNOUNCE_REGION = `document.querySelector('[data-session-search-region] [aria-live="polite"]')`;
 const EMPTY_TITLE = `Array.from(document.querySelectorAll('[data-slot="empty-title"]')).find((el) => el.textContent.trim() === 'No sessions match')`;
 const CLEAR_FILTER_BUTTON = `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Clear filter')`;
 
-function assert(cond, message) {
-  if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
-}
+function assert(cond, message) { if (!cond) throw new Error(`ASSERTION FAILED: ${message}`); }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
-function spawnSync_(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
-}
+function spawnSync_(cmd, args, opts = {}) { return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts }); }
 
 function buildOmpShim(dir) {
   mkdirSync(dir, { recursive: true });
@@ -120,14 +117,11 @@ function copyBuiltExe(destDir) {
   return { dest, hash, buildTime };
 }
 
-function nowStamp() {
-  return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
 async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, pathPrepend, extraEnv = {}, logFile }) {
-  const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${nowStamp()}`);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${stamp}`);
   mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(path.dirname(exePath), `target-${nowStamp()}.pid`);
+  const pidFile = path.join(path.dirname(exePath), `target-${stamp}.pid`);
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
@@ -146,9 +140,7 @@ async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourc
   return { child, targetPid };
 }
 
-function worktreesDirFor(repoDir) {
-  return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
-}
+function worktreesDirFor(repoDir) { return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir)); }
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -443,6 +435,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   // to a dead corner `proveTrailingSlotSwapAndHoverNone` already uses to clear hover.
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
   await cdp.evaluate(`document.activeElement?.blur()`);
+  // Gate round 3 fix (ui-architect-v3 Low, finding 7): the Settings cog's own tooltip (opened
+  // by the Settings-round-trip block above) can still be fading out at this point -- wait for
+  // it to actually leave the DOM, not just move the pointer away, before shooting.
+  await cdp.waitFor(`!document.querySelector('[data-slot="tooltip-content"]')`, { timeoutMs: 5_000, label: 'no tooltip showing before the high-contrast screenshot' });
   await cdp.screenshot(path.join(evidenceDir, '03-high-contrast-filtered.png'));
   await cdp.evaluate(`window.refract.theme.set('dark')`);
   await cdp.waitFor(`document.documentElement.className.includes('theme-dark') && !document.documentElement.className.includes('high-contrast')`, { timeoutMs: 10_000, label: 'back to Dark' });
@@ -467,6 +463,13 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   // #806 file-size split: the proof itself lives in `verify-tauri-session-list-helpers.mjs` so
   // a future session-list story can reuse it). ----
   const { renamedTwiceName } = await proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName, repoBName, sessionA1Name, CLEAR_BUTTON });
+  // Gate round 3 (ui-architect-v3 finding 1): the Project half of the same #900 fix --
+  // `RepositoryGroup.tsx`'s own `useFocusSearchOnStrandedUnmount` call.
+  await proveProjectRenameFocusRedirect(cdp, log, { repoBName });
+  // Gate round 3 (ui-architect-v3 finding 5): the hidden-create announcement, live -- query
+  // matches only session A1 (`renamedTwiceName`), never Project A's own name, so a fresh
+  // Session the "+" creates is Project-resolvable but still a non-match.
+  await proveCreatedSessionHiddenAnnouncement(cdp, log, { repoAName, query: renamedTwiceName, chatAreaAnnounceRegionFinder: CHAT_AREA_ANNOUNCE_REGION });
 
   await typeSearch(cdp, repoAName);
   await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 10_000, label: 'Archived shown for a query matching its own row\'s Project name' });
@@ -495,6 +498,11 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
 }
 
 async function main() {
+  // Gate round 3 fix (ui-architect-v3 Low, finding 7): a stale screenshot from an earlier,
+  // failed attempt (for example `99-diag-add-repository-A-failure.png`) used to sit alongside
+  // this run's own evidence forever -- `SHOT_DIR` is a fixed, literal path (never a variable
+  // root), so removing its own prior contents here is safe.
+  rmSync(SHOT_DIR, { recursive: true, force: true });
   mkdirSync(SHOT_DIR, { recursive: true });
   const log = createReportLogger(path.join(SHOT_DIR, 'report.txt'));
   let shimDir, dataDir, importSourceDir, repoADir, repoBDir, exeDir;
@@ -542,10 +550,12 @@ async function main() {
     await runChecks(cdp, SHOT_DIR, log, { repoA: repoADir, repoB: repoBDir, repoAName, repoBName });
 
     log(`verify-tauri-559: ALL PASS. Evidence and screenshots: ${SHOT_DIR}`);
+    // Gate round 3 fix (ui-architect-v3 Low, finding 7): cite each screenshot by sha256 too.
+    const screenshots = citeScreenshots(SHOT_DIR, ['01-dark-no-matches.png', '02-dark-one-match-forced-open.png', '03-high-contrast-filtered.png']);
     writeFileSync(
       path.join(SHOT_DIR, 'report.json'),
       JSON.stringify(
-        { gitHead: gitHeadValue, exitCode: 0, exeHash, exeBuildTime, finishedAt: new Date().toISOString() },
+        { gitHead: gitHeadValue, exitCode: 0, exeHash, exeBuildTime, screenshots, finishedAt: new Date().toISOString() },
         null,
         2
       )

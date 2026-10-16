@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { toast } from 'sonner'
 import { notify, useSessionsStore, useSplitStore } from '@/state'
@@ -10,7 +10,9 @@ import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
 import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
 import { describeStopReason } from '@/features/chat/ChatPane'
-import { focusSessionPane, focusSessionRow, focusSessionsNav, isFocusStranded } from '@/lib/focus'
+import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus'
+import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
+import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 
 // Issue #811 (SessionList.tsx split): this is SessionRow's own body, moved unchanged -- archive,
 // restore, delete, resume and rename state and handlers, plus the focus-after-removal fallback
@@ -284,25 +286,10 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     openButtonRef.current?.focus()
   }, [renaming])
 
-  // Issue #559 gate round 2 (the #900 pattern): a rename that makes this row's new name (or its
-  // whole Project group, if this was its repo's only match) stop matching an active search
-  // query unmounts it on a LATER render, once the sessions store refreshes from the IPC round
-  // trip. If focus was on this row at that moment, it would otherwise land on `<body>`. A
-  // `useLayoutEffect` cleanup is the last point that still sees focus genuinely inside the
-  // about-to-be-removed `<li>` (`AskCard.tsx`'s own documented reason for the same choice, the
-  // #900 precedent); deferred one rAF so the commit settles first, then `isFocusStranded`
-  // (root `null`, checked globally) guards against stealing focus from wherever it validly
-  // moved to. Empty deps: registered once per row instance, so the cleanup fires exactly once,
-  // on this instance's real final unmount.
-  useLayoutEffect(() => {
-    return () => {
-      if (!rowRef.current?.contains(document.activeElement)) return
-      requestAnimationFrame(() => {
-        if (!isFocusStranded(document.activeElement, null)) return
-        document.querySelector<HTMLInputElement>('[data-session-search-input]')?.focus()
-      })
-    }
-  }, [])
+  // Issue #559 gate rounds 2-3 (the #900 pattern, finding 1): shared with `RepositoryGroup.tsx`
+  // so a Project rename gets the exact same focus-redirect-to-search-field fix as a Session
+  // rename, not a second, row-only copy.
+  useFocusSearchOnStrandedUnmount(rowRef)
 
   // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
   // repository and default branch (no dialog, no base-branch picker), announces immediately
@@ -359,7 +346,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
             // currently stranded on `<body>`, and leaving it there once more MUST NOT happen.
             const here = isStillHere()
             if (!(here && focusSessionPane(result.value.id))) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
               if (here) focusOrigin()
             }
           })
