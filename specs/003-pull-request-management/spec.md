@@ -114,9 +114,13 @@ Gate round 1's own dismissed-review handling (filtering a dismissed reviewer's r
 from the Overview `Timeline` tab, not just from the consensus count.
 
 - FR-031 / decision 10, amended again: a dismissed review is now a real `Timeline` entry (a new
-  `dismissed` `ReviewVerdict`, shown in the Overview as "{author} dismissed their review"), never
-  filtered out server-side. `ReviewConsensus.tsx` alone decides what a dismissal means: folding
-  each reviewer's reviews in chronological order, a dismissal RESETS their standing verdict to
+  `dismissed` `ReviewVerdict`, shown in the Overview as "{author}'s review was dismissed" --
+  gate round 3 fix: not "{author} dismissed their review", which wrongly implies the reviewer
+  dismissed their own review rather than a maintainer or GitHub's stale-review automation doing
+  so; the original approve/request-changes verdict a dismissed review HAD isn't in this query's
+  data, so the wording stays generic rather than guessing which), never filtered out
+  server-side. `ReviewConsensus.tsx` alone decides what a dismissal means: folding each
+  reviewer's reviews in chronological order, a dismissal RESETS their standing verdict to
   none (it does not let an earlier, different review resurface as current); only a later
   approve or request-changes sets a new standing verdict.
 - New Clarification: `timelineItems(first: 100)` (the GraphQL query backing both the Overview
@@ -124,6 +128,23 @@ from the Overview `Timeline` tab, not just from the consensus count.
   100 combined commits/comments/reviews silently loses everything past the 100th item from both
   surfaces. Pre-existing, not introduced by this story; tracked separately as issue #918, not
   fixed here.
+
+#### Gate round 3 amendments (2026-10-16)
+
+- Decision 10's own "{author} dismissed their review" wording, amended: it reads as though the
+  REVIEWER dismissed their own review, which is never the case (a maintainer, or GitHub's own
+  stale-review-on-push automation, does the dismissing). Changed to "{author}'s review was
+  dismissed". The original approve/request-changes verdict a review had before being dismissed
+  isn't available from this query's data (GitHub overwrites `state` to `DISMISSED` outright), so
+  the wording stays generic rather than guessing which it was.
+- FR-031, amended again: a reviewer whose entire history is a single, now-dismissed review (no
+  comment ever submitted) has nothing to report and is left out of the consensus counts
+  entirely, rather than being folded into "commented" by default. "Commented" now means a
+  reviewer has no standing opinionated verdict AND has submitted at least one real comment
+  review.
+- `SubmitReviewInput.verdict` (contracts/ipc.md, data-model.md) narrowed to
+  `Exclude<ReviewVerdict, 'dismissed'>`: a dismissal is a real state an already-submitted review
+  can be in, never a choice a NEW submission can carry.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -364,8 +385,11 @@ creation rules from spec 001.
 - **FR-031**: The pull request detail Overview tab MUST show a reviewer-consensus summary (counts
   of approved / changes-requested / commented, derived from each reviewer's most recent
   opinionated verdict -- approve or request-changes, never superseded by a later comment-only
-  review -- and excluding the pull request's own author) above the PR body, when at least one
-  review exists.
+  review, and reset by a dismissal rather than reverting to an earlier verdict -- counting a
+  reviewer with no standing opinionated verdict as "commented" only if they have at least one
+  actual comment review, and excluding both the pull request's own author and a reviewer whose
+  entire history is a since-dismissed review with no comment) above the PR body, when at least
+  one review exists.
 
 ### Key Entities
 

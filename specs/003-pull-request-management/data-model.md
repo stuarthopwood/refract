@@ -112,7 +112,11 @@ export interface ChangedFile {
 A reviewer's submitted verdict (FR-015), shown in the timeline. `findings` is non-empty only for an automated reviewer's review (FR-008); a human review's `findings` is always `[]`.
 
 ```ts
-export type ReviewVerdict = 'comment' | 'approve' | 'request-changes';
+// Gate round 3 fix (#568 decision 10 amendment): 'dismissed' covers an already-submitted review
+// that was later dismissed -- a real state a stored Review can be in, kept visible in the
+// Overview timeline (FR-008), but never a choice `submitReview`'s own input can carry (see
+// contracts/ipc.md's `SubmitReviewInput.verdict: Exclude<ReviewVerdict, 'dismissed'>`).
+export type ReviewVerdict = 'comment' | 'approve' | 'request-changes' | 'dismissed';
 
 export interface AutomatedFinding {
   severity: 'low' | 'medium' | 'high' | 'critical' | 'unknown'; // research.md decision 4

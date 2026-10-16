@@ -213,6 +213,16 @@ new IPC field or any structural change to the Markdown-rendered PR body.
   client-side standing-verdict fold instead (see T036's own note above). Also documented the
   pre-existing `timelineItems(first: 100)` pagination gap (issue #918) and completed the PR's
   own "Not exercised" disclosure list.
+- Round 3 (2026-10-16): two Medium -- decision 10's "{author} dismissed their review" wording
+  wrongly implied the reviewer dismissed their own review (never true: a maintainer or GitHub's
+  own stale-review automation does); reworded to "{author}'s review was dismissed"
+  (`Timeline.tsx`'s new `reviewSentence` helper). A reviewer whose entire history was a single,
+  now-dismissed review (no comment ever) was being miscounted as "commented" by
+  `ReviewConsensus.tsx`'s fold; fixed to track an explicit `hasComment` flag per reviewer and
+  leave such a reviewer out of every count. Also narrowed `SubmitReviewInput.verdict`
+  (`contracts/ipc.md`, `data-model.md`, `ReviewDialog.tsx`) to
+  `Exclude<ReviewVerdict, 'dismissed'>`, matching the Rust IPC handler's own existing
+  `comment`/`approve`/`request-changes`-only acceptance (`handlers.rs:271-277`, unchanged).
 
 **Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
 passes; full live check per the issue's own decision record "Live checks" list (a selected row's
