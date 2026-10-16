@@ -155,7 +155,7 @@ export function AdvisoryRow({ item, sessionId }: AdvisoryRowProps) {
   }
 
   return (
-    <div className={cn('border-l-[3px]', open ? ACCENT_CLASS[item.severity] : 'border-transparent')}>
+    <div data-advisory-severity={item.severity} className={cn('border-l-[3px]', open ? ACCENT_CLASS[item.severity] : 'border-transparent')}>
       <CollapsedLine
         ref={triggerRef}
         icon={<Icon className={cn('size-3.5 shrink-0', className)} />}
