@@ -38,7 +38,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           the session-list/right-pane panels stay), so `reservesWindowControls` must be `false`
           whenever the right pane shell is the one holding that corner (FR-011, "exactly once"),
           the same prop `ChatPane.tsx` takes. */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
           Pull requests
         </h2>

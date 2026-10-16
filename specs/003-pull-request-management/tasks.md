@@ -142,6 +142,100 @@
 
 ---
 
+## Phase 8: Convergence -- #568 restyle (issue #568)
+
+**Goal**: converge the ui-architect-v3 roundtable's 12 decisions (#568, delegated by Stuart
+2026-10-16) into this feature's existing surfaces, folding in #529 (state pills), #531
+(title/button layout) and #532 (shared Refresh control) as part of the same restyle, without a
+new IPC field or any structural change to the Markdown-rendered PR body.
+
+**Independent test**: full live check per the issue's own decision record "Live checks" list.
+
+- [X] T031 [P] (#568) Row restyle: `divide-y` flat row shape replacing the rounded-md bordered
+  box, the shared active-indicator bar on the selected row, a 3-line layout (title; metadata
+  line of state, check, repo, time; author line), and the font split (App font for metadata and
+  author, mono reserved for branch names) (decisions 1-2).
+  -- Implemented (073ad12): `PullRequestRow.tsx` rewritten to a zero-box `divide-y` row with the
+  shared `bg-active-indicator` bar; live-verified (screenshot) via `scripts/verify-tauri-568.mjs`.
+- [X] T032 [P] (#568) `StatePill`: a new solid-fill pill component replacing the outline `Badge`
+  for pull request state, the new `--pr-open`/`--pr-draft`/`--pr-closed`/`--pr-merged` tokens
+  (already landed in `globals.css` and `theme-contrast-pairs.mjs`), and the `isDraft` search-field
+  data fix in `gh_pull_requests.rs`/`mod.rs` so the four relation-tab searches report Draft
+  instead of silently Open (decisions 5-6).
+  -- Implemented (073ad12): `StatePill.tsx` (new), tokens contrast-verified (433/433 pairs PASS,
+  `check:theme-contrast`); the `isDraft` fix is covered by the `map_pull_request_state` mapping
+  unit test (`mapping_tests.rs`, not the deserialisation fixture test, which only exercises the
+  Merged path), and gate round 2 live-verified a real draft PR rendering its StatePill correctly.
+- [X] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
+  lighter secondary action buttons so the title leads (decision 7).
+  -- Implemented (073ad12): `PullRequestDetail.tsx` title `text-lg line-clamp-2`; New
+  session/Review now `variant="ghost"`; Merge stays the sole filled button.
+- [X] T034 [P] (#568) Shared `RefreshButton` component unifying the pull request list's and
+  detail view's two existing refresh call sites: ghost, icon-only, tooltip, spinning while
+  loading, disabled while loading (decision 8).
+  -- Implemented (073ad12): `RefreshButton.tsx` (new), wired into both `PullRequestList.tsx` and
+  `PullRequestDetail.tsx`.
+- [X] T035 [P] (#568) Overview/Changes tab pair: a local underline-style `className` override on
+  the shared `Tabs` primitive scoped to this view only, leaving the five filter tabs' default
+  pill styling untouched (decision 3); remove `PullRequestsView.tsx`'s header `border-b` divider
+  (decision 9).
+  -- Implemented (073ad12): underline classes applied only inside `PullRequestDetail.tsx`'s own
+  `TabsList`/`TabsTrigger`; `tabs.tsx` untouched (confirmed via `git diff --stat`); the five
+  filter tabs in `PullRequestList.tsx` keep their default shadcn pill classes unchanged; header
+  `border-b border-border` removed from `PullRequestsView.tsx`.
+- [X] T036 (#568) Reviewer-consensus rollup (FR-031): derive counts of approved /
+  changes-requested / commented from `Timeline.tsx`'s existing `review` entries, taking each
+  reviewer's latest verdict only, and render them above the PR body at the top of the Overview
+  tab; no new IPC field (decision 10) (depends on T015, T019).
+  -- Implemented (073ad12): `ReviewConsensus.tsx` (new), mounted at the top of the Overview tab's
+  own `p-3` wrapper, above `Markdown`; derives from `detail.timeline` client-side, no IPC change.
+  Gate round 2 fix: the "latest verdict" reducer is now a chronological per-reviewer fold
+  (standing verdict replaced by a later approve/request-changes, unaffected by a later comment,
+  reset to none by a dismissal) rather than a bare "last entry wins", matching GitHub's own
+  standing-review semantics; a dismissed review stays a real `Timeline` entry (new `dismissed`
+  `ReviewVerdict`) instead of being dropped server-side, so FR-008 (every review shown) still
+  holds.
+- [X] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
+  `CONTEXT.md` and `docs/PLAN.md` to record the convergence, then verify live: the issue's own
+  decision record "Live checks" list.
+  -- Docs updated (073ad12). Live-verified via `scripts/verify-tauri-568.mjs` against a scratch
+  Tauri debug build and a read-only shallow clone of `stuarthopwood/refract` for real PR data;
+  see the issue's decision record and the PR body for the full pass/fail breakdown and any
+  not-exercised items.
+
+**Gate rounds (five-reviewer quality gate on PR #914):**
+- Round 1 (2026-10-16): Critical/High fixes -- real underline tabs (not a box), `isDraft` only
+  applying to OPEN pull requests, consensus semantics, narrow-width action-row overflow,
+  metadata separators, `hover:bg-surface-hover`, literal `--pr-*` token values. See the issue's
+  own gate round 1 amendment comment.
+- Round 2 (2026-10-16): one High -- round 1's own dismissed-review handling deleted a dismissed
+  reviewer's whole review history from the Overview `Timeline` (FR-008 regression); moved to a
+  client-side standing-verdict fold instead (see T036's own note above). Also documented the
+  pre-existing `timelineItems(first: 100)` pagination gap (issue #918) and completed the PR's
+  own "Not exercised" disclosure list.
+- Round 3 (2026-10-16): two Medium -- decision 10's "{author} dismissed their review" wording
+  wrongly implied the reviewer dismissed their own review (never true: a maintainer or GitHub's
+  own stale-review automation does); reworded to "{author}'s review was dismissed"
+  (`Timeline.tsx`'s new `reviewSentence` helper). A reviewer whose entire history was a single,
+  now-dismissed review (no comment ever) was being miscounted as "commented" by
+  `ReviewConsensus.tsx`'s fold; fixed to track an explicit `hasComment` flag per reviewer and
+  leave such a reviewer out of every count. Also narrowed `SubmitReviewInput.verdict`
+  (`contracts/ipc.md`, `data-model.md`, `ReviewDialog.tsx`) to
+  `Exclude<ReviewVerdict, 'dismissed'>`, matching the Rust IPC handler's own existing
+  `comment`/`approve`/`request-changes`-only acceptance (`handlers.rs:271-277`, unchanged).
+
+**Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
+passes; full live check per the issue's own decision record "Live checks" list (a selected row's
+active-indicator bar vs an unselected row; a draft PR on a non-Open filter tab shows "Draft", not
+"Open", after the `isDraft` fix; Merged / Open / Draft / Closed pills in Dark, Obsidian and High
+Contrast; failed-check icon turns red, passed/pending/none stay neutral; keyboard focus moved via
+arrow/Tab between rows; Overview tab reviewer-consensus line renders only when reviews exist,
+with mixed verdicts; underline tabs keyboard nav; `RefreshButton` spinner/disabled state at both
+call sites; 360px pane width and 400% zoom on the restyled row and detail header; reduced motion
+-- no unexpected row-selection transition).
+
+---
+
 ## Dependencies & Execution Order
 
 - **Phase 1 (Setup/probes)**: no dependencies; T001 to T005 run in parallel.

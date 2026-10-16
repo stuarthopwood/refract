@@ -205,11 +205,18 @@ pub struct PullRequestDetail {
 // Mapping: gh wire shapes -> renderer entity shapes
 // ---------------------------------------------------------------------------
 
+/// Gate round 1 fix (#568 decision 6, Code High): `isDraft` alone used to short-circuit straight
+/// to Draft, which mislabelled a CLOSED draft pull request (GitHub keeps `isDraft: true` on a
+/// draft that was closed without being marked ready) as "Draft" on every one of the four
+/// relation-tab searches that actually include closed pull requests. Draft only applies while
+/// the pull request is still open; a closed or merged draft reads as Closed/Merged like any
+/// other pull request in that state.
 pub fn map_pull_request_state(state: &str, is_draft: bool) -> PullRequestState {
-    if is_draft {
+    let upper = state.to_uppercase();
+    if is_draft && upper == "OPEN" {
         return PullRequestState::Draft;
     }
-    match state.to_uppercase().as_str() {
+    match upper.as_str() {
         "MERGED" => PullRequestState::Merged,
         "CLOSED" => PullRequestState::Closed,
         _ => PullRequestState::Open,
@@ -323,7 +330,16 @@ pub fn map_review_verdict(state: Option<&str>) -> Option<ReviewVerdict> {
         "APPROVED" => Some(ReviewVerdict::Approve),
         "CHANGES_REQUESTED" => Some(ReviewVerdict::RequestChanges),
         "COMMENTED" => Some(ReviewVerdict::Comment),
-        // PENDING/DISMISSED: not a submitted verdict.
+        // Gate round 2 fix (#568 decision 10 amendment, Code High N1): DISMISSED used to share
+        // PENDING's `None` -- a real review state, not a not-yet-submitted one -- which deleted
+        // every dismissed review from the Overview `Timeline` entirely (FR-008 regression) once
+        // gate round 1 taught `ReviewConsensus` about dismissals via a backend pre-pass. A
+        // dismissed review IS a submitted review (it has a real body/author/timestamp); it now
+        // keeps its own place in the timeline with a `Dismissed` verdict, and the renderer
+        // (`ReviewConsensus.tsx`) decides what a dismissal means for the standing-verdict
+        // rollup, not this mapping function.
+        "DISMISSED" => Some(ReviewVerdict::Dismissed),
+        // PENDING: not yet a submitted verdict at all.
         _ => None,
     }
 }
@@ -373,7 +389,10 @@ pub fn map_changed_files(
 }
 
 /// Merges `reviewThreads` + the three relevant `timelineItems` kinds into one chronologically
-/// sorted array (FR-008).
+/// sorted array (FR-008). Gate round 2 fix (#568 decision 10 amendment): the round 1 pre-pass
+/// that excluded a dismissed reviewer's reviews from this array entirely is removed -- every
+/// review (including a dismissed one, now mapped to a real `Dismissed` verdict above) keeps its
+/// place here; `ReviewConsensus.tsx` alone decides what a dismissal means for its own rollup.
 pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
     let mut with_timestamps: Vec<(TimelineEntry, String)> = Vec::new();
 
