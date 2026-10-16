@@ -39,7 +39,7 @@
 // --no-bundle` via the shared `buildAndCopyExeFresh` helper instead of silently trusting a
 // stale or foreign exe.
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
