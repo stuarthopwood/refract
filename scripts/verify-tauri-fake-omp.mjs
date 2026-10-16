@@ -13,7 +13,8 @@
 //
 // Script format: see scripts/fixtures/omp-frames/README.md. In short, a `.jsonl` fixture is a
 // strict LINEAR tape: plain lines are frames to emit verbatim (after substituting the
-// `$lastId`/`$turnId`/`$lastMessage` sentinels described there); a `{"__wait__": [...types]}`
+// `$lastId`/`$turnId`/`$lastMessage`/`$conversationFile` sentinels described there); a
+// `{"__wait__": [...types]}`
 // line pauses the tape until a command of one of those types arrives on stdin, then resumes;
 // `{"__delay__": ms}` pauses the tape for `ms` milliseconds before continuing (used to make a
 // streamed reply's own incremental `message_update` deltas land as genuinely separate renders,
@@ -71,6 +72,7 @@ function substitute(value, vars) {
     if (value === '$lastId') return vars.lastId;
     if (value === '$turnId') return vars.turnId;
     if (value === '$lastMessage') return vars.lastMessage;
+    if (value === '$conversationFile') return vars.conversationFile;
     return value;
   }
   if (Array.isArray(value)) return value.map((v) => substitute(v, vars));
@@ -101,7 +103,12 @@ async function main() {
   const tape = loadScenario(scenarioName);
   debugLog(`pid=${process.pid} scenario=${scenarioName} tapeLength=${tape.length}`);
 
-  const vars = { lastId: null, turnId: null, lastMessage: null };
+  // `conversationFile` is seeded once from the env var below (never updated by a wait, unlike
+  // the other three sentinels): a real, literal absolute path the caller pre-created on disk, so
+  // a scripted `get_state`/`switch_session` can report a `sessionFile` that
+  // `assert_conversation_file_exists` (launch_support.rs) genuinely finds -- needed only by a
+  // fixture exercising a real reattach/reopen round trip (issue #555's own live check).
+  const vars = { lastId: null, turnId: null, lastMessage: null, conversationFile: process.env.REFRACT_FAKE_OMP_CONVERSATION_FILE || null };
   let cursor = 0;
   // Commands whose type the tape is not currently waiting for are logged and dropped (never
   // silently hung forever): a real `omp` would of course handle any command, but this is a
