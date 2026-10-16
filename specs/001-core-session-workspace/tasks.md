@@ -2515,7 +2515,7 @@ live-measured at 0px; its other four items are untouched.
   (product code unchanged since), including the growth/focus criterion the round 1 gate found
   unproven.
 
-## Phase 47: Convergence (provisional numbering, T248+ reserved to avoid collision with concurrent lanes; parent renumbers before merge)
+## Phase 47: Convergence
 
 - [X] T248 [US1] #558 blocker callout (Decided, Skippy, delegated by Stuart 2026-10-16;
   `ui-architect-v3` roundtable, full decision record on the issue): a blocker advisory read as
