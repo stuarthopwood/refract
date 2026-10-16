@@ -362,8 +362,12 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Collapse all groups', `Tab from Clear filter must land on Collapse all groups (got ${JSON.stringify(active)})`);
   log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> search field -> Clear filter -> Collapse all groups.');
-  await pressEscape(cdp);
-  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Esc (Tab-order check cleanup)' });
+  // Cleanup: focus is on Collapse all groups now (the last Tab stop asserted above), not the
+  // field, so Esc here would do nothing (`SearchField`'s own handler only intercepts Escape
+  // while the INPUT itself has focus) -- the in-field Clear button works regardless of what
+  // currently has focus.
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Clear (Tab-order check cleanup)' });
   await cdp.evaluate(`document.activeElement?.blur()`);
 
   // ---- Settings round trip: the query (and its filtering) survive opening Settings and
