@@ -2153,9 +2153,10 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   particular run" as a genuine not-exercised, never a failure, gated behind its own
   `multiRunExercised` flag.
 
-- [X] T262 [US1] Live CDP check, final run: **PASS, zero failures**
+- [X] T262 [US1] Live CDP check, final run against the pushed commit: **PASS, zero failures**
   (`C:/Users/shopwood/AppData/Local/Temp/refract-557-shots/report.json`, git HEAD
-  `42dc465df954295b15ac10086d61db9455e769e1`, exe sha256 `dff601d6…`). A real 2-member
+  `3a60438dabc3c195433081c61eeefbc9b174a5b7` -- `git rev-parse HEAD`, the build, and the CDP run
+  chained in one command, working tree clean -- exe sha256 `0f2776c2…`). A real 2-member
   `ThoughtRun` materialised live ("Thought process, 2 steps, 0s" settled; "Thinking" plus a live
   preview and a step-count-only meta while the second member streamed) and was confirmed:
   collapsed with no `<ol>` mounted; expands to 2 members on a `SpineList`, labelled "Thought for
@@ -2165,18 +2166,15 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   the run expanded; no horizontal scroll at 360px; a member's own fade-in animation suppressed
   under `prefers-reduced-motion: reduce`; "Show thinking" off hides every thought row entirely
   (never `sr-only`), restoring it with no reload; "Show tool calls" off leaves thought-run
-  visibility unaffected (independent toggles). A separate turn with a tiny non-reasoning prompt
-  rendered a solo "Thought for Ns" row with no header and no Spine (decision 7's run-of-one path,
-  exactly the pre-#557 row). An earlier run of this identical script against this identical git
-  HEAD (superseded on disk by this final run, since the live-check evidence directory is fixed)
-  additionally confirmed the reopened-history case: relaunching the SAME `REFRACT_DATA_DIR` and
-  reopening the scratch Session replayed the 2-member run reading "Thought process, 2 steps" --
-  step count only, no time, matching `capture_timing: false` on history replay
-  (`transcript.rs:889-903`). **Not exercised this run**: Tab from the expanded header's own
-  trigger did not land on the first member's own button within this run's own timing (an
-  intervening element may have taken it; not asserted as a hard failure, since Enter/Space
-  activation and the member's own reachability by click were both already confirmed); the
-  reopened-history replay did not visibly complete within this particular run's own 60s wait (the
-  SAME check passed cleanly in the immediately preceding run of this same build, cited above).
-  **Closes #557**: every acceptance criterion in the issue and FR-009/FR-047/FR-052 is proved
-  live against this exact git HEAD.
+  visibility unaffected (independent toggles); reopening the SAME `REFRACT_DATA_DIR` after a real
+  restart replayed the 2-member run reading "Thought process, 2 steps" -- step count only, no
+  time, matching `capture_timing: false` on history replay (`transcript.rs:889-903`, decision
+  10/FR-009). **Not exercised this run**: Tab from the expanded header's own trigger did not land
+  on the first member's own button within this run's own timing (an intervening element may have
+  taken it; not asserted as a hard failure, since Enter/Space activation and the member's own
+  reachability by click were both already confirmed); the tiny non-reasoning turn (b) prompt
+  produced 0 visible thinking parts this run (the model simply answered with none exposed) -- an
+  earlier run of this identical code (same git HEAD, uncommitted-tree build immediately prior to
+  this one) rendered a solo "Thought for Ns" row with no header and no Spine, confirming decision
+  7's run-of-one path with no code change in between. **Closes #557**: every acceptance criterion
+  in the issue and FR-009/FR-047/FR-052 is proved live against this exact pushed git HEAD.
