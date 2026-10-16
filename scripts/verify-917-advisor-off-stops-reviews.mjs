@@ -93,15 +93,17 @@ async function sendRealTurn(cdp, sentinel) {
   );
 }
 
-/** `window.refract.sessions.list()`'s own `currentConversation` (absolute path, populated once
- * the first message has been sent) -> its directory is the Session's own OMP artifacts dir,
- * where `__advisor*.jsonl` lives beside the Conversation file (omp://advisor-watchdog.md). */
+/** `window.refract.sessions.list()`'s own `sessionDir` field (populated from `get_state`'s own
+ * `sessionFile` as soon as it is first learned -- unlike `currentConversation`, which the Rust
+ * side (`sync_from_state.rs`) only persists once `messageCount > 0`, `sessionDir` has no such
+ * gate, so it is already populated by the time the composer is enabled, well before any slash
+ * command or real turn has been sent). `__advisor*.jsonl` lives directly inside it, beside
+ * whichever Conversation file is current (omp://advisor-watchdog.md). */
 async function getSessionDir(cdp) {
-  const currentConversation = await cdp.waitFor(
-    `(async () => { const result = await window.refract.sessions.list(); if (!result.ok) return null; const s = result.value[0]; return s?.currentConversation ?? null; })()`,
-    { timeoutMs: 30_000, label: 'Session currentConversation populated' }
+  return cdp.waitFor(
+    `(async () => { const result = await window.refract.sessions.list(); if (!result.ok) return null; const s = result.value[0]; return s?.sessionDir ?? null; })()`,
+    { timeoutMs: 30_000, label: 'Session sessionDir populated' }
   );
-  return path.dirname(currentConversation);
 }
 
 /** Total size (bytes) and line count across every `__advisor*.jsonl` in `dir` right now -- 0/0
