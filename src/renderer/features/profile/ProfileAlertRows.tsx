@@ -24,6 +24,7 @@
 // effect below watches both and joins them into a single announcement when both transition
 // together.
 import { useEffect, useRef, useState } from 'react'
+import { focusProfileItemName } from '@/lib/focus'
 import { AlertTriangleIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -36,13 +37,6 @@ function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'}`
 }
 
-/** Shared fallback focus target for either dialog below, when the control that opened it has
- *  since unmounted (its own row's alert condition cleared, or the row was dismissed, while the
- *  dialog it opened is still open) -- the profile item's name button is always mounted, in both
- *  the mock's and the spec's intended layout, directly above these rows. */
-function focusProfileItemNameButton(): void {
-  document.querySelector<HTMLElement>('[data-profile-name-button]')?.focus()
-}
 
 export function ProfileAlertRows() {
   const warning = useMemoryStore((state) => state.warning)
@@ -135,7 +129,7 @@ export function ProfileAlertRows() {
         onOpenChange={setTriageOpen}
         onCloseFocus={() => {
           if (triageButtonRef.current?.isConnected) triageButtonRef.current.focus()
-          else focusProfileItemNameButton()
+          else focusProfileItemName()
         }}
       />
       <HealthCheckDialog
@@ -143,7 +137,7 @@ export function ProfileAlertRows() {
         onOpenChange={setHealthOpen}
         onCloseFocus={() => {
           if (checkButtonRef.current?.isConnected) checkButtonRef.current.focus()
-          else focusProfileItemNameButton()
+          else focusProfileItemName()
         }}
       />
     </div>

@@ -80,10 +80,13 @@ const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 const SHOT_DIR = process.env.REFRACT_560_SHOT_DIR || path.join(tmpdir(), 'refract-560-shots');
 
-// This story's own frozen copy (recorded at freeze time): built from HEAD cd4b0e33f9e3f06498010aa40df0b4b585444960.
+// This story's own frozen copy (recorded at freeze time): built from HEAD
+// f3014aeb89ee74ddeab90fd08e3823c8675a4d4a (gate-round-1 remediation commit, which fixed the
+// focus-after-stop/bulk-button-label/title-flicker/double-stop bugs this script's own prior run
+// at cd4b0e3 documented).
 const FROZEN_EXE_DEFAULT = 'C:/Users/shopwood/AppData/Local/Temp/refract-560-scratch/refract-tauri-560.exe';
-const FROZEN_EXE_EXPECTED_GIT_HEAD = 'cd4b0e33f9e3f06498010aa40df0b4b585444960';
-const FROZEN_EXE_EXPECTED_HASH = '16bfe7e2ca6da4e758cb5add95609f84e5114b92be689a0a80dca81f4c47e5e4';
+const FROZEN_EXE_EXPECTED_GIT_HEAD = 'f3014aeb89ee74ddeab90fd08e3823c8675a4d4a';
+const FROZEN_EXE_EXPECTED_HASH = 'b68072190c5a52352b3bdff67fd27719786d23536005e339cdad991edc6e1ef2';
 
 // ---- Finders (JS expressions evaluated in the renderer; same `expr-string` convention every
 // other verify-tauri-*.mjs script uses, never a literal CSS-only selector when text/role
@@ -92,7 +95,7 @@ const PROFILE_NAME_BUTTON = `document.querySelector('[data-profile-name-button]'
 const TRIAGE_BUTTON = `document.querySelector('[aria-label="Open memory triage"]')`;
 const DISMISS_MEMORY_BUTTON = `document.querySelector('[aria-label="Dismiss low memory alert"]')`;
 const DISMISS_OMPVERSION_BUTTON = `document.querySelector('[aria-label="Dismiss unverified version alert"]')`;
-const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => /^Low memory \\(\\d+ agents\\)$/.test(el.textContent.trim()))`;
+const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => /^Low memory \\(\\d+ agents?\\)$/.test(el.textContent.trim()))`;
 const OMPVERSION_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'omp 18.10.1: unverified version')`;
 const DIALOG = `document.querySelector('[role="dialog"]')`;
 const ALERT_DIALOG = `document.querySelector('[role="alertdialog"]')`;
@@ -227,6 +230,23 @@ async function axText(cdp, selectorExpr) {
   return names.length > 0 ? names.join('') : null;
 }
 
+/** Polls `textExpr` every `intervalMs` while `aliveExpr` stays true, collecting EVERY sampled
+ * value -- not just the first or the last -- so a title/description that goes blank partway
+ * through a Radix exit animation (the DOM node stays mounted for the animation's duration
+ * before unmounting) is caught even though both endpoints look fine. Returns once `aliveExpr`
+ * goes false (one final sample is taken right after, in case the container vanished between
+ * polls) or `timeoutMs` elapses. */
+async function sampleWhileAlive(cdp, textExpr, aliveExpr, { intervalMs = 20, timeoutMs = 5_000 } = {}) {
+  const samples = [];
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    samples.push(await cdp.evaluate(`${textExpr} ?? null`));
+    if (!(await cdp.evaluate(aliveExpr))) break;
+    await sleep(intervalMs);
+  }
+  return samples;
+}
+
 async function waitForSessionStatus(cdp, sessionId, status, { timeoutMs = 60_000 } = {}) {
   await cdp.waitFor(
     `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.status === ${JSON.stringify(status)})`,
@@ -252,6 +272,14 @@ async function latestSessionIdAndName(cdp, repoName, excludeIds = []) {
 async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   const notExercised = [];
 
+  // Wraps the real `window.refract.sessions.stopAgent` bridge once, early (before any Stop is
+  // clicked), to count invocations -- Item 2's busy-guard assertion below proves a second real
+  // Enter keypress on an already-"Stopping…" button does not reach the IPC call a second time.
+  // `fake-omp-invocations.log` (REFRACT_FAKE_OMP_DEBUG_LOG) only records the fake-omp CHILD
+  // PROCESS's own argv per spawn, not per-call `sessions.stopAgent` IPC traffic into the Rust
+  // backend, so it cannot answer this; this in-page counter is the direct equivalent.
+  await cdp.evaluate(`(() => { window.__stopAgentCallCount = 0; const orig = window.refract.sessions.stopAgent.bind(window.refract.sessions); window.refract.sessions.stopAgent = (...args) => { window.__stopAgentCallCount++; return orig(...args); }; })()`);
+
   // ---- Setup: readiness green, one scratch repository, one idle Session (sessionA) ----
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
@@ -270,7 +298,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   // ---- Item 1: both alert rows appear, with the exact text/labels ----
   await cdp.waitFor(LOW_MEMORY_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Low memory alert row appears (REFRACT_FORCE_LOW_MEMORY=1)' });
   const memoryRowName = await axText(cdp, LOW_MEMORY_ROW_SPAN);
-  assert(/^Low memory \(\d+ agents\)$/.test(memoryRowName ?? ''), `low-memory row's own accessible name must read "Low memory (N agents)" (got ${JSON.stringify(memoryRowName)})`);
+  assert(/^Low memory \(\d+ agents?\)$/.test(memoryRowName ?? ''), `low-memory row's own accessible name must read "Low memory (N agent(s))" (got ${JSON.stringify(memoryRowName)})`);
   log(`STEP PASS: low-memory alert row present, accessible name ${JSON.stringify(memoryRowName)}.`);
 
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Unverified omp version alert row appears' });
@@ -375,11 +403,11 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(stillHasSessionA === false, `the already-stopped Session "${sessionA.name}" must never reappear (status filter is by construction, not a one-time snapshot)`);
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   const bulkTitle = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
-  assert(bulkTitle === 'Stop 1 idle agents?', `the bulk confirmation must name the real idle count (got ${JSON.stringify(bulkTitle)})`);
+  assert(bulkTitle === 'Stop 1 idle agent?', `the bulk confirmation must name the real idle count (got ${JSON.stringify(bulkTitle)})`);
   log('STEP PASS: "Stop idle" confirms with the real, current idle count.');
-  await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop all')`);
+  await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop idle')`);
   await waitForSessionStatus(cdp, sessionB.id, 'stopped');
-  await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed after Stop all' });
+  await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed after Stop idle' });
   await cdp.waitFor(`(${DIALOG})?.textContent.includes('No idle agents to stop right now.')`, { timeoutMs: 10_000, label: 'Triage falls back to empty state after bulk stop' });
   log('STEP PASS: bulk "Stop idle" stopped every listed Session and the dialog now shows the empty-state copy.');
   await cdp.screenshot(path.join(evidenceDir, '04-triage-dialog-empty-after-bulk-stop.png'));

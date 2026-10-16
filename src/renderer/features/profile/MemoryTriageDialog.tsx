@@ -83,7 +83,6 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
   const [bulkStopping, setBulkStopping] = useState(false)
   const bulkButtonRef = useRef<HTMLButtonElement | null>(null)
   const dialogTitleRef = useRef<HTMLHeadingElement>(null)
-  const pendingFocusRef = useRef<(() => void) | null>(null)
 
   /** After a stop (single or bulk) actually settles, picks where focus goes next: the first
    *  still-idle row's own Stop button, else "Stop idle" if the list is non-empty, else the
@@ -117,7 +116,6 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
     }
     setStoppingId(target.id)
     try {
-      pendingFocusRef.current = focusAfterStop
       await stopAgent(target.id)
     } finally {
       setStoppingId(null)
@@ -129,7 +127,6 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
     if (bulkStopping) return
     setBulkStopping(true)
     try {
-      pendingFocusRef.current = focusAfterStop
       await Promise.allSettled(bulkTargetIds.filter(isStillIdle).map((id) => stopAgent(id)))
     } finally {
       setBulkStopping(false)
@@ -148,12 +145,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
         <DialogContent
           onCloseAutoFocus={(event) => {
             event.preventDefault()
-            if (pendingFocusRef.current) {
-              pendingFocusRef.current()
-              pendingFocusRef.current = null
-            } else {
-              onCloseFocus()
-            }
+            onCloseFocus()
           }}
         >
           <DialogHeader>
@@ -286,7 +278,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>Stop {bulkTargetIds.length} idle agents?</AlertDialogTitle>
+            <AlertDialogTitle>Stop {bulkTargetIds.length} idle agent{bulkTargetIds.length === 1 ? '' : 's'}?</AlertDialogTitle>
             <AlertDialogDescription>Every one stays listed; reopening any of them resumes where it left off.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
