@@ -263,11 +263,11 @@ function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
   return nextAt - previousAt > TIME_GAP_THRESHOLD_MS
 }
 
-// Gate round 3 a11y fix (Main, 2026-10-16): `role="separator"`+`aria-label` on the wrapper read as just "separator" on some screen readers; now a plain `div`, decorative lines stay `aria-hidden`, so the visible label reads once as plain text.
+// Gate round 3 a11y fix (Main, 2026-10-16): `role="separator"`+`aria-label` on the wrapper read as just "separator" on some screen readers; now a plain `div`, decorative lines stay `aria-hidden`, so the visible label reads once as plain text. `data-slot` (not a role) lets a live-check/test identify this row without re-adding an ARIA name.
 function TimeGapDivider({ at }: { at: number }) {
   const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+    <div data-slot="time-gap-divider" className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span>{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />

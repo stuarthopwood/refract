@@ -46,7 +46,7 @@
 //        precedes it) renders its own `<time>`, matching this script's own computed expected
 //        label/`dateTime` (a JS re-implementation of `formatMessageTime`, kept in sync by hand).
 //     7. Hide-under-a-divider (Stuart's amendment): "this year" and "today" each sit directly
-//        under a real `TimeGapDivider` (`role="separator"`, the wrapper's own previous sibling)
+//        under a real `TimeGapDivider` (`[data-slot="time-gap-divider"]`, the wrapper's own previous sibling)
 //        and render NO `<time>` row of their own.
 //     8. Gate round 3 (Main): the no-`timestamp` message inserted before "yesterday" breaks the
 //        divider comparison on both sides (`showTimeGapDivider` needs a real `at` on both turns)
@@ -174,7 +174,7 @@ function worktreesDirFor(repoDir) {
  * (gate round 1: that made "outside the bubble's box" true by construction) -- or `null` if
  * `item.at === 0`/non-finite/`hideTime` hid it (`UserMessageTime` returns `null`). A missing
  * WRAPPER is its own `error` (gate round 2: never inferred as "hidden"). Also reports the
- * wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider` (`role="separator"`)
+ * wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider` (`[data-slot="time-gap-divider"]`)
  * sits as the wrapper's own immediately preceding sibling. */
 function timeAndMarginProbeExpr(messageText) {
   return `
@@ -186,7 +186,7 @@ function timeAndMarginProbeExpr(messageText) {
       if (!bubble) return { error: 'no matching user bubble for ' + ${JSON.stringify(messageText)} };
       const wrapper = bubble.closest('[data-slot="message-scroller-item"]');
       if (!wrapper) return { error: 'no message-scroller-item wrapper found for ' + ${JSON.stringify(messageText)} };
-      const precededByDivider = wrapper.previousElementSibling != null && wrapper.previousElementSibling.getAttribute('role') === 'separator';
+      const precededByDivider = wrapper.previousElementSibling != null && wrapper.previousElementSibling.getAttribute('data-slot') === 'time-gap-divider';
       const timeEl = wrapper.querySelector('time');
       const bubbleRect = bubble.getBoundingClientRect();
       if (!timeEl) {
