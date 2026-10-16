@@ -5,7 +5,7 @@
 // rather than fork it -- extend with a prop when that story needs more, per the HARD RULE in
 // AGENTS.md ("Reusable UI components").
 import { useId, useRef } from 'react'
-import type { KeyboardEvent, RefObject } from 'react'
+import type { InputHTMLAttributes, KeyboardEvent, RefObject } from 'react'
 import { SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,9 +30,14 @@ export interface SearchFieldProps {
    *  so a future toolbar can embed this field without nesting a second landmark). */
   className?: string
   inputRef?: RefObject<HTMLInputElement | null>
+  /** Gate round 1 fix (code-reviewer Medium): extra attributes spread onto the `<input>` itself
+   *  (for example a stable `data-*` hook), so a caller never has to find this field by its
+   *  wrapper's own descendant structure -- #934's own future `ListToolbar` embedding could
+   *  change that structure. */
+  inputProps?: InputHTMLAttributes<HTMLInputElement> & { [attribute: `data-${string}`]: string }
 }
 
-export function SearchField({ value, onValueChange, label, placeholder, tooltipSide = 'top', className, inputRef }: SearchFieldProps) {
+export function SearchField({ value, onValueChange, label, placeholder, tooltipSide = 'top', className, inputRef, inputProps }: SearchFieldProps) {
   const localRef = useRef<HTMLInputElement>(null)
   const resolvedRef = inputRef ?? localRef
   const hasValue = value !== ''
@@ -67,7 +72,18 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
         placeholder={placeholder}
         aria-label={label}
         aria-describedby={hasValue ? clearHintId : undefined}
-        className="h-8 pl-8 pr-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+        // Issue #559 decision 28, gate round 1 fix (a11y-auditor/contrast script, code-reviewer
+        // Medium): `Input`'s own base class is `bg-transparent dark:bg-input/30`, and `.dark` is
+        // always applied regardless of the active theme (`theme-store.ts`'s `applyThemeClass`) --
+        // so inside this field's own `bg-sidebar` host, the real rendered surface is ALWAYS
+        // `--input` at 30% opacity composited over `--sidebar`, which measures under 4.5:1 for
+        // `muted-foreground` (the placeholder and both icons) in Dark and Obsidian (2.55:1 /
+        // 2.61:1, `scripts/check-theme-contrast.mjs`). Forced opaque instead, the same fix
+        // shadcn's own (unused) `SidebarInput` primitive already applies for exactly this
+        // reason (`ui/sidebar.tsx`'s `bg-background`) -- both the base and `dark:` variant are
+        // overridden so neither can win the cascade.
+        className="h-8 bg-background pl-8 pr-8 text-sm dark:bg-background forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+        {...inputProps}
       />
       {hasValue && (
         <span id={clearHintId} className="sr-only">
@@ -89,7 +105,16 @@ export function SearchField({ value, onValueChange, label, placeholder, tooltipS
               // Not centred with `top-1/2 -translate-y-1/2`: `Button`'s own base
               // `active:not-aria-[haspopup]:translate-y-px` would then fight that transform on
               // every press. `top-1` centres a 24px target in this 32px field with no transform.
-              className={cn('absolute right-1 top-1 text-muted-foreground hover:text-foreground', COMPOSER_BUTTON_FOCUS_CLASS)}
+              //
+              // Gate round 1 fix (ui-visual-system-v3 Medium): `COMPOSER_BUTTON_FOCUS_CLASS`'s
+              // own `outline-offset-2` pushes the ring onto (and partly past) the field's 1px
+              // border at this button's 4px inset, measuring under 3:1 on that side -- an
+              // explicit `outline-offset-0` after it wins the same CSS property.
+              className={cn(
+                'absolute right-1 top-1 text-muted-foreground hover:text-foreground',
+                COMPOSER_BUTTON_FOCUS_CLASS,
+                'focus-visible:outline-offset-0'
+              )}
               onClick={clear}
             >
               <XIcon aria-hidden />

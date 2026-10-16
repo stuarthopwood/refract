@@ -2,6 +2,13 @@ import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE } from '../../shared/model'
 import type { SessionListCollapse } from '../../shared/model'
 
+/** Decision 18 (gate round 1, code-reviewer Medium): the one place `override.repositories.get`'s
+ * default lives -- a Project absent from the override map is open (matching `isGroupOpen`'s own
+ * no-override default), repeated four times before this helper existed. */
+function overrideOpen(override: { repositories: Map<string, boolean> }, repositoryId: string): boolean {
+  return override.repositories.get(repositoryId) ?? true
+}
+
 // Issue #735 (decision record): collapsed/expanded state for the session
 // list's per-Repository groups and the cross-repository Archived group (#527), persisted in
 // `Settings.sessionListCollapse`. Lives in its own store rather than `useSettingsStore`
@@ -134,7 +141,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
     },
     isGroupOpen: (repositoryId) => {
       const override = get().searchOverride
-      if (override) return override.repositories.get(repositoryId) ?? true
+      if (override) return overrideOpen(override, repositoryId)
       return !get().collapsedRepositoryIds.has(repositoryId)
     },
     isArchivedGroupOpen: () => {
@@ -146,7 +153,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       // ephemeral override and never calls `persist()` -- the saved layout is untouched.
       const override = get().searchOverride
       if (override) {
-        if ((override.repositories.get(repositoryId) ?? true) === open) return
+        if (overrideOpen(override, repositoryId) === open) return
         const repositoriesOverride = new Map(override.repositories)
         repositoriesOverride.set(repositoryId, open)
         set({ searchOverride: { ...override, repositories: repositoriesOverride } })
@@ -215,7 +222,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
         persist()
       }
       const override = get().searchOverride
-      if (override && (override.repositories.get(repositoryId) ?? true) !== true) {
+      if (override && overrideOpen(override, repositoryId) !== true) {
         const repositoriesOverride = new Map(override.repositories)
         repositoriesOverride.set(repositoryId, true)
         set({ searchOverride: { ...override, repositories: repositoriesOverride } })

@@ -2,6 +2,7 @@
 // (the hover card), split out so neither file has to import the other.
 
 import { BellRingIcon, CircleCheckIcon, MessageSquareTextIcon, SquareIcon } from 'lucide-react'
+import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
@@ -56,6 +57,47 @@ export function matchesSessionSearch(session: Pick<SessionSummary, 'name' | 'bra
  *  from here now, with no re-export left in `manageSessionsHelpers.ts`. */
 export function showingCountLabel(shown: number, total: number): string {
   return `Showing ${shown} of ${total} ${total === 1 ? 'session' : 'sessions'}`
+}
+
+export interface SearchedSessions {
+  /** Matching, non-archived Sessions per Project id (every Project id is present, possibly
+   *  with an empty array). Already excludes archived Sessions, so a caller never needs its own
+   *  second `!session.archivedAt` filter on top of this. */
+  matchingByRepository: Map<string, SessionSummary[]>
+  /** Matching archived Sessions, Project-resolvable only (#527's own invariant). */
+  matchingArchived: SessionSummary[]
+  /** Total sessions `query` actually narrows: every non-archived, Project-resolvable Session
+   *  plus every Project-resolvable archived one -- an empty `query` makes `shownCount` equal
+   *  this. */
+  totalCount: number
+  shownCount: number
+}
+
+/** Issue #559 decision 12, gate round 1 (code-reviewer Medium): the ONE place that computes
+ *  what a session-list search query matches, shared by `SessionList.tsx`'s own render path and
+ *  its debounced announcement (previously two independent copies that could silently drift
+ *  apart, for example once #748 Hidden Sessions exist and only one copy excludes them).
+ *  `query` is raw (not yet trimmed/lower-cased) -- this does that once, internally. */
+export function searchSessions(sessions: SessionSummary[], repositories: Repository[], query: string): SearchedSessions {
+  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
+  const trimmed = query.trim().toLowerCase()
+  const matches = (session: SessionSummary): boolean =>
+    matchesSessionSearch(session, repositoriesById.get(session.repositoryId)?.name ?? '', trimmed)
+  const matchingByRepository = new Map<string, SessionSummary[]>()
+  for (const repository of repositories) {
+    matchingByRepository.set(
+      repository.id,
+      sessions.filter((session) => session.repositoryId === repository.id && !session.archivedAt && matches(session))
+    )
+  }
+  const matchingArchived = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId) && matches(session))
+  const totalCount =
+    sessions.filter((session) => !session.archivedAt && repositoriesById.has(session.repositoryId)).length +
+    sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId)).length
+  const shownCount = trimmed
+    ? [...matchingByRepository.values()].reduce((sum, list) => sum + list.length, 0) + matchingArchived.length
+    : totalCount
+  return { matchingByRepository, matchingArchived, totalCount, shownCount }
 }
 
 // ISO timestamps sort and compare lexically, so no Date parsing is needed until formatting.
