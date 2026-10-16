@@ -25,7 +25,11 @@ export interface StageGroup {
 // every stale bare-`subagent` call site as a type error.
 export type StageGroupedItem = Exclude<GroupedTranscriptItem, { kind: 'subagent' }> | StageGroup
 
-export function isStageGroup(item: StageGroupedItem): item is StageGroup {
+// Parameter widened to `{ kind: string }` (issue #558) rather than the narrower
+// `StageGroupedItem` so a caller holding a STILL-WIDER union (`groupAdvisoryItems.ts`'s own
+// `AdvisoryGroupedTranscriptItem`, which also admits an `AdvisoryRun`) can call this directly
+// with no cast and no import cycle; the narrowing it performs is unaffected either way.
+export function isStageGroup(item: { kind: string }): item is StageGroup {
   return item.kind === 'stage-group'
 }
 

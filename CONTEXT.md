@@ -199,6 +199,18 @@ _Avoid_: Filter (see **Filter tab**), section
 A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
+**Advisory accent bar**:
+The 3px left stripe on an expanded blocker (always, error colour) or expanded concern (warning colour) advisory row -- a local sibling class on `AdvisoryRow`'s own wrapper `div`, reserved (transparent) in every other state so toggling it never shifts layout; never a `CollapsedLine` primitive prop (issue #558).
+_Avoid_: severity box, blocker card, alert stripe
+
+**Advisory location**:
+A `path:line` (optionally `:column`) the advisory's note or guidance names, extracted by a conservative, allowlisted-extension regex and shown as monospace, selectable text under an expanded blocker or concern -- never a link (opening the file waits on #463). Zero or more per advisory; none shown when none is found (issue #558).
+_Avoid_: file reference, source pointer
+
+**Advisory concern run**:
+Six or more consecutive concern-severity advisories in one turn with nothing else between them, shown as the newest five plus a "+ Show N more advisor concerns" one-way reveal button -- a run of five or fewer stays ungrouped. Blockers and nits are never part of a run (issue #558).
+_Avoid_: concern group, advisory batch
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
