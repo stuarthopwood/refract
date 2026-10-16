@@ -29,6 +29,35 @@ export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   'unread-response': 'Unread response'
 }
 
+/** Issue #559 decision 12 (reused by `manageSessionsHelpers.ts`'s `filterAndSortSessions`,
+ *  spec 008 FR-025, so neither file has its own copy of this substring check): does `session`'s
+ *  name OR branch contain `query`, case-insensitively? `query` is already trimmed and
+ *  lower-cased by the caller (both callers share that one normalisation step); an empty `query`
+ *  always matches. */
+export function matchesNameOrBranch(session: Pick<SessionSummary, 'name' | 'branch'>, query: string): boolean {
+  if (!query) return true
+  return session.name.toLowerCase().includes(query) || session.branch.toLowerCase().includes(query)
+}
+
+/** Issue #559 decision 12: the session list's own, strictly broader search -- name OR branch
+ *  (above) OR the Session's own Project name. `repositoryName` is the exact string a Project's
+ *  Group header shows (`RepositoryGroup`'s `label={repository.name}`; decision 14: an archived
+ *  row searches the same way, against the same name its own Archived row shows as a secondary
+ *  label). `query` is already trimmed and lower-cased by the caller. */
+export function matchesSessionSearch(session: Pick<SessionSummary, 'name' | 'branch'>, repositoryName: string, query: string): boolean {
+  if (!query) return true
+  return matchesNameOrBranch(session, query) || repositoryName.toLowerCase().includes(query)
+}
+
+/** The filtered-result announcement: "Showing X of N sessions", singular "session" when the
+ *  UNFILTERED total itself is 1 (the thing actually being enumerated). Moved here from
+ *  `manageSessionsHelpers.ts` (issue #559 decision 23) so the Manage sessions screen and the
+ *  session list's own search never phrase the same count two different ways; both import it
+ *  from here now, with no re-export left in `manageSessionsHelpers.ts`. */
+export function showingCountLabel(shown: number, total: number): string {
+  return `Showing ${shown} of ${total} ${total === 1 ? 'session' : 'sessions'}`
+}
+
 // ISO timestamps sort and compare lexically, so no Date parsing is needed until formatting.
 export function formatRelativeTime(iso: string): string {
   const deltaMs = Date.now() - new Date(iso).getTime()

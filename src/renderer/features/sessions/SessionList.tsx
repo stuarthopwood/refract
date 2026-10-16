@@ -1,17 +1,21 @@
-import { useEffect, useId } from 'react'
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon } from 'lucide-react'
+import { useEffect, useId, useRef } from 'react'
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
+import { SearchField } from '@/components/SearchField'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+import { matchesSessionSearch, showingCountLabel } from './sessionDisplay'
 
 // Gate round 1 fix (High, ui-visual-system-v3): decision 23's literal focus class string
 // (`focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
@@ -55,6 +59,17 @@ export function SessionList() {
   const collapsedRepositoryIds = useSessionListStore((state) => state.collapsedRepositoryIds)
   const archivedOpen = useSessionListStore((state) => state.archivedOpen)
   const restored = useSessionListStore((state) => state.restored)
+  // Issue #559 decisions 17-21, 27: the search query and its ephemeral open-group override.
+  // Subscribed as raw state (not through `isGroupOpen`/`isArchivedGroupOpen`) so the aggregate
+  // no-op count below can read every group's open state in a plain loop -- a selector cannot be
+  // called conditionally or per-iteration (Rules of Hooks).
+  const query = useSessionListStore((state) => state.query)
+  const searchOverride = useSessionListStore((state) => state.searchOverride)
+  const setQuery = useSessionListStore((state) => state.setQuery)
+  const trimmedQuery = query.trim().toLowerCase()
+  const hasQuery = trimmedQuery !== ''
+
+  const isArchivedOpen = searchOverride ? searchOverride.archivedOpen : archivedOpen
   const collapseAllReasonId = useId()
   const expandAllReasonId = useId()
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
@@ -62,10 +77,38 @@ export function SessionList() {
   // nothing anywhere is archived" rule shows it; while hidden, its saved flag is ignored.
   const archivedSessions = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId))
   const archivedVisible = archivedSessions.length > 0
+  // Issue #559 decisions 13-16: searching narrows what the list shows -- it never reveals a row
+  // the list would not otherwise show. A Project group renders only once at least one of its own
+  // non-archived Sessions matches, and shows only the matching rows (decision 15); Archived is
+  // searched the same way, matching each row's own Project name (decision 14). The derived header
+  // state each group computes (the Waiting marker, the visible-Session bar, Archived's own count)
+  // follows automatically, since it is computed from whichever `sessions` is passed in (decision
+  // 16) -- `archivedVisible` above stays computed from the UNFILTERED archived list regardless,
+  // since a group a search hides still counts toward "all" (#735 decision 11).
+  const activeSessions = sessions.filter((session) => !session.archivedAt && repositoriesById.has(session.repositoryId))
+  const totalConsideredCount = activeSessions.length + archivedSessions.length
+  const visibleRepositoryEntries = repositories
+    .map((repository) => ({
+      repository,
+      sessions: hasQuery
+        ? activeSessions.filter(
+            (session) => session.repositoryId === repository.id && matchesSessionSearch(session, repository.name, trimmedQuery)
+          )
+        : sessions.filter((session) => session.repositoryId === repository.id)
+    }))
+    .filter((entry) => !hasQuery || entry.sessions.length > 0)
+  const visibleArchivedSessions = hasQuery
+    ? archivedSessions.filter((session) => matchesSessionSearch(session, repositoriesById.get(session.repositoryId)!.name, trimmedQuery))
+    : archivedSessions
+  const shownCount = hasQuery
+    ? visibleRepositoryEntries.reduce((sum, entry) => sum + entry.sessions.length, 0) + visibleArchivedSessions.length
+    : totalConsideredCount
+  const noMatches = hasQuery && shownCount === 0
   const groupCount = repositories.length + (archivedVisible ? 1 : 0)
   const collapsedCount =
-    repositories.filter((repository) => collapsedRepositoryIds.has(repository.id)).length +
-    (archivedVisible && !archivedOpen ? 1 : 0)
+    repositories.filter((repository) =>
+      searchOverride ? (searchOverride.repositories.get(repository.id) ?? true) === false : collapsedRepositoryIds.has(repository.id)
+    ).length + (archivedVisible && !isArchivedOpen ? 1 : 0)
   // Decision 12: no special branch for zero groups -- both are vacuously true then, so both
   // buttons read as a no-op rather than one of them doing something undefined.
   const allCollapsed = collapsedCount === groupCount
@@ -82,6 +125,38 @@ export function SessionList() {
     if (allExpanded) return
     useSessionListStore.getState().expandAll(repositories.map((repository) => repository.id), archivedVisible)
     useChatAreaAnnouncer.getState().announce('All groups expanded')
+  }
+  // Issue #559 decisions 2, 23: the search field's own input ref (Ctrl+N's own App.tsx fallback,
+  // decision 26, focuses it when the search hides every Project) and its polite result-count
+  // announcement, debounced while typing (`ManageSessionsScreen.tsx`'s own established pattern).
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [searchAnnouncement, announceSearch] = useClearedAnnouncement()
+  const previousTrimmedQueryRef = useRef('')
+  useEffect(() => {
+    const previous = previousTrimmedQueryRef.current
+    previousTrimmedQueryRef.current = trimmedQuery
+    if (trimmedQuery === previous) return
+    if (trimmedQuery === '') {
+      announceSearch('Filter cleared')
+      return
+    }
+    const timer = setTimeout(() => {
+      // Re-read live state at fire time (mirrors `ManageSessionsScreen.tsx`'s own debounced
+      // announcement) so a Session that finished mid-debounce is reflected, not a stale snapshot
+      // from the moment the keystroke landed.
+      const liveSessions = useSessionsStore.getState().sessions
+      const liveRepositoriesById = new Map(useRepositoriesStore.getState().repositories.map((repository) => [repository.id, repository]))
+      const liveConsidered = liveSessions.filter((session) => liveRepositoriesById.has(session.repositoryId))
+      const liveShown = liveConsidered.filter((session) =>
+        matchesSessionSearch(session, liveRepositoriesById.get(session.repositoryId)!.name, trimmedQuery)
+      ).length
+      announceSearch(liveShown === 0 ? 'No sessions match' : showingCountLabel(liveShown, liveConsidered.length))
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [trimmedQuery])
+  function handleClearSearch(): void {
+    setQuery('')
+    searchInputRef.current?.focus()
   }
   // Issue #620, UX consult item 2 decision 9: the row menu's "New session from {branch}" item's
   // "Creating session from {branch}" / "Created session {name}" announcements now go through
@@ -174,10 +249,30 @@ export function SessionList() {
       </Button>
       {restored && (
         <>
+          {/* #735 decision 26 reserved this slot: between Pull requests and the toolbar. The
+              `role="search"` landmark lives here, at the call site, not inside `SearchField`
+              itself, so a future shared toolbar can embed the field without nesting a second
+              landmark (#559 decision 3). `mx-2` lines the field up with Pull requests' own
+              column, not the toolbar's `px-3` (decision 4). */}
+          <div role="search" aria-label="Sessions" data-session-search-region className="mx-2 mt-4 shrink-0">
+            <SearchField
+              inputRef={searchInputRef}
+              value={query}
+              onValueChange={setQuery}
+              label="Filter sessions by name, branch or project"
+              placeholder="Filter sessions…"
+              tooltipSide="right"
+            />
+            <div aria-live="polite" aria-atomic="true" className="sr-only">
+              {searchAnnouncement}
+            </div>
+          </div>
           {/* #735 decisions 4-9: pinned, outside and above the ScrollArea -- reachable from a
               long, scrolled list. No border/fill/label/role="toolbar" (zero-box rule; arrow-key
-              roving is ruled out by #567 decision 17). */}
-          <div className="mt-4 flex shrink-0 items-center justify-end gap-1 px-3">
+              roving is ruled out by #567 decision 17). `mt-2` (was `mt-4`): #559 decision 3 gives
+              the 16px gap from Pull requests to the search field above instead, so this row's
+              own gap shrinks to the 8px step under the field. */}
+          <div className="mt-2 flex shrink-0 items-center justify-end gap-1 px-3">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -238,14 +333,28 @@ export function SessionList() {
           </div>
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-3 p-2">
-              {repositories.map((repository) => (
-                <RepositoryGroup
-                  key={repository.id}
-                  repository={repository}
-                  sessions={sessions.filter((session) => session.repositoryId === repository.id)}
-                />
-              ))}
-              <ArchivedGroup sessions={archivedSessions} repositoriesById={repositoriesById} />
+              {noMatches ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="default">
+                      <SearchXIcon aria-hidden className="size-4 text-muted-foreground" />
+                    </EmptyMedia>
+                    <EmptyTitle>No sessions match</EmptyTitle>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button variant="outline" size="sm" onClick={handleClearSearch}>
+                      Clear filter
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : (
+                <>
+                  {visibleRepositoryEntries.map(({ repository, sessions }) => (
+                    <RepositoryGroup key={repository.id} repository={repository} sessions={sessions} />
+                  ))}
+                  <ArchivedGroup sessions={visibleArchivedSessions} repositoriesById={repositoriesById} />
+                </>
+              )}
             </div>
           </ScrollArea>
         </>

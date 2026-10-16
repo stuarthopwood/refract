@@ -29,6 +29,7 @@ import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/h
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
+import { announceQuickCreateFallback } from '@/lib/quickCreateFallback'
 
 // Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
 // minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
@@ -283,11 +284,8 @@ export function App() {
         // silent no-op there, and the keypress has already been `preventDefault`ed. Checking
         // whether focus genuinely moved catches that (and the button being altogether absent)
         // in one condition, and announces instead of leaving the user with no feedback at all.
-        if (document.activeElement !== plus) {
-          useChatAreaAnnouncer
-            .getState()
-            .announce('Open the session list to choose a repository for the new session')
-        }
+        // Issue #559 decision 26: `announceQuickCreateFallback` (`lib/quickCreateFallback.ts`).
+        if (document.activeElement !== plus) announceQuickCreateFallback(repositories.length)
         return
       }
 

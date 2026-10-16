@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Repository } from '../../../shared/model'
-import { showingCountLabel } from './manageSessionsHelpers'
+import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
 
 export interface ManageSessionsToolbarProps {

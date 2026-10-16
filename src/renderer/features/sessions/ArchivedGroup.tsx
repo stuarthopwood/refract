@@ -29,7 +29,9 @@ export function ArchivedGroup({
   // -- both only shown while closed (decisions 21, 22). Hooks run
   // unconditionally, ABOVE the `rows.length === 0` early return below (Rules of Hooks) --
   // `sorted` is simply `[]` on that pass, which every selector/helper below already handles.
-  const isOpen = useSessionListStore((state) => state.archivedOpen)
+  // Issue #559 decision 18: through the selector, not the raw field, so a search's ephemeral
+  // override (session-list-store.ts) reaches Archived too.
+  const isOpen = useSessionListStore((state) => state.isArchivedGroupOpen())
   const containsVisibleSession = useSplitStore((state) => sorted.some((session) => state.paneSessionIds.includes(session.id)))
   const marker = isOpen ? null : groupWaitingState(sorted)
   const containsOpenSession = !isOpen && containsVisibleSession
