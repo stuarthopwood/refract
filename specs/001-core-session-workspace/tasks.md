@@ -2721,15 +2721,57 @@ comment was posted on #559 and the PR body's Departures section corrected.
   (`AlertDialog`, naming the Session) and one "Stop idle" bulk confirm targeting every listed
   Session at once; no per-agent memory figure, since no per-process memory API exists anywhere
   in src-tauri and none is added by this story. Unverified version keeps a "Check" action
-  opening the existing `HealthCheckDialog`; its open/close state moves from `ProfileItem.tsx` up
-  into `App.tsx` since the dialog now has two separate trigger sites (the profile menu and this
-  row), each restoring focus to whichever control opened it. Each row dismisses for the run only
+  opening the existing `HealthCheckDialog`; `ProfileAlertRows.tsx` mounts its own independent
+  instance (its own `open` state and its own `onCloseFocus`), and `ProfileItem.tsx` keeps its
+  own, unchanged instance for the profile menu's Health check item -- the dialog itself supports
+  more than one caller, each owning its own open/close state and its own focus-restore target.
+  Each row dismisses for the run only
   (two local booleans in `ProfileAlertRows.tsx`, never persisted) -- a restart naturally re-arms
   both, satisfying "the alert returns if the condition persists after a restart" with no extra
   logic. Per FR-037 (amended) and new FR-072.
-- [X] T256 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with the
+- [X] T256 [US1] Gate remediation (round 1, four reviewers, one High/High pair confirmed live by
+  a CDP run): `MemoryTriageDialog.tsx` gained busy guards on both confirm flows (Escape and
+  Cancel blocked while a stop is in flight, `stoppingId`/`bulkStopping` gate re-entry), a live
+  re-check of each Session's `idle` status at confirm time (not the snapshot taken when its own
+  Stop button was clicked), a latched last-known confirm target/count (no more text flicker
+  during the close animation), a computed post-stop focus fallback (the next remaining row's own
+  Stop button, else "Stop idle", else the dialog's own now-focusable heading -- never a button
+  the same stop just removed), and `finally`-wrapped `stopAgent` calls so a rejected IPC call
+  can never leave the dialog stuck on "Stopping…". `ProfileAlertRows.tsx`'s announcements moved
+  from a local `useClearedAnnouncement` region (silenced while the nav column is `inert`) to the
+  shared, always-mounted `useChatAreaAnnouncer` App.tsx already renders outside that collapsible
+  subtree, with the two conditions joined into one announcement when both first appear in the
+  same commit (two separate `announce()` calls in the same tick cancelled each other); its own
+  outer padding is now conditional on a row actually showing (`empty:p-0` never matched, since
+  the row always contained the old live region); and "N agents" is pluralised correctly (matches
+  the retired `StatusBar.tsx`'s own `pluralAgents`). The bulk confirm's own destructive button now
+  reads "Stop idle" (was "Stop all", which could be misread as every agent including a working
+  one). Live-verified by `scripts/verify-tauri-560.mjs` (see T257).
+- [X] T257 [US1] Live CDP check (`scripts/verify-tauri-560.mjs`, new, following
+  `verify-tauri-559.mjs`'s own structure): isolated scratch launch per
+  `refract-tauri-live-check-isolation`, with `REFRACT_FORCE_LOW_MEMORY=1` (an existing,
+  pre-reviewed `#[cfg(debug_assertions)]` test knob in `shell/memory.rs`, not added by this
+  story) forcing the low-memory condition, and the fake-omp harness's own hardcoded
+  `omp/18.10.1` version (already outside the specifically re-probed 18.8.x range per
+  `readiness.rs`) triggering the unverified-version condition with no script changes to the app
+  needed for either. Proved live: both rows appear with the exact copy; Triage lists a created
+  idle Session and a confirmed Stop actually stops it; a second idle Session plus "Stop idle"
+  stops it via the bulk confirm, emptying the list; dismissing each row hides it immediately and
+  it does not return on its own within one more memory-sampler tick even though the forced
+  condition still holds; Check opens the real `HealthCheckDialog` showing a genuine
+  "Passed with a warning" omp row; a keyboard-only pass (Tab/Enter) reaches and activates the
+  Check action; every named control's accessible name read via the CDP Accessibility domain
+  (never `textContent`). All checks passed (exit 0); nothing reported as not-exercised. Evidence
+  (`report.json`, screenshots with their own sha256, `git rev-parse HEAD`) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+- [X] T258 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with the
   reworded FR-037, new FR-072, and a dated `### Session 2026-10-16 (quiet alert rows)`
   Clarifications entry; amended `specs/008-profile-and-accounts/spec.md` FR-029 to cross-reference
   both instead of duplicating them; `CONTEXT.md` gained the **Alert row** glossary entry (the term
   the **Waiting marker** entry's own `_Avoid_` line had already reserved for this issue);
-  `docs/PLAN.md` gets this story's own row.
+  `docs/PLAN.md` gets this story's own row. Gate-round corrections: this same task's own T255
+  entry above is corrected to describe the HealthCheckDialog's TWO independent instances built
+  (never a lift into App.tsx, which would have raised App.tsx's own file-size baseline back over
+  its cap); `contracts/ipc.md`'s `memory:warning` row and `memory-store.ts`'s header comment no
+  longer call this the status bar's notice; `HealthCheckDialog.tsx`'s own doc comment names both
+  of its callers.

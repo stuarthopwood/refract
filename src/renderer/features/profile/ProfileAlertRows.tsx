@@ -9,15 +9,40 @@
 // remounts this component with both flags false again, satisfying "the alert returns if the
 // condition persists after a restart" with no extra logic. "Announced once" means once per
 // appearance (including a post-dismiss recurrence after a restart): a ref per alert tracks
-// whether it was already showing on the previous render, and announce() only fires on a
-// hidden -> shown transition.
+// whether it was already showing on the previous render, and the announce effect below only
+// fires on a hidden -> shown transition.
+//
+// Quality-gate remediation (round 1, four reviewers): this component is mounted inside App.tsx's
+// collapsible nav column (`inert`/`aria-hidden` while `navCollapsed`), so a LOCAL `aria-live`
+// region here is silenced whenever the nav is collapsed -- a screen reader would never hear an
+// alert that first appears in that state. Announcements now go through `useChatAreaAnnouncer`
+// (the same always-mounted, never-hidden app-level region `quickCreateFallback.ts` already uses
+// from outside a component), not a local `useClearedAnnouncement` region. The two conditions can
+// also both become true in the SAME commit (e.g. on first mount, if a low-memory warning has
+// already arrived by the time the omp-version warning is set) -- announcing them from two
+// separate effects would race (`announce()` clears the other's still-pending text), so one
+// effect below watches both and joins them into a single announcement when both transition
+// together.
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useHealthStore, useMemoryStore } from '@/state'
 import { HealthCheckDialog } from './HealthCheckDialog'
 import { MemoryTriageDialog } from './MemoryTriageDialog'
+
+/** Matches the retired StatusBar.tsx's own `pluralAgents` exactly (never "1 agents"). */
+function pluralAgents(count: number): string {
+  return `${count} agent${count === 1 ? '' : 's'}`
+}
+
+/** Shared fallback focus target for either dialog below, when the control that opened it has
+ *  since unmounted (its own row's alert condition cleared, or the row was dismissed, while the
+ *  dialog it opened is still open) -- the profile item's name button is always mounted, in both
+ *  the mock's and the spec's intended layout, directly above these rows. */
+function focusProfileItemNameButton(): void {
+  document.querySelector<HTMLElement>('[data-profile-name-button]')?.focus()
+}
 
 export function ProfileAlertRows() {
   const warning = useMemoryStore((state) => state.warning)
@@ -25,7 +50,6 @@ export function ProfileAlertRows() {
   const [dismissed, setDismissed] = useState({ memory: false, ompVersion: false })
   const [triageOpen, setTriageOpen] = useState(false)
   const [healthOpen, setHealthOpen] = useState(false)
-  const [announcement, announce] = useClearedAnnouncement()
   const triageButtonRef = useRef<HTMLButtonElement>(null)
   const checkButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -33,27 +57,29 @@ export function ProfileAlertRows() {
   const ompVersionShown = ompVersionWarning !== null && !dismissed.ompVersion
 
   const wasMemoryShown = useRef(false)
-  useEffect(() => {
-    if (memoryShown && !wasMemoryShown.current) {
-      announce(`Low memory: ${warning?.liveAgents ?? 0} agents running`)
-    }
-    wasMemoryShown.current = memoryShown
-  }, [memoryShown, warning?.liveAgents, announce])
-
   const wasOmpVersionShown = useRef(false)
   useEffect(() => {
-    if (ompVersionShown && !wasOmpVersionShown.current && ompVersionWarning) {
-      announce(`omp ${ompVersionWarning.found} is an unverified version`)
+    const memoryJustShown = memoryShown && !wasMemoryShown.current
+    const ompVersionJustShown = ompVersionShown && !wasOmpVersionShown.current
+    const memoryText = `Low memory: ${pluralAgents(warning?.liveAgents ?? 0)} running`
+    const ompVersionText = ompVersionWarning ? `omp ${ompVersionWarning.found} is an unverified version` : ''
+    if (memoryJustShown && ompVersionJustShown) {
+      useChatAreaAnnouncer.getState().announce(`${memoryText}. ${ompVersionText}`)
+    } else if (memoryJustShown) {
+      useChatAreaAnnouncer.getState().announce(memoryText)
+    } else if (ompVersionJustShown) {
+      useChatAreaAnnouncer.getState().announce(ompVersionText)
     }
+    wasMemoryShown.current = memoryShown
     wasOmpVersionShown.current = ompVersionShown
-  }, [ompVersionShown, ompVersionWarning, announce])
+  }, [memoryShown, ompVersionShown, warning?.liveAgents, ompVersionWarning])
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 pb-2 empty:p-0">
+    <div className={memoryShown || ompVersionShown ? 'flex flex-col gap-0.5 px-2 pb-2' : 'flex flex-col gap-0.5'}>
       {memoryShown && warning && (
         <div className="flex h-6 items-center gap-1.5 text-xs text-state-needs-you">
           <AlertTriangleIcon aria-hidden className="size-3 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Low memory ({warning.liveAgents} agents)</span>
+          <span className="min-w-0 flex-1 truncate">Low memory ({pluralAgents(warning.liveAgents)})</span>
           <Button
             ref={triageButtonRef}
             type="button"
@@ -107,16 +133,19 @@ export function ProfileAlertRows() {
       <MemoryTriageDialog
         open={triageOpen}
         onOpenChange={setTriageOpen}
-        onCloseFocus={() => triageButtonRef.current?.focus()}
+        onCloseFocus={() => {
+          if (triageButtonRef.current?.isConnected) triageButtonRef.current.focus()
+          else focusProfileItemNameButton()
+        }}
       />
       <HealthCheckDialog
         open={healthOpen}
         onOpenChange={setHealthOpen}
-        onCloseFocus={() => checkButtonRef.current?.focus()}
+        onCloseFocus={() => {
+          if (checkButtonRef.current?.isConnected) checkButtonRef.current.focus()
+          else focusProfileItemNameButton()
+        }}
       />
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcement}
-      </div>
     </div>
   )
 }
