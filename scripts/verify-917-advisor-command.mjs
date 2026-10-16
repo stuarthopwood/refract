@@ -85,14 +85,28 @@ async function sendSlashCommand(cdp, command, expectedPattern) {
   const before = await countNotices(cdp);
   await cdp.typeIntoByLabel('Message', command);
   await cdp.clickByLabel('Send message');
-  const deadline = Date.now() + 30_000;
+  // 60s, not 30s: the advisor's own enable/disable is documented as building or tearing down a
+  // full Agent instance (omp://advisor-watchdog.md), so a `status` query sent immediately after
+  // a toggle may genuinely take longer to answer than a command with no such side effect.
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     const texts = await allNoticeTexts(cdp);
     const match = texts.slice(before).find((t) => expectedPattern.test(t));
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`sendSlashCommand: no notice matching ${expectedPattern} appeared within 30s for "${command}"`);
+  // Diagnostic evidence on failure: every notice actually present (not just the new ones) plus
+  // a screenshot, so a genuine mismatch (unexpected wording) is distinguishable from a genuine
+  // timeout (nothing arrived at all) without having to re-run blind.
+  const allTexts = await allNoticeTexts(cdp);
+  try {
+    await cdp.screenshot(path.join(SHOTS_DIR, `timeout-${command.replace(/[^a-z]+/gi, '-')}.png`));
+  } catch {
+    // best-effort only
+  }
+  throw new Error(
+    `sendSlashCommand: no notice matching ${expectedPattern} appeared within 60s for "${command}". All notices present at timeout: ${JSON.stringify(allTexts)}`
+  );
 }
 
 async function main() {
