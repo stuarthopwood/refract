@@ -274,6 +274,25 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
 
+  // ---- Ctrl+N fallback (run HERE, before any Session exists): App.tsx's own fallback target
+  // resolution (no focused pane, 2+ Projects) only falls into the "no repository resolved"
+  // branch this story changed when NO pane is already focused -- once a Session is created and
+  // open later in this script, Ctrl+N instead targets that Session's own Project directly,
+  // regardless of search, so this is the one point in the run where the fallback genuinely
+  // applies. Without a search query, it would simply focus Project A's own "+" (both groups
+  // render; decision 26 is untouched); with every Project hidden by search, "+" cannot be
+  // found, and the new fallback text must fire instead. ----
+  await typeSearch(cdp, 'zzz-no-such-session-zzz');
+  await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: 'empty state shown before the Ctrl+N fallback check' });
+  await cdp.evaluate(`document.activeElement?.blur()`);
+  await pressKey(cdp, 78, 'n', 'KeyN', 2); // Ctrl+N (modifiers bitmask: Ctrl = 2)
+  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT})`, { timeoutMs: 10_000, label: 'Ctrl+N focuses the search field once it is the reason no Project is visible' });
+  const ctrlNAnnouncement = await readAnnouncement(cdp);
+  assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N's own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
+  log('STEP PASS: Ctrl+N, when the search hides every Project (and no Session pane is open yet to resolve one directly), focuses the search field and announces the correct, filter-aware fallback text.');
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Ctrl+N check' });
+
   // One Session per Project, enough for every check except Archived's own (that needs a second,
   // archived Session in Project A -- created and archived LAST, per Main's 2026-10-16 review,
   // so one flaky archive step can never block the checks above it).
@@ -399,20 +418,6 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert((await cdp.evaluate(SEARCH_INPUT + '.value')) === sessionA1Name, 'the query text must survive the Settings round trip');
   assert((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B must still be hidden after the Settings round trip (filtering survives too)');
   log('STEP PASS: the search query and its filtering survive a Settings round trip (App.tsx remounts the whole session list on this view swap).');
-
-  // ---- Ctrl+N fallback: once the search hides every Project, Ctrl+N focuses the search field
-  // instead of the (absent) quick-create button ----
-  await cdp.click(CLEAR_BUTTON);
-  await cdp.evaluate(`document.activeElement?.blur()`);
-  await typeSearch(cdp, 'zzz-no-such-session-zzz');
-  await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: 'empty state shown before the Ctrl+N fallback check' });
-  await cdp.evaluate(`document.activeElement?.blur()`);
-  await pressKey(cdp, 78, 'n', 'KeyN', 2); // Ctrl+N (modifiers bitmask: Ctrl = 2)
-  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT})`, { timeoutMs: 10_000, label: 'Ctrl+N focuses the search field once it is the reason no Project is visible' });
-  const ctrlNAnnouncement = await readAnnouncement(cdp);
-  assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N's own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
-  log('STEP PASS: Ctrl+N, when the search hides every Project, focuses the search field and announces the correct, filter-aware fallback text.');
-  await cdp.click(CLEAR_BUTTON);
 
   // ---- High-contrast screenshot of a filtered, forced-open group ----
   await typeSearch(cdp, sessionA1Name);
