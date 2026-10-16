@@ -99,6 +99,14 @@ pub struct GhTimelineNodes {
 
 pub type GhThreadsAndTimeline = GhReviewThreadsAndTimelineInner;
 
+/// Gate round 2 note (#568 decision 10, architect M6, pre-existing -- not introduced by #568):
+/// `timelineItems(first: 100, ...)` has no pagination (no `pageInfo`/cursor handling anywhere in
+/// this query or its caller). A pull request with more than 100 commits/comments/reviews
+/// combined silently loses everything past the 100th item, from both the Overview `Timeline`
+/// and `ReviewConsensus`'s own rollup -- a review past that cap is invisible to the consensus
+/// count the same way a commit or comment past it is invisible to the Timeline today. Recorded
+/// in `specs/003-pull-request-management/spec.md`'s own Clarifications; a pagination fix is
+/// tracked separately (issue #918), not fixed here.
 const THREADS_AND_TIMELINE_QUERY: &str = "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { login ... on User { name } } body createdAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { login ... on User { name } } body createdAt } ... on PullRequestReview { id author { login ... on User { name } } state body submittedAt } } } } } }";
 
 #[derive(Deserialize)]
@@ -227,6 +235,13 @@ pub enum ReviewVerdict {
     Comment,
     Approve,
     RequestChanges,
+    // Gate round 2 fix (#568 decision 10 amendment): a dismissed review used to be dropped
+    // entirely (mapped to `None`, same as the legitimate PENDING case), which fixed
+    // `ReviewConsensus.tsx`'s own count but silently deleted that reviewer's whole review
+    // history from the Overview `Timeline` (FR-008 regression) -- a dismissed review is now a
+    // real timeline entry with its own verdict, and the renderer (not this backend) decides
+    // what a dismissal means for the consensus rollup.
+    Dismissed,
 }
 
 /// `submit_review`'s approve-pin input: the cached `pullRequestId`/`headSha` `submitReview`'s
@@ -308,6 +323,16 @@ fn build_review_argv(
         ReviewVerdict::Approve => "--approve",
         ReviewVerdict::RequestChanges => "--request-changes",
         ReviewVerdict::Comment => "--comment",
+        // Gate round 2 fix (#568 decision 10 amendment): `Dismissed` was added to this enum so
+        // a dismissed review keeps its own place in the Overview timeline (FR-008) -- it is
+        // never a SUBMITTABLE verdict, though. The IPC handler's own `input.get("verdict")`
+        // string match (`ipc/pull_requests/handlers.rs`) only ever constructs `Comment`/
+        // `Approve`/`RequestChanges` from a `submitReview` request and rejects anything else
+        // before this function is ever called, so this arm is unreachable in practice; it
+        // exists only to keep this match exhaustive against the enum's new 4th variant.
+        ReviewVerdict::Dismissed => {
+            unreachable!("ReviewVerdict::Dismissed is never a submittable review verdict")
+        }
     };
     let mut args = vec![
         "pr".to_string(),

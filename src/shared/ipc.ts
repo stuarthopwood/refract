@@ -275,7 +275,7 @@ export interface PullRequestListResult {
  * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
  * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
 export interface SubmitReviewInput {
-  verdict: ReviewVerdict;
+  verdict: Exclude<ReviewVerdict, 'dismissed'>; // dismissed: real post-submit verdict, never submittable (#568 decision 10)
   body?: string;
   expectedHeadSha: string;
 }

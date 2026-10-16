@@ -99,6 +99,20 @@
   --color-state-needs-you-foreground: var(--state-needs-you-foreground);
   --color-state-stopped: var(--state-stopped);
   --color-state-stopped-foreground: var(--state-stopped-foreground);
+  /* Issue #568/#529: PR-domain-namespaced state tokens for the pull request StatePill --
+   * `--pr-open`/`--pr-draft`/`--pr-closed` resolve to the SAME colour values as the existing
+   * chat-domain `--severity-success`/`--state-idle`/`--destructive` tokens (never the raw
+   * chat variables themselves), so a future chat-only token change cannot silently drift the
+   * PR pill's own colours. `--pr-merged` is a genuinely new purple -- no purple existed
+   * anywhere in this app before this issue. */
+  --color-pr-open: var(--pr-open);
+  --color-pr-open-foreground: var(--pr-open-foreground);
+  --color-pr-draft: var(--pr-draft);
+  --color-pr-draft-foreground: var(--pr-draft-foreground);
+  --color-pr-closed: var(--pr-closed);
+  --color-pr-closed-foreground: var(--pr-closed-foreground);
+  --color-pr-merged: var(--pr-merged);
+  --color-pr-merged-foreground: var(--pr-merged-foreground);
 }
 
 /* Font family roles (docs/DESIGN.md "Look and feel"): theme-independent, so declared once as
@@ -207,6 +221,30 @@
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: oklch(0.704 0.191 22.216);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Issue #568/#529: PR StatePill tokens. Gate round 1 fix (Code Medium): Open/Draft/Closed are
+   * now literal copies of the matching chat-domain fill values (not `var()` aliases), per
+   * decision 5's own wording ("resolve to the same colour values, NOT literal reuse of the
+   * chat variables themselves") -- the tokens below intentionally track `--state-working`/
+   * `--state-idle`/`--destructive` in VALUE only, so a future chat-only token change can never
+   * silently drift the PR pill's own colours. The pill text uses the already-verified
+   * foreground for each: Open matches `--state-working-foreground`, Closed matches
+   * `--destructive-foreground` -- both already gated at 4.5:1 in
+   * `scripts/theme-contrast-pairs.mjs`. Draft (an achromatic grey, same value as `--state-idle`)
+   * had no existing foreground pairing (it was only ever used as plain icon/text colour before
+   * this issue); near-black text measures 8.10:1 against it, comfortably over 4.5:1. Merged is a
+   * genuinely new purple (hue 300, distinct from `--accent-text`'s indigo hue 264) -- no purple
+   * existed anywhere in this app before this issue; L0.65/C0.18 measures 5.69:1 for near-black
+   * text and >=4.7:1 against `--background`/`--card` (hand-computed via the OKLab<->linear-sRGB
+   * matrices `check-theme-contrast.mjs` itself uses; run the script to reconfirm after any
+   * further edit here). */
+  --pr-open: oklch(0.696 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  --pr-closed: oklch(0.704 0.191 22.216);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.65 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
 
   /* ---- #550 (theme foundation, palette v2) ----
    * PURELY ADDITIVE from here down: every property above this comment is byte-identical to
@@ -433,6 +471,19 @@
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: var(--severity-error);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Issue #568/#529: PR StatePill tokens, same reasoning as `.theme-dark`'s own comment (gate
+   * round 1 fix: literal values, not `var()` aliases -- see that comment for why). Same literal
+   * purple as Dark (`L0.65/C0.18/H300`): 5.69:1 for near-black text, 5.47:1 against
+   * `--background` (#0F1014), 4.73:1 against `--surface-1`/card, 4.23:1 against
+   * `--surface-2`/popover -- all clear the >=3:1 non-text floor with margin. */
+  --pr-open: oklch(0.696 0.17 162.48);
+  --pr-open-foreground: oklch(0.145 0 0);
+  --pr-draft: oklch(0.708 0 0);
+  --pr-draft-foreground: oklch(0.145 0 0);
+  --pr-closed: oklch(0.74 0.191 22.216);
+  --pr-closed-foreground: oklch(0.145 0 0);
+  --pr-merged: oklch(0.65 0.18 300);
+  --pr-merged-foreground: oklch(0.145 0 0);
   /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
    * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
    * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
@@ -521,6 +572,20 @@
   --state-needs-you-foreground: oklch(0 0 0);
   --state-stopped: oklch(0.78 0.17 22);
   --state-stopped-foreground: oklch(0 0 0);
+  /* Issue #568/#529: PR StatePill tokens, same reasoning as `.theme-dark`'s own comment (gate
+   * round 1 fix: literal values, not `var()` aliases), tuned brighter to match this preset's own
+   * lighter `state-*` lightness ladder (state-working here is L0.8, versus Dark's L0.696).
+   * `--pr-merged` at `L0.8/C0.17/H300` measures 10.26:1 for pure-black text and 9.72:1 against
+   * `--card`/popover (`oklch(0.14 0 0)`), both far over the 4.5:1/3:1 floors this preset's own
+   * other state fills already clear by similar margins. */
+  --pr-open: oklch(0.8 0.17 162);
+  --pr-open-foreground: oklch(0 0 0);
+  --pr-draft: oklch(0.85 0 0);
+  --pr-draft-foreground: oklch(0 0 0);
+  --pr-closed: oklch(0.78 0.17 22);
+  --pr-closed-foreground: oklch(0 0 0);
+  --pr-merged: oklch(0.8 0.17 300);
+  --pr-merged-foreground: oklch(0 0 0);
 
   /* ---- #550 (theme foundation, palette v2) ----
    * PURELY ADDITIVE, same rule as `.theme-dark` above: every property before this comment is
