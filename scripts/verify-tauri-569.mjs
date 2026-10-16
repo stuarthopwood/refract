@@ -318,8 +318,13 @@ async function main() {
     }
 
     // ArrowDown x2 from the first item (Manage accounts) reaches Theme (Manage sessions, Theme).
+    // A short settle after the keyboard-open: Radix's own default-item focus on a keyboard open
+    // needs a frame to actually commit before arrow keys have anything real to move from.
+    await sleep(250);
     await pressArrow(cdp, 'Down');
+    await sleep(150);
     await pressArrow(cdp, 'Down');
+    await sleep(150);
     const onThemeTrigger = (await getActiveElementAccessibleName(cdp)).name?.startsWith('Theme') ?? false;
     await pressArrow(cdp, 'Right');
     await cdp.waitFor(`!!document.querySelector('[role="menu"] [role="menuitem"] span')`, { timeoutMs: 5_000, label: 'Theme submenu opened via ArrowRight' }).catch(() => {});
@@ -469,11 +474,15 @@ async function main() {
           .waitFor(`(() => { const t = document.querySelector('[data-sonner-toast] [data-title]'); return t ? t.textContent.trim() : null; })()`, { timeoutMs: 5_000, label: 'confirmation toast appears' })
           .catch(() => null);
         const stillAlive = await handleCdp.evaluate('true').catch(() => false);
-        const stillDownloaded = await handleCdp.evaluate(`window.__refractStores?.updates?.getState()?.state?.phase`).catch(() => null);
-        if (toastText === 'Refract updates automatically the next time you quit.' && stillAlive && stillDownloaded === 'downloaded') {
-          checkPass('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillDownloaded }));
+        // `window.__refractStores` is DEV-only (`import.meta.env.DEV`); a `tauri build --debug`
+        // still runs `vite build` (production mode), so that global never exists here -- the
+        // real `window.refract.updates.getState()` IPC call is the only way to read the actual
+        // persisted phase from this build.
+        const stillDownloadedResult = await handleCdp.evaluate(`(async () => { const r = await window.refract.updates.getState(); return r.ok ? r.value.phase : null; })()`).catch(() => null);
+        if (toastText === 'Refract updates automatically the next time you quit.' && stillAlive && stillDownloadedResult === 'downloaded') {
+          checkPass('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillDownloadedResult }));
         } else {
-          checkFail('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillAlive, stillDownloaded }));
+          checkFail('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillAlive, stillDownloadedResult }));
         }
       }
       await teardownPhase();
