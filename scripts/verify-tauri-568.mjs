@@ -288,12 +288,17 @@ async function main() {
           return titleSpan ? titleSpan.textContent.trim() : null;
         })()`);
         await cdp.pressEnter();
-        await sleep(400);
+        // Gate round 1 fix (self-caught): a fixed 400ms sleep isn't enough for the detail
+        // view's own real `pullRequests.detail()` GitHub round-trip (it shows "Loading..." with
+        // no `h2` at all until that resolves) -- poll for the real title to actually land,
+        // generously, since this is a genuine network call, not a local re-render.
+        const detailTitleMatches = await cdp
+          .waitFor(`(() => {
+            const h2 = document.querySelector('h2.line-clamp-2');
+            return h2 ? h2.textContent.includes(${JSON.stringify(focusedRowTitle ?? '')}) : false;
+          })()`, { timeoutMs: 20_000, label: 'detail h2 picks up the selected row\'s title' })
+          .catch(() => false);
         const barOnFocusedRow = await cdp.evaluate(`!!document.activeElement?.querySelector('.bg-active-indicator')`);
-        const detailTitleMatches = await cdp.evaluate(`(() => {
-          const h2 = document.querySelector('h2.line-clamp-2');
-          return h2 ? h2.textContent.includes(${JSON.stringify(focusedRowTitle ?? '')}) : false;
-        })()`);
         if (barOnFocusedRow && detailTitleMatches) {
           checkPass('Keyboard-only: Tab reaches a row and Enter selects it (detail h2 updates)', `row "${focusedRowTitle}"`);
         } else {
@@ -401,7 +406,7 @@ async function main() {
         const pane = Array.from(document.querySelectorAll('div')).find((el) => el.className === 'min-w-0 flex-1 overflow-hidden');
         return pane ? pane.getBoundingClientRect().left : null;
       })()`);
-      const targetWindowWidth = (laidOutAtWideWindow ?? 333) + NARROW_WIDTH;
+      const targetWindowWidth = Math.round((laidOutAtWideWindow ?? 333) + NARROW_WIDTH);
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: targetWindowWidth, height: 900, deviceScaleFactor: 1, mobile: false });
       await sleep(500);
       const paneRect = await cdp.evaluate(`(() => {
