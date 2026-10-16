@@ -12,13 +12,11 @@
 //     `now_ms()` fallback) instead of every other fixture's deliberately-zeroed placeholder.
 //   - `user-message-time-reopen.jsonl` (launch 2): scripts the real `switch_session`/`get_state`/
 //     `set_ask_dialog`/`get_messages_page` reattach sequence, with a canned history response
-//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: four messages, OLDEST
-//     FIRST (a past year, earlier this year, yesterday, today, so `TimeGapDivider` renders a
-//     sensible, forward-chronological divider between each pair), whose `timestamp` fields this
-//     script computes AT RUN TIME (via the new `$histTodayAt`/`$histYesterdayAt`/
-//     `$histThisYearAt`/`$histPastYearAt` sentinels) so each lands in the day-aware bucket
-//     `UserMessageRow.tsx`'s `formatMessageTime` is meant to show, plus one message with no
-//     timestamp at all.
+//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: SIX messages, OLDEST
+//     FIRST -- past year, this year, a no-`timestamp` message, yesterday, today, a second
+//     no-`timestamp` message (full provenance and divider reasoning in the fixtures README) --
+//     whose real-timestamp fields this script computes AT RUN TIME via the `$histTodayAt`/
+//     `$histYesterdayAt`/`$histThisYearAt`/`$histPastYearAt` sentinels.
 // Both reference the new `$conversationFile` sentinel (`verify-tauri-fake-omp.mjs`), seeded from
 // `REFRACT_FAKE_OMP_CONVERSATION_FILE` -- a REAL file this script pre-creates on disk, since
 // `assert_conversation_file_exists` (launch_support.rs) checks the persisted Session's
@@ -36,33 +34,32 @@
 //        `at`, not stale/default) and its visible text matches an hour:minute clock format.
 //     2. It sits outside the bubble's own box (`[data-slot="message-content"]`) and visually
 //        above it.
-//     3. The row after turn 1's user message carries `mt-6` -- `TURN_GAP_CLASS`, Transcript
-//        rhythm's own unchanged house rule, applied to the row below the human turn.
-//     4. Turn 2's own user-message wrapper ALSO carries `mt-6` -- the same unchanged rule applied
-//        above the second human turn -- while turn 1's own wrapper (the very first row in the
-//        transcript) carries NO margin class, the base case every OTHER non-first row (turn 2
-//        included) is compared against.
+//     3. The row after turn 1's user message carries `mt-6` -- `TURN_GAP_CLASS`, applied to the
+//        row below the human turn.
+//     4. Turn 2's own user-message wrapper ALSO carries `mt-6` -- the same rule applied above the
+//        second human turn -- while turn 1's own wrapper (the very first row) carries NO margin.
 //     5. Turn 2's `<time>` also renders with its own fresh, real `at`.
-//   Launch 2 (reopened Conversation, same REFRACT_DATA_DIR, a genuine second app launch):
-//     6. The FIRST historical message (a past year, no `TimeGapDivider` above it -- there is no
-//        preceding turn to compare against) renders its own `<time>`, whose visible label and
-//        `dateTime` match this script's OWN computed expected value (a JS re-implementation of
-//        `formatMessageTime`, kept in sync by comment).
-//     7. Stuart's hide-under-a-divider amendment: every LATER historical message (earlier this
-//        year, yesterday, today) sits directly under a real `TimeGapDivider` (asserted present,
-//        `role="separator"`, as the wrapper's own previous sibling) and renders NO `<time>` row
-//        of its own -- the divider already shows that exact date and time.
-//     8. The historical message with NO `timestamp` key renders NO `<time>` row at all (`at === 0`,
-//        "hide rather than invent").
+//   Launch 2 (reopened Conversation, same REFRACT_DATA_DIR, a genuine second app launch).
+//   History, OLDEST FIRST: past year, (assistant filler), this year, a no-`timestamp` message,
+//   yesterday, today, a second no-`timestamp` message:
+//     6. The FIRST historical message (a past year, no `TimeGapDivider` above it -- nothing
+//        precedes it) renders its own `<time>`, matching this script's own computed expected
+//        label/`dateTime` (a JS re-implementation of `formatMessageTime`, kept in sync by hand).
+//     7. Hide-under-a-divider (Stuart's amendment): "this year" and "today" each sit directly
+//        under a real `TimeGapDivider` (`role="separator"`, the wrapper's own previous sibling)
+//        and render NO `<time>` row of their own.
+//     8. Gate round 3 (Main): the no-`timestamp` message inserted before "yesterday" breaks the
+//        divider comparison on both sides (`showTimeGapDivider` needs a real `at` on both turns)
+//        -- no divider above it or above "yesterday" right after it, so "yesterday" renders its
+//        OWN time instead of being wrongly hidden ("the previous turn had no timestamp").
+//     9. Both no-`timestamp` messages render NO `<time>` row (`at === 0`, "hide rather than
+//        invent") and never sit under a divider either.
 //
-// Note on fidelity: launch 2 reaches the Session via `[data-session-open]` (the existing row
-// already in the session list after the registry round-trips through REFRACT_DATA_DIR), not via
-// "New conversation"/the Conversation switcher UI -- `conversations.list` scans REAL files in the
-// Session's own worktree directory (ipc/conversations.rs), which the fake `omp` never creates, so
-// the switcher's own history dialog would show "No earlier Conversations" regardless of what the
-// wire protocol reports. The wire-level reattach this script drives (`switch_session`/`get_state`/
-// `get_messages_page`, `items_from_history`) is the SAME code a Conversation-switcher click would
-// also exercise once get_messages_page replies -- documented here rather than silently assumed.
+// Note on fidelity: launch 2 reaches the Session via `[data-session-open]`, not the
+// Conversation-switcher UI -- `conversations.list` scans REAL files the fake `omp` never
+// creates, so that dialog would show "No earlier Conversations" regardless of the wire
+// protocol. The reattach driven here (`switch_session`/`get_state`/`get_messages_page`) is the
+// SAME code a switcher click would also exercise once get_messages_page replies.
 
 import { mkdtempSync, mkdirSync, writeFileSync, createWriteStream } from 'node:fs';
 import path from 'node:path';
@@ -89,6 +86,7 @@ const HIST_YESTERDAY_TEXT = 'Historical message from yesterday.';
 const HIST_THIS_YEAR_TEXT = 'Historical message from earlier this year.';
 const HIST_PAST_YEAR_TEXT = 'Historical message from a past year.';
 const HIST_NO_TIME_TEXT = 'Historical message with no timestamp at all.';
+const HIST_NO_TIME_BEFORE_YESTERDAY_TEXT = 'Historical message with no timestamp right before yesterday.';
 
 /** JS re-implementation of `UserMessageRow.tsx`'s `formatMessageTime` -- MUST be kept in sync by
  * hand with that function (there is no shared module between the Vite renderer and this plain
@@ -102,23 +100,20 @@ function expectedLabelFor(date, now) {
   if (dayDiff === 0) return time;
   if (dayDiff === 1) {
     const word = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-1, 'day');
-    return `${word[0].toUpperCase()}${word.slice(1)} ${time}`;
+    return `${word[0].toLocaleUpperCase()}${word.slice(1)} ${time}`;
   }
   if (date.getFullYear() === now.getFullYear()) return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`;
   return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
 }
 
 /** Picks one real instant per day-aware bucket (today, yesterday, earlier this year, a past
- * year), relative to whichever real calendar day this script actually runs on, then SELF-VALIDATES
- * every candidate against the exact same bucketing rule `expectedLabelFor` uses before handing
- * any of them back -- a run never silently asserts the wrong bucket; it throws instead. Every
- * candidate (other than "yesterday", which must use calendar subtraction to land exactly one day
- * back across a month/year boundary) is a RELATIVE offset from "now" rather than a fixed calendar
- * date, so the same code stays correct on any day of the year the script is actually run on.
- * Known narrow gap (documented, not silently wrong): within the first ~20 days of January, or in
- * the first minute after local midnight, there is no valid "earlier this year, not recent"/
- * "today" instant at all -- the self-validation below throws a clear error in that case instead
- * of asserting the wrong bucket; rerun a few minutes/days later. */
+ * year), relative to "now", then SELF-VALIDATES every candidate against `expectedLabelFor`'s
+ * own bucketing rule before handing any of them back -- throws rather than silently asserting
+ * the wrong bucket. Every candidate but "yesterday" (calendar subtraction, exactly one day back)
+ * is a RELATIVE offset from "now", so the same code stays correct on any day it runs on. Known
+ * narrow gap: within the first ~20 days of January, or the first minute after local midnight,
+ * there is no valid "earlier this year"/"today" instant -- self-validation throws instead of
+ * asserting the wrong bucket; rerun later. */
 function computeHistoryTimestamps() {
   const now = new Date();
   const dayDiffFrom = (d) => {
@@ -175,17 +170,12 @@ function worktreesDirFor(repoDir) {
 }
 
 /** Reads the `<time>` element rendered anywhere inside the bubble's own
- * `[data-slot="message-scroller-item"]` wrapper (gate round 1, Tests/Code Low: searching only
- * `bubble.previousElementSibling` made the "outside the bubble's box" check true by
- * construction -- a `<time>` that moved INSIDE the bubble would then just read as "no `<time>`
- * found", never as "inside the box". Searching the whole wrapper instead means `insideBubbleBox`
- * and the hidden-when-`at===0`/hidden-under-a-divider checks all genuinely test where the
- * element is, wherever it renders), or `null` if `item.at === 0`/non-finite/`hideTime` hid it
- * (`UserMessageTime` returns `null`). A missing WRAPPER (gate round 2 Main review: hardened --
- * this used to fall through to `hasTime: false`, so a broken wrapper lookup could silently read
- * as "hidden", never as a probe failure) is now its own `error`, never inferred as hidden. Also
- * reports the wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider`
- * (`role="separator"`) sits as the wrapper's own immediately preceding sibling. */
+ * `[data-slot="message-scroller-item"]` wrapper -- never only `bubble.previousElementSibling`
+ * (gate round 1: that made "outside the bubble's box" true by construction) -- or `null` if
+ * `item.at === 0`/non-finite/`hideTime` hid it (`UserMessageTime` returns `null`). A missing
+ * WRAPPER is its own `error` (gate round 2: never inferred as "hidden"). Also reports the
+ * wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider` (`role="separator"`)
+ * sits as the wrapper's own immediately preceding sibling. */
 function timeAndMarginProbeExpr(messageText) {
   return `
     (() => {
@@ -434,15 +424,24 @@ async function main() {
       label: 'Relaunch: Session reattached, composer enabled',
     });
     await cdp2.waitFor(
-      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && [${JSON.stringify(HIST_TODAY_TEXT)}, ${JSON.stringify(HIST_YESTERDAY_TEXT)}, ${JSON.stringify(HIST_THIS_YEAR_TEXT)}, ${JSON.stringify(HIST_PAST_YEAR_TEXT)}, ${JSON.stringify(HIST_NO_TIME_TEXT)}].every((s) => t.textContent.includes(s)); })()`,
-      { timeoutMs: 30_000, label: 'Relaunch: all five historical messages rendered' }
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && [${JSON.stringify(HIST_TODAY_TEXT)}, ${JSON.stringify(HIST_YESTERDAY_TEXT)}, ${JSON.stringify(HIST_THIS_YEAR_TEXT)}, ${JSON.stringify(HIST_PAST_YEAR_TEXT)}, ${JSON.stringify(HIST_NO_TIME_TEXT)}, ${JSON.stringify(HIST_NO_TIME_BEFORE_YESTERDAY_TEXT)}].every((s) => t.textContent.includes(s)); })()`,
+      { timeoutMs: 30_000, label: 'Relaunch: all six historical messages rendered' }
     );
+    // Gate round 3 (Main): dismiss any stray hover card (move the pointer away, press Escape)
+    // and scroll to the top so the OLDEST message (no divider above it) is visible here too.
+    await cdp2.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await cdp2.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 27, code: 'Escape', key: 'Escape' });
+    await cdp2.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, code: 'Escape', key: 'Escape' });
+    await cdp2.evaluate(`(() => { const v = document.querySelector('[data-slot="message-scroller-viewport"]'); if (v) v.scrollTop = 0; return !!v; })()`);
+    await cdp2.waitFor(`(() => { const v = document.querySelector('[data-slot="message-scroller-viewport"]'); return !!v && v.scrollTop === 0; })()`, { timeoutMs: 5_000, label: 'Relaunch: transcript scrolled to top' });
     await cdp2.screenshot(path.join(SHOTS_DIR, '05-relaunch-history.png'));
 
     const histBuckets = [
       { text: HIST_PAST_YEAR_TEXT, label: 'reopen (past year)', date: histPastYear, expectDivider: false },
       { text: HIST_THIS_YEAR_TEXT, label: 'reopen (this year)', date: histThisYear, expectDivider: true },
-      { text: HIST_YESTERDAY_TEXT, label: 'reopen (yesterday)', date: histYesterday, expectDivider: true },
+      // Gate round 3 (Main): the no-timestamp message now before "yesterday" breaks
+      // `showTimeGapDivider`'s guard, so "yesterday" renders its own time instead of hiding.
+      { text: HIST_YESTERDAY_TEXT, label: 'reopen (yesterday)', date: histYesterday, expectDivider: false },
       { text: HIST_TODAY_TEXT, label: 'reopen (today)', date: histToday, expectDivider: true },
     ];
     for (const bucket of histBuckets) {
@@ -466,8 +465,8 @@ async function main() {
         }
         continue;
       }
-      // No divider above it (the very first turn in the reopened history): keeps its own time,
-      // matching the exact expected day-aware label and dateTime.
+      // No divider directly above it (the first turn, or -- gate round 3 -- preceded by a
+      // no-timestamp turn): keeps its own time, matching the expected label/dateTime.
       if (!probe.hasTime) {
         failures.push(`${bucket.label}: no TimeGapDivider sits above this message, but it rendered NO <time> row at all`);
         continue;
@@ -480,18 +479,31 @@ async function main() {
       } else if (probe.visibleText !== expectedLabel) {
         failures.push(`${bucket.label}: visible text "${probe.visibleText}" does not match the expected day-aware label "${expectedLabel}"`);
       } else {
-        findings.push(`${bucket.label}: no divider above it (the first turn), so its own dateTime matches exactly (${expectedIso}) and the visible label "${probe.visibleText}" matches the expected day-aware format.`);
+        findings.push(`${bucket.label}: no TimeGapDivider sits directly above it, so its own dateTime matches exactly (${expectedIso}) and the visible label "${probe.visibleText}" matches the expected day-aware format.`);
       }
     }
 
-    const histNoTimeProbe = await cdp2.evaluate(timeAndMarginProbeExpr(HIST_NO_TIME_TEXT));
-    console.log('verify-555: reopen (no timestamp) probe', JSON.stringify(histNoTimeProbe));
-    if (histNoTimeProbe.error) {
-      failures.push(`reopen history (no timestamp) probe failed: ${histNoTimeProbe.error}`);
-    } else if (histNoTimeProbe.hasTime) {
-      failures.push(`the historical message with NO stored timestamp unexpectedly rendered a <time> row (dateTime="${histNoTimeProbe.dateTime}") -- should be hidden (at === 0, "hide rather than invent")`);
-    } else {
-      findings.push('the historical message with no stored timestamp at all renders NO <time> row, confirming the at === 0 "hide rather than invent" guard on a genuine reattach.');
+    // Gate round 3 (Main): both no-timestamp messages render NO <time> row (at === 0) AND never
+    // sit under a divider either (showTimeGapDivider never fires with either side at === 0).
+    for (const noTime of [
+      { text: HIST_NO_TIME_BEFORE_YESTERDAY_TEXT, label: 'reopen (no timestamp, right before yesterday)' },
+      { text: HIST_NO_TIME_TEXT, label: 'reopen (no timestamp, trailing)' },
+    ]) {
+      const probe = await cdp2.evaluate(timeAndMarginProbeExpr(noTime.text));
+      console.log(`verify-555: ${noTime.label} probe`, JSON.stringify(probe));
+      if (probe.error) {
+        failures.push(`${noTime.label}: probe failed: ${probe.error}`);
+        continue;
+      }
+      if (probe.hasTime) {
+        failures.push(`${noTime.label}: unexpectedly rendered a <time> row (dateTime="${probe.dateTime}") -- should be hidden (at === 0, "hide rather than invent")`);
+        continue;
+      }
+      if (probe.precededByDivider) {
+        failures.push(`${noTime.label}: rendered no <time> row (correct), but a TimeGapDivider still sits directly above it -- a divider must never be computed against a turn with no usable timestamp`);
+        continue;
+      }
+      findings.push(`${noTime.label}: renders NO <time> row and no TimeGapDivider sits above it either, confirming the at === 0 "hide rather than invent" guard holds independent of divider placement.`);
     }
 
     const report = { gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };

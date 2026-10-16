@@ -148,8 +148,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
 
   switch (item.kind) {
     case 'user':
-      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow`
-      // (split out to keep this file within its `check:file-size` baseline).
+      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep this file within its `check:file-size` baseline).
       return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
 
     case 'assistant-text':
@@ -264,10 +263,11 @@ function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
   return nextAt - previousAt > TIME_GAP_THRESHOLD_MS
 }
 
+// Gate round 3 a11y fix (Main, 2026-10-16): `role="separator"`+`aria-label` on the wrapper read as just "separator" on some screen readers; now a plain `div`, decorative lines stay `aria-hidden`, so the visible label reads once as plain text.
 function TimeGapDivider({ at }: { at: number }) {
   const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div role="separator" aria-label={label} className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+    <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span>{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />

@@ -76,7 +76,7 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
   )
 }
 
-// Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/DESIGN.md
+// Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/design/product-chat.md
 // "Self vs. other layout"): `Message align="end"` reverses the row and pushes it to the end;
 // `w-fit max-w-[85%]` keeps the bubble sized to its own content and caps it well short of the
 // transcript's left edge, so it never touches it regardless of message length.
