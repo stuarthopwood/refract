@@ -2079,3 +2079,282 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   showing (narrow real-model timing, twice lost; backed by the unmodified `status` ternary
   instead) and the 240px Subagents panel case (never attempted); both remain on the verification
   backlog (#650). **Refs #570** (not Closes): those two checks are still open.
+
+## Phase 45: Convergence
+
+- [X] T238 [US5] Issue #567 (UX-architect-v3 roundtable decision record, delegated by Stuart
+  2026-10-15, "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): restyle the
+  session list's rows, group headers and footer to the record's 28-decision spec (#811/#731/#735
+  already merged first, per decision 1-2's own build order). `sessionDisplay.tsx`: new
+  `formatRelativeTimeShort` (decision 11's "now"/"Nm"/"Nh"/"Nd"/short-date form), leaving the
+  existing long-form `formatRelativeTime` untouched for `ManageSessionRow.tsx`/the Pull requests
+  view/`SessionDetailsCard.tsx` (out of this story's scope). New
+  `src/renderer/lib/useMinuteTick.ts`: one shared `setTimeout`/`setInterval` pair behind
+  `useSyncExternalStore`, subscribed by every row instead of a per-row timer. `SessionRow.tsx`:
+  rewritten to the two-line 44px square-cornered row (`data-choice-item` on the `<li>`, `rounded-
+  md` dropped, decision 8); line 1 is the state icon, the truncating title (`font-normal`, never
+  reflowing on selection, decision 3) and the short time at the right; line 2 is one slot, first
+  match wins (decision 9) -- start-progress text, "Terminated unexpectedly", an archived row's
+  own Project name, or otherwise the branch in `font-code`. The trailing slot (decision 12) swaps
+  the time for the row's own "..." menu button on hover, focus inside the row, or an open menu
+  (`group-has-[[aria-expanded="true"]]`), both shown under `(hover: none)`; this is a `display`
+  swap (`hidden`/`inline-flex`), not an opacity fade, since the two share one slot rather than
+  reserving space for both. The accessible name is now one `aria-label`, "{name}, {status
+  word}[, Archived][, focused pane]" (decision 16) -- the scattered bracketed `sr-only` spans this
+  button used are gone, and so is the `isVisible && !isFocusedPane` "(shown, unfocused pane)"
+  case the old spans carried, since decision 16's own formula has no slot for it (Stuart can
+  overturn). The selected-session bar moves to `inset-y-1` (decision 14). `SessionDetailsCard.tsx`
+  gains an `activityDescription` prop (the row's own line-2 text when it is not the branch) and a
+  fuller `aria-describedby` description -- activity text, "{branch} from {base}", "Last active
+  {long time}", the worktree path (decision 16) -- replacing the shorter `From {base}. {path}`
+  form. `GroupHeader.tsx`: sentence case (`uppercase tracking-wide` and the `/70` opacity modifier
+  dropped for `text-xs font-medium text-muted-foreground`, decision 4), the chevron and the
+  optional leading icon shrink to `size-3` (decision 7), the focus ring moves to `outline-offset-
+  [-2px]` (decision 15), `GROUP_HEADER_ACTIONS_OFFSET_PX` recomputed 104px to 88px for the new
+  24px action buttons (3x24 + 3 gaps x 4px + 4px trailing padding), and a new optional `count`
+  prop renders as a separate `tabular-nums` span after the label, folded into the accessible name
+  as "{label}, {count}" (decision 5). `ArchivedGroup.tsx`: `label="Archived"` plus `count=
+  {sorted.length}` instead of the old `Archived (${n})` template string; `showRepository` prop
+  removed from `SessionRow` entirely (the archived-row line-2 rule now keys off `session.
+  archivedAt` directly, decision 9) and its own row list's `gap-0.5` drops to `gap-0` (decision
+  8). `RepositoryGroup.tsx`: the three header action buttons (new session, branch picker, "...")
+  move from a mix of `icon-sm`/a raw 22px button to shared `Button variant="ghost" size="icon-
+  xs"`, hidden at rest and revealed by opacity on `group-hover`/`group-focus-within`/their own
+  `aria-expanded`/`creating`/an empty active-Session list, always shown under `(hover: none)`
+  (decision 6) -- unifying all three to 24px (initially intended, gate round 1 found this alone
+  insufficient, see T241) to resolve #908's "Archived marker column" follow-up (the old mixed
+  28/28/22px actions column, about 94px real, against a stale 104px constant, put Archived's own
+  Waiting marker about 18px left of a Project header's); its own row list's `gap-0.5` also drops
+  to `gap-0`. `SessionList.tsx`: the Pull
+  requests nav entry gains the shared 2px active-indicator bar when selected, alongside its
+  existing fill (decision 18); the footer's own `border-sidebar-border` becomes `border-divider`
+  (decision 20). `ProfileItem.tsx`: its own `border-t` removed, since the footer above it now
+  carries the one divider for the whole block (decision 20). `scripts/theme-contrast-pairs.mjs`:
+  the remaining sidebar pairs decision 26 asks for (`muted-foreground`/`sidebar-foreground`/
+  `destructive` at 4.5:1, `state-working`/`severity-info` at 3:1, each on `sidebar` and `sidebar-
+  accent` -- `active-indicator`/`state-idle`/`state-needs-you`/`state-stopped`/`state-unread-
+  response` already had theirs from #731/#735). Docs: `CONTEXT.md` gains the **Activity line**
+  entry the record's own CONTEXT.md section asks for (**Group header** and the "Unread
+  response"/"Response ready" note were already correct from #527/#731); `docs/design/foundations-
+  typography-spacing.md` records the type ladder (decision 3); `docs/design/components.md` adds a
+  "Labelled ghost nav and footer entries" note for the Pull requests/Add repository buttons
+  (decisions 18, 21); `docs/design/product-layout.md:16` rewritten to use **Project** instead of
+  **Repository** (the session-list bullet's own stale term CONTEXT.md's glossary already bans in
+  UI-facing prose) and to describe the new row/header/footer layout -- the "no separate unread
+  dot" fact itself was already correct from #731 and is kept, just re-worded into the new
+  two-line description.
+- [X] T239 [US5] Update the spec: amended `specs/001-core-session-workspace/spec.md` with a
+  `### Session 2026-10-15 (session list restyle)` Clarifications entry citing the full decision
+  record, amended FR-039 (decision 11's time-format split and decision 16's accessible-
+  description formula), and a new FR-070 (renumbered from a provisional FR-075 once #570/Phase 44 landed first on origin/main
+  with FR-069 as the confirmed ceiling, consecutive numbering restored) for the row/group-header/
+  footer layout itself. FR-005 was reviewed against decision
+  record's "update FR-005 (remove the unread dot)" instruction and left unchanged: its current
+  text ("drawn by the one shared status icon and its word, with no separate unread marker") was
+  already fully compliant, added by #731 before this story started -- recorded here rather than
+  silently skipped.
+- [X] T240 [US5] Verify live (scratch Tauri debug build, `scripts/verify-tauri-567.mjs`, new --
+  reuses `verify-tauri-cdp.mjs`/`verify-tauri-session-list-helpers.mjs`, same precedent as
+  `verify-tauri-735.mjs`; isolated `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
+  `REFRACT_IMPORT_SOURCE_DIR`, the built exe copied out of the shared `CARGO_TARGET_DIR` and
+  sha256-asserted against the launched process before driving it): a `#567`-only DOM marker
+  (`li[data-choice-item]`) present before anything else was judged; row height measured 44px,
+  square corners (`border-radius: 0px`) on both the `<li>` and its content surface; the open
+  button's own focus ring measured `outline-style: solid`, `outline-width: 2px`, `outline-offset:
+  -2px` under REAL keyboard navigation (Tab away, Shift+Tab back -- a mouse click or a script
+  `.focus()` immediately after one does not engage Chromium's own `:focus-visible` heuristic, a
+  live-verified harness correction, not a product bug); the row's accessible name measured
+  `"{name}, Idle, focused pane"` (CDP Accessibility domain, never `textContent`); the trailing
+  slot measured `time: block` / `menu: none` at rest and `time: none` / `menu: flex` on hover (a
+  real `display` swap, not opacity -- also live-verified that the harness's own click-based
+  helpers need the row hovered first, since a `display:none` button has a zero-size
+  `getBoundingClientRect` to click); F2 opened the rename input on the row; a pending approval
+  showed the needs-you icon with the branch in `font-code` (`"Cascadia Code", "Cascadia Mono",
+  Consolas, monospace`) on line 2; archiving showed the Archived header as `"Archived" + a
+  separate countSpan "1"` with no bracket, and the archived row's own line 2 as its Project name;
+  the group header measured `text-transform: none` (sentence case) and its own action buttons
+  24x24px, hidden until hovered (or, live-verified as a side effect once the only Session was
+  archived, shown at rest because the group then had zero active Sessions, decision 6's own
+  empty-group case); a closed group holding a needs-you Session carried the Waiting marker in its
+  own accessible name; the footer measured a 1px divider above it and `0px` on `ProfileItem`'s own
+  former border; the selected Pull requests nav entry showed the active-indicator bar. Screenshots
+  (idle/selected, focused, hover/trailing-slot, renaming, needs-you, Archived open, header hover,
+  collapsed-with-marker, footer, Pull requests selected, Dark (high contrast), Obsidian) and the
+  run's own STEP-PASS report are kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-shots/`. `node scripts/ci-local.mjs` 16/16
+  PASS (confirmed `CARGO_TARGET_DIR` respected -- `src-tauri/target` absent from the worktree
+  afterward); `pnpm test` 148/148 (no new tests, per AGENTS.md); `check:theme-contrast` 415/415
+  PASS including the 9 new sidebar pairs T238 added.
+
+- [X] T241 [US5] Gate round 1 remediation (five-reviewer, 2026-10-16): Code, Tests, A11y and
+  `ui-architect-v3` FAILed on three agreed High findings and several Medium/Low ones (Security
+  PASSed). Fixed: **(1)** `SessionRow.tsx`'s own "..." trigger was `hidden` (`display:none`) at
+  rest, so `menuTriggerRef.current.focus()` silently did nothing on every keyboard close path
+  (Escape, a menu item, Delete > Cancel, Shift+F10) and Shift+Tab skipped it entirely (decision
+  17) -- now an `opacity`/`pointer-events` swap, absolutely positioned over the time's own cell
+  (the time itself swaps to `invisible`, keeping its layout box reserved), with every reveal rule
+  scoped inside `[@media(hover:hover)]` so a touch pointer's own default (always visible, no
+  override needed) satisfies decision 12's "under hover:none, both show" without a separate rule;
+  `group-has-[[data-slot="context-menu-trigger"][data-state="open"]]` added alongside the
+  dropdown's own `aria-expanded` check, since Radix's `ContextMenuTrigger` sets `data-state`, not
+  `aria-expanded`. **(2)** An archived row's own Project name never reached assistive technology
+  (`activityDescription` was `undefined` for that case, resting on a false comment that the
+  unreachable hover card covered it) -- now set to the Project name, with `FolderGit2Icon size-3`
+  added to line 2 to match the old per-repository secondary label (decision 9.4). **(3)** The
+  #908 fold-in (T238) claimed the marker-column alignment was exact "by construction" at 88px;
+  it was still 8px off, because `ArchivedGroup.tsx`'s spacer sits INSIDE the header row and must
+  NOT also add the row's own trailing padding a second time -- added a separate
+  `GROUP_HEADER_ACTIONS_WIDTH_PX` (3x24 + 2x4 = 80) for the spacer, keeping
+  `GROUP_HEADER_ACTIONS_OFFSET_PX` (88) for the tooltip `sideOffset` only, and this time measured
+  live (both header triggers' own `getBoundingClientRect().right`, asserted within 1px) rather
+  than claimed from arithmetic alone. Medium/Low fixes: decision 24's "No sessions yet" empty-
+  Project line (`RepositoryGroup.tsx`, was missing and unflagged); the "..." and header actions'
+  hover/open-menu fill, which lost to `ghost`'s own `dark:hover:bg-muted/50` (every built-in theme
+  sets `.dark`) -- added `dark:hover:bg-sidebar-border`/`aria-expanded:bg-sidebar-border`; a
+  forced-colours focus outline on every new 24px `Button` (`COMPOSER_BUTTON_FOCUS_CLASS`, since
+  `Button`'s own `focus-visible:ring-3` is a box-shadow forced colours strips); decision 8's icon
+  alignment, per the UX architect's own gate ruling (`GroupHeader.tsx`'s trigger `gap-1.5`/
+  `px-1.5` to `gap-1`/`px-1`, `SessionRow.tsx`'s row `pl-3` to `pl-6`, both now meeting at 24px) --
+  **this changes decision 8's own literal `pl-3 pr-2 py-1`, recorded as a departure on #567, not
+  silently overridden**; Resume moved outside the open button into a shared trailing area with
+  the time/"..." cell so line 2 keeps the full row width on every row; the Add repository
+  button's muted-at-rest colour (decision 21); the row shrinking to about 38px while renaming
+  (`min-h-11`); the quick-create "+" losing its glyph-only disabled dim while creating; off-grid
+  `gap-0.5`/`px-1.5` in the repository rename wrapper and the tooltip's own two-line gap
+  (decision 28); `formatRelativeTimeShort`'s rounding (`Math.floor`) disagreeing with
+  `formatRelativeTime`'s (`Math.round`) for the same instant, and its locale-dependent short-date
+  order (`Intl.DateTimeFormat(undefined, …)` reads "Oct 12" in `en-US`, not decision 11's own
+  "12 Oct") -- pinned to `'en-GB'`; and the row's own accessible description re-announcing "Last
+  active {N}m ago" to a focused screen-reader user roughly once a minute (the shared tick
+  recomputes it every render) -- now a stable `formatAbsoluteTime` ("Last active 14:05") in the
+  description only, leaving the visible short time and the hover card's own long form ticking as
+  before. **Live re-verification**: `scripts/verify-tauri-567.mjs` rebuilt and re-run from this
+  fix's own commit (`pnpm tauri build` chained with the verify script in one command, so the
+  run's exe is provably built from the commit under test; git HEAD logged in `report.txt`) --
+  KEYBOARD-ONLY Tab reaches the "..." trigger at rest, Enter opens it, Escape returns focus to
+  it, Delete > Cancel also returns focus to it, and a right-click context menu reveals the "..."
+  slot without stranding focus on `<body>` on close; the header actions' opacity at rest/hover/
+  keyboard-focus measured WHILE the group still has its one active Session (not after archiving,
+  gate round 1's own Medium finding on the first run); the marker-column alignment measured at
+  both header triggers' own `getBoundingClientRect().right` -- **0px delta, an exact match**;
+  decision 24's empty-Project line; the archived row's Project name, icon and accessible
+  description (via its own `aria-describedby` element's `textContent`); everything T240 already
+  covered. Three harness bugs found and fixed while re-running (not product bugs): the header-
+  actions-at-rest probe needed an explicit blur first (`createSessionViaQuickCreate`'s own click
+  left the "+" button focused, which `group-focus-within` then kept revealed); the hover target
+  needed to be the header's own div, not the whole repository container (which also spans the
+  row list below it); `DeleteDialog` is an `AlertDialog` (`role="alertdialog"`), not
+  `role="dialog"`, so its Cancel button needed its own selector. `node scripts/ci-local.mjs`
+  16/16 PASS; `pnpm test` 148/148. Evidence (13 screenshots, `report.txt`, and 5 JSON
+  diagnostics) kept at `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate1-shots/`.
+
+**Not exercised this phase** (stated plainly, not hidden): the mock image itself was not
+available to diff pixel-for-pixel against (only the decision record's own textual description
+was available, which every check above verifies against instead); the `(hover: none)` touch-
+pointer path is now un-overridden default behaviour (gated out of the hover-hiding rules
+entirely, T241) rather than a separately asserted branch, so it was not exercised under actual
+touch-pointer emulation (the scratch harness has none); the Working, Stopped and Unread response
+status icons were not separately live-exercised this phase (that rendering is `StateIcon`'s own,
+unchanged by this story and already gate-verified under #731) -- Idle, Needs-you and Archived
+were exercised, since those are the states that interact with this story's own new line-2
+precedence and accessible-name logic; the 220px narrow-width truncation (decision 25) was not
+re-measured after T241's `pl-6`/`gap-1` changes recovered 8px of width margin for it.
+
+- [X] T242 [US5] Gate round 2 remediation (five-reviewer, 2026-10-16, PR #910): Tests and A11y
+  FAILed on one shared High (a regression of round 1's own fix), Code escalated the "Last active"
+  format to High too and found a second High (line 2 narrower than claimed); Security PASSed.
+  Fixed: **(1)** round 1's keyboard-focus fix scoped the "..." trigger's base opacity/pointer-
+  events visibility entirely inside `[@media(hover:hover)]`, so a touch-only pointer could never
+  reveal or tap it at all, regressing decision 12's "Under hover:none, both show" -- its own
+  `[@media(hover:none)]:static/opacity-100/pointer-events-auto` branch restores it, and the
+  trailing cell's `h-4` becomes `min-h-4` so the time and button can share the row in flow instead
+  of overlapping. CDP's `(hover:none)`/`(pointer:coarse)` media emulation was attempted for a live
+  proof and found to have no effect on WebView2's own CDP endpoint (`matchMedia` never flips, no
+  CDP error either) -- `scripts/verify-tauri-567.mjs` falls back to a static check that the fix's
+  own `@media(hover:none)` CSS rule exists in the running bundle, code-verified rather than
+  behaviourally driven. **(2)** `formatAbsoluteTime` (round 1's a11y fix for a per-minute
+  re-announcing description) was hour:minute only with no date, so an archived Session idle for
+  days read as "Last active 14:05", indistinguishable from one active minutes ago -- now day-aware
+  ("Today HH:MM" or "{day} {month}[ year] HH:MM"), recorded as a decision 11/16 departure on #567.
+  **(3)** Resume and the trailing time/"..." slot were flex siblings of the open button, narrowing
+  line 2 below decision 8's own "full row width" claim (T238's own comment was wrong) -- pinned
+  instead to one absolute group (`right-2 top-1 h-5`) anchored to line 1 only, with line 1's own
+  `pr-28` reserving the matching space; line 2 (no such padding) spans the row again. Medium/Low
+  fixes: Resume had no hover feedback (shares a new `ROW_ACTION_HOVER_CLASS` with the "..."
+  trigger); Pull requests and Add repository both lost their hover fill to ghost's own
+  half-strength `dark:hover:bg-muted/50` (`hover:bg-sidebar-accent dark:hover:bg-sidebar-accent`
+  added to both); "No sessions yet" (decision 24's own verbatim text, for zero Sessions ever) now
+  reads "No active sessions" once every Session is archived instead (the Project still has
+  Sessions, just none listed); `GroupHeader.tsx`'s muddled 84/88px arithmetic comment and
+  `RepositoryGroup.tsx`'s single-constant comment both corrected (name both
+  `GROUP_HEADER_ACTIONS_OFFSET_PX`/`_WIDTH_PX`, not just the one each touches); `components.md`'s
+  "matching every other ghost use" claim corrected (Pull requests stays foreground at rest, a
+  primary nav entry, unlike a footer action). **Live re-verification**: `scripts/verify-tauri-
+  567.mjs` rebuilt and re-run from this commit (`pnpm tauri build` chained with the verify script
+  in one command) -- the line-2 full-width measurement (8px delta, the row's own `pr-2`); an
+  isolated hover-swap proof (time at rest, "..." on hover) with its own screenshot; KEYBOARD-ONLY
+  Delete > Cancel now driven by ArrowDown/Tab/Enter (never a click, correcting T241's own
+  overclaim); a right-click context menu returning focus to a real row-level control on close
+  (by element identity, not merely "not `<body>`"); the archived description's day-aware "Last
+  active Today HH:MM"; "No active sessions" once the only Session is archived; everything T240/
+  T241 already covered, re-confirmed. Shift+F10 (decision 17) was attempted too and found not
+  drivable via CDP in WebView2 (confirmed with a one-shot `contextmenu` listener: no event ever
+  fires) -- it and the right-click check above ultimately drive the identical `contextmenu`
+  handling Radix's `ContextMenuTrigger` reacts to, so this is a harness limitation, not missing
+  coverage of a distinct path. `node scripts/ci-local.mjs` 16/16 PASS. Evidence (screenshots,
+  `report.txt`, JSON diagnostics) kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate2-shots/`.
+
+**Not exercised this phase** (stated plainly, not hidden): the mock image itself was still not
+available to diff pixel-for-pixel against; the dated (non-"Today") branch of `formatAbsoluteTime`
+was not live-exercised (only code-verified -- every session in this run was created today, so only
+the "Today HH:MM" branch occurs naturally); forced-colours rendering of the new hover classes;
+the shared minute tick's own live redraw; the short-date ("12 Oct") form after 7 days; Resume's own
+hover fill (no stopped/resumable Session was created in this run's flow); the 220px narrow-width
+truncation (decision 25), not re-measured after this round's `pr-28`/`right-2` changes.
+
+- [X] T243 [US5] Gate round 3 remediation (five-reviewer, 2026-10-16, PR #910): Code, Tests, A11y
+  and `ui-architect-v3` all PASSed; one short follow-up round before merge. Fixed: **(1)**
+  `SessionRow.tsx`'s line 1 used a flat `pr-28` (112px, the trailing group's own worst case --
+  Resume, the time, and the "..." all shown together under `[@media(hover:none)]`) even under
+  `[@media(hover:hover)]`, where only one of the time/"..." ever shows at once -- starving the
+  title to about five characters at decision 25's own 220px minimum, far more than the group ever
+  needs there. Sized to the real content instead: `pr-10` (or `pr-16` with Resume mounted) under
+  hover:hover; `[@media(hover:none)]` widens further to the true additive case, `pr-17` (68px)
+  without Resume or `pr-24` (96px) with it. **(2)** The "..." trigger hung about 4px below line
+  1's own centre (`inset-y-0` stretching a `size-6` button inside a shorter `min-h-4` cell,
+  top-anchored -- CSS keeps the explicit height and ignores `bottom` when both are set alongside
+  `top`) -- `top-1/2 -translate-y-1/2` centres it regardless of the cell's own height. **(3)**
+  Dropped FR-070's "provisional numbering, parent confirms the final number before merge" note
+  now that #570's own merge settled FR-069 as the ceiling; records the actual renumbering reason
+  instead, matching the existing FR-067/FR-068 precedent. Posted the code-verified-only items
+  (the `(hover:none)`/Shift+F10 CDP gap, the dated `formatAbsoluteTime` branch, forced colours,
+  the minute tick, the short-date form) on #650.
+
+  **Live re-verification** (`scripts/verify-tauri-567.mjs`, rebuilt and re-run from this commit):
+  the session-list panel dragged to its own `minSize={220}` floor (`App.tsx`) -- a precise drag
+  distance computed from the panel's own measured width before dragging, not a large fixed
+  offset, which gate round 3's own first attempt found overshoots the floor and triggers the
+  panel's `collapsible`/`collapsedSize={0}` snap instead of clamping at 220px (a harness bug,
+  not a product one) -- measures the title never overlapping the trailing group (89px of title
+  kept, against the old ~36px floor); the "..." trigger's vertical centre within 1px (measured
+  0px) of line 1's own centre.
+
+  **Resume's own "with Resume" sizing (`pr-16`/`pr-24`) and hover fill stay code-verified, not
+  live** -- gate round 3 attempted to create a genuinely resumable Session live (via the row's own
+  Stop agent action) and found it does not work: `shared/canResumeSession.ts` requires
+  `stopReason: 'agent-exited'` or `terminatedUnexpectedly`, never set by a deliberate, user-
+  initiated Stop (confirmed by reading that source, then by a live attempt -- `canResume` stayed
+  `false` and no Resume button ever mounted). A genuinely resumable Session needs an actual
+  unexpected exit; the fake-omp engine's own `__exit__`/`exit.jsonl` crash directive exists for
+  exactly this (`scripts/fixtures/omp-frames/README.md`), but is wired only into fake-omp-driven
+  scripts, and this script drives a real, ambient `omp` throughout -- switching it over for one
+  session is a nontrivial harness change, out of scope for this round. `pr-16`/`pr-24` are
+  instead confirmed compiled into the running bundle's own CSS at the expected
+  `calc(var(--spacing) * 16/24)` (64px/96px) values. `node scripts/ci-local.mjs` 16/16 PASS.
+  Evidence (screenshots, `report.txt`, JSON diagnostics) kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate3-shots/`.
+
+**Closes #567** (five-reviewer gate PASS across Code, Tests, A11y and `ui-architect-v3`; Security
+PASSed every round). **Refs #908** stands: only the marker-column item is folded in and
+live-measured at 0px; its other four items are untouched.

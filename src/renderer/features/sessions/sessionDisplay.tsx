@@ -41,6 +41,64 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+// #567 decision 11: the row's own visible time ("now", "5m", "3h", "2d", then a short date from
+// 7 days on), distinct from `formatRelativeTime`'s long "ago" form above, which other surfaces
+// (`SessionDetailsCard.tsx`, `ManageSessionRow.tsx`, the Pull requests view) keep using
+// unchanged. The visible text this feeds is `aria-hidden`; the long form goes in the row's own
+// accessible description instead (`SessionDetailsCard.tsx`'s `descriptionText`). Gate round 1 fix
+// (Low, code-reviewer): `Math.round`, matching `formatRelativeTime` above -- `Math.floor` here
+// disagreed with that function's own rounding for the same instant (the visible "4m" and the
+// described "5m ago" could name two different numbers for one row). `'en-GB'` (not the user's own
+// locale) for the short date: decision 11's own example, "12 Oct", is day-then-month with no
+// comma, which is not what every locale gives `Intl.DateTimeFormat(undefined, …)` (`en-US` reads
+// "Oct 12").
+const SHORT_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+export function formatRelativeTimeShort(iso: string): string {
+  const deltaMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.round(deltaMs / 60_000)
+  if (minutes < 1) return 'now'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.round(hours / 24)
+  if (days < 7) return `${days}d`
+  return SHORT_DATE_FORMAT.format(new Date(iso))
+}
+
+// Gate round 1 fix (Medium, a11y-auditor): `SessionDetailsCard`'s own `aria-describedby` text
+// used to embed `formatRelativeTime`'s relative form here, which the shared minute tick
+// (`useMinuteTick`, `SessionRow.tsx`) recomputes every 60s for every mounted row -- Chromium
+// fires a description-changed accessibility event on an edit to a FOCUSED element's own
+// description, and some screen readers (NVDA) speak it, so a user sitting on a recently-active
+// row heard its whole description again roughly once a minute. An absolute wall-clock time never
+// changes between one render and the next, so the description stays stable while still being
+// accurate; the visible, `aria-hidden` short time (`formatRelativeTimeShort` above) and the
+// hover card's own visible long form (`formatRelativeTime`, not read by assistive tech per this
+// file's own comment) are unaffected and keep ticking live.
+//
+// Gate round 2 fix (High, three independent reviewers: the departure from decisions 11/16's own
+// "Last active {long time}" was shipped without being recorded on #567, AND the departure's own
+// implementation was wrong): the first cut was hour:minute only, with no date at all, so a
+// Session idle for days read as "Last active 14:05" -- indistinguishable from one active minutes
+// ago, while the sighted short time plainly showed "3d" or "12 Oct". Now day-aware: "Today HH:MM"
+// on the current calendar day, else "{day} {month} HH:MM" (matching the visible short date's own
+// `en-GB` day-then-month style above), with the year appended only when it differs from today's.
+// Recorded on #567 as a departure from decisions 11 and 16 (gate round 2, 2026-10-16): the
+// motive (a stable, non-churning description) stands; the format is now accurate, not merely
+// stable.
+const ABSOLUTE_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+const ABSOLUTE_TIME_OF_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+export function formatAbsoluteTime(iso: string): string {
+  const date = new Date(iso)
+  const now = new Date()
+  const timeOfDay = ABSOLUTE_TIME_OF_DAY_FORMAT.format(date)
+  const sameDay =
+    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  if (sameDay) return `Today ${timeOfDay}`
+  const yearSuffix = date.getFullYear() !== now.getFullYear() ? ` ${date.getFullYear()}` : ''
+  return `${ABSOLUTE_DATE_FORMAT.format(date)}${yearSuffix} ${timeOfDay}`
+}
+
 /** #735 decision 21 (and #748's own future "Show hidden" badge, which will reuse this helper): the single most
  * urgent state among a Group's listed Sessions, in precedence order -- Needs you, then
  * Terminated unexpectedly, then Unread response (#731, now landed). Working, idle and an

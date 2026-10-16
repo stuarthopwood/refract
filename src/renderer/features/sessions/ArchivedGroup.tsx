@@ -3,7 +3,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { useSessionListStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { GROUP_HEADER_ACTIONS_OFFSET_PX, GroupHeaderTrigger } from './GroupHeader'
+import { GROUP_HEADER_ACTIONS_WIDTH_PX, GroupHeaderTrigger } from './GroupHeader'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
 
@@ -39,27 +39,31 @@ export function ArchivedGroup({
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setArchivedOpen(open)}>
         <div className="group flex items-center gap-1 px-1">
           <GroupHeaderTrigger
-            label={`Archived (${sorted.length})`}
+            label="Archived"
+            count={sorted.length}
             icon={ArchiveIcon}
             marker={marker}
             containsOpenSession={containsOpenSession}
           />
-          {/* Gate round 1 fix (Low, ui-traversal-layout-v3): Archived has no action buttons of
-              its own, so without this spacer the trigger's `ml-auto` marker would land further
-              right than every Repository header's own marker (which shares its row with
-              `GROUP_HEADER_ACTIONS_OFFSET_PX`'s worth of buttons), breaking decision 21's "one
-              column" rule. */}
-          <div aria-hidden className="shrink-0" style={{ width: GROUP_HEADER_ACTIONS_OFFSET_PX }} />
+          {/* Gate round 1 fix (High, three independent reviewers): this spacer sits INSIDE the
+              trigger's own `gap-1 px-1` row, standing in for the three real action buttons a
+              Repository header shows here -- it must be sized to just those buttons
+              (`GROUP_HEADER_ACTIONS_WIDTH_PX`, 3x24 + 2x4 = 80), never the tooltip's own
+              `GROUP_HEADER_ACTIONS_OFFSET_PX` (88), which also counts the row's trailing
+              padding -- using that larger value double-counted the padding and left this
+              header's own `ml-auto` marker about 8px left of a Repository header's (the #908
+              "Archived marker column" defect a previous commit wrongly claimed was fixed "by
+              construction"). */}
+          <div aria-hidden className="shrink-0" style={{ width: GROUP_HEADER_ACTIONS_WIDTH_PX }} />
         </div>
         <CollapsibleContent>
-          <ul aria-label="Archived sessions" className="flex flex-col gap-0.5 py-1">
+          <ul aria-label="Archived sessions" className="flex flex-col gap-0 py-1">
             {sorted.map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 // Non-null: `rows` above already filtered to sessions with a resolvable repository.
                 repository={repositoriesById.get(session.repositoryId)!}
-                showRepository
               />
             ))}
           </ul>

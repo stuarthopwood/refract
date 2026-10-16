@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
+import { cn } from '@/lib/utils'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
 import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
@@ -22,6 +24,32 @@ import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
+
+// #567 decision 6: shared by the "+" quick-create, branch picker, and "..." menu buttons below
+// -- hidden at rest (kept in the Tab order by opacity, never `hidden`/`display:none`, unlike
+// `SessionRow.tsx`'s own trailing-slot swap, which the decision does not ask for here), shown on
+// `group-hover`/`group-focus-within` (hovering or focusing anywhere in the header), this
+// button's own `aria-expanded` (branch picker, "..." menu), and always under `(hover: none)`.
+// The `creating`/`active.length === 0` override (applied per-button below, since only this
+// function's own closure has those values) keeps them visible while a Session is being created
+// or the group has no active Sessions to hover over in the first place.
+//
+// Gate round 1 fix (Medium, architect/visual): `variant="ghost"` alone loses `hover:bg-sidebar-
+// border` to the Button base's own `dark:hover:bg-muted/50` (every built-in theme sets `.dark`,
+// and a `dark:` modifier out-specificities a bare one) -- `--muted` equals `--sidebar-accent` in
+// every theme, so a hovered or open-menu button showed no fill at all against a selected row.
+// `dark:hover:bg-sidebar-border`/`aria-expanded:bg-sidebar-border` win back the fill the same way
+// `SessionList.tsx`'s own `SESSION_LIST_TOOLBAR_BUTTON_CLASS` already does. `COMPOSER_BUTTON_
+// FOCUS_CLASS` restores a real forced-colours focus outline: `Button`'s own `focus-visible:
+// ring-3` is a box-shadow, which forced colours strips, leaving these controls with no visible
+// focus change at all without it.
+const HEADER_ACTION_BUTTON_CLASS = cn(
+  'text-muted-foreground opacity-0 transition-opacity duration-150',
+  'hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border aria-expanded:bg-sidebar-border',
+  'group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
+  '[@media(hover:none)]:opacity-100',
+  COMPOSER_BUTTON_FOCUS_CLASS
+)
 
 export function RepositoryGroup({
   repository,
@@ -184,7 +212,7 @@ export function RepositoryGroup({
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
         <div className="group flex items-center gap-1 px-1">
           {renaming ? (
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
               <input
                 ref={renameInputRef}
                 autoFocus
@@ -198,10 +226,10 @@ export function RepositoryGroup({
                 aria-label="Repository name"
                 aria-invalid={renameError ? true : undefined}
                 aria-describedby={renameError ? renameErrorId : undefined}
-                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1.5 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               />
               {renameError && (
-                <p id={renameErrorId} role="alert" className="px-1.5 text-xs text-destructive">
+                <p id={renameErrorId} role="alert" className="px-1 text-xs text-destructive">
                   {renameError}
                 </p>
               )}
@@ -219,16 +247,25 @@ export function RepositoryGroup({
               containsOpenSession={containsOpenSession}
             />
           )}
-          {/* These three action buttons' total width feeds `GROUP_HEADER_ACTIONS_OFFSET_PX` in
-              `GroupHeader.tsx` -- changing their size or count must update that constant too. */}
+          {/* These three action buttons' total width feeds BOTH `GROUP_HEADER_ACTIONS_OFFSET_PX`
+              (this header's own tooltip `sideOffset`) AND `GROUP_HEADER_ACTIONS_WIDTH_PX`
+              (`ArchivedGroup.tsx`'s matching spacer) in `GroupHeader.tsx` -- changing their size
+              or count must update BOTH constants, or the #908 marker-column drift returns.
+              #567 decision 6: ghost `icon-xs` (24px, 12px icons), hidden at rest and revealed by
+              opacity -- never losing their place in the Tab order -- on hover anywhere in the
+              header (`group-hover`), focus anywhere in it (`group-focus-within`), this control's
+              own `aria-expanded` (the branch picker and the "..." menu), while a create is in
+              flight, whenever the group has no active Sessions to hover over in the first place,
+              and always under a `(hover: none)` pointer (a touch screen has no hover to reveal
+              them). Ctrl+N's own focus-visible handles the "focus reveals the plus" rule below. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon-xs"
                 aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
                 aria-disabled={creating || undefined}
-                className="aria-disabled:opacity-50"
+                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100', 'aria-disabled:[&_svg]:opacity-50')}
                 // Quality-gate fix (round 2, Sec/Code/Verif Medium): no `aria-keyshortcuts`
                 // here -- unlike `ChatHeader.tsx`'s Ctrl+W button or `MessageInput.tsx`'s
                 // Ctrl+Shift+X button (each the ONE control its own chord always activates),
@@ -264,7 +301,12 @@ export function RepositoryGroup({
               repository={repository}
               trigger={
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label={`New session from a branch in ${repository.name}`}>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={`New session from a branch in ${repository.name}`}
+                    className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
+                  >
                     <GitBranchPlusIcon aria-hidden />
                   </Button>
                 </TooltipTrigger>
@@ -274,14 +316,15 @@ export function RepositoryGroup({
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 ref={menuTriggerRef}
-                type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label={`Repository actions for ${repository.name}`}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100')}
               >
-                <EllipsisVerticalIcon aria-hidden className="size-3.5" />
-              </button>
+                <EllipsisVerticalIcon aria-hidden />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               onCloseAutoFocus={(event) => {
@@ -306,11 +349,25 @@ export function RepositoryGroup({
           </DropdownMenu>
         </div>
         <CollapsibleContent>
-          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
-            {active.map((session) => (
-              <SessionRow key={session.id} session={session} repository={repository} />
-            ))}
-          </ul>
+          {active.length === 0 ? (
+            // Gate round 1 fix (High, three independent reviewers; decision 24): an open Project
+            // with no Sessions used to render nothing at all under its header. One indented,
+            // muted line, no action of its own -- the header's own "+" stays visible via the
+            // `active.length === 0` override on `HEADER_ACTION_BUTTON_CLASS` above.
+            // Gate round 2 fix (Low, architect L-e): decision 24's own exact text, "No sessions
+            // yet", describes a Project that has never had one at all (`sessions.length === 0`);
+            // a Project whose only Sessions are archived still HAS Sessions, so "yet" there was
+            // inaccurate -- "No active sessions" instead, recorded on #567.
+            <p className="py-1 pl-6 text-xs text-muted-foreground">
+              {sessions.length === 0 ? 'No sessions yet' : 'No active sessions'}
+            </p>
+          ) : (
+            <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
+              {active.map((session) => (
+                <SessionRow key={session.id} session={session} repository={repository} />
+              ))}
+            </ul>
+          )}
         </CollapsibleContent>
       </Collapsible>
       <RemoveRepositoryDialog
