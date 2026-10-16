@@ -93,6 +93,7 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 |---|---|
 | `settings.get()` | `Settings` |
 | `settings.setApprovalMode(mode)` | `Settings`. Sets `pendingMode` on every live Session whose mode differs; the restart happens at each Session's next settle. |
+| `settings.setSessionListCollapse(value)` | `Settings`. Sets the whole `SessionListCollapse` value (FR-069); `invalid-argument` unless `value` is an object with `collapsedRepositoryIds` an array of strings (at most 1,000 entries, each at most 256 bytes -- duplicate ids are silently REMOVED, not rejected) and `archivedOpen` a boolean. |
 
 ### Model (lane RM, issues #454/#740/#741/#762/#766/#760/#564)
 

@@ -41,6 +41,33 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+/** #735 decision 21 (and #748's own future "Show hidden" badge, which will reuse this helper): the single most
+ * urgent state among a Group's listed Sessions, in precedence order -- Needs you, then
+ * Terminated unexpectedly, then Unread response (#731, now landed). Working, idle and an
+ * ordinary Stopped Session (no `terminatedUnexpectedly`) never count. `status` feeds the shared
+ * `StateIcon` unchanged (the icon colour a plain Needs you/Stopped/Unread response row already
+ * uses); `label` is the word appended to the owning Group header's accessible name and is NOT
+ * always `STATUS_LABEL[status]` -- a terminated-unexpectedly Session is still `status: 'stopped'`
+ * but must read "Terminated unexpectedly", never the generic "Stopped" an ordinary stopped
+ * Session (no marker at all) would otherwise share the icon with. */
+export interface GroupWaitingState {
+  status: SessionDisplayStatus
+  label: string
+}
+
+export function groupWaitingState(sessions: SessionSummary[]): GroupWaitingState | null {
+  if (sessions.some((session) => session.status === 'needs-you')) {
+    return { status: 'needs-you', label: STATUS_LABEL['needs-you'] }
+  }
+  if (sessions.some((session) => session.status === 'stopped' && session.terminatedUnexpectedly)) {
+    return { status: 'stopped', label: 'Terminated unexpectedly' }
+  }
+  if (sessions.some((session) => displayStatus(session) === 'unread-response')) {
+    return { status: 'unread-response', label: STATUS_LABEL['unread-response'] }
+  }
+  return null
+}
+
 // A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md
 // "Look and feel"). Issue #731: idle is `CircleCheckIcon`, the same grey glyph the Subagent
 // panel's own "finished" icon uses (`SubagentPanel.tsx`, #563) -- a check means "turn ended,

@@ -36,6 +36,14 @@ _Avoid_: Close, remove (ambiguous with delete)
 Permanently remove a **Session**, its **Worktree**, and its **Conversations**, only after a confirmation that names what will be lost (uncommitted changes, unpushed commits).
 _Avoid_: Remove, discard
 
+**Group header**:
+The collapsible header above one Project's Sessions in the session list, shared by the Archived group.
+_Avoid_: repository header, section header
+
+**Waiting marker**:
+The status icon on a collapsed Group header showing the most urgent state among the Sessions it hides: Needs you, then Terminated unexpectedly, then Unread response.
+_Avoid_: badge, dot, hidden-state marker (Hidden is #748's term), alert (#560's term)
+
 **Worktree**:
 The isolated checkout of a **Project** that a **Session** works in. Created by Refract when the **Session** is created.
 _Avoid_: Branch, folder, clone

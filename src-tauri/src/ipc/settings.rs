@@ -14,7 +14,7 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ApprovalMode, SplitLayout};
+use crate::store::settings::{ApprovalMode, SessionListCollapse, SplitLayout};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 
@@ -47,6 +47,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register(
         "settings.setWordPredictionEnabled",
         settings_set_word_prediction_enabled,
+    );
+    d.register(
+        "settings.setSessionListCollapse",
+        settings_set_session_list_collapse,
     );
 }
 
@@ -287,6 +291,52 @@ pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -
             .lock()
             .await
             .set_word_prediction_enabled(enabled)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// #735 contracts/ipc.md `settings.setSessionListCollapse`: basic-shape validation only --
+/// `{ collapsedRepositoryIds: string[], archivedOpen: boolean }` -- plus the shared
+/// `sanitize_collapsed_repository_ids` cap-and-dedupe pass (gate round 2 fix), mirroring
+/// `parse_split_arg`'s own validate-then-persist pattern above. Ids are de-duplicated silently,
+/// never rejected; an over-cap count or id length IS rejected as `invalid-argument`, since this
+/// is the renderer's own validated write path, unlike the disk loader's lazy-correction.
+const SESSION_LIST_COLLAPSE_SHAPE_MESSAGE: &str =
+    "settings.setSessionListCollapse expects { collapsedRepositoryIds: string[], archivedOpen: boolean }";
+
+fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse, super::IpcError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let ids_value = object
+        .get("collapsedRepositoryIds")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let collapsed_repository_ids =
+        crate::store::settings::sanitize_collapsed_repository_ids(ids_value)
+            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    let archived_open = object
+        .get("archivedOpen")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?;
+    Ok(SessionListCollapse {
+        collapsed_repository_ids,
+        archived_open,
+    })
+}
+
+pub fn settings_set_session_list_collapse(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = parse_session_list_collapse_arg(args.first().unwrap_or(&Value::Null))?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_session_list_collapse(value)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

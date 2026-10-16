@@ -16,6 +16,7 @@ import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
+import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useUpdateStore } from './update-store'
 
@@ -263,6 +264,18 @@ export function initStores(): void {
     if (document.visibilityState === 'visible') refreshRepositoriesRemotes()
   })
 
+  // Gate round 2 fix (code-reviewer/test-reviewer Medium): `pruneRepositories` below must never
+  // run before `restore()` has set the real saved `collapsedRepositoryIds` -- these two blocks
+  // used to be fully independent `Promise.all` loads with no ordering between them, so a
+  // repositories.list that resolved first pruned against the pre-restore empty default and did
+  // nothing, letting a stale id survive until the next successful remove (the D18 departure
+  // this once was). `restoredPromise` makes the ordering explicit without coupling the two
+  // loads' own timing.
+  let resolveRestored: () => void = () => {}
+  const restoredPromise = new Promise<void>((resolve) => {
+    resolveRestored = resolve
+  })
+
   void (async () => {
     const [sessionsLoad, settingsLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
@@ -270,6 +283,14 @@ export function initStores(): void {
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
+    // #735 decision 19: restored in this same Promise.all block, right alongside Settings,
+    // not deferred to themeBootstrap -- the Sessions arrive in this same load, so nothing
+    // visible is held back by doing it here. Repositories load separately (below) and would
+    // otherwise draw open groups that then immediately snap shut once this resolves. Runs
+    // against the shared `DEFAULT_SETTINGS` fallback (and still flips `restored` true) even
+    // when `settings.get` itself failed.
+    useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
+    resolveRestored()
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
@@ -293,6 +314,15 @@ export function initStores(): void {
   void (async () => {
     const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    // Decision 18: pruning only ever runs against a genuinely successful load -- a
+    // failed load's own `[]` fallback must never be mistaken for "there are now zero
+    // Repositories" and wipe every collapsed id the user had saved. Also waits for
+    // `restore()` to have run first (gate round 2 fix above), so it always prunes against the
+    // real saved ids, never the pre-restore empty default.
+    if (repositoriesLoad.ok) {
+      await restoredPromise
+      useSessionListStore.getState().pruneRepositories(new Set(repositoriesLoad.value.map((repository) => repository.id)))
+    }
     if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes(true)
   })()
 

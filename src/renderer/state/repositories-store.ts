@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Repository, RepositoryRemote } from '../../shared/model'
 import { notify } from './notify'
+import { useSessionListStore } from './session-list-store'
 
 // Gate round 4 fix (Low, a11y-auditor + security-auditor): structural equality for
 // `setRemotes`' own merge below -- lets it keep the SAME repository object (and, if nothing
@@ -82,7 +83,12 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
       notify(result.error)
       return false
     }
-    set({ repositories: get().repositories.filter((repository) => repository.id !== id) })
+    const repositories = get().repositories.filter((repository) => repository.id !== id)
+    set({ repositories })
+    // #735 decision 18: pruned only after a successful remove, never left for a later
+    // stale write to bring the id back (see `session-list-store.ts`'s own `pruneRepositories`
+    // doc comment).
+    useSessionListStore.getState().pruneRepositories(new Set(repositories.map((repository) => repository.id)))
     return true
   },
   // Issue #480: the IPC handler returns the full updated Repository (its name may have reset to

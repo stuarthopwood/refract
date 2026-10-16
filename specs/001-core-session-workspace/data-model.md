@@ -58,10 +58,30 @@ Rules:
 interface Settings {
   version: 1;
   approvalMode: 'ask' | 'edit-freely' | 'auto';   // default 'ask'
+  sessionListCollapse: SessionListCollapse;       // default { collapsedRepositoryIds: [], archivedOpen: false }
 }
 ```
 
 Mapping to OMP's `--approval-mode`: `ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`.
+
+### `SessionListCollapse` (issue #735)
+
+```ts
+interface SessionListCollapse {
+  collapsedRepositoryIds: string[];
+  archivedOpen: boolean;
+}
+```
+
+Only the DIFFERENCE from each group's default is stored: a Repository id absent from
+`collapsedRepositoryIds` is open (a newly added Repository starts open); `archivedOpen` defaults
+`false`. Set whole via `settings.setSessionListCollapse(value)`; the renderer's
+`session-list-store.ts` is the sole writer -- it reads `Settings` once at startup (in the same
+`Promise.all` as `sessions.list`/`settings.get`, so the toolbar and groups render only once that
+has happened), persists every later toggle debounced by about 300ms (flushed on
+`beforeunload`/`pagehide`), and never re-reads its own setter reply or a later
+`settings:changed` broadcast. `collapsedRepositoryIds` is pruned to existing Repository ids only
+after a successful `repositories.list` load or a successful `repositories.remove`.
 
 ### `processes.json`
 

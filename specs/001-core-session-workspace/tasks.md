@@ -1779,3 +1779,204 @@ bar for **Closes #565**.
 real, kept evidence for that run -- the full multi-call Spine, pl-8, role=list, "1 failed" text,
 and the real Obsidian/Dark-high-contrast Theme-submenu screenshots, all confirmed live. **Closes
 #565.**
+
+## Phase 43: Convergence
+
+- [X] T227 [US5] Issue #735 (Stuart 2026-10-13, full UX-architect-v3 roundtable decision record,
+  "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): a pinned Collapse all /
+  Expand all toolbar row above the session list's scroll area (16px gap under Pull requests),
+  two `icon-xs` ghost buttons in fixed order, `aria-disabled` (never native `disabled`) with an
+  always-mounted sr-only no-op reason plus a second visual tooltip line, and a polite
+  `useChatAreaAnnouncer` announcement on each ("All groups collapsed"/"All groups expanded",
+  per-group toggles and the startup restore stay silent). "All" means every Repository group
+  plus Archived while #527's own "hidden entirely while nothing anywhere is archived" rule shows
+  it; Archived's own saved flag is left untouched while hidden.
+- [X] T228 [US5] New `Settings.sessionListCollapse` field (`{ collapsedRepositoryIds: string[],
+  archivedOpen: boolean }`, default all-open/Archived-closed): `src/shared/model.ts`/`ipc.ts`,
+  `src/tauri-bridge/index.ts`, `src-tauri/src/store/settings.rs` (shape, `KNOWN_FIELDS`,
+  `serialize_for_disk`, `set_session_list_collapse`) and `src-tauri/src/ipc/settings.rs`
+  (`settings.setSessionListCollapse`, de-duplicated-string-array-plus-boolean shape validation,
+  `invalid-argument` otherwise). New `src/renderer/state/session-list-store.ts`: the field's
+  sole writer, debounced ~300ms persist flushed on `beforeunload`/`pagehide`, a `restored` flag
+  read once at startup alongside `settings.get`/`sessions.list` so `SessionList.tsx` never
+  paints a group open and then snaps it shut once the persisted state arrives a moment later
+  than Repositories do, `isGroupOpen`/`setRepositoryOpen`/`setArchivedOpen`/`collapseAll`/
+  `expandAll`/`openRepositoryGroup`/`pruneRepositories`. `init-stores.ts` restores the state and
+  prunes removed-Repository ids after a successful `repositories.list`; `repositories-store.ts`
+  prunes after a successful `remove`; `sessions-store.ts`'s `create()`/`restore()` (the one choke
+  point every create entry -- the header "+", the branch picker, Ctrl+N, the row menu's own "New
+  session from {branch}" item -- and the one restore entry already funnel through) call
+  `openRepositoryGroup` on success, covering decision 20's "a closed group reopens, and that open
+  is saved, only when a create or a restore actually moves a row into it" without touching
+  `SessionRow.tsx`/`useSessionRowActions.ts` (the #731/#811 headroom-constrained hook) at all.
+- [X] T229 [US5] `RepositoryGroup.tsx`/`ArchivedGroup.tsx`: both Collapsible types become
+  controlled (`open`/`onOpenChange`, replacing `defaultOpen` and the old uncontrolled-closed
+  Archived group), `onOpenChange` driven by Radix's own reported `open` value (gate round 1 fix,
+  Low: `RepositoryGroup.tsx` originally ignored it and blindly toggled). `GroupHeader.tsx`'s
+  `GroupHeaderTrigger` gains `marker`/`containsOpenSession` props: a Waiting marker (the shared
+  `StateIcon`, `size-4`, `ml-auto flex shrink-0`, after the label) shown only on a closed group,
+  naming the most urgent state among its NON-ARCHIVED Sessions via a new `groupWaitingState()`
+  precedence helper in `sessionDisplay.tsx` (Needs you, then Terminated unexpectedly, then
+  Unread response -- #731's own state, merged in from `origin/main` and wired into the same
+  precedence list its own decision record anticipated); and a 2px `bg-active-indicator` header
+  bar (forced-colours `bg-[Highlight]`) on the Repository group currently holding the visible
+  non-archived Session while it is closed. Both combine into one accessible name, never a second
+  `aria-describedby` region. **Gate round 1 fix (High, every specialist)**: both the marker and
+  the bar were computed from `RepositoryGroup`'s raw `sessions` prop, which (since #527) still
+  includes that Repository's archived Sessions -- an archived Session kept marking and
+  highlighting its old, now-empty-looking group for as long as it stayed closed. Fixed by
+  filtering to the same non-archived `active` list the rows themselves render, computed once and
+  shared by `containsVisibleSession`/`marker`/the rendered rows.
+- [X] T230 [US5] `scripts/theme-contrast-pairs.mjs`: 9 new pairs (`state-needs-you`,
+  `state-stopped`, `active-indicator`, `ring`, `muted-foreground` against `sidebar`/
+  `sidebar-accent`) for the marker, the active bar and the toolbar's own focus ring, all of which
+  render inside the session list's `bg-sidebar` surface and were previously checked only against
+  the page `background`. **Gate round 1 fix (High, ui-visual-system-v3)**: decision 23's literal
+  `focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2
+  focus-visible:outline-ring` string draws no visible ring at all on `Button` -- its base
+  `outline-none` (`button.tsx:7`) sets `outline-style: none` and the decision's own class list
+  never resets it, a trap the repo had already found and fixed once for the composer's own
+  buttons (`pickerShared.tsx`'s `COMPOSER_BUTTON_FOCUS_CLASS`, which adds `outline-solid`). Both
+  toolbar buttons now share one `SESSION_LIST_TOOLBAR_BUTTON_CLASS` built from
+  `COMPOSER_BUTTON_FOCUS_CLASS` plus `COMPOSER_DISABLED_HOVER_RESET_CLASS` (also fixes the Low
+  finding that a disabled toolbar button still showed hover feedback), replacing the two pasted
+  ~260-character class strings; #748's Show hidden button will reuse it.
+- [X] T231 [US5] Update the docs: `specs/001-core-session-workspace/spec.md` (superseded the
+  2026-10-09 Archived "not persisted across restarts" clarification in place, a new 2026-10-15
+  Clarifications Q&A, acceptance scenario 7 under User Story 5 corrected to the three-state
+  marker order, **FR-069** finalised once `origin/main` confirmed FR-067/FR-068), `data-model.md`
+  (`SessionListCollapse` entity), `contracts/ipc.md` (`settings.setSessionListCollapse` row),
+  `CONTEXT.md` (**Group header**, **Waiting marker**), `docs/design/product-layout.md` (the
+  toolbar bullet, merged with #731's own session-list-row wording update).
+- [X] T232 [US5] Live verification: a scratch Tauri debug instance (own data dir, own scratch
+  repositories, the copied exe's sha256 asserted against the launched pid before each run,
+  `scripts/verify-tauri-735.mjs`, rewritten in gate round 1 to assert a genuine mixed collapse
+  state -- one Repository closed, one open, one Session left archived with Archived open --
+  through a real quit and relaunch on the SAME scratch data dir, reading
+  `sessionListCollapse` back out of `<dataDir>/settings.json` rather than the dead
+  `window.__refractStores` DEV-only baseline the first driver asserted against, and failing
+  instead of silently falling back when a real click misses, its session-list-specific CDP
+  driving helpers extracted to a new `scripts/verify-tauri-session-list-helpers.mjs` to keep the
+  file under the #806 600-line cap once the rewrite grew it past it) proved, against real DOM input
+  (never `window.refract.*` as a shortcut, except the one incidental `theme.set` call used only
+  to switch themes between screenshots): two Repository groups added and opened by default;
+  Collapse all/Expand all closing and opening every Repository group plus Archived together,
+  including a real no-op second click (`aria-disabled`, the correct always-mounted reason text,
+  never native `disabled`); the toolbar's keyboard reach immediately after Pull requests
+  (focused, not clicked -- a real click there navigates to the Pull Requests view, whose own
+  repository combobox steals focus on mount) via the real computed accessible name (CDP
+  Accessibility domain, never `textContent`); a collapsed Repository group holding a Session
+  with a genuinely pending approval (status `needs-you`) showing the Waiting marker, its real
+  accessible name reading "..., Needs you"; that marker and the active-session bar NOT
+  reappearing on a Session's own former Repository group once it is archived (the gate round 1
+  regression proof); open-on-create (the header "+" quick-create reopened a closed group) and
+  open-on-restore (restoring an Archived Session reopened its own closed Repository group); the
+  mixed collapse state surviving a real app quit and relaunch on the SAME scratch data dir (a
+  ~1.5s wait before the forceful Job-Object kill, since that kill never fires
+  `beforeunload`/`pagehide`, so the renderer's own flush-on-quit handler would otherwise never
+  run); and the toolbar's focus outline actually rendering under keyboard focus (gate round 1
+  regression proof for T230's fix), checked via computed style (`getComputedStyle`, not the CDP
+  Accessibility domain -- that domain reports accessible names/roles, not rendered box styles;
+  gate round 2 fixed this mislabel and also fixed the reading itself to settle to decision 23's
+  exact 2px solid value, after an earlier reading mid-transition misreported 3px -- see T233),
+  never a bare truthy check. Screenshots (Dark and High contrast, the collapsed group with its
+  marker, the mixed state before and after relaunch) recorded to
+  `C:/Users/shopwood/AppData/Local/Temp/refract-735-shots/`. `node scripts/ci-local.mjs` 16/16
+  PASS (including the full Rust test suite, clippy, and a Tauri debug build) both before and
+  after merging `origin/main`.
+- [X] T233 [US5] Gate round 2 remediation (five-reviewer, 2026-10-15): Code and Tests FAILed on
+  one High (Closes vs Refs: decision 29's Settings round trip and prune checks were still
+  unexercised); Security, Accessibility and Architect PASSed. Fixed:
+  - `scripts/verify-tauri-735.mjs`/`verify-tauri-session-list-helpers.mjs`: a third scratch
+    Repository (C, empty, collapsed) and two new checks -- the Settings round trip (open
+    Settings via the profile item's cog, return via "Back to chat", assert the mixed state
+    survived the whole-list remount) and the prune (remove Repository C, assert its id actually
+    leaves `settings.json` on disk without disturbing Repository A's or Archived's own saved
+    state); `createSessionViaQuickCreate` now waits for the Repository's own row count to
+    increase, not only that a composer is enabled (a dropped second create went undetected the
+    old way, and genuinely happened once in round 1's own evidence); the focus-outline check now
+    waits 250ms for `transition-all` to settle and asserts the EXACT `outline-style: solid`,
+    `outline-width: 2px`, `outline-offset: 2px` (round 1's "solid, 3px" reading was the pre-settle
+    value, not a real departure); both Collapse all and Expand all now get a REAL second click
+    asserted to change nothing, not only a read of `aria-disabled`; new `assertExeMatchesProcess`
+    (`verify-tauri-cdp.mjs`) actually checks the launched process's own exe path and a fresh
+    sha256 against the scratch copy, not only logging the hash at copy time; screenshots, the
+    STEP-PASS report and settings.json dumps now persist to
+    `C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots/` and are kept (round 1's own
+    evidence had been deleted by a later manual cleanup pass).
+  - `SessionList.tsx`: the toolbar's no-op dimming now targets only the glyph
+    (`aria-disabled:[&_svg]:opacity-50`), keeping the focus ring at full contrast; the
+    disabled-hover background/text resets are now toolbar-specific and `dark`-prefixed
+    (`dark:aria-disabled:hover:bg-transparent`, `aria-disabled:hover:text-muted-foreground`),
+    since the composer's own `COMPOSER_DISABLED_HOVER_RESET_CLASS` lost on both counts here (a
+    specificity tie against `dark:hover:bg-sidebar-border`, and `text-current` resolving to the
+    inherited `sidebar-foreground` instead of this button's own `muted-foreground`);
+    `SESSION_LIST_TOOLBAR_BUTTON_CLASS` is no longer exported (nothing outside this file uses it).
+  - `init-stores.ts`: `pruneRepositories` now awaits a `restoredPromise` resolved right after
+    `restore()`, so it can never again run before the real saved ids are loaded (closes the D18
+    departure, dropped from the table below).
+  - `sessions-store.ts`: the `create()`/`restore()` comments now cite the recorded D20 departure
+    instead of claiming full compliance with it.
+  - `src-tauri/src/store/settings.rs`/`ipc/settings.rs`: new shared
+    `sanitize_collapsed_repository_ids` (1,000-id cap, 256-byte-per-id cap, `HashSet` de-dupe
+    instead of the old O(n^2) scan) used by both the disk loader and the IPC setter.
+  - `contracts/ipc.md`: reworded to state plainly that duplicate ids are removed, not rejected,
+    and documents the two new caps. `scripts/check-parity.mjs`: added
+    `SETTINGS_SET_SESSION_LIST_COLLAPSE: 'R8'` (was unassigned).
+  - `scripts/theme-contrast-pairs.mjs:173`, `sessionDisplay.tsx:44`: the two leftover
+    decision-number citations outside the record's 1-29 fixed/removed.
+  - **Live re-verification**: both decision 29 checks pass live against the current head (see
+    above); `node scripts/ci-local.mjs` 16/16 PASS; `cargo test` and `cargo clippy` clean.
+    Screenshots and the STEP-PASS report at
+    `C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots/`.
+  - **Switched to Closes #735**: every item on decision 29's own verification list is now either
+    live-proved or named as an accepted Low departure (D20) in the table below -- no
+    acceptance-scoped item is left unexercised.
+
+**Not exercised this phase** (stated plainly, not hidden): a frame-by-frame capture proving no
+visible flash of open groups before the persisted state loads (the `restored` gate's own
+correctness is a code-review claim here, not a captured absence-of-flash); the toolbar's
+two-line tooltip's own hover-visible rendering (its DOM structure and `aria-describedby` target
+were verified, not a screenshot of the open tooltip bubble itself); and #559's search slot and
+#748's Hide toggle slot in the toolbar, both out of scope for this story (decisions 26-27, hooks
+only: `isGroupOpen` selector, first-button-slot order). Decision 29's own Settings round trip and
+prune, previously listed here as unexercised, are now both live-proved in T233 above.
+
+This phase was written retroactively (the Spec Kit pickup was delegated via the issue's own
+"Decided (Skippy...)" decision-record comment, 2026-10-15, produced by a `ui-architect-v3`
+roundtable rather than a live grill, per Stuart's standing delegation while away). A delegated
+docs subagent's first attempt at the spec.md/data-model.md/contracts/ipc.md/CONTEXT.md/
+product-layout.md amendments used relative paths that resolved against an unrelated sibling
+worktree instead of this one (the worktree-path-resolution trap); caught during
+self-verification (a `git status` diff of zero in this worktree for files the subagent claimed
+to edit), that worktree's own 5 touched files were reverted to clean and the amendments were
+redone directly here. Opened as draft PR #905 (`feat/735-collapse-all`). A five-reviewer gate
+round (code-reviewer, test-reviewer, accessibility-auditor, security-auditor, ui-architect-v3)
+found 3 agreed High findings (the archived-Session leak into the marker and active bar, the
+toolbar focus ring never rendering, and the first live-check driver's restart proof being
+vacuous against a build that persisted nothing) plus Medium (spec FR-069/scenario 7 still naming
+two marker states) and Low findings (decision-number citations in comments using an internal
+63-121 scheme instead of the record's own 1-29, `RepositoryGroup.tsx` ignoring Radix's own
+`open` value, auto-open-on-restore firing even when focus does not move, a possible
+prune/restore race, and a disabled toolbar button still showing hover feedback); every High and
+Medium finding above was fixed in T229-T232; the prune/restore race and the focus-independent
+auto-open were recorded as accepted Low departures in the table below rather than silently
+dropped. Kept **Refs #735**, not **Closes**, for decision 29's Settings round trip and prune --
+named but not yet exercised. Merged `origin/main` (PR #899/#563, which lands as Phase 41) before
+this phase was finalised; `node scripts/ci-local.mjs` re-ran 16/16 clean afterward.
+
+A gate round 2 found one remaining High (the Closes/Refs mismatch above, plus the two decision-29
+items still unexercised) and several Medium/Low findings; T233 fixes all of them and switches
+this entry to **Closes #735** -- see T233's own entry for the full list. D18 (the prune/restore
+race) is fixed there too and dropped from the table below; D20 and D23 stand as recorded,
+accepted departures. Renumbered from provisional Phase 42/T221-T227 to Phase 43/T227-T233 once
+`origin/main` landed PR #906/#565 as Phase 42/T221-T226 (per Main's own merge instruction);
+merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/16 clean.
+
+**Departures from the decision record** (named per the gate's own finding, not silently dropped):
+
+| Decision | Departure |
+|---|---|
+| D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
+| D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |
+
