@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.0 (2026-10-16)
+
+### Features
+
+- feat(chat): composer restyle with status line and in-box pickers (#564) (https://github.com/stuarthopwood/refract/pull/877)
+- feat(chat): #572 Ask card restyle - tab row, tick boxes, structured dialog (https://github.com/stuarthopwood/refract/pull/900)
+- feat(sessions): Unread response status icon, new idle icon (#731) (https://github.com/stuarthopwood/refract/pull/902)
+- feat(chat,subagents): subagent stages, chain row and tree panel (#563) (https://github.com/stuarthopwood/refract/pull/899)
+- feat(chat): connected-log spine (guide rails) -- CollapsedLine geometry, ToolGroupRow on SpineList (https://github.com/stuarthopwood/refract/pull/906)
+- feat(chat): #570 tool row colour treatment -- neutral success, error icon/label/line, group meta counts (https://github.com/stuarthopwood/refract/pull/909)
+- feat(chat): #557 collapse consecutive thoughts into one Thought process row (https://github.com/stuarthopwood/refract/pull/912)
+- feat(chat): #558 blocker callout -- accent bar, locations, Copy, Ask agent to address this (https://github.com/stuarthopwood/refract/pull/916)
+
+### Other
+
+- docs(plan): place installer and updater feedback issues (https://github.com/stuarthopwood/refract/pull/884)
+- docs(plan): place the temp-folder leak issue (https://github.com/stuarthopwood/refract/pull/886)
+- docs(plan): place #887 Project colour; amend decorative-colour rule (https://github.com/stuarthopwood/refract/pull/888)
+- docs(design): allow a user-chosen Project colour in the colour rule (#887) (https://github.com/stuarthopwood/refract/pull/889)
+- docs(plan): place #891 Delete Session dead-end bug (A9) (https://github.com/stuarthopwood/refract/pull/892)
+- docs(plan): #891 git metadata contract (no repo-wide prune) (https://github.com/stuarthopwood/refract/pull/893)
+- docs(plan): place #877 review follow-ups (https://github.com/stuarthopwood/refract/pull/898)
+- refactor(sessions): split SessionList.tsx along its group/row seams (#811) (https://github.com/stuarthopwood/refract/pull/901)
+- UI polish: Session list collapse/expand toolbar + persisted state (#735) (https://github.com/stuarthopwood/refract/pull/905)
+- Session list restyle: rows, group headers and footer, to the mock (#567) (https://github.com/stuarthopwood/refract/pull/910)
+- Pull requests: restyle list rows, header, tabs and the detail layout to the mock (#568) (https://github.com/stuarthopwood/refract/pull/914)
+- docs: remove scratch copies of PLAN.md (https://github.com/stuarthopwood/refract/pull/922)
+
 ## v0.2.0 (2026-10-15)
 
 ### Features
