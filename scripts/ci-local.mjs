@@ -12,7 +12,9 @@
 //
 // `CARGO_TARGET_DIR`/`CARGO_INCREMENTAL` are read from the calling shell's own environment and
 // passed straight through to every step unchanged -- this script never sets or overrides them
-// (the shared Rust build cache lives outside the repo and outside any one worktree).
+// (the shared Rust build cache lives outside the repo and outside any one worktree). Issue #946:
+// before running any `cargo`/`tauri` step, this script refuses rather than letting cargo silently
+// fall back to a worktree-local `src-tauri/target`.
 //
 // Usage: node scripts/ci-local.mjs  (or `pnpm ci:local`)
 
@@ -21,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -133,9 +136,18 @@ function formatDuration(ms) {
 
 function main() {
   const steps = loadSteps();
+  // #946: a cargo/tauri step here left unset falls back to cargo's own default
+  // (`src-tauri/target`), the exact worktree-local build this issue exists to prevent -- refuse
+  // up front, before any step runs, rather than discovering it mid-build.
+  if (steps.some((step) => /\b(cargo|tauri)\b/i.test(step.run))) {
+    try {
+      requireSharedCargoTarget(repoRoot);
+    } catch (err) {
+      fail(err.message);
+    }
+  }
   const results = [];
   let failedAt = -1;
-
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     console.log(`\n> ${step.name}\n  $ ${step.run}`);

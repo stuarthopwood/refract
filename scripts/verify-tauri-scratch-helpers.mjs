@@ -191,3 +191,28 @@ export async function switchTheme(cdp, themeId, themeName) {
     label: `<html> class theme-${themeId} applied (real store round trip, not just the title-bar preview)`
   });
 }
+
+/** #946: refuses to build without the shared `CARGO_TARGET_DIR`, never falling back to a
+ * worktree-local `src-tauri/target` (a 2026-10-16 live-check built into one and consumed 5.9 GB,
+ * dropping C: to 1.3 GB free mid-build for another lane). `repoRoot` is only used to reject a
+ * `CARGO_TARGET_DIR` that resolves inside the repo/worktree itself, which is the same fallback in
+ * disguise; the actual shared directory is machine-specific and deliberately not hardcoded here. */
+export function requireSharedCargoTarget(repoRoot) {
+  const value = process.env.CARGO_TARGET_DIR;
+  if (!value) {
+    throw new Error(
+      'CARGO_TARGET_DIR is not set. Live-check scripts and ci-local refuse to fall back to a ' +
+        "worktree-local `src-tauri/target` (issue #946): set CARGO_TARGET_DIR to the machine's " +
+        'shared cargo target directory before running this script.'
+    );
+  }
+  const resolved = path.resolve(value);
+  const repoResolved = path.resolve(repoRoot);
+  if (resolved === repoResolved || resolved.startsWith(repoResolved + path.sep)) {
+    throw new Error(
+      `CARGO_TARGET_DIR (${resolved}) resolves inside the repo (${repoResolved}); this is the ` +
+        'worktree-local fallback in disguise (issue #946). Point it at a shared directory outside any repo/worktree.'
+    );
+  }
+  return path.join(resolved, 'debug');
+}

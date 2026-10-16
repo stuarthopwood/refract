@@ -35,12 +35,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-565-shots/';
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+const SHOTS_DIR = path.join(tmpdir(), 'refract-565-shots');
 
 const TURN_A_PROMPT =
   "Make exactly TWO separate bash tool calls, one after the other: first run exactly `echo spine-one`, then second run exactly `exit 7` (which deliberately fails). Wait for both calls to finish. Then reply with exactly the single word 'spine565a' and nothing else.";

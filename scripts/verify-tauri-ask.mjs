@@ -32,15 +32,12 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort } from './verify-tauri-cdp.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// Unset when the caller hasn't pointed at a shared cache: `cargo`/`tauri` then fall back to
-// their own default (`src-tauri/target`) -- gate-fix (round 1, code review Medium): a hard-coded
-// one-machine default here tied this harness to one machine, exactly the mistake
-// `verify-tauri.mjs:53-55` already records fixing once before.
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 
 // Default under `os.tmpdir()` (gate round 2, code review/Low: a literal path under Stuart's own
 // user directory tied this harness to one machine), overridable via `REFRACT_ASK_SHOT_DIR` for

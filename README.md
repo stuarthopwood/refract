@@ -29,6 +29,11 @@ cache if disk space is tight (this repo's own worktree instructions use
 `C:/Users/shopwood/.cargo-target/refract`) -- never let two worktrees build into the same
 `src-tauri/target` at once without one.
 
+`scripts/ci-local.mjs` and every `scripts/verify-*` live-check that builds or launches Tauri
+(issue #946) refuse to run unless `CARGO_TARGET_DIR` is set to a directory outside the repo --
+they never fall back to a worktree-local `src-tauri/target`, which has filled a worktree's disk
+mid-build before.
+
 There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
 binary directly: `src-tauri/target/release/refract-tauri.exe`.
 

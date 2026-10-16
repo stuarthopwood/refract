@@ -24,11 +24,12 @@ import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitForCdpTarget, CdpSession, launchViaJobObject, stopLauncher } from './verify-tauri-cdp.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const PORT = 9381;
 const CONFIG_DIR_NAME = process.env.PI_CONFIG_DIR || '.omp';
 
@@ -117,7 +118,7 @@ async function main() {
   const exeSrc = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(exeSrc)) {
     throw new Error(
-      `built exe not found at ${exeSrc} (CARGO_TARGET_DIR=${CARGO_TARGET_DIR ?? '(unset)'}) -- run ` +
+      `built exe not found at ${exeSrc} (CARGO_TARGET_DIR=${process.env.CARGO_TARGET_DIR}) -- run ` +
         `CARGO_TARGET_DIR=<shared dir> CARGO_INCREMENTAL=0 pnpm tauri build --debug --no-bundle first`,
     );
   }

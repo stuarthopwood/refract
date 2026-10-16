@@ -45,17 +45,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort } from './verify-tauri-cdp.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// Unset when the caller hasn't pointed at a shared cache: `cargo`/`tauri` then fall back to their
-// own default (`src-tauri/target`), which is exactly right on a CI runner with no shared-disk
-// constraint and no machine-specific path to assume (gate-fix, code review MEDIUM: the previous
-// hard-coded `C:/Users/shopwood/...` default tied the harness to one machine).
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-// Where the built exe actually lands, mirroring cargo's own resolution: under `CARGO_TARGET_DIR`
-// when set, else `src-tauri/target` (cargo's default for a manifest at `src-tauri/Cargo.toml`).
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 // The scripted prompt deliberately never mentions the reply token below (gate-fix, tests review
 // round 2 MEDIUM): the two must be independent strings, or a check against the token could pass
 // merely because the user's own echoed prompt contains it, never actually observing the
@@ -163,8 +158,8 @@ function buildTauriDebugNoBundle() {
     // Shared-disk note (Main broadcast, 2026-10-14): the shared target dir's disk hit 100% and
     // broke builds once already; CARGO_INCREMENTAL=0 travels with CARGO_TARGET_DIR so every
     // lane building against the shared cache keeps its incremental-artifact footprint down.
-    if (CARGO_TARGET_DIR) {
-      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+    if (process.env.CARGO_TARGET_DIR) {
+      env.CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
       env.CARGO_INCREMENTAL = '0';
     }
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
@@ -190,7 +185,7 @@ function copyBuiltExe(destDir) {
   const dest = path.join(destDir, 'refract-tauri.exe');
   const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
   if (!existsSync(src)) {
-    throw new Error(`copyBuiltExe: built exe not found at ${src} (CARGO_TARGET_DIR=${CARGO_TARGET_DIR ?? '(unset, using cargo default)'})`);
+    throw new Error(`copyBuiltExe: built exe not found at ${src} (CARGO_TARGET_DIR=${process.env.CARGO_TARGET_DIR})`);
   }
   copyFileSync(src, dest);
   return dest;
