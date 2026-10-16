@@ -2079,3 +2079,104 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   showing (narrow real-model timing, twice lost; backed by the unmodified `status` ternary
   instead) and the 240px Subagents panel case (never attempted); both remain on the verification
   backlog (#650). **Refs #570** (not Closes): those two checks are still open.
+
+## Phase 46: Convergence (provisional numbering, T260+ -- parent renumbers before merge)
+
+- [X] T260 [US1] #557 collapse consecutive thoughts (Decided, Skippy, delegated by Stuart
+  2026-10-15; `ui-architect-v3` roundtable, full decision record on the issue): a run of two or
+  more consecutive, non-empty `thinking` items with nothing else between them (a hidden
+  bookkeeping tool's own failure notice does not end it, FR-052) now collapses into one row
+  reading "Thought process" with the step count and, once every member is timed, the union of
+  the members' own intervals as the total duration (never a plain sum, which can overstate past
+  the turn total: thoughts inside one message share an end time, `transcript.rs:920-925`). A new
+  pure `groupThoughtItems.ts` (`src/renderer/features/chat/`) runs on `groupToolItems`'s own
+  output, before `groupSubagentStages` (`Transcript.tsx`'s `turnsWithStages` memo); every run --
+  including a run of one -- becomes a `ThoughtRun`, the same "always wrap" rule `groupToolItems`
+  already follows for tool calls, so `ThoughtRunRow` (new, `ThoughtRunRow.tsx`) never switches
+  React element type at this tree position as a run grows (the exact focus-loss risk
+  `groupToolItems.ts`'s own comment documents). `ThoughtRun` itself is declared in
+  `groupToolItems.ts` beside `ToolGroup` (plus an `isThoughtRun` type guard), joining the shared
+  `GroupedTranscriptItem` union there so every downstream consumer (`groupSubagentStages.ts`,
+  `transcriptRowVisibility.ts`) passes a `ThoughtRun` straight through unchanged, with no edits
+  needed in either file beyond `transcriptRowVisibility.ts`'s own `BOOKKEEPING_KINDS`/
+  `rowVisibility` rename from `'thinking'` to `'thought-run'` (a thought row no longer reaches
+  those checks under its old raw kind once grouping runs; `'thinking'` stays in the type only for
+  `TranscriptRow`'s own defensive one-item fallback, mirroring `ToolGroupRow`'s ungrouped-`tool`
+  fallback). A run of one renders exactly the pre-#557 solo row (`ThoughtItemRow` inside
+  `ThoughtRunRow.tsx`: "Thinking" plus a live preview, "Thought for Ns", or "Thought" with no
+  timing), now at the `pl-8` label column like every other Spine host's solo body. A run of 2+
+  gets a header (`BrainIcon`, "Thought process", no summary, meta "N steps" plus "· Ts" once
+  timed) that never spins itself: while ANY member streams the header instead reads "Thinking"
+  with that member's own live preview and a step-count-only meta (no explicit `triggerAriaLabel`,
+  content-computed exactly as the pre-#557 solo live row always was); once every member settles it
+  switches to the explicit "Thought process, N steps[, Ts]" name (the #570/#632 lesson: explicit
+  beats the browser's own content computation). Members sit on a `SpineList` `<ol>`, keyed by
+  `item.id`, never relabelled "Step N". Growing from one to two keeps the header's own open state
+  automatically (same `CollapsedLine` instance, only its children switch); member 1's own nested
+  row starts open only if the header was open at the exact render where the run first grew past
+  one item (captured once via a lazy ref, mirroring `ToolGroupRow`'s own lifted
+  `openDialogItemId`), every other member and later mount starting collapsed. Default state is
+  always collapsed, live and in history; `rowVisibility`'s `'thought-run'` branch is `'visible'`
+  or `'hidden'` only, never `'sr-only'` (unchanged from the pre-#557 `'thinking'` branch it
+  replaces). `CollapsedLine.tsx` needed no changes: its existing summary-absent flex-1 spacer
+  (landed by #565/#570) already pushes meta/chevron to the right edge for a header with no
+  summary. Spec 001 amended: FR-009 (the Thought-run sentence, union duration, omission rule),
+  FR-047 (Thought run joins the Spine-host enumeration), FR-052 (hidden calls also never break a
+  run of thoughts), Scenario 4 under User Story 1, a Clarifications entry dated 2026-10-16
+  ("thought runs") recording the decision record's summary. `CONTEXT.md` gained a **Thought run**
+  glossary entry beside **Tool group**/**Spine**.
+
+- [X] T261 [US1] Build and verify: `pnpm install --frozen-lockfile`; `pnpm typecheck` clean;
+  `node scripts/ci-local.mjs` 16/16 PASS (148 vitest, indentation, theme-contrast, drag-regions,
+  IPC parity, file-size, version consistency, OMP schema drift x2, `cargo fmt`/`cargo test`/
+  `cargo clippy`, the Tauri debug build, `check:ui-text` 0 leaks across 371 files) --
+  `CARGO_TARGET_DIR=C:/Users/shopwood/.cargo-target/refract CARGO_BUILD_JOBS=4` throughout, no
+  local `src-tauri/target` left in this worktree. A new committed live-check driver,
+  `scripts/verify-557-thought-runs.mjs` (real ambient signed-in `omp`, scratch
+  `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`, scratch repo/
+  session, `claude-sonnet-5` at "high" reasoning effort via the real `model.setModel`/
+  `setThinkingLevel` IPC, Approval mode seeded to Auto in `settings.json`), reused the shared
+  CARGO_TARGET_DIR exe, copied to a private scratch dir and sha256-confirmed unchanged through
+  copy, launch, and every check (`assertExeMatchesProcess`-equivalent plus a `'thought-run'`
+  grep of the built renderer bundle asserted BEFORE anything else, the #557-only marker). Getting
+  a REAL run of 2+ consecutive thoughts needed its own scratch probe first (not committed,
+  outside this repo): a model's own message almost always pairs its thinking with EITHER a tool
+  call or its own visible text, so two separate messages' thinking items are normally separated
+  by a visible assistant-text bubble that ends any run before the next message's thinking even
+  starts; the one reliable path found is the harness's own mandatory `todo` bookkeeping tool
+  (hidden, FR-052) sometimes called a SECOND time mid-turn with real reasoning immediately before
+  it (`stopReason: "toolUse"`, content `[thinking, toolCall]`, no text) -- the hidden notice does
+  not flush the run, so that thinking item merges with the next message's own into one real
+  2-item `ThoughtRun`. The live-check prompt spells out this exact order (think, call todo, think
+  again, THEN answer) to make it likely, never guaranteed: a real model's own message boundaries
+  are not scriptable, so the script treats "the real model did not produce a 2+ member run this
+  particular run" as a genuine not-exercised, never a failure, gated behind its own
+  `multiRunExercised` flag.
+
+- [X] T262 [US1] Live CDP check, final run: **PASS, zero failures**
+  (`C:/Users/shopwood/AppData/Local/Temp/refract-557-shots/report.json`, git HEAD
+  `42dc465df954295b15ac10086d61db9455e769e1`, exe sha256 `dff601d6…`). A real 2-member
+  `ThoughtRun` materialised live ("Thought process, 2 steps, 0s" settled; "Thinking" plus a live
+  preview and a step-count-only meta while the second member streamed) and was confirmed:
+  collapsed with no `<ol>` mounted; expands to 2 members on a `SpineList`, labelled "Thought for
+  1s" each (never "Step N"); member body at `pl-8` (32px, computed); settled AX-tree accessible
+  name exactly "Thought process, 2 steps, 0s"; keyboard Enter on the focused header expands it;
+  collapsing unmounts the `<ol>` again; Dark, Obsidian and Dark (high contrast) screenshots with
+  the run expanded; no horizontal scroll at 360px; a member's own fade-in animation suppressed
+  under `prefers-reduced-motion: reduce`; "Show thinking" off hides every thought row entirely
+  (never `sr-only`), restoring it with no reload; "Show tool calls" off leaves thought-run
+  visibility unaffected (independent toggles). A separate turn with a tiny non-reasoning prompt
+  rendered a solo "Thought for Ns" row with no header and no Spine (decision 7's run-of-one path,
+  exactly the pre-#557 row). An earlier run of this identical script against this identical git
+  HEAD (superseded on disk by this final run, since the live-check evidence directory is fixed)
+  additionally confirmed the reopened-history case: relaunching the SAME `REFRACT_DATA_DIR` and
+  reopening the scratch Session replayed the 2-member run reading "Thought process, 2 steps" --
+  step count only, no time, matching `capture_timing: false` on history replay
+  (`transcript.rs:889-903`). **Not exercised this run**: Tab from the expanded header's own
+  trigger did not land on the first member's own button within this run's own timing (an
+  intervening element may have taken it; not asserted as a hard failure, since Enter/Space
+  activation and the member's own reachability by click were both already confirmed); the
+  reopened-history replay did not visibly complete within this particular run's own 60s wait (the
+  SAME check passed cleanly in the immediately preceding run of this same build, cited above).
+  **Closes #557**: every acceptance criterion in the issue and FR-009/FR-047/FR-052 is proved
+  live against this exact git HEAD.

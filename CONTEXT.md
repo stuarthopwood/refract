@@ -92,6 +92,10 @@ _Avoid_: error preview, output tail
 A run of consecutive calls to the same tool, shown as one row that expands to its calls down a **Spine**; a run of one is still a Tool group, with no Spine (issue #565).
 _Avoid_: thread, batch
 
+**Thought run**:
+Consecutive thoughts in one turn with nothing else between them, shown as one row reading "Thought process" with the step count and, once every thought's own timing is known, the total elapsed time. Two or more thoughts show as "Thought process", which expands to its thoughts down a **Spine**; a single thought is still a Thought run, with no **Spine** (issue #557).
+_Avoid_: thought group, thinking group, phase, step group
+
 **Chat pane**:
 One half of the split chat area (spec 005): a complete chat for one **Session** -- header, transcript, message box, queued messages, pending approvals and questions, and the **Status line** -- matching what a single, unsplit chat pane shows for that **Session**. One or two show at once; the same **Session** is never shown in two panes at the same time.
 _Avoid_: Chat panel, pane (alone, when a **Split** is in scope)
