@@ -65,7 +65,7 @@ import {
   createReportLogger,
   sleep
 } from './verify-tauri-cdp.mjs';
-import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone, proveCenteringAndNarrowWidth } from './verify-tauri-session-list-helpers.mjs';
+import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository, proveTrailingSlotSwapAndHoverNone, proveCenteringAndNarrowWidth, hoverRow, pressKey, rightClick } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -184,28 +184,6 @@ async function connectCdp(port, targetPid) {
 
 function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
-}
-
-async function hoverRow(cdp, finderExpr) {
-  const rect = await cdp.waitFor(
-    `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
-    { timeoutMs: 10_000, label: `hover target: ${finderExpr}` }
-  );
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
-}
-
-async function pressKey(cdp, windowsVirtualKeyCode, key, code, modifiers = 0) {
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode, key, code, modifiers });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode, key, code, modifiers });
-}
-
-async function rightClick(cdp, finderExpr) {
-  const rect = await cdp.waitFor(
-    `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
-    { timeoutMs: 10_000, label: `right-click target: ${finderExpr}` }
-  );
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
 }
 
 async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {

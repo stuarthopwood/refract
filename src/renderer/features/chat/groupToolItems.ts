@@ -2,6 +2,7 @@ import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
+type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>
 
 export interface ToolGroup {
   kind: 'tool-group'
@@ -10,10 +11,27 @@ export interface ToolGroup {
   items: ToolItem[]
 }
 
-export type GroupedTranscriptItem = TranscriptItem | ToolGroup
+// A run of consecutive, non-empty `thinking` items (issue #557, `groupThoughtItems.ts`): every
+// run -- including a run of one -- becomes a `ThoughtRun`, the same "always wrap" rule this
+// file's own `ToolGroup` follows (see `groupThoughtItems.ts`'s own comment for why). Declared
+// here, beside `ToolGroup`, so `GroupedTranscriptItem` is the one place every consumer
+// downstream of `groupToolItems` (`groupSubagentStages.ts`, `transcriptRowVisibility.ts`,
+// `Transcript.tsx`) already imports its grouped-item union from, with no changes needed in any
+// of those files to let a `ThoughtRun` pass through them untouched.
+export interface ThoughtRun {
+  kind: 'thought-run'
+  id: string
+  items: ThinkingItem[]
+}
+
+export type GroupedTranscriptItem = TranscriptItem | ToolGroup | ThoughtRun
 
 export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
   return item.kind === 'tool-group'
+}
+
+export function isThoughtRun(item: GroupedTranscriptItem): item is ThoughtRun {
+  return item.kind === 'thought-run'
 }
 
 // Merges runs of adjacent `tool` items that share the same `tool` name into one `ToolGroup`

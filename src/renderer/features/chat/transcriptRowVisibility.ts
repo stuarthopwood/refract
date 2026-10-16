@@ -14,7 +14,7 @@ import { isToolGroup } from './groupToolItems'
 const BOOKKEEPING_KINDS: Partial<Record<StageGroupedItem['kind'], true>> = {
   'tool-group': true,
   'stage-group': true,
-  thinking: true,
+  'thought-run': true,
   advisory: true,
   notice: true,
   'agent-message': true,
@@ -49,13 +49,14 @@ export function isBookkeepingRow(row: StageGroupedItem): boolean {
 // now does this BEFORE grouping runs, restored to the simpler pre-round-1 order now that Stage
 // membership keys on each `subagent` item's own `messageId` (`groupSubagentStages.ts`) instead
 // of position, so it no longer depends on when the filter runs. This function's own
-// `row.kind === 'thinking'` branch below still only ever sees a thinking row when the toggle is
-// ON (it is filtered out upstream when off), so its `'hidden'` return stays defensive, not dead:
-// a future caller that stops pre-filtering would still get the right answer. A thinking part's
-// own `streaming` flag is the WHOLE assistant message's flag, so it can still read `true` while
-// that message's later tool calls are already `running`; its own in-progress signal is announced
-// once per message instead (see `Transcript.tsx`'s own `announceThinking`), outside the grouped
-// rows entirely.
+// `row.kind === 'thought-run'` branch below (issue #557: renamed from `'thinking'` once
+// `groupThoughtItems` started wrapping every surviving thinking item into a `ThoughtRun` before
+// this ever runs) still only ever sees a row when the toggle is ON (filtered out upstream when
+// off), so its `'hidden'` return stays defensive, not dead: a future caller that stops
+// pre-filtering would still get the right answer. A thinking part's own `streaming` flag is the
+// WHOLE assistant message's flag, so it can still read `true` while that message's later tool
+// calls are already `running`; its own in-progress signal is announced once per message instead
+// (see `Transcript.tsx`'s own `announceThinking`), outside the grouped rows entirely.
 //
 // Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`StageGroup` row that is hidden by
 // "Show tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a
@@ -75,7 +76,7 @@ export function isBookkeepingRow(row: StageGroupedItem): boolean {
 export type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
 export function rowVisibility(row: StageGroupedItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
-  if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
+  if (row.kind === 'thought-run') return transcriptDisplay.thinking ? 'visible' : 'hidden'
   if (transcriptDisplay.toolCalls) return 'visible'
   // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).
   if (isStageGroup(row)) {
