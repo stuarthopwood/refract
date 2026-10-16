@@ -151,31 +151,49 @@ new IPC field or any structural change to the Markdown-rendered PR body.
 
 **Independent test**: full live check per the issue's own decision record "Live checks" list.
 
-- [ ] T031 [P] (#568) Row restyle: `divide-y` flat row shape replacing the rounded-md bordered
+- [X] T031 [P] (#568) Row restyle: `divide-y` flat row shape replacing the rounded-md bordered
   box, the shared active-indicator bar on the selected row, a 3-line layout (title; metadata
   line of state, check, repo, time; author line), and the font split (App font for metadata and
   author, mono reserved for branch names) (decisions 1-2).
-- [ ] T032 [P] (#568) `StatePill`: a new solid-fill pill component replacing the outline `Badge`
+  -- Implemented (073ad12): `PullRequestRow.tsx` rewritten to a zero-box `divide-y` row with the
+  shared `bg-active-indicator` bar; live-verified (screenshot) via `scripts/verify-tauri-568.mjs`.
+- [X] T032 [P] (#568) `StatePill`: a new solid-fill pill component replacing the outline `Badge`
   for pull request state, the new `--pr-open`/`--pr-draft`/`--pr-closed`/`--pr-merged` tokens
   (already landed in `globals.css` and `theme-contrast-pairs.mjs`), and the `isDraft` search-field
   data fix in `gh_pull_requests.rs`/`mod.rs` so the four relation-tab searches report Draft
   instead of silently Open (decisions 5-6).
-- [ ] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
+  -- Implemented (073ad12): `StatePill.tsx` (new), tokens contrast-verified (433/433 pairs PASS,
+  `check:theme-contrast`), `isDraft` fix confirmed by the existing Rust fixture test.
+- [X] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
   lighter secondary action buttons so the title leads (decision 7).
-- [ ] T034 [P] (#568) Shared `RefreshButton` component unifying the pull request list's and
+  -- Implemented (073ad12): `PullRequestDetail.tsx` title `text-lg line-clamp-2`; New
+  session/Review now `variant="ghost"`; Merge stays the sole filled button.
+- [X] T034 [P] (#568) Shared `RefreshButton` component unifying the pull request list's and
   detail view's two existing refresh call sites: ghost, icon-only, tooltip, spinning while
   loading, disabled while loading (decision 8).
-- [ ] T035 [P] (#568) Overview/Changes tab pair: a local underline-style `className` override on
+  -- Implemented (073ad12): `RefreshButton.tsx` (new), wired into both `PullRequestList.tsx` and
+  `PullRequestDetail.tsx`.
+- [X] T035 [P] (#568) Overview/Changes tab pair: a local underline-style `className` override on
   the shared `Tabs` primitive scoped to this view only, leaving the five filter tabs' default
   pill styling untouched (decision 3); remove `PullRequestsView.tsx`'s header `border-b` divider
   (decision 9).
-- [ ] T036 (#568) Reviewer-consensus rollup (FR-031): derive counts of approved /
+  -- Implemented (073ad12): underline classes applied only inside `PullRequestDetail.tsx`'s own
+  `TabsList`/`TabsTrigger`; `tabs.tsx` untouched (confirmed via `git diff --stat`); the five
+  filter tabs in `PullRequestList.tsx` keep their default shadcn pill classes unchanged; header
+  `border-b border-border` removed from `PullRequestsView.tsx`.
+- [X] T036 (#568) Reviewer-consensus rollup (FR-031): derive counts of approved /
   changes-requested / commented from `Timeline.tsx`'s existing `review` entries, taking each
   reviewer's latest verdict only, and render them above the PR body at the top of the Overview
   tab; no new IPC field (decision 10) (depends on T015, T019).
-- [ ] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
+  -- Implemented (073ad12): `ReviewConsensus.tsx` (new), mounted at the top of the Overview tab's
+  own `p-3` wrapper, above `Markdown`; derives from `detail.timeline` client-side, no IPC change.
+- [X] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
   `CONTEXT.md` and `docs/PLAN.md` to record the convergence, then verify live: the issue's own
   decision record "Live checks" list.
+  -- Docs updated (073ad12). Live-verified via `scripts/verify-tauri-568.mjs` against a scratch
+  Tauri debug build and a read-only shallow clone of `stuarthopwood/refract` for real PR data;
+  see the issue's decision record and the PR body for the full pass/fail breakdown and any
+  not-exercised items.
 
 **Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
 passes; full live check per the issue's own decision record "Live checks" list (a selected row's
