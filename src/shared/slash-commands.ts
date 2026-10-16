@@ -26,15 +26,15 @@
 // because the Refract-launched omp profile already carries `advisor.enabled: true`), but
 // Refract had no in-app way to turn it on for a Session whose profile leaves it off, and no way
 // to turn it off for one where it is on. Verified instead by issue #917's own live check against
-// a real signed-in profile (a scratch Session running `/advisor status`, `/advisor on`, a real
-// turn, then `/advisor off`) -- the same verified-before-listed bar FR-032 sets for a probe run,
-// just run by hand once instead of through `slash-commands-probe.mjs` (`omp://advisor-watchdog.md`
-// documents on/off/status among others -- `dump`, `dump raw` and `configure` stay refused, not in
-// this allowlist; the live check instead confirms Refract's own forwarding path and that OMP's
-// real `chat.commands` descriptor for a signed-in profile lists on/off/status). No Settings
-// toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread);
-// `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked
-// separately as a new issue.
+// a real signed-in profile (a scratch Session running `/advisor off`, `/advisor status`,
+// `/advisor on`, `/advisor status`, a real turn, then `/advisor off`) -- the same
+// verified-before-listed bar FR-032 sets for a probe run, just run by hand once instead of
+// through `slash-commands-probe.mjs` (`omp://advisor-watchdog.md` documents on/off/status among
+// others -- `dump`, `dump raw` and `configure` stay refused, not in this allowlist; the live
+// check instead confirms Refract's own forwarding path and that OMP's real `chat.commands`
+// descriptor for a signed-in profile lists on/off/status). No Settings toggle. Decided (Stuart,
+// 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports
+// spend on demand instead; a persistent on/off indicator is tracked separately as issue #937.
 //
 // Critical remediation (issue #129, 2026-10-03): the allowlist used to be keyed on the
 // command's top-level NAME ONLY, so an unverified SUBCOMMAND of an allowed parent -- one the

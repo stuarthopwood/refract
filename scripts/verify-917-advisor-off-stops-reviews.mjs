@@ -1,24 +1,32 @@
 #!/usr/bin/env node
-// Falsification probe for #917 (gate round 2, Main/architect): "the two /advisor status replies
-// differ" is not proof that `/advisor off` actually stops the advisor's reviews -- omp's own docs
-// (omp://advisor-watchdog.md "Enabling the advisor"/"Slash commands" table) say `/advisor off`
-// "Disable the advisor subsystem for this session and stop its runtimes", yet a live run's
-// status reply right after `/advisor off` read `Advisor "default" is running.`, which reads as a
-// direct contradiction unless "running" means something narrower than "actively reviewing".
+// Falsification probe for #917 (gate round 2, Main/architect/G923Tests): "the two /advisor
+// status replies differ" is not proof that `/advisor off` actually stops the advisor's reviews
+// -- omp's own docs (omp://advisor-watchdog.md "Enabling the advisor"/"Slash commands" table)
+// say `/advisor off` "Disable the advisor subsystem for this session and stop its runtimes", yet
+// a live run's status reply right after `/advisor off` read `Advisor "default" is running.`,
+// which reads as a direct contradiction unless "running" means something narrower than
+// "actively reviewing". A first version of this probe measured one phase (ON) with a warm-up
+// plus a second turn but the other phase (OFF) with only ONE turn, which also happened to be
+// the Session's very first turn ever -- G923Tests correctly called this lopsided: a brand-new
+// Session's first turn could itself be skipped for reasons that have nothing to do with on/off
+// (whatever actually causes the warm-up skip), so "no file after one off turn" proved nothing.
 //
-// This probe settles it with ground truth, not wording: every finalized advisor review turn is
-// appended to the owning Session's own `__advisor*.jsonl` file, beside its Conversation file
-// (omp://advisor-watchdog.md "Transcript persistence and observability"), REGARDLESS of whether
-// the emission guard lets any note surface to the user. So:
-//   1. `/advisor off`, then immediately `/advisor status` (nothing else in between) -- record the
-//      literal reply of each.
-//   2. Find this Session's own `__advisor*.jsonl` file(s) (via `window.refract.sessions.list()`'s
-//      `currentConversation` -> its directory), record total size and line count.
-//   3. Send a real turn. Re-measure the same file(s). If `/advisor off` actually stops reviews,
-//      this file must NOT grow.
-//   4. `/advisor on`, another real turn, re-measure again. If `/advisor on` actually resumes
-//      reviews, this file SHOULD grow this time.
-// The conclusion is written in plain language at the end, from the measured deltas, not assumed.
+// This version is symmetric: EVERY phase (on, off, on again) gets the identical warm-up-turn
+// plus a second real turn before being measured, so the only variable that differs between
+// phases is the on/off state itself:
+//   1. `/advisor on`, warm-up turn, second turn -- record size/lines (should exist and grow).
+//   2. `/advisor off` -> literal reply recorded; `/advisor status` -> literal reply recorded
+//      (nothing in between); warm-up turn, second turn -- record size/lines again. Off is
+//      proven ONLY if the file does NOT grow across these two turns, compared to the end of
+//      phase 1.
+//   3. `/advisor on` again, warm-up turn, second turn -- record size/lines again (optional
+//      confirmation that growth resumes).
+// Ground truth, not wording: every finalized advisor review is appended to the owning Session's
+// own `__advisor*.jsonl` file (omp://advisor-watchdog.md "Transcript persistence and
+// observability"), REGARDLESS of whether the emission guard lets any note surface to the user.
+// The conclusion is written in plain language at the end, from the measured deltas only -- the
+// meaning of `Advisor "default" is running.` stays explicitly "not established" unless the
+// evidence actually shows it; this probe does not guess at it as fact.
 //
 // Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
 // override, same isolation posture as verify-917-advisor-command.mjs/verify-558). Reuses the
@@ -220,65 +228,77 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- /advisor off, then /advisor status with nothing in between ----
-    const offReply = await sendSlashCommand(cdp, '/advisor off');
-    findings.push(`"/advisor off" literal reply: ${JSON.stringify(offReply)}`);
-    const statusAfterOff = await sendSlashCommand(cdp, '/advisor status');
-    findings.push(`"/advisor status" literal reply right after off (nothing in between): ${JSON.stringify(statusAfterOff)}`);
-
-    // The Conversation file (and so its artifacts folder, where __advisor*.jsonl would live) does
-    // NOT exist yet after slash commands alone -- confirmed live: `sessionDir` held ONLY the
-    // Conversation's own `.jsonl` file after off+status with no real turn sent. Only a REAL turn
-    // creates it, so the "before" baseline for the off-phase is definitionally zero (nothing
-    // could exist before the first thing that creates the folder at all).
-    const beforeOffTurn = { folderExists: false, files: [], totalBytes: 0, totalLines: 0 };
-    await sendRealTurn(cdp, 't917boff');
-    findings.push('A real turn completed while the advisor was OFF (the first real turn this Session has had).');
+    // ---- Phase 1: /advisor on (explicit, even though the ambient profile may already default
+    // to it), warm-up turn, second turn -- establishes the file exists and grows at all ----
+    const onReply1 = await sendSlashCommand(cdp, '/advisor on');
+    findings.push(`Phase 1 "/advisor on" literal reply: ${JSON.stringify(onReply1)}`);
     const sessionDir = await getSessionDir(cdp);
     findings.push(`Session dir: ${sessionDir}`);
-    const afterOffTurn = await pollForGrowth(sessionDir, beforeOffTurn, 45_000);
+    const beforePhase1 = measureAdvisorFiles(sessionDir);
     findings.push(
-      `__advisor*.jsonl after the off-phase turn (polled up to 45s; baseline was definitionally zero, nothing existed before the first real turn): folderExists=${afterOffTurn.folderExists} files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
+      `Phase 1 (ON) baseline before any turn: folderExists=${beforePhase1.folderExists} files=${JSON.stringify(beforePhase1.files)} bytes=${beforePhase1.totalBytes} lines=${beforePhase1.totalLines}`
     );
-    const grewWhileOff = afterOffTurn.totalBytes > beforeOffTurn.totalBytes || afterOffTurn.totalLines > beforeOffTurn.totalLines;
+    await sendRealTurn(cdp, 't917symon1warmup');
+    await sendRealTurn(cdp, 't917symon1turn');
+    findings.push('Phase 1 (ON): warm-up turn then a second real turn both completed.');
+    const afterPhase1 = await pollForGrowth(sessionDir, beforePhase1, 60_000);
+    findings.push(
+      `Phase 1 (ON) after warm-up + second turn (polled up to 60s): folderExists=${afterPhase1.folderExists} files=${JSON.stringify(afterPhase1.files)} bytes=${afterPhase1.totalBytes} lines=${afterPhase1.totalLines}`
+    );
+    const grewInPhase1 = afterPhase1.totalBytes > beforePhase1.totalBytes || afterPhase1.totalLines > beforePhase1.totalLines;
 
-    // ---- /advisor on, then TWO real turns -- the first is a deliberate warm-up
-    // (`advisor.immuneTurns` skips reviewing it, the same precedent verify-558-blocker-callout.mjs
-    // already established for this exact advisor subsystem), the second is the one a review is
-    // actually expected against ----
-    const onReply = await sendSlashCommand(cdp, '/advisor on');
-    findings.push(`"/advisor on" literal reply: ${JSON.stringify(onReply)}`);
-    const beforeOnTurn = measureAdvisorFiles(sessionDir);
+    // ---- Phase 2: /advisor off, literal /advisor status reply (nothing in between), then the
+    // IDENTICAL warm-up turn + second turn treatment -- off is proven only if this does NOT
+    // grow past where Phase 1 left off ----
+    const offReply = await sendSlashCommand(cdp, '/advisor off');
+    findings.push(`Phase 2 "/advisor off" literal reply: ${JSON.stringify(offReply)}`);
+    const statusAfterOff = await sendSlashCommand(cdp, '/advisor status');
+    findings.push(`Phase 2 "/advisor status" literal reply right after off (nothing in between): ${JSON.stringify(statusAfterOff)}`);
+    const beforePhase2 = afterPhase1;
+    await sendRealTurn(cdp, 't917symoffwarmup');
+    await sendRealTurn(cdp, 't917symoffturn');
+    findings.push('Phase 2 (OFF): warm-up turn then a second real turn both completed.');
+    const afterPhase2 = await pollForGrowth(sessionDir, beforePhase2, 60_000);
     findings.push(
-      `__advisor*.jsonl before the on-phase turns: folderExists=${beforeOnTurn.folderExists} files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
+      `Phase 2 (OFF) after warm-up + second turn (polled up to 60s, compared against Phase 1's own end state): files=${JSON.stringify(afterPhase2.files)} bytes=${afterPhase2.totalBytes} lines=${afterPhase2.totalLines}`
     );
-    await sendRealTurn(cdp, 't917bwarmup');
-    findings.push('Warm-up turn completed (advisor.immuneTurns skips reviewing this one, per verify-558-blocker-callout.mjs\'s own precedent).');
-    await sendRealTurn(cdp, 't917bon');
-    findings.push('Second (non-warm-up) real turn completed while the advisor was ON.');
-    const afterOnTurn = await pollForGrowth(sessionDir, beforeOnTurn, 60_000);
-    findings.push(
-      `__advisor*.jsonl after the on-phase turns (polled up to 60s): folderExists=${afterOnTurn.folderExists} files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
-    );
-    const grewWhileOn = afterOnTurn.totalBytes > beforeOnTurn.totalBytes || afterOnTurn.totalLines > beforeOnTurn.totalLines;
+    const grewInPhase2 = afterPhase2.totalBytes > beforePhase2.totalBytes || afterPhase2.totalLines > beforePhase2.totalLines;
 
-    // ---- Conclusion, from the measured deltas only ----
+    // ---- Phase 3 (optional confirmation): /advisor on again, warm-up turn, second turn --
+    // growth should resume if off in Phase 2 genuinely paused it rather than something else
+    // having silently stopped the advisor for good ----
+    const onReply2 = await sendSlashCommand(cdp, '/advisor on');
+    findings.push(`Phase 3 "/advisor on" (again) literal reply: ${JSON.stringify(onReply2)}`);
+    const beforePhase3 = afterPhase2;
+    await sendRealTurn(cdp, 't917symon2warmup');
+    await sendRealTurn(cdp, 't917symon2turn');
+    findings.push('Phase 3 (ON again): warm-up turn then a second real turn both completed.');
+    const afterPhase3 = await pollForGrowth(sessionDir, beforePhase3, 60_000);
+    findings.push(
+      `Phase 3 (ON again) after warm-up + second turn (polled up to 60s): files=${JSON.stringify(afterPhase3.files)} bytes=${afterPhase3.totalBytes} lines=${afterPhase3.totalLines}`
+    );
+    const grewInPhase3 = afterPhase3.totalBytes > beforePhase3.totalBytes || afterPhase3.totalLines > beforePhase3.totalLines;
+
+    // ---- Conclusion, from the measured deltas only -- "is running" stays unexplained unless
+    // the evidence actually shows what it means ----
     let conclusion;
-    if (grewWhileOff) {
+    if (!grewInPhase1) {
       failures.push(
-        `The __advisor*.jsonl file GREW during the OFF-phase turn (bytes ${beforeOffTurn.totalBytes} -> ${afterOffTurn.totalBytes}, lines ${beforeOffTurn.totalLines} -> ${afterOffTurn.totalLines}): "/advisor off" does NOT appear to stop the advisor from reviewing turns, contradicting omp://advisor-watchdog.md's own documented behaviour ("stop its runtimes"). This is either an omp behaviour or a Refract forwarding bug -- #917 cannot claim off works until this is resolved.`
+        `Phase 1 (ON, warm-up + second turn) did NOT grow the file at all (stayed at bytes=${beforePhase1.totalBytes}, lines=${beforePhase1.totalLines}): inconclusive baseline -- cannot test whether OFF stops reviews when nothing confirms ON runs them in the first place under this exact two-turn treatment.`
       );
-      conclusion = 'FALSIFIED: off did not stop reviews.';
-    } else if (!grewWhileOn) {
+      conclusion = 'INCONCLUSIVE: the ON baseline itself never grew the file.';
+    } else if (grewInPhase2) {
       failures.push(
-        `The __advisor*.jsonl file did NOT grow during the ON-phase turn either (bytes ${beforeOnTurn.totalBytes} -> ${afterOnTurn.totalBytes}): inconclusive -- either /advisor on also failed to start reviews, or the advisor never produced a finalized review this run for an unrelated reason (e.g. reviewMode/cadence). Cannot confirm the toggle has the documented effect from this evidence alone.`
+        `The file GREW in Phase 2 (OFF, warm-up + second turn: bytes ${beforePhase2.totalBytes} -> ${afterPhase2.totalBytes}, lines ${beforePhase2.totalLines} -> ${afterPhase2.totalLines}), under the SAME two-turn treatment that grew it in Phase 1 (ON): "/advisor off" does NOT appear to stop the advisor from reviewing turns, contradicting omp://advisor-watchdog.md's own documented behaviour ("stop its runtimes"). This is either an omp behaviour or a Refract forwarding bug -- #917 cannot claim off works until this is resolved.`
       );
-      conclusion = 'INCONCLUSIVE: neither phase grew the file.';
+      conclusion = 'FALSIFIED: off did not stop reviews (symmetric comparison).';
     } else {
       findings.push(
-        `CONFIRMED by file evidence: the __advisor*.jsonl file did NOT grow while the advisor was OFF (stayed at bytes=${beforeOffTurn.totalBytes}, lines=${beforeOffTurn.totalLines}) but DID grow while it was ON (bytes ${beforeOnTurn.totalBytes} -> ${afterOnTurn.totalBytes}, lines ${beforeOnTurn.totalLines} -> ${afterOnTurn.totalLines}). "/advisor off" genuinely stops the advisor from running a review for a turn; the status reply "Advisor \\"default\\" is running." observed right after off does NOT mean "actively reviewing" -- it reports the named advisor's own object/runtime still being instantiated and alive (per omp://advisor-watchdog.md's "Rebuilding advisors ... keeps updates the cadence skipped", a built advisor instance persists even while the session-scoped override has it gated off from running against new turns), distinct from the review-cadence gate the session-scoped on/off override actually controls.`
+        `CONFIRMED by symmetric file evidence: Phase 1 (ON, warm-up + second turn) grew the file (bytes ${beforePhase1.totalBytes} -> ${afterPhase1.totalBytes}, lines ${beforePhase1.totalLines} -> ${afterPhase1.totalLines}). Phase 2 (OFF, the IDENTICAL warm-up + second turn treatment) did NOT grow it at all (stayed at bytes=${afterPhase2.totalBytes}, lines=${afterPhase2.totalLines}). Since both phases got the exact same two-turn treatment, the only variable that differs is the on/off state itself -- "/advisor off" genuinely stops the advisor from running a review for a turn.${grewInPhase3 ? ` Phase 3 (ON again, same two-turn treatment) resumed growth (bytes ${beforePhase3.totalBytes} -> ${afterPhase3.totalBytes}, lines ${beforePhase3.totalLines} -> ${afterPhase3.totalLines}), confirming the pause in Phase 2 was the toggle, not something else having silently stopped the advisor for good.` : ' Phase 3 (ON again, same two-turn treatment) did NOT resume growth, which is odd given Phase 1 worked under the identical treatment -- left unexplained rather than guessed at.'} The meaning of the status reply "Advisor \\"default\\" is running." observed right after off is NOT established by this evidence either way -- it is a real, literal reply that differs from "Advisor is enabled (...)", but this probe does not know what "running" refers to and does not guess.`
       );
-      conclusion = 'CONFIRMED: off stops reviews (file evidence), on resumes them; "is running" describes the instance, not the review gate.';
+      conclusion = grewInPhase3
+        ? 'CONFIRMED: off stops reviews, on resumes them (symmetric warm-up+turn comparison in all three phases).'
+        : 'CONFIRMED (off stops reviews, Phases 1 vs 2) but Phase 3 did not resume growth -- partially confirmed, the resumption itself unproven this run.';
     }
     findings.push(`CONCLUSION: ${conclusion}`);
 
@@ -286,10 +306,10 @@ async function main() {
       gitHead: gitHeadSha,
       exeSha256: exeHash,
       sessionDir,
-      beforeOffTurn,
-      afterOffTurn,
-      beforeOnTurn,
-      afterOnTurn,
+      beforePhase1,
+      afterPhase1,
+      afterPhase2,
+      afterPhase3,
       conclusion,
       findings,
       failures,

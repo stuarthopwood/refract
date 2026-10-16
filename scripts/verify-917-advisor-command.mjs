@@ -77,9 +77,10 @@ async function clearComposer(cdp) {
 }
 
 /** Sends `command`, then waits for a NEWLY-mounted notice (index >= the pre-send count) whose
- * text matches `expectedPattern` -- a per-command exact pattern (`/Advisor enabled\./`,
- * `/Advisor disabled\./`, `/^Advisor is (enabled|disabled)/`), not simply the latest notice by
- * index or a loose "mentions advisor" substring test, because this ambient signed-in profile's
+ * text matches `expectedPattern` -- a per-command exact pattern for `/advisor on`/`/advisor off`
+ * (`/Advisor enabled\./`, `/Advisor disabled\./`) and a loose `/advisor/i` match for `/advisor
+ * status` (its own wording is not a stable prefix -- see the call sites below). Not simply the
+ * LATEST notice by index, regardless of pattern, because this ambient signed-in profile's
  * own session occasionally mounts an unrelated system notice (e.g. its own MCP tool list) within
  * the same short window, which can race ahead of the real `/advisor` reply and would otherwise
  * be misread as the command's own output. Keeps polling past an unrelated new notice instead of
@@ -203,7 +204,8 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-slash-menu.png'));
     await clearComposer(cdp);
 
-    // ---- /advisor off, then /advisor status (expect "disabled") -- proves the off direction ----
+    // ---- /advisor off (its own "Advisor disabled." confirmation IS the off-direction evidence
+    // here), then /advisor status logged for the record only (see below, not proof of direction) ----
     const offReply1 = await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
     findings.push(`"/advisor off" produced: ${JSON.stringify(offReply1)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, '01-advisor-off.png'));
@@ -218,9 +220,10 @@ async function main() {
     // literal text so the real wording is on record rather than assumed.
     const statusAfterOff = await sendSlashCommand(cdp, '/advisor status', /advisor/i);
     findings.push(`"/advisor status" after off: ${JSON.stringify(statusAfterOff)}`);
-    await cdp.screenshot(path.join(SHOTS_DIR, '02-advisor-status-disabled.png'));
+    await cdp.screenshot(path.join(SHOTS_DIR, '02-advisor-status-after-off.png'));
 
-    // ---- /advisor on, then /advisor status -- proves the on direction ----
+    // ---- /advisor on (its own "Advisor enabled." confirmation IS the on-direction evidence),
+    // then /advisor status logged for the record only ----
     const onReply = await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
     findings.push(`"/advisor on" produced: ${JSON.stringify(onReply)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-advisor-on.png'));

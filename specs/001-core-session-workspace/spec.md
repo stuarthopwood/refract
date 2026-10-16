@@ -183,7 +183,7 @@
 - Q: Decided (Stuart, 2026-10-16): no cost readout for `/advisor` (`advisor_cost_changed` stays
   unread; `/advisor status`'s own reply surfaces spend on demand instead, which is sufficient).
   A persistent on/off indicator for the advisor's Session-scoped state is a separate idea,
-  tracked as its own new issue, not part of #917.
+  tracked as its own issue (#937), not part of #917.
 
 ## User Scenarios & Testing *(mandatory)*
 
