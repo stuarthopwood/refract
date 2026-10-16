@@ -130,6 +130,22 @@ function measureAdvisorFiles(dir) {
   return { files, totalBytes, totalLines };
 }
 
+/** Polls `measureAdvisorFiles(dir)` until it shows growth past `baseline` (bytes or lines) or
+ * `timeoutMs` elapses -- a finalized review is written asynchronously after the primary turn
+ * settles (omp://advisor-watchdog.md "Advisor review is async after the turn settles"), so a
+ * single immediate measurement right after the turn would under-count a real but still-pending
+ * review. Returns the LAST measurement either way (growth or none), never throws. */
+async function pollForGrowth(dir, baseline, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = measureAdvisorFiles(dir);
+  while (Date.now() < deadline) {
+    if (latest.totalBytes > baseline.totalBytes || latest.totalLines > baseline.totalLines) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    latest = measureAdvisorFiles(dir);
+  }
+  return latest;
+}
+
 async function main() {
   let dataDir, importSourceDir, repoDir, exeDir, launcherDir;
   let child;
@@ -208,27 +224,33 @@ async function main() {
       `__advisor*.jsonl before the off-phase turn: files=${JSON.stringify(beforeOffTurn.files)} bytes=${beforeOffTurn.totalBytes} lines=${beforeOffTurn.totalLines}`
     );
 
-    // ---- A real turn while the advisor is OFF ----
+    // ---- A real turn while the advisor is OFF (poll for up to 45s: a review is async, so even
+    // a failed "off" would not necessarily grow the file instantly) ----
     await sendRealTurn(cdp, 't917boff');
     findings.push('A real turn completed while the advisor was OFF.');
-    const afterOffTurn = measureAdvisorFiles(sessionDir);
+    const afterOffTurn = await pollForGrowth(sessionDir, beforeOffTurn, 45_000);
     findings.push(
-      `__advisor*.jsonl after the off-phase turn: files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
+      `__advisor*.jsonl after the off-phase turn (polled up to 45s): files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
     );
     const grewWhileOff = afterOffTurn.totalBytes > beforeOffTurn.totalBytes || afterOffTurn.totalLines > beforeOffTurn.totalLines;
 
-    // ---- /advisor on, then a real turn while the advisor is ON ----
+    // ---- /advisor on, then TWO real turns -- the first is a deliberate warm-up
+    // (`advisor.immuneTurns` skips reviewing it, the same precedent verify-558-blocker-callout.mjs
+    // already established for this exact advisor subsystem), the second is the one a review is
+    // actually expected against ----
     const onReply = await sendSlashCommand(cdp, '/advisor on');
     findings.push(`"/advisor on" literal reply: ${JSON.stringify(onReply)}`);
     const beforeOnTurn = measureAdvisorFiles(sessionDir);
     findings.push(
-      `__advisor*.jsonl before the on-phase turn: files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
+      `__advisor*.jsonl before the on-phase turns: files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
     );
+    await sendRealTurn(cdp, 't917bwarmup');
+    findings.push('Warm-up turn completed (advisor.immuneTurns skips reviewing this one, per verify-558-blocker-callout.mjs\'s own precedent).');
     await sendRealTurn(cdp, 't917bon');
-    findings.push('A real turn completed while the advisor was ON.');
-    const afterOnTurn = measureAdvisorFiles(sessionDir);
+    findings.push('Second (non-warm-up) real turn completed while the advisor was ON.');
+    const afterOnTurn = await pollForGrowth(sessionDir, beforeOnTurn, 60_000);
     findings.push(
-      `__advisor*.jsonl after the on-phase turn: files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
+      `__advisor*.jsonl after the on-phase turns (polled up to 60s): files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
     );
     const grewWhileOn = afterOnTurn.totalBytes > beforeOnTurn.totalBytes || afterOnTurn.totalLines > beforeOnTurn.totalLines;
 
