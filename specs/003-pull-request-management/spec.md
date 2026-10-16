@@ -105,9 +105,25 @@ session's own record rather than re-opening earlier sessions:
   buttons overflow the detail pane invisibly instead of wrapping.
 - FR-031, amended: "most recent review verdict" is read as the reviewer's most recent
   OPINIONATED verdict (approve or request-changes); a later comment-only review never overrides
-  a standing approval or changes-requested, matching GitHub's own review semantics. A review
-  that is later dismissed (and never replaced) excludes that reviewer from the rollup entirely,
-  handled server-side in `build_timeline`.
+  a standing approval or changes-requested, matching GitHub's own review semantics.
+
+#### Gate round 2 amendments (2026-10-16)
+
+Gate round 1's own dismissed-review handling (filtering a dismissed reviewer's reviews out of
+`build_timeline` entirely) regressed FR-008: it deleted that reviewer's whole review history
+from the Overview `Timeline` tab, not just from the consensus count.
+
+- FR-031 / decision 10, amended again: a dismissed review is now a real `Timeline` entry (a new
+  `dismissed` `ReviewVerdict`, shown in the Overview as "{author} dismissed their review"), never
+  filtered out server-side. `ReviewConsensus.tsx` alone decides what a dismissal means: folding
+  each reviewer's reviews in chronological order, a dismissal RESETS their standing verdict to
+  none (it does not let an earlier, different review resurface as current); only a later
+  approve or request-changes sets a new standing verdict.
+- New Clarification: `timelineItems(first: 100)` (the GraphQL query backing both the Overview
+  Timeline and FR-031's own consensus rollup) has no pagination -- a pull request with more than
+  100 combined commits/comments/reviews silently loses everything past the 100th item from both
+  surfaces. Pre-existing, not introduced by this story; tracked separately as issue #918, not
+  fixed here.
 
 ## User Scenarios & Testing *(mandatory)*
 

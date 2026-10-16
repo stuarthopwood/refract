@@ -4,7 +4,7 @@
 import { RefreshCwIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '@/features/chat/pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS } from '@/features/chat/pickerShared'
 import { cn } from '@/lib/utils'
 
 export interface RefreshButtonProps {
@@ -37,7 +37,7 @@ export function RefreshButton({ loading, onClick, label, className }: RefreshBut
             if (loading) return
             onClick()
           }}
-          className={cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_BUTTON_FOCUS_CLASS, className)}
+          className={cn(COMPOSER_DISABLED_CLASS, COMPOSER_BUTTON_FOCUS_CLASS, className)}
         >
           <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
         </Button>

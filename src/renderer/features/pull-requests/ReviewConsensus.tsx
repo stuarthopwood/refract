@@ -1,14 +1,17 @@
 // Reviewer-consensus rollup shown above the Overview tab's Markdown body (#568 decision 10,
-// FR-031). Gate round 1 fix (Code/Flow High): matches GitHub's own standing-review semantics,
-// not a bare "latest review wins" reducer -- a reviewer's accessible APPROVED or
-// CHANGES_REQUESTED review stays their counted opinion even if they leave a plain COMMENTED
-// review afterwards (replying in a thread, for example); GitHub never lets a comment supersede
-// an opinionated review. A reviewer is counted as "commented" only when they have never
-// submitted an opinionated review at all. The pull request's own author is excluded, since their
-// comments on their own pull request aren't a reviewer's verdict. A review that was later
-// DISMISSED never reaches this component in the first place (`build_timeline` in
-// `mapping.rs` drops every review from a reviewer whose own most recent review was a dismissal),
-// so no extra handling is needed here for that case.
+// FR-031). Matches GitHub's own standing-review semantics, not a bare "latest review wins"
+// reducer: per reviewer, fold every review in chronological order, tracking one "standing"
+// verdict --
+//   - approve / request-changes REPLACES the standing verdict (the latest opinionated review
+//     always wins);
+//   - comment leaves the standing verdict unchanged (a reply doesn't supersede an approval);
+//   - dismissed RESETS the standing verdict to none -- gate round 2 fix (#568 decision 10
+//     amendment, Code High N1): a dismissal clears whatever was standing, it does NOT let an
+//     EARLIER review resurface (dismissing a "changes requested" review that came after an
+//     earlier "approve" leaves the reviewer with no current opinion, not a reverted approval).
+// A reviewer with no standing verdict after the fold (comment-only, or their last opinionated
+// review was since dismissed) is counted as "commented". The pull request's own author is
+// excluded, since their own comments on their own pull request aren't a reviewer's verdict.
 import type { Review, ReviewVerdict, TimelineEntry } from '../../../shared/github'
 
 export interface ReviewConsensusProps {
@@ -17,15 +20,17 @@ export interface ReviewConsensusProps {
   authorLogin: string
 }
 
-/** The reviewer's standing verdict: the chronologically LATEST review that is `'approve'` or
- * `'request-changes'`, ignoring any `'comment'` review that came after it. `null` when the
- * reviewer has never submitted an opinionated review (comment-only). */
-function standingVerdict(reviews: Review[]): Extract<ReviewVerdict, 'approve' | 'request-changes'> | null {
+type StandingVerdict = Extract<ReviewVerdict, 'approve' | 'request-changes'> | null
+
+function standingVerdict(reviews: Review[]): StandingVerdict {
   const byTime = [...reviews].sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime())
-  for (const review of [...byTime].reverse()) {
-    if (review.verdict === 'approve' || review.verdict === 'request-changes') return review.verdict
+  let standing: StandingVerdict = null
+  for (const review of byTime) {
+    if (review.verdict === 'approve' || review.verdict === 'request-changes') standing = review.verdict
+    else if (review.verdict === 'dismissed') standing = null
+    // 'comment' leaves `standing` unchanged.
   }
-  return null
+  return standing
 }
 
 function groupReviewsByReviewer(timeline: TimelineEntry[], authorLogin: string): Map<string, Review[]> {
@@ -61,8 +66,6 @@ export function ReviewConsensus({ timeline, authorLogin }: ReviewConsensusProps)
     changesRequested > 0 ? `${changesRequested} changes requested` : null,
     commented > 0 ? `${commented} commented` : null
   ].filter((part): part is string => part !== null)
-
-  if (parts.length === 0) return null
 
   return <p className="mb-3 text-sm text-muted-foreground">{parts.join(', ')}</p>
 }

@@ -92,7 +92,7 @@ export interface PullRequestDetail {
   headRepositoryOwner: string | null;
 }
 
-export type ReviewVerdict = 'comment' | 'approve' | 'request-changes';
+export type ReviewVerdict = 'comment' | 'approve' | 'request-changes' | 'dismissed';
 
 /** `findings` is non-empty only for an automated reviewer's review (FR-008); a human review's
  * `findings` is always `[]`. */

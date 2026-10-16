@@ -4,8 +4,6 @@
 // registration, the staleness cache, and `list`/`buildDetail`'s own orchestration; this file is
 // pure data shapes and pure mapping functions, no `gh`/IPC side effects of its own.
 
-use std::collections::HashMap;
-
 use serde::Serialize;
 
 use crate::github::gh::{GhActor, GhCheckRun};
@@ -332,7 +330,16 @@ pub fn map_review_verdict(state: Option<&str>) -> Option<ReviewVerdict> {
         "APPROVED" => Some(ReviewVerdict::Approve),
         "CHANGES_REQUESTED" => Some(ReviewVerdict::RequestChanges),
         "COMMENTED" => Some(ReviewVerdict::Comment),
-        // PENDING/DISMISSED: not a submitted verdict.
+        // Gate round 2 fix (#568 decision 10 amendment, Code High N1): DISMISSED used to share
+        // PENDING's `None` -- a real review state, not a not-yet-submitted one -- which deleted
+        // every dismissed review from the Overview `Timeline` entirely (FR-008 regression) once
+        // gate round 1 taught `ReviewConsensus` about dismissals via a backend pre-pass. A
+        // dismissed review IS a submitted review (it has a real body/author/timestamp); it now
+        // keeps its own place in the timeline with a `Dismissed` verdict, and the renderer
+        // (`ReviewConsensus.tsx`) decides what a dismissal means for the standing-verdict
+        // rollup, not this mapping function.
+        "DISMISSED" => Some(ReviewVerdict::Dismissed),
+        // PENDING: not yet a submitted verdict at all.
         _ => None,
     }
 }
@@ -382,44 +389,11 @@ pub fn map_changed_files(
 }
 
 /// Merges `reviewThreads` + the three relevant `timelineItems` kinds into one chronologically
-/// sorted array (FR-008).
+/// sorted array (FR-008). Gate round 2 fix (#568 decision 10 amendment): the round 1 pre-pass
+/// that excluded a dismissed reviewer's reviews from this array entirely is removed -- every
+/// review (including a dismissed one, now mapped to a real `Dismissed` verdict above) keeps its
+/// place here; `ReviewConsensus.tsx` alone decides what a dismissal means for its own rollup.
 pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
-    // Gate round 1 fix (#568 decision 10, Code/Flow High): `map_review_verdict` returns `None`
-    // for a DISMISSED review, the same as the legitimate PENDING case, so a dismissed review is
-    // invisible below -- without this pre-pass, `ReviewConsensus.tsx`'s "latest review per
-    // reviewer" reducer would see an OLDER, now-withdrawn review from that same reviewer as if
-    // it were still their current standing opinion (for example a dismissed "changes requested"
-    // reappearing as live). One pass over every `PullRequestReview` node (including
-    // PENDING/DISMISSED, which the main loop below still skips) finds each reviewer's single
-    // most recent review by `submittedAt` (ISO 8601 strings compare lexicographically in
-    // chronological order); when that one is DISMISSED, every review from that reviewer is left
-    // out of the timeline entirely, since a dismissed review was their most recent action and
-    // nothing has superseded it.
-    let mut latest_review_by_author: HashMap<&str, (&str, &str)> = HashMap::new();
-    for node in &data.timeline_items.nodes {
-        if node.__typename != "PullRequestReview" {
-            continue;
-        }
-        let Some(login) = node.author.as_ref().and_then(|a| a.login.as_deref()) else {
-            continue;
-        };
-        let submitted_at = node.submitted_at.as_deref().unwrap_or("");
-        let state = node.state.as_deref().unwrap_or("");
-        latest_review_by_author
-            .entry(login)
-            .and_modify(|entry| {
-                if submitted_at > entry.0 {
-                    *entry = (submitted_at, state);
-                }
-            })
-            .or_insert((submitted_at, state));
-    }
-    let dismissed_authors: std::collections::HashSet<&str> = latest_review_by_author
-        .into_iter()
-        .filter(|(_, (_, state))| state.eq_ignore_ascii_case("DISMISSED"))
-        .map(|(login, _)| login)
-        .collect();
-
     let mut with_timestamps: Vec<(TimelineEntry, String)> = Vec::new();
 
     for node in &data.timeline_items.nodes {
@@ -453,10 +427,6 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
                 }
             }
             "PullRequestReview" => {
-                let login = node.author.as_ref().and_then(|a| a.login.as_deref());
-                if login.is_some_and(|login| dismissed_authors.contains(login)) {
-                    continue;
-                }
                 if let (Some(id), Some(verdict)) =
                     (&node.id, map_review_verdict(node.state.as_deref()))
                 {

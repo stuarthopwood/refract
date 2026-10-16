@@ -191,6 +191,14 @@ fn map_review_verdict_covers_none_and_every_submitted_state() {
         map_review_verdict(Some("COMMENTED")),
         Some(ReviewVerdict::Comment)
     );
+    // Gate round 2 fix (#568 decision 10 amendment): DISMISSED is a real, submitted review
+    // state, not a not-yet-submitted one like PENDING -- it keeps its own place in the
+    // Overview timeline with its own verdict.
+    assert_eq!(
+        map_review_verdict(Some("DISMISSED")),
+        Some(ReviewVerdict::Dismissed)
+    );
+    assert_eq!(map_review_verdict(Some("PENDING")), None);
 }
 
 /// `GhPrViewDetail` has no `Default`; this fills every field with a plausible value so each test

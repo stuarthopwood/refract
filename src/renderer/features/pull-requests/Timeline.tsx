@@ -25,10 +25,13 @@ function actorLabel(actor: PullRequestActor): string {
   return actor.name ?? actor.login
 }
 
+// Gate round 2 fix (#568 decision 10 amendment): DISMISSED is now a real timeline entry (it no
+// longer shares PENDING's silent drop in `map_review_verdict`), so it needs its own label here.
 const VERDICT_LABEL: Record<Review['verdict'], string> = {
   comment: 'commented',
   approve: 'approved',
-  'request-changes': 'requested changes'
+  'request-changes': 'requested changes',
+  dismissed: 'dismissed their review'
 }
 
 const SEVERITY_LABEL: Record<AutomatedFinding['severity'], string> = {

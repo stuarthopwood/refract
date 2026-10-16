@@ -163,7 +163,9 @@ new IPC field or any structural change to the Markdown-rendered PR body.
   data fix in `gh_pull_requests.rs`/`mod.rs` so the four relation-tab searches report Draft
   instead of silently Open (decisions 5-6).
   -- Implemented (073ad12): `StatePill.tsx` (new), tokens contrast-verified (433/433 pairs PASS,
-  `check:theme-contrast`), `isDraft` fix confirmed by the existing Rust fixture test.
+  `check:theme-contrast`); the `isDraft` fix is covered by the `map_pull_request_state` mapping
+  unit test (`mapping_tests.rs`, not the deserialisation fixture test, which only exercises the
+  Merged path), and gate round 2 live-verified a real draft PR rendering its StatePill correctly.
 - [X] T033 [P] (#568) Detail header title/button layout: larger title (`text-lg`, two-line clamp),
   lighter secondary action buttons so the title leads (decision 7).
   -- Implemented (073ad12): `PullRequestDetail.tsx` title `text-lg line-clamp-2`; New
@@ -187,6 +189,12 @@ new IPC field or any structural change to the Markdown-rendered PR body.
   tab; no new IPC field (decision 10) (depends on T015, T019).
   -- Implemented (073ad12): `ReviewConsensus.tsx` (new), mounted at the top of the Overview tab's
   own `p-3` wrapper, above `Markdown`; derives from `detail.timeline` client-side, no IPC change.
+  Gate round 2 fix: the "latest verdict" reducer is now a chronological per-reviewer fold
+  (standing verdict replaced by a later approve/request-changes, unaffected by a later comment,
+  reset to none by a dismissal) rather than a bare "last entry wins", matching GitHub's own
+  standing-review semantics; a dismissed review stays a real `Timeline` entry (new `dismissed`
+  `ReviewVerdict`) instead of being dropped server-side, so FR-008 (every review shown) still
+  holds.
 - [X] T037 (#568) Update `specs/003-pull-request-management/spec.md` (FR-031, Clarifications),
   `CONTEXT.md` and `docs/PLAN.md` to record the convergence, then verify live: the issue's own
   decision record "Live checks" list.
@@ -194,6 +202,17 @@ new IPC field or any structural change to the Markdown-rendered PR body.
   Tauri debug build and a read-only shallow clone of `stuarthopwood/refract` for real PR data;
   see the issue's decision record and the PR body for the full pass/fail breakdown and any
   not-exercised items.
+
+**Gate rounds (five-reviewer quality gate on PR #914):**
+- Round 1 (2026-10-16): Critical/High fixes -- real underline tabs (not a box), `isDraft` only
+  applying to OPEN pull requests, consensus semantics, narrow-width action-row overflow,
+  metadata separators, `hover:bg-surface-hover`, literal `--pr-*` token values. See the issue's
+  own gate round 1 amendment comment.
+- Round 2 (2026-10-16): one High -- round 1's own dismissed-review handling deleted a dismissed
+  reviewer's whole review history from the Overview `Timeline` (FR-008 regression); moved to a
+  client-side standing-verdict fold instead (see T036's own note above). Also documented the
+  pre-existing `timelineItems(first: 100)` pagination gap (issue #918) and completed the PR's
+  own "Not exercised" disclosure list.
 
 **Checkpoint**: `pnpm typecheck` and `cargo build` pass; `node scripts/check-theme-contrast.mjs`
 passes; full live check per the issue's own decision record "Live checks" list (a selected row's

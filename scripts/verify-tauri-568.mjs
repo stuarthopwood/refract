@@ -332,12 +332,15 @@ async function main() {
       if (pillClass) checkPass('StatePill renders with a bg-pr-* class', pillClass);
       else checkFail('StatePill renders with a bg-pr-* class', 'not found');
 
-      const newSessionVariant = await cdp.evaluate(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim().startsWith('New session') || el.textContent.trim() === 'Starting\\u2026'); return btn ? btn.getAttribute('data-variant') : null; })()`);
+      // Gate round 2 fix (Code Low): scope every button probe below to the DETAIL HEADER
+      // specifically (the block containing the `h2.line-clamp-2` title), not the whole
+      // document -- a dialog or another panel could in principle contain a same-named button.
+      const newSessionVariant = await cdp.evaluate(`(() => { const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0'); const btn = header && Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim().startsWith('New session') || el.textContent.trim() === 'Starting\\u2026'); return btn ? btn.getAttribute('data-variant') : null; })()`);
       if (newSessionVariant === 'ghost') checkPass('New session button is data-variant="ghost"');
       else checkFail('New session button is data-variant="ghost"', `got "${newSessionVariant}"`);
 
       // Gate round 1 addition: Merge must stay the one FILLED (default-variant) button.
-      const mergeVariant = await cdp.evaluate(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Merge'); return btn ? btn.getAttribute('data-variant') : null; })()`);
+      const mergeVariant = await cdp.evaluate(`(() => { const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0'); const btn = header && Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Merge'); return btn ? btn.getAttribute('data-variant') : null; })()`);
       if (mergeVariant === 'default') checkPass('Merge button is data-variant="default" (the one filled button)');
       else checkFail('Merge button is data-variant="default" (the one filled button)', `got "${mergeVariant}"`);
 
@@ -361,8 +364,14 @@ async function main() {
       if (isRealUnderline) checkPass('Detail Overview/Changes active tab is a real 2px underline (0px on other 3 sides)', JSON.stringify(detailTabBorders));
       else checkFail('Detail Overview/Changes active tab is a real 2px underline (0px on other 3 sides)', JSON.stringify(detailTabBorders));
 
+      // Gate round 2 fix (architect L1): scope to the Overview tab's OWN panel (found via the
+      // "Overview" trigger's `aria-controls`, the real Radix wiring from trigger to content),
+      // not any `<p>` anywhere in the document.
       const consensusText = await cdp.evaluate(`(() => {
-        const candidates = Array.from(document.querySelectorAll('p')).map((el) => el.textContent.trim());
+        const overviewTab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Overview');
+        const panelId = overviewTab ? overviewTab.getAttribute('aria-controls') : null;
+        const panel = panelId ? document.getElementById(panelId) : null;
+        const candidates = panel ? Array.from(panel.querySelectorAll('p')).map((el) => el.textContent.trim()) : [];
         return candidates.find((t) => /approved|changes requested|commented/.test(t)) ?? null;
       })()`);
       if (consensusText) checkPass('Reviewer-consensus line renders when reviews exist', consensusText);
@@ -427,9 +436,10 @@ async function main() {
         windowWidth = Math.round(windowWidth - error);
       }
       const buttonRects = await cdp.evaluate(`(() => {
+        const header = document.querySelector('h2.line-clamp-2')?.closest('.shrink-0');
         const names = ['New session', 'Review', 'Merge'];
         return names.map((name) => {
-          const btn = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === name || (name === 'New session' && el.textContent.trim().startsWith('New session')));
+          const btn = header && Array.from(header.querySelectorAll('button')).find((el) => el.textContent.trim() === name || (name === 'New session' && el.textContent.trim().startsWith('New session')));
           if (!btn) return { name, found: false };
           const r = btn.getBoundingClientRect();
           return { name, found: true, left: r.left, right: r.right, width: r.width };
