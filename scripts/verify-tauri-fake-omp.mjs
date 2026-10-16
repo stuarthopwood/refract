@@ -73,6 +73,10 @@ function substitute(value, vars) {
     if (value === '$turnId') return vars.turnId;
     if (value === '$lastMessage') return vars.lastMessage;
     if (value === '$conversationFile') return vars.conversationFile;
+    if (value === '$histTodayAt') return vars.histTodayAt;
+    if (value === '$histYesterdayAt') return vars.histYesterdayAt;
+    if (value === '$histThisYearAt') return vars.histThisYearAt;
+    if (value === '$histPastYearAt') return vars.histPastYearAt;
     return value;
   }
   if (Array.isArray(value)) return value.map((v) => substitute(v, vars));
@@ -103,12 +107,33 @@ async function main() {
   const tape = loadScenario(scenarioName);
   debugLog(`pid=${process.pid} scenario=${scenarioName} tapeLength=${tape.length}`);
 
-  // `conversationFile` is seeded once from the env var below (never updated by a wait, unlike
-  // the other three sentinels): a real, literal absolute path the caller pre-created on disk, so
-  // a scripted `get_state`/`switch_session` can report a `sessionFile` that
-  // `assert_conversation_file_exists` (launch_support.rs) genuinely finds -- needed only by a
-  // fixture exercising a real reattach/reopen round trip (issue #555's own live check).
-  const vars = { lastId: null, turnId: null, lastMessage: null, conversationFile: process.env.REFRACT_FAKE_OMP_CONVERSATION_FILE || null };
+  // `conversationFile` and the four `hist*At` fields are all seeded once from env vars below
+  // (never updated by a wait, unlike the first three sentinels): real values the caller computes
+  // and passes in, needed only by a fixture exercising a real reattach/reopen round trip (issue
+  // #555's own live check). `conversationFile` is a literal absolute path the caller pre-creates
+  // on disk, so a scripted `get_state`/`switch_session` can report a `sessionFile` that
+  // `assert_conversation_file_exists` (launch_support.rs) genuinely finds. The four `hist*At`
+  // epoch-ms numbers (parsed from their own env vars, `null` when unset or non-numeric) let a
+  // canned `get_messages_page` history response embed timestamps computed AT RUN TIME relative
+  // to the real "now" -- the day-aware format rule (`UserMessageRow.tsx`'s `formatMessageTime`)
+  // genuinely depends on which calendar day/year the run happens on, which a hardcoded fixture
+  // value could never express correctly on every future run.
+  const parseEnvMs = (name) => {
+    const raw = process.env[name];
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const vars = {
+    lastId: null,
+    turnId: null,
+    lastMessage: null,
+    conversationFile: process.env.REFRACT_FAKE_OMP_CONVERSATION_FILE || null,
+    histTodayAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_TODAY_AT'),
+    histYesterdayAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_YESTERDAY_AT'),
+    histThisYearAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_THIS_YEAR_AT'),
+    histPastYearAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_PAST_YEAR_AT'),
+  };
   let cursor = 0;
   // Commands whose type the tape is not currently waiting for are logged and dropped (never
   // silently hung forever): a real `omp` would of course handle any command, but this is a

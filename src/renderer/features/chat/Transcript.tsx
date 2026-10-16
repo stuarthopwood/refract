@@ -27,14 +27,13 @@ import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { UserMessageRow } from './UserMessageRow'
+import { UserMessageRow, type UserItem } from './UserMessageRow'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
-type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
 // every Session of the same repository shares one `repositories.userName` round trip.

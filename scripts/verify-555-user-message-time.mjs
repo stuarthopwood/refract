@@ -12,27 +12,40 @@
 //     `now_ms()` fallback) instead of every other fixture's deliberately-zeroed placeholder.
 //   - `user-message-time-reopen.jsonl` (launch 2): scripts the real `switch_session`/`get_state`/
 //     `set_ask_dialog`/`get_messages_page` reattach sequence, with a canned history response
-//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: one message with a real
-//     stored timestamp, one with none at all.
+//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: four messages whose
+//     `timestamp` fields this script computes AT RUN TIME (via the new `$histTodayAt`/
+//     `$histYesterdayAt`/`$histThisYearAt`/`$histPastYearAt` sentinels) so each lands in the
+//     day-aware bucket `UserMessageRow.tsx`'s `formatMessageTime` is meant to show, plus one
+//     message with no timestamp at all.
 // Both reference the new `$conversationFile` sentinel (`verify-tauri-fake-omp.mjs`), seeded from
 // `REFRACT_FAKE_OMP_CONVERSATION_FILE` -- a REAL file this script pre-creates on disk, since
 // `assert_conversation_file_exists` (launch_support.rs) checks the persisted Session's
 // `current_conversation` path actually exists before sending `switch_session` on reattach.
 //
+// Important scope note: the HISTORY content in launch 2 is a canned fake-omp tape, not data
+// launch 1 actually persisted -- launch 1's own two live-sent messages are never replayed back.
+// This proves `items_from_history`'s real code path renders a stored timestamp (or its absence)
+// correctly on a genuine reattach; it does not prove a specific timestamp survives Refract's own
+// persistence across the two launches (OMP, not Refract, owns that file).
+//
 // Assertions, in order:
-//   Launch 1 (two human turns):
-//     1. Turn 1's `<time dateTime=...>` parses to within the last 2 minutes (a real, current
-//        `at`) and its visible text matches an hour:minute clock format.
+//   Launch 1 (two human turns, one process):
+//     1. Turn 1's `<time dateTime=...>` parses close to the real send time (a real, current
+//        `at`, not stale/default) and its visible text matches an hour:minute clock format.
 //     2. It sits outside the bubble's own box (`[data-slot="message-content"]`) and visually
 //        above it.
-//     3. The row after turn 1's user message carries `mt-6` (space BELOW the human turn).
-//     4. Turn 2's own user-message-item wrapper ALSO carries `mt-6` (space ABOVE the new human
-//        turn) -- turn 1's own wrapper carries NO margin class (the very first row), the base
-//        case confirming the margin only appears once there is a preceding row.
+//     3. The row after turn 1's user message carries `mt-6` -- `TURN_GAP_CLASS`, Transcript
+//        rhythm's own unchanged house rule, applied to the row below the human turn.
+//     4. Turn 2's own user-message wrapper ALSO carries `mt-6` -- the same unchanged rule applied
+//        above the second human turn -- while turn 1's own wrapper (the very first row in the
+//        transcript) carries NO margin class, the base case every OTHER non-first row (turn 2
+//        included) is compared against.
 //     5. Turn 2's `<time>` also renders with its own fresh, real `at`.
-//   Launch 2 (reopened Conversation, same REFRACT_DATA_DIR):
-//     6. The historical message with an explicit stored `timestamp` renders a `<time>` whose
-//        `dateTime` matches that EXACT value (a real recorded time survives a reopen faithfully).
+//   Launch 2 (reopened Conversation, same REFRACT_DATA_DIR, a genuine second app launch):
+//     6. Four historical messages (today, yesterday, earlier this year, a past year) each render
+//        a `<time>` whose visible label and `dateTime` match this script's OWN computed expected
+//        value for that exact bucket (a JS re-implementation of `formatMessageTime`, kept in
+//        sync by comment).
 //     7. The historical message with NO `timestamp` key renders NO `<time>` row at all (`at === 0`,
 //        "hide rather than invent").
 //
@@ -65,9 +78,62 @@ const PROMPT_MESSAGE_1 = 'Checking issue 555 turn one timestamp rendering now.';
 const PROMPT_MESSAGE_2 = 'Checking issue 555 turn two timestamp and margin now.';
 const REPLY_TOKEN_1 = 'xyzzy9'; // fixture's fixed turn-1 assistant reply token
 const REPLY_TOKEN_2 = 'turn-two-streamed-ok'; // fixture's fixed turn-2 assistant reply token
-const HIST_WITH_TIME_TEXT = 'Historical message with a real timestamp.';
+const HIST_TODAY_TEXT = 'Historical message from today.';
+const HIST_YESTERDAY_TEXT = 'Historical message from yesterday.';
+const HIST_THIS_YEAR_TEXT = 'Historical message from earlier this year.';
+const HIST_PAST_YEAR_TEXT = 'Historical message from a past year.';
 const HIST_NO_TIME_TEXT = 'Historical message with no timestamp at all.';
-const HIST_TIMESTAMP_MS = 1760616865000;
+
+/** JS re-implementation of `UserMessageRow.tsx`'s `formatMessageTime` -- MUST be kept in sync by
+ * hand with that function (there is no shared module between the Vite renderer and this plain
+ * Node script). Used to compute the EXACT expected visible label for each historical message, so
+ * the reopen assertions below check real equality, not a loose pattern. */
+function expectedLabelFor(date, now) {
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfThatDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayDiff = Math.round((startOfToday - startOfThatDay) / 86_400_000);
+  if (dayDiff === 0) return time;
+  if (dayDiff === 1) {
+    const word = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-1, 'day');
+    return `${word[0].toUpperCase()}${word.slice(1)} ${time}`;
+  }
+  if (date.getFullYear() === now.getFullYear()) return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`;
+  return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
+}
+
+/** Picks one real instant per day-aware bucket (today, yesterday, earlier this year, a past
+ * year), relative to whichever real calendar day this script actually runs on, then SELF-VALIDATES
+ * every candidate against the exact same bucketing rule `expectedLabelFor` uses before handing
+ * any of them back -- a run never silently asserts the wrong bucket; it throws instead. Every
+ * candidate (other than "yesterday", which must use calendar subtraction to land exactly one day
+ * back across a month/year boundary) is a RELATIVE offset from "now" rather than a fixed calendar
+ * date, so the same code stays correct on any day of the year the script is actually run on.
+ * Known narrow gap (documented, not silently wrong): within the first ~20 days of January, or in
+ * the first minute after local midnight, there is no valid "earlier this year, not recent"/
+ * "today" instant at all -- the self-validation below throws a clear error in that case instead
+ * of asserting the wrong bucket; rerun a few minutes/days later. */
+function computeHistoryTimestamps() {
+  const now = new Date();
+  const dayDiffFrom = (d) => {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfThatDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    return Math.round((startOfToday - startOfThatDay) / 86_400_000);
+  };
+  const today = new Date(now.getTime() - 60_000);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0);
+  const thisYear = new Date(now.getTime() - 20 * 86_400_000);
+  const pastYear = new Date(now.getTime() - 400 * 86_400_000);
+
+  if (dayDiffFrom(today) !== 0) throw new Error(`computeHistoryTimestamps: "today" candidate did not land in today's bucket (dayDiff=${dayDiffFrom(today)}) -- rerun a minute later`);
+  if (dayDiffFrom(yesterday) !== 1) throw new Error(`computeHistoryTimestamps: "yesterday" candidate did not land in yesterday's bucket (dayDiff=${dayDiffFrom(yesterday)})`);
+  if (!(dayDiffFrom(thisYear) > 1 && thisYear.getFullYear() === now.getFullYear())) {
+    throw new Error(`computeHistoryTimestamps: "thisYear" candidate did not land in the same-year-not-recent bucket (dayDiff=${dayDiffFrom(thisYear)}, year=${thisYear.getFullYear()}) -- known gap in the first ~20 days of January, rerun later`);
+  }
+  if (pastYear.getFullYear() === now.getFullYear()) throw new Error('computeHistoryTimestamps: "pastYear" candidate is not actually in a past year');
+
+  return { now, today, yesterday, thisYear, pastYear };
+}
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -102,11 +168,14 @@ function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
-/** Reads the `<time>` element rendered as the bubble's immediate previous sibling (the
- * `UserMessageRow` Fragment's own structure: the time row and the `Message` div are direct
- * siblings), or `null` if `item.at === 0` hid it (`UserMessageTime` returns `null`). Also reports
- * the bubble's own `[data-slot="message-scroller-item"]` wrapper class list, so the caller can
- * check the turn-gap margin on the SAME probe. */
+/** Reads the `<time>` element rendered anywhere inside the bubble's own
+ * `[data-slot="message-scroller-item"]` wrapper (gate round 1, Tests/Code Low: searching only
+ * `bubble.previousElementSibling` made the "outside the bubble's box" check true by
+ * construction -- a `<time>` that moved INSIDE the bubble would then just read as "no `<time>`
+ * found", never as "inside the box". Searching the whole wrapper instead means `insideBubbleBox`
+ * and the hidden-when-`at===0` check both genuinely test where the element is, wherever it
+ * renders), or `null` if `item.at === 0` hid it (`UserMessageTime` returns `null`). Also reports
+ * the wrapper's own class list, so the caller can check the turn-gap margin on the SAME probe. */
 function timeAndMarginProbeExpr(messageText) {
   return `
     (() => {
@@ -115,9 +184,8 @@ function timeAndMarginProbeExpr(messageText) {
       const bubble = Array.from(transcript.querySelectorAll('[data-slot="message"][data-align="end"]'))
         .find((el) => el.textContent.includes(${JSON.stringify(messageText)}));
       if (!bubble) return { error: 'no matching user bubble for ' + ${JSON.stringify(messageText)} };
-      const timeRow = bubble.previousElementSibling;
-      const timeEl = timeRow ? timeRow.querySelector('time') : null;
       const wrapper = bubble.closest('[data-slot="message-scroller-item"]');
+      const timeEl = wrapper ? wrapper.querySelector('time') : null;
       const bubbleRect = bubble.getBoundingClientRect();
       if (!timeEl) {
         return { hasTime: false, wrapperClassName: wrapper ? wrapper.className : null };
@@ -284,14 +352,15 @@ async function main() {
     console.log('verify-555: turn 2 probe', JSON.stringify(probe2));
     checkMessageProbe(probe2, { label: 'turn 2', sentAt: sendStartedAt2, expectWrapperMargin: 'mt-6', findings, failures });
 
-    // Turn 1's own user-message wrapper gets NO margin class (the very first row in the whole
-    // transcript) -- the base case that makes turn 2's own `mt-6` meaningful evidence of a NEW
-    // turn boundary, not just "every row always gets mt-6 regardless".
+    // Turn 1's own user-message wrapper gets NO margin class: it is the very first row in the
+    // whole transcript, the one case `TURN_GAP_CLASS` is never applied to (Transcript.tsx's
+    // `isFirstRow` guard) -- distinguishing this from every OTHER row (including turn 2's own
+    // user message below), which all get `mt-6` under Transcript rhythm's unchanged house rule.
     if (probe1.wrapperClassName != null) {
       if (/\bmt-6\b/.test(probe1.wrapperClassName)) {
         failures.push(`turn 1's own user-message wrapper unexpectedly carries mt-6 (it is the FIRST row in the transcript, which should carry no margin class at all): "${probe1.wrapperClassName}"`);
       } else {
-        findings.push(`turn 1's own user-message wrapper carries no margin class (the first row), confirming turn 2's mt-6 is a genuine NEW-turn margin, not a blanket default.`);
+        findings.push(`turn 1's own user-message wrapper carries no margin class, the one documented exception (the first row) to Transcript rhythm's mt-6 rule.`);
       }
     }
 
@@ -309,6 +378,15 @@ async function main() {
     // ---------------------------------------------------------------------
     // Launch 2: reopen the SAME Session against the SAME REFRACT_DATA_DIR
     // ---------------------------------------------------------------------
+    const { now: histNow, today: histToday, yesterday: histYesterday, thisYear: histThisYear, pastYear: histPastYear } = computeHistoryTimestamps();
+    console.log('verify-555: history timestamps', {
+      now: histNow.toISOString(),
+      today: histToday.toISOString(),
+      yesterday: histYesterday.toISOString(),
+      thisYear: histThisYear.toISOString(),
+      pastYear: histPastYear.toISOString(),
+    });
+
     const port2 = await getFreePort();
     const launched2 = await launchBuiltExe(launcherExe, exePath, {
       port: port2,
@@ -321,6 +399,10 @@ async function main() {
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'user-message-time-reopen',
         REFRACT_FAKE_OMP_CONVERSATION_FILE: conversationFile,
+        REFRACT_FAKE_OMP_HIST_TODAY_AT: String(histToday.getTime()),
+        REFRACT_FAKE_OMP_HIST_YESTERDAY_AT: String(histYesterday.getTime()),
+        REFRACT_FAKE_OMP_HIST_THIS_YEAR_AT: String(histThisYear.getTime()),
+        REFRACT_FAKE_OMP_HIST_PAST_YEAR_AT: String(histPastYear.getTime()),
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-launch2.log'),
       },
     });
@@ -339,24 +421,37 @@ async function main() {
       label: 'Relaunch: Session reattached, composer enabled',
     });
     await cdp2.waitFor(
-      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.includes(${JSON.stringify(HIST_WITH_TIME_TEXT)}) && t.textContent.includes(${JSON.stringify(HIST_NO_TIME_TEXT)}); })()`,
-      { timeoutMs: 30_000, label: 'Relaunch: both historical messages rendered' }
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && [${JSON.stringify(HIST_TODAY_TEXT)}, ${JSON.stringify(HIST_YESTERDAY_TEXT)}, ${JSON.stringify(HIST_THIS_YEAR_TEXT)}, ${JSON.stringify(HIST_PAST_YEAR_TEXT)}, ${JSON.stringify(HIST_NO_TIME_TEXT)}].every((s) => t.textContent.includes(s)); })()`,
+      { timeoutMs: 30_000, label: 'Relaunch: all five historical messages rendered' }
     );
     await cdp2.screenshot(path.join(SHOTS_DIR, '05-relaunch-history.png'));
 
-    const histWithTimeProbe = await cdp2.evaluate(timeAndMarginProbeExpr(HIST_WITH_TIME_TEXT));
-    console.log('verify-555: reopen (with timestamp) probe', JSON.stringify(histWithTimeProbe));
-    if (histWithTimeProbe.error) {
-      failures.push(`reopen history (with timestamp) probe failed: ${histWithTimeProbe.error}`);
-    } else if (!histWithTimeProbe.hasTime) {
-      failures.push('the historical message with an explicit stored timestamp rendered NO <time> row at all');
-    } else {
-      const expectedIso = new Date(HIST_TIMESTAMP_MS).toISOString();
-      const actualIso = histWithTimeProbe.dateTime ? new Date(histWithTimeProbe.dateTime).toISOString() : null;
+    const histBuckets = [
+      { text: HIST_TODAY_TEXT, label: 'reopen (today)', date: histToday },
+      { text: HIST_YESTERDAY_TEXT, label: 'reopen (yesterday)', date: histYesterday },
+      { text: HIST_THIS_YEAR_TEXT, label: 'reopen (this year)', date: histThisYear },
+      { text: HIST_PAST_YEAR_TEXT, label: 'reopen (past year)', date: histPastYear },
+    ];
+    for (const bucket of histBuckets) {
+      const probe = await cdp2.evaluate(timeAndMarginProbeExpr(bucket.text));
+      console.log(`verify-555: ${bucket.label} probe`, JSON.stringify(probe));
+      if (probe.error) {
+        failures.push(`${bucket.label}: probe failed: ${probe.error}`);
+        continue;
+      }
+      if (!probe.hasTime) {
+        failures.push(`${bucket.label}: rendered NO <time> row at all, expected the day-aware label`);
+        continue;
+      }
+      const expectedIso = bucket.date.toISOString();
+      const actualIso = probe.dateTime ? new Date(probe.dateTime).toISOString() : null;
+      const expectedLabel = expectedLabelFor(bucket.date, histNow);
       if (actualIso !== expectedIso) {
-        failures.push(`reopened historical message's dateTime ("${histWithTimeProbe.dateTime}" -> ${actualIso}) does not match the fixture's own stored timestamp (expected ${expectedIso})`);
+        failures.push(`${bucket.label}: dateTime ("${probe.dateTime}" -> ${actualIso}) does not match the fixture's own stored timestamp (expected ${expectedIso})`);
+      } else if (probe.visibleText !== expectedLabel) {
+        failures.push(`${bucket.label}: visible text "${probe.visibleText}" does not match the expected day-aware label "${expectedLabel}"`);
       } else {
-        findings.push(`reopened historical message's dateTime matches the fixture's own stored timestamp exactly (${expectedIso}) -- a real recorded time survives a genuine reattach faithfully.`);
+        findings.push(`${bucket.label}: dateTime matches exactly (${expectedIso}) and the visible label "${probe.visibleText}" matches the expected day-aware format.`);
       }
     }
 
@@ -456,7 +551,7 @@ function checkMessageProbe(probe, { label, sentAt, expectWrapperMargin, findings
     if (!probe.wrapperClassName || !new RegExp(`\\b${expectWrapperMargin}\\b`).test(probe.wrapperClassName)) {
       failures.push(`${label}: expected the user-message wrapper to carry ${expectWrapperMargin}, got "${probe.wrapperClassName}"`);
     } else {
-      findings.push(`${label}: the user-message wrapper carries ${expectWrapperMargin} (a NEW turn boundary, space ABOVE it).`);
+      findings.push(`${label}: the user-message wrapper carries ${expectWrapperMargin} -- Transcript rhythm's unchanged house margin, present above this human turn as it is above every non-first row.`);
     }
   }
 }
