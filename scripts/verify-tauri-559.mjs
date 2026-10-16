@@ -13,15 +13,18 @@
 //     collapsed before the search started -- and that collapse returns once the query clears.
 //   - Typing a Project's own name shows that whole Project's group (every row), since every
 //     Session in it matches on Project name.
-//   - Archived is searched the same way, against each archived row's own Project name.
 //   - Esc and the in-field Clear button both restore the full list and the exact pre-search
-//     collapsed/expanded state (asserted via settings.json on disk, not just the DOM).
+//     collapsed/expanded state, asserted via settings.json on disk (byte-identical), not just
+//     the DOM.
 //   - Tab order: Pull requests -> search field -> (Clear filter, only while there is text) ->
 //     Collapse all groups.
 //   - The result count announcement (debounced while typing; immediate "Filter cleared").
-//   - The query (and the Clear) survive a Settings round trip (App.tsx remounts the whole list).
+//   - The query (and the filtering) survive a Settings round trip (App.tsx remounts the list).
 //   - Ctrl+N's own fallback, when the search hides every Project, focuses the search field
 //     instead of the (now-absent) quick-create button.
+//   - Archived is searched the same way, against each archived row's own Project name (run
+//     LAST: this is the only check that needs an archived Session at all, per Main's 2026-10-16
+//     review -- every other check above runs first so one flaky archive step cannot block them).
 //
 // Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-735.mjs.
 
@@ -42,7 +45,6 @@ import {
   createReportLogger
 } from './verify-tauri-cdp.mjs';
 import {
-  getAccessibleName,
   getActiveElementAccessibleName,
   pressTab,
   pressEscape,
@@ -51,8 +53,6 @@ import {
   ARCHIVED_TRIGGER_FINDER,
   groupState,
   createSessionViaQuickCreate,
-  archiveFirstRowIn,
-  restoreOnlyArchivedRow,
   addRepository
 } from './verify-tauri-session-list-helpers.mjs';
 
@@ -198,6 +198,53 @@ async function connectCdp(port, targetPid) {
   return cdp;
 }
 
+/** Finder for the FIRST (most-recently-active) Session row's own "... actions" trigger inside
+ * the named Project's group. */
+function firstRowActionsFinder(repoName) {
+  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
+}
+
+/** Opens a Session row's own "..." actions menu like a real user, fixing the flake Main
+ * diagnosed (2026-10-16): the trigger is revealed by `group-hover`/`group-focus-within`
+ * opacity (#567), so a bare synthetic click at a freshly-mounted row's own bounding rect can
+ * land before the browser has actually run the hover style recalculation the trigger's own
+ * interactivity depends on. Hovers the row first (a real `mouseMoved`, the only way to trigger
+ * a `:hover`/`group-hover` CSS reveal over CDP), waits for the trigger to actually report
+ * revealed (`opacity > 0.5`) AND closed (`aria-expanded="false"`), THEN clicks it (recomputing
+ * the bounding rect at click time, since hovering can itself shift the row's own layout as
+ * hidden actions reserve their column) and waits for the real `[role="menu"]` to mount -- never
+ * a fixed sleep. On a timeout, captures a screenshot and the row's own DOM for diagnosis. */
+async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
+  const triggerFinder = firstRowActionsFinder(repoName);
+  const rowFinder = `${triggerFinder}?.closest('li')`;
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${rowFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 15_000, label: `row to hover: ${rowFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  try {
+    await cdp.waitFor(
+      `(() => { const el = ${triggerFinder}; if (!el) return false; return parseFloat(getComputedStyle(el).opacity) > 0.5 && el.getAttribute('aria-expanded') === 'false'; })()`,
+      { timeoutMs: 10_000, label: `row actions trigger revealed and closed: ${triggerFinder}` }
+    );
+    await cdp.click(triggerFinder);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'row actions menu opened' });
+  } catch (err) {
+    const diag = await cdp.evaluate(
+      `(() => { const el = ${triggerFinder}; if (!el) return { triggerFound: false }; const cs = getComputedStyle(el); return { triggerFound: true, ariaExpanded: el.getAttribute('aria-expanded'), opacity: cs.opacity, pointerEvents: cs.pointerEvents, outerHTML: el.outerHTML?.slice(0, 600), rowHtml: el.closest('li')?.outerHTML?.slice(0, 2000) }; })()`
+    );
+    log(`verify-tauri-559: openRowActionsMenu FAILED for "${repoName}" -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
+    await cdp.screenshot(path.join(evidenceDir, '99-diag-row-actions-menu-failure.png'));
+    throw err;
+  }
+}
+
+async function clickMenuItem(cdp, text) {
+  const finder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(text)})`;
+  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` });
+  await cdp.click(finder);
+}
+
 async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoBName }) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
@@ -210,27 +257,16 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
 
-  // Session A1 (stays active), Session A2 (archived below, so Archived shows Project A's own
-  // name as its secondary label -- decision 14's own target), Session B1 (stays active). Names
-  // are OMP's own generated adjective-noun strings (FR-003), never a literal "A1"/"A2" -- each
-  // is captured from the real rendered row the instant it exists, for every later search query.
+  // One Session per Project, enough for every check except Archived's own (that needs a second,
+  // archived Session in Project A -- created and archived LAST, per Main's 2026-10-16 review,
+  // so one flaky archive step can never block the checks above it).
   await createSessionViaQuickCreate(cdp, repoAName);
   const sessionA1Name = await cdp.evaluate(
     `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoAName)})); const btn = group?.querySelector('li [data-session-open]'); return btn ? btn.getAttribute('aria-label').split(',')[0] : null; })()`
   );
-  await createSessionViaQuickCreate(cdp, repoAName);
-  const sessionA2Name = await cdp.evaluate(
-    `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoAName)})); const names = Array.from(group.querySelectorAll('li [data-session-open]')).map((b) => b.getAttribute('aria-label').split(',')[0]); return names.find((n) => n !== ${JSON.stringify(sessionA1Name)}); })()`
-  );
   await createSessionViaQuickCreate(cdp, repoBName);
-  assert(sessionA1Name && sessionA2Name, `both Project A session names must be captured (got A1=${JSON.stringify(sessionA1Name)}, A2=${JSON.stringify(sessionA2Name)})`);
-  log(`STEP PASS: Session "${sessionA1Name}" (A1), "${sessionA2Name}" (A2) created in Project A; a third Session created in Project B.`);
-  // A brief settle pause before the row menu click below: right after the last create, a newly
-  // mounted row's own trigger needs one tick to become a stable click target.
-  await sleep(300);
-  await archiveFirstRowIn(cdp, repoAName);
-  await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 15_000, label: 'Archived group appears after archiving Session A2' });
-  log(`STEP PASS: Session "${sessionA2Name}" archived (Project A now has one active Session, "${sessionA1Name}", plus one archived).`);
+  assert(sessionA1Name, `Project A's own Session name must be captured (got ${JSON.stringify(sessionA1Name)})`);
+  log(`STEP PASS: Session "${sessionA1Name}" created in Project A; a Session created in Project B.`);
 
   // Manually collapse Project A -- the state the search's own override must respect once the
   // query clears, and must NOT respect (forces it open) while a query matches it.
@@ -246,10 +282,9 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: '"No sessions match" empty state shown' });
   assert((await cdp.evaluate(groupTriggerFinder(repoAName) + ' === undefined')) === true, 'Project A group must be gone from the DOM on zero matches');
   assert((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B group must be gone from the DOM on zero matches');
-  assert((await cdp.evaluate(ARCHIVED_TRIGGER_FINDER + ' === null')) === true, 'Archived must be gone from the DOM on zero matches');
   const zeroAnnouncement = await readAnnouncement(cdp);
   assert(zeroAnnouncement === 'No sessions match', `announcement on zero matches must read "No sessions match" (got ${JSON.stringify(zeroAnnouncement)})`);
-  log('STEP PASS: a non-matching query shows the empty state, hides every group and Archived, and announces "No sessions match".');
+  log('STEP PASS: a non-matching query shows the empty state, hides every group, and announces "No sessions match".');
   await cdp.screenshot(path.join(evidenceDir, '01-dark-no-matches.png'));
 
   // ---- Clear filter button inside the empty state restores everything, incl. Project A's own
@@ -267,15 +302,11 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' === undefined', { timeoutMs: 10_000, label: 'Project B hidden (no match)' });
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Project A must show OPEN while a query matches it, overriding its own saved collapsed state');
   const rowsDuringSearch = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
-  assert(
-    rowsDuringSearch.includes(sessionA1Name) && !rowsDuringSearch.includes(sessionA2Name),
-    `only the matching Session row ("${sessionA1Name}") must render inside Project A (got: ${JSON.stringify(rowsDuringSearch)})`
-  );
-  assert((await cdp.evaluate(ARCHIVED_TRIGGER_FINDER + ' === null')) === true, `Archived must stay hidden (its own row, "${sessionA2Name}", does not match "${sessionA1Name}" on name or Project name)`);
+  assert(rowsDuringSearch.includes(sessionA1Name), `the matching Session row ("${sessionA1Name}") must render inside Project A (got: ${JSON.stringify(rowsDuringSearch)})`);
   await sleep(600); // debounce window
   const matchAnnouncement = await readAnnouncement(cdp);
   assert(/^Showing 1 of \d+ sessions$/.test(matchAnnouncement), `announcement must read "Showing 1 of N sessions" (got ${JSON.stringify(matchAnnouncement)})`);
-  log(`STEP PASS: a name query shows only the matching Session, forces its Project open, hides the sibling Project and Archived; announced ${JSON.stringify(matchAnnouncement)}.`);
+  log(`STEP PASS: a name query shows only the matching Session, forces its Project open, hides the sibling Project; announced ${JSON.stringify(matchAnnouncement)}.`);
   await cdp.screenshot(path.join(evidenceDir, '02-dark-one-match-forced-open.png'));
 
   // ---- The Collapse all / Expand all toolbar stays interactive during a search (never a no-op
@@ -289,7 +320,8 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log('STEP PASS: Collapse all / Expand all stay live and actually toggle the visible group while a search is active (not a dead no-op).');
 
   // ---- Esc clears the field and restores Project A's saved CLOSED state (never written to by
-  // the toggle above, which only touched the search's own ephemeral override) ----
+  // the toggle above, which only touched the search's own ephemeral override), proved by a
+  // byte-identical settings.json, not only the DOM ----
   await cdp.click(SEARCH_INPUT);
   await pressEscape(cdp);
   await cdp.waitFor(SEARCH_INPUT + `.value === ''`, { timeoutMs: 5_000, label: 'Esc clears the field' });
@@ -306,7 +338,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log('STEP PASS: Esc clears the field, announces "Filter cleared", restores Project A\'s saved closed state, and settings.json is byte-identical to before the search (the override never persisted).');
 
   // ---- A Project-name query shows the WHOLE Project (every Session in it matches on Project
-  // name), and the Archived group is searched the same way against its own Project name ----
+  // name) ----
   await typeSearch(cdp, repoBName);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' === undefined', { timeoutMs: 10_000, label: 'Project A hidden (its name does not match Project B\'s name)' });
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Project B must show, forced open, for its own Project-name query');
@@ -315,21 +347,13 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the in-field Clear button' });
   log('STEP PASS: the in-field Clear (x) button restores the full list.');
 
-  await typeSearch(cdp, repoAName);
-  await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 10_000, label: 'Archived shown for a query matching its own row\'s Project name' });
-  const archivedRowsForQuery = await cdp.evaluate(`document.querySelectorAll('[data-archived-group] li').length`);
-  assert(archivedRowsForQuery === 1, `Archived must show exactly the one matching archived row (got ${archivedRowsForQuery})`);
-  log('STEP PASS: Archived is searched the same way, against each row\'s own Project name.');
-  await cdp.click(CLEAR_BUTTON);
-  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after clearing' });
-
   // ---- Tab order: Pull requests -> search field -> Clear filter (only while there is text) ->
   // Collapse all groups ----
   await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
   assert(active.role === 'searchbox' || /Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the search field (got ${JSON.stringify(active)})`);
-  await cdp.send('Input.insertText', { text: 'A1' });
+  await cdp.send('Input.insertText', { text: sessionA1Name });
   await cdp.waitFor(CLEAR_BUTTON + ' !== null', { timeoutMs: 5_000, label: 'Clear button appears once the field has text' });
   await pressTab(cdp);
   active = await getActiveElementAccessibleName(cdp);
@@ -339,6 +363,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert(active.name === 'Collapse all groups', `Tab from Clear filter must land on Collapse all groups (got ${JSON.stringify(active)})`);
   log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> search field -> Clear filter -> Collapse all groups.');
   await pressEscape(cdp);
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Esc (Tab-order check cleanup)' });
   await cdp.evaluate(`document.activeElement?.blur()`);
 
   // ---- Settings round trip: the query (and its filtering) survive opening Settings and
@@ -356,6 +381,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
 
   // ---- Ctrl+N fallback: once the search hides every Project, Ctrl+N focuses the search field
   // instead of the (absent) quick-create button ----
+  await cdp.click(CLEAR_BUTTON);
   await cdp.evaluate(`document.activeElement?.blur()`);
   await typeSearch(cdp, 'zzz-no-such-session-zzz');
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: 'empty state shown before the Ctrl+N fallback check' });
@@ -363,7 +389,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await pressKey(cdp, 78, 'n', 'KeyN', 2); // Ctrl+N (modifiers bitmask: Ctrl = 2)
   await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT})`, { timeoutMs: 10_000, label: 'Ctrl+N focuses the search field once it is the reason no Project is visible' });
   const ctrlNAnnouncement = await readAnnouncement(cdp);
-  assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N\'s own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
+  assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N's own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
   log('STEP PASS: Ctrl+N, when the search hides every Project, focuses the search field and announces the correct, filter-aware fallback text.');
   await cdp.click(CLEAR_BUTTON);
 
@@ -381,6 +407,27 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.evaluate(`window.refract.theme.set('dark')`);
   await cdp.waitFor(`document.documentElement.className.includes('theme-dark') && !document.documentElement.className.includes('high-contrast')`, { timeoutMs: 10_000, label: 'back to Dark' });
   await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after the high-contrast check' });
+
+  // ---- LAST: Archived, the only check that needs a second, archived Session. Create Session
+  // A2, archive it via a real hover+click (openRowActionsMenu, fixed per Main's diagnosis), then
+  // confirm Archived is searched the same way, against each row's own Project name. ----
+  await createSessionViaQuickCreate(cdp, repoAName);
+  const sessionA2Name = await cdp.evaluate(
+    `(() => { const group = Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoAName)})); const names = Array.from(group.querySelectorAll('li [data-session-open]')).map((b) => b.getAttribute('aria-label').split(',')[0]); return names.find((n) => n !== ${JSON.stringify(sessionA1Name)}); })()`
+  );
+  assert(sessionA2Name, `Project A's second Session name must be captured (got ${JSON.stringify(sessionA2Name)})`);
+  await openRowActionsMenu(cdp, repoAName, evidenceDir, log);
+  await clickMenuItem(cdp, 'Archive');
+  await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 15_000, label: 'Archived group appears after archiving Session A2' });
+  log(`STEP PASS: Session "${sessionA2Name}" archived via a real hover-then-click on its own row menu (Project A now has one active Session, "${sessionA1Name}", plus one archived).`);
+
+  await typeSearch(cdp, repoAName);
+  await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + ' !== null', { timeoutMs: 10_000, label: 'Archived shown for a query matching its own row\'s Project name' });
+  const archivedRowsForQuery = await cdp.evaluate(`document.querySelectorAll('[data-archived-group] li').length`);
+  assert(archivedRowsForQuery === 1, `Archived must show exactly the one matching archived row (got ${archivedRowsForQuery})`);
+  log('STEP PASS: Archived is searched the same way, against each row\'s own Project name.');
+  await cdp.click(CLEAR_BUTTON);
 
   log('ALL IN-PROCESS CHECKS PASS.');
 }
@@ -390,6 +437,7 @@ async function main() {
   const log = createReportLogger(path.join(SHOT_DIR, 'report.txt'));
   let shimDir, dataDir, importSourceDir, repoADir, repoBDir, exeDir;
   let child, cdp;
+  let exitCode = 0;
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-559-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-559-data-'));
@@ -401,7 +449,7 @@ async function main() {
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-559-exe-'));
 
     log(`verify-tauri-559: data dir ${dataDir}`);
-    log(`verify-tauri-559: evidence dir ${evidenceDirLog(SHOT_DIR)}`);
+    log(`verify-tauri-559: evidence dir ${SHOT_DIR}`);
     log(`verify-tauri-559: Project A ${repoADir} (name "${repoAName}")`);
     log(`verify-tauri-559: Project B ${repoBDir} (name "${repoBName}")`);
 
@@ -431,6 +479,25 @@ async function main() {
     await runChecks(cdp, SHOT_DIR, log, { repoA: repoADir, repoB: repoBDir, repoAName, repoBName });
 
     log(`verify-tauri-559: ALL PASS. Evidence and screenshots: ${SHOT_DIR}`);
+    writeFileSync(
+      path.join(SHOT_DIR, 'report.json'),
+      JSON.stringify(
+        { gitHead: process.env.REFRACT_559_GIT_HEAD || null, exitCode: 0, exeHash, finishedAt: new Date().toISOString() },
+        null,
+        2
+      )
+    );
+  } catch (err) {
+    exitCode = 1;
+    writeFileSync(
+      path.join(SHOT_DIR, 'report.json'),
+      JSON.stringify(
+        { gitHead: process.env.REFRACT_559_GIT_HEAD || null, exitCode: 1, error: String(err?.message ?? err), finishedAt: new Date().toISOString() },
+        null,
+        2
+      )
+    );
+    throw err;
   } finally {
     cdp?.close();
     if (child) await stopLauncher(child);
@@ -444,11 +511,8 @@ async function main() {
     await safeRmSync(exeDir);
     // Deliberately NOT removing SHOT_DIR: its STEP-PASS report and screenshots are this run's
     // own audit trail (same convention as verify-tauri-735.mjs).
+    process.exitCode = exitCode;
   }
-}
-
-function evidenceDirLog(dir) {
-  return dir;
 }
 
 main().catch((err) => {
