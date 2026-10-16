@@ -7,7 +7,7 @@
 //
 // Proves, against the real rendered DOM (CDP Accessibility domain for accessible names, never
 // textContent for a name):
-//   - Both alert rows appear once a repository exists: "Low memory ({N} agents)" (forced by
+//   - Both alert rows appear once a repository exists: "Low memory" (forced by
 //     REFRACT_FORCE_LOW_MEMORY=1, a pre-existing debug-only test knob in memory.rs -- this
 //     script never touches memory.rs) and "omp 18.10.1: unverified version" (the fake-omp
 //     shim's hardcoded --version answer, which readiness.rs's own documented rule already
@@ -61,7 +61,8 @@ import {
   pressEscape,
   groupTriggerFinder,
   createSessionViaQuickCreate,
-  addRepository
+  addRepository,
+  openSettingsAndReturn
 } from './verify-tauri-session-list-helpers.mjs';
 import {
   gitHead,
@@ -74,19 +75,38 @@ import {
   buildAndCopyExeFresh
 } from './verify-tauri-scratch-helpers.mjs';
 
+
+// Item 6 (gate round 2, MEDIUM): throws immediately, before anything else in this script runs,
+// unless CARGO_TARGET_DIR is set AND resolves to exactly the one shared cargo target dir this
+// machine uses for Refract builds -- never a silent fallback to `src-tauri/target` (that
+// fallback already filled this session's disk once, building a SECOND full target tree
+// alongside the real one).
+const REQUIRED_CARGO_TARGET_DIR = 'C:/Users/shopwood/.cargo-target/refract';
+function normalizeDirForComparison(dir) {
+  return path.resolve(dir).replace(/\\/g, '/').toLowerCase();
+}
+if (!process.env.CARGO_TARGET_DIR || normalizeDirForComparison(process.env.CARGO_TARGET_DIR) !== normalizeDirForComparison(REQUIRED_CARGO_TARGET_DIR)) {
+  throw new Error(
+    `verify-tauri-560: CARGO_TARGET_DIR must be set and resolve to exactly ${REQUIRED_CARGO_TARGET_DIR} (got ${JSON.stringify(process.env.CARGO_TARGET_DIR ?? null)}) -- refusing to silently fall back to src-tauri/target, which already filled this session's disk once.`
+  );
+}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
 const SHOT_DIR = process.env.REFRACT_560_SHOT_DIR || path.join(tmpdir(), 'refract-560-shots');
 
-// This story's own frozen copy (recorded at freeze time): built from HEAD
-// f3014aeb89ee74ddeab90fd08e3823c8675a4d4a (gate-round-1 remediation commit, which fixed the
-// focus-after-stop/bulk-button-label/title-flicker/double-stop bugs this script's own prior run
-// at cd4b0e3 documented).
+// This story's own frozen copy (recorded at freeze time, round 1: built from HEAD
+// f3014aeb89ee74ddeab90fd08e3823c8675a4d4a). No frozen exe is currently trustworthy: TWO more
+// commits of real, app-behaviour-changing fixes (f3014ae's own round-1 remediation was the
+// commit that exe was frozen from, plus round-2's 96b662f on top of it, plus the current
+// uncommitted round-2 remediation) have landed since that freeze, none of them exercised by any
+// frozen copy -- `FROZEN_EXE_EXPECTED_GIT_HEAD` is deliberately an impossible value so
+// `resolveExe` below always falls through to a fresh `buildAndCopyExeFresh` rebuild rather than
+// silently reusing a stale binary that predates these fixes.
 const FROZEN_EXE_DEFAULT = 'C:/Users/shopwood/AppData/Local/Temp/refract-560-scratch/refract-tauri-560.exe';
-const FROZEN_EXE_EXPECTED_GIT_HEAD = 'f3014aeb89ee74ddeab90fd08e3823c8675a4d4a';
-const FROZEN_EXE_EXPECTED_HASH = 'b68072190c5a52352b3bdff67fd27719786d23536005e339cdad991edc6e1ef2';
+const FROZEN_EXE_EXPECTED_GIT_HEAD = 'NO-TRUSTWORTHY-FROZEN-EXE-REBUILD-REQUIRED';
+const FROZEN_EXE_EXPECTED_HASH = 'NO-TRUSTWORTHY-FROZEN-EXE-REBUILD-REQUIRED';
 
 // ---- Finders (JS expressions evaluated in the renderer; same `expr-string` convention every
 // other verify-tauri-*.mjs script uses, never a literal CSS-only selector when text/role
@@ -95,7 +115,10 @@ const PROFILE_NAME_BUTTON = `document.querySelector('[data-profile-name-button]'
 const TRIAGE_BUTTON = `document.querySelector('[aria-label="Open memory triage"]')`;
 const DISMISS_MEMORY_BUTTON = `document.querySelector('[aria-label="Dismiss low memory alert"]')`;
 const DISMISS_OMPVERSION_BUTTON = `document.querySelector('[aria-label="Dismiss unverified version alert"]')`;
-const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => /^Low memory \\(\\d+ agents?\\)$/.test(el.textContent.trim()))`;
+// Item 12 (gate round 2): the row no longer states a Session count (`warning.liveAgents`
+// counts every non-stopped agent, not just the idle ones Triage lists, so stating a number here
+// implied a 1:1 match with Triage's own list that was never guaranteed) -- just "Low memory".
+const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'Low memory')`;
 const OMPVERSION_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'omp 18.10.1: unverified version')`;
 const DIALOG = `document.querySelector('[role="dialog"]')`;
 const ALERT_DIALOG = `document.querySelector('[role="alertdialog"]')`;
@@ -103,6 +126,10 @@ const DIALOG_TITLE = `document.querySelector('[data-slot="dialog-title"]')`;
 const ALERT_DIALOG_TITLE = `document.querySelector('[data-slot="alert-dialog-title"]')`;
 const HEALTH_LIST = `document.querySelector('[aria-label="Health checks"]')`;
 const OMP_CHECK_ROW = `Array.from((${HEALTH_LIST})?.querySelectorAll('li') ?? []).find((li) => li.textContent.includes('OMP found'))`;
+// The app-level `useChatAreaAnnouncer` region (App.tsx's single global `aria-live="polite"`
+// region) -- distinct from any dialog-local live region, same finder convention
+// verify-tauri-559.mjs's own `CHAT_AREA_ANNOUNCE_REGION` already established.
+const CHAT_AREA_ANNOUNCE_REGION = `document.querySelector('[aria-live="polite"]')`;
 
 function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
@@ -233,15 +260,18 @@ async function axText(cdp, selectorExpr) {
 /** Polls `textExpr` every `intervalMs` while `aliveExpr` stays true, collecting EVERY sampled
  * value -- not just the first or the last -- so a title/description that goes blank partway
  * through a Radix exit animation (the DOM node stays mounted for the animation's duration
- * before unmounting) is caught even though both endpoints look fine. Returns once `aliveExpr`
- * goes false (one final sample is taken right after, in case the container vanished between
- * polls) or `timeoutMs` elapses. */
+ * before unmounting) is caught even though both endpoints look fine. Checks `aliveExpr` BEFORE
+ * each text read (round 1 of this helper sampled text unconditionally then checked `aliveExpr`
+ * after, so the loop's own final iteration -- taken the instant the container had already
+ * unmounted -- always recorded a trailing `null`, confirmed live: that is this helper sampling
+ * its own teardown, not the app going blank, and does not belong in the returned samples).
+ * Returns once `aliveExpr` goes false or `timeoutMs` elapses. */
 async function sampleWhileAlive(cdp, textExpr, aliveExpr, { intervalMs = 20, timeoutMs = 5_000 } = {}) {
   const samples = [];
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    samples.push(await cdp.evaluate(`${textExpr} ?? null`));
     if (!(await cdp.evaluate(aliveExpr))) break;
+    samples.push(await cdp.evaluate(`${textExpr} ?? null`));
     await sleep(intervalMs);
   }
   return samples;
@@ -298,7 +328,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   // ---- Item 1: both alert rows appear, with the exact text/labels ----
   await cdp.waitFor(LOW_MEMORY_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Low memory alert row appears (REFRACT_FORCE_LOW_MEMORY=1)' });
   const memoryRowName = await axText(cdp, LOW_MEMORY_ROW_SPAN);
-  assert(/^Low memory \(\d+ agents?\)$/.test(memoryRowName ?? ''), `low-memory row's own accessible name must read "Low memory (N agent(s))" (got ${JSON.stringify(memoryRowName)})`);
+  assert(memoryRowName === 'Low memory', `low-memory row's own accessible name must read exactly "Low memory" (got ${JSON.stringify(memoryRowName)})`);
   log(`STEP PASS: low-memory alert row present, accessible name ${JSON.stringify(memoryRowName)}.`);
 
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Unverified omp version alert row appears' });
@@ -376,14 +406,83 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.click(`(${sessionARow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation opened' });
   log('STEP PASS: the Session\'s own Stop button opens a confirmation naming that exact Session.');
-  await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
+
+  // Item 5a (round 2, for the next live run): Escape closes the per-row confirm WITHOUT
+  // stopping anything, then a second Escape closes the Triage Dialog itself, landing focus
+  // back on the alert row's own Triage button -- never <body>, never left inside the (now
+  // closed) Dialog.
+  await pressEscape(cdp);
+  await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'per-Session confirmation closed via Escape (no stop)' });
+  await pressEscape(cdp);
+  await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage Dialog closed via a second Escape' });
+  const postEscapeCancelActive = await getActiveElementAccessibleName(cdp);
+  assert(
+    postEscapeCancelActive.name === 'Open memory triage',
+    `Escape-cancelling the per-Session confirm then the Dialog must return focus to "Open memory triage" (got ${JSON.stringify(postEscapeCancelActive)})`
+  );
+  await waitForSessionStatus(cdp, sessionA.id, 'idle');
+  log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape returns focus to the alert row\'s own Triage button.');
+
+  // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below.
+  await cdp.click(TRIAGE_BUTTON);
+  await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened' });
+  await cdp.click(`(${sessionARow})?.querySelector('button')`);
+  await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation reopened' });
+
+  // Item 5b (round 2): the title is sampled TWICE against the same expected exact string --
+  // immediately on open (just above/below) and again right before the destructive click -- so
+  // neither moment is ever blank/undefined/stale.
+  const titleAtOpen = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
+  assert(
+    titleAtOpen === `Stop ${sessionA.name}'s agent?`,
+    `the per-Session confirm's own title immediately after opening must read exactly "Stop ${sessionA.name}'s agent?" (got ${JSON.stringify(titleAtOpen)})`
+  );
+  const singleStopActionExpr = `Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() !== 'Cancel')`;
+  await cdp.evaluate(`(${singleStopActionExpr})?.focus()`);
+  const titleBeforeClick = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
+  assert(
+    titleBeforeClick === `Stop ${sessionA.name}'s agent?`,
+    `the per-Session confirm's own title right before the destructive Stop click must still read exactly "Stop ${sessionA.name}'s agent?" (got ${JSON.stringify(titleBeforeClick)})`
+  );
+  log(`STEP PASS: the per-Session confirm's own title read the exact expected string at both sampled moments (open: ${JSON.stringify(titleAtOpen)}, pre-click: ${JSON.stringify(titleBeforeClick)}).`);
+  await cdp.click(singleStopActionExpr);
+
+  // Item 5c (round 2): the Stop button's own visible text is read BEFORE the second Enter
+  // fires -- if it does not read "Stopping…" at that exact moment (e.g. the first call already
+  // settled faster than this script's own round trip to read it), this sub-check is recorded
+  // NOT EXERCISED rather than silently passed or falsely failed.
+  const stopButtonTextBeforeSecondEnter = await cdp.evaluate(`(${singleStopActionExpr})?.textContent.trim()`);
+  if (stopButtonTextBeforeSecondEnter === 'Stopping…') {
+    log('STEP PASS: the Stop button read "Stopping…" immediately before the second Enter, confirming the busy guard is actually being exercised.');
+  } else {
+    notExercised.push(
+      `Item 5c busy-guard-text sub-check: the Stop button read ${JSON.stringify(stopButtonTextBeforeSecondEnter)}, not "Stopping…", at the moment this script sampled it (the first stopAgent call likely already settled before the sample) -- the busy-guard COUNT assertion below still ran, but this specific textual sub-check did not.`
+    );
+  }
+  // Gate-round-1 remediation (busy guard in handleConfirmStop): a second real Enter on the SAME
+  // button while it reads "Stopping…" must not reach stopAgent a second time -- fired with no
+  // intervening await for the first call to settle, while the real IPC stop is still in flight.
+  await pressRealEnter(cdp);
+  const singleTitleSamples = await sampleWhileAlive(cdp, `(${ALERT_DIALOG_TITLE})?.textContent.trim()`, `!!(${ALERT_DIALOG})`);
+  assert(singleTitleSamples.length > 0, 'expected at least one title sample while the per-Session confirmation was still mounted and closing');
+  assert(
+    singleTitleSamples.every((text) => typeof text === 'string' && text.length > 0 && text !== 'undefined' && !/Stop (undefined|null)'s agent\?/.test(text)),
+    `the per-Session confirmation's own title must never go blank/undefined during the close animation -- the last-known target name must stay latched (got samples ${JSON.stringify(singleTitleSamples)})`
+  );
+  log(`STEP PASS: the per-Session confirmation's own title stayed real and non-blank through every sampled frame of the close animation (${singleTitleSamples.length} samples: ${JSON.stringify(singleTitleSamples)}).`);
   await waitForSessionStatus(cdp, sessionA.id, 'stopped');
-  await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'confirmation closed after Stop' });
   await cdp.waitFor(sessionARow + ' === undefined', { timeoutMs: 10_000, label: `Session "${sessionA.name}" no longer listed as idle` });
   const emptyAfterSingleStop = await cdp.evaluate(`(${DIALOG})?.textContent.includes('No idle agents to stop right now.')`);
   assert(emptyAfterSingleStop === true, 'Triage must fall back to the empty-state copy once its only idle Session is stopped');
+  const stopAgentCallsAfterSingleStop = await cdp.evaluate('window.__stopAgentCallCount');
+  assert(stopAgentCallsAfterSingleStop === 1, `a second real Enter keypress on an already-"Stopping…" Stop button must not fire a second stopAgent IPC call (got ${stopAgentCallsAfterSingleStop} calls)`);
+  log('STEP PASS: the busy guard held -- exactly one real stopAgent call reached the IPC bridge despite a second real Enter keypress while "Stopping…".');
   const postStopActive = await getActiveElementAccessibleName(cdp);
-  log(`STEP PASS: confirming Stop actually stopped the agent (sessions.list() status now 'stopped'), the row is gone, and the dialog shows the empty-state copy. Focus after the removed row's own ref-based restore landed on: role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)} (the Stop button's own DOM node was removed by the same render that closed the confirmation, so its ref-based focus() call is a documented no-op here -- not a bug in this script or the app).`);
+  assert(
+    postStopActive.role === 'heading' && postStopActive.name === 'Free up memory',
+    `focus after a successful single Stop must land on a genuine, named, connected control, never <body> -- with no idle Sessions remaining (this Session was the only one), focusAfterStop()'s own documented fallback order lands on the dialog's own heading (role=heading name="Free up memory"); got role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}`
+  );
+  log(`STEP PASS: confirming Stop actually stopped the agent (sessions.list() status now 'stopped'), the row is gone, the dialog shows the empty-state copy, and focus landed on a real connected control: the dialog's own heading (role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}), never <body>.`);
   await cdp.screenshot(path.join(evidenceDir, '03-triage-dialog-after-stop-A.png'));
   await pressEscape(cdp);
   await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage dialog closed via Escape' });
@@ -404,7 +503,33 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   const bulkTitle = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
   assert(bulkTitle === 'Stop 1 idle agent?', `the bulk confirmation must name the real idle count (got ${JSON.stringify(bulkTitle)})`);
-  log('STEP PASS: "Stop idle" confirms with the real, current idle count.');
+  const ALERT_DIALOG_DESCRIPTION = `document.querySelector('[data-slot="alert-dialog-description"]')`;
+  const bulkDescription = await cdp.evaluate(`(${ALERT_DIALOG_DESCRIPTION})?.textContent.trim()`);
+  assert(
+    (bulkDescription ?? '').includes(sessionB.name),
+    `the bulk confirmation's own description must NAME the Session(s) being stopped, not just the count (got ${JSON.stringify(bulkDescription)})`
+  );
+  log('STEP PASS: "Stop idle" confirms with the real, current idle count, and its description names the Session(s) being stopped.');
+
+  // Item 5a (round 2): Escape closes the bulk confirm WITHOUT stopping anything, then a second
+  // Escape closes the Triage Dialog itself, landing focus back on "Open memory triage".
+  await pressEscape(cdp);
+  await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed via Escape (no stop)' });
+  await pressEscape(cdp);
+  await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage Dialog closed via a second Escape' });
+  const postBulkEscapeActive = await getActiveElementAccessibleName(cdp);
+  assert(
+    postBulkEscapeActive.name === 'Open memory triage',
+    `Escape-cancelling the bulk confirm then the Dialog must return focus to "Open memory triage" (got ${JSON.stringify(postBulkEscapeActive)})`
+  );
+  await waitForSessionStatus(cdp, sessionB.id, 'idle');
+  log('STEP PASS: Escape-cancelling the bulk confirm never stops any Session, and a second Escape returns focus to the alert row\'s own Triage button.');
+
+  // Re-open the Dialog and "Stop idle" again to actually perform the bulk stop below.
+  await cdp.click(TRIAGE_BUTTON);
+  await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened for the real bulk stop' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
+  await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop idle')`);
   await waitForSessionStatus(cdp, sessionB.id, 'stopped');
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed after Stop idle' });
@@ -425,12 +550,45 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert((await cdp.evaluate(LOW_MEMORY_ROW_SPAN + ' === undefined')) === true, 'the low-memory row must NOT reappear on its own after a further sampler tick -- dismissal is local React state, never re-derived from the store');
   log('STEP PASS: the dismissed low-memory row did not return after a further real sampler tick, confirming dismissal is local-only state, not read back from the store.');
 
-  // ---- Item 6: dismissing the unverified-version row (no recurrence tick needed -- nothing
-  // re-triggers this check mid-run) ----
-  await cdp.click(DISMISS_OMPVERSION_BUTTON);
-  await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on Dismiss' });
-  log('STEP PASS: dismissing the unverified-version row hides it immediately.');
+  // ---- Item 6: dismissing the unverified-version row, via Tab + Enter (item 5d, round 2) --
+  // the low-memory row is already gone at this point, so the real Tab order from the profile
+  // name button is just: Settings -> Check -> Dismiss. ----
+  await cdp.evaluate(`(() => { const el = ${PROFILE_NAME_BUTTON}; el?.focus(); return !!el; })()`);
+  await pressTab(cdp);
+  await pressTab(cdp);
+  await pressTab(cdp);
+  const preKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
+  assert(
+    preKeyboardDismissActive.name === 'Dismiss unverified version alert',
+    `real Tab order (Name -> Settings -> Check -> Dismiss) must land on the omp-version Dismiss button (got ${JSON.stringify(preKeyboardDismissActive)})`
+  );
+  await pressRealEnter(cdp);
+  await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on keyboard-driven Dismiss' });
+  const postKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
+  const postKeyboardDismissConnected = await cdp.evaluate(`document.activeElement !== document.body && document.activeElement?.isConnected === true`);
+  assert(
+    postKeyboardDismissConnected === true && !!postKeyboardDismissActive.name,
+    `after a keyboard-driven Dismiss (Tab + Enter), focus must land on a real, named, connected control, never <body> (got connected=${postKeyboardDismissConnected}, ${JSON.stringify(postKeyboardDismissActive)})`
+  );
+  log(`STEP PASS: dismissing the unverified-version row via Tab + Enter hides it immediately and leaves focus on a real connected control: role=${JSON.stringify(postKeyboardDismissActive.role)} name=${JSON.stringify(postKeyboardDismissActive.name)}.`);
   await cdp.screenshot(path.join(evidenceDir, '05-both-rows-dismissed.png'));
+
+  // ---- Item 5e (round 2): a Settings round trip must not resurrect a dismissed row or
+  // re-announce it -- reuses `openSettingsAndReturn` (verify-tauri-session-list-helpers.mjs)
+  // rather than a duplicate in-script Settings round trip. ----
+  const announceTextBeforeRoundTrip = await cdp.evaluate(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent ?? null`);
+  await openSettingsAndReturn(cdp);
+  await sleep(500); // lets any stray re-announce effect actually commit before sampling
+  const announceTextAfterRoundTrip = await cdp.evaluate(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent ?? null`);
+  assert(
+    (await cdp.evaluate(LOW_MEMORY_ROW_SPAN + ' === undefined')) === true && (await cdp.evaluate(OMPVERSION_ROW_SPAN + ' === undefined')) === true,
+    'both previously-dismissed rows must stay dismissed after a Settings round trip'
+  );
+  assert(
+    announceTextAfterRoundTrip === announceTextBeforeRoundTrip,
+    `the chat-area announcement region's own text must NOT change (re-announce either alert) after a Settings round trip over an already-dismissed row (before ${JSON.stringify(announceTextBeforeRoundTrip)}, after ${JSON.stringify(announceTextAfterRoundTrip)})`
+  );
+  log('STEP PASS: a Settings round trip leaves both dismissed rows dismissed and never re-announces them.');
 
   if (notExercised.length > 0) {
     for (const item of notExercised) log(`NOT EXERCISED: ${item}`);
