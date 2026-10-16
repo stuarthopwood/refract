@@ -5,7 +5,7 @@
 import { useEffect } from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { usePullRequestsStore } from '@/state'
+import { useAccountsStore, usePullRequestsStore } from '@/state'
 import type { FilterTab } from '../../../shared/github'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { PullRequestRow } from './PullRequestRow'
@@ -37,6 +37,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   const selectPullRequest = usePullRequestsStore((s) => s.selectPullRequest)
   const refresh = usePullRequestsStore((s) => s.refresh)
   const refreshActiveCount = usePullRequestsStore((s) => s.refreshActiveCount)
+  const githubStatus = useAccountsStore((s) => s.githubStatus)
 
   // Fetches on open and whenever the scoped repository changes (FR-001); never polled
   // automatically afterward (FR-028) -- only the explicit refresh button and tab switch re-fetch.
@@ -82,8 +83,11 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
             // count's non-polling refresh triggers too -- the developer is already demonstrating
             // interest in this repository's pull request state, so the sidebar's `involves`/
             // `is:open` count rides along for free rather than waiting for the next focus event.
+            // Gate round 2 fix (L3): gated on `githubStatus === 'ready'`, matching every other
+            // active-count trigger (`SessionList.tsx`'s own mount effect, `init-stores.ts`'s
+            // focus refresh) -- a query with nobody signed in would only ever resolve to `null`.
             void refresh(repositoryId)
-            void refreshActiveCount(repositoryId)
+            if (githubStatus === 'ready') void refreshActiveCount(repositoryId)
           }}
           label="Refresh pull requests"
         />

@@ -180,22 +180,27 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   )
 }
 
-/** The update entry (spec 008 FR-021, T024b; issue #569 decision 5): always present in the fixed
- *  order (FR-018), self-contained like `ThemeSubmenu` above -- reads `useUpdateStore` directly
- *  rather than threading a new prop through `ProfileItem.tsx`. Not the status bar's full
- *  status bar's full idle/checking/available/downloading/downloaded/failed/unavailable detail
- *  (`StatusBar.tsx`, which keeps the Download/Retry actions entirely to itself): "Restart to
- *  update" with a plain trailing version once a download is waiting for the next quit, "Check
- *  for updates" otherwise (the busy sub-states get their own visible verb -- "Checking for
- *  updates…"/"Downloading update…"/"Installing update…" -- so the accessible name IS the visible
- *  text, no separate `aria-label` needed). Selecting "Restart to update" only confirms with a
- *  toast -- it never quits or installs. Selecting "Check for updates" re-runs the check and
- *  shows one outcome toast (gate round 1 fix: an explicit 'available' branch names the version;
- *  no "available" toast is shown for any other phase; the unavailable-reason and up-to-date
- *  outcomes are informational, `toast.info`, never `toast.error`, which is reserved for a real
- *  failure); `aria-disabled` (same guarded-`onSelect` pattern as the "GitHub unavailable" row
- *  above) while a check, download, or install is already running, swapping in the same
- *  `LoaderCircleIcon` that row's own busy state uses. */
+/** The update entry (spec 008 FR-021, T024b; issue #569 decision 5, amended gate round 2 --
+ *  recorded on #569): always present in the fixed order (FR-018), self-contained like
+ *  `ThemeSubmenu` above -- reads `useUpdateStore` directly rather than threading a new prop
+ *  through `ProfileItem.tsx`. Not the status bar's own fuller idle/checking/available/
+ *  downloading/downloaded/failed/unavailable detail (`StatusBar.tsx`, which keeps the Download/
+ *  Retry actions entirely to itself): "Restart to update" with a plain trailing version once a
+ *  download is waiting for the next quit, "Check for updates" otherwise -- the busy sub-states
+ *  get their own visible verb ("Checking for updates…"/"Downloading update…"/"Installing
+ *  update…") instead of the generic label, so the accessible name IS the visible text with no
+ *  separate `aria-label`; this departs from decision 5's original "text 'Check for updates',
+ *  one icon" wording, recorded as a departure on #569. Selecting "Restart to update" only
+ *  confirms with a toast -- it never quits or installs. Selecting "Check for updates" (gate
+ *  round 2 fix, M1 -- the status bar itself renders nothing for `checking`, and a real check can
+ *  take seconds): opens a `toast.loading` placeholder immediately and replaces it IN PLACE
+ *  (sonner's `{ id }`) with the outcome once `check()` settles, including a rejected promise
+ *  (`tauri-bridge`'s own IPC call can reject) -- never silent. Unavailable reasons use
+ *  `toast.warning` (matching the status bar's own amber treatment for the same state, not
+ *  `toast.info`); "available" is `toast.info`, not `toast.success` (which reads as "done" with
+ *  no next step), and names where to actually act; a check that resolves to downloading,
+ *  downloaded, or installing (the current state unchanged, `checker.rs`) still gets its own
+ *  neutral toast rather than silence. */
 function UpdateMenuItem() {
   const updateState = useUpdateStore((state) => state.state)
   const phase = updateState?.phase
@@ -203,29 +208,32 @@ function UpdateMenuItem() {
   const busyLabel = phase === 'checking' ? 'Checking for updates…' : phase === 'downloading' ? 'Downloading update…' : phase === 'installing' ? 'Installing update…' : 'Check for updates'
 
   function handleCheckAgain(): void {
-    void window.refract.updates.check().then((result) => {
-      if (!result.ok) {
-        notify(result.error)
-        return
-      }
-      const next = result.value
-      // Gate round 1 fix: each outcome gets its own explicit branch -- 'available' names the
-      // version rather than folding into a generic "else", and nothing outside this branch ever
-      // claims "An update is available." A real failure (`toast.error`) is the only outcome that
-      // is actually bad news; an unreachable/not-signed-in/not-installed CLI or a plain
-      // up-to-date result are both informational (`toast.info`), never an error.
-      if (next.phase === 'failed') {
-        toast.error(next.lastError ?? 'Update failed for an unknown reason.')
-      } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
-        toast.info(updateUnavailableReasonText(next.unavailableReason))
-      } else if (next.phase === 'idle') {
-        toast.info('Refract is up to date.')
-      } else if (next.phase === 'available') {
-        toast.success(`Update available: v${next.availableVersion}`)
-      }
-      // 'downloading'/'downloaded'/'installing' here would mean a previous check already moved
-      // past 'available' by the time this one resolved -- no toast invents a claim for those.
-    })
+    const id = toast.loading('Checking for updates…')
+    void window.refract.updates
+      .check()
+      .then((result) => {
+        if (!result.ok) {
+          toast.error(result.error.message, { id })
+          return
+        }
+        const next = result.value
+        if (next.phase === 'failed') {
+          toast.error(next.lastError ?? 'Update failed for an unknown reason.', { id })
+        } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
+          toast.warning(updateUnavailableReasonText(next.unavailableReason), { id })
+        } else if (next.phase === 'idle') {
+          toast.info('Refract is up to date.', { id })
+        } else if (next.phase === 'available') {
+          toast.info(`Refract v${next.availableVersion} is available. Download it from the status bar.`, { id })
+        } else if (next.phase === 'downloading') {
+          toast.info('An update is already downloading.', { id })
+        } else if (next.phase === 'downloaded') {
+          toast.info(`Refract v${next.availableVersion} is downloaded; it installs the next time you quit.`, { id })
+        } else if (next.phase === 'installing') {
+          toast.info('Refract is installing the update.', { id })
+        }
+      })
+      .catch(() => toast.error('Could not check for updates.', { id }))
   }
 
   if (phase === 'downloaded') {
@@ -233,10 +241,12 @@ function UpdateMenuItem() {
       <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
         <RefreshCwIcon aria-hidden />
         <span className="flex-1">Restart to update</span>
-        <span className="text-xs text-muted-foreground">
-          <span aria-hidden> </span>
-          <span className="sr-only"> version </span>v{updateState?.availableVersion}
-        </span>
+        {updateState?.availableVersion && (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            <span aria-hidden> </span>
+            <span className="sr-only"> version </span>v{updateState.availableVersion}
+          </span>
+        )}
       </DropdownMenuItem>
     )
   }
@@ -244,7 +254,6 @@ function UpdateMenuItem() {
   return (
     <DropdownMenuItem
       aria-disabled={busy || undefined}
-      className={busy ? 'aria-disabled:opacity-50' : undefined}
       onSelect={(event) => {
         if (busy) {
           event.preventDefault()
@@ -258,6 +267,7 @@ function UpdateMenuItem() {
     </DropdownMenuItem>
   )
 }
+
 
 /** Keyboard shortcuts, Health check, and What's new: common to every GitHub sign-in state, so
  *  extracted here and rendered exactly once by `ProfileMenuContent` below, regardless of state. */

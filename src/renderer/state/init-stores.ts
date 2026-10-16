@@ -249,6 +249,7 @@ export function initStores(): void {
   // Issue #569 decision 2(d): the active GitHub account identity (`login@host`) changing -- a
   // sign-in, sign-out, switch, or a fresh `accounts:github-changed` broadcast -- means every
   // cached active-count is stale (`@me` now means someone else, or nobody), so all of them are
+  // dropped rather than picking which ones to keep.
   let lastActiveAccountIdentity: string | null = null
   useAccountsStore.subscribe((state) => {
     const active = state.github.find((account) => account.active)

@@ -4,7 +4,7 @@
 // current filter tab, narrowing query, loaded rows, loading/error state, and which pull request
 // is selected, none of which any other spec needs.
 import { create } from 'zustand'
-import type { IpcError } from '../../shared/ipc'
+import type { IpcError, PullRequestListResult, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestSummary } from '../../shared/github'
 
 export interface PullRequestsRepoState {
@@ -140,7 +140,23 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // Issue #569 decision 1: `involves` already covers author/assignee/mentioned/review-requested
     // in one search; `search_pull_requests` (gh_pull_requests.rs) applies no state filter of its
     // own, so `is:open` is required here to count only open pull requests.
-    const result = await window.refract.pullRequests.list(repositoryId, 'involves', 'is:open')
+    // Gate round 2 fix (L2): a rejected IPC call (never expected to throw, but the bridge is not
+    // guaranteed not to) used to leave `loading: true` stuck forever, which also silently
+    // disabled the window-focus refresh and the mount effect (both skip while already loading).
+    let result: Result<PullRequestListResult>
+    try {
+      result = await window.refract.pullRequests.list(repositoryId, 'involves', 'is:open')
+    } catch {
+      if (activeCountSequence[repositoryId] !== sequence) return
+      set({
+        activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, {
+          count: null,
+          loading: false,
+          fetchedAt: null
+        })
+      })
+      return
+    }
     if (activeCountSequence[repositoryId] !== sequence) return
     if (!result.ok) {
       // Decision 4: a failed/unavailable fetch clears to `null` (renders as nothing), never a

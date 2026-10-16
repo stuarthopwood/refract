@@ -157,8 +157,12 @@ from the Overview `Timeline` tab, not just from the consensus count.
   refresh -- never a timer/polling interval.
 - Q: How is the count rendered? -> A: Plain trailing text ("N active") with no box or chip,
   matching the existing count-is-its-own-span convention; no new visual treatment.
-- Q: When is the count hidden? -> A: Whenever a positive count isn't known yet: while loading,
-  when the count is zero, or when the query is unavailable (signed out, offline, or erroring).
+- Q: When is the count hidden? -> A: Whenever no positive count is known yet for the default
+  repository: before its first successful fetch, when the last fetch failed or is unavailable
+  (signed out, offline, erroring), or when the real count is zero. A background refresh of an
+  already-shown count keeps the last known value on screen instead of flickering to hidden
+  (amended 2026-10-16, gate round 2: the original wording said "hidden while loading", which
+  would have wrongly hidden an already-known count during every refresh).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -406,10 +410,13 @@ creation rules from spec 001.
   one review exists.
 - **FR-032**: The left-nav "Pull requests" entry MUST show a trailing count of open pull
   requests involving the active account (author, assignee, mentioned, or review-requested) for
-  the currently selected/default repository only -- the same single-repository scoping as
+  the default repository only (the focused pane's Session's repository, independent of the Pull
+  requests view's own repository dropdown) -- the same single-repository scoping as
   FR-001/FR-002, never a cross-repository aggregate. The count MUST render as plain text with no
-  box, and MUST be shown only when a positive count is known: it MUST be hidden while loading,
-  when the count is zero, or when the query is unavailable. The count MUST be refreshed only on
+  box, and MUST be shown only when a positive count is known for that repository: hidden before
+  the first successful fetch, when the last fetch failed or is unavailable, or when the real
+  count is zero -- a background refresh of an ALREADY-shown count MUST keep the last known value
+  on screen, never flicker to hidden while that refresh runs. The count MUST be refreshed only on
   app start, a default-repository change, window focus (throttled), an active-account change, and
   the view's own explicit refresh -- and MUST NOT be refreshed on a timer.
 

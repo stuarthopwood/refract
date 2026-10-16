@@ -161,7 +161,7 @@ export function SessionList() {
           />
         )}
         <GitPullRequestIcon aria-hidden className="size-4" />
-        Pull requests
+        <span className="min-w-0 truncate">Pull requests</span>
         {/* Issue #569 decisions 3-4: a plain trailing count, never a box or `(N)` brackets
             (`GroupHeader.tsx`'s own "Archived" count convention) -- rendered only when a
             positive count is known; folded into the button's own `aria-label` above rather than
