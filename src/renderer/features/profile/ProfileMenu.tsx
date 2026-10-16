@@ -12,17 +12,14 @@
 // of that. `ProfileItem.tsx` owns every dialog this menu can open (Manage accounts, Sign out,
 // Keyboard shortcuts, Health check) as siblings of the `DropdownMenu`, since a menu item unmounts
 // the moment the menu closes -- this component only calls the callbacks it is given for those.
-// The Theme submenu and What's new are the two exceptions: both are fully self-contained (reading
-// `useThemeStore`/`useViewStore` directly, the same way `ProfileItem.tsx`'s own cog button
-// already calls `useViewStore` inline), since neither needs a sibling dialog -- Theme only needs
-// `onThemeApplied` to reach ProfileItem's shared live region, and What's new only ever shows a
-// toast.
-//
-// One reserved slot, left as a comment rather than a disabled/stub item (a control that opens
-// nothing is worse than no control): the update entry lands between Keyboard shortcuts and
-// Health check once spec 006 ships `updates.get()`/`updates:changed` (tasks.md T024b) -- no
-// `updates` IPC, preload method, or store exists yet.
+// The Theme submenu, the update entry, and What's new are the three exceptions: each is fully
+// self-contained (reading `useThemeStore`/`useUpdateStore`/`useViewStore` directly, the same way
+// `ProfileItem.tsx`'s own cog button already calls `useViewStore` inline), since none needs a
+// sibling dialog -- Theme only needs `onThemeApplied` to reach ProfileItem's shared live region,
+// the update entry (issue #569, spec 008 FR-021, T024b) only ever shows a toast confirming or
+// reporting a check, and What's new only ever shows a toast too.
 import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import {
   ActivityIcon,
   CheckIcon,
@@ -34,6 +31,7 @@ import {
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
+  RefreshCwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -50,7 +48,8 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
-import { useAccountsStore, useActiveThemeId, useThemeStore, useViewStore } from '@/state'
+import { updateUnavailableReasonText } from '@/lib/updateStatus'
+import { useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'
@@ -181,6 +180,95 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   )
 }
 
+/** The update entry (spec 008 FR-021, T024b; issue #569 decision 5, amended gate round 2 --
+ *  recorded on #569): always present in the fixed order (FR-018), self-contained like
+ *  `ThemeSubmenu` above -- reads `useUpdateStore` directly rather than threading a new prop
+ *  through `ProfileItem.tsx`. Not the status bar's own fuller idle/checking/available/
+ *  downloading/downloaded/failed/unavailable detail (`StatusBar.tsx`, which keeps the Download/
+ *  Retry actions entirely to itself): "Restart to update" with a plain trailing version once a
+ *  download is waiting for the next quit, "Check for updates" otherwise -- the busy sub-states
+ *  get their own visible verb ("Checking for updates…"/"Downloading update…"/"Installing
+ *  update…") instead of the generic label, so the accessible name IS the visible text with no
+ *  separate `aria-label`; this departs from decision 5's original "text 'Check for updates',
+ *  one icon" wording, recorded as a departure on #569. Selecting "Restart to update" only
+ *  confirms with a toast -- it never quits or installs. Selecting "Check for updates" (gate
+ *  round 2 fix, M1 -- the status bar itself renders nothing for `checking`, and a real check can
+ *  take seconds): opens a `toast.loading` placeholder immediately and replaces it IN PLACE
+ *  (sonner's `{ id }`) with the outcome once `check()` settles, including a rejected promise
+ *  (`tauri-bridge`'s own IPC call can reject) -- never silent. Unavailable reasons use
+ *  `toast.warning` (matching the status bar's own amber treatment for the same state, not
+ *  `toast.info`); "available" is `toast.info`, not `toast.success` (which reads as "done" with
+ *  no next step), and names where to actually act; a check that resolves to downloading,
+ *  downloaded, or installing (the current state unchanged, `checker.rs`) still gets its own
+ *  neutral toast rather than silence. */
+function UpdateMenuItem() {
+  const updateState = useUpdateStore((state) => state.state)
+  const phase = updateState?.phase
+  const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing'
+  const busyLabel = phase === 'checking' ? 'Checking for updates…' : phase === 'downloading' ? 'Downloading update…' : phase === 'installing' ? 'Installing update…' : 'Check for updates'
+
+  function handleCheckAgain(): void {
+    const id = toast.loading('Checking for updates…')
+    void window.refract.updates
+      .check()
+      .then((result) => {
+        if (!result.ok) {
+          toast.error(result.error.message, { id })
+          return
+        }
+        const next = result.value
+        if (next.phase === 'failed') {
+          toast.error(next.lastError ?? 'Update failed for an unknown reason.', { id })
+        } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
+          toast.warning(updateUnavailableReasonText(next.unavailableReason), { id })
+        } else if (next.phase === 'idle') {
+          toast.info('Refract is up to date.', { id })
+        } else if (next.phase === 'available') {
+          toast.info(`Refract v${next.availableVersion} is available. Download it from the status bar.`, { id })
+        } else if (next.phase === 'downloading') {
+          toast.info('An update is already downloading.', { id })
+        } else if (next.phase === 'downloaded') {
+          toast.info(`Refract v${next.availableVersion} is downloaded; it installs the next time you quit.`, { id })
+        } else if (next.phase === 'installing') {
+          toast.info('Refract is installing the update.', { id })
+        }
+      })
+      .catch(() => toast.error('Could not check for updates.', { id }))
+  }
+
+  if (phase === 'downloaded') {
+    return (
+      <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
+        <RefreshCwIcon aria-hidden />
+        <span className="flex-1">Restart to update</span>
+        {updateState?.availableVersion && (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            <span aria-hidden> </span>
+            <span className="sr-only"> version </span>v{updateState.availableVersion}
+          </span>
+        )}
+      </DropdownMenuItem>
+    )
+  }
+
+  return (
+    <DropdownMenuItem
+      aria-disabled={busy || undefined}
+      onSelect={(event) => {
+        if (busy) {
+          event.preventDefault()
+          return
+        }
+        handleCheckAgain()
+      }}
+    >
+      {busy ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <RefreshCwIcon aria-hidden />}
+      {busyLabel}
+    </DropdownMenuItem>
+  )
+}
+
+
 /** Keyboard shortcuts, Health check, and What's new: common to every GitHub sign-in state, so
  *  extracted here and rendered exactly once by `ProfileMenuContent` below, regardless of state. */
 function CommonMenuItems({
@@ -198,8 +286,9 @@ function CommonMenuItems({
         <KeyboardIcon aria-hidden />
         Keyboard shortcuts
       </DropdownMenuItem>
-      {/* Update entry slot (spec 006, tasks.md T024b): reserved here, between Keyboard shortcuts
-          and Health check, until spec 006 ships `updates.get()`/`updates:changed`. */}
+      {/* Update entry (issue #569, spec 008 FR-021, T024b): always present, fixed between
+          Keyboard shortcuts and Health check per FR-018. */}
+      <UpdateMenuItem />
       <DropdownMenuItem onSelect={onHealthCheck}>
         <ActivityIcon aria-hidden />
         Health check

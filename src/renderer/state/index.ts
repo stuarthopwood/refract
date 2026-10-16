@@ -51,7 +51,7 @@ export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WI
 export { useSplitStore }
 export { useSessionListStore }
 export { usePullRequestsStore }
-export type { PullRequestsRepoState } from './pull-requests-store'
+export type { PullRequestsRepoState, PullRequestsActiveCount } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 export { useUpdateStore }
 

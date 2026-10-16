@@ -9,32 +9,12 @@ import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { updateUnavailableReasonText } from '@/lib/updateStatus'
 import { notify, useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
 import type { UpdateState } from '../../../shared/updates'
 
 function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`
-}
-
-/** FR-017/data-model.md "unavailableReason": `checker.rs`'s `Outcome::Unavailable` always
- * commits this alongside `phase: 'idle'`, never `'failed'` -- a GitHub-unreachable check is
- * "nothing new to report", not a failure, so it renders as its own idle-with-a-note badge below,
- * separate from the `'failed'` one. Plain-words explanation, never the raw enum value, matching
- * the Electron reference's `updateStatusText` (src/renderer/lib/updateActions.ts on
- * `origin/spec-006-impl`, mined/unfinished). */
-function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailableReason']>): string {
-  switch (reason) {
-    case 'not-installed':
-      return 'GitHub CLI is not installed.'
-    case 'not-signed-in':
-      // Gate finding (round 3, Medium): matches `readiness.rs`'s own `check_github_cli` hint --
-      // a portable-zip `gh` install may not be the `gh` a user's own terminal resolves, so
-      // "Run gh auth login" could sign a different `gh` in, or find no terminal at all. Refract's
-      // own sign-in flow (Manage accounts' "Sign in to GitHub…") always drives this exact binary.
-      return 'GitHub CLI is not signed in. Sign in via Manage accounts.'
-    case 'offline':
-      return 'Could not reach GitHub.'
-  }
 }
 
 /** Gate finding (round 2, Medium): the footer's own badge TEXT must stay short -- `lastError`

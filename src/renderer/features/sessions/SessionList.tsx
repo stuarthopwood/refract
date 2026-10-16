@@ -1,14 +1,15 @@
-import { useId } from 'react'
+import { useEffect, useId } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
-import { usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 
@@ -92,19 +93,35 @@ export function SessionList() {
   // scope a repository from, unlike a Session row -- defaults to the currently focused pane's
   // Session's repository (App.tsx's own `frontSessionId` derivation), falling back to the first
   // added repository. `PullRequestsView.tsx`'s own repository dropdown (T012) is where the
-  // developer changes this afterward.
-  function defaultRepositoryId(): string | undefined {
-    const splitState = useSplitStore.getState()
-    const focusedSessionId = splitState.paneSessionIds[splitState.focusedIndex] ?? splitState.paneSessionIds[0]
-    const focusedSession = sessions.find((session) => session.id === focusedSessionId)
-    return focusedSession?.repositoryId ?? repositories[0]?.id
-  }
+  // developer changes this afterward. Issue #569: pulled into a shared, reactive
+  // `useDefaultRepositoryId()` (`@/lib/defaultRepository`) so the trailing active-count readout
+  // below can react to a real repository change, not just whatever re-render this component sees.
+  const defaultRepositoryId = useDefaultRepositoryId()
+  // Issue #569 decisions 1, 3, 4: the sidebar count. `null` covers "never fetched", "zero", and
+  // "unavailable" alike -- all three render as nothing (decision 4), and `activeCountLabel` below
+  // is the one place that distinction actually matters.
+  const githubStatus = useAccountsStore((state) => state.githubStatus)
+  const activeCount = usePullRequestsStore((state) =>
+    defaultRepositoryId ? state.activeCountFor(defaultRepositoryId).count : null
+  )
+  const activeCountLabel =
+    githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
+  // Issue #569 decision 2(a)/(b): fetches once per default repository that has no cached count
+  // yet (covers both app startup and a genuine default-repository change) -- never on a timer.
+  // The window focus/visibility refresh, the active-account-change clear, and the pull request
+  // list's own explicit Refresh button all live in `init-stores.ts` / `PullRequestList.tsx`, not
+  // here, and all skip while signed out of GitHub (`githubStatus !== 'ready'`).
+  useEffect(() => {
+    if (!defaultRepositoryId) return
+    if (githubStatus !== 'ready') return
+    if (usePullRequestsStore.getState().activeCountByRepository[defaultRepositoryId]) return
+    void usePullRequestsStore.getState().refreshActiveCount(defaultRepositoryId)
+  }, [defaultRepositoryId, githubStatus])
 
   function handleOpenPullRequests(): void {
-    const repositoryId = defaultRepositoryId()
-    if (!repositoryId) return
-    selectPullRequest(repositoryId, null)
-    openPullRequests(repositoryId)
+    if (!defaultRepositoryId) return
+    selectPullRequest(defaultRepositoryId, null)
+    openPullRequests(defaultRepositoryId)
   }
 
   return (
@@ -132,7 +149,7 @@ export function SessionList() {
           'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
-        aria-label="Pull requests"
+        aria-label={activeCountLabel ? `Pull requests, ${activeCountLabel} active` : 'Pull requests'}
         onClick={handleOpenPullRequests}
       >
         {/* #567 decision 18: "A selected nav entry gets the 2px bar plus the fill", the same
@@ -144,7 +161,16 @@ export function SessionList() {
           />
         )}
         <GitPullRequestIcon aria-hidden className="size-4" />
-        Pull requests
+        <span className="min-w-0 truncate">Pull requests</span>
+        {/* Issue #569 decisions 3-4: a plain trailing count, never a box or `(N)` brackets
+            (`GroupHeader.tsx`'s own "Archived" count convention) -- rendered only when a
+            positive count is known; folded into the button's own `aria-label` above rather than
+            a second announced region. */}
+        {activeCountLabel && (
+          <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+            {activeCountLabel} active
+          </span>
+        )}
       </Button>
       {restored && (
         <>
