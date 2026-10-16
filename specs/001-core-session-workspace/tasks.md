@@ -2630,9 +2630,9 @@ live-measured at 0px; its other four items are untouched.
   `extended-context`) carry no indicator anywhere in Refract, so `/advisor` needs no new
   component, store or message kind -- its reply already renders through the existing
   forwarded-command path (a `command_output` frame becomes a transcript `notice` row, same as
-  `/usage show`/`/session info`). No Settings toggle. No dedicated cost readout yet
-  (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead.
-  Whether a standing readout is wanted is open (Stuart).
+  `/usage show`/`/session info`). No Settings toggle. Decided (Stuart, 2026-10-16): no cost
+  readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand
+  instead; a persistent on/off indicator is tracked separately as a new issue.
 - [X] T252 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with a dated
   `### Session 2026-10-16 (advisor command)` Clarifications entry recording the decision, the
   `ui-architect-v3` confirmation, and the probe-bypass rationale; `contracts/omp-usage.md`'s

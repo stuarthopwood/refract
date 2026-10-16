@@ -32,8 +32,9 @@
 // documents on/off/status among others -- `dump`, `dump raw` and `configure` stay refused, not in
 // this allowlist; the live check instead confirms Refract's own forwarding path and that OMP's
 // real `chat.commands` descriptor for a signed-in profile lists on/off/status). No Settings
-// toggle. No dedicated cost readout yet (`advisor_cost_changed` stays unread); `/advisor status`
-// reports spend on demand instead. Whether a standing readout is wanted is open (Stuart).
+// toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread);
+// `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked
+// separately as a new issue.
 //
 // Critical remediation (issue #129, 2026-10-03): the allowlist used to be keyed on the
 // command's top-level NAME ONLY, so an unverified SUBCOMMAND of an allowed parent -- one the

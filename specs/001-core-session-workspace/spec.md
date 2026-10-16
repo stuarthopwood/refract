@@ -171,9 +171,8 @@
   on/off/status commands -- carry no indicator anywhere in Refract today, so `/advisor` needs no
   parity addition; its reply already renders through the existing forwarded-command path (a
   `command_output` frame becomes a transcript `notice` row, the same as `/usage show` or
-  `/session info`). No new component, store or message kind was added. No dedicated cost readout
-  yet (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead.
-  Whether a standing readout is wanted is open (Stuart).
+  `/session info`). No new component, store or message kind was added (cost readout decided
+  separately below).
 - Q: `/advisor` was one of the probe's own denylisted names (`docs/spike/slash-commands-probe.mjs`
   `DENYLIST`), so the T092/18.5.1 run this allowlist is built from never sent it -- does FR-032's
   "verified to run" bar still hold? → A: Yes, satisfied a different way: issue #917's own live
@@ -181,6 +180,10 @@
   off`) stands in for the probe run, the same bar applied to every other entry just run by hand
   once instead of through the probe script (`contracts/omp-usage.md` "Slash command
   classification" records the detail).
+- Q: Decided (Stuart, 2026-10-16): no cost readout for `/advisor` (`advisor_cost_changed` stays
+  unread; `/advisor status`'s own reply surfaces spend on demand instead, which is sufficient).
+  A persistent on/off indicator for the advisor's Session-scoped state is a separate idea,
+  tracked as its own new issue, not part of #917.
 
 ## User Scenarios & Testing *(mandatory)*
 
