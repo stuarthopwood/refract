@@ -6,7 +6,7 @@
   "src/renderer/features/chat/ChatPane.tsx": 1445,
   "src/renderer/features/chat/Markdown.tsx": 997,
   "src/renderer/features/chat/MessageInput.tsx": 1632,
-  "src/renderer/features/chat/Transcript.tsx": 1090,
+  "src/renderer/features/chat/Transcript.tsx": 1074,
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
   "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 1159,

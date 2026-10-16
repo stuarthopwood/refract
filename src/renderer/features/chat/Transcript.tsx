@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
 import { cn } from 'cn'
-import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
+import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
@@ -27,14 +27,13 @@ import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { initials } from '@/lib/initials'
+import { UserMessageRow, type UserItem } from './UserMessageRow'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
-type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
 // Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
 // every Session of the same repository shares one `repositories.userName` round trip.
@@ -130,7 +129,7 @@ interface TranscriptRowProps {
   item: AdvisoryGroupedTranscriptItem
   sessionId: string | null
   pending: PendingRequest[]
-  userName: string | undefined
+  userName: string | undefined; hideTime?: boolean // #555 amendment: hides a user row's own time under a directly-above TimeGapDivider (see UserMessageRowProps)
   resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
   /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
   onAdvisoryReveal: () => void
@@ -141,32 +140,16 @@ interface TranscriptRowProps {
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 
   switch (item.kind) {
-    case 'user': {
-      // Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/
-      // DESIGN.md "Self vs. other layout"): `Message align="end"` reverses the row and pushes it
-      // to the end; `w-fit max-w-[85%]` (replacing the old `w-full`) keeps the bubble sized to its
-      // own content and caps it well short of the transcript's left edge, so it never touches it
-      // regardless of message length.
-      const name = userName ?? 'You'
-      return (
-        <Message align="end">
-          <MessageAvatar aria-hidden className="text-xs font-medium">
-            {initials(name)}
-          </MessageAvatar>
-          <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
-            <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
-            <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
-          </MessageContent>
-        </Message>
-      )
-    }
+    case 'user':
+      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep this file within its `check:file-size` baseline).
+      return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
 
     case 'assistant-text':
       return (
@@ -280,10 +263,11 @@ function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
   return nextAt - previousAt > TIME_GAP_THRESHOLD_MS
 }
 
+// Gate round 3 a11y fix (Main, 2026-10-16): `role="separator"`+`aria-label` on the wrapper read as just "separator" on some screen readers; now a plain `div`, decorative lines stay `aria-hidden`, so the visible label reads once as plain text. `data-slot` (not a role) lets a live-check/test identify this row without re-adding an ARIA name.
 function TimeGapDivider({ at }: { at: number }) {
   const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   return (
-    <div role="separator" aria-label={label} className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+    <div data-slot="time-gap-divider" className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span>{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
@@ -1015,7 +999,7 @@ export function Transcript({
                             item={row}
                             sessionId={sessionId}
                             pending={pending}
-                            userName={userName}
+                            userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
                             resolvedAskByRequestId={resolvedAskByRequestId}
                             onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
                           />
