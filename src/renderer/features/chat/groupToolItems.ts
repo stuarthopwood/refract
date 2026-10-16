@@ -26,11 +26,15 @@ export interface ThoughtRun {
 
 export type GroupedTranscriptItem = TranscriptItem | ToolGroup | ThoughtRun
 
-export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
+// Parameter widened to `{ kind: string }` (issue #558) rather than the narrower
+// `GroupedTranscriptItem` so a caller holding a STILL-WIDER union (`groupAdvisoryItems.ts`'s own
+// `AdvisoryGroupedTranscriptItem`, which also admits an `AdvisoryRun`) can call either guard
+// directly with no cast and no import cycle; the narrowing each performs is unaffected either way.
+export function isToolGroup(item: { kind: string }): item is ToolGroup {
   return item.kind === 'tool-group'
 }
 
-export function isThoughtRun(item: GroupedTranscriptItem): item is ThoughtRun {
+export function isThoughtRun(item: { kind: string }): item is ThoughtRun {
   return item.kind === 'thought-run'
 }
 

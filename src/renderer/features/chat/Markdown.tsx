@@ -932,9 +932,9 @@ const components: Components = {
         </code>
       )
     }
-    if (lang === 'mermaid') {
-      return <MermaidBlock code={text} streaming={streaming} />
-    }
+    // #558 (FR-050 exception, gate round 3): the one fence that wraps instead of scrolling (the advisor's own quoted note); no `lang` to highlight.
+    if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap />
+    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} />
     return <CodeBlock code={text} lang={lang} />
   }
 }
