@@ -21,8 +21,8 @@ export interface SearchFieldProps {
    *  visible placeholder alone is not read by every screen reader once the field has focus. */
   label: string
   placeholder: string
-  /** Which side the clear button's tooltip (and the field's own) opens on; a narrow host (the
-   *  220px-minimum session list) needs `"right"` so the tooltip clears its own neighbours. */
+  /** Which side the clear button's tooltip opens on; a narrow host (the 220px-minimum session
+   *  list) needs `"right"` so the tooltip clears its own neighbours. */
   tooltipSide?: 'top' | 'right' | 'bottom' | 'left'
   /** Applied to the field's own wrapper, never the `<input>` directly -- a caller that needs a
    *  landmark role or a width override wraps or classes this component from outside instead of
@@ -33,12 +33,17 @@ export interface SearchFieldProps {
   /** Gate round 1 fix (code-reviewer Medium): extra attributes spread onto the `<input>` itself
    *  (for example a stable `data-*` hook), so a caller never has to find this field by its
    *  wrapper's own descendant structure -- #934's own future `ListToolbar` embedding could
-   *  change that structure. Gate round 3 fix (finding 10): the props every behaviour above
-   *  depends on are omitted from what a caller can pass, so a future `onKeyDown`/`role`/
-   *  `className`/`value`/`onChange`/`aria-label` here can never silently remove Esc-clears or
-   *  the field's own accessible name -- the component itself owns those, always.
+   *  change that structure. Gate round 3 fix (finding 10, extended gate round 5, Main's finding
+   *  5): the props every behaviour above depends on are omitted from what a caller can pass, so
+   *  a future `onKeyDown`/`role`/`className`/`value`/`onChange`/`type`/`aria-label`/
+   *  `aria-labelledby`/`aria-describedby` here can never silently remove Esc-clears, the
+   *  field's own accessible name, or the Clear-hint wiring -- the component itself owns those,
+   *  always.
    */
-  inputProps?: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onKeyDown' | 'aria-label' | 'role' | 'className'> & {
+  inputProps?: Omit<
+    InputHTMLAttributes<HTMLInputElement>,
+    'value' | 'onChange' | 'onKeyDown' | 'aria-label' | 'aria-labelledby' | 'aria-describedby' | 'role' | 'className' | 'type'
+  > & {
     [attribute: `data-${string}`]: string
   }
 }

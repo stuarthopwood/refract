@@ -4,9 +4,10 @@
 // only -- a baseline entry may never be RAISED, so the growth was moved out into its own module
 // instead). `check-theme-contrast.mjs` imports `PAIRS` from here and iterates it exactly as it
 // did when the array lived inline; the two composited checks below (search field, user-bubble
-// links) moved out alongside it for the same reason, carrying their own small copy of the
-// alpha-compositing math so this module never needs to import back from the script it was
-// extracted out of.
+// links) moved out alongside it for the same reason, sharing `contrast-math.mjs`'s own alpha-
+// compositing primitives with `check-theme-contrast.mjs` rather than each keeping a private
+// copy (gate round 5, Main's finding 1: a private copy here once silently regressed to a wrong,
+// naive linear-space blend -- one shared module can only drift in one place, never two).
 //
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
@@ -15,6 +16,8 @@
 // below). `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
 // rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
 // `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
+
+import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 export const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -237,53 +240,6 @@ export const PAIRS = [
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]
-
-// ---- shared alpha-compositing math (duplicated, not imported, from check-theme-contrast.mjs's
-// own copy: importing back from the script this module was extracted out of to dodge its
-// file-size ratchet would recreate the exact coupling the extraction was meant to remove).
-function clamp01(x) {
-  return Math.min(1, Math.max(0, x))
-}
-
-function srgbGammaDecode(c) {
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-}
-
-function srgbGammaEncode(c) {
-  const clamped = Math.min(1, Math.max(0, c))
-  return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
-}
-
-// Quality-gate remediation (HIGH, check-theme-contrast.mjs's own original fix, duplicated here
-// verbatim): browsers alpha-composite in gamma-encoded sRGB space, not linear light -- blending
-// in linear space understates how much a semi-transparent token lets the backdrop show through.
-function compositeOverLinear(fg, bg) {
-  return fg.linear.map((c, i) => {
-    const fgGamma = srgbGammaEncode(clamp01(c))
-    const bgGamma = srgbGammaEncode(clamp01(bg.linear[i]))
-    return srgbGammaDecode(clamp01(fg.alpha * fgGamma + (1 - fg.alpha) * bgGamma))
-  })
-}
-
-function resolvedLinear(propEntry, backdropEntry) {
-  if (propEntry.alpha >= 1) return propEntry.linear.map(clamp01)
-  return compositeOverLinear(propEntry, backdropEntry)
-}
-
-function relativeLuminance([r, g, b]) {
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrastRatio(lumA, lumB) {
-  const lighter = Math.max(lumA, lumB)
-  const darker = Math.min(lumA, lumB)
-  return (lighter + 0.05) / (darker + 0.05)
-}
-
-function linearToHex([r, g, b]) {
-  const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
-  return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
-}
 
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
 // default translucent fill (`bg-transparent dark:bg-input/30`, `SearchField.tsx`'s own comment)

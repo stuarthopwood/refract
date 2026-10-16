@@ -288,8 +288,10 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
 
   // Issue #559 gate rounds 2-3 (the #900 pattern, finding 1): shared with `RepositoryGroup.tsx`
   // so a Project rename gets the exact same focus-redirect-to-search-field fix as a Session
-  // rename, not a second, row-only copy.
-  useFocusSearchOnStrandedUnmount(rowRef)
+  // rename, not a second, row-only copy. `restoreRequestedRef` (gate round 5, Main's finding 4)
+  // lets this skip its own generic redirect while a restore for THIS row is in flight, since
+  // `onRestore` below already has its own, more specific focus fallback.
+  useFocusSearchOnStrandedUnmount(rowRef, restoreRequestedRef)
 
   // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
   // repository and default branch (no dialog, no base-branch picker), announces immediately

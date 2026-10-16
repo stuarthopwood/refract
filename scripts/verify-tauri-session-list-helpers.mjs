@@ -70,7 +70,7 @@ export async function proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, {
   );
 }
 
-function readJson(filePath) {
+export function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
@@ -185,6 +185,53 @@ export async function createSessionViaQuickCreate(cdp, repoName) {
     `(() => { const count = ${rowSelector}; const msg = document.querySelector('[aria-label="Message"]'); return count > ${before} && !!msg && !msg.disabled; })()`,
     { timeoutMs: 60_000, label: `Session created in ${repoName} (row count ${before} -> ${before + 1}), composer enabled` }
   );
+}
+
+/** Finder for the FIRST (most-recently-active) Session row's own "... actions" trigger inside
+ * the named Project's group. */
+export function firstRowActionsFinder(repoName) {
+  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
+}
+
+/** Opens a Session row's own "..." actions menu like a real user, fixing the flake Main
+ * diagnosed (2026-10-16): the trigger is revealed by `group-hover`/`group-focus-within`
+ * opacity (#567), so a bare synthetic click at a freshly-mounted row's own bounding rect can
+ * land before the browser has actually run the hover style recalculation the trigger's own
+ * interactivity depends on. Hovers the row first (a real `mouseMoved`, the only way to trigger
+ * a `:hover`/`group-hover` CSS reveal over CDP), waits for the trigger to actually report
+ * revealed (`opacity > 0.5`) AND closed (`aria-expanded="false"`), THEN clicks it (recomputing
+ * the bounding rect at click time, since hovering can itself shift the row's own layout as
+ * hidden actions reserve their column) and waits for the real `[role="menu"]` to mount -- never
+ * a fixed sleep. On a timeout, captures a screenshot and the row's own DOM for diagnosis. */
+export async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
+  const triggerFinder = firstRowActionsFinder(repoName);
+  const rowFinder = `${triggerFinder}?.closest('li')`;
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${rowFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 15_000, label: `row to hover: ${rowFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  try {
+    await cdp.waitFor(
+      `(() => { const el = ${triggerFinder}; if (!el) return false; return parseFloat(getComputedStyle(el).opacity) > 0.5 && el.getAttribute('aria-expanded') === 'false'; })()`,
+      { timeoutMs: 10_000, label: `row actions trigger revealed and closed: ${triggerFinder}` }
+    );
+    await cdp.click(triggerFinder);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'row actions menu opened' });
+  } catch (err) {
+    const diag = await cdp.evaluate(
+      `(() => { const el = ${triggerFinder}; if (!el) return { triggerFound: false }; const cs = getComputedStyle(el); return { triggerFound: true, ariaExpanded: el.getAttribute('aria-expanded'), opacity: cs.opacity, pointerEvents: cs.pointerEvents, outerHTML: el.outerHTML?.slice(0, 600), rowHtml: el.closest('li')?.outerHTML?.slice(0, 2000) }; })()`
+    );
+    log(`verify-tauri-559: openRowActionsMenu FAILED for "${repoName}" -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
+    await cdp.screenshot(path.join(evidenceDir, '99-diag-row-actions-menu-failure.png'));
+    throw err;
+  }
+}
+
+export async function clickMenuItem(cdp, text) {
+  const finder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(text)})`;
+  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` });
+  await cdp.click(finder);
 }
 
 /** Archives the FIRST (most-recently-active, so the just-created one) Session row inside the

@@ -67,7 +67,11 @@ import {
   proveRenameMatchingAndSessionSwitch,
   proveProjectRenameFocusRedirect,
   proveCreatedSessionHiddenAnnouncement,
-  SEARCH_INPUT_FINDER
+  SEARCH_INPUT_FINDER,
+  readJson,
+  firstRowActionsFinder,
+  openRowActionsMenu,
+  clickMenuItem
 } from './verify-tauri-session-list-helpers.mjs';
 import { gitHead, sha256OfFile, buildLauncher, makeScratchRepo, safeRmSync, citeScreenshots, clearKnownOutputFiles } from './verify-tauri-scratch-helpers.mjs';
 
@@ -142,8 +146,6 @@ async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourc
 
 function worktreesDirFor(repoDir) { return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir)); }
 
-function readJson(filePath) { return JSON.parse(readFileSync(filePath, 'utf8')); }
-
 // Both announcement checks below wait for the EXACT (or matching) text to appear, rather than
 // reading "whatever is there now" -- a region that already holds a PREVIOUS announcement (for
 // example this same search field's own earlier "Filter cleared") reads as non-empty the instant
@@ -179,52 +181,6 @@ async function connectCdp(port, targetPid) {
   return cdp;
 }
 
-/** Finder for the FIRST (most-recently-active) Session row's own "... actions" trigger inside
- * the named Project's group. */
-function firstRowActionsFinder(repoName) {
-  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
-}
-
-/** Opens a Session row's own "..." actions menu like a real user, fixing the flake Main
- * diagnosed (2026-10-16): the trigger is revealed by `group-hover`/`group-focus-within`
- * opacity (#567), so a bare synthetic click at a freshly-mounted row's own bounding rect can
- * land before the browser has actually run the hover style recalculation the trigger's own
- * interactivity depends on. Hovers the row first (a real `mouseMoved`, the only way to trigger
- * a `:hover`/`group-hover` CSS reveal over CDP), waits for the trigger to actually report
- * revealed (`opacity > 0.5`) AND closed (`aria-expanded="false"`), THEN clicks it (recomputing
- * the bounding rect at click time, since hovering can itself shift the row's own layout as
- * hidden actions reserve their column) and waits for the real `[role="menu"]` to mount -- never
- * a fixed sleep. On a timeout, captures a screenshot and the row's own DOM for diagnosis. */
-async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
-  const triggerFinder = firstRowActionsFinder(repoName);
-  const rowFinder = `${triggerFinder}?.closest('li')`;
-  const rowRect = await cdp.waitFor(
-    `(() => { const el = ${rowFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
-    { timeoutMs: 15_000, label: `row to hover: ${rowFinder}` }
-  );
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
-  try {
-    await cdp.waitFor(
-      `(() => { const el = ${triggerFinder}; if (!el) return false; return parseFloat(getComputedStyle(el).opacity) > 0.5 && el.getAttribute('aria-expanded') === 'false'; })()`,
-      { timeoutMs: 10_000, label: `row actions trigger revealed and closed: ${triggerFinder}` }
-    );
-    await cdp.click(triggerFinder);
-    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'row actions menu opened' });
-  } catch (err) {
-    const diag = await cdp.evaluate(
-      `(() => { const el = ${triggerFinder}; if (!el) return { triggerFound: false }; const cs = getComputedStyle(el); return { triggerFound: true, ariaExpanded: el.getAttribute('aria-expanded'), opacity: cs.opacity, pointerEvents: cs.pointerEvents, outerHTML: el.outerHTML?.slice(0, 600), rowHtml: el.closest('li')?.outerHTML?.slice(0, 2000) }; })()`
-    );
-    log(`verify-tauri-559: openRowActionsMenu FAILED for "${repoName}" -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
-    await cdp.screenshot(path.join(evidenceDir, '99-diag-row-actions-menu-failure.png'));
-    throw err;
-  }
-}
-
-async function clickMenuItem(cdp, text) {
-  const finder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(text)})`;
-  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` }); await cdp.click(finder);
-}
-
 /** Wraps the shared `addRepository` helper with failure diagnostics (a screenshot plus the
  *  dialog's own DOM state at the moment the wait timed out) -- added after this exact step
  *  intermittently timed out on its second call with no app-side error logged, so the root
@@ -253,6 +209,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await addRepositoryDiag(cdp, repoB, evidenceDir, log, 'B');
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
+  // Gate round 5 (Main's finding 10): the search field's own `role="search"` landmark
+  // (`SessionList.tsx` decision 3) is a real, rendered attribute, not just claimed in prose.
+  assert((await cdp.evaluate(`!!document.querySelector('[role="search"][aria-label="Sessions"]')`)) === true, 'the session search field must sit inside a role="search" landmark');
+  log('STEP PASS: the search field sits inside a role="search" landmark.');
 
   // ---- Ctrl+N fallback (run HERE, before any Session exists): App.tsx's own fallback target
   // resolution (no focused pane, 2+ Projects) only falls into the "no repository resolved"
@@ -396,6 +356,19 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Clear (Tab-order check cleanup)' });
   await cdp.evaluate(`document.activeElement?.blur()`);
+  // ---- Gate round 5 (Main's finding 10): a real keyboard Escape while focus is ON the Clear
+  // (x) button itself, not just the input -- the wrapper's own handler (gate round 3 finding 9)
+  // is meant to catch Esc from either child, but only the input had ever been driven. ----
+  await typeSearch(cdp, sessionA1Name);
+  await cdp.waitFor(CLEAR_BUTTON + ' !== null', { timeoutMs: 5_000, label: 'Clear button appears for the Esc-on-button check' });
+  await cdp.click(SEARCH_INPUT);
+  await pressTab(cdp);
+  const escActive = await getActiveElementAccessibleName(cdp);
+  assert(escActive.name === 'Clear filter', `focus must be on Clear filter before pressing Esc (got ${JSON.stringify(escActive)})`);
+  await pressEscape(cdp);
+  await cdp.waitFor(SEARCH_INPUT + `.value === ''`, { timeoutMs: 5_000, label: 'Esc on the Clear button clears the field' });
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Esc-on-Clear-button' });
+  log('STEP PASS: a real keyboard Escape while focus is on the Clear (x) button itself (not just the input) also clears the filter.');
 
   // ---- Settings round trip: the query (and its filtering) survive opening Settings and
   // returning, since it lives in session-list-store.ts, not local component state ----

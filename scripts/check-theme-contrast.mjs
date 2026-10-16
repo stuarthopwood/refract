@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows } from './theme-contrast-pairs.mjs'
+import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
@@ -68,10 +69,6 @@ function oklchToLinearSrgb(L, C, Hdeg) {
   return oklabToLinearSrgb(L, a, b)
 }
 
-function srgbGammaDecode(c) {
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-}
-
 function hexToLinearSrgb(hex) {
   let h = hex.slice(1)
   if (h.length === 3) h = [...h].map((c) => c + c).join('')
@@ -79,18 +76,6 @@ function hexToLinearSrgb(hex) {
   const g = parseInt(h.slice(2, 4), 16) / 255
   const b = parseInt(h.slice(4, 6), 16) / 255
   return [srgbGammaDecode(r), srgbGammaDecode(g), srgbGammaDecode(b)]
-}
-
-// Linear sRGB -> gamma sRGB, for the hex debug column only (display, never fed back into the
-// WCAG luminance formula, which operates on linear values directly).
-function srgbGammaEncode(c) {
-  const clamped = Math.min(1, Math.max(0, c))
-  return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
-}
-
-function linearToHex([r, g, b]) {
-  const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
-  return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
 }
 
 // ---- parse every `.theme-<id> { ... }` block, generically (not hardcoded to today's two) -----
@@ -244,44 +229,6 @@ const ROOT_BLOCK_RE = /:root\s*\{([^}]*)\}/
 const rootMatch = css.match(ROOT_BLOCK_RE)
 const watermarkOpacityMatch = rootMatch ? rootMatch[1].match(/--watermark-opacity:\s*([\d.]+)\s*;/) : null
 const watermarkOpacity = watermarkOpacityMatch ? Number(watermarkOpacityMatch[1]) : null
-
-// ---- WCAG relative luminance / contrast ratio -------------------------------------------------
-
-function clamp01(x) {
-  return Math.min(1, Math.max(0, x))
-}
-
-// Quality-gate remediation (HIGH, corroborated by code-reviewer/test-reviewer/accessibility-
-// auditor): browsers alpha-composite in gamma-encoded sRGB space, not linear light -- blending
-// in linear space (the old behaviour here) understated how much a semi-transparent token lets
-// the backdrop show through. A reviewer independently confirmed with node that `.theme-dark`'s
-// `--border` (16% alpha) was reported 4.01:1 by the old linear blend but is actually only
-// 1.53:1 as really rendered. Fix: gamma-encode both operands, blend in that gamma space (what
-// the compositor does), then gamma-decode the blended result back to linear before computing
-// WCAG relative luminance.
-function compositeOverLinear(fg, bg) {
-  return fg.linear.map((c, i) => {
-    const fgGamma = srgbGammaEncode(clamp01(c))
-    const bgGamma = srgbGammaEncode(clamp01(bg.linear[i]))
-    return srgbGammaDecode(clamp01(fg.alpha * fgGamma + (1 - fg.alpha) * bgGamma))
-  })
-}
-
-function relativeLuminance([r, g, b]) {
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrastRatio(lumA, lumB) {
-  const lighter = Math.max(lumA, lumB)
-  const darker = Math.min(lumA, lumB)
-  return (lighter + 0.05) / (darker + 0.05)
-}
-
-function resolvedLinear(propEntry, backdropEntry) {
-  if (propEntry.alpha >= 1) return propEntry.linear.map(clamp01)
-  return compositeOverLinear(propEntry, backdropEntry)
-}
-
 
 // The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
 // `--divider` (never `--border`, which stays a real control edge everywhere in this cut -- see

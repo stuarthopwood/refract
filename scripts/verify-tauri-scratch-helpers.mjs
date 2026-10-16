@@ -9,7 +9,7 @@
 // several of these (written before this split); not touched here, out of scope for #570.
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -63,10 +63,22 @@ export function citeScreenshots(dir, names) {
  *  only a script's own KNOWN output files, by literal name, never the folder; refuses unless
  *  `shotDir` resolves directly under the OS temp dir with the given prefix, so a misconfigured
  *  override can never reach somewhere unintended. Recreates the (now-empty, or newly made)
- *  folder itself afterward, same as a plain `mkdirSync(shotDir, { recursive: true })` would. */
+ *  folder itself afterward, same as a plain `mkdirSync(shotDir, { recursive: true })` would.
+ *  Gate round 5 fix (Main's finding 9): a short-path (8.3) or differently-cased `%TEMP%` would
+ *  make the earlier plain string comparison wrongly refuse (or, worse, wrongly allow) a
+ *  legitimate folder -- `realpathSync.native` resolves both sides to the same canonical form
+ *  before comparing, and the trailing `.toLowerCase()` is belt-and-braces over Windows' own
+ *  case-insensitive filesystem semantics. */
 export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
   const resolved = path.resolve(shotDir);
-  if (path.dirname(resolved) !== path.resolve(tmpdir()) || !path.basename(resolved).startsWith(prefix)) {
+  let realParent, realTmp;
+  try {
+    realParent = realpathSync.native(path.dirname(resolved)).toLowerCase();
+    realTmp = realpathSync.native(tmpdir()).toLowerCase();
+  } catch {
+    throw new Error(`refusing to clear ${resolved} -- its parent directory does not resolve to a real path`);
+  }
+  if (realParent !== realTmp || !path.basename(resolved).toLowerCase().startsWith(prefix.toLowerCase())) {
     throw new Error(`refusing to clear ${resolved} -- not a recognized ${prefix}* folder directly under the OS temp dir`);
   }
   for (const name of fileNames) {

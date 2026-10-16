@@ -15,8 +15,8 @@ import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
-import { matchesSessionSearch, searchSessions, showingCountLabel } from './sessionDisplay'
-import { createdSessionAnnouncement } from './createdSessionAnnouncement'
+import { searchSessions, showingCountLabel } from './sessionDisplay'
+import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
 
 // Gate round 1 fix (High, ui-visual-system-v3): decision 23's literal focus class string
@@ -164,10 +164,13 @@ export function SessionList() {
     if (!hasQuery) return
     for (const session of sessions) {
       if (session.archivedAt || previousIds.has(session.id)) continue
-      const repository = repositoriesById.get(session.repositoryId)
-      if (repository && !matchesSessionSearch(session, repository.name, trimmedQuery)) {
-        useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(session))
-      }
+      // Gate round 5 (Main's finding 7): `createdSessionAnnouncement` already computes its own
+      // match decision via `searchSessions` -- re-deriving it here with `matchesSessionSearch`
+      // was a second, redundant copy of that same decision (and a different helper than the one
+      // this function itself relies on), so this just asks the one shared function for its
+      // verdict instead of recomputing it.
+      const announcement = createdSessionAnnouncement(session)
+      if (wasHiddenByFilter(announcement)) useChatAreaAnnouncer.getState().announce(announcement)
     }
   }, [sessions, hasQuery, trimmedQuery])
   // Issue #620, UX consult item 2 decision 9: the row menu's "New session from {branch}" item's
