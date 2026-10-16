@@ -68,7 +68,7 @@ function assertBundleContainsStory558Markers() {
   const mainFile = readdirSync(assetsDir).find((f) => f.startsWith('main-') && f.endsWith('.js'));
   if (!mainFile) throw new Error('verify-558: no main-*.js bundle found');
   const content = readFileSync(path.join(assetsDir, mainFile), 'utf8');
-  for (const marker of ['Ask agent to address this', 'Copy advisory', 'more advisor concerns']) {
+  for (const marker of ['Ask agent to address this', 'Copy advisory', 'more advisor concern']) {
     if (!content.includes(marker)) throw new Error(`verify-558: bundle is missing the #558-only marker "${marker}" -- this is not actually #558's build`);
   }
 }
