@@ -1330,7 +1330,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
               Start new, and on expand the whole stderr/omp-log/memory text), interrupting the
               user mid-read. A sibling here never mutates a live region. */}
           {startFailureDetails && (
-            <div className="mt-2 pl-6">
+            <div className="mt-2 pl-8 pb-3">
               {/* Issue #512 requirement 2 (gate-fixes Medium finding, cycle 5): the stderr/
                   omp-log warnings-and-errors tails and memory figures `buildStartFailure`
                   appends, hidden behind a disclosure instead of always shown inline -- the
@@ -1362,7 +1362,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 role="region"
                 tabIndex={0}
                 aria-label="Start failure details"
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words px-1 py-0.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 {startFailureDetails}
               </pre>

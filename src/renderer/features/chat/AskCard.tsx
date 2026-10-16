@@ -318,7 +318,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         )}
         {error && (
           <CardContent>
-            <Alert variant="destructive">
+            <Alert variant="destructive" box="inline">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           </CardContent>

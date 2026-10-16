@@ -10,17 +10,16 @@
 //     emit a long warning. Expands it and asserts the expanded body's own computed style carries
 //     no background fill, no border and no border-radius (the box this story removes).
 //
-//   Phase B (real `omp`, ambient PATH, a brand-new never-before-used OMP_PROFILE with NO
-//     modelRoles configured): creating a Session in a profile with no default model makes
-//     `omp --mode rpc-ui` exit before it ever emits a `ready` frame (the same root cause
-//     `verify-rm-live-check.mjs`'s own provenance note records, deliberately NOT worked around
-//     here), landing the Session on stopReason `start-failed` with a real stderr-derived detail
-//     string. Expands "Details" and asserts the same no-box properties on the `<pre>`, plus a
-//     real Tab-dispatched keyboard-focus check that the focus ring lands clear of the text.
+//   Phase B (fake omp, REFRACT_FAKE_OMP_SCENARIO=zero-box-556-start-failed): the Session's own
+//     `OmpProcess` runs the fake-omp shim, which under this scenario never emits a `ready` frame
+//     at all -- the renderer's own `READY_CEILING_MS` (180s) start-failure timeout then lands the
+//     Session on stopReason `start-failed` with a real detail string. Expands "Details" and
+//     asserts the same no-box properties on the `<pre>`, plus a real Tab-dispatched
+//     keyboard-focus check that the focus ring (an inset box-shadow) lands clear of the text.
 //
 // Neither phase spends a real model turn or touches Stuart's real omp profile/Sessions
-// (REFRACT_DATA_DIR/REFRACT_IMPORT_SOURCE_DIR are scratch; Phase B's OMP_PROFILE is a brand-new
-// name never used before, so it carries no real credentials).
+// (REFRACT_DATA_DIR/REFRACT_IMPORT_SOURCE_DIR are scratch; both phases run the fake-omp shim, no
+// real `omp` process or profile is ever touched).
 //
 // NOT exercised live: the Subagents panel's own long-notice instance (`SubagentPanel.tsx:290`
 // reuses the exact same `NoticeRow` component with no panel-specific className override --
@@ -51,6 +50,7 @@ import {
   assertExeUnchanged,
   citeScreenshots,
   clearKnownOutputFiles,
+  sha256OfFile,
 } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -132,23 +132,23 @@ async function runPhaseA({ exePath, exeHash, launcherExe, log, results }) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-556-a-data-'));
   const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-556-a-repo-')), 'verify-556a');
   const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-556-a-import-'));
-  const port = await getFreePort();
-  buildOmpShim(shimDir);
-  const env = {
-    ...process.env,
-    PATH: `${shimDir};${process.env.PATH}`,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: path.join(shimDir, 'webview2-data'),
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-    REFRACT_FAKE_OMP_NODE: process.execPath,
-    REFRACT_FAKE_OMP_SCENARIO: 'zero-box-556-long-notice',
-  };
-  mkdirSync(env.WEBVIEW2_USER_DATA_FOLDER, { recursive: true });
   const pidFile = path.join(shimDir, 'target.pid');
   let child, cdp;
   try {
+    const port = await getFreePort();
+    buildOmpShim(shimDir);
+    const env = {
+      ...process.env,
+      PATH: `${shimDir};${process.env.PATH}`,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+      WEBVIEW2_USER_DATA_FOLDER: path.join(shimDir, 'webview2-data'),
+      REFRACT_DATA_DIR: dataDir,
+      REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+      REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+      REFRACT_FAKE_OMP_NODE: process.execPath,
+      REFRACT_FAKE_OMP_SCENARIO: 'zero-box-556-long-notice',
+    };
+    mkdirSync(env.WEBVIEW2_USER_DATA_FOLDER, { recursive: true });
     const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: shimDir, env });
     child = launched.child;
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
@@ -218,27 +218,27 @@ async function runPhaseB({ exePath, exeHash, launcherExe, log, results }) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-556-b-data-'));
   const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-556-b-repo-')), 'verify-556b');
   const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-556-b-import-'));
-  const port = await getFreePort();
-  buildOmpShim(shimDir);
-  const env = {
-    ...process.env,
-    PATH: `${shimDir};${process.env.PATH}`,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: path.join(shimDir, 'webview2-data'),
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-    REFRACT_FAKE_OMP_NODE: process.execPath,
-    // `--no-session` (the readiness probe's own scratch process) always forces `readiness`
-    // regardless of this var, so readiness goes green normally; only the SESSION's own
-    // `OmpProcess` -- spawned once "Create session" is clicked below -- reads this and never
-    // emits `ready` at all, deterministically producing a real `start-failed` Session.
-    REFRACT_FAKE_OMP_SCENARIO: 'zero-box-556-start-failed',
-  };
-  mkdirSync(env.WEBVIEW2_USER_DATA_FOLDER, { recursive: true });
   const pidFile = path.join(shimDir, 'target.pid');
   let child, cdp;
   try {
+    const port = await getFreePort();
+    buildOmpShim(shimDir);
+    const env = {
+      ...process.env,
+      PATH: `${shimDir};${process.env.PATH}`,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+      WEBVIEW2_USER_DATA_FOLDER: path.join(shimDir, 'webview2-data'),
+      REFRACT_DATA_DIR: dataDir,
+      REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+      REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+      REFRACT_FAKE_OMP_NODE: process.execPath,
+      // `--no-session` (the readiness probe's own scratch process) always forces `readiness`
+      // regardless of this var, so readiness goes green normally; only the SESSION's own
+      // `OmpProcess` -- spawned once "Create session" is clicked below -- reads this and never
+      // emits `ready` at all, deterministically producing a real `start-failed` Session.
+      REFRACT_FAKE_OMP_SCENARIO: 'zero-box-556-start-failed',
+    };
+    mkdirSync(env.WEBVIEW2_USER_DATA_FOLDER, { recursive: true });
     const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: shimDir, env });
     child = launched.child;
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
@@ -285,6 +285,11 @@ async function runPhaseB({ exePath, exeHash, launcherExe, log, results }) {
     await cdp.click(detailsButtonFinder);
     const preFinder = `document.querySelector('[data-pane-banner] pre[aria-label="Start failure details"]')`;
     await cdp.waitFor(`!(${preFinder}).hidden`, { timeoutMs: 10_000, label: 'Phase B: details expanded' });
+    // Fix 9 (gate round 2, capture-artifact finding): the sidebar can still show a stray hover
+    // tooltip from the click above -- move the pointer to a dead corner and wait for it to
+    // actually leave the DOM before shooting, same convention as `verify-tauri-559.mjs`.
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+    await cdp.waitFor(`!document.querySelector('[data-slot="tooltip-content"]')`, { timeoutMs: 5_000, label: 'no tooltip showing before b02 screenshot' });
     await cdp.screenshot(path.join(SHOTS_DIR, 'b02-start-failed-details-expanded.png'));
 
     const style = await readComputedBoxStyle(cdp, preFinder);
@@ -300,18 +305,23 @@ async function runPhaseB({ exePath, exeHash, launcherExe, log, results }) {
     // true), then a real `Input.dispatchKeyEvent` Tab moves focus the rest of the way -- the
     // one thing this step actually proves.
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+    const preFocusStyle = await cdp.evaluate(
+      `(() => { const el = (${preFinder}); const s = getComputedStyle(el); return { boxShadow: s.boxShadow }; })()`,
+    );
+    log(`verify-556: Phase B details <pre> boxShadow before focus: ${JSON.stringify(preFocusStyle)}`);
+    assertTrue(preFocusStyle.boxShadow === 'none', `expected no inset ring before focus, got boxShadow=${preFocusStyle.boxShadow}`);
     await cdp.evaluate(`(${detailsButtonFinder}).focus()`);
     await pressTab(cdp);
     await cdp.waitFor(`document.activeElement === (${preFinder})`, { timeoutMs: 5_000, label: 'Phase B: Tab moved focus onto the details region' });
     const focusStyle = await cdp.evaluate(
-      `(() => { const el = (${preFinder}); const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return { outlineWidth: s.outlineWidth, outlineOffset: s.outlineOffset, outlineColor: s.outlineColor, paddingLeft: s.paddingLeft, paddingTop: s.paddingTop }; })()`,
+      `(() => { const el = (${preFinder}); const s = getComputedStyle(el); return { boxShadow: s.boxShadow, paddingLeft: s.paddingLeft, paddingTop: s.paddingTop }; })()`,
     );
     log(`verify-556: Phase B focused details <pre> style: ${JSON.stringify(focusStyle)}`);
-    assertTrue(parseFloat(focusStyle.outlineWidth) > 0, `expected a real focus outline, got outlineWidth=${focusStyle.outlineWidth}`);
-    assertTrue(parseFloat(focusStyle.paddingLeft) > 0 && parseFloat(focusStyle.paddingTop) > 0, `expected the px-1/py-0.5 padding to keep the ring clear of the text, got ${JSON.stringify(focusStyle)}`);
+    assertTrue(focusStyle.boxShadow !== 'none' && focusStyle.boxShadow.includes('inset'), `expected a real inset focus ring (box-shadow), got boxShadow=${focusStyle.boxShadow}`);
+    assertTrue(parseFloat(focusStyle.paddingLeft) > 0 && parseFloat(focusStyle.paddingTop) > 0, `expected the p-1 padding to keep the ring clear of the text, got ${JSON.stringify(focusStyle)}`);
     await cdp.screenshot(path.join(SHOTS_DIR, 'b03-start-failed-details-focus.png'));
     results.push({ name: 'Phase B: keyboard focus on details region shows a real, text-clear focus ring', ok: true, detail: focusStyle });
-    log('STEP PASS: real Tab-dispatched keyboard focus lands on the details region with a visible outline, clear of the text.');
+    log('STEP PASS: real Tab-dispatched keyboard focus lands on the details region with a visible inset box-shadow ring, clear of the text.');
   } catch (err) {
     results.push({ name: 'Phase B', ok: false, detail: String(err?.stack || err) });
     throw err;
@@ -327,7 +337,6 @@ async function runPhaseB({ exePath, exeHash, launcherExe, log, results }) {
 }
 
 async function main() {
-  mkdirSync(SHOTS_DIR, { recursive: true });
   clearKnownOutputFiles(SHOTS_DIR, 'refract-556-zero-box-shots', SHOT_NAMES);
   const gitHeadSha = gitHead(REPO_ROOT);
   console.log(`verify-556: git HEAD ${gitHeadSha}`);
@@ -364,6 +373,7 @@ async function main() {
   const report = {
     gitHead: gitHeadSha,
     exeSha256: exeHash,
+    scriptSha256: sha256OfFile(fileURLToPath(import.meta.url)),
     exitCode: passed ? 0 : 1,
     results,
     screenshots: citeScreenshots(SHOTS_DIR, SHOT_NAMES.filter((n) => existsSync(path.join(SHOTS_DIR, n)))),

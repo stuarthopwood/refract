@@ -416,7 +416,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {error && (
           <CardContent>
-            <Alert variant="destructive">
+            <Alert variant="destructive" box="inline">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           </CardContent>
@@ -583,7 +583,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </div>
         )}
         {error && (
-          <Alert variant="destructive">
+          <Alert variant="destructive" box="inline">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
