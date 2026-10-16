@@ -9,7 +9,6 @@ import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
 import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
 import { ProfileAlertRows } from '@/features/profile/ProfileAlertRows'
-import { HealthCheckDialog } from '@/features/profile/HealthCheckDialog'
 import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
@@ -31,6 +30,7 @@ import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/h
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
+import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
 import { announceQuickCreateFallback } from '@/features/sessions/quickCreateFallback'
 import { createdSessionAnnouncement } from '@/features/sessions/createdSessionAnnouncement'
 
@@ -39,16 +39,6 @@ import { createdSessionAnnouncement } from '@/features/sessions/createdSessionAn
 // no longer both fit; the chat area shows one pane instead of two, with the other Session one
 // click away via ChatHeader's swap chip.
 const MIN_SPLIT_WIDTH_PX = 360 * 2
-
-// Shared by every window-wide keyboard chord below (Ctrl+Shift+\, Ctrl+W, Ctrl+,): a
-// destructive- or navigation-feeling chord must not fire while a Dialog/Sheet (`role="dialog"`, which Radix
-// sets despite the primitive never setting `aria-modal` -- confirmed in its installed
-// source, so matching the bare role is both correct and simpler), an AlertDialog
-// (`role="alertdialog"`), a DropdownMenu/ContextMenu (`role="menu"`), or a Select
-// (`data-slot="select-content"`, which sets no distinguishing role at all) is open. Radix
-// Popover also renders `role="dialog"` despite being non-modal, so it needs no separate
-// `data-slot` clause either (quality-gate remediation, PR #634/#636 gates).
-const OVERLAY_OPEN_SELECTOR = '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
 
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
 // spec 004's Subagents panel is its first occupant (FR-017 to FR-020), always mounted but
@@ -70,12 +60,6 @@ const OVERLAY_OPEN_SELECTOR = '[role="alertdialog"], [role="dialog"], [role="men
 // swap chip.
 export function App() {
   const [ready, setReady] = useState(false)
-  const [healthOpen, setHealthOpen] = useState(false)
-  const healthCheckReturnFocusRef = useRef<(() => void) | null>(null)
-  function openHealthCheck(returnFocusTo: () => void): void {
-    healthCheckReturnFocusRef.current = returnFocusTo
-    setHealthOpen(true)
-  }
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
@@ -534,8 +518,8 @@ export function App() {
                   <div className="min-h-0 flex-1">
                     <SessionList />
                   </div>
-                  <ProfileItem onOpenHealthCheck={openHealthCheck} />
-                  <ProfileAlertRows onOpenHealthCheck={openHealthCheck} />
+                  <ProfileItem />
+                  <ProfileAlertRows />
                 </div>
               </ErrorBoundary>
             </ResizablePanel>
@@ -730,7 +714,6 @@ export function App() {
           </div>
         )}
       </div>
-      <HealthCheckDialog open={healthOpen} onOpenChange={setHealthOpen} onCloseFocus={() => healthCheckReturnFocusRef.current?.()} />
       <StatusBar />
       {/* Rendered last (Electron computes `-webkit-app-region` override by DOM document order,
           not paint/z-index order, confirmed live: a `no-drag-region` element earlier in the tree

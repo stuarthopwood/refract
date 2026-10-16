@@ -14,7 +14,7 @@
 // menu is closed.
 //
 // This component also owns every dialog the profile menu can open (Manage accounts, Sign out,
-// Keyboard shortcuts) as SIBLINGS of the `DropdownMenu`, never nested inside its
+// Keyboard shortcuts, Health check) as SIBLINGS of the `DropdownMenu`, never nested inside its
 // content -- a menu item unmounts the instant the menu closes, which would tear down a dialog
 // launched from inside it mid-open. The `DropdownMenu` itself is `modal={false}`: Radix's modal
 // dropdown can leave `document.body.style.pointerEvents` stuck at `'none'` when a Dialog opens
@@ -38,6 +38,7 @@ import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { notify, useAccountsStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
+import { HealthCheckDialog } from './HealthCheckDialog'
 import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ManageAccountsDialog } from './ManageAccountsDialog'
 import type { ManageAccountsDialogHandle } from './ManageAccountsDialog'
@@ -68,7 +69,7 @@ function accessibleName(account: GitHubAccount | undefined, githubStatus: Github
   return `${account.displayName ?? account.login}, signed in to GitHub`
 }
 
-export function ProfileItem({ onOpenHealthCheck }: { onOpenHealthCheck(returnFocusTo: () => void): void }) {
+export function ProfileItem() {
   const github = useAccountsStore((state) => state.github)
   const githubStatus = useAccountsStore((state) => state.githubStatus)
   const account = github.find((candidate) => candidate.active)
@@ -91,6 +92,7 @@ export function ProfileItem({ onOpenHealthCheck }: { onOpenHealthCheck(returnFoc
   const [signOutTarget, setSignOutTarget] = useState<GitHubAccount | null>(null)
   const [signOutFromMenu, setSignOutFromMenu] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
   // Shared by every announcement this component itself makes (sign-out, Theme submenu) -- one
   // polite live region is enough, since they never fire at the same moment.
   const [announcement, announce] = useClearedAnnouncement()
@@ -280,7 +282,7 @@ export function ProfileItem({ onOpenHealthCheck }: { onOpenHealthCheck(returnFoc
           onFixSignIn={handleFixSignIn}
           onCheckGithubAgain={handleCheckGithubAgain}
           onKeyboardShortcuts={() => setKeyboardOpen(true)}
-          onHealthCheck={() => onOpenHealthCheck(focusNameButton)}
+          onHealthCheck={() => setHealthOpen(true)}
           onWhatsNew={handleWhatsNew}
           onThemeApplied={handleThemeApplied}
         />
@@ -330,6 +332,7 @@ export function ProfileItem({ onOpenHealthCheck }: { onOpenHealthCheck(returnFoc
         onCloseFocus={handleSignOutCloseFocus}
       />
       <KeyboardShortcutsDialog open={keyboardOpen} onOpenChange={setKeyboardOpen} onCloseFocus={focusNameButton} />
+      <HealthCheckDialog open={healthOpen} onOpenChange={setHealthOpen} onCloseFocus={focusNameButton} />
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>

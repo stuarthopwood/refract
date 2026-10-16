@@ -16,21 +16,15 @@ import { AlertTriangleIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useHealthStore, useMemoryStore } from '@/state'
+import { HealthCheckDialog } from './HealthCheckDialog'
 import { MemoryTriageDialog } from './MemoryTriageDialog'
 
-export interface ProfileAlertRowsProps {
-  /** Opens the shared Health check dialog App.tsx owns; `returnFocusTo` is called once the
-   *  dialog closes, so App.tsx can restore focus to whichever control actually opened it
-   *  (ProfileItem.tsx's profile-menu item passes its own name-button focus restorer through the
-   *  identical prop). */
-  onOpenHealthCheck(returnFocusTo: () => void): void
-}
-
-export function ProfileAlertRows({ onOpenHealthCheck }: ProfileAlertRowsProps) {
+export function ProfileAlertRows() {
   const warning = useMemoryStore((state) => state.warning)
   const ompVersionWarning = useHealthStore((state) => state.ompVersionWarning)
   const [dismissed, setDismissed] = useState({ memory: false, ompVersion: false })
   const [triageOpen, setTriageOpen] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
   const [announcement, announce] = useClearedAnnouncement()
   const triageButtonRef = useRef<HTMLButtonElement>(null)
   const checkButtonRef = useRef<HTMLButtonElement>(null)
@@ -94,7 +88,7 @@ export function ProfileAlertRows({ onOpenHealthCheck }: ProfileAlertRowsProps) {
             size="xs"
             aria-label="Open Health check"
             className="h-auto p-0 text-state-needs-you"
-            onClick={() => onOpenHealthCheck(() => checkButtonRef.current?.focus())}
+            onClick={() => setHealthOpen(true)}
           >
             Check
           </Button>
@@ -114,6 +108,11 @@ export function ProfileAlertRows({ onOpenHealthCheck }: ProfileAlertRowsProps) {
         open={triageOpen}
         onOpenChange={setTriageOpen}
         onCloseFocus={() => triageButtonRef.current?.focus()}
+      />
+      <HealthCheckDialog
+        open={healthOpen}
+        onOpenChange={setHealthOpen}
+        onCloseFocus={() => checkButtonRef.current?.focus()}
       />
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
