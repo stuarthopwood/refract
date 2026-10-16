@@ -99,6 +99,23 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
   renderer-main boundary. A constant used by one consumer lives beside it too; it moves out only
   when two modules must agree on the same value.
 
+## Reusable UI components (HARD RULE)
+
+On 2026-10-15 the user decided (#934 grill, ADR 0003): "All UI elements should be re-usable
+components, enhanced when use cases add complexity." The Manage sessions screen and the Pull
+requests view had drifted into two different filters, search fields and headers for the same job.
+
+- Build every UI element from a shared component in `src/renderer/components/` (a primitive in
+  `components/ui/` or a composed one such as a screen header, list toolbar or search field). When a
+  new use case needs more, extend the shared component with a prop or slot; do not copy it into a
+  feature folder or hand-style a primitive in place.
+- This applies to all new UI and to any UI a change touches. Existing one-offs are listed in the
+  audit issue #935 and fixed one group per PR.
+- Reviewers (including `code-reviewer`, `accessibility-auditor` and the UI architect agents) block a
+  PR that adds a one-off control where a shared one exists or should exist.
+- See `docs/design/components.md` ("Reusable components first").
+- Put this rule in every delegation brief for UI work.
+
 ## The plan
 
 `docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work. When the user asks for new issues to be created, update the plan in the same turn (working rule 8).
