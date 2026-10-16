@@ -1,30 +1,30 @@
 #!/usr/bin/env node
-// #567 session list restyle live check against the scratch Tauri debug build. Reuses the exe
-// `ci-local.mjs` just built (no rebuild here -- scratch copy + hash check only), the shared CDP
-// driver (`verify-tauri-cdp.mjs`) and session-list helpers (`verify-tauri-session-list-helpers.mjs`),
-// same precedent as `verify-tauri-735.mjs`.
+// #567 session list restyle live check against the scratch Tauri debug build. Gate round 1 (five-
+// reviewer re-review) added the keyboard-only focus-return checks, the geometric marker-column
+// comparison, and moved the header-actions-at-rest probe before the only active Session is
+// archived. Never rebuilds itself: the caller chains a fresh `pnpm tauri build` with this script
+// in ONE command (`REFRACT_567_PREBUILT_EXE` points at that build's own output), so the run's own
+// exe is always built from the exact commit under test, logged below via `git rev-parse HEAD`.
 //
 // Proves, against the real rendered DOM (never window.refract.* as a shortcut for anything the
 // UI itself should do -- window.refract.theme.set is the one exception, used only to switch
 // themes between screenshots, the same exception verify-tauri-735.mjs documents):
-//   - A #567-only DOM marker (the row's own `data-choice-item` <li>, and the Archived header's
-//     own separate tabular-nums count span) is present before anything else is judged.
-//   - Row geometry: ~44px row height, the open button's own focus ring draws INSIDE the row
-//     (negative outline-offset), the selected row's active-indicator bar uses inset-y-1.
-//   - The row's trailing slot: at rest shows the time; on hover the "..." menu button replaces
-//     it (display, not opacity) and the time hides.
-//   - Line 2 precedence: an archived row shows its own Project name, a non-archived row shows
-//     its branch in the Code font.
-//   - The row's own accessible name follows the "{name}, {status}[, Archived][, focused pane]"
-//     comma form (CDP Accessibility domain, never textContent).
-//   - Group header: sentence case (no uppercase/tracking), 24px ghost action buttons hidden at
-//     rest and revealed on hover, a closed group's own Waiting marker.
-//   - Archived group: "Archived" + a separate tabular-nums count span, never bracketed.
-//   - Footer: one `border-divider` above the Add-repository/profile-item block, no second
-//     border on the profile item itself.
-//   - Dark (high contrast) and Obsidian screenshots via `window.refract.theme.set`.
-//   - The exe actually driving the CDP session is the exact scratch copy this run built and
-//     hashed (`assertExeMatchesProcess`).
+//   - A #567-only DOM marker, row geometry, the focus ring, the row's own accessible name.
+//   - The trailing slot: at rest shows the time; on hover the "..." menu button replaces it
+//     (opacity/pointer-events, not display -- gate round 1 fix) and the time hides.
+//   - KEYBOARD-ONLY: Tab reaches the row's "..." at rest (it is never removed from the Tab
+//     order); Enter opens it; Escape returns focus to it; Delete then Cancel also returns focus
+//     to it (gate round 1's High finding -- a `display:none` trigger could never take focus back).
+//   - Header actions' opacity at rest/hover/keyboard-focus, measured BEFORE the only active
+//     Session is archived (gate round 1 fix: the previous run measured an empty group, which is
+//     always-on by its own decision 6 override, and proved nothing about the hidden-at-rest
+//     state).
+//   - The Archived header's own trigger right edge lines up with a Repository header's, within
+//     1px (gate round 1 fix: the previous #908 fold-in was 8px off and wrongly claimed exact).
+//   - Decision 24's "No sessions yet" line once the only Session is archived.
+//   - Archived row: Project name with FolderGit2Icon on line 2, and in the accessible description.
+//   - Group header sentence case, the closed-group Waiting marker, the footer divider, the Pull
+//     requests selected bar, Dark (high contrast) and Obsidian screenshots.
 //
 // Isolation (refract-tauri-live-check-isolation skill): REFRACT_DATA_DIR/WEBVIEW2_USER_DATA_FOLDER
 // are fresh scratch dirs; REFRACT_IMPORT_SOURCE_DIR is an empty scratch dir.
@@ -48,7 +48,8 @@ import {
 import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreate, addRepository } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SHOT_DIR = process.env.REFRACT_567_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-567-shots';
+const REPO_ROOT = path.resolve(__dirname, '..');
+const SHOT_DIR = process.env.REFRACT_567_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-567-gate1-shots';
 const PRE_BUILT_EXE = process.env.REFRACT_567_PREBUILT_EXE;
 const PROMPT_MESSAGE = 'Please respond now.';
 
@@ -58,6 +59,12 @@ function nowStamp() {
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
+}
+
+function gitHead() {
+  const result = spawnSync_('git', ['-C', REPO_ROOT, 'rev-parse', 'HEAD']);
+  if (result.status !== 0) throw new Error(`gitHead: git rev-parse failed: ${result.stderr}`);
+  return result.stdout.trim();
 }
 
 async function safeRmSync(dir) {
@@ -98,7 +105,7 @@ function copyBuiltExe(destDir) {
   mkdirSync(destDir, { recursive: true });
   const dest = path.join(destDir, 'refract-tauri.exe');
   if (!PRE_BUILT_EXE || !existsSync(PRE_BUILT_EXE)) {
-    throw new Error(`copyBuiltExe: REFRACT_567_PREBUILT_EXE not set or missing (${PRE_BUILT_EXE}) -- this script never rebuilds, run ci-local or pnpm tauri build first`);
+    throw new Error(`copyBuiltExe: REFRACT_567_PREBUILT_EXE not set or missing (${PRE_BUILT_EXE}) -- this script never rebuilds, chain a build in the same command first`);
   }
   copyFileSync(PRE_BUILT_EXE, dest);
   const hash = createHash('sha256').update(readFileSync(dest)).digest('hex');
@@ -167,6 +174,20 @@ async function hoverRow(cdp, finderExpr) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
 }
 
+async function pressKey(cdp, windowsVirtualKeyCode, key, code, modifiers = 0) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode, key, code, modifiers });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode, key, code, modifiers });
+}
+
+async function rightClick(cdp, finderExpr) {
+  const rect = await cdp.waitFor(
+    `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `right-click target: ${finderExpr}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
+}
+
 async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
@@ -177,15 +198,14 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(groupTriggerFinder(repoName) + ' !== undefined', { timeoutMs: 15_000, label: 'Project group rendered' });
   log('STEP PASS: scratch Project added, group rendered.');
 
-  // ---- #567-only marker: the row's own <li data-choice-item>, present before anything else
-  // is judged (distinguishes this build from any other lane's exe/stale state). ----
+  // ---- #567-only marker ----
   await createSessionViaQuickCreate(cdp, repoName);
   const rowFinder = `document.querySelector('[data-repository-id] li[data-choice-item]')`;
   await cdp.waitFor(`!!${rowFinder}`, { timeoutMs: 15_000, label: '#567 marker: li[data-choice-item] row' });
   log('STEP PASS: #567-only DOM marker present (li[data-choice-item] row).');
   await cdp.screenshot(path.join(evidenceDir, '01-row-idle-selected.png'));
 
-  // ---- Row geometry: ~44px tall, square corners (no border-radius), focus ring draws inside. ----
+  // ---- Row geometry ----
   const rowGeometry = await cdp.evaluate(
     `(() => { const li = ${rowFinder}; const surface = li.firstElementChild.nextElementSibling ?? li.querySelector(':scope > div'); const r = surface.getBoundingClientRect(); const cs = getComputedStyle(surface); return { height: r.height, borderRadius: cs.borderRadius, liBorderRadius: getComputedStyle(li).borderRadius }; })()`
   );
@@ -194,13 +214,33 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(rowGeometry.height >= 40 && rowGeometry.height <= 48, `row height should be close to 44px (decision 8), measured ${rowGeometry.height}`);
   assert(rowGeometry.borderRadius === '0px', `row surface must be square-cornered (FR-054), measured borderRadius=${rowGeometry.borderRadius}`);
 
+  // ---- Header actions at rest / hover / keyboard focus, measured NOW while the group still
+  // has its one active Session (gate round 1 fix: measuring after archiving proved nothing,
+  // since decision 6's own empty-group override forces opacity-100 regardless of hover/focus). ----
+  const plusFinder = `document.querySelector('[data-quick-create-session]')`;
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 }); // clear any lingering hover first
+  await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) < 0.5`, { timeoutMs: 5_000, label: 'header + hidden at rest (active Session present)' });
+  const headerAtRest = await cdp.evaluate(`(() => { const r = ${plusFinder}.getBoundingClientRect(); return { opacity: getComputedStyle(${plusFinder}).opacity, width: r.width, height: r.height }; })()`);
+  log(`verify-tauri-567: header "+" AT REST (active Session present): ${JSON.stringify(headerAtRest)}`);
+  assert(parseFloat(headerAtRest.opacity) < 0.5, `header "+" must be hidden at rest while the group has an active Session (decision 6), got opacity=${headerAtRest.opacity}`);
+  assert(Math.round(headerAtRest.width) === 24 && Math.round(headerAtRest.height) === 24, `header action buttons must be 24px icon-xs (decision 6), got ${JSON.stringify(headerAtRest)}`);
+  await hoverRow(cdp, `document.querySelector('[data-repository-id]')`);
+  await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) > 0.5`, { timeoutMs: 5_000, label: 'header + revealed on hover' });
+  log('STEP PASS: header "+" hidden at rest with an active Session present, revealed on hover (opacity 0 -> 1).');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+  await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) < 0.5`, { timeoutMs: 5_000, label: 'header + hidden again after hover clears' });
+  // Keyboard focus reveal: Ctrl+N's own fallback target per the existing focus-visible class.
+  await cdp.evaluate(`${plusFinder}.focus()`);
+  await pressKey(cdp, 9, 'Tab', 'Tab'); // away
+  await pressKey(cdp, 9, 'Tab', 'Tab', 8); // Shift+Tab back
+  await cdp.waitFor(`parseFloat(getComputedStyle(${plusFinder}).opacity) > 0.5 && document.activeElement === ${plusFinder}`, { timeoutMs: 5_000, label: 'header + revealed on keyboard focus' });
+  log('STEP PASS: header "+" revealed on real keyboard focus too.');
+  await cdp.screenshot(path.join(evidenceDir, '07-group-header-hover.png'));
+
+  // ---- Focus ring (real keyboard Tab/Shift+Tab, not a mouse click or script .focus()) ----
   const openButtonFinder = `${rowFinder}.querySelector('.session-open-button')`;
   await cdp.click(openButtonFinder); // focuses it via the real click path (also selects it)
   await cdp.waitFor(`document.activeElement === ${openButtonFinder}`, { timeoutMs: 10_000, label: 'row open button focused' });
-  // A mouse click does not engage `:focus-visible` in Chromium's own heuristic (only real
-  // keyboard navigation does) -- Tab away then Shift+Tab back, real `Input.dispatchKeyEvent`
-  // input (never a state poke), so the outline this decision actually cares about is the one
-  // really drawn for a keyboard user, not a false negative from how the harness first focused it.
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.waitFor(`document.activeElement !== ${openButtonFinder}`, { timeoutMs: 10_000, label: 'Tab moved focus away from the open button' });
@@ -217,51 +257,55 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(focusDiag.outlineOffset.trim().startsWith('-'), `row open button's focus ring must draw INSIDE the row (decision 15, negative outline-offset), measured ${focusDiag.outlineOffset}`);
   await cdp.screenshot(path.join(evidenceDir, '02-row-focused.png'));
 
-  // ---- Accessible name: "{name}, {status word}" comma form (decision 16). ----
-  const axName = await cdp.send('Accessibility.getPartialAXTree', {
-    objectId: (await cdp.send('Runtime.evaluate', { expression: openButtonFinder, returnByValue: false })).result.objectId
-  }).then((r) => r.nodes?.[0]?.name?.value ?? null).catch(() => null);
-  writeFileSync(path.join(evidenceDir, 'row-ax-name.json'), JSON.stringify({ axName }, null, 2));
-  log(`verify-tauri-567: row open button accessible name: ${JSON.stringify(axName)}`);
-  assert(typeof axName === 'string' && /, (Idle|Working|Needs you|Stopped|Unread response)/.test(axName), `accessible name must contain ", {status word}" (decision 16), got ${JSON.stringify(axName)}`);
-
-  // ---- Trailing slot swap: at rest the time shows (aria-hidden); on hover the "..." button
-  // takes its place (display, not just opacity) and the time hides. Blur first: the previous
-  // keyboard-focus check left focus inside this row, and `group-focus-within` alone (correctly)
-  // already hides the time -- "at rest" must mean neither hover nor focus is inside the row.
-  await cdp.evaluate(`${openButtonFinder}.blur()`);
-  await cdp.waitFor(`document.activeElement !== ${openButtonFinder}`, { timeoutMs: 5_000, label: 'row blurred before the at-rest check' });
-  // The earlier click left the virtual pointer resting at the row's own centre -- `:hover` is
-  // positional and never clears on its own without a real mouse-move event away from it.
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
-  const timeFinder = `${rowFinder}.querySelector('.session-open-button span[aria-hidden]')`;
+  // ---- KEYBOARD-ONLY focus return after the "..." menu closes (gate round 1 High finding) ----
   const ellipsisFinder = `${rowFinder}.querySelector('button[aria-label$="actions"]')`;
-  await cdp.waitFor(`getComputedStyle(${ellipsisFinder}).display === 'none'`, { timeoutMs: 5_000, label: '"..." menu button hidden again once hover/focus cleared' });
-  const atRest = await cdp.evaluate(
-    `(() => ({ timeDisplay: getComputedStyle(${timeFinder}).display, timeText: ${timeFinder}.textContent, menuDisplay: getComputedStyle(${ellipsisFinder}).display }))()`
-  );
-  log(`verify-tauri-567: trailing slot AT REST: ${JSON.stringify(atRest)}`);
-  assert(atRest.timeDisplay !== 'none', `time must show at rest, got display=${atRest.timeDisplay}`);
-  assert(atRest.menuDisplay === 'none', `"..." menu button must be hidden at rest, got display=${atRest.menuDisplay}`);
-  await hoverRow(cdp, rowFinder);
-  await cdp.waitFor(`getComputedStyle(${ellipsisFinder}).display !== 'none'`, { timeoutMs: 5_000, label: '"..." menu button shown on hover' });
-  const onHover = await cdp.evaluate(`(() => ({ timeDisplay: getComputedStyle(${timeFinder}).display, menuDisplay: getComputedStyle(${ellipsisFinder}).display }))()`);
-  log(`verify-tauri-567: trailing slot ON HOVER: ${JSON.stringify(onHover)}`);
-  assert(onHover.timeDisplay === 'none', `time must hide on hover (decision 12), got display=${onHover.timeDisplay}`);
-  assert(onHover.menuDisplay !== 'none', `"..." menu button must show on hover (decision 12), got display=${onHover.menuDisplay}`);
-  log('STEP PASS: trailing time/"..." menu slot swap verified on hover (display toggling, not opacity).');
-  await cdp.screenshot(path.join(evidenceDir, '03-row-hover-trailing-slot.png'));
+  await cdp.evaluate(`${openButtonFinder}.focus()`);
+  await pressKey(cdp, 9, 'Tab', 'Tab');
+  await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'Tab from the open button reaches the "..." trigger (decision 17: every control is a Tab stop)' });
+  log('STEP PASS: Tab reaches the row\'s "..." trigger at rest -- it is never removed from the Tab order.');
+  await pressKey(cdp, 13, 'Enter', 'Enter');
+  await cdp.waitFor(`${ellipsisFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: '"..." menu opened via Enter' });
+  await pressKey(cdp, 27, 'Escape', 'Escape');
+  await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'Escape returns focus to the "..." trigger' });
+  log('STEP PASS: Escape closes the "..." menu and returns KEYBOARD focus to the trigger (not <body>).');
+
+  // ---- Delete then Cancel also returns focus to the "..." trigger ----
+  await pressKey(cdp, 13, 'Enter', 'Enter');
+  await cdp.waitFor(`${ellipsisFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: '"..." menu reopened' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Delete'))`);
+  await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete confirmation dialog open' });
+  await cdp.clickByText('Cancel', { inDialog: true });
+  await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog closed' });
+  await cdp.waitFor(`document.activeElement === ${ellipsisFinder}`, { timeoutMs: 10_000, label: 'focus returns to the "..." trigger after Delete > Cancel' });
+  log('STEP PASS: Delete > Cancel returns focus to the "..." trigger (not <body>).');
+
+  // ---- Right-click (context menu) also reveals the "..." slot and leaves focus somewhere live ----
+  await rightClick(cdp, rowFinder);
+  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu opened via right-click' });
+  const ellipsisVisibleDuringContextMenu = await cdp.evaluate(`getComputedStyle(${ellipsisFinder}).opacity`);
+  log(`verify-tauri-567: "..." opacity while the context menu is open: ${ellipsisVisibleDuringContextMenu}`);
+  assert(parseFloat(ellipsisVisibleDuringContextMenu) > 0.5, `"..." must also show while a right-click context menu is open (decision 12), got opacity=${ellipsisVisibleDuringContextMenu}`);
+  await pressKey(cdp, 27, 'Escape', 'Escape');
+  await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu closed' });
+  const activeAfterContextMenu = await cdp.evaluate(`document.activeElement === document.body ? 'body' : document.activeElement.tagName`);
+  log(`verify-tauri-567: focus after closing the context menu: ${activeAfterContextMenu}`);
+  assert(activeAfterContextMenu !== 'body', `focus must not strand on <body> after closing the right-click context menu, got ${activeAfterContextMenu}`);
+  log('STEP PASS: right-click context menu reveals the "..." slot and does not strand focus on <body> on close.');
+  await cdp.screenshot(path.join(evidenceDir, '13-context-menu.png'));
 
   // ---- Renaming state (F2) ----
-  await cdp.click(openButtonFinder); // F2 is handled by the open button's own keydown handler
+  await cdp.click(openButtonFinder);
   await cdp.waitFor(`document.activeElement === ${openButtonFinder}`, { timeoutMs: 10_000, label: 'row open button focused before F2' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 0x73, code: 'F2', key: 'F2' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 0x73, code: 'F2', key: 'F2' });
+  await pressKey(cdp, 0x73, 'F2', 'F2');
   await cdp.waitFor(`!!${rowFinder}.querySelector('input[aria-label="Session name"]')`, { timeoutMs: 10_000, label: 'rename input shown' });
-  log('STEP PASS: F2 renaming state shown on the row.');
+  const rowHeightWhileRenaming = await cdp.evaluate(
+    `(() => { const li = ${rowFinder}; const surface = li.querySelector(':scope > div'); return surface.getBoundingClientRect().height; })()`
+  );
+  log(`verify-tauri-567: row height while renaming: ${rowHeightWhileRenaming}`);
+  assert(rowHeightWhileRenaming >= 40, `row must not shrink while renaming (min-h-11), measured ${rowHeightWhileRenaming}`);
+  log('STEP PASS: F2 renaming state shown on the row, full height kept.');
   await cdp.screenshot(path.join(evidenceDir, '04-row-renaming.png'));
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, code: 'Escape', key: 'Escape' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, code: 'Escape', key: 'Escape' });
+  await pressKey(cdp, 27, 'Escape', 'Escape');
   await cdp.waitFor(`!${rowFinder}.querySelector('input[aria-label="Session name"]')`, { timeoutMs: 10_000, label: 'rename cancelled' });
 
   // ---- Needs-you (pending approval) status, branch line 2 ----
@@ -277,13 +321,15 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log(`verify-tauri-567: line 2 (branch, needs-you row): ${JSON.stringify(line2Branch)}`);
   assert(line2Branch.fontFamily.toLowerCase().includes('cascadia') || line2Branch.fontFamily.toLowerCase().includes('consolas') || line2Branch.fontFamily.toLowerCase().includes('mono'), `branch line 2 must use the Code font (decision 10), got ${line2Branch.fontFamily}`);
 
-  // ---- Archive it: Archived group label/count format, line 2 becomes the Project name.
-  // `archiveFirstRowIn` (the shared helper) assumes an opacity-hidden "..." button, which still
-  // has a real bounding rect to click; #567's own trailing slot instead toggles `display` (the
-  // "takes that slot" swap, decision 12), so the row must be hovered first or the button has a
-  // zero-size rect to click. ----
+  // ---- Marker-column alignment: Repository header's trigger right edge vs Archived's own,
+  // measured geometrically (not dependent on a marker actually rendering) -- gate round 1 fix:
+  // the previous #908 fold-in was 8px off and never measured live either way. ----
+  const repoHeaderTriggerFinder = groupTriggerFinder(repoName);
+  const repoTriggerRight = await cdp.evaluate(`${repoHeaderTriggerFinder}.getBoundingClientRect().right`);
+
+  // ---- Archive it: Archived group label/count format, line 2 becomes the Project name. ----
   await hoverRow(cdp, rowFinder);
-  await cdp.waitFor(`getComputedStyle(${ellipsisFinder}).display !== 'none'`, { timeoutMs: 5_000, label: '"..." menu button visible before archiving' });
+  await cdp.waitFor(`getComputedStyle(${ellipsisFinder}).opacity > 0.5`, { timeoutMs: 5_000, label: '"..." menu button visible before archiving' });
   await cdp.click(ellipsisFinder);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'row menu open with Archive item' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
@@ -295,40 +341,59 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log(`verify-tauri-567: Archived header label: ${JSON.stringify(archivedLabel)}`);
   assert(!archivedLabel.hasBracket, `Archived label must not use brackets (decision 5), got text=${JSON.stringify(archivedLabel.text)}`);
   assert(archivedLabel.countSpan === '1', `Archived header must show a separate tabular-nums count span (decision 5), got ${JSON.stringify(archivedLabel.countSpan)}`);
+
+  // Marker-column alignment, measured now that both headers exist (geometric, regardless of a
+  // real marker-worthy status on either side -- the trigger's own right edge is what `ml-auto`
+  // anchors a marker against).
+  const archivedTriggerRight = await cdp.evaluate(`${ARCHIVED_TRIGGER_FINDER}.getBoundingClientRect().right`);
+  const alignmentDeltaPx = Math.abs(repoTriggerRight - archivedTriggerRight);
+  writeFileSync(path.join(evidenceDir, 'marker-column-alignment.json'), JSON.stringify({ repoTriggerRight, archivedTriggerRight, alignmentDeltaPx }, null, 2));
+  log(`verify-tauri-567: marker column alignment: Repository trigger right=${repoTriggerRight}, Archived trigger right=${archivedTriggerRight}, delta=${alignmentDeltaPx}px`);
+  assert(alignmentDeltaPx <= 1, `Archived and Repository header triggers must line up within 1px (#908), measured delta=${alignmentDeltaPx}px`);
+  log('STEP PASS: #908 marker column alignment measured live -- within 1px.');
+
   await cdp.click(ARCHIVED_TRIGGER_FINDER);
   await cdp.waitFor(`${ARCHIVED_TRIGGER_FINDER}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Archived opened' });
   const archivedRowFinder = `document.querySelector('[data-archived-group] li[data-choice-item]')`;
   await cdp.waitFor(`!!${archivedRowFinder}`, { timeoutMs: 10_000, label: 'archived row rendered' });
-  const archivedLine2 = await cdp.evaluate(`${archivedRowFinder}.querySelector('.session-open-button > span:last-child').textContent`);
-  log(`verify-tauri-567: archived row's own line 2 (should be the Project name): ${JSON.stringify(archivedLine2)}`);
-  assert(archivedLine2 === repoName, `archived row's line 2 must show its own Project name (decision 9), got ${JSON.stringify(archivedLine2)}`);
-  log('STEP PASS: Archived header label/count format and archived row line-2 Project name verified.');
+  const archivedLine2 = await cdp.evaluate(
+    `(() => { const s = ${archivedRowFinder}.querySelector('.session-open-button > span:last-child'); return { text: s.textContent, hasIcon: !!s.querySelector('svg') }; })()`
+  );
+  log(`verify-tauri-567: archived row's own line 2 (should be the Project name with an icon): ${JSON.stringify(archivedLine2)}`);
+  assert(archivedLine2.text === repoName, `archived row's line 2 must show its own Project name (decision 9), got ${JSON.stringify(archivedLine2.text)}`);
+  assert(archivedLine2.hasIcon, `archived row's line 2 must show FolderGit2Icon (decision 9.4), got no icon`);
+  const archivedDescription = await cdp.evaluate(
+    `(() => { const btn = ${archivedRowFinder}.querySelector('.session-open-button'); const id = btn.getAttribute('aria-describedby'); return id ? document.getElementById(id)?.textContent ?? null : null; })()`
+  );
+  log(`verify-tauri-567: archived row's accessible description: ${JSON.stringify(archivedDescription)}`);
+  assert(typeof archivedDescription === 'string' && archivedDescription.includes(repoName), `archived row's accessible description must include its own Project name (decision 16), got ${JSON.stringify(archivedDescription)}`);
+  log('STEP PASS: Archived header label/count format, archived row line-2 Project name + icon, and the accessible description all verified.');
   await cdp.screenshot(path.join(evidenceDir, '06-archived-group-open.png'));
-
-  // ---- Group header: sentence case, 24px ghost actions hidden at rest / shown on hover ----
   await cdp.click(ARCHIVED_TRIGGER_FINDER); // close it again
-  const headerTrigger = groupTriggerFinder(repoName);
-  const headerCase = await cdp.evaluate(`getComputedStyle(${headerTrigger}).textTransform`);
+
+  // ---- Decision 24: "No sessions yet" once the only Session is archived ----
+  await cdp.waitFor(`${repoHeaderTriggerFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Project group still open' });
+  const emptyStateText = await cdp.evaluate(
+    `(() => { const group = document.querySelector('[data-repository-id]'); const p = Array.from(group.querySelectorAll('p')).find((el) => el.textContent.includes('No sessions yet')); return p ? p.textContent : null; })()`
+  );
+  log(`verify-tauri-567: empty-Project state text: ${JSON.stringify(emptyStateText)}`);
+  assert(emptyStateText === 'No sessions yet', `an open, empty Project must show "No sessions yet" (decision 24), got ${JSON.stringify(emptyStateText)}`);
+  log('STEP PASS: decision 24\'s "No sessions yet" line renders once the only Session is archived.');
+  await cdp.screenshot(path.join(evidenceDir, '14-empty-project.png'));
+
+  // ---- Group header: sentence case ----
+  const headerCase = await cdp.evaluate(`getComputedStyle(${repoHeaderTriggerFinder}).textTransform`);
   log(`verify-tauri-567: group header text-transform: ${headerCase}`);
   assert(headerCase === 'none', `group header must be sentence case, never uppercase (decision 4), got textTransform=${headerCase}`);
-  const headerActionsAtRest = await cdp.evaluate(
-    `(() => { const plus = document.querySelector('[data-quick-create-session]'); const r = plus.getBoundingClientRect(); return { opacity: getComputedStyle(plus).opacity, width: r.width, height: r.height }; })()`
-  );
-  log(`verify-tauri-567: header "+" button at rest: ${JSON.stringify(headerActionsAtRest)}`);
-  assert(Math.round(headerActionsAtRest.width) === 24 && Math.round(headerActionsAtRest.height) === 24, `header action buttons must be 24px icon-xs (decision 6), got ${JSON.stringify(headerActionsAtRest)}`);
-  await hoverRow(cdp, `document.querySelector('[data-repository-id]')`);
-  await cdp.waitFor(`parseFloat(getComputedStyle(document.querySelector('[data-quick-create-session]')).opacity) > 0.5`, { timeoutMs: 5_000, label: 'header actions revealed on hover' });
-  log('STEP PASS: group header sentence case and 24px hover-revealed action buttons verified.');
-  await cdp.screenshot(path.join(evidenceDir, '07-group-header-hover.png'));
 
   // ---- Collapsed group with a Waiting marker ----
   await createSessionViaQuickCreate(cdp, repoName);
   await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
   await cdp.clickByLabel('Send message');
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'second session needs-you' });
-  await cdp.click(headerTrigger);
-  await cdp.waitFor(`${headerTrigger}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Project group collapsed' });
-  const markerName = await cdp.evaluate(`${headerTrigger}.getAttribute('aria-label')`);
+  await cdp.click(repoHeaderTriggerFinder);
+  await cdp.waitFor(`${repoHeaderTriggerFinder}.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Project group collapsed' });
+  const markerName = await cdp.evaluate(`${repoHeaderTriggerFinder}.getAttribute('aria-label')`);
   log(`verify-tauri-567: collapsed header accessible name (should include the Waiting marker): ${JSON.stringify(markerName)}`);
   assert(typeof markerName === 'string' && markerName.includes('Needs you'), `closed group with a needs-you Session must carry the Waiting marker in its accessible name (#735 decision 21), got ${JSON.stringify(markerName)}`);
   log('STEP PASS: closed group header carries the Waiting marker.');
@@ -336,7 +401,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
 
   // ---- Footer: one divider above Add repository + profile item, no second border on ProfileItem ----
   const footerCheck = await cdp.evaluate(
-    `(() => { const footer = Array.from(document.querySelectorAll('nav div')).find((el) => el.className.includes('border-t') && el.querySelector('button')?.textContent?.includes('Add repository')); const profile = document.querySelector('[data-profile-name-button]')?.closest('div'); const fcs = footer ? getComputedStyle(footer) : null; const pcs = profile ? getComputedStyle(profile) : null; return { footerBorderWidth: fcs?.borderTopWidth, profileBorderWidth: pcs?.borderTopWidth }; })()`
+    `(() => { const footer = Array.from(document.querySelectorAll('nav div')).find((el) => el.className.includes('border-t') && el.querySelector('button')?.textContent?.includes('Add repository')); const profile = document.querySelector('[data-profile-name-button]')?.closest('div'); const fcs = footer ? getComputedStyle(footer) : null; const pcs = profile ? getComputedStyle(profile) : null; return { footerBorderWidth: fcs?.borderTopWidth, profileBorderWidth: pcs?.borderTopWidth, addRepoColor: getComputedStyle(footer.querySelector('button')).color }; })()`
   );
   writeFileSync(path.join(evidenceDir, 'footer-check.json'), JSON.stringify(footerCheck, null, 2));
   log(`verify-tauri-567: footer divider check: ${JSON.stringify(footerCheck)}`);
@@ -354,11 +419,9 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: Pull requests nav entry shows the selected bar plus fill.');
   await cdp.screenshot(path.join(evidenceDir, '10-pull-requests-selected.png'));
 
-  // ---- Restore the normal session-list/chat view (currently Pull requests, and the Project
-  // group is still collapsed from the Waiting-marker check) before the caller's per-theme
-  // screenshots, so those show the row layout rather than the Pull requests view. ----
-  await cdp.click(headerTrigger);
-  await cdp.waitFor(`${headerTrigger}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Project group reopened before theme screenshots' });
+  // ---- Restore the normal session-list/chat view before the caller's per-theme screenshots ----
+  await cdp.click(repoHeaderTriggerFinder);
+  await cdp.waitFor(`${repoHeaderTriggerFinder}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Project group reopened before theme screenshots' });
   const anyOpenButton = `document.querySelector('[data-repository-id] .session-open-button')`;
   await cdp.click(anyOpenButton);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 15_000, label: 'chat pane shown before theme screenshots' });
@@ -369,6 +432,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
 async function main() {
   mkdirSync(SHOT_DIR, { recursive: true });
   const log = createReportLogger(path.join(SHOT_DIR, 'report.txt'));
+  log(`verify-tauri-567: git HEAD under test: ${gitHead()}`);
   let shimDir, dataDir, importSourceDir, repoDir, exeDir;
   const evidenceDir = SHOT_DIR;
   let child;

@@ -45,18 +45,39 @@ export function formatRelativeTime(iso: string): string {
 // 7 days on), distinct from `formatRelativeTime`'s long "ago" form above, which other surfaces
 // (`SessionDetailsCard.tsx`, `ManageSessionRow.tsx`, the Pull requests view) keep using
 // unchanged. The visible text this feeds is `aria-hidden`; the long form goes in the row's own
-// accessible description instead (`SessionDetailsCard.tsx`'s `descriptionText`).
-const SHORT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
+// accessible description instead (`SessionDetailsCard.tsx`'s `descriptionText`). Gate round 1 fix
+// (Low, code-reviewer): `Math.round`, matching `formatRelativeTime` above -- `Math.floor` here
+// disagreed with that function's own rounding for the same instant (the visible "4m" and the
+// described "5m ago" could name two different numbers for one row). `'en-GB'` (not the user's own
+// locale) for the short date: decision 11's own example, "12 Oct", is day-then-month with no
+// comma, which is not what every locale gives `Intl.DateTimeFormat(undefined, …)` (`en-US` reads
+// "Oct 12").
+const SHORT_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
 export function formatRelativeTimeShort(iso: string): string {
   const deltaMs = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(deltaMs / 60_000)
+  const minutes = Math.round(deltaMs / 60_000)
   if (minutes < 1) return 'now'
   if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
+  const hours = Math.round(minutes / 60)
   if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
+  const days = Math.round(hours / 24)
   if (days < 7) return `${days}d`
   return SHORT_DATE_FORMAT.format(new Date(iso))
+}
+
+// Gate round 1 fix (Medium, a11y-auditor): `SessionDetailsCard`'s own `aria-describedby` text
+// used to embed `formatRelativeTime`'s relative form here, which the shared minute tick
+// (`useMinuteTick`, `SessionRow.tsx`) recomputes every 60s for every mounted row -- Chromium
+// fires a description-changed accessibility event on an edit to a FOCUSED element's own
+// description, and some screen readers (NVDA) speak it, so a user sitting on a recently-active
+// row heard its whole description again roughly once a minute. An absolute wall-clock time never
+// changes between one render and the next, so the description stays stable while still being
+// accurate; the visible, `aria-hidden` short time (`formatRelativeTimeShort` above) and the
+// hover card's own visible long form (`formatRelativeTime`, not read by assistive tech per this
+// file's own comment) are unaffected and keep ticking live.
+const ABSOLUTE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+export function formatAbsoluteTime(iso: string): string {
+  return ABSOLUTE_TIME_FORMAT.format(new Date(iso))
 }
 
 /** #735 decision 21 (and #748's own future "Show hidden" badge, which will reuse this helper): the single most

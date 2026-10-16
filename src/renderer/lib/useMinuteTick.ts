@@ -13,8 +13,10 @@ let timeoutHandle: number | undefined
 let intervalHandle: number | undefined
 
 function start(): void {
-  // Aligns the very first tick to the next real minute boundary; every tick after that is a
-  // plain 60s interval, which stays aligned since it was anchored by the first one.
+  // Aligns the very first tick to the next real minute boundary. Every tick after that is a
+  // plain 60s `setInterval`, which drifts over a long session (timer coalescing, background-tab
+  // throttling) rather than staying perfectly aligned -- harmless here, since the visible text
+  // this drives rounds to the nearest minute anyway, so a few seconds of drift never shows.
   const msToNextMinute = 60_000 - (Date.now() % 60_000)
   timeoutHandle = setTimeout(() => {
     tick++

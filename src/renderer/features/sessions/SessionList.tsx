@@ -236,7 +236,7 @@ export function SessionList() {
       <div className="shrink-0 border-t border-divider p-2">
         <AddRepositoryDialog
           trigger={
-            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium">
+            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium text-muted-foreground hover:text-foreground">
               <FolderPlusIcon aria-hidden className="size-4" />
               Add repository
             </Button>

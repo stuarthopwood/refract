@@ -2021,11 +2021,11 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   move from a mix of `icon-sm`/a raw 22px button to shared `Button variant="ghost" size="icon-
   xs"`, hidden at rest and revealed by opacity on `group-hover`/`group-focus-within`/their own
   `aria-expanded`/`creating`/an empty active-Session list, always shown under `(hover: none)`
-  (decision 6) -- unifying all three to 24px, folded with recomputing `GROUP_HEADER_ACTIONS_
-  OFFSET_PX` from their real size, resolves #908's "Archived marker column" follow-up (the old
-  mixed 28/28/22px actions column, about 94px real, against a stale 104px constant, put
-  Archived's own Waiting marker about 10px left of a Project header's); its own row list's
-  `gap-0.5` also drops to `gap-0`. `SessionList.tsx`: the Pull
+  (decision 6) -- unifying all three to 24px (initially intended, gate round 1 found this alone
+  insufficient, see T263) to resolve #908's "Archived marker column" follow-up (the old mixed
+  28/28/22px actions column, about 94px real, against a stale 104px constant, put Archived's own
+  Waiting marker about 18px left of a Project header's); its own row list's `gap-0.5` also drops
+  to `gap-0`. `SessionList.tsx`: the Pull
   requests nav entry gains the shared 2px active-indicator bar when selected, alongside its
   existing fill (decision 18); the footer's own `border-sidebar-border` becomes `border-divider`
   (decision 20). `ProfileItem.tsx`: its own `border-t` removed, since the footer above it now
@@ -2086,19 +2086,69 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   afterward); `pnpm test` 148/148 (no new tests, per AGENTS.md); `check:theme-contrast` 415/415
   PASS including the 9 new sidebar pairs T260 added.
 
+- [X] T263 [US5] Gate round 1 remediation (five-reviewer, 2026-10-16): Code, Tests, A11y and
+  `ui-architect-v3` FAILed on three agreed High findings and several Medium/Low ones (Security
+  PASSed). Fixed: **(1)** `SessionRow.tsx`'s own "..." trigger was `hidden` (`display:none`) at
+  rest, so `menuTriggerRef.current.focus()` silently did nothing on every keyboard close path
+  (Escape, a menu item, Delete > Cancel, Shift+F10) and Shift+Tab skipped it entirely (decision
+  17) -- now an `opacity`/`pointer-events` swap, absolutely positioned over the time's own cell
+  (the time itself swaps to `invisible`, keeping its layout box reserved), with every reveal rule
+  scoped inside `[@media(hover:hover)]` so a touch pointer's own default (always visible, no
+  override needed) satisfies decision 12's "under hover:none, both show" without a separate rule;
+  `group-has-[[data-slot="context-menu-trigger"][data-state="open"]]` added alongside the
+  dropdown's own `aria-expanded` check, since Radix's `ContextMenuTrigger` sets `data-state`, not
+  `aria-expanded`. **(2)** An archived row's own Project name never reached assistive technology
+  (`activityDescription` was `undefined` for that case, resting on a false comment that the
+  unreachable hover card covered it) -- now set to the Project name, with `FolderGit2Icon size-3`
+  added to line 2 to match the old per-repository secondary label (decision 9.4). **(3)** The
+  #908 fold-in (T260) claimed the marker-column alignment was exact "by construction" at 88px;
+  it was still 8px off, because `ArchivedGroup.tsx`'s spacer sits INSIDE the header row and must
+  NOT also add the row's own trailing padding a second time -- added a separate
+  `GROUP_HEADER_ACTIONS_WIDTH_PX` (3x24 + 2x4 = 80) for the spacer, keeping
+  `GROUP_HEADER_ACTIONS_OFFSET_PX` (88) for the tooltip `sideOffset` only, and this time measured
+  live (both header triggers' own `getBoundingClientRect().right`, asserted within 1px) rather
+  than claimed from arithmetic alone. Medium/Low fixes: decision 24's "No sessions yet" empty-
+  Project line (`RepositoryGroup.tsx`, was missing and unflagged); the "..." and header actions'
+  hover/open-menu fill, which lost to `ghost`'s own `dark:hover:bg-muted/50` (every built-in theme
+  sets `.dark`) -- added `dark:hover:bg-sidebar-border`/`aria-expanded:bg-sidebar-border`; a
+  forced-colours focus outline on every new 24px `Button` (`COMPOSER_BUTTON_FOCUS_CLASS`, since
+  `Button`'s own `focus-visible:ring-3` is a box-shadow forced colours strips); decision 8's icon
+  alignment, per the UX architect's own gate ruling (`GroupHeader.tsx`'s trigger `gap-1.5`/
+  `px-1.5` to `gap-1`/`px-1`, `SessionRow.tsx`'s row `pl-3` to `pl-6`, both now meeting at 24px) --
+  **this changes decision 8's own literal `pl-3 pr-2 py-1`, recorded as a departure on #567, not
+  silently overridden**; Resume moved outside the open button into a shared trailing area with
+  the time/"..." cell so line 2 keeps the full row width on every row; the Add repository
+  button's muted-at-rest colour (decision 21); the row shrinking to about 38px while renaming
+  (`min-h-11`); the quick-create "+" losing its glyph-only disabled dim while creating; off-grid
+  `gap-0.5`/`px-1.5` in the repository rename wrapper and the tooltip's own two-line gap
+  (decision 28); `formatRelativeTimeShort`'s rounding (`Math.floor`) disagreeing with
+  `formatRelativeTime`'s (`Math.round`) for the same instant, and its locale-dependent short-date
+  order (`Intl.DateTimeFormat(undefined, …)` reads "Oct 12" in `en-US`, not decision 11's own
+  "12 Oct") -- pinned to `'en-GB'`; and the row's own accessible description re-announcing "Last
+  active {N}m ago" to a focused screen-reader user roughly once a minute (the shared tick
+  recomputes it every render) -- now a stable `formatAbsoluteTime` ("Last active 14:05") in the
+  description only, leaving the visible short time and the hover card's own long form ticking as
+  before. **Live re-verification**: `scripts/verify-tauri-567.mjs` rebuilt and re-run from this
+  fix's own commit (`pnpm tauri build` chained with the verify script in one command, so the
+  run's exe is provably built from the commit under test; git HEAD logged in `report.txt`) --
+  KEYBOARD-ONLY Tab reaches the "..." trigger at rest, Enter opens it, Escape returns focus to
+  it, Delete > Cancel also returns focus to it, and a right-click context menu reveals the "..."
+  slot without stranding focus on `<body>` on close; the header actions' opacity at rest/hover/
+  keyboard-focus measured WHILE the group still has its one active Session (not after archiving,
+  gate round 1's own Medium finding on the first run); the marker-column alignment measured at
+  both header triggers' own right edge (within 1px); decision 24's empty-Project line; the
+  archived row's Project name, icon and accessible description (via its own `aria-describedby`
+  element's `textContent`); everything T262 already covered. `node scripts/ci-local.mjs` 16/16
+  PASS; `pnpm test` 148/148.
+
 **Not exercised this phase** (stated plainly, not hidden): the mock image itself was not
 available to diff pixel-for-pixel against (only the decision record's own textual description
 was available, which every check above verifies against instead); the `(hover: none)` touch-
-pointer path (both the row's trailing slot and a group header's own actions showing at rest) was
-not exercised, since the scratch harness has no touch-pointer emulation; the Working, Stopped and
-Unread response status icons were not separately live-exercised this phase (that rendering is
-`StateIcon`'s own, unchanged by this story and already gate-verified under #731) -- Idle,
-Needs-you and Archived were exercised, since those are the states that interact with this story's
-own new line-2 precedence and accessible-name logic; a frame-by-frame capture proving the row's
-own indent (`pl-3`) visually lines up under the group header's Project icon was not captured --
-measured instead from the two screenshots at hand: the row's own status icon sits visibly to the
-left of the header's folder icon (roughly 12px vs roughly 28px from the shared left edge), not
-flush. Decision 8 gives `pl-3 pr-2 py-1` as its own literal, reviewed class list, which this
-phase followed verbatim rather than widening it to chase the qualitative "lines up under the
-header's icon" goal unilaterally; flagged here for Stuart or the gate to settle, not silently
-resolved either way.
+pointer path is now un-overridden default behaviour (gated out of the hover-hiding rules
+entirely, T263) rather than a separately asserted branch, so it was not exercised under actual
+touch-pointer emulation (the scratch harness has none); the Working, Stopped and Unread response
+status icons were not separately live-exercised this phase (that rendering is `StateIcon`'s own,
+unchanged by this story and already gate-verified under #731) -- Idle, Needs-you and Archived
+were exercised, since those are the states that interact with this story's own new line-2
+precedence and accessible-name logic; the 220px narrow-width truncation (decision 25) was not
+re-measured after T263's `pl-6`/`gap-1` changes recovered 8px of width margin for it.

@@ -7,7 +7,7 @@ import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { StateIcon, STATUS_LABEL, displayStatus, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
+import { StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
 /** The session details card (T069/T070): wraps the row's open button (`children`, passed through
@@ -50,10 +50,13 @@ export function SessionDetailsCard({
   // replaces the shorter `From {base}. {path}` form, now that the row's own accessible name
   // (`SessionRow.tsx`'s `aria-label`) no longer carries the branch, base, or last-active time
   // itself; this description is the one place they still reach assistive technology.
+  // Gate round 1 fix (Medium, a11y): "Last active" uses `formatAbsoluteTime`, not
+  // `formatRelativeTime` -- see that function's own comment for why (description churn on a
+  // focused row, once a minute, from the shared tick).
   const descriptionText = [
     activityDescription,
     `${session.branch} from ${session.baseBranch}`,
-    `Last active ${formatRelativeTime(session.lastActivityAt)}`,
+    `Last active ${formatAbsoluteTime(session.lastActivityAt)}`,
     `${session.worktreePath}${worktreeMissing ? ' (missing)' : ''}`
   ]
     .filter((part): part is string => Boolean(part))
