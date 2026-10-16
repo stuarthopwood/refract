@@ -485,6 +485,40 @@ async function main() {
           checkFail('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillAlive, stillDownloadedResult }));
         }
       }
+
+      if (phase.label === 'failed') {
+        await handleCdp.screenshot(path.join(SHOTS_DIR, '08-profile-menu-failed.png'));
+        // Gate round 2 fix (M1, architect): prove the "Check for updates" click's toast.loading
+        // placeholder is genuinely REPLACED IN PLACE by sonner's own `{ id }` mechanism (one
+        // toast throughout, never two stacked), not just that the loading toast appears.
+        await handleCdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Check for updates'))`);
+        const loadingSeen = await handleCdp
+          .waitFor(`(() => { const t = document.querySelector('[data-sonner-toast] [data-title]'); return t && t.textContent.trim() === 'Checking for updates\u2026'; })()`, { timeoutMs: 3_000, label: 'loading toast appears' })
+          .catch(() => false);
+        let outcomeText = null;
+        let maxToastCount = 0;
+        const toastDeadline = Date.now() + 10_000;
+        while (Date.now() < toastDeadline) {
+          const snap = await handleCdp.evaluate(
+            `(() => { const toasts = Array.from(document.querySelectorAll('[data-sonner-toast]')); const titles = toasts.map((t) => { const d = t.querySelector('[data-title]'); return d ? d.textContent.trim() : null; }).filter(Boolean); return { count: toasts.length, titles }; })()`
+          );
+          maxToastCount = Math.max(maxToastCount, snap.count);
+          const settled = snap.titles.find((t) => t !== 'Checking for updates\u2026');
+          if (settled) { outcomeText = settled; break; }
+          await sleep(200);
+        }
+        if (loadingSeen && outcomeText && maxToastCount === 1) {
+          checkPass('"Check for updates": toast.loading replaced in place (sonner {id}) by one outcome toast, never stacked', JSON.stringify({ loadingSeen, outcomeText, maxToastCount }));
+        } else {
+          checkFail('"Check for updates": toast.loading replaced in place (sonner {id}) by one outcome toast, never stacked', JSON.stringify({ loadingSeen, outcomeText, maxToastCount }));
+        }
+        // Error path (toast.error on a rejected check, or phase settling to "failed"): forcing a
+        // genuine gh/network failure for one scratch launch, without a mock (AGENTS.md's
+        // no-mocks-while-prototyping rule), was judged unsafe/unreliable to script against a real
+        // signed-in gh install -- the handleCheckAgain catch()/phase-failed toast.error branches
+        // are code-reviewed only, not independently live-triggered.
+        notExercised('"Check for updates" error path (toast.error on a rejected or failed real check)', 'forcing a genuine gh/network failure for one scratch launch without a mock was judged unsafe/unreliable to script against a real signed-in gh install; the catch()/phase-failed toast.error branches in handleCheckAgain are code-reviewed only');
+      }
       await teardownPhase();
       await sleep(1500);
     }
