@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import { toast } from 'sonner'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { createdSessionAnnouncement, wasHiddenByFilter } from '@/features/sessions/createdSessionAnnouncement'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -333,24 +334,23 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
           return
         }
         const finish = () => {
-          const stay = useViewStore.getState().view === 'manage-sessions' && isStillHere()
-          if (!stay) {
-            useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+          const announcement = createdSessionAnnouncement(result.value)
+          if (!(useViewStore.getState().view === 'manage-sessions' && isStillHere())) {
+            useChatAreaAnnouncer.getState().announce(announcement)
             return
           }
           useViewStore.getState().openChat(repository.id)
           requestAnimationFrame(() => {
             const { paneSessionIds, focusedIndex } = useSplitStore.getState()
             const focusedSessionId = paneSessionIds[focusedIndex]
-            // Gate round 4 (all four reviewers): do not ignore whether a pane was actually
-            // found -- `openChat` has already switched the view away from this (now unmounted)
-            // screen, so a missing pane must not be left silently unfocused; fall back to the
-            // same "always-connected" nav target `handleOpen` above implicitly relies on via
-            // `focusSessionPane`'s own internal fallback chain.
-            if (!(focusedSessionId && focusSessionPane(focusedSessionId))) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
-              focusSessionsNav()
-            }
+            // Gate round 4 (all four reviewers): check whether a pane was actually found --
+            // `openChat` already switched the view away from this (unmounted) screen, so a missing
+            // pane must not stay silently unfocused; fall back to the same "always-connected" nav
+            // target `handleOpen` relies on, via `focusSessionPane`'s own fallback chain.
+            const found = focusedSessionId && focusSessionPane(focusedSessionId)
+            // Gate round 5 (Main's finding 2): a found pane still needs this when hidden by filter.
+            if (!found || wasHiddenByFilter(announcement)) useChatAreaAnnouncer.getState().announce(announcement)
+            if (!found) focusSessionsNav()
           })
         }
         if (createRequestedRef.current) settledCreateRef.current = finish

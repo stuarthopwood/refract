@@ -5,7 +5,7 @@
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import type { SessionFilters } from '@/state/view-store'
-import { displayStatus } from '@/features/sessions/sessionDisplay'
+import { displayStatus, matchesNameOrBranch } from '@/features/sessions/sessionDisplay'
 import type { SessionDisplayStatus } from '@/features/sessions/sessionDisplay'
 
 // Issue #731 decision 8: Manage sessions' own Status sort order -- needs-you, Unread response,
@@ -34,7 +34,7 @@ export function filterAndSortSessions(
     if (filters.repositoryId !== 'all' && session.repositoryId !== filters.repositoryId) return false
     if (filters.archiveFilter === 'active' && session.archivedAt) return false
     if (filters.archiveFilter === 'archived' && !session.archivedAt) return false
-    if (query && !session.name.toLowerCase().includes(query) && !session.branch.toLowerCase().includes(query)) return false
+    if (!matchesNameOrBranch(session, query)) return false
     return true
   })
   return [...filtered].sort((a, b) => {
@@ -66,8 +66,3 @@ export function distinctRepositoryCount(sessions: SessionSummary[]): number {
   return new Set(sessions.map((session) => session.repositoryId)).size
 }
 
-/** The filtered-result announcement: "Showing X of N sessions", singular "session" when the
- *  UNFILTERED total itself is 1 (the thing actually being enumerated). */
-export function showingCountLabel(shown: number, total: number): string {
-  return `Showing ${shown} of ${total} ${total === 1 ? 'session' : 'sessions'}`
-}

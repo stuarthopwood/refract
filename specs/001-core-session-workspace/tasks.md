@@ -2649,3 +2649,62 @@ built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #917). `n
 scripts/ci-local.mjs` (16/16) was run after the build; see the PR body for the exact result and
 the live-check evidence (a scratch Tauri debug instance, `/advisor status`, `/advisor on`, a real
 turn, `/advisor off`, and the slash menu listing).
+
+## Phase 49: Convergence
+
+(Renumbered from provisional Phase 48/T251-T252 to Phase 49/T253-T254: PR #923 (#917) merged into
+`main` first and claimed Phase 48/T251-T252.)
+
+- [X] T253 [US5] #559 session search (Decided, Skippy, delegated by Stuart 2026-10-16;
+  `ui-architect-v3` roundtable, full decision record on the issue): built the shared
+  `SearchField` component (`src/renderer/components/SearchField.tsx`, docs/design/components.md
+  "Reusable components first", #934 decision 5) -- a leading magnifier, Esc-clears, a clear (x)
+  button shown only while there is text, and the forced-colours focus fix every other toolbar
+  control in this nav already carries. Placed in `SessionList.tsx` in the slot #735 decision 26
+  reserved (between Pull requests and the Collapse all/Expand all toolbar, which moves from
+  `mt-4` to `mt-2`), inside its own `role="search"` landmark at the call site. The matcher
+  (`matchesNameOrBranch`/`matchesSessionSearch` plus `showingCountLabel`, moved into
+  `sessionDisplay.tsx` so Manage sessions' own filter and this field share one substring check
+  rather than two) narrows what the list already shows: a Project group renders only once at
+  least one of its own non-archived Sessions matches (name, branch, or Project name), showing
+  only the matching rows, and Archived is searched the same way against each row's own Project
+  name. `session-list-store.ts` gained `query`/`setQuery` and an ephemeral `searchOverride`
+  (created empty -- every group open -- the instant the trimmed query goes empty to non-empty,
+  discarded, not merged back, the instant it empties again) plus a new `isArchivedGroupOpen()`
+  selector (`ArchivedGroup.tsx` switched onto it, replacing its own raw `archivedOpen` read) so
+  every Group header and the Collapse all/Expand all toolbar stay fully interactive during a
+  search without ever writing `Settings.sessionListCollapse`. Zero matches render the shared
+  `Empty` compound ("No sessions match", a Clear filter button); the shown-versus-total count is
+  announced politely, debounced 500ms while typing (`ManageSessionsScreen.tsx`'s own established
+  pattern), with an immediate "Filter cleared" once the query empties. `App.tsx`'s Ctrl+N
+  fallback, when the quick-create button is absent specifically because the search hides every
+  Project, now focuses the search field and asks for the filter to be cleared, instead of its
+  older, now-inaccurate "open the session list" wording. No keyboard shortcut added to focus the
+  field this story (deferred, decision 24); no new `Settings`/IPC surface (the query is never
+  persisted). Per FR-071, US5/AC8.
+- [X] T254 [US5] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+  FR-071, a dated `### Session 2026-10-16 (session search)` Clarifications entry, US5 acceptance
+  scenario 8, and a new Edge Cases bullet for a zero-match search; `docs/design/product-
+  layout.md`'s session list paragraph gains the search field's own line; `docs/design/
+  components.md` records that the proposed `SearchField` (#934 decision 5) is now built, by
+  this story; `docs/PLAN.md` gets this story's own row.
+
+**Gate rounds 2-3 addendum**: Main's five-reviewer gate (round 1) found the `typeSearch` live-
+check helper only ever appending via `Input.insertText`, never clearing first, which doubled
+earlier text onto later queries and broke screenshot 03; fixed with real Ctrl+A/Backspace key
+events first. Branch matching, case-insensitivity, a query surviving a Session switch, Shift+Tab,
+and zero matches hiding Archived (once one exists) were claimed but never actually driven live --
+all five are now real live steps. `useSessionRowActions.ts` gained the #900 focus-redirect
+pattern for a Session row's own rename. Round 2 (ui-architect-v3) then found: the Project half of
+that same #900 fix was still open (a Project rename left focus on `<body>`, fixed by a new shared
+`useFocusSearchOnStrandedUnmount` hook used by both `useSessionRowActions.ts` and
+`RepositoryGroup.tsx`, gated on a non-empty query); the "real contrast bug" PR claim was wrong
+(`--input` is itself translucent, so `dark:bg-input/30` composites far lighter than 30% -- the
+field's own default fill actually clears 4.5:1 comfortably; the opaque `bg-background` override
+was reverted, and `theme-contrast-pairs.mjs` gained the real composited `searchFieldContrastRows`
+check instead); the hidden-create announcement could be silently replaced by a plainer one from
+a racing call site, fixed with one shared `createdSessionAnnouncement()` used everywhere; Esc on
+the SearchField wrapper (not just the input), `inputProps`'s `Omit`-narrowed type, one shared
+`sessionSearchSelector.ts` for the `data-session-search-input` hook, a stale screenshot sitting in
+the evidence folder, and a tooltip-ghost in screenshot 03 were all fixed; a D20/D28 amendment
+comment was posted on #559 and the PR body's Departures section corrected.

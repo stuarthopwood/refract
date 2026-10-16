@@ -11,6 +11,8 @@ import { useWorktreeActions } from './useWorktreeActions'
 import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
 import { describeStopReason } from '@/features/chat/ChatPane'
 import { focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus'
+import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
+import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 
 // Issue #811 (SessionList.tsx split): this is SessionRow's own body, moved unchanged -- archive,
 // restore, delete, resume and rename state and handlers, plus the focus-after-removal fallback
@@ -284,6 +286,13 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     openButtonRef.current?.focus()
   }, [renaming])
 
+  // Issue #559 gate rounds 2-3 (the #900 pattern, finding 1): shared with `RepositoryGroup.tsx`
+  // so a Project rename gets the exact same focus-redirect-to-search-field fix as a Session
+  // rename, not a second, row-only copy. `restoreRequestedRef` (gate round 5, Main's finding 4)
+  // lets this skip its own generic redirect while a restore for THIS row is in flight, since
+  // `onRestore` below already has its own, more specific focus fallback.
+  useFocusSearchOnStrandedUnmount(rowRef, restoreRequestedRef)
+
   // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
   // repository and default branch (no dialog, no base-branch picker), announces immediately
   // (held until the menu actually closes, see `pendingCreateAnnouncementRef`), then -- on
@@ -339,7 +348,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
             // currently stranded on `<body>`, and leaving it there once more MUST NOT happen.
             const here = isStillHere()
             if (!(here && focusSessionPane(result.value.id))) {
-              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              useChatAreaAnnouncer.getState().announce(createdSessionAnnouncement(result.value))
               if (here) focusOrigin()
             }
           })

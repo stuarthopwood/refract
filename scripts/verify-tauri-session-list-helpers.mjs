@@ -70,7 +70,7 @@ export async function proveTrailingSlotSwapAndHoverNone(cdp, evidenceDir, log, {
   );
 }
 
-function readJson(filePath) {
+export function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
@@ -185,6 +185,53 @@ export async function createSessionViaQuickCreate(cdp, repoName) {
     `(() => { const count = ${rowSelector}; const msg = document.querySelector('[aria-label="Message"]'); return count > ${before} && !!msg && !msg.disabled; })()`,
     { timeoutMs: 60_000, label: `Session created in ${repoName} (row count ${before} -> ${before + 1}), composer enabled` }
   );
+}
+
+/** Finder for the FIRST (most-recently-active) Session row's own "... actions" trigger inside
+ * the named Project's group. */
+export function firstRowActionsFinder(repoName) {
+  return `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label$=" actions"]')`;
+}
+
+/** Opens a Session row's own "..." actions menu like a real user, fixing the flake Main
+ * diagnosed (2026-10-16): the trigger is revealed by `group-hover`/`group-focus-within`
+ * opacity (#567), so a bare synthetic click at a freshly-mounted row's own bounding rect can
+ * land before the browser has actually run the hover style recalculation the trigger's own
+ * interactivity depends on. Hovers the row first (a real `mouseMoved`, the only way to trigger
+ * a `:hover`/`group-hover` CSS reveal over CDP), waits for the trigger to actually report
+ * revealed (`opacity > 0.5`) AND closed (`aria-expanded="false"`), THEN clicks it (recomputing
+ * the bounding rect at click time, since hovering can itself shift the row's own layout as
+ * hidden actions reserve their column) and waits for the real `[role="menu"]` to mount -- never
+ * a fixed sleep. On a timeout, captures a screenshot and the row's own DOM for diagnosis. */
+export async function openRowActionsMenu(cdp, repoName, evidenceDir, log) {
+  const triggerFinder = firstRowActionsFinder(repoName);
+  const rowFinder = `${triggerFinder}?.closest('li')`;
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${rowFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 15_000, label: `row to hover: ${rowFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  try {
+    await cdp.waitFor(
+      `(() => { const el = ${triggerFinder}; if (!el) return false; return parseFloat(getComputedStyle(el).opacity) > 0.5 && el.getAttribute('aria-expanded') === 'false'; })()`,
+      { timeoutMs: 10_000, label: `row actions trigger revealed and closed: ${triggerFinder}` }
+    );
+    await cdp.click(triggerFinder);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'row actions menu opened' });
+  } catch (err) {
+    const diag = await cdp.evaluate(
+      `(() => { const el = ${triggerFinder}; if (!el) return { triggerFound: false }; const cs = getComputedStyle(el); return { triggerFound: true, ariaExpanded: el.getAttribute('aria-expanded'), opacity: cs.opacity, pointerEvents: cs.pointerEvents, outerHTML: el.outerHTML?.slice(0, 600), rowHtml: el.closest('li')?.outerHTML?.slice(0, 2000) }; })()`
+    );
+    log(`verify-tauri-559: openRowActionsMenu FAILED for "${repoName}" -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
+    await cdp.screenshot(path.join(evidenceDir, '99-diag-row-actions-menu-failure.png'));
+    throw err;
+  }
+}
+
+export async function clickMenuItem(cdp, text) {
+  const finder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(text)})`;
+  await cdp.waitFor(finder + ' !== undefined', { timeoutMs: 10_000, label: `menu item "${text}" present` });
+  await cdp.click(finder);
 }
 
 /** Archives the FIRST (most-recently-active, so the just-created one) Session row inside the
@@ -392,4 +439,155 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   // Restore the session list to its normal width before the theme screenshots below.
   await dragResizeHandleBy(400);
   await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width > 250`, { timeoutMs: 10_000, label: 'session list restored to normal width' });
+}
+
+// Issue #559's own session search field -- generic markers any future session-list live check
+// can reuse without re-deriving the selector (#806 file-size split: moved out of
+// `verify-tauri-559.mjs` once it grew past the cap, gate round 2). Gate round 3 fix (finding
+// 11): the SAME `data-session-search-input` attribute the real app's own `SessionList.tsx`
+// (`inputProps`) and `quickCreateFallback.ts`/`useFocusSearchOnStrandedUnmount.ts`
+// (`sessionSearchSelector.ts`'s `SESSION_SEARCH_INPUT_SELECTOR`) already use, not a
+// descendant-structure lookup through the region wrapper that could drift from the app's own
+// selector unnoticed.
+export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-input]')`;
+
+/** Types into the search field via a real click plus `Input.insertText`. Clears any EXISTING
+ *  text first via real key events (Ctrl+A then Backspace) -- `Input.insertText` only ever
+ *  INSERTS at the caret, so two calls in a row would otherwise silently concatenate onto
+ *  whatever a previous step left behind, not replace it. */
+export async function typeIntoSessionSearch(cdp, text) {
+  await cdp.click(SEARCH_INPUT_FINDER);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select all existing text
+  await pressKey(cdp, 8, 'Backspace', 'Backspace'); // delete the selection
+  await cdp.waitFor(SEARCH_INPUT_FINDER + `.value === ''`, { timeoutMs: 5_000, label: 'search field cleared before typing' });
+  await cdp.send('Input.insertText', { text });
+}
+
+/** Finds a Session row's own open button by the START of its accessible name (the display name,
+ *  before the first comma -- see `SessionRow.tsx`'s own `aria-label` convention). */
+export function sessionOpenButtonFinder(name) {
+  return `Array.from(document.querySelectorAll('[data-repository-id] li [data-session-open]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(name)}))`;
+}
+
+/** Renames a Session via F2 (real key events throughout): focuses `currentFinder` (an
+ *  open-button finder expression, e.g. from `sessionOpenButtonFinder`), presses F2, clears the
+ *  rename input (Ctrl+A, Backspace), types `newName`, and commits with Enter. */
+export async function renameSessionViaF2(cdp, currentFinder, newName) {
+  await cdp.evaluate(`(${currentFinder})?.focus()`);
+  await cdp.waitFor(`document.activeElement === (${currentFinder})`, { timeoutMs: 5_000, label: `open button focused before renaming to ${JSON.stringify(newName)}` });
+  await pressKey(cdp, 113, 'F2', 'F2');
+  await cdp.waitFor(`!!document.querySelector('input[aria-label="Session name"]')`, { timeoutMs: 5_000, label: 'rename input mounted after F2' });
+  await cdp.click(`document.querySelector('input[aria-label="Session name"]')`);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2);
+  await pressKey(cdp, 8, 'Backspace', 'Backspace');
+  await cdp.send('Input.insertText', { text: newName });
+  await pressKey(cdp, 13, 'Enter', 'Enter'); // commits
+}
+
+/** Issue #559 gate round 2 (ui-architect-v3/a11y-auditor High/Medium), all from one setup. A1's
+ *  own branch still equals `sessionA1Name` (spec 001 Assumptions: "the same generated name is
+ *  used for the session's branch and as its initial display name"; renaming never changes it).
+ *  Renaming A1 ONCE decouples name from branch, so searching the ORIGINAL value afterward can
+ *  only match via BRANCH -- real proof of decision 12's "name OR branch OR Project name" rule,
+ *  not a coincidence of the two being identical, and the same query upper-cased proves case-
+ *  insensitivity. A SECOND rename, to something matching neither the new name, the unchanged
+ *  branch, nor either Project's own name, makes the row (and Project A, its own only remaining
+ *  match) actually unmount -- proving the #900 focus-redirect fix (`useSessionRowActions.ts`'s
+ *  `useLayoutEffect` cleanup) moves focus to the search field, never `<body>`. Finally proves
+ *  the query survives switching to Project B's own open Session, not just a Settings round
+ *  trip. Returns the Session's final name, reused by the caller for an Archived-reverse check
+ *  afterward. */
+export async function proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName, repoBName, sessionA1Name, CLEAR_BUTTON }) {
+  await renameSessionViaF2(cdp, sessionOpenButtonFinder(sessionA1Name), 'alpha-renamed-once');
+  const renamedOnceFinder = sessionOpenButtonFinder('alpha-renamed-once');
+  await cdp.waitFor(renamedOnceFinder + ' !== undefined', { timeoutMs: 15_000, label: 'Session A1 shows its new name after the first rename' });
+
+  await typeIntoSessionSearch(cdp, sessionA1Name);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A still matches its own renamed Session by BRANCH' });
+  let rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
+  assertTrue(rows.includes('alpha-renamed-once'), `the renamed row must still show, matching via its unchanged branch (got ${JSON.stringify(rows)})`);
+  log(`STEP PASS: branch matching -- Session A1, renamed to "alpha-renamed-once", still matches a query for its own unchanged branch ("${sessionA1Name}").`);
+
+  await typeIntoSessionSearch(cdp, sessionA1Name.toUpperCase());
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'an upper-cased query still matches (case-insensitive)' });
+  rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
+  assertTrue(rows.includes('alpha-renamed-once'), `an upper-cased query must match case-insensitively (got ${JSON.stringify(rows)})`);
+  log('STEP PASS: case-insensitive matching confirmed with an upper-cased query.');
+
+  await typeIntoSessionSearch(cdp, 'alpha-renamed-once');
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A matches its own just-renamed Session by NAME' });
+  const renamedTwiceName = 'zzz-unmatched-after-second-rename-zzz';
+  await renameSessionViaF2(cdp, renamedOnceFinder, renamedTwiceName);
+  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT_FINDER})`, {
+    timeoutMs: 15_000,
+    label: 'focus redirected to the search field once the renamed row (and its own now-matchless Project) unmounts (#900 pattern)'
+  });
+  assertTrue((await cdp.evaluate(groupTriggerFinder(repoAName) + ' === undefined')) === true, 'Project A must actually be gone -- its only Session no longer matches by name, branch, or Project name');
+  log('STEP PASS: renaming a Session out of the active filter (new name matching neither name, branch, nor Project) moves focus to the search field instead of <body>, once the row and its now-matchless Project actually unmount.');
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the rename-focus check' });
+
+  await typeIntoSessionSearch(cdp, repoBName);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' === undefined', { timeoutMs: 10_000, label: 'Project A hidden before the Session-switch check' });
+  const projectBOpenButtonFinder = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoBName)}))?.querySelector('li [data-session-open]')`;
+  await cdp.click(projectBOpenButtonFinder);
+  await cdp.waitFor(`(${projectBOpenButtonFinder})?.getAttribute('aria-current') === 'true'`, { timeoutMs: 10_000, label: "Project B's own Session opened (switched to)" });
+  assertTrue((await cdp.evaluate(SEARCH_INPUT_FINDER + '.value')) === repoBName, 'the query text must survive switching to a different Session, not just a Settings round trip');
+  log('STEP PASS: the search query survives switching to a different open Session.');
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Session-switch check' });
+
+  return { renamedTwiceName };
+}
+
+/** Issue #559 gate round 3 (ui-architect-v3 finding 1): the Project half of the #900 focus-
+ *  redirect fix -- a rename that makes a WHOLE Project group stop matching an active
+ *  Project-NAME query (the only way renaming can make a group, not just one row, its own sole
+ *  match) unmounts the group on a later render; proves `RepositoryGroup.tsx`'s own
+ *  `useFocusSearchOnStrandedUnmount(groupRootRef)` call moves focus to the search field, the
+ *  same as the Session row's own half already proved by `proveRenameMatchingAndSessionSwitch`
+ *  above. Renames `repoBName`'s own Project permanently (nothing after this call in
+ *  `verify-tauri-559.mjs` depends on that name any more). */
+export async function proveProjectRenameFocusRedirect(cdp, log, { repoBName }) {
+  await typeIntoSessionSearch(cdp, repoBName);
+  await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B matches its own Project-name query before the Project-rename check' });
+  const triggerFinder = groupTriggerFinder(repoBName);
+  await cdp.evaluate(`(${triggerFinder})?.focus()`);
+  await cdp.waitFor(`document.activeElement === (${triggerFinder})`, { timeoutMs: 5_000, label: 'Project B trigger focused before renaming' });
+  await pressKey(cdp, 113, 'F2', 'F2');
+  await cdp.waitFor(`!!document.querySelector('input[aria-label="Repository name"]')`, { timeoutMs: 5_000, label: 'repository rename input mounted after F2' });
+  await cdp.click(`document.querySelector('input[aria-label="Repository name"]')`);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2);
+  await pressKey(cdp, 8, 'Backspace', 'Backspace');
+  await cdp.send('Input.insertText', { text: 'zzz-project-renamed-out-of-filter-zzz' });
+  await pressKey(cdp, 13, 'Enter', 'Enter');
+  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT_FINDER})`, {
+    timeoutMs: 15_000,
+    label: 'focus redirected to the search field once the renamed Project (and its whole group) unmounts (#900 pattern, Project half)'
+  });
+  assertTrue((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B must actually be gone -- its new name no longer matches the active Project-name query');
+  log('STEP PASS: renaming a Project out of the active filter (a Project-name query) moves focus to the search field instead of <body>, once the whole group actually unmounts.');
+  await typeIntoSessionSearch(cdp, '');
+}
+
+/** Issue #559 gate round 3 (ui-architect-v3 finding 5): proves the hidden-create announcement
+ *  live -- creates a Session from a VISIBLE Project's own quick-create "+" while a query
+ *  matching only an existing row (never the Project's own name) is active, so the new Session's
+ *  own generated name matches neither the query, its branch, nor the Project name, and must be
+ *  announced as hidden rather than silently dropped. Uses the bare `clickQuickCreate` (not
+ *  `createSessionViaQuickCreate`), which waits for a new ROW to appear -- it never would here,
+ *  by design -- confirming success via the composer enabling and the announcement text itself
+ *  instead. */
+export async function proveCreatedSessionHiddenAnnouncement(cdp, log, { repoAName, query, chatAreaAnnounceRegionFinder }) {
+  await typeIntoSessionSearch(cdp, query);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A visible for the hidden-create announcement check' });
+  await clickQuickCreate(cdp, repoAName);
+  await cdp.waitFor(`(() => { const msg = document.querySelector('[aria-label="Message"]'); return !!msg && !msg.disabled; })()`, { timeoutMs: 60_000, label: 'new Session created (composer enabled), even though hidden by the filter' });
+  const text = await cdp.waitFor(
+    `(() => { const t = (${chatAreaAnnounceRegionFinder})?.textContent?.trim() || ''; return /hidden by the session filter/.test(t) ? t : false; })()`,
+    { timeoutMs: 10_000, label: 'announcer reads "Created session ..., hidden by the session filter"' }
+  );
+  log(`STEP PASS: creating a Session from a visible Project's own quick-create "+" while active query does not match it announces ${JSON.stringify(text)}.`);
+  await typeIntoSessionSearch(cdp, '');
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the hidden-create announcement check' });
 }

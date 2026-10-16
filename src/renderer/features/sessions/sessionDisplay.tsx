@@ -2,6 +2,7 @@
 // (the hover card), split out so neither file has to import the other.
 
 import { BellRingIcon, CircleCheckIcon, MessageSquareTextIcon, SquareIcon } from 'lucide-react'
+import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,76 @@ export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   'needs-you': 'Needs you',
   stopped: 'Stopped',
   'unread-response': 'Unread response'
+}
+
+/** Issue #559 decision 12 (reused by `manageSessionsHelpers.ts`'s `filterAndSortSessions`,
+ *  spec 008 FR-025, so neither file has its own copy of this substring check): does `session`'s
+ *  name OR branch contain `query`, case-insensitively? `query` is already trimmed and
+ *  lower-cased by the caller (both callers share that one normalisation step); an empty `query`
+ *  always matches. */
+export function matchesNameOrBranch(session: Pick<SessionSummary, 'name' | 'branch'>, query: string): boolean {
+  if (!query) return true
+  return session.name.toLowerCase().includes(query) || session.branch.toLowerCase().includes(query)
+}
+
+/** Issue #559 decision 12: the session list's own, strictly broader search -- name OR branch
+ *  (above) OR the Session's own Project name. `repositoryName` is the exact string a Project's
+ *  Group header shows (`RepositoryGroup`'s `label={repository.name}`; decision 14: an archived
+ *  row searches the same way, against the same name its own Archived row shows as a secondary
+ *  label). `query` is already trimmed and lower-cased by the caller. */
+export function matchesSessionSearch(session: Pick<SessionSummary, 'name' | 'branch'>, repositoryName: string, query: string): boolean {
+  if (!query) return true
+  return matchesNameOrBranch(session, query) || repositoryName.toLowerCase().includes(query)
+}
+
+/** The filtered-result announcement: "Showing X of N sessions", singular "session" when the
+ *  UNFILTERED total itself is 1 (the thing actually being enumerated). Moved here from
+ *  `manageSessionsHelpers.ts` (issue #559 decision 23) so the Manage sessions screen and the
+ *  session list's own search never phrase the same count two different ways; both import it
+ *  from here now, with no re-export left in `manageSessionsHelpers.ts`. */
+export function showingCountLabel(shown: number, total: number): string {
+  return `Showing ${shown} of ${total} ${total === 1 ? 'session' : 'sessions'}`
+}
+
+export interface SearchedSessions {
+  /** Matching, non-archived Sessions per Project id (every Project id is present, possibly
+   *  with an empty array). Already excludes archived Sessions, so a caller never needs its own
+   *  second `!session.archivedAt` filter on top of this. */
+  matchingByRepository: Map<string, SessionSummary[]>
+  /** Matching archived Sessions, Project-resolvable only (#527's own invariant). */
+  matchingArchived: SessionSummary[]
+  /** Total sessions `query` actually narrows: every non-archived, Project-resolvable Session
+   *  plus every Project-resolvable archived one -- an empty `query` makes `shownCount` equal
+   *  this. */
+  totalCount: number
+  shownCount: number
+}
+
+/** Issue #559 decision 12, gate round 1 (code-reviewer Medium): the ONE place that computes
+ *  what a session-list search query matches, shared by `SessionList.tsx`'s own render path and
+ *  its debounced announcement (previously two independent copies that could silently drift
+ *  apart, for example once #748 Hidden Sessions exist and only one copy excludes them).
+ *  `query` is raw (not yet trimmed/lower-cased) -- this does that once, internally. */
+export function searchSessions(sessions: SessionSummary[], repositories: Repository[], query: string): SearchedSessions {
+  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
+  const trimmed = query.trim().toLowerCase()
+  const matches = (session: SessionSummary): boolean =>
+    matchesSessionSearch(session, repositoriesById.get(session.repositoryId)?.name ?? '', trimmed)
+  const matchingByRepository = new Map<string, SessionSummary[]>()
+  for (const repository of repositories) {
+    matchingByRepository.set(
+      repository.id,
+      sessions.filter((session) => session.repositoryId === repository.id && !session.archivedAt && matches(session))
+    )
+  }
+  const matchingArchived = sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId) && matches(session))
+  const totalCount =
+    sessions.filter((session) => !session.archivedAt && repositoriesById.has(session.repositoryId)).length +
+    sessions.filter((session) => session.archivedAt && repositoriesById.has(session.repositoryId)).length
+  const shownCount = trimmed
+    ? [...matchingByRepository.values()].reduce((sum, list) => sum + list.length, 0) + matchingArchived.length
+    : totalCount
+  return { matchingByRepository, matchingArchived, totalCount, shownCount }
 }
 
 // ISO timestamps sort and compare lexically, so no Date parsing is needed until formatting.

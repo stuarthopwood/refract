@@ -18,7 +18,8 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
-import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel, showingCountLabel } from './manageSessionsHelpers'
+import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel } from './manageSessionsHelpers'
+import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import { DEFAULT_FILTERS } from '@/state/view-store'
 
 export function ManageSessionsScreen() {

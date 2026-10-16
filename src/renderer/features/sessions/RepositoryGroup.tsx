@@ -22,6 +22,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { GroupHeaderTrigger } from './GroupHeader'
+import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
 import { SessionRow } from './SessionRow'
 
@@ -97,6 +98,12 @@ export function RepositoryGroup({
   const restoreFocusRef = useRef(false)
   const renameRequestedRef = useRef(false)
   const renameErrorId = `repository-rename-error-${repository.id}`
+  const groupRootRef = useRef<HTMLDivElement>(null)
+  // Issue #559 gate round 3 (the #900 pattern, finding 1): a rename that makes this whole group
+  // stop matching an active search query (a Project-name query is the only way a group, not
+  // just one row, can be its OWN sole match) unmounts it on a later render, same as a Session
+  // row's own rename -- shared with `useSessionRowActions.ts` so both get the identical fix.
+  useFocusSearchOnStrandedUnmount(groupRootRef)
 
   async function handleQuickCreate(): Promise<void> {
     // Gate-fixes a code/a11y Medium (round 1): on `main` this returned early, silently, on a
@@ -208,7 +215,7 @@ export function RepositoryGroup({
         ? 'Git repository, local only (no remote)'
         : 'Git repository'
   return (
-    <div className="flex flex-col" data-repository-id={repository.id}>
+    <div ref={groupRootRef} className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible open={isOpen} onOpenChange={(open) => useSessionListStore.getState().setRepositoryOpen(repository.id, open)}>
         <div className="group flex items-center gap-1 px-1">
           {renaming ? (

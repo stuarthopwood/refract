@@ -2,8 +2,12 @@
 // scripts/check-theme-contrast.mjs (gate round 4 follow-up, #806 file-size ratchet: the script
 // had grown past its own recorded baseline for legitimate new pairs, and the ratchet is lower-
 // only -- a baseline entry may never be RAISED, so the growth was moved out into its own module
-// instead). Pure data, no behaviour change: `check-theme-contrast.mjs` imports `PAIRS` from here
-// and iterates it exactly as it did when the array lived inline.
+// instead). `check-theme-contrast.mjs` imports `PAIRS` from here and iterates it exactly as it
+// did when the array lived inline; the two composited checks below (search field, user-bubble
+// links) moved out alongside it for the same reason, sharing `contrast-math.mjs`'s own alpha-
+// compositing primitives with `check-theme-contrast.mjs` rather than each keeping a private
+// copy (gate round 5, Main's finding 1: a private copy here once silently regressed to a wrong,
+// naive linear-space blend -- one shared module can only drift in one place, never two).
 //
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
@@ -12,6 +16,8 @@
 // below). `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
 // rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
 // `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
+
+import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 export const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -234,3 +240,73 @@ export const PAIRS = [
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]
+
+// Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
+// default translucent fill (`bg-transparent dark:bg-input/30`, `SearchField.tsx`'s own comment)
+// -- `.dark` is always applied to `<html>` regardless of the active theme, so `dark:bg-input/30`
+// always renders, in every built-in theme. A real PAIRS entry cannot express this: `--input` is
+// ITSELF translucent (its own `alpha` is already < 1 once parsed from `oklch(1 0 0 / 36%)`),
+// so `bg-input/30` composites at `input.alpha * 0.3` -- roughly 11% white over `--sidebar` in
+// Dark/Obsidian, not a flat 30% an earlier (reverted) calculation wrongly assumed (that cut
+// treated `--input` as opaque, landing on 2.55:1/2.61:1 and an unnecessary opaque-fill "fix").
+// Exported as a function, not a plain `PAIRS` entry, since this module holds only simple
+// token-name pairs and this needs real alpha-compositing math.
+export function searchFieldContrastRows(themes) {
+  const rows = []
+  for (const [themeId, props] of Object.entries(themes)) {
+    const input = props['input']
+    const sidebar = props['sidebar']
+    const mutedForeground = props['muted-foreground']
+    if (!input || !sidebar || !mutedForeground) {
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'search-field (input*0.3 on sidebar)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const fieldLinear = resolvedLinear({ raw: 'input*0.3', alpha: input.alpha * 0.3, linear: input.linear }, sidebar)
+    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fieldLinear))
+    rows.push({
+      themeId,
+      fg: 'muted-foreground',
+      bg: 'search-field (input*0.3 on sidebar)',
+      min: 4.5,
+      ratio,
+      pass: ratio >= 4.5,
+      fgHex: linearToHex(mutedForeground.linear),
+      bgHex: linearToHex(fieldLinear),
+    })
+  }
+  return rows
+}
+
+// ---- issue #610 (hyperlinks): a link/file-link rendered inside a user message composites
+// `--accent-text` (Markdown.tsx's `linkClassName`) over the user bubble's own translucent fill
+// (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
+// `--background` -- the plain-background/card/popover PAIRS entries above never actually
+// exercise this composited case. Checked the same way the destructive-footer block above
+// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
+// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
+// `--accent-text` against that blended result.
+export function userBubbleLinkContrastRows(themes) {
+  const rows = []
+  for (const [themeId, props] of Object.entries(themes)) {
+    const accent = props['accent']
+    const background = props['background']
+    const accentText = props['accent-text']
+    if (!accent || !background || !accentText) {
+      rows.push({ themeId, fg: 'accent-text', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background)
+    const ratio = contrastRatio(relativeLuminance(accentText.linear), relativeLuminance(bubbleLinear))
+    rows.push({
+      themeId,
+      fg: 'accent-text',
+      bg: 'user-bubble (accent/50 on background)',
+      min: 4.5,
+      ratio,
+      pass: ratio >= 4.5,
+      fgHex: linearToHex(accentText.linear),
+      bgHex: linearToHex(bubbleLinear),
+    })
+  }
+  return rows
+}
