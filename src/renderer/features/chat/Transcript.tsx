@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
 import { cn } from 'cn'
-import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
+import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
@@ -27,7 +27,7 @@ import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
 import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
-import { initials } from '@/lib/initials'
+import { UserMessageRow } from './UserMessageRow'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
@@ -148,25 +148,10 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 
   switch (item.kind) {
-    case 'user': {
-      // Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/
-      // DESIGN.md "Self vs. other layout"): `Message align="end"` reverses the row and pushes it
-      // to the end; `w-fit max-w-[85%]` (replacing the old `w-full`) keeps the bubble sized to its
-      // own content and caps it well short of the transcript's left edge, so it never touches it
-      // regardless of message length.
-      const name = userName ?? 'You'
-      return (
-        <Message align="end">
-          <MessageAvatar aria-hidden className="text-xs font-medium">
-            {initials(name)}
-          </MessageAvatar>
-          <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
-            <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
-            <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
-          </MessageContent>
-        </Message>
-      )
-    }
+    case 'user':
+      // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow`
+      // (split out to keep this file within its `check:file-size` baseline).
+      return <UserMessageRow item={item} userName={userName} />
 
     case 'assistant-text':
       return (
