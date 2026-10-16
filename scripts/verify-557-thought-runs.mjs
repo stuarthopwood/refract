@@ -40,18 +40,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+// Gate round 1 (code/a11y/architect Low): the repo's own shared Tab/Escape senders set `key`/
+// `code` (Chromium only moves focus on a Tab keydown whose `key` is literally `"Tab"`); this
+// script's own hand-rolled `Input.dispatchKeyEvent` calls did not, which silently downgraded the
+// Tab-into-member check to "not exercised" with a wrong guessed cause.
+import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-const SHOTS_DIR = 'C:/Users/shopwood/AppData/Local/Temp/refract-557-shots/';
+const SHOTS_DIR = path.join(tmpdir(), 'refract-557-gate1-shots');
 
 const REASONING_MODEL = { provider: 'github-copilot', id: 'claude-sonnet-5' };
 const REASONING_LEVEL = 'high';
 
 const TURN_A_PROMPT =
-  "A train leaves city A at 60mph, another leaves city B (300 miles away) at 90mph toward A at the same time; find when and where they meet. Follow this exact order, with NO text output of any kind until the very last step: (1) call the todo tool once now (one init op), as required. (2) Think in detail working out the closing-speed method numerically -- do not write any reply text yet, only reasoning. (3) Call the todo tool a second time to mark that method done -- still write no reply text. (4) Think in detail again, this time re-deriving the answer with an independent relative-frames method to double check -- still write no reply text. (5) Only now, after both reasoning passes and both todo calls, write your final reply: exactly the single word 'probe557a' and nothing else. Call no tool other than todo.";
+  "A train leaves city A at 60mph, another leaves city B (300 miles away) at 90mph toward A at the same time; find when and where they meet. Follow this exact order, with NO text output of any kind until the very last step: (1) call the todo tool once now (one init op), as required. (2) Think in detail working out the closing-speed method numerically -- write out at least eight distinct, separately-numbered considerations (the closing speed itself, the combined distance, the time to close it, each train's own distance travelled, a sanity check against each train's own speed, a check the numbers are physically sensible, a restatement of the method, and a final numeric answer for this method) before moving on; take real time over this, do not write any reply text yet, only reasoning. (3) Call the todo tool a second time to mark that method done -- still write no reply text. (4) Think in detail again, this time re-deriving the answer with an independent relative-frames method to double check -- still write no reply text. (5) Only now, after both reasoning passes and both todo calls, write your final reply: exactly the single word 'probe557a' and nothing else. Call no tool other than todo.";
 const TURN_A_SENTINEL = 'probe557a';
 const TURN_B_PROMPT =
   "Multiply 47 by 83, working it out digit by digit in your head first. Then reply with exactly the single word 'probe557b' and nothing else.";
@@ -329,6 +334,72 @@ async function main() {
       notExercised.push('Could not capture a thought row mid-run before it settled (real model timing).');
     }
 
+    // ---- Growth-with-focus live check (decisions 14, 15, 17; gate round 1 code/a11y/architect
+    // High): catch the run SOLO, focus and expand it by keyboard, then prove focus and the open
+    // state survive the exact moment it grows to 2+ members -- the fix must be proven live, not
+    // only reasoned about from the code. Real model timing: the window between the run
+    // appearing solo and it growing past one item is not scriptable, so this is a genuine
+    // attempt, downgraded to `notExercised` (never a failure) if the run already grew before it
+    // could be caught solo. `TURN_A_PROMPT`'s own elongated first reasoning phase exists to
+    // widen this window.
+    try {
+      const soloNow = await cdp.evaluate(`(${SOLO_THOUGHT_FINDER}).length > 0 && (${THOUGHT_HEADER_FINDER}).length === 0`);
+      if (!soloNow) throw new Error('no solo thought row was available to focus before the run already grew past one member');
+      await cdp.evaluate(`(() => { const el = (${SOLO_THOUGHT_FINDER})[0]; el.focus(); window.__thoughtGrowthFocusTarget = el; })()`);
+      const focusedSolo = await cdp.evaluate(`document.activeElement === window.__thoughtGrowthFocusTarget`);
+      if (!focusedSolo) throw new Error('could not focus the solo thought row');
+      await cdp.pressEnter();
+      await cdp.waitFor(`window.__thoughtGrowthFocusTarget?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'solo thought row expands on Enter' });
+      await cdp.waitFor(`(${THOUGHT_HEADER_FINDER}).length > 0`, {
+        timeoutMs: 150_000,
+        intervalMs: 150,
+        label: 'the run grows to 2+ members while the solo row is focused and expanded',
+      });
+      const growthResult = await cdp.evaluate(`(() => {
+        const header = (${THOUGHT_HEADER_FINDER})[0];
+        const root = header ? header.closest('[data-slot="collapsible"]') : null;
+        const ol = root ? root.querySelector('ol.border-l') : null;
+        const firstMember = ol ? ol.querySelector('li button') : null;
+        return {
+          headerIsSameElement: header === window.__thoughtGrowthFocusTarget,
+          sameNode: document.activeElement === window.__thoughtGrowthFocusTarget,
+          stillExpanded: header?.getAttribute('aria-expanded') === 'true',
+          firstMemberOpen: firstMember?.getAttribute('aria-expanded') === 'true',
+        };
+      })()`);
+      await cdp.screenshot(path.join(SHOTS_DIR, '00b-dark-growth-focus-preserved.png'));
+      if (!growthResult.headerIsSameElement) {
+        failures.push('The thought-run header is a DIFFERENT DOM element than the one focused while solo -- the row remounted when it grew (decisions 15/17 violation).');
+      } else {
+        findings.push('The SAME DOM element that was solo is still the header after growth to 2+ members -- no remount (decisions 15/17 fix confirmed live).');
+      }
+      if (!growthResult.sameNode) failures.push('document.activeElement moved away from the thought-run trigger when the run grew (decision 17 requires focus to stay put).');
+      else findings.push('Keyboard focus stayed on the thought-run trigger across growth from solo to 2+ members (decision 17).');
+      if (!growthResult.stillExpanded) failures.push('The thought-run header closed itself when the run grew from solo to 2+ members (decision 14 violation).');
+      else findings.push('The run stayed expanded across growth from solo to 2+ members (decision 14).');
+      if (!growthResult.firstMemberOpen) failures.push('Member 1 did not start open after the run grew while its own solo row was expanded (decision 15 violation).');
+      else findings.push('Member 1 starts open because the run was expanded at the moment it grew past one item (decision 15).');
+
+      // Decision 15 "every later mount starts collapsed": a collapse then re-expand must NOT
+      // reopen member 1 a second time (the growth-only open flag is consumed once, ThoughtRunRow's
+      // own post-growth effect).
+      await setThoughtHeaderExpanded(cdp, 0, false);
+      await setThoughtHeaderExpanded(cdp, 0, true);
+      const memberReopened = await cdp.evaluate(`(() => {
+        const root = (${THOUGHT_HEADER_FINDER})[0].closest('[data-slot="collapsible"]');
+        const ol = root ? root.querySelector('ol.border-l') : null;
+        const firstMember = ol ? ol.querySelector('li button') : null;
+        return firstMember?.getAttribute('aria-expanded') === 'true';
+      })()`);
+      if (memberReopened) failures.push('Member 1 reopened on a LATER re-expand of the header (collapse, then expand again) -- decision 15 requires every later mount to start collapsed.');
+      else findings.push('A later collapse-then-re-expand of the header leaves member 1 collapsed (decision 15).');
+      await setThoughtHeaderExpanded(cdp, 0, false);
+    } catch (err) {
+      notExercised.push(
+        `Growth-with-focus live check did not complete this run (${err.message}) -- real model timing: the run may have grown to 2+ members before a solo row could be caught and focused, or it never grew past one at all this run. See turn-a-transcript.html.`,
+      );
+    }
+
     try {
       await cdp.waitFor(
         `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && (t.textContent.match(/${TURN_A_SENTINEL}/g) ?? []).length >= 2; })()`,
@@ -358,6 +429,15 @@ async function main() {
       const metaTextSettled = await cdp.evaluate(`(${THOUGHT_HEADER_FINDER})[0].querySelector('.tabular-nums')?.closest('span')?.textContent.trim() ?? (${THOUGHT_HEADER_FINDER})[0].textContent`);
       if (!/\d+ steps/.test(metaTextSettled)) failures.push(`Settled thought-run header meta does not contain "N steps" (measured: "${metaTextSettled}") -- decision 8.`);
       else findings.push(`Settled thought-run header meta reads "${metaTextSettled.trim()}" (decision 8: step count, plus total time once every member is timed).`);
+      // Gate round 1 (code/a11y/architect Medium): the header used to apply no floor to its own
+      // total, so it could read "0s" while every member (floored to 1s) read "Thought for 1s" --
+      // a total smaller than any of its own members. The fix applies the same 1s floor the
+      // members already use; assert directly that "0s" never appears once settled and timed.
+      if (/\b0s\b/.test(metaTextSettled)) {
+        failures.push(`Settled thought-run header meta reads "${metaTextSettled.trim()}" -- contains "0s" despite the 1s-floor fix (gate round 1 Medium).`);
+      } else {
+        findings.push('Settled thought-run header meta never reads "0s" (gate round 1 fix: the header total now shares the members\' own 1s floor).');
+      }
 
       const olPresentCollapsed = await cdp.evaluate(`!!document.querySelector('[aria-label="Transcript"] ol.border-l')`);
       // A Stage/tool group from the SAME turn could also contribute an <ol>; scope to whether
@@ -412,23 +492,25 @@ async function main() {
       await setThoughtHeaderExpanded(cdp, 0, false);
       const headerFocusable = await cdp.evaluate(`(() => { const el = (${THOUGHT_HEADER_FINDER})[0]; el.focus(); return document.activeElement === el; })()`);
       if (!headerFocusable) failures.push('Thought-run header did not accept programmatic focus.');
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13 });
+      await cdp.pressEnter();
       const openedByEnter = await cdp.waitFor(`(${THOUGHT_HEADER_FINDER})[0]?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Enter expands the thought-run header' }).catch(() => false);
       if (!openedByEnter) failures.push('Pressing Enter on the focused thought-run header did not expand it (decision 16).');
       else findings.push('Keyboard: Enter on the focused header expands the run (decision 16).');
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, text: '\t', unmodifiedText: '\t' });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9 });
-      const focusMovedToMember = await cdp.evaluate(`(() => {
+      // Gate round 1 (code/a11y/architect Low): the repo's own `pressTab` sets `key`/`code` --
+      // Chromium only moves focus on a Tab keydown whose `key` is literally "Tab"; the previous
+      // hand-rolled dispatch left those out, silently downgrading this to "not exercised" with
+      // the wrong guessed cause ("an intervening element"). With the real key event, this is
+      // now a hard assertion, matching the DOM order `CollapsedLine`/`SpineList` already produce.
+      await pressTab(cdp);
+      const focusMovedToMember = await cdp.waitFor(`(() => {
         const root = (${THOUGHT_HEADER_FINDER})[0].closest('[data-slot="collapsible"]');
         const ol = root ? root.querySelector('ol.border-l') : null;
         const firstMemberButton = ol ? ol.querySelector('li button') : null;
         return !!firstMemberButton && document.activeElement === firstMemberButton;
-      })()`);
-      if (!focusMovedToMember) notExercised.push('Tab from the header did not land on the first member\'s own trigger in this run (focus order may have been intercepted by an intervening element); not asserted as a hard failure.');
+      })()`, { timeoutMs: 5_000, label: 'Tab from the header lands on the first member\'s own trigger' }).catch(() => false);
+      if (!focusMovedToMember) failures.push("Tab from the expanded header's own trigger did not land on the first member's own trigger (decision 16).");
       else findings.push("Keyboard: Tab from the expanded header's own trigger moves to the first member's trigger next (decision 16).");
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27 });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27 });
+      await pressEscape(cdp);
       await setThoughtHeaderExpanded(cdp, 0, false);
       findings.push('Collapsing the run unmounts the SpineList again.');
 
