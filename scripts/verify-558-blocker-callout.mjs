@@ -277,7 +277,10 @@ async function main() {
           const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
           const afterTab2 = (await getActiveElementAccessibleName(cdp)).name;
-          if (afterTab1 === 'Copy advisory' && (afterTab2 || '').startsWith('Ask agent to address this')) {
+          // "Copied" (not "Copy advisory") is also a pass here: the Copy click just above
+          // (COPIED_RESET_MS = 1500) can still be inside its post-click window by the time this
+          // check runs -- same physical button, same correct Tab position, a transient label.
+          if ((afterTab1 === 'Copy advisory' || afterTab1 === 'Copied') && (afterTab2 || '').startsWith('Ask agent to address this')) {
             findings.push(`Keyboard Tab order confirmed: trigger -> "${afterTab1}" -> "${afterTab2}" (decision 12, standard DOM order).`);
           } else {
             failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
