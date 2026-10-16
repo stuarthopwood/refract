@@ -1,0 +1,155 @@
+// Shared scratch-live-check helpers for `scripts/verify-5xx-*.mjs` Tauri debug-build CDP checks
+// (issue #570 gate round 1, #806 file-size split: extracted out of `verify-570-tool-colours.mjs`
+// once it grew past the 600-line soft cap). Generic across any story's own live check: resolving
+// `git rev-parse HEAD`, building the Job-Object launcher, a scratch git repo, hashing/copying/
+// rebuilding the debug exe, launching it isolated (own `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
+// `REFRACT_IMPORT_SOURCE_DIR`), safely removing scratch dirs, asserting the launched exe's own
+// hash didn't change under a lane, reading a real accessible name off the AX tree, and driving the
+// real Profile-menu Theme submenu. `verify-565-spine.mjs` carries its own near-identical copies of
+// several of these (written before this split); not touched here, out of scope for #570.
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { launchViaJobObject, sleep } from './verify-tauri-cdp.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function spawnSync_(cmd, args, opts = {}) {
+  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
+}
+
+export function gitHead(repoRoot) {
+  const result = spawnSync_('git', ['-C', repoRoot, 'rev-parse', 'HEAD']);
+  return result.status === 0 ? result.stdout.trim() : `<git rev-parse failed: ${result.stderr}>`;
+}
+
+export function buildLauncher(dir) {
+  mkdirSync(dir, { recursive: true });
+  const src = path.join(__dirname, 'verify-tauri-launcher.rs');
+  const out = path.join(dir, 'verify-tauri-launcher.exe');
+  const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
+  if (result.status !== 0) throw new Error(`buildLauncher: rustc failed (exit ${result.status}):\n${result.stderr}`);
+  return out;
+}
+
+export function makeScratchRepo(dir, label) {
+  mkdirSync(dir, { recursive: true });
+  const run = (args) => {
+    const result = spawnSync_('git', ['-C', dir, ...args]);
+    if (result.status !== 0) throw new Error(`makeScratchRepo: git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+    return result;
+  };
+  run(['init', '-q', '-b', 'main']);
+  run(['-c', `user.name=${label}`, '-c', `user.email=${label}@example.invalid`, 'commit', '-q', '--allow-empty', '-m', 'init']);
+  return dir;
+}
+
+export function sha256OfFile(filePath) {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAttempts = 3, label = 'verify' } = {}) {
+  mkdirSync(destDir, { recursive: true });
+  const dest = path.join(destDir, 'refract-tauri.exe');
+  const src = path.join(buildOutputDir, 'refract-tauri.exe');
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`${label}: rebuilding the debug exe fresh (attempt ${attempt}/${maxAttempts})...`);
+    const buildResult = spawnSync('pnpm', ['tauri', 'build', '--debug', '--no-bundle'], { cwd: repoRoot, stdio: 'inherit', shell: true, windowsHide: true });
+    if (buildResult.status !== 0) throw new Error(`buildAndCopyExeFresh: pnpm tauri build failed (exit ${buildResult.status}${buildResult.error ? `, error: ${buildResult.error.message}` : ''})`);
+    if (!existsSync(src)) throw new Error(`buildAndCopyExeFresh: built exe not found at ${src} after a successful build`);
+    const preCopyStat = statSync(src);
+    const preCopyHash = sha256OfFile(src);
+    copyFileSync(src, dest);
+    const postCopyStat = statSync(src);
+    const postCopyHash = existsSync(src) ? sha256OfFile(src) : null;
+    const unchanged = postCopyHash === preCopyHash && postCopyStat.mtimeMs === preCopyStat.mtimeMs && postCopyStat.size === preCopyStat.size;
+    if (unchanged) {
+      console.log(`${label}: built exe copied to ${dest} (private copy; sha256 ${preCopyHash.slice(0, 12)}…, confirmed unchanged through the copy).`);
+      return { dest, hash: preCopyHash };
+    }
+    console.warn(`${label}: source exe changed between build and copy (attempt ${attempt}) -- a concurrent lane is rebuilding; retrying.`);
+  }
+  throw new Error(`buildAndCopyExeFresh: source exe kept changing across ${maxAttempts} rebuild attempts.`);
+}
+
+export async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile }) {
+  const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
+  mkdirSync(webview2DataDir, { recursive: true });
+  const pidFile = path.join(path.dirname(exePath), 'target.pid');
+  const env = {
+    ...process.env,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
+    REFRACT_DATA_DIR: dataDir,
+    REFRACT_IMPORT_SOURCE_DIR: importSourceDir
+  };
+  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
+  if (logFile) {
+    const stream = createWriteStream(logFile);
+    child.stdout.pipe(stream, { end: false });
+    child.stderr.pipe(stream, { end: false });
+  }
+  return { child, targetPid };
+}
+
+export async function safeRmSync(dir, label = 'verify') {
+  if (!dir) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.warn(`${label}: could not remove scratch dir ${dir} (left on disk): ${err.message}`);
+        return;
+      }
+      await sleep(1000);
+    }
+  }
+}
+
+export function assertExeUnchanged(exePath, expectedHash, label, scriptLabel = 'verify') {
+  const actualHash = sha256OfFile(exePath);
+  if (actualHash !== expectedHash) {
+    throw new Error(`assertExeUnchanged (${label}): ${exePath} hash is ${actualHash.slice(0, 12)}…, expected ${expectedHash.slice(0, 12)}… -- the exe under test changed after launch; this run's findings cannot be trusted.`);
+  }
+  console.log(`${scriptLabel}: exe sha256 ${expectedHash.slice(0, 12)}… confirmed unchanged (${label}).`);
+}
+
+export async function getAccessibleNameAndRole(cdp, selectorExpr) {
+  await cdp.send('Accessibility.enable');
+  const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
+  const objectId = evalResult.result?.objectId;
+  if (!objectId) return { name: null, role: null };
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId });
+  const node = nodes?.[0];
+  return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
+}
+
+/** Drives the REAL Profile-menu UI (`window.refract.theme.preview(id)` only moves the title-bar
+ * overlay colour, never the renderer's `<html>` class the CSS tokens key off). A real
+ * `mouseMoved` hover before the click matches how Radix's own `DropdownMenuSub` actually opens
+ * (pointer-enter, not just a bare click). */
+export async function switchTheme(cdp, themeId, themeName) {
+  await cdp.click(`document.querySelector('[data-profile-name-button]')`);
+  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
+  const themeTriggerFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`;
+  await cdp.waitFor(`!!(${themeTriggerFinder})`, { timeoutMs: 10_000, label: 'Theme submenu trigger visible' });
+  const rect = await cdp.evaluate(`(() => { const el = ${themeTriggerFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
+  await sleep(400);
+  await cdp.click(themeTriggerFinder);
+  await cdp.waitFor(
+    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
+    { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` }
+  );
+  await cdp.click(
+    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`
+  );
+  await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
+    timeoutMs: 15_000,
+    label: `<html> class theme-${themeId} applied (real store round trip, not just the title-bar preview)`
+  });
+}

@@ -1980,3 +1980,102 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
 | D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
 | D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |
 
+## Phase 44: Convergence
+
+- [X] T234 [US1] #570 tool row colour treatment (Decided, Skippy, delegated by Stuart 2026-10-15;
+  `ui-architect-v3` roundtable, full decision record on the issue): amended spec 001 per the
+  record's own section 5 -- FR-008 (label neutral for running/done/interrupted/exited, the
+  running icon alone in the working colour (pre-existing, unchanged by this story); red
+  icon/label and the new Error line for a failed call, a multi-call group's own settled-status
+  colour rule and meta-slot counts), FR-047 (ties the existing generic "warning or error line"
+  clause to FR-061's own named Error line for tool rows specifically), FR-061 (the failed-call
+  error text renamed the Error line and moved out of the expanded body into the collapsed row
+  itself, unconditionally; the expansion no longer repeats it), a new Clarifications "Session
+  2026-10-16" entry (three Q/A matching the decision record's colour/icon map, Error line
+  placement and derivation, and group collapsed/expanded behaviour), acceptance scenario 18 (US1),
+  and three Edge Cases (`(no output)` placeholder, ANSI stripping, a still-running group with an
+  already-failed member). `git diff --numstat origin/main -- specs/001-core-session-workspace/tasks.md`
+  confirmed 0 deletions before this phase was appended.
+
+- [X] T235 [US1] Probe first (decision record's own "Ready to build" note: FR-061's wording
+  assumed, as an [INFERENCE], that a failed `bash` call's own output ends with its useful line --
+  the probe was required to confirm or flip this before the Error line's `bash` derivation was
+  built). `docs/spike/bash-error-probe-570.mjs` (scratch `--session-dir`/cwd under `os.tmpdir()`,
+  real signed-in default profile, `--approval-mode=yolo`, two isolated tiny turns) ran against the
+  real signed-in `omp 18.10.1` and captured two real `tool_execution_end` frames for a failing
+  `bash` call: `ls /definitely-not-a-real-path-570` (real stderr) and `exit 7` (no output at all).
+  Both flipped the assumption: OMP's own bash wrapper always appends a trailing `Wall time: Ns`
+  then `Command exited with code N` footer AFTER the real content (or a literal `(no output)`
+  placeholder when there is none), so the real error sits BEFORE that footer, not at the raw
+  string's own last line. Recorded as `docs/spike/FINDINGS.md` item 60. `ToolRow.tsx`'s
+  `errorLine()` strips that known two-line footer from the end before taking the new last line
+  for `bash` (first line, unaffected, for every other tool).
+
+- [X] T236 [US1] Built per the decision record's section 6 ("Files the build will touch"):
+  `toolStatus.tsx`'s `StatusIcon` now renders the identical icon/colour per state as
+  `subagentStatus.tsx`'s own map (#563, already shipped first): `LoaderCircleIcon`
+  `text-state-working` (running), `CheckCircle2Icon` `text-state-idle` (done, fully neutral --
+  "failure loud, success quiet"), `XCircleIcon` `text-severity-error` (error), `UnplugIcon`
+  `text-muted-foreground` (interrupted/exited); every icon `aria-hidden`. `CollapsedLine.tsx`
+  gained `labelClassName` (a failed row's label joins its icon in the error colour, the target
+  stays muted) and `detail`/`hideDetailWhenOpen` (the Error line: a `<p>` sibling of the trigger,
+  inside the `Collapsible` root, at the label column `pl-8 pr-2`, linked to the trigger via
+  `aria-describedby`, mounting inside the transcript's own existing `role="log"` region so it is
+  announced once as that log's own addition with no second live region; `hideDetailWhenOpen` lets
+  a multi-call group's own header show its latest failed member's line only while collapsed,
+  replaced by each failed member's own line once expanded, while a solo call's or a member's own
+  line stays visible either way). `ToolRow.tsx`: `ToolCallBody`'s old boxed error `<p>` is deleted
+  (no longer duplicated inside the expansion); `ToolCallRow` (a group member) and `ToolGroupRow`
+  (solo and the group header) both pass `labelClassName`/`detail` for a failed item, and
+  `ToolGroupRow`'s own summary no longer appends ", N failed"/", N interrupted" as text -- those
+  counts move into the row's never-shrinking `meta` slot, "N failed" in the error colour the
+  instant any member fails (even mid-run; the header's own icon/label turn red only once the
+  group's SETTLED status is failed, matching the existing running-beats-failed worst-state order),
+  "N interrupted" staying neutral. Docs updated per section 5: `product-chat.md` (bullets 14-15),
+  `foundations-icons.md` (a new Chat Status icons bullet distinct from the session-list
+  `StateIcon`), `CONTEXT.md` (new **Status icon** and **Error line** glossary entries; "a state
+  icon" in the Subagent panel entry corrected to "a **Status icon**"). `check:theme-contrast`'s
+  existing `destructive`/`muted` (4.5:1) and `state-idle`/`muted` (3:1) pairs already numerically
+  cover `severity-error` (the two tokens share an identical value in every built-in theme,
+  `globals.css`), so no new PAIRS entries were needed -- confirmed by a clean 361/361 run.
+  `pnpm typecheck` clean; `node scripts/ci-local.mjs`: 16/16 steps PASS, including the Tauri debug
+  build and `check:ui-text` (0 leaks across 371 files).
+
+- [X] T237 [US1] Gate round 1 remediation (PR #909: code-reviewer/ui-architect-v3 FAIL on one
+  shared High, both PASS after the fix; accessibility-auditor, security-auditor, test-reviewer all
+  PASS with findings): fixed `errorLine()` (`ToolRow.tsx`) -- the original cut stripped OMP's own
+  `Command exited with code N` line together with its `Wall time:` footer, so a SILENT `bash`
+  failure (`exit 9`, no stdout/stderr) showed OMP's own `(no output)` placeholder instead of the
+  one fact that explains it; now only `Wall time: Ns` is stripped, the exit/timeout line that
+  follows it is read FIRST as a fallback ("Exited with code N" / "Command timed out after N
+  seconds"), and a lone `(no output)` left after the cut is also treated as wrapper chrome, never
+  content. Also fixed: a settled group's own Error line is prefixed with the failing member's
+  target, muted, whenever it differs from the header's own visible (last-call) target (M2); the
+  group meta's "N failed"/"N interrupted" counts are joined by a visible middle dot plus an
+  sr-only comma, matching #632's own grammar, instead of two bare adjacent spans (M1); FR-008 and
+  `product-chat.md` corrected to say the running ICON alone keeps its pre-existing working colour
+  (only the LABEL is neutral for running) rather than claiming the whole row is "fully neutral";
+  `toolStatus.tsx` and `subagentStatus.tsx` now both read one shared icon/colour table
+  (`statusGlyph.ts`, decision 3) instead of two hand-written copies; C0 controls and bidi-override
+  characters are stripped from the Error line and its `<p>` gets `dir="auto"` (security Low); two
+  `severity-error` pairs (background, muted) added to `theme-contrast-pairs.mjs` at the real 4.5:1
+  text floor, not just the pre-existing 3:1 icon floor (a11y Low); the committed probe script
+  (`docs/spike/bash-error-probe-570.mjs`) now actually runs both scenarios FINDINGS 60 claims
+  (a real stderr failure and a silent `exit 9`), re-run live and FINDINGS 60 corrected to match.
+  Filed issue #911 (a user-initiated Stop mid-flight renders the FULL failed/red treatment, not
+  neutral -- confirmed live, not merely [INFERENCE], out of scope for #570, pre-existing #510/#490
+  code untouched by this story) and a decision-20 note on #552 (the HC red-on-hover floor).
+  `scripts/verify-570-tool-colours.mjs` rebuilds fresh immediately before every run now (no reused
+  exe -- round 1's first rerun lost exactly that race to a sibling lane's own concurrent rebuild
+  of the shared target) and asserts a #570-only string in the built bundle before trusting
+  anything else; the group's settled Error line, the solo Error line, and the 360px Error line are
+  all now asserted against the exact expected text, not merely logged. `node scripts/ci-local.mjs`
+  not re-run in full this round (no Rust change beyond the already-passing build); `pnpm
+  typecheck` and `node scripts/check-theme-contrast.mjs` (394/394, up from 361, the two new
+  `severity-error` pairs) both clean. Live re-run: **zero failures** -- the exit-code fallback, the
+  group-detail attribution, the AX-tree-measured accessible name, the 360px clamped Error line, and
+  the M3 Stop-mid-flight finding (now CONFIRMED, not [INFERENCE]) are all real, live evidence.
+  Still not exercised: the exact spinner-still-running instant with a failed count already
+  showing (narrow real-model timing, twice lost; backed by the unmodified `status` ternary
+  instead) and the 240px Subagents panel case (never attempted); both remain on the verification
+  backlog (#650). **Refs #570** (not Closes): those two checks are still open.

@@ -73,12 +73,20 @@ The per-turn summary row listing a turn's **Stages** and their agents with statu
 _Avoid_: DAG, gate topology, pipeline
 
 **Subagent panel**:
-The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: a tree of the **Session**'s subagents (issue #563; the **Session** is the root, started agents are the first level, their own child agents the next once the tracker knows the parent), each with a state icon plus the state word, and showing a selected one's live stream (text and tool calls) updating as it runs.
+The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: a tree of the **Session**'s subagents (issue #563; the **Session** is the root, started agents are the first level, their own child agents the next once the tracker knows the parent), each with a **Status icon** plus the state word, and showing a selected one's live stream (text and tool calls) updating as it runs.
 _Avoid_: Subagent sidebar, task panel
 
 **Spine**:
 The 1px neutral `border-divider` line down the left of an expanded group row's members, marking that they belong to that header; decorative, state lives on each member's own icon, and it is never coloured or animated (issue #565). The **Stage** group and **Subagent chain** (above) use it as their shared connector.
 _Avoid_: rail (taken by Icon rail), guide rail, thread, timeline, connector
+
+**Status icon**:
+The one icon shape and colour per state, shared by tool rows, tool groups, **Stage** groups, the **Subagent chain**, and the **Subagent panel**, from one shared table both `toolStatus.tsx` and `subagentStatus.tsx` read (`statusGlyph.ts`, issue #570, gate round 1): done/finished is fully neutral, and only running and failed/error carry colour. A tool row's own label additionally takes the error colour on failure (tool rows and groups only; **Stage**, the **Subagent chain** and the **Subagent panel** colour only the icon, never their label), since a chromatic success colour used outside its own meaning teaches the wrong meaning.
+_Avoid_: state dot, badge
+
+**Error line**:
+The first meaningful line of a failed tool call's own output, shown directly under its row whether collapsed or expanded, without needing to expand anything (the LAST line for a `bash` call, after OMP's own trailing `Wall time:` footer is stripped; the FIRST line for every other tool). For a silent `bash` failure (no stdout or stderr), the line is the exit code or timeout OMP itself reported ("Exited with code N"/"Command timed out after N seconds"), never OMP's bare `(no output)` wrapper text; "Failed." is reserved for when no output and no exit/timeout information exist at all (issue #570, gate round 1).
+_Avoid_: error preview, output tail
 
 **Tool group**:
 A run of consecutive calls to the same tool, shown as one row that expands to its calls down a **Spine**; a run of one is still a Tool group, with no Spine (issue #565).

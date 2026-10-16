@@ -4,8 +4,8 @@
 // differently depending which of those surfaces shows it. Extends the icon set
 // `SubagentPanel.tsx`'s own (pre-#563) `SubagentStateIcon` (running/finished/failed/exited) with
 // `cancelled` (decision 15, split out of failed: a cancel/abort is not a failure).
-import { CheckCircle2Icon, CircleStopIcon, LoaderCircleIcon, UnplugIcon, XCircleIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { STATUS_GLYPH, type StatusGlyphKey } from '../chat/statusGlyph'
 
 export type SubagentRowStatus = 'running' | 'finished' | 'failed' | 'cancelled' | 'exited'
 
@@ -17,20 +17,24 @@ export const SUBAGENT_STATUS_LABEL: Record<SubagentRowStatus, string> = {
   exited: 'Agent exited'
 }
 
+// Gate round 1 (#570, G909Code Medium, decision 3 "one status map"): the icon/colour pairs
+// below come from `statusGlyph.ts`'s shared `STATUS_GLYPH` table -- the one this module chose
+// first (issue #563) and `toolStatus.tsx`'s own `StatusIcon` now reads too, instead of a second
+// hand-written copy that could drift apart from this one.
+const GLYPH_KEY_BY_STATUS: Record<SubagentRowStatus, StatusGlyphKey> = {
+  running: 'running',
+  finished: 'neutral-done',
+  failed: 'error',
+  cancelled: 'cancelled',
+  exited: 'neutral-muted'
+}
+
 /** The icon-only markup shared by `SubagentStatusIcon` and `SubagentStatusGlyph` below: a
  * distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop
  * (cancelled), unplug (exited). */
 function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
-  const className = 'size-3.5 shrink-0'
-  return (
-    <>
-      {status === 'running' && <LoaderCircleIcon aria-hidden className={cn(className, 'animate-spin text-state-working')} />}
-      {status === 'finished' && <CheckCircle2Icon aria-hidden className={cn(className, 'text-state-idle')} />}
-      {status === 'failed' && <XCircleIcon aria-hidden className={cn(className, 'text-severity-error')} />}
-      {status === 'cancelled' && <CircleStopIcon aria-hidden className={cn(className, 'text-muted-foreground')} />}
-      {status === 'exited' && <UnplugIcon aria-hidden className={cn(className, 'text-muted-foreground')} />}
-    </>
-  )
+  const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
+  return <Icon aria-hidden className={cn('size-3.5 shrink-0', className)} />
 }
 
 /** A distinct icon per state, never colour alone (WCAG 2.1 AA). `finished`'s word is `sr-only`

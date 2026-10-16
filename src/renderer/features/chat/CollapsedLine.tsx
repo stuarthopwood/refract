@@ -24,6 +24,9 @@ export interface CollapsedLineProps {
   meta?: React.ReactNode
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
+  /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
+   * label and icon render in the error colour, #570 decision 4; the target stays muted). */
+  labelClassName?: string
   /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in,
    * because the chat's own rows are deliberately one-line, but a narrow side panel (the
    * Subagents panel) needs a long path or paragraph visible instead of losing its useful tail. */
@@ -42,6 +45,16 @@ export interface CollapsedLineProps {
    * interactive trigger. Stays in the always-mounted header row, reachable while collapsed.
    * Ignored when `children` is omitted. */
   action?: React.ReactNode
+  /** #570 decisions 6/9: a failed tool call's own Error line, rendered as a `<p>` sibling of the
+   * trigger -- inside the `Collapsible` root, outside `CollapsibleContent` and the button --
+   * aligned to the label column (`pl-8 pr-2`). Linked to the trigger via `aria-describedby`.
+   * Ignored when `children` is omitted (no trigger to describe). */
+  detail?: React.ReactNode
+  /** #570 decision 9: a multi-call group's own header shows its latest failed member's Error
+   * line only while COLLAPSED (replaced by each failed member's own line once expanded); a solo
+   * call's or a member's own Error line has no such condition and stays visible either way.
+   * Opt-in per caller, since most `detail` callers want it unconditionally. */
+  hideDetailWhenOpen?: boolean
   /** Expansion content; omit entirely for a line with nothing to expand (it then renders as a
    * plain, non-interactive row with no chevron and no trigger). */
   children?: React.ReactNode
@@ -63,12 +76,15 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     summary,
     meta,
     summaryClassName,
+    labelClassName,
     summaryWrap,
     open,
     onOpenChange,
     defaultOpen,
     triggerAriaLabel,
     action,
+    detail,
+    hideDetailWhenOpen,
     children,
     className,
     contentClassName
@@ -79,6 +95,19 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const isControlled = open !== undefined
   const actualOpen = isControlled ? open : uncontrolledOpen
   const setOpen = onOpenChange ?? setUncontrolledOpen
+  const detailId = React.useId()
+  // Gate round 2 (G909A11y/G909Arch N6): a multi-call group's own Error line used to unmount
+  // entirely on expand and remount on re-collapse -- the remount is a genuine DOM insertion
+  // inside the transcript's `role="log"` region, so a user's OWN collapse re-announced an
+  // already-known failure as if it were new (decision 15 wants exactly one announcement per
+  // failure, not one per toggle). Fixed: the `<p>` stays MOUNTED for as long as `detail` itself
+  // is defined (a hidden member's own line also attaches/detaches rows elsewhere already, so
+  // this is never rendered for a row with no failure at all); only its visibility toggles via
+  // the native `hidden` attribute, which removes it from the accessibility tree without an
+  // actual node removal/insertion for Chromium's own live-region mutation detection to catch.
+  const detailMounted = detail !== undefined
+  const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
+  const showDetail = detailMounted && !detailVisuallyHidden
 
   const row = (
     <>
@@ -86,7 +115,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly. */}
       <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
-        <span className="min-w-0 max-w-full truncate font-medium" title={typeof label === 'string' ? label : undefined}>
+        <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}
@@ -103,15 +132,22 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <span className="min-w-0 flex-1" />
       )}
       {meta !== undefined && (
-        <>
+        // Gate round 2 (G909Arch/Main): the separator used to be its own top-level sibling span
+        // between the summary and the meta span; Chromium's own accessible-name-from-content
+        // algorithm inserts a space between EVERY sibling node it concatenates, independent of
+        // the separator's own text -- with the summary's own text ending in no whitespace of its
+        // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
+        // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
+        // removes the extra boundary that caused it.
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not
            * whitespace-only, so it survives collapsing. */}
           <span className="sr-only">, </span>
           {/* #565 decision 33: `tabular-nums` keeps a duration's digits aligned down a Spine. */}
-          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{meta}</span>
-        </>
+          {meta}
+        </span>
       )}
     </>
   )
@@ -140,6 +176,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
           aria-label={triggerAriaLabel}
+          aria-describedby={showDetail ? detailId : undefined}
           className={cn(
             // Gate round 3 (architect M-1, unanimous): this trigger sits inside
             // `MessageScrollerItem`'s own `content-visibility:auto` (`message-scroller.tsx`),
@@ -158,6 +195,32 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
          * header row, reachable while collapsed (never inside `CollapsibleContent`). */}
         {action}
       </div>
+      {detailMounted && (
+        // #570 decisions 6-8: app font (a message, not code), text-xs, clamped at two lines,
+        // no tint/border/box; plain text node, no markup or links. `dir="auto"` (gate round 1,
+        // security Low): tool output may legitimately contain RTL text (a path or message in
+        // another script); letting the browser infer direction from the first strong character
+        // per element, rather than inheriting the page's own LTR, keeps that text readable
+        // without giving a bidi-override character (already stripped in `errorLine()`) anywhere
+        // to hide behind.
+        <p
+          id={detailId}
+          dir="auto"
+          // Gate round 2 (G909Arch N2): `dir="auto"` lets the browser infer direction from the
+          // first strong character, which can right-align the WHOLE line (including the `pl-8`
+          // label-column gutter) when the error text happens to start RTL -- `text-left` pins
+          // the text's own alignment to the label column regardless of its inferred direction.
+          //
+          // Gate round 2 (G909A11y/G909Arch N6): `hidden` (not a conditional unmount) while a
+          // multi-call group is expanded, so the node stays in the DOM across every collapse and
+          // re-announcing an already-known failure on the user's own re-collapse (see
+          // `detailMounted`'s own comment above).
+          hidden={detailVisuallyHidden}
+          className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 line-clamp-2 text-left text-xs text-severity-error [overflow-wrap:anywhere]')}
+        >
+          {detail}
+        </p>
+      )}
       <CollapsibleContent className={cn('space-y-2 px-2 pb-2 pt-1', contentClassName)}>{children}</CollapsibleContent>
     </Collapsible>
   )
