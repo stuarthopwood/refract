@@ -124,10 +124,18 @@ export const PAIRS = [
   // and below (lines 117, 152) -- only `destructive`/`muted` and `state-needs-you`/`muted` were
   // genuinely missing. Both are real rendered text today: a long error/warning `NoticeRow`'s own
   // `summaryClassName` (`text-destructive`/`text-state-needs-you`) sits directly on this tint
-  // once hovered (`ToolGroupRow`'s own "N failed"/"N interrupted" text stays `text-muted-
-  // foreground`, already covered at line 109, until #570 gives it real colour).
+  // once hovered.
   { fg: 'destructive', bg: 'muted', min: 4.5 },
   { fg: 'state-needs-you', bg: 'muted', min: 4.5 },
+  // Issue #570, gate round 1 (accessibility-auditor/test-reviewer Low): `ToolGroupRow`'s own
+  // "N failed" meta text and a failed row's own label/Error line now render `text-severity-
+  // error` directly (never `text-destructive`), on both the row background and this hover tint.
+  // `severity-error` was previously gated only at the 3:1 icon floor (its `bg: 'background'`/`bg: 'muted'` pairs earlier in this file); the two
+  // tokens share an identical value in every built-in theme (`globals.css`), so this passes
+  // today purely because of that alias, but the gate must check the token actually RENDERED, not
+  // rely on an alias that could be split apart later without this file noticing.
+  { fg: 'severity-error', bg: 'background', min: 4.5 },
+  { fg: 'severity-error', bg: 'muted', min: 4.5 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/

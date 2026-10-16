@@ -1980,9 +1980,109 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
 | D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
 | D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |
 
+## Phase 44: Convergence
+
+- [X] T234 [US1] #570 tool row colour treatment (Decided, Skippy, delegated by Stuart 2026-10-15;
+  `ui-architect-v3` roundtable, full decision record on the issue): amended spec 001 per the
+  record's own section 5 -- FR-008 (label neutral for running/done/interrupted/exited, the
+  running icon alone in the working colour (pre-existing, unchanged by this story); red
+  icon/label and the new Error line for a failed call, a multi-call group's own settled-status
+  colour rule and meta-slot counts), FR-047 (ties the existing generic "warning or error line"
+  clause to FR-061's own named Error line for tool rows specifically), FR-061 (the failed-call
+  error text renamed the Error line and moved out of the expanded body into the collapsed row
+  itself, unconditionally; the expansion no longer repeats it), a new Clarifications "Session
+  2026-10-16" entry (three Q/A matching the decision record's colour/icon map, Error line
+  placement and derivation, and group collapsed/expanded behaviour), acceptance scenario 18 (US1),
+  and three Edge Cases (`(no output)` placeholder, ANSI stripping, a still-running group with an
+  already-failed member). `git diff --numstat origin/main -- specs/001-core-session-workspace/tasks.md`
+  confirmed 0 deletions before this phase was appended.
+
+- [X] T235 [US1] Probe first (decision record's own "Ready to build" note: FR-061's wording
+  assumed, as an [INFERENCE], that a failed `bash` call's own output ends with its useful line --
+  the probe was required to confirm or flip this before the Error line's `bash` derivation was
+  built). `docs/spike/bash-error-probe-570.mjs` (scratch `--session-dir`/cwd under `os.tmpdir()`,
+  real signed-in default profile, `--approval-mode=yolo`, two isolated tiny turns) ran against the
+  real signed-in `omp 18.10.1` and captured two real `tool_execution_end` frames for a failing
+  `bash` call: `ls /definitely-not-a-real-path-570` (real stderr) and `exit 7` (no output at all).
+  Both flipped the assumption: OMP's own bash wrapper always appends a trailing `Wall time: Ns`
+  then `Command exited with code N` footer AFTER the real content (or a literal `(no output)`
+  placeholder when there is none), so the real error sits BEFORE that footer, not at the raw
+  string's own last line. Recorded as `docs/spike/FINDINGS.md` item 60. `ToolRow.tsx`'s
+  `errorLine()` strips that known two-line footer from the end before taking the new last line
+  for `bash` (first line, unaffected, for every other tool).
+
+- [X] T236 [US1] Built per the decision record's section 6 ("Files the build will touch"):
+  `toolStatus.tsx`'s `StatusIcon` now renders the identical icon/colour per state as
+  `subagentStatus.tsx`'s own map (#563, already shipped first): `LoaderCircleIcon`
+  `text-state-working` (running), `CheckCircle2Icon` `text-state-idle` (done, fully neutral --
+  "failure loud, success quiet"), `XCircleIcon` `text-severity-error` (error), `UnplugIcon`
+  `text-muted-foreground` (interrupted/exited); every icon `aria-hidden`. `CollapsedLine.tsx`
+  gained `labelClassName` (a failed row's label joins its icon in the error colour, the target
+  stays muted) and `detail`/`hideDetailWhenOpen` (the Error line: a `<p>` sibling of the trigger,
+  inside the `Collapsible` root, at the label column `pl-8 pr-2`, linked to the trigger via
+  `aria-describedby`, mounting inside the transcript's own existing `role="log"` region so it is
+  announced once as that log's own addition with no second live region; `hideDetailWhenOpen` lets
+  a multi-call group's own header show its latest failed member's line only while collapsed,
+  replaced by each failed member's own line once expanded, while a solo call's or a member's own
+  line stays visible either way). `ToolRow.tsx`: `ToolCallBody`'s old boxed error `<p>` is deleted
+  (no longer duplicated inside the expansion); `ToolCallRow` (a group member) and `ToolGroupRow`
+  (solo and the group header) both pass `labelClassName`/`detail` for a failed item, and
+  `ToolGroupRow`'s own summary no longer appends ", N failed"/", N interrupted" as text -- those
+  counts move into the row's never-shrinking `meta` slot, "N failed" in the error colour the
+  instant any member fails (even mid-run; the header's own icon/label turn red only once the
+  group's SETTLED status is failed, matching the existing running-beats-failed worst-state order),
+  "N interrupted" staying neutral. Docs updated per section 5: `product-chat.md` (bullets 14-15),
+  `foundations-icons.md` (a new Chat Status icons bullet distinct from the session-list
+  `StateIcon`), `CONTEXT.md` (new **Status icon** and **Error line** glossary entries; "a state
+  icon" in the Subagent panel entry corrected to "a **Status icon**"). `check:theme-contrast`'s
+  existing `destructive`/`muted` (4.5:1) and `state-idle`/`muted` (3:1) pairs already numerically
+  cover `severity-error` (the two tokens share an identical value in every built-in theme,
+  `globals.css`), so no new PAIRS entries were needed -- confirmed by a clean 361/361 run.
+  `pnpm typecheck` clean; `node scripts/ci-local.mjs`: 16/16 steps PASS, including the Tauri debug
+  build and `check:ui-text` (0 leaks across 371 files).
+
+- [X] T237 [US1] Gate round 1 remediation (PR #909: code-reviewer/ui-architect-v3 FAIL on one
+  shared High, both PASS after the fix; accessibility-auditor, security-auditor, test-reviewer all
+  PASS with findings): fixed `errorLine()` (`ToolRow.tsx`) -- the original cut stripped OMP's own
+  `Command exited with code N` line together with its `Wall time:` footer, so a SILENT `bash`
+  failure (`exit 9`, no stdout/stderr) showed OMP's own `(no output)` placeholder instead of the
+  one fact that explains it; now only `Wall time: Ns` is stripped, the exit/timeout line that
+  follows it is read FIRST as a fallback ("Exited with code N" / "Command timed out after N
+  seconds"), and a lone `(no output)` left after the cut is also treated as wrapper chrome, never
+  content. Also fixed: a settled group's own Error line is prefixed with the failing member's
+  target, muted, whenever it differs from the header's own visible (last-call) target (M2); the
+  group meta's "N failed"/"N interrupted" counts are joined by a visible middle dot plus an
+  sr-only comma, matching #632's own grammar, instead of two bare adjacent spans (M1); FR-008 and
+  `product-chat.md` corrected to say the running ICON alone keeps its pre-existing working colour
+  (only the LABEL is neutral for running) rather than claiming the whole row is "fully neutral";
+  `toolStatus.tsx` and `subagentStatus.tsx` now both read one shared icon/colour table
+  (`statusGlyph.ts`, decision 3) instead of two hand-written copies; C0 controls and bidi-override
+  characters are stripped from the Error line and its `<p>` gets `dir="auto"` (security Low); two
+  `severity-error` pairs (background, muted) added to `theme-contrast-pairs.mjs` at the real 4.5:1
+  text floor, not just the pre-existing 3:1 icon floor (a11y Low); the committed probe script
+  (`docs/spike/bash-error-probe-570.mjs`) now actually runs both scenarios FINDINGS 60 claims
+  (a real stderr failure and a silent `exit 9`), re-run live and FINDINGS 60 corrected to match.
+  Filed issue #911 (a user-initiated Stop mid-flight renders the FULL failed/red treatment, not
+  neutral -- confirmed live, not merely [INFERENCE], out of scope for #570, pre-existing #510/#490
+  code untouched by this story) and a decision-20 note on #552 (the HC red-on-hover floor).
+  `scripts/verify-570-tool-colours.mjs` rebuilds fresh immediately before every run now (no reused
+  exe -- round 1's first rerun lost exactly that race to a sibling lane's own concurrent rebuild
+  of the shared target) and asserts a #570-only string in the built bundle before trusting
+  anything else; the group's settled Error line, the solo Error line, and the 360px Error line are
+  all now asserted against the exact expected text, not merely logged. `node scripts/ci-local.mjs`
+  not re-run in full this round (no Rust change beyond the already-passing build); `pnpm
+  typecheck` and `node scripts/check-theme-contrast.mjs` (394/394, up from 361, the two new
+  `severity-error` pairs) both clean. Live re-run: **zero failures** -- the exit-code fallback, the
+  group-detail attribution, the AX-tree-measured accessible name, the 360px clamped Error line, and
+  the M3 Stop-mid-flight finding (now CONFIRMED, not [INFERENCE]) are all real, live evidence.
+  Still not exercised: the exact spinner-still-running instant with a failed count already
+  showing (narrow real-model timing, twice lost; backed by the unmodified `status` ternary
+  instead) and the 240px Subagents panel case (never attempted); both remain on the verification
+  backlog (#650). **Refs #570** (not Closes): those two checks are still open.
+
 ## Phase 45: Convergence
 
-- [X] T260 [US5] Issue #567 (UX-architect-v3 roundtable decision record, delegated by Stuart
+- [X] T238 [US5] Issue #567 (UX-architect-v3 roundtable decision record, delegated by Stuart
   2026-10-15, "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): restyle the
   session list's rows, group headers and footer to the record's 28-decision spec (#811/#731/#735
   already merged first, per decision 1-2's own build order). `sessionDisplay.tsx`: new
@@ -2022,7 +2122,7 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   xs"`, hidden at rest and revealed by opacity on `group-hover`/`group-focus-within`/their own
   `aria-expanded`/`creating`/an empty active-Session list, always shown under `(hover: none)`
   (decision 6) -- unifying all three to 24px (initially intended, gate round 1 found this alone
-  insufficient, see T263) to resolve #908's "Archived marker column" follow-up (the old mixed
+  insufficient, see T241) to resolve #908's "Archived marker column" follow-up (the old mixed
   28/28/22px actions column, about 94px real, against a stale 104px constant, put Archived's own
   Waiting marker about 18px left of a Project header's); its own row list's `gap-0.5` also drops
   to `gap-0`. `SessionList.tsx`: the Pull
@@ -2043,17 +2143,17 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   UI-facing prose) and to describe the new row/header/footer layout -- the "no separate unread
   dot" fact itself was already correct from #731 and is kept, just re-worded into the new
   two-line description.
-- [X] T261 [US5] Update the spec: amended `specs/001-core-session-workspace/spec.md` with a
+- [X] T239 [US5] Update the spec: amended `specs/001-core-session-workspace/spec.md` with a
   `### Session 2026-10-15 (session list restyle)` Clarifications entry citing the full decision
   record, amended FR-039 (decision 11's time-format split and decision 16's accessible-
-  description formula), and a new FR-075 (provisional numbering -- the parent confirms the final
-  number before merge, per the #570/Phase 44 collision the numbering scheme already reserves
-  against) for the row/group-header/footer layout itself. FR-005 was reviewed against decision
+  description formula), and a new FR-070 (renumbered from a provisional FR-075 once #570/Phase 44 landed first on origin/main
+  with FR-069 as the confirmed ceiling, consecutive numbering restored) for the row/group-header/
+  footer layout itself. FR-005 was reviewed against decision
   record's "update FR-005 (remove the unread dot)" instruction and left unchanged: its current
   text ("drawn by the one shared status icon and its word, with no separate unread marker") was
   already fully compliant, added by #731 before this story started -- recorded here rather than
   silently skipped.
-- [X] T262 [US5] Verify live (scratch Tauri debug build, `scripts/verify-tauri-567.mjs`, new --
+- [X] T240 [US5] Verify live (scratch Tauri debug build, `scripts/verify-tauri-567.mjs`, new --
   reuses `verify-tauri-cdp.mjs`/`verify-tauri-session-list-helpers.mjs`, same precedent as
   `verify-tauri-735.mjs`; isolated `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
   `REFRACT_IMPORT_SOURCE_DIR`, the built exe copied out of the shared `CARGO_TARGET_DIR` and
@@ -2084,9 +2184,9 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   `C:/Users/shopwood/AppData/Local/Temp/refract-567-shots/`. `node scripts/ci-local.mjs` 16/16
   PASS (confirmed `CARGO_TARGET_DIR` respected -- `src-tauri/target` absent from the worktree
   afterward); `pnpm test` 148/148 (no new tests, per AGENTS.md); `check:theme-contrast` 415/415
-  PASS including the 9 new sidebar pairs T260 added.
+  PASS including the 9 new sidebar pairs T238 added.
 
-- [X] T263 [US5] Gate round 1 remediation (five-reviewer, 2026-10-16): Code, Tests, A11y and
+- [X] T241 [US5] Gate round 1 remediation (five-reviewer, 2026-10-16): Code, Tests, A11y and
   `ui-architect-v3` FAILed on three agreed High findings and several Medium/Low ones (Security
   PASSed). Fixed: **(1)** `SessionRow.tsx`'s own "..." trigger was `hidden` (`display:none`) at
   rest, so `menuTriggerRef.current.focus()` silently did nothing on every keyboard close path
@@ -2101,7 +2201,7 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   (`activityDescription` was `undefined` for that case, resting on a false comment that the
   unreachable hover card covered it) -- now set to the Project name, with `FolderGit2Icon size-3`
   added to line 2 to match the old per-repository secondary label (decision 9.4). **(3)** The
-  #908 fold-in (T260) claimed the marker-column alignment was exact "by construction" at 88px;
+  #908 fold-in (T238) claimed the marker-column alignment was exact "by construction" at 88px;
   it was still 8px off, because `ArchivedGroup.tsx`'s spacer sits INSIDE the header row and must
   NOT also add the row's own trailing padding a second time -- added a separate
   `GROUP_HEADER_ACTIONS_WIDTH_PX` (3x24 + 2x4 = 80) for the spacer, keeping
@@ -2138,7 +2238,7 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   gate round 1's own Medium finding on the first run); the marker-column alignment measured at
   both header triggers' own `getBoundingClientRect().right` -- **0px delta, an exact match**;
   decision 24's empty-Project line; the archived row's Project name, icon and accessible
-  description (via its own `aria-describedby` element's `textContent`); everything T262 already
+  description (via its own `aria-describedby` element's `textContent`); everything T240 already
   covered. Three harness bugs found and fixed while re-running (not product bugs): the header-
   actions-at-rest probe needed an explicit blur first (`createSessionViaQuickCreate`'s own click
   left the "+" button focused, which `group-focus-within` then kept revealed); the hover target
@@ -2152,10 +2252,63 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
 available to diff pixel-for-pixel against (only the decision record's own textual description
 was available, which every check above verifies against instead); the `(hover: none)` touch-
 pointer path is now un-overridden default behaviour (gated out of the hover-hiding rules
-entirely, T263) rather than a separately asserted branch, so it was not exercised under actual
+entirely, T241) rather than a separately asserted branch, so it was not exercised under actual
 touch-pointer emulation (the scratch harness has none); the Working, Stopped and Unread response
 status icons were not separately live-exercised this phase (that rendering is `StateIcon`'s own,
 unchanged by this story and already gate-verified under #731) -- Idle, Needs-you and Archived
 were exercised, since those are the states that interact with this story's own new line-2
 precedence and accessible-name logic; the 220px narrow-width truncation (decision 25) was not
-re-measured after T263's `pl-6`/`gap-1` changes recovered 8px of width margin for it.
+re-measured after T241's `pl-6`/`gap-1` changes recovered 8px of width margin for it.
+
+- [X] T242 [US5] Gate round 2 remediation (five-reviewer, 2026-10-16, PR #910): Tests and A11y
+  FAILed on one shared High (a regression of round 1's own fix), Code escalated the "Last active"
+  format to High too and found a second High (line 2 narrower than claimed); Security PASSed.
+  Fixed: **(1)** round 1's keyboard-focus fix scoped the "..." trigger's base opacity/pointer-
+  events visibility entirely inside `[@media(hover:hover)]`, so a touch-only pointer could never
+  reveal or tap it at all, regressing decision 12's "Under hover:none, both show" -- its own
+  `[@media(hover:none)]:static/opacity-100/pointer-events-auto` branch restores it, and the
+  trailing cell's `h-4` becomes `min-h-4` so the time and button can share the row in flow instead
+  of overlapping. CDP's `(hover:none)`/`(pointer:coarse)` media emulation was attempted for a live
+  proof and found to have no effect on WebView2's own CDP endpoint (`matchMedia` never flips, no
+  CDP error either) -- `scripts/verify-tauri-567.mjs` falls back to a static check that the fix's
+  own `@media(hover:none)` CSS rule exists in the running bundle, code-verified rather than
+  behaviourally driven. **(2)** `formatAbsoluteTime` (round 1's a11y fix for a per-minute
+  re-announcing description) was hour:minute only with no date, so an archived Session idle for
+  days read as "Last active 14:05", indistinguishable from one active minutes ago -- now day-aware
+  ("Today HH:MM" or "{day} {month}[ year] HH:MM"), recorded as a decision 11/16 departure on #567.
+  **(3)** Resume and the trailing time/"..." slot were flex siblings of the open button, narrowing
+  line 2 below decision 8's own "full row width" claim (T238's own comment was wrong) -- pinned
+  instead to one absolute group (`right-2 top-1 h-5`) anchored to line 1 only, with line 1's own
+  `pr-28` reserving the matching space; line 2 (no such padding) spans the row again. Medium/Low
+  fixes: Resume had no hover feedback (shares a new `ROW_ACTION_HOVER_CLASS` with the "..."
+  trigger); Pull requests and Add repository both lost their hover fill to ghost's own
+  half-strength `dark:hover:bg-muted/50` (`hover:bg-sidebar-accent dark:hover:bg-sidebar-accent`
+  added to both); "No sessions yet" (decision 24's own verbatim text, for zero Sessions ever) now
+  reads "No active sessions" once every Session is archived instead (the Project still has
+  Sessions, just none listed); `GroupHeader.tsx`'s muddled 84/88px arithmetic comment and
+  `RepositoryGroup.tsx`'s single-constant comment both corrected (name both
+  `GROUP_HEADER_ACTIONS_OFFSET_PX`/`_WIDTH_PX`, not just the one each touches); `components.md`'s
+  "matching every other ghost use" claim corrected (Pull requests stays foreground at rest, a
+  primary nav entry, unlike a footer action). **Live re-verification**: `scripts/verify-tauri-
+  567.mjs` rebuilt and re-run from this commit (`pnpm tauri build` chained with the verify script
+  in one command) -- the line-2 full-width measurement (8px delta, the row's own `pr-2`); an
+  isolated hover-swap proof (time at rest, "..." on hover) with its own screenshot; KEYBOARD-ONLY
+  Delete > Cancel now driven by ArrowDown/Tab/Enter (never a click, correcting T241's own
+  overclaim); a right-click context menu returning focus to a real row-level control on close
+  (by element identity, not merely "not `<body>`"); the archived description's day-aware "Last
+  active Today HH:MM"; "No active sessions" once the only Session is archived; everything T240/
+  T241 already covered, re-confirmed. Shift+F10 (decision 17) was attempted too and found not
+  drivable via CDP in WebView2 (confirmed with a one-shot `contextmenu` listener: no event ever
+  fires) -- it and the right-click check above ultimately drive the identical `contextmenu`
+  handling Radix's `ContextMenuTrigger` reacts to, so this is a harness limitation, not missing
+  coverage of a distinct path. `node scripts/ci-local.mjs` 16/16 PASS. Evidence (screenshots,
+  `report.txt`, JSON diagnostics) kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate2-shots/`.
+
+**Not exercised this phase** (stated plainly, not hidden): the mock image itself was still not
+available to diff pixel-for-pixel against; the dated (non-"Today") branch of `formatAbsoluteTime`
+was not live-exercised (only code-verified -- every session in this run was created today, so only
+the "Today HH:MM" branch occurs naturally); forced-colours rendering of the new hover classes;
+the shared minute tick's own live redraw; the short-date ("12 Oct") form after 7 days; Resume's own
+hover fill (no stopped/resumable Session was created in this run's flow); the 220px narrow-width
+truncation (decision 25), not re-measured after this round's `pr-28`/`right-2` changes.
