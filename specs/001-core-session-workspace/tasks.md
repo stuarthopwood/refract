@@ -2708,3 +2708,28 @@ the SearchField wrapper (not just the input), `inputProps`'s `Omit`-narrowed typ
 `sessionSearchSelector.ts` for the `data-session-search-input` hook, a stale screenshot sitting in
 the evidence folder, and a tooltip-ghost in screenshot 03 were all fixed; a D20/D28 amendment
 comment was posted on #559 and the PR body's Departures section corrected.
+
+## Phase 50: Convergence
+
+- [X] T255 [US1] #560 quiet alert rows (Decided, Skippy, delegated by Stuart 2026-10-16;
+  `ui-architect-v3` roundtable, full decision record on the issue). `ProfileAlertRows.tsx` (new)
+  renders two single-line rows as `App.tsx` siblings directly after `<ProfileItem/>`, replacing
+  `StatusBar.tsx`'s own low-memory and unverified-omp-version `Popover`s (its update badge is
+  unchanged). Low memory keeps a "Triage" action, now opening `MemoryTriageDialog.tsx` (new): a
+  `Dialog` listing every Session whose agent is `idle` -- never `working` (mid-turn) or
+  `needs-you` (waiting on the user), never already `stopped` -- each with a confirmed Stop
+  (`AlertDialog`, naming the Session) and one "Stop idle" bulk confirm targeting every listed
+  Session at once; no per-agent memory figure, since no per-process memory API exists anywhere
+  in src-tauri and none is added by this story. Unverified version keeps a "Check" action
+  opening the existing `HealthCheckDialog`; its open/close state moves from `ProfileItem.tsx` up
+  into `App.tsx` since the dialog now has two separate trigger sites (the profile menu and this
+  row), each restoring focus to whichever control opened it. Each row dismisses for the run only
+  (two local booleans in `ProfileAlertRows.tsx`, never persisted) -- a restart naturally re-arms
+  both, satisfying "the alert returns if the condition persists after a restart" with no extra
+  logic. Per FR-037 (amended) and new FR-072.
+- [X] T256 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with the
+  reworded FR-037, new FR-072, and a dated `### Session 2026-10-16 (quiet alert rows)`
+  Clarifications entry; amended `specs/008-profile-and-accounts/spec.md` FR-029 to cross-reference
+  both instead of duplicating them; `CONTEXT.md` gained the **Alert row** glossary entry (the term
+  the **Waiting marker** entry's own `_Avoid_` line had already reserved for this issue);
+  `docs/PLAN.md` gets this story's own row.

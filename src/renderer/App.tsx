@@ -8,6 +8,8 @@ import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
 import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
+import { ProfileAlertRows } from '@/features/profile/ProfileAlertRows'
+import { HealthCheckDialog } from '@/features/profile/HealthCheckDialog'
 import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
@@ -68,6 +70,12 @@ const OVERLAY_OPEN_SELECTOR = '[role="alertdialog"], [role="dialog"], [role="men
 // swap chip.
 export function App() {
   const [ready, setReady] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
+  const healthCheckReturnFocusRef = useRef<(() => void) | null>(null)
+  function openHealthCheck(returnFocusTo: () => void): void {
+    healthCheckReturnFocusRef.current = returnFocusTo
+    setHealthOpen(true)
+  }
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
@@ -526,7 +534,8 @@ export function App() {
                   <div className="min-h-0 flex-1">
                     <SessionList />
                   </div>
-                  <ProfileItem />
+                  <ProfileItem onOpenHealthCheck={openHealthCheck} />
+                  <ProfileAlertRows onOpenHealthCheck={openHealthCheck} />
                 </div>
               </ErrorBoundary>
             </ResizablePanel>
@@ -721,6 +730,7 @@ export function App() {
           </div>
         )}
       </div>
+      <HealthCheckDialog open={healthOpen} onOpenChange={setHealthOpen} onCloseFocus={() => healthCheckReturnFocusRef.current?.()} />
       <StatusBar />
       {/* Rendered last (Electron computes `-webkit-app-region` override by DOM document order,
           not paint/z-index order, confirmed live: a `no-drag-region` element earlier in the tree
