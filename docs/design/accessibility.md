@@ -56,6 +56,12 @@ Nothing in Refract exists only in a context menu or only on hover. Every action 
 
 Dark (high contrast) is a theme file, not a separate design: the same components, the same zero-box rule, the same icon set, with only the token values listed above changed. A component must never branch its markup or its icon choice on which theme preset is active; only CSS custom properties change.
 
+### Accepted departures
+
+Departures from the checklist above that Stuart accepted on purpose. Each names its scope, so nothing else may cite it.
+
+- **Quiet composer (Stuart, 2026-10-16, issue #927).** In Dark and Obsidian, the composer's border and the focus outline of its controls (Approval mode, Model, Reasoning, Attach, the text field) fall below 3:1 (1.4.11 non-text contrast; 2.4.7 focus stays visible, only muted). Hover is never the only interactive cue: keyboard focus still draws the muted outline. Dark (high contrast) keeps the full 3:1 edges and focus ring. The difference lives in token values only (`--composer-border`, the composer focus and control-edge tokens), never in markup, per the rule above.
+
 ## Design-system checklist (Spec Kit plan gate)
 
 Governance (agenda item 12) decided to put this checklist in the Spec Kit plan template; it is not wired in yet (`.specify/templates/plan-template.md` has no design-system section today — see "Open," below). Until it is, apply this checklist by hand: one box per rule, grouped by the page it comes from, checked against a story's plan before work starts, or the plan names which boxes do not apply and why.
