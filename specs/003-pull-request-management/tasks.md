@@ -236,6 +236,27 @@ call sites; 360px pane width and 400% zoom on the restyled row and detail header
 
 ---
 
+## Phase 9: Convergence -- #569 sidebar pull request count (issue #569)
+
+- [ ] T038 New `activeCountByRepository` store slice + `refreshActiveCount` action in
+  `pull-requests-store.ts` (FR-032). Reference task only, recorded here for traceability -- built
+  by a sibling task in the same PR; not implemented by this task.
+- [ ] T039 Shared default-repository-id hook extraction from `SessionList.tsx` (FR-032).
+  Reference task only, recorded here for traceability -- built by a sibling task in
+  `SessionList.tsx` in the same PR; not implemented by this task.
+- [ ] T040 `SessionList.tsx` trailing count render + `aria-label` for the left-nav "Pull
+  requests" entry (FR-032). Reference task only, recorded here for traceability -- built by a
+  sibling task in `SessionList.tsx` in the same PR; not implemented by this task.
+- [X] T041 Update `specs/003-pull-request-management/spec.md` (new FR-032, Clarifications
+  Session 2026-10-16) and `specs/003-pull-request-management/contracts/ipc.md` (`pullRequests.list`
+  second non-polling caller note) to record the #569 decision record.
+- [ ] T042 Live verification per the issue's own decision record "Live checks" list (sidebar
+  count matches `gh search prs --repo ... --involves @me -- -is:open` run independently;
+  confirm it is absent with zero/no open PRs involving the signed-in account; and that switching
+  the default repository updates it without a flash of a stale number).
+
+---
+
 ## Dependencies & Execution Order
 
 - **Phase 1 (Setup/probes)**: no dependencies; T001 to T005 run in parallel.

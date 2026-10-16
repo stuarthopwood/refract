@@ -36,6 +36,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   const setQuery = usePullRequestsStore((s) => s.setQuery)
   const selectPullRequest = usePullRequestsStore((s) => s.selectPullRequest)
   const refresh = usePullRequestsStore((s) => s.refresh)
+  const refreshActiveCount = usePullRequestsStore((s) => s.refreshActiveCount)
 
   // Fetches on open and whenever the scoped repository changes (FR-001); never polled
   // automatically afterward (FR-028) -- only the explicit refresh button and tab switch re-fetch.
@@ -74,7 +75,18 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
           aria-label="Filter pull requests by title or label"
           className="h-8 flex-1"
         />
-        <RefreshButton loading={state.loading} onClick={() => void refresh(repositoryId)} label="Refresh pull requests" />
+        <RefreshButton
+          loading={state.loading}
+          onClick={() => {
+            // Issue #569 decision 2(e): the view's own explicit Refresh is one of the active
+            // count's non-polling refresh triggers too -- the developer is already demonstrating
+            // interest in this repository's pull request state, so the sidebar's `involves`/
+            // `is:open` count rides along for free rather than waiting for the next focus event.
+            void refresh(repositoryId)
+            void refreshActiveCount(repositoryId)
+          }}
+          label="Refresh pull requests"
+        />
       </div>
       <div className="text-xs text-muted-foreground" aria-live="polite">
         {state.fetchedAt ? `Last updated ${formatRelativeTime(state.fetchedAt)}` : state.loading ? 'Loading...' : ''}

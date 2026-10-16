@@ -146,6 +146,20 @@ from the Overview `Timeline` tab, not just from the consensus count.
   `Exclude<ReviewVerdict, 'dismissed'>`: a dismissal is a real state an already-submitted review
   can be in, never a choice a NEW submission can carry.
 
+### Session 2026-10-16 (#569 sidebar pull request count)
+
+- Q: What counts as the "active" pull request count shown next to the left-nav "Pull requests"
+  entry? -> A: The current/default repository only, reusing the existing per-repository
+  `involves`+`is:open` search (no new scope); never a cross-repository aggregate. Matches the
+  single-repository scoping already established by FR-001/FR-002.
+- Q: How does the count refresh? -> A: Event-driven only -- app start, default-repository
+  change, window focus (throttled), and active-account change, plus the view's own explicit
+  refresh -- never a timer/polling interval.
+- Q: How is the count rendered? -> A: Plain trailing text ("N active") with no box or chip,
+  matching the existing count-is-its-own-span convention; no new visual treatment.
+- Q: When is the count hidden? -> A: Whenever a positive count isn't known yet: while loading,
+  when the count is zero, or when the query is unavailable (signed out, offline, or erroring).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse pull requests (Priority: P1)
@@ -390,6 +404,14 @@ creation rules from spec 001.
   actual comment review, and excluding both the pull request's own author and a reviewer whose
   entire history is a since-dismissed review with no comment) above the PR body, when at least
   one review exists.
+- **FR-032**: The left-nav "Pull requests" entry MUST show a trailing count of open pull
+  requests involving the active account (author, assignee, mentioned, or review-requested) for
+  the currently selected/default repository only -- the same single-repository scoping as
+  FR-001/FR-002, never a cross-repository aggregate. The count MUST render as plain text with no
+  box, and MUST be shown only when a positive count is known: it MUST be hidden while loading,
+  when the count is zero, or when the query is unavailable. The count MUST be refreshed only on
+  app start, a default-repository change, window focus (throttled), an active-account change, and
+  the view's own explicit refresh -- and MUST NOT be refreshed on a timer.
 
 ### Key Entities
 

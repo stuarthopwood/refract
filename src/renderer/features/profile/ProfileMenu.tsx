@@ -12,17 +12,14 @@
 // of that. `ProfileItem.tsx` owns every dialog this menu can open (Manage accounts, Sign out,
 // Keyboard shortcuts, Health check) as siblings of the `DropdownMenu`, since a menu item unmounts
 // the moment the menu closes -- this component only calls the callbacks it is given for those.
-// The Theme submenu and What's new are the two exceptions: both are fully self-contained (reading
-// `useThemeStore`/`useViewStore` directly, the same way `ProfileItem.tsx`'s own cog button
-// already calls `useViewStore` inline), since neither needs a sibling dialog -- Theme only needs
-// `onThemeApplied` to reach ProfileItem's shared live region, and What's new only ever shows a
-// toast.
-//
-// One reserved slot, left as a comment rather than a disabled/stub item (a control that opens
-// nothing is worse than no control): the update entry lands between Keyboard shortcuts and
-// Health check once spec 006 ships `updates.get()`/`updates:changed` (tasks.md T024b) -- no
-// `updates` IPC, preload method, or store exists yet.
+// The Theme submenu, the update entry, and What's new are the three exceptions: each is fully
+// self-contained (reading `useThemeStore`/`useUpdateStore`/`useViewStore` directly, the same way
+// `ProfileItem.tsx`'s own cog button already calls `useViewStore` inline), since none needs a
+// sibling dialog -- Theme only needs `onThemeApplied` to reach ProfileItem's shared live region,
+// the update entry (issue #569, spec 008 FR-021, T024b) only ever shows a toast confirming or
+// reporting a check, and What's new only ever shows a toast too.
 import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import {
   ActivityIcon,
   CheckIcon,
@@ -34,6 +31,7 @@ import {
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
+  RefreshCwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -50,7 +48,8 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
-import { useAccountsStore, useActiveThemeId, useThemeStore, useViewStore } from '@/state'
+import { updateUnavailableReasonText } from '@/lib/updateStatus'
+import { notify, useAccountsStore, useActiveThemeId, useThemeStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'
@@ -181,6 +180,69 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   )
 }
 
+/** The update entry (spec 008 FR-021, T024b; issue #569 decision 5): always present in the fixed
+ *  order (FR-018), self-contained like `ThemeSubmenu` above -- reads `useUpdateStore` directly
+ *  rather than threading a new prop through `ProfileItem.tsx`. Exactly two renderings, not the
+ *  status bar's full idle/checking/available/downloading/downloaded/failed/unavailable detail
+ *  (`StatusBar.tsx`, which keeps the Download/Retry actions entirely to itself): "Restart to
+ *  update" with a plain trailing version once a download is waiting for the next quit, "Check
+ *  for updates" otherwise. Selecting "Restart to update" only confirms with a toast -- it never
+ *  quits or installs. Selecting "Check for updates" re-runs the check and shows one outcome
+ *  toast; `aria-disabled` (same guarded-`onSelect` pattern as the "GitHub unavailable" row
+ *  above) while a check, download, or install is already running, swapping in the same
+ *  `LoaderCircleIcon` that row's own busy state uses. */
+function UpdateMenuItem() {
+  const updateState = useUpdateStore((state) => state.state)
+  const phase = updateState?.phase
+  const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing'
+
+  function handleCheckAgain(): void {
+    void window.refract.updates.check().then((result) => {
+      if (!result.ok) {
+        notify(result.error)
+        return
+      }
+      const next = result.value
+      if (next.phase === 'failed') {
+        toast.error(next.lastError ?? 'Update failed for an unknown reason.')
+      } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
+        toast.error(updateUnavailableReasonText(next.unavailableReason))
+      } else if (next.phase === 'idle') {
+        toast.success('Refract is up to date.')
+      } else {
+        toast.success('An update is available.')
+      }
+    })
+  }
+
+  if (phase === 'downloaded') {
+    return (
+      <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
+        <RefreshCwIcon aria-hidden />
+        <span className="flex-1">Restart to update</span>
+        <span className="text-xs text-muted-foreground">v{updateState?.availableVersion}</span>
+      </DropdownMenuItem>
+    )
+  }
+
+  return (
+    <DropdownMenuItem
+      aria-disabled={busy || undefined}
+      aria-label={busy ? 'Check for updates, checking…' : undefined}
+      onSelect={(event) => {
+        if (busy) {
+          event.preventDefault()
+          return
+        }
+        handleCheckAgain()
+      }}
+    >
+      {busy ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <RefreshCwIcon aria-hidden />}
+      Check for updates
+    </DropdownMenuItem>
+  )
+}
+
 /** Keyboard shortcuts, Health check, and What's new: common to every GitHub sign-in state, so
  *  extracted here and rendered exactly once by `ProfileMenuContent` below, regardless of state. */
 function CommonMenuItems({
@@ -198,8 +260,9 @@ function CommonMenuItems({
         <KeyboardIcon aria-hidden />
         Keyboard shortcuts
       </DropdownMenuItem>
-      {/* Update entry slot (spec 006, tasks.md T024b): reserved here, between Keyboard shortcuts
-          and Health check, until spec 006 ships `updates.get()`/`updates:changed`. */}
+      {/* Update entry (issue #569, spec 008 FR-021, T024b): always present, fixed between
+          Keyboard shortcuts and Health check per FR-018. */}
+      <UpdateMenuItem />
       <DropdownMenuItem onSelect={onHealthCheck}>
         <ActivityIcon aria-hidden />
         Health check
