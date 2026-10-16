@@ -223,7 +223,16 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log(`STEP PASS: full documented Tab order confirmed: ${tabOrder.map((s) => JSON.stringify(s.name)).join(' -> ')}.`);
 
   // ---- Item 2: Memory Triage -- lists the idle Session, per-row Stop with confirmation ----
+  // A settle sleep before this first mouse click is REQUIRED, confirmed live: immediately after
+  // the preceding keyboard-only sequence (Tab walk + Enter-driven HealthCheckDialog open/close),
+  // the very next synthetic mouse click on the Triage button is a proven one-shot miss -- CDP's
+  // elementFromPoint at the click's own coordinates confirms the Triage button genuinely IS the
+  // hit target (no stray overlay, no layout overlap) and the identical click dispatched again a
+  // moment later opens MemoryTriageDialog immediately, so the button/dialog wiring itself is
+  // correct; only the FIRST click right after that keyboard sequence is lost, a timing race in
+  // this script's own input sequencing, not an app bug.
   await cdp.evaluate(`document.activeElement?.blur()`);
+  await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog opened' });
   const sessionARow = `Array.from(document.querySelectorAll('[role="dialog"] li')).find((li) => li.textContent.includes(${JSON.stringify(sessionA.name)}))`;
@@ -240,7 +249,11 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   // Item 5a (round 2, for the next live run): Escape closes the per-row confirm WITHOUT
   // stopping anything, then a second Escape closes the Triage Dialog itself, landing focus
   // back on the alert row's own Triage button -- never <body>, never left inside the (now
-  // closed) Dialog.
+  // closed) Dialog. A settle sleep before the FIRST Escape is REQUIRED, confirmed live (same
+  // race as the bulk-confirm Escape below and the Triage button's own first click, above):
+  // dispatching the Escape keydown immediately after the mouse click that opened this
+  // AlertDialog intermittently races its FocusScope/DismissableLayer setup and is lost.
+  await sleep(300);
   await pressEscape(cdp);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'per-Session confirmation closed via Escape (no stop)' });
   await pressEscape(cdp);
@@ -342,7 +355,17 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: "Stop idle" confirms with the real, current idle count, and its description names the Session(s) being stopped.');
 
   // Item 5a (round 2): Escape closes the bulk confirm WITHOUT stopping anything, then a second
-  // Escape closes the Triage Dialog itself, landing focus back on "Open memory triage".
+  // Escape closes the Triage Dialog itself, landing focus back on "Open memory triage". A
+  // settle sleep before the FIRST Escape is REQUIRED, confirmed live: this exact Escape timed
+  // out intermittently (the keydown, dispatched immediately after two evaluate() round trips
+  // reading the confirm's own title/description, raced the bulk AlertDialog's own just-opened
+  // FocusScope/DismissableLayer setup) in two separate live runs, then passed cleanly with no
+  // retry needed in a third once this same settle convention (already proven for the Triage
+  // button's own first click, above) was tried here too -- the same class of WebView2/CDP
+  // input-timing race this script has already hit once, not a product bug (the confirm's own
+  // title/description/count all read correctly every time; only the FIRST post-open keyboard
+  // event right after a flurry of dialog churn is ever lost).
+  await sleep(300);
   await pressEscape(cdp);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed via Escape (no stop)' });
   await pressEscape(cdp);
@@ -360,7 +383,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened for the real bulk stop' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
-  await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop idle')`);
+  await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
   await waitForSessionStatus(cdp, sessionB.id, 'stopped');
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed after Stop idle' });
   await cdp.waitFor(`(${DIALOG})?.textContent.includes('No idle agents to stop right now.')`, { timeoutMs: 10_000, label: 'Triage falls back to empty state after bulk stop' });

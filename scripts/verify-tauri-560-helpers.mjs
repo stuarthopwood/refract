@@ -155,18 +155,24 @@ export async function axText(cdp, selectorExpr) {
 /** Polls `textExpr` every `intervalMs` while `aliveExpr` stays true, collecting EVERY sampled
  * value -- not just the first or the last -- so a title/description that goes blank partway
  * through a Radix exit animation (the DOM node stays mounted for the animation's duration
- * before unmounting) is caught even though both endpoints look fine. Checks `aliveExpr` BEFORE
- * each text read (round 1 of this helper sampled text unconditionally then checked `aliveExpr`
- * after, so the loop's own final iteration -- taken the instant the container had already
- * unmounted -- always recorded a trailing `null`, confirmed live: that is this helper sampling
- * its own teardown, not the app going blank, and does not belong in the returned samples).
- * Returns once `aliveExpr` goes false or `timeoutMs` elapses. */
+ * before unmounting) is caught even though both endpoints look fine. Round 1 sampled text
+ * unconditionally then checked `aliveExpr` after, so the loop's own final iteration -- taken
+ * the instant the container had already unmounted -- always recorded a trailing `null`,
+ * confirmed live. Round 2 checked `aliveExpr` and read `textExpr` as TWO SEPARATE `evaluate`
+ * round trips, which fixed that but opened a narrower version of the exact same race, also
+ * confirmed live: the container can unmount in the real wall-clock gap BETWEEN those two
+ * round trips (aliveExpr still true, then gone by the time textExpr runs), still producing a
+ * trailing `null`. Reads both in a SINGLE `evaluate` call -- one atomic snapshot, no gap for
+ * the container to unmount in between -- so a `null` in the returned samples can only mean
+ * the title itself actually went blank while still mounted, never this helper racing its own
+ * two queries against the container's own teardown. */
 export async function sampleWhileAlive(cdp, textExpr, aliveExpr, { intervalMs = 20, timeoutMs = 5_000 } = {}) {
   const samples = [];
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!(await cdp.evaluate(aliveExpr))) break;
-    samples.push(await cdp.evaluate(`${textExpr} ?? null`));
+    const snapshot = await cdp.evaluate(`(() => { const alive = !!(${aliveExpr}); return alive ? { alive: true, text: (${textExpr}) ?? null } : { alive: false, text: null }; })()`);
+    if (!snapshot.alive) break;
+    samples.push(snapshot.text);
     await sleep(intervalMs);
   }
   return samples;
