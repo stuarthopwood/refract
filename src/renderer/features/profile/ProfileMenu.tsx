@@ -186,15 +186,21 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
  *  status bar's full idle/checking/available/downloading/downloaded/failed/unavailable detail
  *  (`StatusBar.tsx`, which keeps the Download/Retry actions entirely to itself): "Restart to
  *  update" with a plain trailing version once a download is waiting for the next quit, "Check
- *  for updates" otherwise. Selecting "Restart to update" only confirms with a toast -- it never
- *  quits or installs. Selecting "Check for updates" re-runs the check and shows one outcome
- *  toast; `aria-disabled` (same guarded-`onSelect` pattern as the "GitHub unavailable" row
+ *  for updates" otherwise (the busy sub-states get their own visible verb -- "Checking for
+ *  updates…"/"Downloading update…"/"Installing update…" -- so the accessible name IS the visible
+ *  text, no separate `aria-label` needed). Selecting "Restart to update" only confirms with a
+ *  toast -- it never quits or installs. Selecting "Check for updates" re-runs the check and
+ *  shows one outcome toast (gate round 1 fix: an explicit 'available' branch names the version;
+ *  no "available" toast is shown for any other phase; the unavailable-reason and up-to-date
+ *  outcomes are informational, `toast.info`, never `toast.error`, which is reserved for a real
+ *  failure); `aria-disabled` (same guarded-`onSelect` pattern as the "GitHub unavailable" row
  *  above) while a check, download, or install is already running, swapping in the same
  *  `LoaderCircleIcon` that row's own busy state uses. */
 function UpdateMenuItem() {
   const updateState = useUpdateStore((state) => state.state)
   const phase = updateState?.phase
   const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing'
+  const busyLabel = phase === 'checking' ? 'Checking for updates…' : phase === 'downloading' ? 'Downloading update…' : phase === 'installing' ? 'Installing update…' : 'Check for updates'
 
   function handleCheckAgain(): void {
     void window.refract.updates.check().then((result) => {
@@ -203,15 +209,22 @@ function UpdateMenuItem() {
         return
       }
       const next = result.value
+      // Gate round 1 fix: each outcome gets its own explicit branch -- 'available' names the
+      // version rather than folding into a generic "else", and nothing outside this branch ever
+      // claims "An update is available." A real failure (`toast.error`) is the only outcome that
+      // is actually bad news; an unreachable/not-signed-in/not-installed CLI or a plain
+      // up-to-date result are both informational (`toast.info`), never an error.
       if (next.phase === 'failed') {
         toast.error(next.lastError ?? 'Update failed for an unknown reason.')
       } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
-        toast.error(updateUnavailableReasonText(next.unavailableReason))
+        toast.info(updateUnavailableReasonText(next.unavailableReason))
       } else if (next.phase === 'idle') {
-        toast.success('Refract is up to date.')
-      } else {
-        toast.success('An update is available.')
+        toast.info('Refract is up to date.')
+      } else if (next.phase === 'available') {
+        toast.success(`Update available: v${next.availableVersion}`)
       }
+      // 'downloading'/'downloaded'/'installing' here would mean a previous check already moved
+      // past 'available' by the time this one resolved -- no toast invents a claim for those.
     })
   }
 
@@ -220,7 +233,10 @@ function UpdateMenuItem() {
       <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
         <RefreshCwIcon aria-hidden />
         <span className="flex-1">Restart to update</span>
-        <span className="text-xs text-muted-foreground">v{updateState?.availableVersion}</span>
+        <span className="text-xs text-muted-foreground">
+          <span aria-hidden> </span>
+          <span className="sr-only">version </span>v{updateState?.availableVersion}
+        </span>
       </DropdownMenuItem>
     )
   }
@@ -228,7 +244,7 @@ function UpdateMenuItem() {
   return (
     <DropdownMenuItem
       aria-disabled={busy || undefined}
-      aria-label={busy ? 'Check for updates, checking…' : undefined}
+      className={busy ? 'aria-disabled:opacity-50' : undefined}
       onSelect={(event) => {
         if (busy) {
           event.preventDefault()
@@ -238,7 +254,7 @@ function UpdateMenuItem() {
       }}
     >
       {busy ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <RefreshCwIcon aria-hidden />}
-      Check for updates
+      {busyLabel}
     </DropdownMenuItem>
   )
 }

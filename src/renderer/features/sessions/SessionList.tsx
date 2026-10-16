@@ -104,7 +104,8 @@ export function SessionList() {
   const activeCount = usePullRequestsStore((state) =>
     defaultRepositoryId ? state.activeCountFor(defaultRepositoryId).count : null
   )
-  const activeCountLabel = activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
+  const activeCountLabel =
+    githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
   // Issue #569 decision 2(a)/(b): fetches once per default repository that has no cached count
   // yet (covers both app startup and a genuine default-repository change) -- never on a timer.
   // The window focus/visibility refresh, the active-account-change clear, and the pull request

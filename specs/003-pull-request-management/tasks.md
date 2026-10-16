@@ -238,22 +238,34 @@ call sites; 360px pane width and 400% zoom on the restyled row and detail header
 
 ## Phase 9: Convergence -- #569 sidebar pull request count (issue #569)
 
-- [ ] T038 New `activeCountByRepository` store slice + `refreshActiveCount` action in
-  `pull-requests-store.ts` (FR-032). Reference task only, recorded here for traceability -- built
-  by a sibling task in the same PR; not implemented by this task.
-- [ ] T039 Shared default-repository-id hook extraction from `SessionList.tsx` (FR-032).
-  Reference task only, recorded here for traceability -- built by a sibling task in
-  `SessionList.tsx` in the same PR; not implemented by this task.
-- [ ] T040 `SessionList.tsx` trailing count render + `aria-label` for the left-nav "Pull
-  requests" entry (FR-032). Reference task only, recorded here for traceability -- built by a
-  sibling task in `SessionList.tsx` in the same PR; not implemented by this task.
+- [X] T038 New `activeCountByRepository` store slice + `refreshActiveCount` action in
+  `pull-requests-store.ts` (FR-032).
+  -- Implemented: `activeCountByRepository`/`activeCountFor`/`refreshActiveCount`/
+  `clearActiveCounts` (own sequence counter, independent of the visible-tab `refreshSequence`);
+  gate round 1 fix: `clearActiveCounts` now bumps every existing sequence key too, so an
+  in-flight fetch started before a clear can never resurrect a stale count after it.
+- [X] T039 Shared default-repository-id hook extraction from `SessionList.tsx` (FR-032).
+  -- Implemented: `src/renderer/lib/defaultRepository.ts` (`useDefaultRepositoryId`/
+  `getDefaultRepositoryId`), imported directly from the individual store modules (never the
+  `@/state` barrel) to avoid a circular import with `init-stores.ts`.
+- [X] T040 `SessionList.tsx` trailing count render + `aria-label` for the left-nav "Pull
+  requests" entry (FR-032).
+  -- Implemented: a plain `tabular-nums` trailing span, shown only when `githubStatus === 'ready'`
+  and a positive count is known (gate round 1 hardening); `aria-label` becomes
+  "Pull requests, N active" the same way.
 - [X] T041 Update `specs/003-pull-request-management/spec.md` (new FR-032, Clarifications
   Session 2026-10-16) and `specs/003-pull-request-management/contracts/ipc.md` (`pullRequests.list`
   second non-polling caller note) to record the #569 decision record.
-- [ ] T042 Live verification per the issue's own decision record "Live checks" list (sidebar
-  count matches `gh search prs --repo ... --involves @me -- -is:open` run independently;
-  confirm it is absent with zero/no open PRs involving the signed-in account; and that switching
-  the default repository updates it without a flash of a stale number).
+- [X] T042 Live verification per the issue's own decision record "Live checks" list.
+  -- Live-verified (`scripts/verify-tauri-569.mjs`, isolated scratch Tauri debug instance, a
+  read-only clone of `stuarthopwood/refract`): the sidebar count matches an independent
+  `gh search prs --repo stuarthopwood/refract --involves @me -- is:open` run outside the app
+  (2 active, matched exactly); the count disappears (not a stale number) once the default
+  repository changes to one with no GitHub remote. NOT live-verified: the explicit "zero active
+  PRs" rendering (the signed-in account's real PR count was non-zero throughout this run) and the
+  60s window-focus throttle / active-GitHub-account-change cache-clear paths (code-verified only
+  -- see the issue's #650 comment for the full code-verified-only list).
+
 
 ---
 

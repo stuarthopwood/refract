@@ -232,6 +232,10 @@ export function initStores(): void {
     if (useAccountsStore.getState().githubStatus !== 'ready') return
     const repositoryId = getDefaultRepositoryId()
     if (!repositoryId) return
+    // Gate round 1 fix (Code Medium, decision 2(c)): checked BEFORE stamping the throttle below,
+    // so a fetch already in flight (the mount effect, or the account-change refresh) never
+    // silently consumes this window's own throttle slot for nothing.
+    if (usePullRequestsStore.getState().activeCountFor(repositoryId).loading) return
     const now = Date.now()
     if (now - lastActiveCountFocusRefresh < 60000) return
     lastActiveCountFocusRefresh = now
@@ -245,9 +249,6 @@ export function initStores(): void {
   // Issue #569 decision 2(d): the active GitHub account identity (`login@host`) changing -- a
   // sign-in, sign-out, switch, or a fresh `accounts:github-changed` broadcast -- means every
   // cached active-count is stale (`@me` now means someone else, or nobody), so all of them are
-  // dropped rather than picking which ones to keep. A direct `useAccountsStore.subscribe` (not a
-  // component effect) so this fires even while no component reading `activeCountByRepository`
-  // happens to be mounted.
   let lastActiveAccountIdentity: string | null = null
   useAccountsStore.subscribe((state) => {
     const active = state.github.find((account) => account.active)
@@ -255,6 +256,15 @@ export function initStores(): void {
     if (identity === lastActiveAccountIdentity) return
     lastActiveAccountIdentity = identity
     usePullRequestsStore.getState().clearActiveCounts()
+    // Gate round 1 fix (Code/Security/A11y/Arch High): a non-null new identity (a fresh sign-in
+    // or an account switch, never a sign-out) immediately re-fetches the default repository's
+    // count for THIS account, rather than leaving the sidebar silently blank until the next
+    // focus/visibility event or explicit refresh -- `githubStatus` on this same snapshot is
+    // already 'ready' by the time `setGithub` (the only caller that changes `active`) commits it.
+    if (identity !== null && state.githubStatus === 'ready') {
+      const repositoryId = getDefaultRepositoryId()
+      if (repositoryId) void usePullRequestsStore.getState().refreshActiveCount(repositoryId)
+    }
   })
 
   // Issue #528, gate round 3 fix (Medium, verification): `repositories.remotes()` isolates the

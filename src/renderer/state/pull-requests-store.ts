@@ -162,5 +162,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       })
     })
   },
-  clearActiveCounts: () => set({ activeCountByRepository: {} })
+  clearActiveCounts: () => {
+    // Gate round 1 fix (Code/Security/A11y/Arch High): bumping every repository's own sequence
+    // number here means an in-flight `refreshActiveCount` fetch started BEFORE this clear, whose
+    // `await` resolves AFTER it, sees its own sequence no longer match and bails -- without this
+    // it could silently resurrect a stale, now-wrong-account count right after the clear.
+    for (const key of Object.keys(activeCountSequence)) {
+      activeCountSequence[key] = (activeCountSequence[key] ?? 0) + 1
+    }
+    set({ activeCountByRepository: {} })
+  }
 }))

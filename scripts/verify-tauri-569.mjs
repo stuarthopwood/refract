@@ -5,66 +5,79 @@
 // `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR`, never Stuart's real
 // `%APPDATA%/refract-tauri`).
 //
-// Most of #569 (account header, per-item icons, Theme "Current" marker) was already built by an
-// earlier story and is NOT re-proven here beyond a quick sanity screenshot -- see this story's
-// decision record. What this script actually proves:
-//   - A #569-only DOM/bundle marker (the literal "Restart to update"/"Check for updates" pair,
-//     unique to the new `UpdateMenuItem`) is present before anything else is trusted.
-//   - The sidebar "N active" count: added against a real read-only clone of
-//     stuarthopwood/refract (never written to -- no comment/review/merge call is ever made),
-//     cross-checked against an independent `gh search prs` run outside the app; then proved to
+// Gate round 1 rewrite. What this script actually proves:
+//   - A #569-only DOM/bundle marker is present before anything else is trusted.
+//   - The sidebar "N active" count against a real read-only clone of stuarthopwood/refract,
+//     cross-checked against an independent `gh search prs` run outside the app; proved to
 //     disappear (not flash a stale number) once the default repository changes to one with no
-//     GitHub remote.
-//   - Keyboard-only profile menu: fixed item order (the update entry sits between Keyboard
-//     shortcuts and Health check, FR-018), arrow-key nav into/out of the Theme submenu, Esc
-//     returns focus to the profile item's name button.
-//   - The update entry's exact two renderings (FR-021), forced via a scratch `updateState.json`
-//     seeded into the isolated data dir (no network): idle, available, downloading, downloaded,
-//     failed, and GitHub-CLI-unavailable all collapse to "Check for updates" except downloaded
-//     ("Restart to update vX.Y.Z", which never quits or installs on select).
-//   - Dark, Obsidian/High contrast, 360px width, reduced motion.
+//     GitHub remote -- this repo-switch test runs LAST so every screenshot above it is taken
+//     while the GitHub clone is still the default repository (count visible).
+//   - Keyboard-ONLY profile menu, driven with `Emulation.setFocusEmulationEnabled` and real
+//     `Input.dispatchKeyEvent`: focus the name button, Enter opens the menu, fixed item order,
+//     ArrowDown to Theme, ArrowRight into the submenu (asserting the "Current" marker), ArrowLeft
+//     back out, Esc closes the whole menu and returns focus to the name button.
+//   - The update entry's renderings (FR-021) forced via a scratch `updateState.json`. This is
+//     NOT a no-network check: Refract's own automatic startup update check makes a real `gh`
+//     release lookup on every launch (spec 006 FR-017), which is a no-op for phases
+//     `available`/`downloading`/`downloaded`/`installing` and for `failed` specifically on the
+//     automatic path (`checker.rs`'s own documented no-op rules) -- the seed is only guaranteed
+//     to survive for exactly those phases; `idle` (with or without `unavailableReason`) is NOT a
+//     no-op target and may be overwritten by that real check before this script reads it.
+//   - "Restart to update": selecting it shows the literal confirmation toast and the update
+//     phase is still `downloaded` afterward (never quits or installs).
+//   - An attempt (best-effort, explicitly reported either way) to catch the real automatic
+//     startup check's own transient "Checking for updates…" busy state.
 //
 // Every launched app instance (and its CDP connection) is registered in `openHandles` the
 // instant it is created and torn down in ONE top-level `finally`, regardless of which step
-// throws -- round 1 of this script threw mid "Part A" (a test bug, not a product bug: it never
-// created a Session in the second scratch repo before asserting the composer) with the teardown
-// for the FIRST launch scoped only to the try block that threw, leaking that process and its
-// still-open CDP WebSocket for the rest of the run; Node's event loop then never drained and the
-// whole command hung until the CALLER's own 3600s wall-clock timeout killed it from outside,
-// burning an hour for a problem the script itself could have reported in under 5 minutes. A hard
-// `process.exit(...)` at every exit path (success or failure) is the second half of that fix.
-//
-// The exe is built ONCE (`buildAndCopyExeFresh`) and relaunched several times against different
-// scratch data dirs for the update-entry phase sweep, rather than rebuilding per phase.
+// throws. Each launch gets its own exe copy in its own directory (`launchBuiltExe` derives
+// `webview2-data` from the exe's own directory; sharing one copy across sequential relaunches hit
+// a WebView2 user-data-folder handoff that made a later launch's CDP target resolve to the wrong
+// pid). A hard `process.exit(...)` at every exit path.
 
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, assertExeMatchesProcess, createReportLogger, sleep } from './verify-tauri-cdp.mjs';
+import {
+  getFreePort,
+  waitForCdpTarget,
+  CdpSession,
+  stopLauncher,
+  isTargetOwningPort,
+  assertExeMatchesProcess,
+  createReportLogger,
+  sleep
+} from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme } from './verify-tauri-scratch-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, pressEscape, pressKey, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-const SHOTS_DIR = process.env.REFRACT_569_SHOTS_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-569-shots';
+// Gate round 1 fix (Tests): default from `os.tmpdir()`, never a hardcoded user path.
+const SHOTS_DIR = process.env.REFRACT_569_SHOTS_DIR || path.join(tmpdir(), 'refract-569-shots');
 const GITHUB_SCRATCH_CLONE_URL = 'https://github.com/stuarthopwood/refract.git';
 const NARROW_WIDTH = 360;
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
-
 function assert(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
+async function pressArrow(cdp, direction) {
+  const map = { Down: [40, 'ArrowDown'], Up: [38, 'ArrowUp'], Left: [37, 'ArrowLeft'], Right: [39, 'ArrowRight'] };
+  const [code, key] = map[direction];
+  await pressKey(cdp, code, key, key);
+}
+async function pressEnterKey(cdp) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13 });
+}
 
-// Every dir/launch handle created anywhere in main() is pushed here the instant it exists, and
-// the one top-level `finally` tears every one of them down in reverse order -- no cleanup is
-// ever scoped to a nested try block that a throw could skip over.
 const openHandles = [];
 function track(teardownFn) {
   openHandles.push(teardownFn);
@@ -89,9 +102,6 @@ async function connectCdp(port, targetPid, label) {
   return cdp;
 }
 
-/** Clones `stuarthopwood/refract` itself, shallow and read-only (never written to -- this
- * script never calls `pullRequests.comment`/`submitReview`/`merge`). Returns `null` (never
- * throws) on failure so the caller fails the run loudly instead of faking a pass. */
 function makeGithubScratchClone(dir) {
   mkdirSync(path.dirname(dir), { recursive: true });
   const result = spawnSync_('git', ['clone', '--depth', '1', '--quiet', GITHUB_SCRATCH_CLONE_URL, dir], { timeout: 60_000 });
@@ -102,8 +112,6 @@ function makeGithubScratchClone(dir) {
   return dir;
 }
 
-/** Ground truth for the sidebar count, run OUTSIDE the app: the exact query
- * `refreshActiveCount` (pull-requests-store.ts) issues for this repository. */
 function independentActivePrCount(repoDir) {
   const result = spawnSync_('gh', ['search', 'prs', '--repo', 'stuarthopwood/refract', '--involves', '@me', '--json', 'number', '--', 'is:open'], { cwd: repoDir });
   if (result.status !== 0) return null;
@@ -175,13 +183,6 @@ async function main() {
     track(() => safeRmSync(importSourceDir));
     if (seedUpdate) seedUpdateState(dataDir, seedUpdate);
 
-    // Every attempt (of every phase) gets its OWN exe copy, in its own fresh directory --
-    // `launchBuiltExe` derives `webview2-data` from `path.dirname(exePath)`, and six sequential
-    // relaunches sharing that ONE directory (the original bug here) hit a WebView2 user-data-
-    // folder lock that survives the previous process's teardown for a beat: every single
-    // relaunch after the first then resolved its own fresh CDP port to a listener whose pid was
-    // never the one this run launched. A unique per-launch copy of the same already-verified
-    // bytes sidesteps the lock entirely rather than chasing its exact cause further.
     let lastErr;
     for (let attempt = 1; attempt <= 5; attempt++) {
       const launchExeDir = mkdtempSync(path.join(tmpdir(), `refract-569-${label}-exe${attempt}-`));
@@ -235,8 +236,7 @@ async function main() {
     log(`verify-tauri-569: exe sha256 ${exeHash} copied to ${exePath}`);
 
     // ---------------------------------------------------------------------------------------
-    // Part A: the sidebar count, keyboard-only menu, and a visual sanity pass -- one launch,
-    // with a real read-only clone of stuarthopwood/refract for real PR data.
+    // Part A: sidebar count, keyboard-only menu, visual sanity -- one launch, real PR data.
     // ---------------------------------------------------------------------------------------
     const cloneParent = mkdtempSync(path.join(tmpdir(), 'refract-569-repo-'));
     track(() => safeRmSync(cloneParent));
@@ -253,14 +253,13 @@ async function main() {
       );
     }
 
+    let independentCount = null;
     if (repoClone) {
-      const independentCount = independentActivePrCount(repoClone);
+      independentCount = independentActivePrCount(repoClone);
       log(`verify-tauri-569: independent gh search prs count (involves @me, is:open): ${independentCount}`);
 
       await addRepository(cdp, repoClone);
       checkPass('Added scratch stuarthopwood/refract clone as a Project');
-      // Adding a repository alone creates no Session; make one so this repository becomes the
-      // focused pane's (and so the sidebar count's default) repository.
       await createSessionViaQuickCreate(cdp, 'refract');
 
       await cdp
@@ -290,43 +289,50 @@ async function main() {
           checkFail('Sidebar count matches an independent gh search', JSON.stringify({ independentCount, buttonState }));
         }
       }
-
-      await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-sidebar-pr-count.png'));
-
-      // ---- Default-repository change: a second, plain scratch repo with NO GitHub remote,
-      // with its own new Session (making it the focused pane's repository) -- the sidebar count
-      // must disappear (no-github-remote -> count: null -> hidden), not keep the first
-      // repository's stale number. ----
-      const plainRepoParent = mkdtempSync(path.join(tmpdir(), 'refract-569-plain-'));
-      track(() => safeRmSync(plainRepoParent));
-      const plainRepoDir = makeScratchRepo(path.join(plainRepoParent, 'plain'), 'refract-569-plain');
-      await addRepository(cdp, plainRepoDir);
-      await createSessionViaQuickCreate(cdp, 'plain');
-      const afterSwitch = await readPrButtonState();
-      if (afterSwitch && afterSwitch.trailingText === null && afterSwitch.ariaLabel === 'Pull requests') {
-        checkPass('Sidebar count disappears (not a stale number) once the default repository has no GitHub remote', JSON.stringify(afterSwitch));
-      } else {
-        checkFail('Sidebar count disappears (not a stale number) once the default repository has no GitHub remote', JSON.stringify(afterSwitch));
-      }
     } else {
       notExercised('Every real-PR-data sidebar count check', 'the GitHub scratch clone failed (see the hard failure above) -- code-verified only');
     }
 
-    // ---- Keyboard-only profile menu: fixed order, update entry position, arrow-key nav into
-    // the Theme submenu, Esc returns focus to the name button. ----
+    // ---- Dark screenshot: refract clone is STILL the default repo here (count visible). ----
+    await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-sidebar-pr-count.png'));
+
+    // ---- Keyboard-ONLY profile menu: focus emulation + real Input.dispatchKeyEvent. ----
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
-    await cdp.click(`document.querySelector('[data-profile-name-button]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
+    await cdp.evaluate(`document.querySelector('[data-profile-name-button]').focus()`);
+    const focusedNameButton = (await getActiveElementAccessibleName(cdp)).role === 'button';
+    await pressEnterKey(cdp);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened via Enter' });
+    if (focusedNameButton) checkPass('Keyboard: Enter on the focused name button opens the profile menu');
+    else checkFail('Keyboard: Enter on the focused name button opens the profile menu', 'activeElement was not the name button before Enter');
+
     const itemOrder = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"]')).map((el) => el.textContent.trim())`);
     log(`verify-tauri-569: profile menu item order: ${JSON.stringify(itemOrder)}`);
     const keyboardIdx = itemOrder.findIndex((t) => t === 'Keyboard shortcuts');
     const healthIdx = itemOrder.findIndex((t) => t.startsWith('Health check'));
-    const updateIdx = itemOrder.findIndex((t) => t === 'Check for updates' || t.startsWith('Restart to update'));
+    const updateIdx = itemOrder.findIndex((t) => t === 'Check for updates' || t.startsWith('Restart to update') || t.startsWith('Checking for updates') || t.startsWith('Downloading update') || t.startsWith('Installing update'));
     if (keyboardIdx >= 0 && healthIdx >= 0 && updateIdx === keyboardIdx + 1 && updateIdx < healthIdx) {
       checkPass('Update entry sits between Keyboard shortcuts and Health check (FR-018 fixed order)', JSON.stringify({ keyboardIdx, updateIdx, healthIdx }));
     } else {
       checkFail('Update entry sits between Keyboard shortcuts and Health check (FR-018 fixed order)', JSON.stringify({ keyboardIdx, updateIdx, healthIdx, itemOrder }));
     }
+
+    // ArrowDown x2 from the first item (Manage accounts) reaches Theme (Manage sessions, Theme).
+    await pressArrow(cdp, 'Down');
+    await pressArrow(cdp, 'Down');
+    const onThemeTrigger = (await getActiveElementAccessibleName(cdp)).name?.startsWith('Theme') ?? false;
+    await pressArrow(cdp, 'Right');
+    await cdp.waitFor(`!!document.querySelector('[role="menu"] [role="menuitem"] span')`, { timeoutMs: 5_000, label: 'Theme submenu opened via ArrowRight' }).catch(() => {});
+    await sleep(300);
+    const currentMarkerPresent = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.includes('Current'))`);
+    const focusInSubmenu = (await getActiveElementAccessibleName(cdp)).name?.includes('Current') ?? false;
+    if (onThemeTrigger && currentMarkerPresent) {
+      checkPass('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with a "Current" marker visible', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
+    } else {
+      checkFail('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with a "Current" marker visible', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
+    }
+    await pressArrow(cdp, 'Left');
+    await sleep(200);
 
     await pressEscape(cdp);
     await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu closed by Esc' });
@@ -334,18 +340,25 @@ async function main() {
     if (focusAfterEsc) checkPass('Esc closes the profile menu and returns focus to the name button');
     else checkFail('Esc closes the profile menu and returns focus to the name button', String(focusAfterEsc));
 
+    // Profile menu open screenshot (reopen via keyboard again for the shot).
+    await pressEnterKey(cdp);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu reopened for screenshot' });
+    await cdp.screenshot(path.join(SHOTS_DIR, '06-profile-menu-open.png'));
+    await pressEscape(cdp);
+    await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu closed again' });
+
     await switchTheme(cdp, 'dark', 'Dark');
     checkPass('Keyboard-driven Theme submenu: selecting "Dark" applies and persists it (real store round trip)');
 
     await cdp.evaluate(`window.refract.theme.set('dark-high-contrast')`);
     await cdp.waitFor(`document.documentElement.className.includes('dark-high-contrast')`, { timeoutMs: 10_000, label: 'high-contrast theme applied' });
     await cdp.screenshot(path.join(SHOTS_DIR, '02-theme-dark-high-contrast.png'));
-    checkPass('Dark (high contrast) theme screenshot captured');
+    checkPass('Dark (high contrast) theme screenshot captured (refract clone still default repo, count visible)');
 
     await cdp.evaluate(`window.refract.theme.set('obsidian')`);
     await cdp.waitFor(`document.documentElement.className.includes('obsidian')`, { timeoutMs: 10_000, label: 'obsidian theme applied' });
     await cdp.screenshot(path.join(SHOTS_DIR, '03-theme-obsidian.png'));
-    checkPass('Obsidian theme screenshot captured');
+    checkPass('Obsidian theme screenshot captured (refract clone still default repo, count visible)');
     await cdp.evaluate(`window.refract.theme.set('dark')`);
 
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: NARROW_WIDTH, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -360,47 +373,52 @@ async function main() {
     await sleep(300);
     await cdp.screenshot(path.join(SHOTS_DIR, '05-reduced-motion.png'));
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+
+    // ---- Default-repository change (runs LAST in Part A, after every screenshot above): a
+    // second, plain scratch repo with NO GitHub remote, with its own new Session -- the sidebar
+    // count must disappear (no-github-remote -> count: null -> hidden), not keep a stale number.
+    // ---- (skipped entirely if the clone itself failed; nothing to switch away from.) ----
+    if (repoClone) {
+      const plainRepoParent = mkdtempSync(path.join(tmpdir(), 'refract-569-plain-'));
+      track(() => safeRmSync(plainRepoParent));
+      const plainRepoDir = makeScratchRepo(path.join(plainRepoParent, 'plain'), 'refract-569-plain');
+      await addRepository(cdp, plainRepoDir);
+      await createSessionViaQuickCreate(cdp, 'refract-569-plain');
+      const afterSwitch = await readPrButtonState();
+      if (afterSwitch && afterSwitch.trailingText === null && afterSwitch.ariaLabel === 'Pull requests') {
+        checkPass('Sidebar count disappears (not a stale number) once the default repository has no GitHub remote', JSON.stringify(afterSwitch));
+      } else {
+        checkFail('Sidebar count disappears (not a stale number) once the default repository has no GitHub remote', JSON.stringify(afterSwitch));
+      }
+    }
+
     await teardownMain();
-    // A fresh `getFreePort()` immediately after `stopLauncher` resolves has, in practice, raced
-    // the OS not yet having released the just-closed socket (observed once: the very next
-    // launch's CDP target resolved to the PREVIOUS run's still-tearing-down pid, tripping
-    // `isTargetOwningPort`'s own safety check) -- a short settle avoids re-litigating that race
-    // before every one of Part B's six launches.
-    await sleep(2000);
 
     // ---------------------------------------------------------------------------------------
-    // Part B: the update entry's exact two renderings, forced via a scratch updateState.json
-    // (no network) -- a fresh launch per phase, same copied exe.
+    // Part B: the update entry's renderings, forced via a scratch updateState.json -- each
+    // phase launch makes a REAL automatic startup update check (spec 006 FR-017, a real `gh`
+    // release lookup): per `checker.rs`'s own documented no-op rules this is a no-op for
+    // available/downloading/downloaded/installing, and for `failed` on the automatic path
+    // specifically -- 'idle' (with or without unavailableReason) is NOT a no-op target and may
+    // be overwritten before this script reads it.
     // ---------------------------------------------------------------------------------------
     async function profileMenuUpdateRow(cdpSession) {
       await cdpSession.click(`document.querySelector('[data-profile-name-button]')`);
       await cdpSession.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
       return cdpSession.evaluate(
-        `(() => { const items = Array.from(document.querySelectorAll('[role="menuitem"]')); const row = items.find((el) => el.textContent.trim().startsWith('Check for updates') || el.textContent.trim().startsWith('Restart to update')); if (!row) return null; return { text: row.textContent.trim(), ariaDisabled: row.getAttribute('aria-disabled') }; })()`
+        `(() => { const items = Array.from(document.querySelectorAll('[role="menuitem"]')); const row = items.find((el) => el.textContent.trim().startsWith('Check for updates') || el.textContent.trim().startsWith('Restart to update') || el.textContent.trim().startsWith('Checking for updates') || el.textContent.trim().startsWith('Downloading update') || el.textContent.trim().startsWith('Installing update')); if (!row) return null; return { text: row.textContent.trim(), ariaDisabled: row.getAttribute('aria-disabled') }; })()`
       );
     }
 
     const phases = [
-      { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates' },
+      { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
       { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates' },
-      // A seeded `updateState.json` with phase 'downloading' is NOT observed as-is: Rust's own
-      // `install_on_quit::resolve_startup_state` (state.rs's documented state machine, "a quit
-      // during download leaves the phase stuck") resolves any LEFTOVER `downloading`/`installing`
-      // phase found at startup to `failed` with an actionable message, before the renderer ever
-      // sees it -- nothing persists a partial download to resume, so a static seed genuinely
-      // can't produce a live busy "downloading" render without an in-flight real download. The
-      // real busy state is still code-verified (`UpdateMenuItem`'s `busy` ternary structurally
-      // covers `'downloading'`); this expectation matches what the app ACTUALLY does on launch.
-      { label: 'downloading', seed: { phase: 'downloading', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates' },
+      { label: 'downloading', seed: { phase: 'downloading', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates', note: "install_on_quit::resolve_startup_state resolves a leftover 'downloading' to 'failed' before the renderer sees it" },
       { label: 'downloaded', seed: { phase: 'downloaded', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Restart to update' },
       { label: 'failed', seed: { phase: 'failed', lastError: 'Scratch synthetic failure (verify-tauri-569)' }, expectBusy: false, expectPrefix: 'Check for updates' },
-      { label: 'unavailable-offline', seed: { phase: 'idle', unavailableReason: 'offline' }, expectBusy: false, expectPrefix: 'Check for updates' }
+      { label: 'unavailable-offline', seed: { phase: 'idle', unavailableReason: 'offline' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true }
     ];
 
-    // Part B's own throwaway repo+Session: `ProfileItem.tsx` only mounts once the session list
-    // itself does (`App.tsx`'s `showReadiness = !ready || !hasRepositories` gate) -- Part A's
-    // profile-menu checks got there for free (it had already added a repository for the PR
-    // count); each phase launch here is otherwise a blank profile and never reaches it.
     const phaseRepoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-569-phase-repo-')), 'refract-569-phase-repo');
     track(() => safeRmSync(phaseRepoDir));
 
@@ -408,20 +426,55 @@ async function main() {
       const { cdp: handleCdp, teardown: teardownPhase } = await launchFresh(`update-${phase.label}`, { seedUpdate: phase.seed });
       await addRepository(handleCdp, phaseRepoDir);
       await createSessionViaQuickCreate(handleCdp, 'refract-569-phase-repo');
-      const row = await profileMenuUpdateRow(handleCdp);
+
+      // Best-effort attempt (every phase, cheap): catch the real automatic startup check's own
+      // transient busy text before it settles. Reported either way, never claimed as "no network".
+      await handleCdp.click(`document.querySelector('[data-profile-name-button]')`);
+      await handleCdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened' });
+      const pollDeadline = Date.now() + 2500;
+      let caughtChecking = null;
+      let lastRow = null;
+      while (Date.now() < pollDeadline) {
+        lastRow = await handleCdp.evaluate(
+          `(() => { const items = Array.from(document.querySelectorAll('[role="menuitem"]')); const row = items.find((el) => el.textContent.trim().startsWith('Check for updates') || el.textContent.trim().startsWith('Restart to update') || el.textContent.trim().startsWith('Checking for updates') || el.textContent.trim().startsWith('Downloading update') || el.textContent.trim().startsWith('Installing update')); if (!row) return null; return { text: row.textContent.trim(), ariaDisabled: row.getAttribute('aria-disabled') }; })()`
+        );
+        if (lastRow?.text?.startsWith('Checking for updates')) {
+          caughtChecking = lastRow;
+          break;
+        }
+        await sleep(150);
+      }
+      if (phase.label === 'idle') {
+        if (caughtChecking) checkPass('Caught the real automatic startup check\'s busy "Checking for updates…" state', JSON.stringify(caughtChecking));
+        else notExercised('Busy "Checking for updates…" state during the automatic startup check', 'the real gh release check (spec 006 FR-017, no mock) resolved before this run could poll fast enough to observe it mid-flight');
+      }
+      const row = lastRow;
       const textOk = row && row.text.startsWith(phase.expectPrefix);
       const busyOk = row && (row.ariaDisabled === 'true') === phase.expectBusy;
-      if (textOk && busyOk) {
-        checkPass(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify(row));
+      if (phase.seedMayBeOverwritten && !(textOk && busyOk)) {
+        notExercised(`Update entry phase "${phase.label}" renders correctly`, `the seed may have been overwritten by the real automatic startup check before this ran (idle is not a documented no-op target); observed ${JSON.stringify(row)}`);
+      } else if (textOk && busyOk) {
+        checkPass(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify(row) + (phase.note ? ` (${phase.note})` : ''));
       } else {
         checkFail(`Update entry phase "${phase.label}" renders correctly`, JSON.stringify({ row, expected: phase }));
       }
+
       if (phase.label === 'downloaded') {
+        await handleCdp.screenshot(path.join(SHOTS_DIR, '07-profile-menu-downloaded.png'));
+        // Watch the toast region (sonner renders a `[data-sonner-toaster]` with `[data-title]`
+        // rows) and assert the literal confirmation text, then assert the phase is STILL
+        // 'downloaded' (never quits or installs).
         await handleCdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Restart to update'))`);
-        await sleep(500);
+        const toastText = await handleCdp
+          .waitFor(`(() => { const t = document.querySelector('[data-sonner-toast] [data-title]'); return t ? t.textContent.trim() : null; })()`, { timeoutMs: 5_000, label: 'confirmation toast appears' })
+          .catch(() => null);
         const stillAlive = await handleCdp.evaluate('true').catch(() => false);
-        if (stillAlive) checkPass('"Restart to update" never quits or installs on select (process still alive)');
-        else checkFail('"Restart to update" never quits or installs on select (process still alive)', 'CDP connection died after selecting the item');
+        const stillDownloaded = await handleCdp.evaluate(`window.__refractStores?.updates?.getState()?.state?.phase`).catch(() => null);
+        if (toastText === 'Refract updates automatically the next time you quit.' && stillAlive && stillDownloaded === 'downloaded') {
+          checkPass('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillDownloaded }));
+        } else {
+          checkFail('"Restart to update": shows the exact confirmation toast, phase stays "downloaded", never quits or installs', JSON.stringify({ toastText, stillAlive, stillDownloaded }));
+        }
       }
       await teardownPhase();
       await sleep(1500);
