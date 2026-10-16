@@ -1980,3 +1980,121 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
 | D20 | A restored or created Session's group auto-opens even on a path where focus does not move (Low, accepted: moving the call out of the shared store action would touch the headroom-constrained `useSessionRowActions.ts`). |
 | D23 | The toolbar's literal focus-ring class string draws nothing on `Button`; fixed by building from the repo's own existing `COMPOSER_BUTTON_FOCUS_CLASS` fix instead (High, fixed, recorded on the issue; the resulting outline is live-verified at the record's exact 2px solid value). |
 
+## Phase 45: Convergence
+
+- [X] T260 [US5] Issue #567 (UX-architect-v3 roundtable decision record, delegated by Stuart
+  2026-10-15, "Decided (Skippy, delegated by Stuart 2026-10-15)" on the issue): restyle the
+  session list's rows, group headers and footer to the record's 28-decision spec (#811/#731/#735
+  already merged first, per decision 1-2's own build order). `sessionDisplay.tsx`: new
+  `formatRelativeTimeShort` (decision 11's "now"/"Nm"/"Nh"/"Nd"/short-date form), leaving the
+  existing long-form `formatRelativeTime` untouched for `ManageSessionRow.tsx`/the Pull requests
+  view/`SessionDetailsCard.tsx` (out of this story's scope). New
+  `src/renderer/lib/useMinuteTick.ts`: one shared `setTimeout`/`setInterval` pair behind
+  `useSyncExternalStore`, subscribed by every row instead of a per-row timer. `SessionRow.tsx`:
+  rewritten to the two-line 44px square-cornered row (`data-choice-item` on the `<li>`, `rounded-
+  md` dropped, decision 8); line 1 is the state icon, the truncating title (`font-normal`, never
+  reflowing on selection, decision 3) and the short time at the right; line 2 is one slot, first
+  match wins (decision 9) -- start-progress text, "Terminated unexpectedly", an archived row's
+  own Project name, or otherwise the branch in `font-code`. The trailing slot (decision 12) swaps
+  the time for the row's own "..." menu button on hover, focus inside the row, or an open menu
+  (`group-has-[[aria-expanded="true"]]`), both shown under `(hover: none)`; this is a `display`
+  swap (`hidden`/`inline-flex`), not an opacity fade, since the two share one slot rather than
+  reserving space for both. The accessible name is now one `aria-label`, "{name}, {status
+  word}[, Archived][, focused pane]" (decision 16) -- the scattered bracketed `sr-only` spans this
+  button used are gone, and so is the `isVisible && !isFocusedPane` "(shown, unfocused pane)"
+  case the old spans carried, since decision 16's own formula has no slot for it (Stuart can
+  overturn). The selected-session bar moves to `inset-y-1` (decision 14). `SessionDetailsCard.tsx`
+  gains an `activityDescription` prop (the row's own line-2 text when it is not the branch) and a
+  fuller `aria-describedby` description -- activity text, "{branch} from {base}", "Last active
+  {long time}", the worktree path (decision 16) -- replacing the shorter `From {base}. {path}`
+  form. `GroupHeader.tsx`: sentence case (`uppercase tracking-wide` and the `/70` opacity modifier
+  dropped for `text-xs font-medium text-muted-foreground`, decision 4), the chevron and the
+  optional leading icon shrink to `size-3` (decision 7), the focus ring moves to `outline-offset-
+  [-2px]` (decision 15), `GROUP_HEADER_ACTIONS_OFFSET_PX` recomputed 104px to 88px for the new
+  24px action buttons (3x24 + 3 gaps x 4px + 4px trailing padding), and a new optional `count`
+  prop renders as a separate `tabular-nums` span after the label, folded into the accessible name
+  as "{label}, {count}" (decision 5). `ArchivedGroup.tsx`: `label="Archived"` plus `count=
+  {sorted.length}` instead of the old `Archived (${n})` template string; `showRepository` prop
+  removed from `SessionRow` entirely (the archived-row line-2 rule now keys off `session.
+  archivedAt` directly, decision 9) and its own row list's `gap-0.5` drops to `gap-0` (decision
+  8). `RepositoryGroup.tsx`: the three header action buttons (new session, branch picker, "...")
+  move from a mix of `icon-sm`/a raw 22px button to shared `Button variant="ghost" size="icon-
+  xs"`, hidden at rest and revealed by opacity on `group-hover`/`group-focus-within`/their own
+  `aria-expanded`/`creating`/an empty active-Session list, always shown under `(hover: none)`
+  (decision 6); its own row list's `gap-0.5` also drops to `gap-0`. `SessionList.tsx`: the Pull
+  requests nav entry gains the shared 2px active-indicator bar when selected, alongside its
+  existing fill (decision 18); the footer's own `border-sidebar-border` becomes `border-divider`
+  (decision 20). `ProfileItem.tsx`: its own `border-t` removed, since the footer above it now
+  carries the one divider for the whole block (decision 20). `scripts/theme-contrast-pairs.mjs`:
+  the remaining sidebar pairs decision 26 asks for (`muted-foreground`/`sidebar-foreground`/
+  `destructive` at 4.5:1, `state-working`/`severity-info` at 3:1, each on `sidebar` and `sidebar-
+  accent` -- `active-indicator`/`state-idle`/`state-needs-you`/`state-stopped`/`state-unread-
+  response` already had theirs from #731/#735). Docs: `CONTEXT.md` gains the **Activity line**
+  entry the record's own CONTEXT.md section asks for (**Group header** and the "Unread
+  response"/"Response ready" note were already correct from #527/#731); `docs/design/foundations-
+  typography-spacing.md` records the type ladder (decision 3); `docs/design/components.md` adds a
+  "Labelled ghost nav and footer entries" note for the Pull requests/Add repository buttons
+  (decisions 18, 21); `docs/design/product-layout.md:16` rewritten to use **Project** instead of
+  **Repository** (the session-list bullet's own stale term CONTEXT.md's glossary already bans in
+  UI-facing prose) and to describe the new row/header/footer layout -- the "no separate unread
+  dot" fact itself was already correct from #731 and is kept, just re-worded into the new
+  two-line description.
+- [X] T261 [US5] Update the spec: amended `specs/001-core-session-workspace/spec.md` with a
+  `### Session 2026-10-15 (session list restyle)` Clarifications entry citing the full decision
+  record, amended FR-039 (decision 11's time-format split and decision 16's accessible-
+  description formula), and a new FR-075 (provisional numbering -- the parent confirms the final
+  number before merge, per the #570/Phase 44 collision the numbering scheme already reserves
+  against) for the row/group-header/footer layout itself. FR-005 was reviewed against decision
+  record's "update FR-005 (remove the unread dot)" instruction and left unchanged: its current
+  text ("drawn by the one shared status icon and its word, with no separate unread marker") was
+  already fully compliant, added by #731 before this story started -- recorded here rather than
+  silently skipped.
+- [X] T262 [US5] Verify live (scratch Tauri debug build, `scripts/verify-tauri-567.mjs`, new --
+  reuses `verify-tauri-cdp.mjs`/`verify-tauri-session-list-helpers.mjs`, same precedent as
+  `verify-tauri-735.mjs`; isolated `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/
+  `REFRACT_IMPORT_SOURCE_DIR`, the built exe copied out of the shared `CARGO_TARGET_DIR` and
+  sha256-asserted against the launched process before driving it): a `#567`-only DOM marker
+  (`li[data-choice-item]`) present before anything else was judged; row height measured 44px,
+  square corners (`border-radius: 0px`) on both the `<li>` and its content surface; the open
+  button's own focus ring measured `outline-style: solid`, `outline-width: 2px`, `outline-offset:
+  -2px` under REAL keyboard navigation (Tab away, Shift+Tab back -- a mouse click or a script
+  `.focus()` immediately after one does not engage Chromium's own `:focus-visible` heuristic, a
+  live-verified harness correction, not a product bug); the row's accessible name measured
+  `"{name}, Idle, focused pane"` (CDP Accessibility domain, never `textContent`); the trailing
+  slot measured `time: block` / `menu: none` at rest and `time: none` / `menu: flex` on hover (a
+  real `display` swap, not opacity -- also live-verified that the harness's own click-based
+  helpers need the row hovered first, since a `display:none` button has a zero-size
+  `getBoundingClientRect` to click); F2 opened the rename input on the row; a pending approval
+  showed the needs-you icon with the branch in `font-code` (`"Cascadia Code", "Cascadia Mono",
+  Consolas, monospace`) on line 2; archiving showed the Archived header as `"Archived" + a
+  separate countSpan "1"` with no bracket, and the archived row's own line 2 as its Project name;
+  the group header measured `text-transform: none` (sentence case) and its own action buttons
+  24x24px, hidden until hovered (or, live-verified as a side effect once the only Session was
+  archived, shown at rest because the group then had zero active Sessions, decision 6's own
+  empty-group case); a closed group holding a needs-you Session carried the Waiting marker in its
+  own accessible name; the footer measured a 1px divider above it and `0px` on `ProfileItem`'s own
+  former border; the selected Pull requests nav entry showed the active-indicator bar. Screenshots
+  (idle/selected, focused, hover/trailing-slot, renaming, needs-you, Archived open, header hover,
+  collapsed-with-marker, footer, Pull requests selected, Dark (high contrast), Obsidian) and the
+  run's own STEP-PASS report are kept at
+  `C:/Users/shopwood/AppData/Local/Temp/refract-567-shots/`. `node scripts/ci-local.mjs` 16/16
+  PASS (confirmed `CARGO_TARGET_DIR` respected -- `src-tauri/target` absent from the worktree
+  afterward); `pnpm test` 148/148 (no new tests, per AGENTS.md); `check:theme-contrast` 415/415
+  PASS including the 9 new sidebar pairs T260 added.
+
+**Not exercised this phase** (stated plainly, not hidden): the mock image itself was not
+available to diff pixel-for-pixel against (only the decision record's own textual description
+was available, which every check above verifies against instead); the `(hover: none)` touch-
+pointer path (both the row's trailing slot and a group header's own actions showing at rest) was
+not exercised, since the scratch harness has no touch-pointer emulation; the Working, Stopped and
+Unread response status icons were not separately live-exercised this phase (that rendering is
+`StateIcon`'s own, unchanged by this story and already gate-verified under #731) -- Idle,
+Needs-you and Archived were exercised, since those are the states that interact with this story's
+own new line-2 precedence and accessible-name logic; a frame-by-frame capture proving the row's
+own indent (`pl-3`) visually lines up under the group header's Project icon was not captured --
+measured instead from the two screenshots at hand: the row's own status icon sits visibly to the
+left of the header's folder icon (roughly 12px vs roughly 28px from the shared left edge), not
+flush. Decision 8 gives `pl-3 pr-2 py-1` as its own literal, reviewed class list, which this
+phase followed verbatim rather than widening it to chase the qualitative "lines up under the
+header's icon" goal unilaterally; flagged here for Stuart or the gate to settle, not silently
+resolved either way.
