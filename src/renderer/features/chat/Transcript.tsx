@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ArrowDownIcon, BrainIcon, Loader2Icon } from 'lucide-react'
+import { ArrowDownIcon } from 'lucide-react'
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -16,8 +16,9 @@ import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURB
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
-import { CollapsedLine } from './CollapsedLine'
-import { groupToolItems, isToolGroup } from './groupToolItems'
+import { groupToolItems, isToolGroup, isThoughtRun } from './groupToolItems'
+import { groupThoughtItems } from './groupThoughtItems'
+import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup, type StageGroupedItem } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
 import { formatElapsed } from './formatElapsed'
@@ -62,12 +63,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
   }, [repositoryId])
   return name
 }
-
-function formatThinkingSeconds(ms: number): string {
-  return `${Math.max(1, Math.round(ms / 1000))}`
-}
-
-const THINKING_PREVIEW_CHARS = 120
 
 /** The nearest preceding `ask` tool item for a `request` item at `requestIndex`, scanning
  * backward only until an earlier `request` item (a different question) is hit (T072/T073). */
@@ -145,6 +140,7 @@ interface TranscriptRowProps {
 function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
+  if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 
   switch (item.kind) {
     case 'user': {
@@ -179,31 +175,15 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
         </Message>
       )
 
-    case 'thinking': {
+    case 'thinking':
+      // Defensive fallback for a non-empty `thinking` item that reaches here ungrouped (should
+      // not normally occur: `groupThoughtItems` wraps every run, including a run of one, into a
+      // `ThoughtRun` before this renders -- see `groupToolItems.ts`'s own comment for why every
+      // consumer downstream must never switch React element type between a lone item and a run).
+      // `!item.text` matches `groupThoughtItems`'s own "dropped from grouping" rule for an empty
+      // thought (defensive; Rust never actually sends one).
       if (!item.text) return null
-      const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
-      const label = item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
-      return (
-        <CollapsedLine
-          icon={
-            item.streaming ? (
-              <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-            ) : (
-              <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            )
-          }
-          label={label}
-          summary={item.streaming ? item.text.slice(-THINKING_PREVIEW_CHARS) : undefined}
-        >
-          {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): the ambient
-           * `--foreground` this inherited by default reads brighter than primary chat prose's own
-           * `--chat-foreground`, inverting the intended secondary/bookkeeping hierarchy for a
-           * Thinking block's full expanded text -- the same level its own collapsed summary above
-           * already uses. */}
-          <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-muted-foreground" />
-        </CollapsedLine>
-      )
-    }
+      return <ThoughtRunRow group={{ kind: 'thought-run', id: item.id, items: [item] }} />
 
     case 'tool':
       if (item.tool === 'ask') {
@@ -433,7 +413,13 @@ export function Transcript({
     () =>
       visibleTurns.map((turn) => {
         const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
-        const groupedWithStages = groupSubagentStages(groupToolItems(viewItems))
+        // Issue #557: `groupThoughtItems` wraps every run of consecutive, non-empty thinking
+        // items (even a run of one) into a `ThoughtRun` -- run after `groupToolItems` (whose own
+        // `ToolGroup` items pass through untouched, since none has `kind: 'thinking'`) and
+        // before `groupSubagentStages` (whose own `StageGroup`/pass-through items are likewise
+        // untouched, since none has `kind: 'subagent'`); order between the two groupers does not
+        // matter functionally, since each only ever rewrites items of its own kind.
+        const groupedWithStages = groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)))
         return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
       }),
     [visibleTurns, transcriptDisplay.thinking]

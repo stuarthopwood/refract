@@ -107,6 +107,37 @@ export async function pressEscape(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
 }
 
+/** Moves a real pointer over the centre of the element matched by `finderExpr`, without
+ * clicking -- the only reliable way to trigger a `:hover`/`group-hover` CSS reveal over CDP
+ * (`Input.dispatchMouseEvent` with no press). Extracted from `verify-tauri-567.mjs` to keep it
+ * under the #806 600-line file-size cap. */
+export async function hoverRow(cdp, finderExpr) {
+  const rect = await cdp.waitFor(
+    `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `hover target: ${finderExpr}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
+}
+
+/** A single real keydown/keyup pair with an explicit DOM `key`/`code` (Chromium only moves
+ * focus, or fires the right synthetic key, when both are set -- a bare `windowsVirtualKeyCode`
+ * is not enough). `modifiers` is CDP's own bitmask (Shift=8). */
+export async function pressKey(cdp, windowsVirtualKeyCode, key, code, modifiers = 0) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode, key, code, modifiers });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode, key, code, modifiers });
+}
+
+/** A real right-click (press then release the right button) at the centre of the element
+ * matched by `finderExpr`, the one way to trigger a native `contextmenu` event over CDP. */
+export async function rightClick(cdp, finderExpr) {
+  const rect = await cdp.waitFor(
+    `(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: `right-click target: ${finderExpr}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', clickCount: 1 });
+}
+
 export function groupTriggerFinder(repoName) {
   // Repository headers are wrapped in a Tooltip (`asChild`), whose own `data-slot`/`data-state`
   // overwrite the inner CollapsibleTrigger's (GroupHeader.tsx's own documented reason for keying
