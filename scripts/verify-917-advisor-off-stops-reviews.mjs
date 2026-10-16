@@ -97,13 +97,38 @@ async function sendRealTurn(cdp, sentinel) {
  * `sessionFile` as soon as it is first learned -- unlike `currentConversation`, which the Rust
  * side (`sync_from_state.rs`) only persists once `messageCount > 0`, `sessionDir` has no such
  * gate, so it is already populated by the time the composer is enabled, well before any slash
- * command or real turn has been sent). `__advisor*.jsonl` lives directly inside it, beside
- * whichever Conversation file is current (omp://advisor-watchdog.md). */
+ * command or real turn has been sent); `__advisor*.jsonl` lives inside a per-Conversation
+ * artifacts folder under it, resolved separately by `getArtifactsDir` below. */
 async function getSessionDir(cdp) {
   return cdp.waitFor(
     `(async () => { const result = await window.refract.sessions.list(); if (!result.ok) return null; const s = result.value[0]; return s?.sessionDir ?? null; })()`,
     { timeoutMs: 30_000, label: 'Session sessionDir populated' }
   );
+}
+
+/** The per-Conversation ARTIFACTS SUBDIRECTORY inside `sessionDir` -- discovered live to be a
+ * folder sharing the Conversation file's own basename (no `.jsonl`), NOT `sessionDir` itself:
+ * `sessionDir` directly holds `<timestamp>_<uuid>.jsonl` (the Conversation) alongside a
+ * same-named (no extension) folder, and `__advisor.jsonl` lives INSIDE that folder, not beside
+ * the `.jsonl` file as `omp://advisor-watchdog.md`'s "<session>/__advisor.jsonl" wording reads
+ * at a glance (an earlier version of this probe searched `sessionDir` directly and found
+ * nothing in either phase because of this). Polls because the Conversation file, and so this
+ * folder, may not exist yet in the first moment after Session creation. */
+async function getArtifactsDir(sessionDir, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const conversationFile = readdirSync(sessionDir).find((f) => f.endsWith('.jsonl') && !f.startsWith('__advisor'));
+      if (conversationFile) {
+        const dir = path.join(sessionDir, conversationFile.slice(0, -'.jsonl'.length));
+        if (existsSync(dir)) return dir;
+      }
+    } catch {
+      // sessionDir may not exist yet either; keep polling
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`getArtifactsDir: no Conversation artifacts folder appeared under ${sessionDir} within ${timeoutMs}ms`);
 }
 
 /** Total size (bytes) and line count across every `__advisor*.jsonl` in `dir` right now -- 0/0
@@ -218,8 +243,10 @@ async function main() {
     findings.push(`"/advisor status" literal reply right after off (nothing in between): ${JSON.stringify(statusAfterOff)}`);
 
     const sessionDir = await getSessionDir(cdp);
-    findings.push(`Session artifacts dir: ${sessionDir}`);
-    const beforeOffTurn = measureAdvisorFiles(sessionDir);
+    const artifactsDir = await getArtifactsDir(sessionDir);
+    findings.push(`Session dir: ${sessionDir}`);
+    findings.push(`Conversation artifacts dir (where __advisor*.jsonl actually lives): ${artifactsDir}`);
+    const beforeOffTurn = measureAdvisorFiles(artifactsDir);
     findings.push(
       `__advisor*.jsonl before the off-phase turn: files=${JSON.stringify(beforeOffTurn.files)} bytes=${beforeOffTurn.totalBytes} lines=${beforeOffTurn.totalLines}`
     );
@@ -228,7 +255,7 @@ async function main() {
     // a failed "off" would not necessarily grow the file instantly) ----
     await sendRealTurn(cdp, 't917boff');
     findings.push('A real turn completed while the advisor was OFF.');
-    const afterOffTurn = await pollForGrowth(sessionDir, beforeOffTurn, 45_000);
+    const afterOffTurn = await pollForGrowth(artifactsDir, beforeOffTurn, 45_000);
     findings.push(
       `__advisor*.jsonl after the off-phase turn (polled up to 45s): files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
     );
@@ -240,7 +267,7 @@ async function main() {
     // actually expected against ----
     const onReply = await sendSlashCommand(cdp, '/advisor on');
     findings.push(`"/advisor on" literal reply: ${JSON.stringify(onReply)}`);
-    const beforeOnTurn = measureAdvisorFiles(sessionDir);
+    const beforeOnTurn = measureAdvisorFiles(artifactsDir);
     findings.push(
       `__advisor*.jsonl before the on-phase turns: files=${JSON.stringify(beforeOnTurn.files)} bytes=${beforeOnTurn.totalBytes} lines=${beforeOnTurn.totalLines}`
     );
@@ -248,7 +275,7 @@ async function main() {
     findings.push('Warm-up turn completed (advisor.immuneTurns skips reviewing this one, per verify-558-blocker-callout.mjs\'s own precedent).');
     await sendRealTurn(cdp, 't917bon');
     findings.push('Second (non-warm-up) real turn completed while the advisor was ON.');
-    const afterOnTurn = await pollForGrowth(sessionDir, beforeOnTurn, 60_000);
+    const afterOnTurn = await pollForGrowth(artifactsDir, beforeOnTurn, 60_000);
     findings.push(
       `__advisor*.jsonl after the on-phase turns (polled up to 60s): files=${JSON.stringify(afterOnTurn.files)} bytes=${afterOnTurn.totalBytes} lines=${afterOnTurn.totalLines}`
     );
@@ -278,6 +305,7 @@ async function main() {
       gitHead: gitHeadSha,
       exeSha256: exeHash,
       sessionDir,
+      artifactsDir,
       beforeOffTurn,
       afterOffTurn,
       beforeOnTurn,
