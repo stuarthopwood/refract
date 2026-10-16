@@ -19,10 +19,10 @@
 //   - The update entry's renderings (FR-021) forced via a scratch `updateState.json`. This is
 //     NOT a no-network check: Refract's own automatic startup update check makes a real `gh`
 //     release lookup on every launch (spec 006 FR-017), which is a no-op for phases
-//     `available`/`downloading`/`downloaded`/`installing` and for `failed` specifically on the
-//     automatic path (`checker.rs`'s own documented no-op rules) -- the seed is only guaranteed
-//     to survive for exactly those phases; `idle` (with or without `unavailableReason`) is NOT a
-//     no-op target and may be overwritten by that real check before this script reads it.
+//     `downloading`/`downloaded`/`installing` and for `failed` specifically on the automatic
+//     path (`checker.rs`'s own documented no-op rules) -- the seed is only guaranteed to survive
+//     for exactly those phases; `idle` (with or without `unavailableReason`) and `available` are
+//     NOT no-op targets and may be overwritten by the real check before this script reads them.
 //   - "Restart to update": selecting it shows the literal confirmation toast and the update
 //     phase is still `downloaded` afterward (never quits or installs).
 //   - An attempt (best-effort, explicitly reported either way) to catch the real automatic
@@ -403,9 +403,9 @@ async function main() {
     // Part B: the update entry's renderings, forced via a scratch updateState.json -- each
     // phase launch makes a REAL automatic startup update check (spec 006 FR-017, a real `gh`
     // release lookup): per `checker.rs`'s own documented no-op rules this is a no-op for
-    // available/downloading/downloaded/installing, and for `failed` on the automatic path
-    // specifically -- 'idle' (with or without unavailableReason) is NOT a no-op target and may
-    // be overwritten before this script reads it.
+    // downloading/downloaded/installing, and for `failed` on the automatic path specifically --
+    // 'idle' (with or without unavailableReason) and 'available' are NOT no-op targets and may
+    // be overwritten before this script reads them.
     // ---------------------------------------------------------------------------------------
     async function profileMenuUpdateRow(cdpSession) {
       await cdpSession.click(`document.querySelector('[data-profile-name-button]')`);
@@ -417,7 +417,7 @@ async function main() {
 
     const phases = [
       { label: 'idle', seed: { phase: 'idle' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
-      { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates' },
+      { label: 'available', seed: { phase: 'available', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates', seedMayBeOverwritten: true },
       { label: 'downloading', seed: { phase: 'downloading', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Check for updates', note: "install_on_quit::resolve_startup_state resolves a leftover 'downloading' to 'failed' before the renderer sees it" },
       { label: 'downloaded', seed: { phase: 'downloaded', availableVersion: '9.9.9' }, expectBusy: false, expectPrefix: 'Restart to update' },
       { label: 'failed', seed: { phase: 'failed', lastError: 'Scratch synthetic failure (verify-tauri-569)' }, expectBusy: false, expectPrefix: 'Check for updates' },

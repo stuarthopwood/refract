@@ -187,6 +187,11 @@ correctly and are fully keyboard-accessible.
   install is already running, matching the file's own "GitHub unavailable, Checking…" pattern).
   `pnpm typecheck` passes. Live keyboard/visual verification pending the parent's live check
   (issue #569 decision record, "Live checks").
+  -- Gate round 2 fix: "Check for updates" is now reserved for the ready-to-act state; the three
+  busy phases (checking/downloading/installing) each show their own verb ("Checking for
+  updates…"/"Downloading update…"/"Installing update…") instead of the generic label, with no
+  separate `aria-label` (the visible text already starts the accessible name) -- see FR-021's
+  2026-10-16 amendment and Clarifications entry.
 - [X] T025 (#329) [US4] Update the docs and verify live: `docs/DESIGN.md` ("Keyboard" cross-reference, Settings/Backlog notes for the Theme submenu and update entry) and `quickstart.md` Story 4; then on the built app in an isolated instance: confirm the fixed order, open and check the Theme submenu's active entry, open Keyboard shortcuts, select Health check and read its result, select What's new and confirm the system browser opens, and operate the whole menu (including into and out of the Theme submenu) using only the keyboard with focus returning to the profile item on close.
   -- docs/DESIGN.md's Profile item bullet rewritten with the full built order and both reserved
   slots named; new Keyboard shortcuts dialog and Health check dialog bullets added; quickstart.md

@@ -28,6 +28,15 @@ Health check; What's new; About; Help center; and Sign out in red).
 - Q: Which extra items belong in the profile menu? -> A: Health check, What's new, and Manage
   sessions; not About, not Help center.
 
+### Session 2026-10-16
+
+- Q: Does the update entry's "otherwise" wording (FR-021) need its own busy state, given a
+  check/download/install can take a visible moment? -> A: Yes -- gate round 2 (issue #569):
+  "Check for updates" is reserved for the ready-to-act state; while one of those three is
+  actually running the entry instead shows its own verb ("Checking for updates…"/"Downloading
+  update…"/"Installing update…"), `aria-disabled`, matching the busy-state pattern the same
+  menu's "GitHub unavailable, Checking…" row already uses.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See who you are and reach Settings (Priority: P1)
@@ -318,8 +327,12 @@ a session, confirming each action's confirmation names what will be lost.
   shortcuts; its entries MUST come from the shortcut set defined by backlog issue #6 once that
   work exists, and MUST otherwise list the shortcuts already present in the app.
 - **FR-021**: The update entry MUST read "Restart to update" with the new version's number when an
-  update has downloaded and is waiting for the next quit, and "Check for updates" otherwise;
-  selecting it in the latter state MUST check again (spec 006).
+  update has downloaded and is waiting for the next quit, "Check for updates" when idle,
+  available, failed, or GitHub-CLI-unavailable (selecting it in these states MUST check again,
+  spec 006), and its own busy verb -- "Checking for updates…", "Downloading update…", or
+  "Installing update…" -- while a check, download, or install is already running (amended
+  2026-10-16, issue #569 decision 5: the busy sub-states were not distinguished in the original
+  wording).
 - **FR-022**: The Health check item MUST re-run the first-run readiness checks (spec 006) and show
   their result.
 - **FR-023**: The What's new item MUST open the installed version's release notes in the system

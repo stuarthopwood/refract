@@ -182,7 +182,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
 
 /** The update entry (spec 008 FR-021, T024b; issue #569 decision 5): always present in the fixed
  *  order (FR-018), self-contained like `ThemeSubmenu` above -- reads `useUpdateStore` directly
- *  rather than threading a new prop through `ProfileItem.tsx`. Exactly two renderings, not the
+ *  rather than threading a new prop through `ProfileItem.tsx`. Not the status bar's full
  *  status bar's full idle/checking/available/downloading/downloaded/failed/unavailable detail
  *  (`StatusBar.tsx`, which keeps the Download/Retry actions entirely to itself): "Restart to
  *  update" with a plain trailing version once a download is waiting for the next quit, "Check
@@ -235,7 +235,7 @@ function UpdateMenuItem() {
         <span className="flex-1">Restart to update</span>
         <span className="text-xs text-muted-foreground">
           <span aria-hidden> </span>
-          <span className="sr-only">version </span>v{updateState?.availableVersion}
+          <span className="sr-only"> version </span>v{updateState?.availableVersion}
         </span>
       </DropdownMenuItem>
     )
