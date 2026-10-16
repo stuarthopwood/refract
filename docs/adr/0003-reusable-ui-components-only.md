@@ -1,0 +1,7 @@
+# Reusable UI components only
+
+The Manage sessions screen and the Pull requests view had each hand-built their own filter (a restyled `ToggleGroup` against `Tabs`), search field, header and count, so two screens doing the same job looked and behaved differently; an audit (#935) found 13 such groups across the renderer. On 2026-10-15 (the #934 grill) Stuart decided: "All UI elements should be re-usable components, enhanced when use cases add complexity." Every control comes from a shared component in `src/renderer/components/`, and a new use case extends that component with a prop or slot instead of copying or restyling it in a feature folder.
+
+This is a deliberate trade-off against speed: a one-off control is faster to write for one screen, and a shared component must be generalised and kept backwards compatible for every caller. Stuart chose consistency and one place to fix things over that speed. It is enforced in `AGENTS.md` ("Reusable UI components"), `docs/design/components.md` ("Reusable components first"), by reviewers blocking new one-offs, and by fixing the existing ones one group per PR from #935.
+
+**Consequences:** shared components carry more props and slots over time; when one grows past the 600-line cap (#806) it is split into composed pieces, never forked per screen. Changing a shared primitive (for example the Filter tabs height, 36 to 32 px, in #934) changes every screen that uses it, so each such change live-checks all of its call sites.
