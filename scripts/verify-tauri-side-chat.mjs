@@ -88,8 +88,8 @@ function buildTauriDebugNoBundle() {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const env = { ...process.env };
-    if (CARGO_TARGET_DIR) {
-      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+    if (process.env.CARGO_TARGET_DIR) {
+      env.CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
       env.CARGO_INCREMENTAL = '0';
     }
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {

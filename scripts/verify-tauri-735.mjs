@@ -82,7 +82,7 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 // the run's STEP-PASS report, app logs and settings.json dumps live here too, and NONE of it is
 // deleted in the `finally` block below (round 1 did not delete it either, but a later manual
 // cleanup pass did -- this round's run is kept deliberately as the gate's own audit trail).
-const SHOT_DIR = process.env.REFRACT_735_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots';
+const SHOT_DIR = process.env.REFRACT_735_SHOT_DIR || path.join(tmpdir(), 'refract-735-gate2-shots');
 
 const PROMPT_MESSAGE = 'Please respond now.';
 
@@ -132,8 +132,8 @@ function buildTauriDebugNoBundle() {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const env = { ...process.env };
-    if (CARGO_TARGET_DIR) {
-      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+    if (process.env.CARGO_TARGET_DIR) {
+      env.CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
       env.CARGO_INCREMENTAL = '0';
       env.CARGO_BUILD_JOBS = '4';
     }

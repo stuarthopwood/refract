@@ -47,6 +47,7 @@ import {
   makeScratchRepo,
   sha256OfFile,
   buildAndCopyExeFresh,
+  launchBuiltExe,
   safeRmSync,
   requireSharedCargoTarget,
   assertExeUnchanged,

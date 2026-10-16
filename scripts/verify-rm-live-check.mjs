@@ -15,8 +15,7 @@
 // already use (`probe-fake`/`probe-fake-model`, `baseUrl: http://127.0.0.1:1`).
 //
 // Usage: node scripts/verify-rm-live-check.mjs (requires CARGO_TARGET_DIR set to the shared
-// build cache, or a prior `pnpm tauri build --debug --no-bundle` under `src-tauri/target`; no
-// machine-specific fallback path is hardcoded).
+// build cache; issue #946, no worktree-local src-tauri/target fallback).
 
 import { mkdirSync, existsSync, copyFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';

@@ -196,7 +196,11 @@ export async function switchTheme(cdp, themeId, themeName) {
  * worktree-local `src-tauri/target` (a 2026-10-16 live-check built into one and consumed 5.9 GB,
  * dropping C: to 1.3 GB free mid-build for another lane). `repoRoot` is only used to reject a
  * `CARGO_TARGET_DIR` that resolves inside the repo/worktree itself, which is the same fallback in
- * disguise; the actual shared directory is machine-specific and deliberately not hardcoded here. */
+ * disguise; the actual shared directory is machine-specific and deliberately not hardcoded here.
+ * Refuses a relative path outright (ambiguous against whatever `cwd` happens to be). Compares
+ * `fs.realpathSync.native` output (resolves symlinks/junctions, e.g. a worktree reached through a
+ * junction) case-insensitively on win32, where the filesystem itself is case-insensitive and two
+ * differently-cased spellings of the same path are the same directory. */
 export function requireSharedCargoTarget(repoRoot) {
   const value = process.env.CARGO_TARGET_DIR;
   if (!value) {
@@ -206,9 +210,28 @@ export function requireSharedCargoTarget(repoRoot) {
         'shared cargo target directory before running this script.'
     );
   }
+  if (!path.isAbsolute(value)) {
+    throw new Error(
+      `CARGO_TARGET_DIR (${value}) is a relative path (issue #946): set it to an absolute path to ` +
+        'a shared directory outside any repo/worktree.'
+    );
+  }
   const resolved = path.resolve(value);
   const repoResolved = path.resolve(repoRoot);
-  if (resolved === repoResolved || resolved.startsWith(repoResolved + path.sep)) {
+  const realOrSelf = (p) => {
+    try {
+      return realpathSync.native(p);
+    } catch {
+      return p;
+    }
+  };
+  let comparedTarget = realOrSelf(resolved);
+  let comparedRepo = realOrSelf(repoResolved);
+  if (process.platform === 'win32') {
+    comparedTarget = comparedTarget.toLowerCase();
+    comparedRepo = comparedRepo.toLowerCase();
+  }
+  if (comparedTarget === comparedRepo || comparedTarget.startsWith(comparedRepo + path.sep)) {
     throw new Error(
       `CARGO_TARGET_DIR (${resolved}) resolves inside the repo (${repoResolved}); this is the ` +
         'worktree-local fallback in disguise (issue #946). Point it at a shared directory outside any repo/worktree.'

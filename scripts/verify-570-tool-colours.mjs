@@ -40,6 +40,7 @@ import {
   launchBuiltExe,
   safeRmSync,
   assertExeUnchanged,
+  getAccessibleNameAndRole,
   switchTheme,
   requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';

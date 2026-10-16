@@ -32,12 +32,12 @@
 // `verify-tauri-cdp.mjs`'s own `stopLauncher`/`launchViaJobObject` doc comments. Never a kill by
 // name, per AGENTS.md's destructive-operations rule applied to processes.
 //
-// Shared disk note: when `CARGO_TARGET_DIR` is set in the environment, every cargo/tauri
-// invocation here uses it (see this repo's own worktree instructions for the shared path); when
-// unset, cargo's own default applies (a plain CI runner has no shared-cache constraint to honour,
-// and hard-coding one machine's path here would silently point CI at a path that does not exist
-// there). The build step briefly uses that target dir's own lock when it is shared (builds
-// serialise there machine-wide); only the copied exe runs concurrently with others.
+// Shared disk note (issue #946): `CARGO_TARGET_DIR` is required, enforced by
+// `requireSharedCargoTarget` below -- this script refuses to run rather than letting cargo fall
+// back to its own default (a worktree-local `src-tauri/target`, which has filled a worktree's
+// disk before). Every cargo/tauri invocation here uses the shared dir; its build step briefly
+// uses that target dir's own lock (builds serialise there machine-wide) -- only the copied exe
+// runs concurrently with others.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync, existsSync } from 'node:fs';
@@ -144,9 +144,9 @@ function worktreesDirFor(repoDir) {
 /** Builds the Rust app once with no dev server (the live-run convention, 2026-10-13): `tauri
  * build --debug --no-bundle` runs the renderer's own production build plus `cargo build`
  * (never `cargo run`), so it never touches Vite's shared port 5174 and finishes with a plain
- * exe under `CARGO_TARGET_DIR` (or cargo's own default when that is unset), not a running
- * process. Takes a few minutes the first time; a shared target dir makes a rebuild fast once
- * most crates are already compiled. */
+ * exe under the shared `CARGO_TARGET_DIR` (issue #946: always set, enforced above), not a
+ * running process. Takes a few minutes the first time; a shared target dir makes a rebuild fast
+ * once most crates are already compiled. */
 function buildTauriDebugNoBundle() {
   // A shared `CARGO_TARGET_DIR` means another lane's own running exe (built from the same
   // crate) can transiently hold `debug/refract-tauri.exe` open, so `cargo build`'s own rename-
@@ -154,14 +154,10 @@ function buildTauriDebugNoBundle() {
   // Retried, not treated as this run's own failure.
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const env = { ...process.env };
     // Shared-disk note (Main broadcast, 2026-10-14): the shared target dir's disk hit 100% and
     // broke builds once already; CARGO_INCREMENTAL=0 travels with CARGO_TARGET_DIR so every
     // lane building against the shared cache keeps its incremental-artifact footprint down.
-    if (process.env.CARGO_TARGET_DIR) {
-      env.CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-      env.CARGO_INCREMENTAL = '0';
-    }
+    const env = { ...process.env, CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR, CARGO_INCREMENTAL: '0' };
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
       env,
