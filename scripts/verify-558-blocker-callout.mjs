@@ -216,6 +216,13 @@ async function main() {
       findings.push(`Best severity observed live: "${bestSeverity}" (blocker is the ideal outcome but is the advisor model's own call, not forced).`);
       const severities = await readAdvisorySeverities(cdp);
       const targetIndex = severities.lastIndexOf(bestSeverity);
+      // The transcript can have scrolled this row out of the viewport by now (three risky-action
+      // turns plus the agent's own replies); cdp.click() dispatches Input.dispatchMouseEvent at
+      // getBoundingClientRect() viewport coordinates with no auto-scroll, so a click on an
+      // off-screen element silently lands nowhere. Scroll it into view once, up front, so every
+      // click below (expand, Copy, Tab-order, Ask-agent) targets a coordinate that is actually
+      // on screen.
+      await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].scrollIntoView({ block: 'center' })`);
       await cdp.screenshot(path.join(SHOTS_DIR, '00-dark-advisory-arrived.png'));
 
       if (bestSeverity === 'nit') {
