@@ -245,15 +245,32 @@ async function clickMenuItem(cdp, text) {
   await cdp.click(finder);
 }
 
+/** Wraps the shared `addRepository` helper with failure diagnostics (a screenshot plus the
+ *  dialog's own DOM state at the moment the wait timed out) -- added after this exact step
+ *  intermittently timed out on its second call with no app-side error logged, so the root
+ *  cause needed more than a bare stack trace to isolate. */
+async function addRepositoryDiag(cdp, dir, evidenceDir, log, label) {
+  try {
+    await addRepository(cdp, dir);
+  } catch (err) {
+    const diag = await cdp.evaluate(
+      `(() => ({ dialogPresent: !!document.querySelector('[role="dialog"]'), dialogInputValue: document.querySelector('[role="dialog"] input')?.value ?? null, dialogButtons: Array.from(document.querySelectorAll('[role="dialog"] button')).map((b) => b.textContent.trim()), footerAddButtons: Array.from(document.querySelectorAll('button')).filter((b) => b.textContent.trim() === 'Add repository').length, activeElement: document.activeElement?.tagName }))()`
+    );
+    log(`verify-tauri-559: addRepository("${label}") FAILED -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
+    await cdp.screenshot(path.join(evidenceDir, `99-diag-add-repository-${label}-failure.png`));
+    throw err;
+  }
+}
+
 async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoBName }) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.waitFor(
     `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
     { timeoutMs: 60_000, label: 'Readiness green' }
   );
-  await addRepository(cdp, repoA);
+  await addRepositoryDiag(cdp, repoA, evidenceDir, log, 'A');
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository A group rendered' });
-  await addRepository(cdp, repoB);
+  await addRepositoryDiag(cdp, repoB, evidenceDir, log, 'B');
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
 
