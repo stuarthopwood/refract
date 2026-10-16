@@ -255,9 +255,32 @@ async function main() {
         else if (!clipboardText.startsWith(expectedPrefix)) failures.push(`Clipboard reads "${clipboardText.slice(0, 80)}...", expected it to start with "${expectedPrefix}" (decision 6).`);
         else findings.push(`Copy advisory wrote the REAL OS clipboard (read back directly, not via the sandboxed renderer API): "${clipboardText.slice(0, 80)}${clipboardText.length > 80 ? '…' : ''}".`);
 
+        // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent (BEFORE
+        // Ask-agent itself runs, since sending introduces a new reply turn that can shift
+        // which row this turn's own advisory now is) ----
+        try {
+          await cdp.click(`(${ADVISORY_FINDER})[${targetIndex}]`);
+          await pressTab(cdp);
+          const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
+          await pressTab(cdp);
+          const afterTab2 = (await getActiveElementAccessibleName(cdp)).name;
+          if (afterTab1 === 'Copy advisory' && (afterTab2 || '').startsWith('Ask agent to address this')) {
+            findings.push(`Keyboard Tab order confirmed: trigger -> "${afterTab1}" -> "${afterTab2}" (decision 12, standard DOM order).`);
+          } else {
+            failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
+          }
+          await pressEscape(cdp);
+        } catch (err) {
+          notExercised.push(`Keyboard Tab-order check did not complete (${err.message}).`);
+        }
+
         // ---- Ask agent to address this <severity>: real chat.send, real new user turn ----
+        // A REAL pointer click (Input.dispatchMouseEvent via cdp.click), not a raw `.click()`
+        // call: only a real click focuses the clicked element first, the same way a genuine
+        // user interaction would -- needed for the focus-return check below to mean anything.
         const transcriptTextBefore = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]').textContent`);
-        await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); const btn = Array.from(wrapper.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Ask agent to address this')); btn.click(); })()`);
+        const askButtonFinder = `(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return Array.from(wrapper.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Ask agent to address this')); })()`;
+        await cdp.click(askButtonFinder);
         try {
           await cdp.waitFor(
             `document.querySelector('[aria-label="Transcript"]').textContent.includes('Please address this ${bestSeverity}')`,
@@ -274,23 +297,6 @@ async function main() {
           );
         } catch (err) {
           notExercised.push(`Ask-agent send/focus-return check did not complete in time (${err.message}).`);
-        }
-
-        // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent ----
-        try {
-          await cdp.click(`(${ADVISORY_FINDER})[${targetIndex}]`);
-          await pressTab(cdp);
-          const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
-          await pressTab(cdp);
-          const afterTab2 = (await getActiveElementAccessibleName(cdp)).name;
-          if (afterTab1 === 'Copy advisory' && (afterTab2 || '').startsWith('Ask agent to address this')) {
-            findings.push(`Keyboard Tab order confirmed: trigger -> "${afterTab1}" -> "${afterTab2}" (decision 12, standard DOM order).`);
-          } else {
-            failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
-          }
-          await pressEscape(cdp);
-        } catch (err) {
-          notExercised.push(`Keyboard Tab-order check did not complete (${err.message}).`);
         }
       }
     }
