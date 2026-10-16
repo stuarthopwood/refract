@@ -6,16 +6,16 @@
 // override, matching #570/#557's own isolation posture: only Refract's OWN data,
 // `REFRACT_DATA_DIR`, is scratch). Real model tokens, small prompts.
 //
-// #917: RPC hosts start the advisor runtime DISABLED unless the host opts in, and Refract
-// never opts in, nor does `/advisor` exist in `SUPPORTED_OMP_COMMANDS` for a developer to turn
-// it on by hand -- so no `<advisory>` note can arrive in this script's own scratch Session
-// today. It still sends a warm-up turn plus a few turns shaped to read as risky to a
-// code-review advisor, in case #917 is resolved by the time this runs, and records whatever
-// severity actually appears (never forced). #558's severity-specific behaviour (default-open,
-// accent colour, locations, Copy, Ask-agent, focus-return, keyboard order, the concern-run
-// reveal) is asserted live only if a real advisory actually materialises; otherwise it is
-// code-reviewed only, with no unit or live-advisory coverage -- see the PR body's own
-// "Not exercised" list.
+// Advisor reachability depends on the signed-in `omp` profile's own persisted settings, not on
+// anything this script controls (an earlier draft wrongly assumed RPC hosts always start the
+// advisor disabled, filed as #917 -- live runs since have repeatedly shown a real `<advisory>`
+// note arriving against the ambient profile used here). It sends a warm-up turn plus a few
+// turns shaped to read as risky to a code-review advisor and records whatever severity actually
+// appears (never forced, never guaranteed -- the advisor's own judgement decides each run).
+// #558's severity-specific behaviour (default-open, accent colour, locations, Copy, Ask-agent,
+// focus-return, keyboard order, the concern-run reveal) is asserted live only if a real advisory
+// actually materialises this run; otherwise it is code-reviewed only, with no unit or
+// live-advisory coverage -- see the PR body's own "Not exercised" list.
 //
 // The exe under test is rebuilt immediately before this script runs and checked against the
 // just-built renderer bundle for three #558-only strings before anything else is trusted.
@@ -251,6 +251,13 @@ async function main() {
         if (locationsText.length > 0) findings.push(`Location(s) extracted and shown as monospace text: ${JSON.stringify(locationsText)} (decisions 4-5).`);
         else notExercised.push('The advisor\'s own note text did not happen to name a path:line this run (advisor phrasing is not caller-controlled); location extraction (and both a note-only and a note-plus-guidance location together) is code-reviewed only, no unit or live coverage.');
 
+        // Captured now (the row's own expanded body, already open) for the gate round 2 High
+        // fix below: asserting this exact text later reappears inside the POSTED Ask-agent user
+        // bubble, not just the "Please address this..." lead-in line (the old `<advisory>` tag
+        // wrapper was silently dropped by the sanitised Markdown renderer; the agent still
+        // received it, but the transcript misrepresented what the user sent).
+        const noteText = await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); return wrapper.querySelector('.whitespace-pre-wrap')?.textContent ?? ''; })()`);
+
         // ---- Copy advisory: real OS clipboard ----
         const copyBefore = readOsClipboardText();
         await cdp.evaluate(`(() => { const wrapper = (${ADVISORY_FINDER})[${targetIndex}].closest('[data-advisory-severity]'); const btn = Array.from(wrapper.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '') === 'Copy advisory'); btn.click(); })()`);
@@ -273,6 +280,10 @@ async function main() {
         // reason this collapsed row's own Ask-agent button went missing for the step after it).
         try {
           await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
+          // Gate round 2 (M3): a keyboard-focused trigger's own inset ring is raised above the
+          // accent bar via a `[data-slot=collapsible-trigger]:focus-visible` z-index lift --
+          // screenshot the focused state directly, since no earlier run captured one.
+          await cdp.screenshot(path.join(SHOTS_DIR, '06-focused-trigger.png'));
           await pressTab(cdp);
           const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
@@ -292,7 +303,6 @@ async function main() {
           notExercised.push(`Keyboard Tab-order check did not complete (${err.message}).`);
         }
 
-
         // ---- Ask agent to address this <severity>: real chat.send, real new user turn ----
         // A REAL pointer click (Input.dispatchMouseEvent via cdp.click), not a raw `.click()`
         // call: only a real click focuses the clicked element first, the same way a genuine
@@ -306,6 +316,25 @@ async function main() {
             { timeoutMs: 60_000, label: 'Ask-agent message posted as a new user turn' }
           );
           findings.push(`"Ask agent to address this ${bestSeverity}" sent a real message through chat.send, visible as a new user turn (decision 7).`);
+          // Gate round 2 High fix: the old `<advisory>` tag wrapper was dropped as a raw
+          // CommonMark HTML block by the sanitised Markdown renderer, so the posted bubble
+          // showed only the "Please address this..." lead-in -- the note itself was invisible.
+          // Asserting the lead-in appeared (above) is NOT enough; the note text must be in the
+          // SAME bubble, not just somewhere else in the transcript (the original advisory row,
+          // still mounted above, also contains it -- a whole-transcript substring check would
+          // pass even if the bubble itself were empty, which is exactly the bug this missed).
+          const notePreview = noteText.slice(0, 40);
+          const bubbleContainsNote = await cdp.evaluate(`(() => {
+            const bubbles = Array.from(document.querySelectorAll('[aria-label="Transcript"] [data-slot="message"][data-align="end"]'));
+            const bubble = [...bubbles].reverse().find((el) => el.textContent.includes('Please address this ${bestSeverity}'));
+            return !!bubble && bubble.textContent.includes(${JSON.stringify(notePreview)});
+          })()`);
+          if (!bubbleContainsNote) {
+            failures.push(`The posted "Ask agent" user bubble does not contain the advisor's own note text ("${notePreview}..."): decision 7's fenced quoting may not be rendering.`);
+          } else {
+            findings.push('The posted "Ask agent" user turn contains the advisor\'s own note text verbatim, not just the lead-in line (decision 7 fenced-block fix, gate round 2).');
+          }
+          await cdp.screenshot(path.join(SHOTS_DIR, '07-ask-agent-bubble.png'));
           const activeHasTag = await cdp.evaluate(`document.activeElement && document.activeElement.getAttribute('data-558-test-trigger') === '1'`);
           if (activeHasTag) findings.push('Focus returned to the advisory row\'s own trigger after the send completed (decision 13).');
           else failures.push('Focus did not return to the advisory row\'s own trigger after Ask-agent sent.');
@@ -319,7 +348,6 @@ async function main() {
         }
       }
     }
-
     // ---- Themes ----
     try {
       await switchTheme(cdp, 'obsidian', 'Obsidian');

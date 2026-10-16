@@ -7,7 +7,7 @@ import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-
 import { notify, useSessionsStore } from '@/state'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
+import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS } from './pickerShared'
 import { CONCERN_RUN_THRESHOLD, type AdvisoryRun } from './groupAdvisoryItems'
 
 type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>
@@ -42,9 +42,21 @@ const ADVISORY_WORD = {
 // absolutely-positioned `before:` pseudo-element -- zero layout impact, so the icon stays
 // exactly on-grid in every state, and no `pl` compensation is needed anywhere. `before:content-
 // ['']` is required for Tailwind to actually generate the pseudo-element's box.
+//
+// Gate round 2 fixes: (a) `before:pointer-events-none` -- the bar painted over the trigger's own
+// leftmost 3px was otherwise a dead click zone; (b) `before:forced-color-adjust-none
+// forced-colors:before:bg-[CanvasText]` -- OS forced-colours mode replaces an ordinary
+// `background-color` with `Canvas`, making the bar invisible (severity is still carried by the
+// icon and word, so this was a Medium, not a High); (c) the absolutely-positioned bar paints
+// AFTER the in-flow trigger, covering the left ~2px of its inset `outline-offset-[-2px]` focus
+// ring -- `[&_[data-slot=collapsible-trigger]:focus-visible]:relative …:z-[1]` lifts ONLY the
+// trigger (never Copy/Ask-agent, which never sit at the wrapper's left edge) above the bar while
+// it has keyboard focus, so all four sides of its ring are visible again.
 const STRIPE_CLASS = {
-  blocker: "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-error before:content-['']",
-  concern: "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-warning before:content-['']"
+  blocker:
+    "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-error before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText] [&_[data-slot=collapsible-trigger]:focus-visible]:relative [&_[data-slot=collapsible-trigger]:focus-visible]:z-[1]",
+  concern:
+    "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-warning before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText] [&_[data-slot=collapsible-trigger]:focus-visible]:relative [&_[data-slot=collapsible-trigger]:focus-visible]:z-[1]"
 } as const
 
 interface AdvisoryRowProps {
@@ -66,25 +78,36 @@ function buildCopyText(item: AdvisoryItem, locations: AdvisoryLocation[]): strin
   return text
 }
 
-// Gate round 1 fix (Security Low): the note/guidance/locations are bounded inside one clearly
-// labelled `<advisory>...</advisory>` block instead of a bare `"quoted"` fragment -- the earlier
-// form left the guidance, locations and advisor name outside the quotes entirely, so
-// advisor-written text could end the quote early or read as the user's own instructions. Any
-// literal `</advisory>` inside the advisor's own text is broken (escaped) so it can never close
-// the block early.
-function escapeAdvisoryDelimiter(text: string): string {
-  return text.replace(/<\/advisory>/gi, '<\\/advisory>')
-}
+// Gate round 2 fix (High, three independent reviewers, live-proven): a bare `<advisory>` opening
+// tag on its own line starts a CommonMark HTML block that runs to the next blank line; the
+// renderer's own `Markdown` component sanitises user turns with `rehype-sanitize` and no
+// `rehype-raw` (`Markdown.tsx`), so that whole block -- the note itself -- was silently dropped
+// from the posted user bubble (the agent still received the full text over `chat.send`; only
+// the TRANSCRIPT's own rendering misrepresented it, confirmed live, screenshot
+// `01-obsidian.png`). A fenced code block is never parsed as an HTML block, so its content
+// always renders verbatim; using OMP's own `<advisory>` element name for a user-authored block
+// was also a second, independent reason to drop it (a model reading its own injected-advisory
+// tag name back in a USER turn could misattribute authorship). The fence itself must be
+// strictly longer than the longest run of backticks already inside the payload -- an
+// advisor-authored run of exactly N backticks could otherwise close a fence of only N -- and the
+// payload itself is capped well above any normal advisor note (an unbounded note/guidance could
+// otherwise make `chat.send`'s own message body, and so this block, unboundedly large).
+const MAX_ASK_AGENT_PAYLOAD_LENGTH = 8_000
 
 function buildAskAgentMessage(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
-  let payload = escapeAdvisoryDelimiter(item.text)
+  let payload = `Advisor: ${item.advisor ?? 'unknown'}\n\n${item.text}`
   if (item.guidance) {
-    payload += `\n\nGuidance: ${escapeAdvisoryDelimiter(item.guidance)}`
+    payload += `\n\nGuidance: ${item.guidance}`
   }
   if (locations.length) {
     payload += `\n\nLocation${locations.length > 1 ? 's' : ''}: ${locations.map((location) => location.raw).join(', ')}`
   }
-  return `Please address this ${item.severity} from ${item.advisor ?? 'the advisor'}:\n\n<advisory>\n${payload}\n</advisory>`
+  if (payload.length > MAX_ASK_AGENT_PAYLOAD_LENGTH) {
+    payload = `${payload.slice(0, MAX_ASK_AGENT_PAYLOAD_LENGTH)}\u2026 [truncated]`
+  }
+  const longestBacktickRun = (payload.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0)
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1))
+  return `Please address this ${item.severity} from the advisor:\n\n${fence}text\n${payload}\n${fence}`
 }
 
 // One baseline line per `<advisory>` element OMP adds to the conversation (T085, FR-051,
@@ -99,12 +122,19 @@ function buildAskAgentMessage(item: AdvisoryItem, locations: AdvisoryLocation[])
 // note/guidance name, a Copy action, and an "Ask agent to address this <severity>" action that
 // sends the note/guidance/locations through the ordinary `chat.send` path as an ordinary user
 // message, posted as a real user turn. Decision 14: a nit gets none of this -- no accent bar, no
-// locations, no actions, the exact same plain expanded body it has always had. The blocker's own
-// mount-time announcement (decision 9) moved OUT of this row entirely, into a single
-// Transcript-level announcer (`useAdvisoryAnnouncement.ts`, gate round 1 High fix): a per-row
-// live region nested inside the transcript's own `role="log"` double-announced a live arrival
-// (once as the log's own addition, once as the nested region) and re-announced on every mount
-// (Session switch, history reopen, "Load earlier").
+// locations, no actions, the exact same plain expanded body it has always had.
+//
+// Gate round 2 fix (decision 9 amendment): the blocker's own announcement is NOT a separate
+// mechanism. A gate round 1 "fix" added a single out-of-log `useAdvisoryAnnouncement` hook,
+// which turned out to still re-announce on a Session/Conversation switch (the hook's own
+// `seenRef` never reset) and on "Load earlier" (it read the windowed, not the full, turn list),
+// and ALSO still double-read a live arrival (once via the log's own addition, once via the
+// hook's own status span). Deleted entirely, matching #570's own Error line precedent: the row's
+// own mount into the transcript's `role="log"` (`aria-relevant="additions"`) IS decision 9's one
+// polite announcement. This is silent by construction for a history reopen, a Session switch, or
+// "Load earlier" (none of those are log ADDITIONS, just a rerender or a reveal of already-mounted
+// content under `aria-live="off"`, `suppressLogAnnouncements`), and fires exactly once for a
+// genuine live arrival, with no separate channel to double it.
 export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(function AdvisoryRow({ item, sessionId }, forwardedRef) {
   const Icon = ADVISORY_ICON[item.severity]
   const className = ADVISORY_CLASS[item.severity]
@@ -137,7 +167,13 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
     try {
       if (notStarted) {
         const snapshot = await useSessionsStore.getState().open(sessionId, true)
-        if (!snapshot) return
+        if (!snapshot) {
+          // Gate round 2 fix (Low): the composer-opening path silently gave up with no
+          // feedback when a not-started Session failed to open -- the same "prompt-failed"
+          // code the catch block below already uses for every other send failure.
+          notify({ code: 'prompt-failed', message: 'Could not start the agent for this Session.' })
+          return
+        }
       }
       const message = buildAskAgentMessage(item, locations)
       // Same path a normal user message takes (`window.refract.chat.send`), so Refract's own
@@ -160,8 +196,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
       if (document.activeElement === askButtonRef.current || document.activeElement === document.body) {
         innerRef.current?.focus({ preventScroll: true })
       }
-    } catch (err) {
-      notify({ code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) })
+    } catch {
+      // Gate round 2 fix (Low, layout/visual specialists): a raw thrown `err.message` could
+      // surface internal detail (a stack frame, a path) the way the `agent-not-running` guard
+      // just above already exists to prevent for the ordinary IPC-error path.
+      notify({ code: 'prompt-failed', message: 'Could not send this to the agent.' })
     } finally {
       setAsking(false)
     }
@@ -178,11 +217,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         meta={meta || undefined}
       >
         <div className="space-y-2">
-          <div className="whitespace-pre-wrap text-sm">{item.text}</div>
+          <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
           {item.guidance && (
             <div>
               <div className="mb-1 text-xs font-medium text-muted-foreground">Guidance</div>
-              <div className="whitespace-pre-wrap text-sm">{item.guidance}</div>
+              <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
             </div>
           )}
         </div>
@@ -191,6 +230,10 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   }
 
   const askReasonId = `${item.id}-ask-reason`
+  // Gate round 2 fix (Low): the sr-only disabled reason used to cover only `sessionUnavailable`
+  // -- a `!sessionId` row (the ref's own doc comment above: "nothing to send to") disabled with
+  // no stated reason at all.
+  const askReason = !sessionId ? 'No Session to send this to.' : sessionUnavailable ? 'Start the agent to send this.' : undefined
 
   return (
     <div data-advisory-severity={item.severity} className={cn(item.severity === 'blocker' || open ? STRIPE_CLASS[item.severity] : undefined)}>
@@ -206,11 +249,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
       >
         {/* Decision 2 order: note, guidance, locations, then the actions row. */}
-        <div className="whitespace-pre-wrap text-sm">{item.text}</div>
+        <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
         {item.guidance && (
           <div>
             <div className="mb-1 text-xs font-medium text-muted-foreground">Guidance</div>
-            <div className="whitespace-pre-wrap text-sm">{item.guidance}</div>
+            <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
           </div>
         )}
         {locations.length > 0 && (
@@ -232,15 +275,15 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
             size="sm"
             aria-disabled={askDisabled || undefined}
             aria-busy={asking || undefined}
-            aria-describedby={sessionUnavailable ? askReasonId : undefined}
-            className={cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
+            aria-describedby={askReason ? askReasonId : undefined}
+            className={cn(COMPOSER_DISABLED_CLASS, COMPOSER_BUTTON_FOCUS_CLASS)}
             onClick={() => void handleAskAgent()}
           >
             Ask agent to address this {item.severity}
           </Button>
-          {sessionUnavailable && (
+          {askReason && (
             <span id={askReasonId} className="sr-only">
-              Start the agent to send this.
+              {askReason}
             </span>
           )}
         </div>
@@ -249,9 +292,33 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   )
 })
 
+
 interface AdvisoryRunRowProps {
   group: AdvisoryRun
   sessionId: string | undefined
+  /** Gate round 2 fix (Medium, ui-architect-v3): revealing N hidden rows at once inserted every
+   * one of them into the transcript's `role="log"`, with no suppression and no single summary
+   * -- the same flood "Load N earlier turns" already guards against with
+   * `suppressLogAnnouncements`. Reuses that exact mechanism: `Transcript.tsx` passes its own
+   * setter down, so one reveal click gets one rAF-cleared suppression window instead of N
+   * separate log-addition announcements. */
+  onReveal?: () => void
+}
+
+/** Gate round 2 fix (Medium, ui-architect-v3, M2): a wrapper so the item CURRENTLY AT RISK of
+ * being hidden by the "+ Show N more" overflow -- the oldest of the visible five -- can detect,
+ * in its own `useLayoutEffect` CLEANUP, whether focus was inside it the instant before React
+ * unmounts it. A cleanup still sees its own ref attached (the project's own documented React
+ * 19.3 pattern, `refract-ui-lane-gate-checklist`); a later PASSIVE effect would not, since by
+ * then the node is already gone and focus has already fallen to `<body>`. */
+function FocusHandoffOnUnmount({ onFocusLost, children }: { onFocusLost: () => void; children: React.ReactNode }) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useLayoutEffect(() => {
+    return () => {
+      if (ref.current?.contains(document.activeElement)) onFocusLost()
+    }
+  }, [onFocusLost])
+  return <div ref={ref}>{children}</div>
 }
 
 // #558 decision 10 (gate round 1: always-wrap, see `groupAdvisoryItems.ts`'s own comment): a
@@ -263,40 +330,68 @@ interface AdvisoryRunRowProps {
 // `useLayoutEffect`, to the first newly revealed (oldest) row's own trigger (gate round 1 High
 // fix: the button used to simply unmount, dropping focus to `<body>`, the same defect "Load N
 // earlier turns" was fixed for in this same file, Transcript.tsx:609-646).
-export function AdvisoryRunRow({ group, sessionId }: AdvisoryRunRowProps) {
+export function AdvisoryRunRow({ group, sessionId, onReveal }: AdvisoryRunRowProps) {
   const overflow = group.items.length > CONCERN_RUN_THRESHOLD
   const [showAll, setShowAll] = React.useState(false)
   const hiddenCount = group.items.length - CONCERN_RUN_THRESHOLD
   const visible = overflow && !showAll ? group.items.slice(-CONCERN_RUN_THRESHOLD) : group.items
   const firstRevealedRef = React.useRef<HTMLElement>(null)
+  const showAllButtonRef = React.useRef<HTMLButtonElement>(null)
   const wasShowAllRef = React.useRef(false)
+  const focusLostToOverflowRef = React.useRef(false)
   React.useLayoutEffect(() => {
     if (showAll && !wasShowAllRef.current) {
       firstRevealedRef.current?.focus({ preventScroll: true })
     }
     wasShowAllRef.current = showAll
   }, [showAll])
+  // Gate round 2 fix (Medium, M2): a sixth consecutive concern hides the oldest of the newest
+  // five behind the reveal above -- if the user's focus was inside that row (its trigger, Copy
+  // or Ask-agent), it must move to the reveal button, never fall to `<body>` (the same "no focus
+  // on `<body>` after any unmount" rule "Load N earlier turns" and the first fix above follow).
+  React.useLayoutEffect(() => {
+    if (focusLostToOverflowRef.current) {
+      focusLostToOverflowRef.current = false
+      showAllButtonRef.current?.focus({ preventScroll: true })
+    }
+  })
   return (
     <div className="space-y-1">
       {overflow && !showAll && (
         <Button
+          ref={showAllButtonRef}
           type="button"
           variant="ghost"
           size="sm"
-          className="px-2 pt-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-0"
-          onClick={() => setShowAll(true)}
+          className="px-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-solid focus-visible:outline-ring focus-visible:ring-0"
+          onClick={() => {
+            onReveal?.()
+            setShowAll(true)
+          }}
         >
-          + Show {hiddenCount} more advisor concern{hiddenCount === 1 ? '' : 's'}
+          <span aria-hidden="true">+</span> Show {hiddenCount} more advisor concern{hiddenCount === 1 ? '' : 's'}
         </Button>
       )}
-      {visible.map((runItem, index) => (
-        <AdvisoryRow
-          key={runItem.id}
-          item={runItem}
-          sessionId={sessionId}
-          ref={overflow && showAll && index === 0 ? firstRevealedRef : undefined}
-        />
-      ))}
+      {visible.map((runItem, index) => {
+        const row = (
+          <AdvisoryRow
+            key={runItem.id}
+            item={runItem}
+            sessionId={sessionId}
+            ref={overflow && showAll && index === 0 ? firstRevealedRef : undefined}
+          />
+        )
+        // Only the CURRENT oldest visible item, while NOT yet revealed, can ever be the next one
+        // an incoming concern hides -- wrapping just it keeps this a no-op for every other row.
+        if (overflow && !showAll && index === 0) {
+          return (
+            <FocusHandoffOnUnmount key={runItem.id} onFocusLost={() => (focusLostToOverflowRef.current = true)}>
+              {row}
+            </FocusHandoffOnUnmount>
+          )
+        }
+        return row
+      })}
     </div>
   )
 }

@@ -1,22 +1,34 @@
 // Conservative `path:line[:column]` extraction from an advisory's note and guidance (issue
-// #558, FR-051 amendment, ui-architect-v3 roundtable decision 4; regex corrected gate round 1).
+// #558, FR-051 amendment, ui-architect-v3 roundtable decision 4; regex corrected gate round 1,
+// extended gate round 2).
 //
 // An ALLOWLISTED code-file extension set -- not a bare `\w+` -- is the conservative choice: it
 // naturally excludes URL/host false positives without any fragile scheme-stripping logic. The
-// leading `(?<![\w./\\:-])` lookbehind (replacing a plain `\b`, gate round 1 fix: `\b` chopped
+// leading `(?<![\w./\\:@~+-])` lookbehind (replacing a plain `\b`, gate round 1 fix: `\b` chopped
 // path prefixes -- `C:\Repos\x\foo.ts:42` became `Repos\x\foo.ts:42`, `/home/x/foo.ts:1` lost
 // its leading `/`) only allows a match to START where the preceding character is NOT itself
 // part of a path/URL -- this also rejects a URL's own host segment as an emergent property,
 // with no separate `://` check needed: every segment boundary inside `https://host/a/b.ts:1` is
 // itself preceded by `/` or `:`, both excluded, so no valid start position exists anywhere in a
 // scheme-qualified URL. The optional prefix group restores a drive letter (`C:\`), a relative
-// prefix (`./`, `../`), or a bare absolute-path leading `/` that the body's own character class
-// (which excludes `:` to keep the line-number delimiter unambiguous) cannot include itself. The
-// body is bounded to `{1,260}` characters (gate round 1 Security Low: an unbounded `+` lets the
-// class restart at every `/`/`.`/`-` boundary in a long, hostile note, costing roughly quadratic
-// time against the ~40 extension alternatives).
+// prefix (`./`, `../`), a home-relative `~/` (gate round 2 fix), or a bare absolute-path leading
+// `/` that the body's own character class (which excludes `:` to keep the line-number delimiter
+// unambiguous) cannot include itself. The body is bounded to `{1,260}` characters (gate round 1
+// Security Low: an unbounded `+` lets the class restart at every `/`/`.`/`-` boundary in a long,
+// hostile note, costing roughly quadratic time against the ~40 extension alternatives).
+//
+// Gate round 2 fix (Medium, ui-architect-v3): `@`, `~` and `+` are now in BOTH the body class
+// and the lookbehind's exclusion set -- without them, `node_modules/@scope/pkg/index.js:3` and
+// `~/proj/foo.ts:1` matched only their OWN tail (`scope/pkg/index.js:3`, `/proj/foo.ts:1`),
+// silently showing, copying and sending a WRONG path to the agent, which is worse than showing
+// none (decision 4's own "conservative"). A path containing a literal SPACE (e.g.
+// `C:\Program Files\x\foo.ts:1`) still extracts only its tail after the space: a space must stay
+// a valid match-START boundary (it is how a path named mid-sentence, "see src/foo.ts:42 for
+// details", is found at all), so this one case is an accepted, documented limitation rather than
+// a defect to chase -- it is no worse than the pre-existing "no match" the issue already accepts
+// for an unparseable note.
 const LOCATION_PATTERN =
-  /(?<![\w./\\:-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)?[\w./\\-]{1,260}\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|m|mm|sql|sh|ps1|ya?ml|toml|json|md|css|scss|html|vue|svelte)):(\d+)(?::(\d+))?\b/gi
+  /(?<![\w./\\:@~+-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|~[\\/]|\/)?[\w./\\@~+-]{1,260}\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|m|mm|sql|sh|ps1|ya?ml|toml|json|md|css|scss|html|vue|svelte)):(\d+)(?::(\d+))?\b/gi
 
 export interface AdvisoryLocation {
   /** The exact matched text (`path:line` or `path:line:column`), shown and copied verbatim. */
@@ -30,7 +42,10 @@ export interface AdvisoryLocation {
  * scoping restriction, and guidance commonly names the fix location too) and returns EVERY
  * match, de-duplicated by its own `path:line` pair (gate round 1 fix: de-duplicating by the raw
  * matched text let `foo.ts:42` and `foo.ts:42:5` both render as if they were different
- * locations) -- the FIRST raw text for a given pair wins, never just the first match overall. */
+ * locations) -- the FIRST raw text for a given pair wins, never just the first match overall.
+ * The dedupe key normalises `\` to `/` (gate round 2 fix, Low): `src\foo.ts:42` and
+ * `src/foo.ts:42` are the same location, so without this they rendered as two. `raw` itself is
+ * NEVER normalised -- the advisor's own text is always shown and copied verbatim. */
 export function extractAdvisoryLocations(text: string, guidance?: string): AdvisoryLocation[] {
   const combined = guidance ? `${text}\n${guidance}` : text
   const seen = new Set<string>()
@@ -38,7 +53,7 @@ export function extractAdvisoryLocations(text: string, guidance?: string): Advis
   for (const match of combined.matchAll(LOCATION_PATTERN)) {
     const path = match[1]!
     const line = Number(match[2])
-    const key = `${path}:${line}`
+    const key = `${path.replace(/\\/g, '/')}:${line}`
     if (seen.has(key)) continue
     seen.add(key)
     locations.push({

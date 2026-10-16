@@ -78,10 +78,10 @@ export type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
 export function rowVisibility(row: AdvisoryGroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
   if (row.kind === 'thought-run') return transcriptDisplay.thinking ? 'visible' : 'hidden'
-  // #558: a run of six-plus consecutive concerns is never hidden by "Show tool calls" off --
-  // matches a plain `advisory` item's own "never hidden" rule below (`groupToolItems` only ever
-  // groups `tool` items, so neither kind is ever part of the filtered `ToolGroup`/`StageGroup`
-  // set this function otherwise governs).
+  // #558: every concern run (including a run of one, always wrapped by `groupAdvisoryItems`) is
+  // never hidden by "Show tool calls" off -- matches a plain `advisory` item's own "never
+  // hidden" rule below (`groupToolItems` only ever groups `tool` items, so neither kind is ever
+  // part of the filtered `ToolGroup`/`StageGroup` set this function otherwise governs).
   if (row.kind === 'advisory-run') return 'visible'
   if (transcriptDisplay.toolCalls) return 'visible'
   // Issue #563: Stage groups follow the lone-subagent rule below (cancelled counts as visible too).

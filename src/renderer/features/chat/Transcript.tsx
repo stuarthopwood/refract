@@ -31,7 +31,6 @@ import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
-import { useAdvisoryAnnouncement } from './useAdvisoryAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -133,14 +132,16 @@ interface TranscriptRowProps {
   pending: PendingRequest[]
   userName: string | undefined
   resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
+  /** Gate round 2 fix: reuses the SAME `suppressLogAnnouncements` "Load N earlier turns" mechanism, instead of a second one-off flag. */
+  onAdvisoryReveal: () => void
 }
 
 // Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
-  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} />
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal }: TranscriptRowProps) {
+  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} />
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
@@ -426,8 +427,6 @@ export function Transcript({
   // Gate fix (H3): the per-Stage settle announcement lives in its own hook (file-size baseline)
   // -- the single out-of-log announcer, rendered as a sibling of `revealedAnnouncement` below.
   const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
-  const advisoryAnnouncement = useAdvisoryAnnouncement(turnsWithStages) // #558 gate round 1 High fix
-
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
   // `isFirstRow` tracks the very first rendered row across the whole transcript (no margin at
@@ -1017,6 +1016,7 @@ export function Transcript({
                             pending={pending}
                             userName={userName}
                             resolvedAskByRequestId={resolvedAskByRequestId}
+                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)}
                           />
                         </MessageScrollerItem>
                       )
@@ -1064,7 +1064,6 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
-        <span role="status" aria-live="polite" className="sr-only">{advisoryAnnouncement}</span>
         <Button
           ref={buttonRef}
           type="button"
