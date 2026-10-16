@@ -185,20 +185,31 @@ async function typeSearch(cdp, text) {
   await cdp.send('Input.insertText', { text });
 }
 
-async function readAnnouncement(cdp, { timeoutMs = 30_000 } = {}) {
-  return cdp.waitFor(`(${ANNOUNCE_REGION})?.textContent?.trim() || ''`, { timeoutMs, label: 'search announcement region non-empty' });
+// Both announcement checks below wait for the EXACT (or matching) text to appear, rather than
+// reading "whatever is there now" -- a region that already holds a PREVIOUS announcement (for
+// example this same search field's own earlier "Filter cleared") reads as non-empty the instant
+// a poll runs, before the real, newly-debounced update has landed; waiting for the specific
+// expected value removes that race instead of needing a hand-tuned sleep before every read.
+async function waitForAnnouncementText(cdp, regionExpr, expected, { timeoutMs = 10_000 } = {}) {
+  await cdp.waitFor(`((${regionExpr})?.textContent?.trim() || '') === ${JSON.stringify(expected)}`, {
+    timeoutMs,
+    label: `announcement reads ${JSON.stringify(expected)}`
+  });
+}
+async function waitForAnnouncementMatch(cdp, regionExpr, regexSource, { timeoutMs = 10_000 } = {}) {
+  return cdp.waitFor(
+    `(() => { const t = (${regionExpr})?.textContent?.trim() || ''; return new RegExp(${JSON.stringify(regexSource)}).test(t) ? t : false; })()`,
+    { timeoutMs, label: `announcement matches /${regexSource}/` }
+  );
 }
 
 /** Ctrl+N's own fallback text (`announceQuickCreateFallback`, `lib/quickCreateFallback.ts`)
  *  goes through the APP-LEVEL `useChatAreaAnnouncer` (App.tsx's single global
  *  `aria-live="polite"` region, shared with #735's Collapse/Expand announcements) -- a
- *  DIFFERENT region from the search field's own local one `readAnnouncement` reads, so it needs
- *  its own finder: the first `aria-live="polite"` region that is NOT nested inside the search
- *  field's own `data-session-search-region` wrapper. */
+ *  DIFFERENT region from the search field's own local one, so it needs its own finder: the
+ *  first `aria-live="polite"` region that is NOT nested inside the search field's own
+ *  `data-session-search-region` wrapper. */
 const CHAT_AREA_ANNOUNCE_REGION = `Array.from(document.querySelectorAll('[aria-live="polite"]')).find((el) => !el.closest('[data-session-search-region]'))`;
-async function readChatAreaAnnouncement(cdp, { timeoutMs = 10_000 } = {}) {
-  return cdp.waitFor(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent?.trim() || ''`, { timeoutMs, label: 'chat area announcement region non-empty' });
-}
 
 async function connectCdp(port, targetPid) {
   const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
@@ -298,8 +309,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.evaluate(`document.activeElement?.blur()`);
   await pressKey(cdp, 78, 'n', 'KeyN', 2); // Ctrl+N (modifiers bitmask: Ctrl = 2)
   await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT})`, { timeoutMs: 10_000, label: 'Ctrl+N focuses the search field once it is the reason no Project is visible' });
-  const ctrlNAnnouncement = await readChatAreaAnnouncement(cdp);
-  assert(ctrlNAnnouncement === 'Clear the filter to choose a project for the new session', `Ctrl+N's own announcement must name the filter (got ${JSON.stringify(ctrlNAnnouncement)})`);
+  await waitForAnnouncementText(cdp, CHAT_AREA_ANNOUNCE_REGION, 'Clear the filter to choose a project for the new session');
   log('STEP PASS: Ctrl+N, when the search hides every Project (and no Session pane is open yet to resolve one directly), focuses the search field and announces the correct, filter-aware fallback text.');
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Ctrl+N check' });
@@ -329,8 +339,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(EMPTY_TITLE + ' !== undefined', { timeoutMs: 10_000, label: '"No sessions match" empty state shown' });
   assert((await cdp.evaluate(groupTriggerFinder(repoAName) + ' === undefined')) === true, 'Project A group must be gone from the DOM on zero matches');
   assert((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B group must be gone from the DOM on zero matches');
-  const zeroAnnouncement = await readAnnouncement(cdp);
-  assert(zeroAnnouncement === 'No sessions match', `announcement on zero matches must read "No sessions match" (got ${JSON.stringify(zeroAnnouncement)})`);
+  await waitForAnnouncementText(cdp, ANNOUNCE_REGION, 'No sessions match');
   log('STEP PASS: a non-matching query shows the empty state, hides every group, and announces "No sessions match".');
   await cdp.screenshot(path.join(evidenceDir, '01-dark-no-matches.png'));
 
@@ -350,8 +359,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'open', 'Project A must show OPEN while a query matches it, overriding its own saved collapsed state');
   const rowsDuringSearch = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
   assert(rowsDuringSearch.includes(sessionA1Name), `the matching Session row ("${sessionA1Name}") must render inside Project A (got: ${JSON.stringify(rowsDuringSearch)})`);
-  await sleep(600); // debounce window
-  const matchAnnouncement = await readAnnouncement(cdp);
+  const matchAnnouncement = await waitForAnnouncementMatch(cdp, ANNOUNCE_REGION, '^Showing 1 of \\d+ sessions$');
   assert(/^Showing 1 of \d+ sessions$/.test(matchAnnouncement), `announcement must read "Showing 1 of N sessions" (got ${JSON.stringify(matchAnnouncement)})`);
   log(`STEP PASS: a name query shows only the matching Session, forces its Project open, hides the sibling Project; announced ${JSON.stringify(matchAnnouncement)}.`);
   await cdp.screenshot(path.join(evidenceDir, '02-dark-one-match-forced-open.png'));
@@ -374,8 +382,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(SEARCH_INPUT + `.value === ''`, { timeoutMs: 5_000, label: 'Esc clears the field' });
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Esc' });
   assert((await groupState(cdp, groupTriggerFinder(repoAName))) === 'closed', 'Project A must return to its saved CLOSED state after Esc (the in-search Collapse/Expand clicks above never touched the saved layout)');
-  const clearedAnnouncement = await readAnnouncement(cdp);
-  assert(clearedAnnouncement === 'Filter cleared', `Esc must announce "Filter cleared" immediately (got ${JSON.stringify(clearedAnnouncement)})`);
+  await waitForAnnouncementText(cdp, ANNOUNCE_REGION, 'Filter cleared');
   await sleep(400);
   const settingsAfterSearch = readJson(path.join(dataDirForSettings, 'settings.json'));
   assert(
