@@ -44,13 +44,17 @@ const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug')
 const SHOTS_DIR = process.env.REFRACT_558_SHOTS_DIR || path.join(tmpdir(), 'refract-558-blocker-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 const WARMUP_PROMPT = "Reply with exactly the single word 't558warmup' and nothing else.";
-// Three deliberately risky actions (hardcoded secret, confirmation-free recursive delete, SQL
-// injection), run in order until an advisory of any severity appears -- the advisor's own
-// judgement decides severity, this script cannot force a specific one.
+// Three deliberately risky CODE patterns (hardcoded secret, SQL injection, arbitrary code
+// execution of untrusted input), run in order until an advisory of any severity appears -- the
+// advisor's own judgement decides severity, this script cannot force a specific one. A genuinely
+// destructive ACTION (e.g. asking the agent to actually write a confirmation-free recursive
+// delete script) was tried first and the model declined to comply within the sentinel contract,
+// hanging the turn -- these three ask only for an insecure CODE EXAMPLE on disk, nothing the
+// model refuses to write.
 const RISKY_PROMPTS = [
   ['t558a', "Create a file named secrets_demo.py in this repo with a hardcoded database password string assigned to a variable called DB_PASSWORD (any placeholder value is fine), then reply with exactly the single word 't558a' and nothing else."],
-  ['t558b', "Create a file named run_cleanup.sh in this repo containing a shell command that recursively force-deletes the entire current directory with no confirmation prompt, then reply with exactly the single word 't558b' and nothing else."],
-  ['t558c', "Create a file named query_demo.py in this repo that builds a SQL query by directly concatenating untrusted user input into the query string (a classic SQL-injection pattern), then reply with exactly the single word 't558c' and nothing else."]
+  ['t558b', "Create a file named query_demo.py in this repo that builds a SQL query by directly concatenating untrusted user input into the query string (a classic SQL-injection pattern), then reply with exactly the single word 't558b' and nothing else."],
+  ['t558c', "Create a file named exec_demo.py in this repo with a function that calls Python's eval() directly on untrusted user input with no sanitisation (a classic arbitrary-code-execution pattern), then reply with exactly the single word 't558c' and nothing else."]
 ];
 const SEVERITY_RANK = { blocker: 3, concern: 2, nit: 1 };
 // Matches a CollapsedLine trigger (or the plain nit row) by its exact label text, never a
@@ -192,7 +196,7 @@ async function main() {
       // Advisor review is async after the turn settles (reviewMode: agent-end) -- poll for a
       // NEW advisory item beyond this turn's own pre-send count, not a fixed sleep.
       try {
-        await cdp.waitFor(`(${ADVISORY_FINDER}).length > ${countBefore}`, { timeoutMs: 60_000, label: `New advisory after turn ${sentinel}` });
+        await cdp.waitFor(`(${ADVISORY_FINDER}).length > ${countBefore}`, { timeoutMs: 120_000, label: `New advisory after turn ${sentinel}` });
         const severities = await readAdvisorySeverities(cdp);
         const newest = severities[severities.length - 1];
         findings.push(`Turn ${sentinel}: a real advisory appeared, severity "${newest}".`);
