@@ -21,12 +21,22 @@
 // and the lookbehind's exclusion set -- without them, `node_modules/@scope/pkg/index.js:3` and
 // `~/proj/foo.ts:1` matched only their OWN tail (`scope/pkg/index.js:3`, `/proj/foo.ts:1`),
 // silently showing, copying and sending a WRONG path to the agent, which is worse than showing
-// none (decision 4's own "conservative"). A path containing a literal SPACE (e.g.
-// `C:\Program Files\x\foo.ts:1`) still extracts only its tail after the space: a space must stay
-// a valid match-START boundary (it is how a path named mid-sentence, "see src/foo.ts:42 for
-// details", is found at all), so this one case is an accepted, documented limitation rather than
-// a defect to chase -- it is no worse than the pre-existing "no match" the issue already accepts
-// for an unparseable note.
+// none (decision 4's own "conservative"). Two related cases are NOT fixed, and are accepted,
+// documented limitations rather than defects to chase, because -- unlike `@`/`~`/`+`, which are
+// ordinary PATH characters that simply needed adding to both sides of the lookbehind -- fixing
+// either would require treating a character that is ALSO the normal, common boundary a path is
+// found after/within as something else, which breaks the far more common case it exists for:
+// - A path containing a literal SPACE (`C:\Program Files\x\foo.ts:1`) still extracts only its
+//   tail after the space, because a space must stay a valid match-START boundary -- it is how a
+//   path named mid-sentence ("see src/foo.ts:42 for details") is found at all; excluding it would
+//   silently stop matching the overwhelmingly common no-space case to fix a rarer one.
+// - `Location:src/a.ts:1` (a label with no space before the path) never matches at all, because
+//   `:` is already excluded from the lookbehind (gate round 1, to keep the line-number
+//   delimiter unambiguous) -- the same exclusion that correctly rejects a URL's own
+//   scheme-qualified host also rejects this label's own colon as a valid preceding character.
+//   Widening the exclusion set for one would widen it for the other; "no match" here is the
+//   same conservative fallback the issue already accepts for any unparseable note.
+//
 const LOCATION_PATTERN =
   /(?<![\w./\\:@~+-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|~[\\/]|\/)?[\w./\\@~+-]{1,260}\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|m|mm|sql|sh|ps1|ya?ml|toml|json|md|css|scss|html|vue|svelte)):(\d+)(?::(\d+))?\b/gi
 

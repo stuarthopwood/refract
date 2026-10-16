@@ -132,16 +132,17 @@ interface TranscriptRowProps {
   pending: PendingRequest[]
   userName: string | undefined
   resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
-  /** Gate round 2 fix: reuses the SAME `suppressLogAnnouncements` "Load N earlier turns" mechanism, instead of a second one-off flag. */
+  /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
   onAdvisoryReveal: () => void
+  onQueuedAnnounce: (text: string) => void
 }
 
 // Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal }: TranscriptRowProps) {
-  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} />
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+  if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
@@ -204,7 +205,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
       return <AgentMessageRow item={item} />
 
     case 'advisory':
-      return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} />
+      return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} onQueuedAnnounce={onQueuedAnnounce} />
 
     case 'request': {
       const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
@@ -1016,7 +1017,7 @@ export function Transcript({
                             pending={pending}
                             userName={userName}
                             resolvedAskByRequestId={resolvedAskByRequestId}
-                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)}
+                            onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
                           />
                         </MessageScrollerItem>
                       )

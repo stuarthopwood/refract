@@ -2526,9 +2526,11 @@ live-measured at 0px; its other four items are untouched.
   state) -- the error colour on a blocker row AT ALL TIMES, collapsed or expanded; the warning
   colour on a concern row only while expanded; `CollapsedLine.tsx` itself is untouched, no new
   prop added. A blocker defaults open (`useState` initializer) live or reopened from history
-  alike, with no focus steal on auto-expansion -- one out-of-log status announcement
-  (`useAdvisoryAnnouncement.ts`, modelled on `useStageSettleAnnouncement.ts`), never a per-row
-  live region, never re-announced for an id already seen. The expanded body, in order, shows
+  alike, with no focus steal on auto-expansion -- the row's own mount into the transcript's
+  `role="log"` is decision 9's one polite announcement (gate round 2 correction: an earlier
+  separate out-of-log hook, `useAdvisoryAnnouncement.ts`, was deleted outright after it turned
+  out to still re-announce on a Session/Conversation switch and still double-read a live
+  arrival; see T249). The expanded body, in order, shows
   the note, the guidance, then any `path:line`/`path:line:column` location(s) the note or
   guidance names, extracted by a new pure `src/renderer/lib/advisory-locations.ts` (a
   conservative, allowlisted-code-extension regex with a corrected lookbehind anchor so a drive
@@ -2584,3 +2586,30 @@ live-measured at 0px; its other four items are untouched.
   wrap behaviour at 360px now match every other `CollapsedLine` consumer
   (`contentClassName={LABEL_COLUMN_CONTENT_CLASS}`). `node scripts/ci-local.mjs` 16/16 PASS;
   `pnpm typecheck` clean; `check:theme-contrast` 427/427.
+
+- [X] T250 [US1] Gate rounds 2 and 3 remediation (five-reviewer each, 2026-10-16): round 2
+  (Code/Tests/A11y/architect unanimous) found two new Highs the round 1 live run never checked
+  the CONTENT of: (H-A) round 1's own out-of-log `useAdvisoryAnnouncement` hook still
+  re-announced on a Session/Conversation switch (`seenRef` never reset) and on "Load earlier"
+  (read the windowed turn list), and still double-read a live arrival -- deleted entirely; the
+  row's own mount into `role="log"` is decision 9's one announcement by construction. (H-B) the
+  `<advisory>` tag wrapper was parsed as a raw CommonMark HTML block by the sanitised Markdown
+  renderer and silently dropped from the posted user bubble (live-proven via screenshot) --
+  replaced with a fenced block, length-capped, advisor name inside. Round 2 ALSO shipped a
+  `FocusHandoffOnUnmount` wrapper meant to hand focus to "+ Show" when a sixth concern hides the
+  oldest visible row, conditionally applied only at the overflow boundary -- round 3 (Code/Tests
+  High) found this wrapper actually stole focus on EVERY re-render of an overflowed run (its
+  cleanup was keyed to an inline callback, a new identity each render), still dropped focus on
+  the FIRST overflow (unwrapped below the threshold), and remounted row 0 at the boundary by
+  swapping element type. Fixed by wrapping every visible row unconditionally, with an
+  empty-dependency cleanup reading the callback through a ref. Round 3 also fixed: the
+  advisor-name ask-agent fence now omits the line entirely when unset (not "Advisor: unknown");
+  the quoted note's own fence uses a dedicated `advisor-note` info string (`Markdown.tsx`'s
+  `code` renderer wraps only this one, every other fence keeps scrolling sideways unchanged); a
+  queued (not yet sent) Ask-agent now announces "Queued for agent" via the existing
+  `revealedAnnouncement` span, no new one added; the payload truncation no longer splits a
+  surrogate pair; the Ask-agent button reverted to `COMPOSER_DISABLED_OPACITY_CLASS` alone (the
+  hover-reset class was stripping the outline button's own hover fill); the location regex's own
+  comment reconciled its "wrong path is worse than none" principle with the space-containing-path
+  and no-space-after-label limitations it still accepts. `node scripts/ci-local.mjs` 16/16 PASS
+  both rounds.

@@ -102,6 +102,13 @@ async function probeTokenBorderColor(cdp, className) {
   return cdp.evaluate(`(() => { const probe = document.createElement('span'); probe.style.position = 'fixed'; probe.className = ${JSON.stringify(className)}; document.body.appendChild(probe); const c = getComputedStyle(probe, '::before').backgroundColor; probe.remove(); return c; })()`);
 }
 
+// `pressTab`'s own Shift-modified counterpart (gate round 3, M3 focus-ring proof): CDP's
+// `Input.dispatchKeyEvent` modifier bitmask has Shift at bit 3 (value 8).
+async function pressShiftTab(cdp) {
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', modifiers: 8 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', modifiers: 8 });
+}
+
 async function main() {
   let dataDir, importSourceDir, repoDir, exeDir, launcherDir;
   let child;
@@ -269,21 +276,18 @@ async function main() {
         else if (!clipboardText.startsWith(expectedPrefix)) failures.push(`Clipboard reads "${clipboardText.slice(0, 80)}...", expected it to start with "${expectedPrefix}" (decision 6).`);
         else findings.push(`Copy advisory wrote the REAL OS clipboard (read back directly, not via the sandboxed renderer API): "${clipboardText.slice(0, 80)}${clipboardText.length > 80 ? '…' : ''}".`);
 
-        // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent (BEFORE
-        // Ask-agent itself runs, since sending introduces a new reply turn that can shift
-        // which row this turn's own advisory now is) ----
-        // A direct `.focus()`, never a click: the row is ALREADY open here (a blocker
-        // auto-opens, a concern was just manually opened above), and `CollapsibleTrigger` is a
-        // TOGGLE button -- clicking it again would collapse it, unmounting Copy/Ask-agent and
-        // sending the next two Tabs into whatever transcript row happens to follow instead (the
-        // exact "Thought for 1s" / "Done bash..." wrong targets an earlier run hit, and the
-        // reason this collapsed row's own Ask-agent button went missing for the step after it).
+        // ---- Keyboard-only: Tab from the trigger reaches Copy then Ask-agent, then Shift+Tab
+        // back proves the trigger's own focus-ring/z-index fix (gate round 3: the previous
+        // version's `.focus()` + immediate screenshot proved nothing -- a script `.focus()`
+        // right after a prior real click does not set Chromium's `:focus-visible`, so the
+        // z-[1] lift (which applies only under `:focus-visible`) was never even in play; the
+        // 06-focused-trigger.png from that run shows no ring on any side, confirming it). ----
         try {
+          // `Emulation.setFocusEmulationEnabled` first: the offscreen scratch WebView2 instance
+          // likely has no real OS window focus, under which `:focus-visible` never paints
+          // regardless of how focus is set.
+          await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
           await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
-          // Gate round 2 (M3): a keyboard-focused trigger's own inset ring is raised above the
-          // accent bar via a `[data-slot=collapsible-trigger]:focus-visible` z-index lift --
-          // screenshot the focused state directly, since no earlier run captured one.
-          await cdp.screenshot(path.join(SHOTS_DIR, '06-focused-trigger.png'));
           await pressTab(cdp);
           const afterTab1 = (await getActiveElementAccessibleName(cdp)).name;
           await pressTab(cdp);
@@ -296,11 +300,41 @@ async function main() {
           } else {
             failures.push(`Keyboard Tab order from the trigger reached "${afterTab1}" then "${afterTab2}", expected "Copy advisory" then "Ask agent to address this...".`);
           }
+          // Shift+Tab twice: back to Copy, then back to the trigger itself -- via REAL keyboard
+          // navigation this time, the only way Chromium actually sets `:focus-visible`.
+          await pressShiftTab(cdp);
+          await pressShiftTab(cdp);
+          const ring = await cdp.evaluate(`(() => {
+            const el = (${ADVISORY_FINDER})[${targetIndex}];
+            const style = getComputedStyle(el);
+            return {
+              isTrigger: el === document.activeElement,
+              focusVisible: el.matches(':focus-visible'),
+              position: style.position,
+              zIndex: style.zIndex,
+              outlineStyle: style.outlineStyle,
+              outlineWidth: style.outlineWidth
+            };
+          })()`);
+          if (!ring.isTrigger) {
+            failures.push(`Shift+Tab twice from Ask-agent did not land back on the trigger (decision 12 reverse order).`);
+          } else if (!ring.focusVisible) {
+            notExercised.push('The trigger did not match :focus-visible after a real Shift+Tab sequence even with focus emulation enabled -- the M3 stripe/focus-ring z-index fix is code-reviewed only this run.');
+          } else if (ring.position !== 'relative' || ring.zIndex !== '1' || ring.outlineStyle !== 'solid' || ring.outlineWidth !== '2px') {
+            failures.push(`Focused trigger computed style was position:${ring.position} z-index:${ring.zIndex} outline:${ring.outlineStyle} ${ring.outlineWidth}, expected position:relative z-index:1 outline:solid 2px (decision 1's stripe/focus-ring fix, gate round 2/3).`);
+          } else {
+            findings.push(`Keyboard-focused trigger confirmed :focus-visible with the accent-bar z-index lift active (position:relative, z-index:1, a solid 2px outline) -- the fix that raises it above the stripe is proven live, not just code-reviewed.`);
+            // Clipped to the row's own left edge (where the stripe and the ring's left side
+            // overlap) -- a full-window shot would not show whether the fix actually works.
+            const rect = await cdp.evaluate(`(() => { const r = (${ADVISORY_FINDER})[${targetIndex}].getBoundingClientRect(); return { x: Math.max(0, r.x - 4), y: r.y, width: Math.min(240, r.width + 8), height: r.height }; })()`);
+            const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 1 } });
+            writeFileSync(path.join(SHOTS_DIR, '06-focused-trigger.png'), Buffer.from(data, 'base64'));
+          }
           // Return focus to the trigger (a plain .focus(), same reasoning as above) so the row
           // is left exactly as the Ask-agent step below expects it: open, trigger focused.
           await cdp.evaluate(`(${ADVISORY_FINDER})[${targetIndex}].focus()`);
         } catch (err) {
-          notExercised.push(`Keyboard Tab-order check did not complete (${err.message}).`);
+          notExercised.push(`Keyboard Tab-order/focus-ring check did not complete (${err.message}).`);
         }
 
         // ---- Ask agent to address this <severity>: real chat.send, real new user turn ----
@@ -368,6 +402,26 @@ async function main() {
       if (narrowOverflow) failures.push('A horizontal scrollbar appeared at 360px width.');
       else findings.push('No horizontal scroll at 360px width.');
       await cdp.screenshot(path.join(SHOTS_DIR, '03-360px.png'));
+      // Gate round 3 fix (Medium): the page-level `scrollWidth` check above only catches a
+      // horizontal SCROLLBAR on the whole document -- a nested element can overflow its OWN
+      // container (clipped, not scrolled) with no effect on that page-level measurement.
+      // Screenshot the advisory row and the posted Ask-agent bubble specifically, the two
+      // surfaces this story actually touches, instead of relying on the generic whole-window
+      // shot to happen to show either one legibly.
+      const rowCountAtNarrow = await cdp.evaluate(`(${ADVISORY_FINDER}).length`);
+      if (rowCountAtNarrow > 0) {
+        await cdp.evaluate(`(${ADVISORY_FINDER})[${rowCountAtNarrow} - 1].scrollIntoView({ block: 'center' })`);
+        await cdp.screenshot(path.join(SHOTS_DIR, '03a-360px-advisory-row.png'));
+      }
+      const hasBubbleAtNarrow = await cdp.evaluate(
+        `!!document.querySelector('[aria-label="Transcript"] [data-slot="message"][data-align="end"]')`
+      );
+      if (hasBubbleAtNarrow) {
+        await cdp.evaluate(
+          `(() => { const b = document.querySelectorAll('[aria-label="Transcript"] [data-slot="message"][data-align="end"]'); b[b.length - 1].scrollIntoView({ block: 'center' }); })()`
+        );
+        await cdp.screenshot(path.join(SHOTS_DIR, '03b-360px-ask-agent-bubble.png'));
+      }
       await cdp.send('Emulation.clearDeviceMetricsOverride', {});
     } catch (err) {
       notExercised.push(`360px width check did not complete (${err.message}).`);
