@@ -129,7 +129,7 @@ The left-nav entry and the list-plus-detail view it opens, listing GitHub issues
 _Avoid_: Issues page, issue log, issue tracker
 
 **Filter tab**:
-One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: Open, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to Open. Pull requests' Overview/Changes pair uses a locally-styled underline variant of the shared Tabs primitive, pending #394's app-wide tab convention; the five Filter tabs keep the shared primitive's default pill styling unchanged.
+One of the tabs across the top of a **Pull requests view**'s or **Issues view**'s list (pull requests: All, Authored by me, Assigned to me, Involves me, Review requested; issues: Open, Assigned to me, Authored by me, Mentions me), narrowing which items the list shows; exactly one is active at a time, defaulting to the first. The Pull requests first tab is **All** (renamed from Open, Stuart 2026-10-16, #499), because the State control in its Filters section (Open, Closed incl. merged, All; default Open) now narrows whichever tab is active. Pull requests Filter tabs are ghost tabs in one row that scrolls sideways, the active one on a subtle background (#499). Pull requests' Overview/Changes pair uses a locally-styled underline variant of the shared Tabs primitive, pending #394's app-wide tab convention.
 _Avoid_: Filter, category, "Created by me" (say Authored by me)
 
 **Review thread**:
