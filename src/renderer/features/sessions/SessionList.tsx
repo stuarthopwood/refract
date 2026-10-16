@@ -357,7 +357,16 @@ export function SessionList() {
                     <EmptyTitle>No sessions match</EmptyTitle>
                   </EmptyHeader>
                   <EmptyContent>
-                    <Button variant="outline" size="sm" onClick={handleClearSearch}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearSearch}
+                      // Gate round 2 fix (ui-architect-v3/a11y-auditor Medium): matches the
+                      // field's own Input and clear (x) button -- `Button`'s base `outline-none`
+                      // draws no focus change at all under forced colours, which strips its
+                      // box-shadow ring.
+                      className="forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+                    >
                       Clear filter
                     </Button>
                   </EmptyContent>

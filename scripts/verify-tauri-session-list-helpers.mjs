@@ -393,3 +393,97 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   await dragResizeHandleBy(400);
   await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width > 250`, { timeoutMs: 10_000, label: 'session list restored to normal width' });
 }
+
+// Issue #559's own session search field -- generic markers any future session-list live check
+// can reuse without re-deriving the selector (#806 file-size split: moved out of
+// `verify-tauri-559.mjs` once it grew past the cap, gate round 2).
+export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-region] input')`;
+
+/** Types into the search field via a real click plus `Input.insertText`. Clears any EXISTING
+ *  text first via real key events (Ctrl+A then Backspace) -- `Input.insertText` only ever
+ *  INSERTS at the caret, so two calls in a row would otherwise silently concatenate onto
+ *  whatever a previous step left behind, not replace it. */
+export async function typeIntoSessionSearch(cdp, text) {
+  await cdp.click(SEARCH_INPUT_FINDER);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select all existing text
+  await pressKey(cdp, 8, 'Backspace', 'Backspace'); // delete the selection
+  await cdp.waitFor(SEARCH_INPUT_FINDER + `.value === ''`, { timeoutMs: 5_000, label: 'search field cleared before typing' });
+  await cdp.send('Input.insertText', { text });
+}
+
+/** Finds a Session row's own open button by the START of its accessible name (the display name,
+ *  before the first comma -- see `SessionRow.tsx`'s own `aria-label` convention). */
+export function sessionOpenButtonFinder(name) {
+  return `Array.from(document.querySelectorAll('[data-repository-id] li [data-session-open]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(name)}))`;
+}
+
+/** Renames a Session via F2 (real key events throughout): focuses `currentFinder` (an
+ *  open-button finder expression, e.g. from `sessionOpenButtonFinder`), presses F2, clears the
+ *  rename input (Ctrl+A, Backspace), types `newName`, and commits with Enter. */
+export async function renameSessionViaF2(cdp, currentFinder, newName) {
+  await cdp.evaluate(`(${currentFinder})?.focus()`);
+  await cdp.waitFor(`document.activeElement === (${currentFinder})`, { timeoutMs: 5_000, label: `open button focused before renaming to ${JSON.stringify(newName)}` });
+  await pressKey(cdp, 113, 'F2', 'F2');
+  await cdp.waitFor(`!!document.querySelector('input[aria-label="Session name"]')`, { timeoutMs: 5_000, label: 'rename input mounted after F2' });
+  await cdp.click(`document.querySelector('input[aria-label="Session name"]')`);
+  await pressKey(cdp, 65, 'a', 'KeyA', 2);
+  await pressKey(cdp, 8, 'Backspace', 'Backspace');
+  await cdp.send('Input.insertText', { text: newName });
+  await pressKey(cdp, 13, 'Enter', 'Enter'); // commits
+}
+
+/** Issue #559 gate round 2 (ui-architect-v3/a11y-auditor High/Medium), all from one setup. A1's
+ *  own branch still equals `sessionA1Name` (spec 001 Assumptions: "the same generated name is
+ *  used for the session's branch and as its initial display name"; renaming never changes it).
+ *  Renaming A1 ONCE decouples name from branch, so searching the ORIGINAL value afterward can
+ *  only match via BRANCH -- real proof of decision 12's "name OR branch OR Project name" rule,
+ *  not a coincidence of the two being identical, and the same query upper-cased proves case-
+ *  insensitivity. A SECOND rename, to something matching neither the new name, the unchanged
+ *  branch, nor either Project's own name, makes the row (and Project A, its own only remaining
+ *  match) actually unmount -- proving the #900 focus-redirect fix (`useSessionRowActions.ts`'s
+ *  `useLayoutEffect` cleanup) moves focus to the search field, never `<body>`. Finally proves
+ *  the query survives switching to Project B's own open Session, not just a Settings round
+ *  trip. Returns the Session's final name, reused by the caller for an Archived-reverse check
+ *  afterward. */
+export async function proveRenameMatchingAndSessionSwitch(cdp, log, { repoAName, repoBName, sessionA1Name, CLEAR_BUTTON }) {
+  await renameSessionViaF2(cdp, sessionOpenButtonFinder(sessionA1Name), 'alpha-renamed-once');
+  const renamedOnceFinder = sessionOpenButtonFinder('alpha-renamed-once');
+  await cdp.waitFor(renamedOnceFinder + ' !== undefined', { timeoutMs: 15_000, label: 'Session A1 shows its new name after the first rename' });
+
+  await typeIntoSessionSearch(cdp, sessionA1Name);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A still matches its own renamed Session by BRANCH' });
+  let rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
+  assertTrue(rows.includes('alpha-renamed-once'), `the renamed row must still show, matching via its unchanged branch (got ${JSON.stringify(rows)})`);
+  log(`STEP PASS: branch matching -- Session A1, renamed to "alpha-renamed-once", still matches a query for its own unchanged branch ("${sessionA1Name}").`);
+
+  await typeIntoSessionSearch(cdp, sessionA1Name.toUpperCase());
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'an upper-cased query still matches (case-insensitive)' });
+  rows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-repository-id] li')).map((el) => el.textContent).join('|')`);
+  assertTrue(rows.includes('alpha-renamed-once'), `an upper-cased query must match case-insensitively (got ${JSON.stringify(rows)})`);
+  log('STEP PASS: case-insensitive matching confirmed with an upper-cased query.');
+
+  await typeIntoSessionSearch(cdp, 'alpha-renamed-once');
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A matches its own just-renamed Session by NAME' });
+  const renamedTwiceName = 'zzz-unmatched-after-second-rename-zzz';
+  await renameSessionViaF2(cdp, renamedOnceFinder, renamedTwiceName);
+  await cdp.waitFor(`document.activeElement === (${SEARCH_INPUT_FINDER})`, {
+    timeoutMs: 15_000,
+    label: 'focus redirected to the search field once the renamed row (and its own now-matchless Project) unmounts (#900 pattern)'
+  });
+  assertTrue((await cdp.evaluate(groupTriggerFinder(repoAName) + ' === undefined')) === true, 'Project A must actually be gone -- its only Session no longer matches by name, branch, or Project name');
+  log('STEP PASS: renaming a Session out of the active filter (new name matching neither name, branch, nor Project) moves focus to the search field instead of <body>, once the row and its now-matchless Project actually unmount.');
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the rename-focus check' });
+
+  await typeIntoSessionSearch(cdp, repoBName);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' === undefined', { timeoutMs: 10_000, label: 'Project A hidden before the Session-switch check' });
+  const projectBOpenButtonFinder = `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoBName)}))?.querySelector('li [data-session-open]')`;
+  await cdp.click(projectBOpenButtonFinder);
+  await cdp.waitFor(`(${projectBOpenButtonFinder})?.getAttribute('aria-current') === 'true'`, { timeoutMs: 10_000, label: "Project B's own Session opened (switched to)" });
+  assertTrue((await cdp.evaluate(SEARCH_INPUT_FINDER + '.value')) === repoBName, 'the query text must survive switching to a different Session, not just a Settings round trip');
+  log('STEP PASS: the search query survives switching to a different open Session.');
+  await cdp.click(CLEAR_BUTTON);
+  await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the Session-switch check' });
+
+  return { renamedTwiceName };
+}

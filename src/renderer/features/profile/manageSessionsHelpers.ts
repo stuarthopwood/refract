@@ -66,4 +66,3 @@ export function distinctRepositoryCount(sessions: SessionSummary[]): number {
   return new Set(sessions.map((session) => session.repositoryId)).size
 }
 
-
