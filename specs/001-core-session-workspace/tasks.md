@@ -2136,10 +2136,17 @@ merged `origin/main` again at that point, `node scripts/ci-local.mjs` re-ran 16/
   slot without stranding focus on `<body>` on close; the header actions' opacity at rest/hover/
   keyboard-focus measured WHILE the group still has its one active Session (not after archiving,
   gate round 1's own Medium finding on the first run); the marker-column alignment measured at
-  both header triggers' own right edge (within 1px); decision 24's empty-Project line; the
-  archived row's Project name, icon and accessible description (via its own `aria-describedby`
-  element's `textContent`); everything T262 already covered. `node scripts/ci-local.mjs` 16/16
-  PASS; `pnpm test` 148/148.
+  both header triggers' own `getBoundingClientRect().right` -- **0px delta, an exact match**;
+  decision 24's empty-Project line; the archived row's Project name, icon and accessible
+  description (via its own `aria-describedby` element's `textContent`); everything T262 already
+  covered. Three harness bugs found and fixed while re-running (not product bugs): the header-
+  actions-at-rest probe needed an explicit blur first (`createSessionViaQuickCreate`'s own click
+  left the "+" button focused, which `group-focus-within` then kept revealed); the hover target
+  needed to be the header's own div, not the whole repository container (which also spans the
+  row list below it); `DeleteDialog` is an `AlertDialog` (`role="alertdialog"`), not
+  `role="dialog"`, so its Cancel button needed its own selector. `node scripts/ci-local.mjs`
+  16/16 PASS; `pnpm test` 148/148. Evidence (13 screenshots, `report.txt`, and 5 JSON
+  diagnostics) kept at `C:/Users/shopwood/AppData/Local/Temp/refract-567-gate1-shots/`.
 
 **Not exercised this phase** (stated plainly, not hidden): the mock image itself was not
 available to diff pixel-for-pixel against (only the decision record's own textual description
