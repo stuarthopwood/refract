@@ -242,22 +242,21 @@ async function main() {
     const statusAfterOff = await sendSlashCommand(cdp, '/advisor status');
     findings.push(`"/advisor status" literal reply right after off (nothing in between): ${JSON.stringify(statusAfterOff)}`);
 
+    // The Conversation file (and so its artifacts folder, where __advisor*.jsonl would live) does
+    // NOT exist yet after slash commands alone -- confirmed live: `getArtifactsDir` timed out
+    // after off+status with no real turn sent. Only a REAL turn creates it, so the "before"
+    // baseline for the off-phase is definitionally zero (nothing could exist before the first
+    // thing that creates the folder at all), and the directory is resolved AFTER this turn runs.
+    const beforeOffTurn = { files: [], totalBytes: 0, totalLines: 0 };
+    await sendRealTurn(cdp, 't917boff');
+    findings.push('A real turn completed while the advisor was OFF (the first real turn this Session has had).');
     const sessionDir = await getSessionDir(cdp);
     const artifactsDir = await getArtifactsDir(sessionDir);
     findings.push(`Session dir: ${sessionDir}`);
     findings.push(`Conversation artifacts dir (where __advisor*.jsonl actually lives): ${artifactsDir}`);
-    const beforeOffTurn = measureAdvisorFiles(artifactsDir);
-    findings.push(
-      `__advisor*.jsonl before the off-phase turn: files=${JSON.stringify(beforeOffTurn.files)} bytes=${beforeOffTurn.totalBytes} lines=${beforeOffTurn.totalLines}`
-    );
-
-    // ---- A real turn while the advisor is OFF (poll for up to 45s: a review is async, so even
-    // a failed "off" would not necessarily grow the file instantly) ----
-    await sendRealTurn(cdp, 't917boff');
-    findings.push('A real turn completed while the advisor was OFF.');
     const afterOffTurn = await pollForGrowth(artifactsDir, beforeOffTurn, 45_000);
     findings.push(
-      `__advisor*.jsonl after the off-phase turn (polled up to 45s): files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
+      `__advisor*.jsonl after the off-phase turn (polled up to 45s; baseline was definitionally zero, nothing existed before the first real turn): files=${JSON.stringify(afterOffTurn.files)} bytes=${afterOffTurn.totalBytes} lines=${afterOffTurn.totalLines}`
     );
     const grewWhileOff = afterOffTurn.totalBytes > beforeOffTurn.totalBytes || afterOffTurn.totalLines > beforeOffTurn.totalLines;
 
