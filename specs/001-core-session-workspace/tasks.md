@@ -2489,8 +2489,9 @@ live-measured at 0px; its other four items are untouched.
   reopen a second time. `node scripts/ci-local.mjs` 16/16 PASS; `pnpm typecheck` clean.
 
 - [X] T247 [US1] Live CDP check, final run against the pushed commit: **PASS, zero failures**
-  (`C:/Users/shopwood/AppData/Local/Temp/refract-557-gate1-shots/report.json`, git HEAD and exe
-  sha256 logged by the chained build+verify command run from the committed, pushed HEAD). A real
+  (`C:/Users/shopwood/AppData/Local/Temp/refract-557-gate1-shots/report.json`, git HEAD
+  `99895233da20ecf41b3846f27195377d5a73bb75` -- `git rev-parse HEAD`, the build, and the CDP run
+  chained in one command, working tree clean -- exe sha256 `3bd03be5…`). A real
   2-member `ThoughtRun` materialised live and the gate's own growth-with-focus sequence was
   proved: the SAME DOM element that was solo (keyboard-focused, Enter-expanded) was still the
   header after it grew to 2 members, with focus unmoved, the run still expanded, and member 1
