@@ -2613,3 +2613,38 @@ live-measured at 0px; its other four items are untouched.
   comment reconciled its "wrong path is worse than none" principle with the space-containing-path
   and no-space-after-label limitations it still accepts. `node scripts/ci-local.mjs` 16/16 PASS
   both rounds.
+
+## Phase 48: Convergence
+
+- [X] T251 [US7] Issue #917 (Decided, Stuart, 2026-10-16): allow `/advisor` (on, off, status) per
+  Session, forwarded to omp, session-scoped and not persisted. `src/shared/slash-commands.ts`
+  gains `advisor: ['on', 'off', 'status']` in `SUPPORTED_OMP_COMMANDS`, with a header note
+  explaining this one entry was never run by `docs/spike/slash-commands-probe.mjs` (its own
+  `DENYLIST` regex names `advisor`, so it sits in `contracts/omp-usage.md`'s "needs-decision"
+  bucket) -- included anyway by explicit decision, verified instead by this story's own live
+  check against a real signed-in profile. `src-tauri/src/session/agent/commands.rs`'s
+  `supported_omp_subcommands` gains the matching `"advisor" => Some(&["on", "off", "status"])`
+  arm for TS/Rust parity (the IPC parity gate compares both sides). No renderer change: a
+  `ui-architect-v3` roundtable (Decided, Skippy, delegated by Stuart 2026-10-16) confirmed the
+  other session-scoped on/off/status commands (`fast`, `slow`, `extended-context`) carry no
+  indicator anywhere in Refract, so `/advisor` needs no new component, store or message kind --
+  its reply already renders through the existing forwarded-command path (a `command_output`
+  frame becomes a transcript `notice` row, same as `/usage show`/`/session info`). No Settings
+  toggle and no cost readout (`advisor_cost_changed` stays unread): both out of this story's
+  decided scope.
+- [X] T252 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with a dated
+  `### Session 2026-10-16 (advisor command)` Clarifications entry recording the decision, the
+  `ui-architect-v3` confirmation, and the probe-bypass rationale; `contracts/omp-usage.md`'s
+  "Slash command classification" section gained a paragraph recording `advisor`'s inclusion
+  despite staying counted in the unchanged 138 `needs-decision` row (the probe table itself is a
+  historical record of that run, not edited); `CONTEXT.md` gained an **Advisor** glossary entry
+  distinguishing the subsystem from the existing **Advisory** terms (the note it produces);
+  `docs/PLAN.md`'s new Advisor toggle row records #917 and #475 (the related, broader "enable the
+  advisor at all" OMP-feature-batch row, not a duplicate: #475 is about whether Refract ever
+  launches omp with the advisor on at all, #917 is narrowly the in-app per-Session switch).
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #917). `node
+scripts/ci-local.mjs` (16/16) was run after the build; see the PR body for the exact result and
+the live-check evidence (a scratch Tauri debug instance, `/advisor status`, `/advisor on`, a real
+turn, `/advisor off`, and the slash menu listing).

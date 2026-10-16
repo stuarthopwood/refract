@@ -153,6 +153,34 @@
 
 - Q: Gate round 1 (code-reviewer/accessibility-auditor/ui-architect-v3, three independent reviewers): the blocker's own mount-time live region sat inside the transcript's `role="log"`, double-announcing a live arrival and re-announcing on every remount; "+ Show N more" unmounted on activation, dropping focus to `<body>`; a collapsed blocker lost its stripe; decision 10's "focus stability is a non-issue" was false once a sixth concern remounted every existing row. Fix? → A: Amended above: "+ Show N more" moves focus to the first newly revealed row in a `useLayoutEffect`; the stripe now shows on a blocker row at all times, collapsed or expanded; every concern run, including a run of one, is always wrapped (matching a Tool group/Thought run), so a sixth concern's own arrival never remounts rows 1-5. The blocker's own announcement fix (moving it to one out-of-log status span) turned out to be WRONG: that span still re-announced on a Session/Conversation switch and "Load earlier" (its `seenRef` was never reset, and it read the windowed turn list), and still double-read a live arrival alongside the transcript's own log addition. Gate round 2 (code-reviewer/accessibility-auditor/ui-architect-v3 unanimous): deleted the separate announcer entirely -- the blocker row's own mount into the transcript's `role="log"` IS decision 9's one polite announcement (matching #570's Error-line precedent), silent by construction on every remount (a switch, a history reopen, a reveal are never log ADDITIONS) and firing exactly once on a genuine live arrival, with no second channel to double it. Revealing a hidden concern run now also suppresses log announcements for one frame (the same mechanism "Load N earlier turns" uses), so N newly-revealed rows read as one reveal, not N separate announcements. Also fixed: the Ask-agent message's `<advisory>` tag wrapper was parsed as a raw CommonMark HTML block by the sanitised Markdown renderer and silently dropped from the posted user bubble (the agent still received it); replaced with a fenced code block, length-capped, with the advisor name moved inside it. The location regex gained `@`/`~`/`+` support and a `~/` prefix; its dedupe key now normalises `\` to `/`.
 
+### Session 2026-10-16 (advisor command)
+
+- Q: Issue #917 (Decided, Stuart, 2026-10-16): omp's advisor subsystem never reaches a Session
+  because `/advisor` is not in the slash-command allowlist, even though the advisor is already
+  real and reachable in Refract (a live blocker advisory arrived during the #558 live check,
+  since the Refract-launched omp profile already carries `advisor.enabled: true`). How should a
+  developer turn it on or off? → A: Option 1, a per-Session `/advisor` toggle, not a Settings
+  toggle: `/advisor on`, `/advisor off` and `/advisor status` are added to the supported
+  slash-command set (FR-032), session-scoped and not persisted; typing `/advisor on` enables the
+  advisor for that Session, `/advisor off` disables it, `/advisor status` shows its state as a
+  transcript notice, and the slash-command menu lists `advisor` with the short description OMP's
+  own `get_available_commands` supplies for it. No Settings toggle and no cost readout
+  (`advisor_cost_changed` stays unread) for now.
+- Q: Decided (Skippy, delegated by Stuart 2026-10-16; `ui-architect-v3` roundtable, full decision
+  record on the issue): does this toggle need any new UI (an indicator, a dedicated message kind,
+  a cost readout)? → A: No. `fast`, `slow` and `extended-context` -- the other session-scoped
+  on/off/status commands -- carry no indicator anywhere in Refract today, so `/advisor` needs no
+  parity addition; its reply already renders through the existing forwarded-command path (a
+  `command_output` frame becomes a transcript `notice` row, the same as `/usage show` or
+  `/session info`). No new component, store or message kind was added.
+- Q: `/advisor` was one of the probe's own denylisted names (`docs/spike/slash-commands-probe.mjs`
+  `DENYLIST`), so the T092/18.5.1 run this allowlist is built from never sent it -- does FR-032's
+  "verified to run" bar still hold? → A: Yes, satisfied a different way: issue #917's own live
+  check against a real signed-in profile (`/advisor status`, `/advisor on`, a real turn, `/advisor
+  off`) stands in for the probe run, the same bar applied to every other entry just run by hand
+  once instead of through the probe script (`contracts/omp-usage.md` "Slash command
+  classification" records the detail).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)

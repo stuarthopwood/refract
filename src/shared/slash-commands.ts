@@ -18,6 +18,21 @@
 //   stay out until verified against a real, signed-in profile -- unchanged from the prior (now
 //   superseded) run's same three names.
 //
+// Deliberately INCLUDED despite the probe's own DENYLIST regex naming it (never sent, so never
+// verified by docs/spike/slash-commands-probe.mjs -- `contracts/omp-usage.md`'s "Slash command
+// classification" table counts it in the 138-strong "needs-decision" bucket): 'advisor' (on,
+// off, status). Issue #917, Decided (Stuart, 2026-10-16): the advisor subsystem is real and
+// reachable in Refract today (a live blocker advisory arrived during the #558 live check,
+// because the Refract-launched omp profile already carries `advisor.enabled: true`), but
+// Refract had no in-app way to turn it on for a Session whose profile leaves it off, and no way
+// to turn it off for one where it is on. Verified instead by issue #917's own live check against
+// a real signed-in profile (a scratch Session running `/advisor status`, `/advisor on`, a real
+// turn, then `/advisor off`) -- the same verified-before-listed bar FR-032 sets for a probe run,
+// just run by hand once instead of through `slash-commands-probe.mjs` (`omp://advisor-watchdog.md`
+// already documents the exact three subcommands; the live check instead confirms Refract's own
+// forwarding path and that OMP's real `chat.commands` descriptor for a signed-in profile lists
+// them). No Settings toggle and no cost readout: both stay out of this story's decided scope.
+//
 // Critical remediation (issue #129, 2026-10-03): the allowlist used to be keyed on the
 // command's top-level NAME ONLY, so an unverified SUBCOMMAND of an allowed parent -- one the
 // probe explicitly denylisted and never ran, e.g. `/todo copy` (overwrites the real OS
@@ -55,6 +70,7 @@ export const SUPPORTED_OMP_COMMANDS: Readonly<Record<string, readonly string[]>>
   fast: ['on', 'ultra', 'off', 'status'],
   slow: ['on', 'off', 'status'],
   'extended-context': ['on', 'off', 'status'],
+  advisor: ['on', 'off', 'status'],
   prewalk: ['restart'],
   effort: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'],
   dump: ['all'],
