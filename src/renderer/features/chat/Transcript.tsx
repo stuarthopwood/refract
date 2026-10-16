@@ -129,7 +129,7 @@ interface TranscriptRowProps {
   item: AdvisoryGroupedTranscriptItem
   sessionId: string | null
   pending: PendingRequest[]
-  userName: string | undefined
+  userName: string | undefined; hideTime?: boolean // #555 amendment: hides a user row's own time under a directly-above TimeGapDivider (see UserMessageRowProps)
   resolvedAskByRequestId: Map<string, ToolItem | undefined> // keyed by request.requestId
   /** Both reuse EXISTING Transcript mechanisms (gate round 2/3): reveal -> suppressLogAnnouncements; queued -> revealedAnnouncement. */
   onAdvisoryReveal: () => void
@@ -140,7 +140,7 @@ interface TranscriptRowProps {
 // docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
 // pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
-function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
   if (isStageGroup(item)) return <StageGroupRow group={item} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
@@ -150,7 +150,7 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
     case 'user':
       // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow`
       // (split out to keep this file within its `check:file-size` baseline).
-      return <UserMessageRow item={item} userName={userName} />
+      return <UserMessageRow item={item} userName={userName} hideTime={hideTime} />
 
     case 'assistant-text':
       return (
@@ -999,7 +999,7 @@ export function Transcript({
                             item={row}
                             sessionId={sessionId}
                             pending={pending}
-                            userName={userName}
+                            userName={userName} hideTime={showTimeGapDivider && row.kind === 'user'}
                             resolvedAskByRequestId={resolvedAskByRequestId}
                             onAdvisoryReveal={() => setSuppressLogAnnouncements(true)} onQueuedAnnounce={setRevealedAnnouncement}
                           />

@@ -12,11 +12,13 @@
 //     `now_ms()` fallback) instead of every other fixture's deliberately-zeroed placeholder.
 //   - `user-message-time-reopen.jsonl` (launch 2): scripts the real `switch_session`/`get_state`/
 //     `set_ask_dialog`/`get_messages_page` reattach sequence, with a canned history response
-//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: four messages whose
-//     `timestamp` fields this script computes AT RUN TIME (via the new `$histTodayAt`/
-//     `$histYesterdayAt`/`$histThisYearAt`/`$histPastYearAt` sentinels) so each lands in the
-//     day-aware bucket `UserMessageRow.tsx`'s `formatMessageTime` is meant to show, plus one
-//     message with no timestamp at all.
+//     exercising `items_from_history`'s `.unwrap_or(0)` path directly: four messages, OLDEST
+//     FIRST (a past year, earlier this year, yesterday, today, so `TimeGapDivider` renders a
+//     sensible, forward-chronological divider between each pair), whose `timestamp` fields this
+//     script computes AT RUN TIME (via the new `$histTodayAt`/`$histYesterdayAt`/
+//     `$histThisYearAt`/`$histPastYearAt` sentinels) so each lands in the day-aware bucket
+//     `UserMessageRow.tsx`'s `formatMessageTime` is meant to show, plus one message with no
+//     timestamp at all.
 // Both reference the new `$conversationFile` sentinel (`verify-tauri-fake-omp.mjs`), seeded from
 // `REFRACT_FAKE_OMP_CONVERSATION_FILE` -- a REAL file this script pre-creates on disk, since
 // `assert_conversation_file_exists` (launch_support.rs) checks the persisted Session's
@@ -42,11 +44,15 @@
 //        included) is compared against.
 //     5. Turn 2's `<time>` also renders with its own fresh, real `at`.
 //   Launch 2 (reopened Conversation, same REFRACT_DATA_DIR, a genuine second app launch):
-//     6. Four historical messages (today, yesterday, earlier this year, a past year) each render
-//        a `<time>` whose visible label and `dateTime` match this script's OWN computed expected
-//        value for that exact bucket (a JS re-implementation of `formatMessageTime`, kept in
-//        sync by comment).
-//     7. The historical message with NO `timestamp` key renders NO `<time>` row at all (`at === 0`,
+//     6. The FIRST historical message (a past year, no `TimeGapDivider` above it -- there is no
+//        preceding turn to compare against) renders its own `<time>`, whose visible label and
+//        `dateTime` match this script's OWN computed expected value (a JS re-implementation of
+//        `formatMessageTime`, kept in sync by comment).
+//     7. Stuart's hide-under-a-divider amendment: every LATER historical message (earlier this
+//        year, yesterday, today) sits directly under a real `TimeGapDivider` (asserted present,
+//        `role="separator"`, as the wrapper's own previous sibling) and renders NO `<time>` row
+//        of its own -- the divider already shows that exact date and time.
+//     8. The historical message with NO `timestamp` key renders NO `<time>` row at all (`at === 0`,
 //        "hide rather than invent").
 //
 // Note on fidelity: launch 2 reaches the Session via `[data-session-open]` (the existing row
@@ -173,9 +179,13 @@ function worktreesDirFor(repoDir) {
  * `bubble.previousElementSibling` made the "outside the bubble's box" check true by
  * construction -- a `<time>` that moved INSIDE the bubble would then just read as "no `<time>`
  * found", never as "inside the box". Searching the whole wrapper instead means `insideBubbleBox`
- * and the hidden-when-`at===0` check both genuinely test where the element is, wherever it
- * renders), or `null` if `item.at === 0` hid it (`UserMessageTime` returns `null`). Also reports
- * the wrapper's own class list, so the caller can check the turn-gap margin on the SAME probe. */
+ * and the hidden-when-`at===0`/hidden-under-a-divider checks all genuinely test where the
+ * element is, wherever it renders), or `null` if `item.at === 0`/non-finite/`hideTime` hid it
+ * (`UserMessageTime` returns `null`). A missing WRAPPER (gate round 2 Main review: hardened --
+ * this used to fall through to `hasTime: false`, so a broken wrapper lookup could silently read
+ * as "hidden", never as a probe failure) is now its own `error`, never inferred as hidden. Also
+ * reports the wrapper's own class list (turn-gap margin) and whether a `TimeGapDivider`
+ * (`role="separator"`) sits as the wrapper's own immediately preceding sibling. */
 function timeAndMarginProbeExpr(messageText) {
   return `
     (() => {
@@ -185,10 +195,12 @@ function timeAndMarginProbeExpr(messageText) {
         .find((el) => el.textContent.includes(${JSON.stringify(messageText)}));
       if (!bubble) return { error: 'no matching user bubble for ' + ${JSON.stringify(messageText)} };
       const wrapper = bubble.closest('[data-slot="message-scroller-item"]');
-      const timeEl = wrapper ? wrapper.querySelector('time') : null;
+      if (!wrapper) return { error: 'no message-scroller-item wrapper found for ' + ${JSON.stringify(messageText)} };
+      const precededByDivider = wrapper.previousElementSibling != null && wrapper.previousElementSibling.getAttribute('role') === 'separator';
+      const timeEl = wrapper.querySelector('time');
       const bubbleRect = bubble.getBoundingClientRect();
       if (!timeEl) {
-        return { hasTime: false, wrapperClassName: wrapper ? wrapper.className : null };
+        return { hasTime: false, wrapperClassName: wrapper.className, precededByDivider };
       }
       const timeRect = timeEl.getBoundingClientRect();
       return {
@@ -198,7 +210,8 @@ function timeAndMarginProbeExpr(messageText) {
         insideBubbleBox: !!timeEl.closest('[data-slot="message-content"]'),
         timeBottom: timeRect.bottom,
         bubbleTop: bubbleRect.top,
-        wrapperClassName: wrapper ? wrapper.className : null,
+        wrapperClassName: wrapper.className,
+        precededByDivider,
       };
     })()
   `;
@@ -427,10 +440,10 @@ async function main() {
     await cdp2.screenshot(path.join(SHOTS_DIR, '05-relaunch-history.png'));
 
     const histBuckets = [
-      { text: HIST_TODAY_TEXT, label: 'reopen (today)', date: histToday },
-      { text: HIST_YESTERDAY_TEXT, label: 'reopen (yesterday)', date: histYesterday },
-      { text: HIST_THIS_YEAR_TEXT, label: 'reopen (this year)', date: histThisYear },
-      { text: HIST_PAST_YEAR_TEXT, label: 'reopen (past year)', date: histPastYear },
+      { text: HIST_PAST_YEAR_TEXT, label: 'reopen (past year)', date: histPastYear, expectDivider: false },
+      { text: HIST_THIS_YEAR_TEXT, label: 'reopen (this year)', date: histThisYear, expectDivider: true },
+      { text: HIST_YESTERDAY_TEXT, label: 'reopen (yesterday)', date: histYesterday, expectDivider: true },
+      { text: HIST_TODAY_TEXT, label: 'reopen (today)', date: histToday, expectDivider: true },
     ];
     for (const bucket of histBuckets) {
       const probe = await cdp2.evaluate(timeAndMarginProbeExpr(bucket.text));
@@ -439,8 +452,24 @@ async function main() {
         failures.push(`${bucket.label}: probe failed: ${probe.error}`);
         continue;
       }
+      if (probe.precededByDivider !== bucket.expectDivider) {
+        failures.push(`${bucket.label}: expected a TimeGapDivider directly above = ${bucket.expectDivider}, got ${probe.precededByDivider} -- the fixture's own chronological ordering may have changed`);
+        continue;
+      }
+      if (bucket.expectDivider) {
+        // Stuart's hide-under-a-divider amendment: the divider above already shows this exact
+        // date and time, so the per-message row must be hidden, not merely redundant.
+        if (probe.hasTime) {
+          failures.push(`${bucket.label}: a TimeGapDivider sits directly above this message, but it still rendered a <time> row (dateTime="${probe.dateTime}") -- should be hidden`);
+        } else {
+          findings.push(`${bucket.label}: a TimeGapDivider sits directly above this message and its own per-message <time> row is correctly hidden (Stuart's hide-under-a-divider amendment).`);
+        }
+        continue;
+      }
+      // No divider above it (the very first turn in the reopened history): keeps its own time,
+      // matching the exact expected day-aware label and dateTime.
       if (!probe.hasTime) {
-        failures.push(`${bucket.label}: rendered NO <time> row at all, expected the day-aware label`);
+        failures.push(`${bucket.label}: no TimeGapDivider sits above this message, but it rendered NO <time> row at all`);
         continue;
       }
       const expectedIso = bucket.date.toISOString();
@@ -451,7 +480,7 @@ async function main() {
       } else if (probe.visibleText !== expectedLabel) {
         failures.push(`${bucket.label}: visible text "${probe.visibleText}" does not match the expected day-aware label "${expectedLabel}"`);
       } else {
-        findings.push(`${bucket.label}: dateTime matches exactly (${expectedIso}) and the visible label "${probe.visibleText}" matches the expected day-aware format.`);
+        findings.push(`${bucket.label}: no divider above it (the first turn), so its own dateTime matches exactly (${expectedIso}) and the visible label "${probe.visibleText}" matches the expected day-aware format.`);
       }
     }
 

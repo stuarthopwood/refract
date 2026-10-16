@@ -9,6 +9,10 @@ export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 interface UserMessageRowProps {
   item: UserItem
   userName: string | undefined
+  /** Issue #555 amendment (Stuart, 2026-10-16): true when a `TimeGapDivider` already renders
+   * directly above this turn (it shows the same date and time already) -- the per-message row
+   * would just repeat it. */
+  hideTime?: boolean
 }
 
 // Locale-aware "yesterday" (issue #555, amended 2026-10-16, Stuart's own call, gate round 1
@@ -37,7 +41,7 @@ function formatMessageTime(date: Date): string {
   if (dayDiff === 0) return time
   if (dayDiff === 1) {
     const word = RELATIVE_DAY_FORMAT.format(-1, 'day')
-    return `${word[0]!.toUpperCase()}${word.slice(1)} ${time}`
+    return `${word[0]!.toLocaleUpperCase()}${word.slice(1)} ${time}`
   }
   if (date.getFullYear() === now.getFullYear()) return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`
   return `${date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`
@@ -59,7 +63,8 @@ function formatMessageTime(date: Date): string {
 // mid-render, which the chat pane's `ErrorBoundary` would otherwise turn into a dead pane on
 // every reopen of that Conversation). `Number.isFinite(date.getTime())` catches both the
 // Invalid-Date case and any other non-finite result in one guard.
-function UserMessageTime({ at }: { at: number }) {
+function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }) {
+  if (hide) return null
   if (at === 0) return null
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return null
@@ -76,11 +81,11 @@ function UserMessageTime({ at }: { at: number }) {
 // `w-fit max-w-[85%]` keeps the bubble sized to its own content and caps it well short of the
 // transcript's left edge, so it never touches it regardless of message length.
 // `UserMessageTime` renders as a sibling ABOVE this whole `Message`, never inside it.
-export function UserMessageRow({ item, userName }: UserMessageRowProps) {
+export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps) {
   const name = userName ?? 'You'
   return (
     <>
-      <UserMessageTime at={item.at} />
+      <UserMessageTime at={item.at} hide={hideTime} />
       <Message align="end">
         <MessageAvatar aria-hidden className="text-xs font-medium">
           {initials(name)}
