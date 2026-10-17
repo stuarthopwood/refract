@@ -2,51 +2,35 @@
 // Live CDP check for issue #927 (quiet composer: transparent fill, faint border, muted focus
 // outline, ghost pickers in Dark and Obsidian; Dark high contrast keeps its 3:1 edges and full
 // ring) and issue #928 (composer status line 13px text, 14px icons), shipped together per
-// `docs/PLAN.md`'s own "v0.3.0 feedback" row ("Suggested order: #927 and #928 together, both
-// composer chrome").
+// `docs/PLAN.md`'s "v0.3.0 feedback" row.
 //
-// Drives a REAL `omp` (resolved from PATH, ambient already-signed-in default profile, no
-// `OMP_PROFILE` override), the same isolation posture `verify-570-tool-colours.mjs`/
-// `verify-565-spine.mjs` already use: scratch cwd/worktree/`REFRACT_DATA_DIR` never touch
-// Stuart's real Session list. No prompt is ever sent to the agent -- every assertion below is a
-// static `getComputedStyle()`/DOM read, needing only an OPEN, enabled Session (composer
-// `disabled` clears once the real agent attaches), never a turn, so this spends no model tokens.
+// Drives a REAL `omp` (ambient signed-in profile, no `OMP_PROFILE` override), the same isolation
+// posture `verify-570-tool-colours.mjs`/`verify-565-spine.mjs` use: scratch cwd/worktree/
+// `REFRACT_DATA_DIR` never touch Stuart's real Session list. No prompt is ever sent -- every
+// assertion is a static `getComputedStyle()`/DOM read, so this spends no model tokens.
 //
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
-// scripts/verify-927-928-quiet-composer.mjs (requires a prior
-// `pnpm tauri build --debug --no-bundle`, same convention every `verify-5xx-*.mjs`/`verify-9xx-*
-// .mjs` script in this repo already documents).
+// scripts/verify-927-928-quiet-composer.mjs (requires a prior `pnpm tauri build --debug
+// --no-bundle`, the same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script documents).
 //
-// Per theme (Dark, Obsidian, Dark high contrast), this measures:
-//   (a) the composer box's own resting `background-color`/`border-color` (transparent fill +
-//       faint border in Dark/Obsidian; the old opaque fill + opaque border, unchanged, in Dark
-//       high contrast);
-//   (b) the SAME box's focus-visible `border-color`/`box-shadow` once the textarea is focused
-//       (text fields always qualify for `:focus-visible` regardless of input modality, so a
-//       script `.focus()` call is a genuine test here) -- muted border, no glow, in Dark/
-//       Obsidian; the old opaque border + `ring-ring/50` glow, unchanged, in Dark high contrast;
-//   (c) the Approval pill, Model/Reasoning pickers, and Attach button (`badgeVariants`/
-//       `Button`-based ghost triggers) at rest -- no fill in any theme, but a visible, enforced
-//       resting BORDER in Dark (high contrast) only (U1 decision 3, item 6) -- and their
-//       settled `outline-color` (`document.getAnimations().forEach((a) => a.finish())` first,
-//       item 4/M3) once reached by a REAL keyboard Tab (never a script `.focus()` call, since a
-//       `<button>`'s own `:focus-visible` genuinely depends on keyboard-vs-pointer input
-//       modality, unlike a text field), asserted against the resolved `--composer-focus` value;
-//   (d) Send's own settled outline-color after the SAME real-Tab chain -- which must land on
-//       Send FIRST, before the bottom row, since Send sits earlier in DOM order (item 3, T2) --
-//       asserted against the resolved `--ring` value, contrasted against the ghost controls'
-//       muted one, to prove the #927 split (Send/Stop stayed on the old, opaque `--ring` token)
-//       actually took effect;
-//   (e) issue #928: every status-line chip (found by the structural `data-slot="readout-chip"`
-//       attribute, never by `.text-readout` itself) computed `font-size` (13px) and its icon's
-//       RENDERED `getBoundingClientRect` size (14px x 14px) -- a real failure (never
-//       `notExercised`) if the status line mounted but no chip matched, or any size differs.
+// Per theme (Dark, Obsidian, Dark high contrast):
+//   (a)/(b) the composer box's resting and focus-visible `background-color`/`border-color`/
+//       `box-shadow` (transparent fill, faint border, no glow in Dark/Obsidian; unchanged opaque
+//       fill/border/full ring in Dark high contrast);
+//   (c)/(d) the Approval pill, Model/Reasoning pickers and Attach button's resting styles (no
+//       fill anywhere; a visible resting border ONLY in Dark high contrast, item 6/U1) and their
+//       settled (`document.getAnimations().forEach((a) => a.finish())`, item 4/M3) outline-color
+//       once reached by a REAL keyboard Tab that must land on Send FIRST (item 3/T2, DOM order),
+//       asserted against the resolved `--composer-focus`/`--ring` values;
+//   (hover, item 5/T3) a real CDP `mouseMoved` over each ghost trigger: pointer cursor + a faint
+//       fill delta when enabled, not-allowed + no fill change when `aria-disabled`;
+//   (e) issue #928: every status-line chip's (`[data-slot="readout-chip"]`) computed font-size
+//       (13px) and icon RENDERED `getBoundingClientRect` size (14px) -- a real failure, never
+//       `notExercised`, if the status line mounted but no chip matched or any size differs.
 //
-// The exe under test is tied to the commit two ways (the established convention this repo's
-// `verify-5xx-*.mjs` scripts all follow): rebuild immediately before this script runs (never a
-// reused, possibly sibling-lane-clobbered exe), and assert #927/#928-only strings
-// (`composer-border`, `text-readout`) are present in the built renderer bundle before trusting
-// anything else.
+// The exe under test is tied to the commit two ways: rebuilt immediately before this script runs
+// (never a reused, possibly sibling-lane-clobbered exe), and #927/#928-only markers
+// (`composer-border`, `text-readout`) asserted present in the built renderer bundle first.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -65,6 +49,7 @@ import {
   switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { pressTab } from './verify-tauri-session-list-helpers.mjs';
+import { assertGhostHoverStates } from './verify-927-928-hover.mjs';
 import { parseComputedColorToEntry, measuredContrastRatio, hasVisibleShadow } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +86,16 @@ const MODEL_PICKER_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => { const l = el.getAttribute('aria-label') || ''; return l.includes(', model') || /^model\b/i.test(l); })`;
 const REASONING_PICKER_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => { const l = el.getAttribute('aria-label') || ''; return l.includes(', reasoning') || /^reasoning\b/i.test(l); })`;
+// Item 5 (T3, hover): the same four ghost triggers `readGhostControlRestingStyles` reads,
+// keyed identically (`approvalPill`/`modelPicker`/`reasoningPicker`/`attachButton`) so a
+// hover read can be compared directly against its own resting background without a second
+// name-mapping table.
+const GHOST_HOVER_TARGETS = [
+  ['approvalPill', APPROVAL_PILL_FINDER],
+  ['modelPicker', MODEL_PICKER_FINDER],
+  ['reasoningPicker', REASONING_PICKER_FINDER],
+  ['attachButton', ATTACH_BUTTON_FINDER]
+];
 
 /** (a)/(b) above: the composer box's own resting and focus-visible computed styles. Focuses the
  * textarea directly via `.focus()` -- a genuine `:focus-visible` test, since text fields always
@@ -146,27 +141,19 @@ async function readGhostControlRestingStyles(cdp) {
   })()`);
 }
 
-/** (c)/(d) above: a REAL keyboard Tab chain starting from a REAL click on the message field
- * (verified against `document.elementFromPoint`, never a scripted `.focus()` call anywhere in
- * this chain) -- confirmed live (gate feedback): a scripted `.focus()` starting point produced
- * unreliable subsequent Tab landings (Send's own step intermittently landed in the sidebar's
- * session-search field instead of the composer's Send button).
+/** (c)/(d) above: a REAL keyboard Tab chain from a REAL click on the message field (verified
+ * against `document.elementFromPoint`, never a scripted `.focus()` call -- confirmed live, a
+ * scripted start produced unreliable Tab landings).
  *
- * Item 3 (T2, gate951Test): Send sits in DOM order BEFORE the bottom row (MessageInput.tsx: the
- * Send/Stop button div is a sibling of the Textarea, directly inside the field row; the
- * Approval/Model/Reasoning/Attach row is the NEXT sibling after that) -- so the FIRST real Tab
- * off the textarea must land on Send, not somewhere inside the bottom row; landing anywhere else
- * on that first Tab is a real failure (`wrongPosition`), not merely "found it eventually". Walks
- * the bottom row afterward with a bounded step cap, recording each of Approval/Model/Reasoning/
- * Attach the first time its own aria-label is reached (never assuming a fixed step count per
- * destination, since an intervening tabbable element -- e.g. the right-pane `ResizableHandle`
- * -- can sit between any two of them); any one not reached within the cap is a real failure, not
- * a skip.
+ * Item 3 (T2): Send sits in DOM order BEFORE the bottom row (MessageInput.tsx: the Send/Stop
+ * div is a sibling of the Textarea; Approval/Model/Reasoning/Attach is the next sibling after
+ * that), so the FIRST real Tab must land on Send -- landing elsewhere is `wrongPosition`, a real
+ * failure. Walks the bottom row afterward with a step cap, recording each of Approval/Model/
+ * Reasoning/Attach the first time reached (never a fixed step count, since an intervening
+ * tabbable element can sit between any two); not reached within the cap is a real failure.
  *
- * Item 4 (M3, settled outline colours): `document.getAnimations().forEach((a) => a.finish())`
- * runs before every outline read below -- a focus-visible outline-colour CSS transition can
- * still be mid-flight the instant a Tab lands, which would otherwise read an in-between colour,
- * neither the resting nor the settled one, and fail a since-correct assertion. */
+ * Item 4 (M3): `document.getAnimations().forEach((a) => a.finish())` runs before every outline
+ * read -- an outline-colour CSS transition can still be mid-flight the instant a Tab lands. */
 async function readFocusOutlineChain(cdp) {
   const fieldRect = await cdp.evaluate(`(() => {
     const field = document.querySelector('[aria-label="Message"]');
@@ -295,6 +282,7 @@ async function main() {
   const findings = [];
   const failures = []; // Wrong measured values, or a target genuinely missing -- ALWAYS fails the run.
   const notExercised = []; // Genuine skips only (timing, an optional path not reached).
+  let anyDisabledTriggerSeen = false; // Item 5 (T3): true only if a real aria-disabled ghost trigger was ever hovered.
   let exeHash = null;
   let gitHeadSha = null;
   let dirty = 'unknown';
@@ -452,6 +440,13 @@ async function main() {
         }
       }
 
+      // ---- (hover, item 5/T3): real CDP mouseMoved over each ghost trigger (helper split into
+      // `verify-927-928-hover.mjs`, file-size #806 ratchet) -- pointer cursor + a faint fill
+      // delta for an enabled trigger, not-allowed + no fill change for an aria-disabled one. ----
+      if (await assertGhostHoverStates(cdp, theme.name, GHOST_HOVER_TARGETS, ghostResting, findings, failures)) {
+        anyDisabledTriggerSeen = true;
+      }
+
       // ---- (c)/(d): real keyboard Tab chain -- T2 (Send precedes the bottom row in DOM order)
       // plus the settled, resolved outline-colour split (item 4/M3) ----
       const chain = await readFocusOutlineChain(cdp);
@@ -551,6 +546,9 @@ async function main() {
         }
       }
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-02-status-line.png`));
+    }
+    if (!anyDisabledTriggerSeen) {
+      notExercised.push('Item 5 (T3) aria-disabled hover check: no ghost trigger was ever aria-disabled in this run -- this scratch harness never sends a turn, and a picker only disables while the Session is working/needs-you or stopped, neither of which this script produces.');
     }
 
     const report = {
