@@ -37,10 +37,12 @@
 //     Escapes) still returns focus to the row's own Triage button, unaffected.
 //   - Gate round 2 F2 (failed Stop announced as success): `window.refract.sessions.stopAgent`
 //     is monkey-patched in the renderer (no real process touched) to force one Session's Stop
-//     to resolve `{ok:false}` -- single and bulk (mixed with genuinely-succeeding Sessions) --
-//     and confirms the live region announces the real outcome, naming the failing Session(s),
-//     never claiming success; the forced-failed Session stays listed since it was never
-//     actually stopped.
+//     to resolve `{ok:false}` -- both its own per-row Stop AND "Stop idle" (bulk, n=1 -- a
+//     second concurrently-idle Session would race issue #512's real low-memory start-defer
+//     feature this harness's own REFRACT_FORCE_LOW_MEMORY=1 triggers, confirmed live) -- and
+//     confirms the live region announces the real outcome, naming the failing Session, never
+//     claiming success; the forced-failed Session stays listed since it was never actually
+//     stopped.
 //
 // Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-559.mjs.
 // Uses the already-frozen exe named by REFRACT_560_FROZEN_EXE (default: the path this story's
@@ -272,10 +274,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape (a keyboard-only close of the Triage dialog) returns focus to the alert row\'s own Triage button -- F1\'s second half, unaffected by the blank-space-click fix above.');
 
   // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below. A
-  // settle sleep before each of these two clicks is REQUIRED (same race already documented
-  // above for the Triage button's own first click and the Escape-cancel sequence): the very
-  // next synthetic mouse click right after a flurry of dialog open/close churn is an
-  // intermittent one-shot miss in this WebView2/CDP harness, not an app bug.
+  // settle sleep before each click is REQUIRED (same WebView2/CDP input-timing race documented
+  // above): the very next synthetic click right after a flurry of dialog churn is a one-shot miss.
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
