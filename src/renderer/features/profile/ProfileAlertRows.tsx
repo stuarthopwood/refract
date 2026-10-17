@@ -184,12 +184,26 @@ export function ProfileAlertRows() {
   // triggers item 2 names: the row's own condition clearing on its own, and the user clicking
   // Dismiss (which removes the row the same way). A normal Tab-away is never affected:
   // `relatedTarget` there is the real next focusable element, not `null`/outside the row.
+  //
+  // Gate round 2 (Code FAIL): `document.activeElement === document.body` alone is NOT a removal
+  // signal -- an ordinary click on blank space (anywhere with no focusable target) ALSO blurs
+  // the active element to `<body>` without removing anything, and the previous version redirected
+  // focus straight back to this row every time, stealing it from wherever the user had just
+  // clicked. The actual discriminator is whether `event.target` (the descendant that lost focus)
+  // is still connected to the document: removed-from-DOM leaves it `isConnected === false`, while
+  // a blank-space click leaves the same button sitting right there, still connected.
+  function describesRemoval(event: FocusEvent): boolean {
+    const leaving = event.target as Node | null
+    return leaving !== null && !leaving.isConnected
+  }
+
   useEffect(() => {
     const rowEl = memoryShown ? memoryRowRef.current : null
     if (!rowEl) return
     function handleFocusOut(event: FocusEvent): void {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
+      if (!describesRemoval(event)) return
       queueMicrotask(() => {
         if (document.activeElement === document.body) redirectFocusFrom('memory')
       })
@@ -205,6 +219,7 @@ export function ProfileAlertRows() {
     function handleFocusOut(event: FocusEvent): void {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
+      if (!describesRemoval(event)) return
       queueMicrotask(() => {
         if (document.activeElement === document.body) redirectFocusFrom('ompVersion')
       })
