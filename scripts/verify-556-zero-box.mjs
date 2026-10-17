@@ -90,10 +90,6 @@ const SHOT_NAMES = [
   'c02-approval-card-error-alert.png',
 ];
 
-function nowStamp() {
-  return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
 function assertTrue(cond, message) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
 }
@@ -109,10 +105,11 @@ function buildOmpShim(dir) {
   return out;
 }
 
-/** Ties the exe under test to this story's own commits: greps the just-built renderer bundle
- * (`out/tauri-web/assets/*.js`) for the two edited classNames (the NEW, unboxed strings) and
- * confirms the two OLD boxed strings are gone. Cheap, real proof this build really contains
- * #556's edit, independent of git-log reasoning about timing (same pattern #558/#570 use). */
+/** Ties the exe under test to this story's own commits: greps THIS WORKTREE's just-built renderer
+ * bundle (`out/tauri-web/assets/*.js`) for the two edited classNames (the NEW, unboxed strings)
+ * and confirms the two OLD boxed strings are gone. This only proves the bundle on disk matches
+ * the worktree's source -- it is the live computed-style checks in Phases A/B/C, plus
+ * `assertExeUnchanged`'s sha256 pin, that actually catch a stale exe at runtime. */
 function assertBundleMatchesStory556() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   const files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
@@ -177,7 +174,6 @@ function assertNoBox(style, label) {
 }
 
 async function runPhaseA({ exePath, exeHash, launcherExe, log, results }) {
-  const stamp = nowStamp();
   const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-556-a-shim-'));
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-556-a-data-'));
   const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-556-a-repo-')), 'verify-556a');
@@ -505,7 +501,9 @@ async function runPhaseC({ exePath, exeHash, launcherExe, log, results }) {
 async function main() {
   clearKnownOutputFiles(SHOTS_DIR, 'refract-556-zero-box-shots', SHOT_NAMES);
   const gitHeadSha = gitHead(REPO_ROOT);
-  console.log(`verify-556: git HEAD ${gitHeadSha}`);
+  const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
+  const dirtyLines = gitStatusResult.status === 0 ? gitStatusResult.stdout.split('\n').filter(Boolean) : [];
+  console.log(`verify-556: git HEAD ${gitHeadSha}${dirtyLines.length ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
 
   const buildDir = mkdtempSync(path.join(tmpdir(), 'refract-556-build-'));
   const launcherExe = buildLauncher(buildDir);
@@ -541,9 +539,10 @@ async function main() {
     console.error('verify-556: Phase C FAILED:', err);
   }
 
-  writeFileSync(path.join(SHOTS_DIR, 'report.log'), logLines.join('\n') + '\n');
+  writeFileSync(logPath, logLines.join('\n') + '\n');
   const report = {
     gitHead: gitHeadSha,
+    dirty: dirtyLines.length ? dirtyLines : false,
     exeSha256: exeHash,
     scriptSha256: sha256OfFile(fileURLToPath(import.meta.url)),
     exitCode: passed ? 0 : 1,
