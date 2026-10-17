@@ -109,40 +109,77 @@ function rankCommandsJs(needle, commands) {
  * install actually offers. Returns `{ prefix, wordStart, substring, subsequence }`, each either
  * `{ needle, name }` or `null` if this install's own command set has nothing suitable (a real,
  * reportable gap, not a script bug). */
+/** The single best (lowest) NAME tier any command in `commands` achieves for `needle` (never
+ * the description fallback, which is always worse than every name tier and so can never be the
+ * tier that "beats" a candidate here) -- `null` when nothing matches by name at all. Used as a
+ * guard: a tier's own test query is only valid once this confirms NO command scores a BETTER
+ * tier than the one the query is meant to demonstrate, so the winner is provably on tier merit,
+ * never by coincidence of which command this script happened to pick first. */
+function bestNameTier(needle, commands) {
+  let best = null;
+  for (const command of commands) {
+    const candidates = [command.name];
+    if (command.name.toLowerCase().startsWith('skill:')) candidates.push(command.name.slice('skill:'.length));
+    for (const candidate of candidates) {
+      const tier = scoreAgainstTarget(needle, candidate);
+      if (tier !== null && (best === null || tier < best)) best = tier;
+    }
+  }
+  return best;
+}
+
+/** Finds one real command (and a needle) per requested tier, built algorithmically from
+ * `commands` (never a hardcoded name) so this check works against whatever a real ambient OMP
+ * install actually offers -- and GUARDED by `bestNameTier` so each returned query is only kept
+ * once confirmed that no OTHER real command in this same install scores a BETTER tier for that
+ * needle (otherwise the "tier X wins" proof would be trivially defeated the moment some unrelated
+ * command happens to prefix-match the same two letters). Returns `{ prefix, wordStart, substring,
+ * subsequence }`, each either `{ needle, name }` or `null` if this install's own command set has
+ * nothing that can demonstrate that tier cleanly (a real, reportable gap, not a script bug). */
 function buildTierQueries(commands) {
   const names = commands.map((c) => c.name);
   const result = { prefix: null, wordStart: null, substring: null, subsequence: null };
+
   for (const name of names) {
-    if (result.prefix === null && name.length >= 2) {
-      result.prefix = { needle: name.slice(0, 2), name };
-    }
-    if (result.wordStart === null) {
-      for (let i = 1; i < name.length - 1; i++) {
-        if (WORD_BOUNDARY_CHARS[name[i - 1]] && !WORD_BOUNDARY_CHARS[name[i]]) {
-          result.wordStart = { needle: name.slice(i, i + 2), name };
-          break;
-        }
-      }
-    }
-    if (result.substring === null && name.length >= 4) {
-      // A middle 2-char slice that is neither the prefix nor (per the scan above) right after a
-      // word boundary, so this scorer's own earlier tiers cannot claim it first.
-      const mid = Math.floor(name.length / 2);
-      const slice = name.slice(mid, mid + 2);
-      if (!name.toLowerCase().startsWith(slice.toLowerCase()) && slice.length === 2) {
-        result.substring = { needle: slice, name };
-      }
-    }
-    if (result.subsequence === null && name.length >= 5) {
-      // Drop one interior character so the needle can never be a contiguous substring, but is
-      // always a valid left-to-right subsequence of `name` itself.
-      const dropAt = Math.floor(name.length / 2);
-      const needle = name.slice(0, dropAt) + name.slice(dropAt + 1);
-      if (!name.toLowerCase().includes(needle.toLowerCase())) {
-        result.subsequence = { needle, name };
+    if (result.prefix !== null || name.length < 2) continue;
+    const needle = name.slice(0, 2).toLowerCase();
+    if (bestNameTier(needle, commands) === TIER_PREFIX) result.prefix = { needle, name };
+  }
+
+  for (const name of names) {
+    if (result.wordStart !== null) break;
+    for (let i = 1; i + 2 <= name.length; i++) {
+      if (!WORD_BOUNDARY_CHARS[name[i - 1]] || WORD_BOUNDARY_CHARS[name[i]]) continue;
+      const needle = name.slice(i, i + 2).toLowerCase();
+      if (bestNameTier(needle, commands) === TIER_WORD_START) {
+        result.wordStart = { needle, name };
+        break;
       }
     }
   }
+
+  for (const name of names) {
+    if (result.substring !== null || name.length < 4) continue;
+    for (let mid = 1; mid + 2 <= name.length; mid++) {
+      const needle = name.slice(mid, mid + 2).toLowerCase();
+      if (bestNameTier(needle, commands) === TIER_SUBSTRING) {
+        result.substring = { needle, name };
+        break;
+      }
+    }
+  }
+
+  for (const name of names) {
+    if (result.subsequence !== null || name.length < 5) continue;
+    for (let dropAt = 1; dropAt < name.length - 1; dropAt++) {
+      const needle = (name.slice(0, dropAt) + name.slice(dropAt + 1)).toLowerCase();
+      if (bestNameTier(needle, commands) === TIER_SUBSEQUENCE) {
+        result.subsequence = { needle, name };
+        break;
+      }
+    }
+  }
+
   return result;
 }
 
