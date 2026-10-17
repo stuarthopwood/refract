@@ -121,11 +121,24 @@ async function main() {
     mkdirSync(SHOTS_DIR, { recursive: true });
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
 
-    // Scratch targets turns (b)/(c)/(d) read or edit, committed so `grep`/`read`/`edit` all see
-    // a real, tracked file rather than something the agent would have to create first.
+    // Scratch targets turns (b)/(c)/(d) read or edit, COMMITTED (not merely written to `repoDir`'s
+    // own working copy) so `grep`/`read`/`edit` all see a real, tracked file. A live run first
+    // proved why this matters: Refract creates a brand-new `git worktree` per Session (checked
+    // out from the repository's own committed tree, `src-tauri/src/git/worktrees.rs`), which
+    // never materialises an uncommitted or untracked file sitting only in `repoDir`'s own working
+    // copy -- the agent's `read`/`edit` calls landed in that separate worktree and genuinely
+    // failed with "not found" even though this script had written the files right here.
     writeFileSync(path.join(repoDir, 't632-read-target.txt'), 'one\ntwo\nthree\n');
     writeFileSync(path.join(repoDir, 't632-edit-target.txt'), 'one\ntwo\nthree\n');
     appendFileSync(path.join(repoDir, 'README-t632grep.txt'), 'line containing t632GrepMarker here\n');
+    const seedAdd = spawnSync('git', ['-C', repoDir, 'add', '-A'], { encoding: 'utf8', windowsHide: true });
+    if (seedAdd.status !== 0) throw new Error(`verify-632: git add of scratch targets failed: ${seedAdd.stderr || seedAdd.stdout}`);
+    const seedCommit = spawnSync(
+      'git',
+      ['-C', repoDir, '-c', 'user.name=verify-632-grouped-calls', '-c', 'user.email=verify-632-grouped-calls@example.invalid', 'commit', '-q', '-m', 'seed t632 scratch targets'],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    if (seedCommit.status !== 0) throw new Error(`verify-632: git commit of scratch targets failed: ${seedCommit.stderr || seedCommit.stdout}`);
 
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
@@ -273,7 +286,12 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_E_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632e-done/g) ?? []).length >= 2; })()`, { timeoutMs: 240_000, label: 'Turn (e) finished (subagent done, main agent replied)' });
-    await cdp.clickByLabel('Show subagents panel');
+    // `SubagentChainRow`'s own "Show subagents panel" button only renders for a turn with TWO
+    // OR MORE Stages (FR-065); this turn starts exactly one subagent, so the control that opens
+    // the panel here is the readout bar's own `SubagentsChip` instead, whose accessible name is
+    // dynamic -- "Open subagents panel (1 finished)" (`ReadoutChips.tsx`'s own `phrase`, never a
+    // fixed string) -- hence the prefix match.
+    await cdp.clickByLabel('Open subagents panel', { prefix: true });
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel open' });
     await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"], [role="tree"][aria-label="Subagents"] button')`);
     const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('[role="tabpanel"] button, aside button')).filter((el) => el.querySelector('span.font-medium'))`;
