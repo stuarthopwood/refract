@@ -6,7 +6,7 @@ import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
-import { commandRowText } from './formatToolCommand'
+import { COMMAND_STYLE_TOOLS, commandRowText } from './formatToolCommand'
 import { diffStat } from '@/lib/diff'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
@@ -141,6 +141,17 @@ function joinMetaParts(parts: Array<React.ReactNode | undefined>): React.ReactNo
   )
 }
 
+// Gate round 1 (code-reviewer High, H2): `diffStat` re-diffs on every render of every `edit`
+// row; memoised in a `WeakMap` keyed on `item.edit` (stable for that `TranscriptItem`'s life --
+// a genuinely new result gets a new `edit` object, never a stale cache hit).
+const diffStatCache = new WeakMap<NonNullable<ToolItem['edit']>, { added: number; removed: number } | undefined>()
+function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; removed: number } | undefined {
+  if (diffStatCache.has(edit)) return diffStatCache.get(edit)
+  const stat = diffStat(edit.path, edit.oldText, edit.newText)
+  diffStatCache.set(edit, stat)
+  return stat
+}
+
 // #632 section 3's "muted result" column, for one call's own row (both the solo branch and each
 // nested `ToolCallRow`): an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the
 // same old/new text `DiffView`'s expanded body already diffs, #630) joined with the call's own
@@ -152,13 +163,23 @@ function joinMetaParts(parts: Array<React.ReactNode | undefined>): React.ReactNo
 // three: #630's own field comment notes a diff against "a cached prior read/edit of the same
 // path" was the original idea, but no such cache exists yet (a separate, substantial piece of
 // work), so `write` keeps its existing "Wrote N lines" body text and gets no new row stat either.
+// Gate round 1 (Sec Medium H3): gated on `status === 'done'`, same as `ToolCallBody`'s own
+// "Wrote N lines"/quiet-summary text, since `item.edit` is populated while still running too.
+// Gate round 1 (ui-architect-v3 High H5): a coloured stat broke #570 decisions 1/3 ("success
+// stays neutral") -- both colour classes dropped, `tabular-nums` kept; an sr-only "N lines
+// added, M removed" sits beside the visual "+N −M" (A11y Low).
 function callMeta(item: ToolItem): React.ReactNode | undefined {
-  const stat = item.edit ? diffStat(item.edit.path, item.edit.oldText, item.edit.newText) : undefined
+  const stat = item.status === 'done' && item.edit ? cachedDiffStat(item.edit) : undefined
   const duration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   return joinMetaParts([
     stat ? (
       <span className="tabular-nums">
-        <span className="text-state-working">+{stat.added}</span> <span className="text-destructive">−{stat.removed}</span>
+        <span aria-hidden="true">
+          +{stat.added} −{stat.removed}
+        </span>
+        <span className="sr-only">
+          {stat.added} {stat.added === 1 ? 'line' : 'lines'} added, {stat.removed} {stat.removed === 1 ? 'line' : 'lines'} removed
+        </span>
       </span>
     ) : undefined,
     duration
@@ -185,8 +206,12 @@ function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProp
   // are both claims that the call *succeeded*, so both are gated on `status === 'done'` and
   // never shown for a running, interrupted or exited call (which could still fail, or never
   // actually have written anything).
+  // Gate round 1 (ui-architect-v3 High, H6): #632's own acceptance is that an expanded `bash`
+  // call shows NO output text at all except a failed call's Error line -- `quietSummary` is
+  // skipped for `bash` only (FR-061's "single line, 200 chars or fewer, shows verbatim" rule now
+  // excludes it, spec.md corrected to match); every other tool is unaffected.
   const isDone = item.status === 'done'
-  const summary = isDone ? quietSummary(item.output) : undefined
+  const summary = isDone && item.tool !== 'bash' ? quietSummary(item.output) : undefined
   // Quality-gate remediation (Low): a `content` ending in a trailing newline (the common case for
   // a real file) used to count one line too many -- `split('\n')` turns "a\nb\n" into
   // `['a', 'b', '']`, counting the empty string after the final newline as a line of its own.
@@ -233,14 +258,27 @@ interface ToolCallRowProps {
 // One compact row per tool call, used only for each call nested inside an expanded multi-call
 // group (never at the top-level tree position `ToolGroupRow` itself occupies).
 function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
+  // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a `bash`/`grep` member's own
+  // `summary` (`commandRowText`) already names the tool ("$ ..."/"grep \"...\""), so a separate
+  // `label` read as a duplicate word; dropped for exactly those two tools.
+  const isCommandStyle = COMMAND_STYLE_TOOLS[item.tool]
+  // Gate round 1 (accessibility-auditor Medium, M1): this row had no explicit accessible name
+  // (content-based, lost once `label` is dropped above, and prone to #570's doubled-space
+  // artifact) -- built explicitly from tool, status, `commandRowText` (M1, matches what is
+  // actually shown), and duration.
+  const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
+  const memberAriaLabel = [`${toolStatusLabel(item.status)} ${item.tool} ${commandRowText(item)}`, memberDuration]
+    .filter((part): part is string => !!part)
+    .join(', ')
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
-      label={item.tool}
+      label={isCommandStyle ? undefined : item.tool}
       labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
       summary={commandRowText(item)}
       summaryWrap={summaryWrap}
       meta={callMeta(item)}
+      triggerAriaLabel={memberAriaLabel}
       // #570 decisions 6, 9: a failed member's own Error line, shown whether this row is
       // collapsed or expanded -- no `hideDetailWhenOpen` here, that only applies to the GROUP
       // header below, which this member row is not.
@@ -356,16 +394,20 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // label and the meta slot, matching the issue's own mockup), not replaced with a different
   // single-call description.
   const toolLabel = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
-  const visibleLabel = solo ? toolLabel : `${group.tool} \u00d7${group.items.length}`
+  // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a solo command-style call's own
+  // `summary` already names the tool; the bare label repeated it, so it's dropped for those two
+  // tools only (`toolLabel` still feeds the accessible name, so this is visual-only).
+  const soloIsCommandStyle = solo && skillName === undefined && COMMAND_STYLE_TOOLS[last.tool]
+  const visibleLabel = soloIsCommandStyle ? undefined : solo ? toolLabel : `${group.tool} \u00d7${group.items.length}`
   const summary = skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined
   // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
   // matching the mockup's own worked example (11.8s + 4.1s = 15.9s) -- joins the failed/
-  // interrupted counts below in the meta slot, instead of being left out of the header entirely
-  // (the aria-label a few lines down already illustrated this fact in its own gate-round-2
-  // comment, "...15.9 seconds", before any code actually computed it).
+  // interrupted counts below in the meta slot. Gate round 1 (code-reviewer Medium, M6): a
+  // missing `durationMs` used to be treated as zero, silently understating the real total as a
+  // partial sum presented as complete -- shown only once EVERY member carries its own duration.
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
-  const hasDuration = group.items.some((item) => item.durationMs != null)
-  const totalDuration = !isRunning && hasDuration ? formatDuration(totalDurationMs) : undefined
+  const allHaveDuration = group.items.every((item) => item.durationMs != null)
+  const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
   // #570 decision 12: a multi-call group's own failed/interrupted counts move from the summary
   // text above into this never-shrinking meta slot, "N failed" in the error colour the instant
   // any member fails -- even mid-run, since colour here is reinforcement, not the only signal
@@ -389,7 +431,12 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // Read straight off the raw fields (never off the visual `meta` JSX above, which can carry a
   // coloured diff-stat span the aria string has no use for) so this never breaks if that JSX
   // shape changes.
-  const soloSummaryText = skillName !== undefined ? skillName : last.target
+  // Gate round 1 (accessibility-auditor Medium, M1, WCAG 2.5.3 Label in Name): a solo command-
+  // style call's own VISIBLE summary is `commandRowText` ("$ ..."/"grep \"...\""), but this
+  // accessible-name text used the raw, untransformed target -- the two could read completely
+  // different text for the identical row. `commandRowText` here too, so the visible text and
+  // the accessible name's own description of it can never diverge.
+  const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
   const triggerAriaLabel = solo
     ? [`${toolStatusLabel(status)} ${toolLabel} ${soloSummaryText}`, soloDurationText]
@@ -417,14 +464,19 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       // #570 decisions 6, 9: the group's own Error line while collapsed is the LATEST failed
       // member (replaced by each failed member's own line once expanded -- `hideDetailWhenOpen`
       // only for a multi-call group; a solo call's line has no such condition, decision 6, since
-      // there is no separate "expanded body" of other members to replace it with). Gate round 1
-      // (G909Arch M2): the header's own visible target names the LAST call, which is not always
-      // the one this Error line is about -- prefixed, muted, with the failing call's own target
-      // whenever it differs from `last` (decision 9 addendum), so the line is never read as
-      // belonging to a call that actually succeeded.
+      // there is no separate "expanded body" of other members to replace it with).
+      // Gate round 1 (accessibility-auditor/code-reviewer Medium, M5): #632 dropped the group
+      // header's own `summary` entirely for a multi-call group (it names the tool and the count
+      // only, never any one call's command) -- the OLD reasoning here ("prefix only when the
+      // failing call differs from the one the header's own summary names") no longer applies,
+      // since the header never names any call, including the last one. The prefix is now
+      // UNCONDITIONAL for a multi-call group, through the same `commandRowText` grammar the row
+      // itself shows (not the raw target, so the prefix and the row read identically once
+      // expanded); a solo group shows the bare Error line with no prefix, since the row directly
+      // above it already is that one call.
       detail={
         lastFailedItem
-          ? lastFailedItem === last
+          ? solo
             ? errorLine(lastFailedItem)
             : (() => {
                 // Gate round 2 (G909Arch N1): the prefix used to be the raw, uncapped target --
@@ -433,8 +485,11 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
                 // entirely, the one thing decision 6 exists to keep visible. Sanitized the same
                 // way as the error text (ANSI/control-char stripped), capped short, and dropped
                 // outright when empty rather than rendering a bare "undefined: ".
-                const prefix = sanitizeLines(lastFailedItem.target)[0]
-                const truncatedPrefix = prefix && prefix.length > ATTRIBUTION_PREFIX_MAX_CHARS ? `${prefix.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…` : prefix
+                const failingCommandText = sanitizeLines(commandRowText(lastFailedItem))[0]
+                const truncatedPrefix =
+                  failingCommandText && failingCommandText.length > ATTRIBUTION_PREFIX_MAX_CHARS
+                    ? `${failingCommandText.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…`
+                    : failingCommandText
                 return truncatedPrefix ? (
                   <>
                     <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}: </bdi>

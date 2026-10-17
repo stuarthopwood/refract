@@ -4,7 +4,7 @@ import { Diff, type GutterOptions, Hunk, isDelete, isInsert, parseDiff } from 'r
 import 'react-diff-view/style/index.css'
 import './diff-view.css'
 import { cn } from 'cn'
-import { buildUnifiedDiff } from '@/lib/diff'
+import { buildUnifiedDiff, countChanges } from '@/lib/diff'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { FileLinkButton } from './Markdown'
@@ -55,18 +55,10 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
   const bodyRef = React.useRef<HTMLDivElement>(null)
   const regionId = React.useId()
 
-  const stats = React.useMemo(() => {
-    if (!changedFile) return { added: 0, removed: 0 }
-    let added = 0
-    let removed = 0
-    for (const hunk of changedFile.hunks) {
-      for (const change of hunk.changes) {
-        if (isInsert(change)) added++
-        else if (isDelete(change)) removed++
-      }
-    }
-    return { added, removed }
-  }, [changedFile])
+  // Gate round 1 (code-reviewer High, H2): shares `countChanges` with `lib/diff.ts`'s own
+  // `diffStat` (ToolRow.tsx's "+N −M" row stat) instead of a second hand-rolled loop, so the
+  // two can never disagree about the same diff.
+  const stats = React.useMemo(() => (changedFile ? countChanges(changedFile) : { added: 0, removed: 0 }), [changedFile])
 
   // Quality-gate remediation (Critical, round 2): only ever measures (and so only ever flips
   // `canExpand`) while the body is actually capped and collapsed -- `expanded` short-circuits
