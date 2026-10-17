@@ -222,7 +222,11 @@ pub fn settings_set_watermark_enabled(state: AppState, args: Vec<Value>) -> Hand
 /// `settings_set_approval_mode` above.
 pub fn settings_set_chat_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let width = match args.first().and_then(|v| v.as_str()).and_then(parse_chat_width) {
+        let width = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_chat_width)
+        {
             Some(width) => width,
             None => {
                 return Err(invalid_argument(

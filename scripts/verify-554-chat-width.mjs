@@ -118,6 +118,30 @@ async function closeSettings(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
+/** Tab from the currently-focused radio to the Save button, Enter to commit (real keyboard, not
+ * a click()) -- falls back to a plain click on Save if Tab lands somewhere else (DOM order
+ * between the radiogroup and the row of Save/Cancel buttons may differ from assumed; recorded as
+ * `notExercised`, not a hard failure of the setting itself). Confirms Save is disabled afterward
+ * (committed), pushing to `failures` if it is not. */
+async function saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label }) {
+  await pressTab(cdp);
+  await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` }).catch(() =>
+    notExercised.push(`Tab landed somewhere other than Save immediately after the radiogroup (${label}) -- DOM order between the radiogroup and the Save button may differ from assumed; Save committed via click instead, not a hard failure of the setting itself.`)
+  );
+  const focusedIsSave = await cdp.evaluate(`document.activeElement?.textContent?.trim() === 'Save'`);
+  if (focusedIsSave) {
+    await pressEnterKey(cdp);
+  } else {
+    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
+  }
+  try {
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 5_000, label: `Keyboard Save committed (${label}, Save disabled afterward)` });
+    findings.push(`Keyboard Save committed "${label}" (Save disabled afterward, matching the Theme picker's own isDirty gate).`);
+  } catch {
+    failures.push(`After keyboard Save (${label}), the Save button is still enabled -- the preview was not committed.`);
+  }
+}
+
 /** Reads the transcript column's own measured rect, the pane viewport's rect (its direct
  * scrollable ancestor), and the composer box's rect, all in one round trip so they describe the
  * exact same render (two separate `evaluate()` calls could straddle a resize/re-render). */
@@ -127,7 +151,13 @@ async function measureLayout(cdp) {
     const viewport = column?.parentElement;
     const composer = ${COMPOSER_BOX_FINDER};
     const rect = (el) => el ? { left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right, width: el.getBoundingClientRect().width } : null;
-    return { column: rect(column), viewport: rect(viewport), composer: rect(composer) };
+    // viewport.clientWidth excludes its own scrollbar (FR-053's themed scrollbar reserves about
+    // 8px); getBoundingClientRect().width does not -- comparing the column (a child that fills
+    // the CONTENT box) against the viewport's own outer box overstates the gap by the scrollbar
+    // width. clientLeft/clientTop account for the left/top border, kept separate from the rect
+    // left/top used for margin maths below.
+    const viewportMeasured = viewport ? { ...rect(viewport), clientWidth: viewport.clientWidth } : null;
+    return { column: rect(column), viewport: viewportMeasured, composer: rect(composer) };
   })()`);
 }
 
@@ -224,86 +254,101 @@ async function main() {
         failures.push(`Default "Full" at ${width}px: transcript column or its viewport not found.`);
         continue;
       }
-      assertClose(`Default "Full" at ${width}px: column width vs viewport width`, layout.column.width, layout.viewport.width, 'FR-049: the column must fill its own viewport at every width with no cap.', 4);
+      assertClose(`Default "Full" at ${width}px: column width vs viewport content width`, layout.column.width, layout.viewport.clientWidth, 'FR-049: the column must fill its own viewport at every width with no cap.', 4);
       await cdp.screenshot(path.join(SHOTS_DIR, `01-full-${width}.png`));
     }
 
-    // ---- Check 2: switch to "Reading column" via MOUSE, live preview (no Save yet), at 1280/1920/2560. ----
+    // ---- Check 2: switch to "Reading column" via MOUSE, Save (same Settings mount -- closing
+    // Settings without saving unmounts AppearanceSection, which reverts any open preview per
+    // FR-005, matching Theme's own contract; the chat transcript is also not even mounted while
+    // Settings is open, so the ONLY place to observe the capped column is after a real Save, not
+    // mid-preview). The live-preview MECHANISM itself (no IPC round trip needed to flip the
+    // choice) is proven instead by the radio's own aria-checked flipping immediately on click/
+    // Arrow, both checked below and in Check 3. ----
     await setWindowWidth(cdp, 1280);
     await openSettingsAppearance(cdp);
     const beforeMouseClick = await cdp.evaluate(`(${CHAT_WIDTH_FULL_RADIO_FINDER})?.getAttribute('aria-checked')`);
     if (beforeMouseClick !== 'true') failures.push(`Chat width setting: expected "Full" to be the checked radio before any change (got aria-checked=${beforeMouseClick}).`);
     await cdp.click(CHAT_WIDTH_READING_COLUMN_RADIO_FINDER);
     await cdp.waitFor(`(${CHAT_WIDTH_READING_COLUMN_RADIO_FINDER})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Reading column" radio checked (mouse)' });
-    findings.push('Mouse: clicked the "Reading column" radio in Settings, Appearance.');
+    findings.push('Mouse: clicked the "Reading column" radio -- aria-checked flipped immediately (live local-store preview, no IPC round trip).');
+    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 5_000, label: 'Save committed (Save button disabled afterward)' });
+    findings.push('Mouse Save committed "Reading column" (Save disabled afterward, same mount -- confirms a real settings.setChatWidth round trip, not just local UI state).');
     await closeSettings(cdp);
 
     for (const width of WINDOW_WIDTHS) {
       await setWindowWidth(cdp, width);
       const layout = await measureLayout(cdp);
-      if (!layout.column) {
-        failures.push(`Reading column (mouse, live preview, no Save yet) at ${width}px: transcript column not found.`);
+      if (!layout.column || !layout.viewport) {
+        failures.push(`Reading column (mouse-saved) at ${width}px: transcript column or viewport not found.`);
         continue;
       }
-      assertClose(`Reading column (mouse, live preview, pre-Save) at ${width}px: column width`, layout.column.width, READING_COLUMN_PX, '64rem cap, FR-073.');
-      const leftMargin = layout.viewport ? layout.column.left - layout.viewport.left : null;
-      const rightMargin = layout.viewport ? layout.viewport.right - layout.column.right : null;
-      if (leftMargin !== null && rightMargin !== null) {
-        assertClose(`Reading column (mouse, pre-Save) at ${width}px: centring (left vs right margin)`, leftMargin, rightMargin, 'mx-auto must centre the capped column.', 3);
+      const rightEdge = layout.viewport.left + layout.viewport.clientWidth;
+      const leftMargin = layout.column.left - layout.viewport.left;
+      const rightMargin = rightEdge - layout.column.right;
+      if (width === 1280) {
+        // This window's own chat pane content width is narrower than 64rem (session list + nav
+        // eat the rest of a 1280px window) -- the cap CANNOT bind here, so the column must
+        // simply equal the pane's own content width (no cap, no centring), same as "Full".
+        assertClose(`Reading column at 1280px (cap cannot bind, pane narrower than 64rem): column width equals pane content width`, layout.column.width, layout.viewport.clientWidth, 'FR-073: the cap is a maximum, never a minimum.', 4);
+        assertClose(`Reading column at 1280px: left vs right margin (no cap in effect)`, leftMargin, rightMargin, 'no cap bound, so both margins should read ~0.', 4);
       } else {
-        failures.push(`Reading column (mouse, pre-Save) at ${width}px: could not measure left/right margins (viewport not found).`);
+        // 1920/2560: the pane is comfortably wider than 64rem -- the cap MUST bind, exactly, and
+        // the column MUST be centred within 1px, not just "close enough" (so a broken cap or a
+        // broken centring could not pass this by accident at these two widths).
+        assertClose(`Reading column at ${width}px: column width equals the 64rem cap exactly`, layout.column.width, READING_COLUMN_PX, '64rem cap, FR-073.', 2);
+        assertClose(`Reading column at ${width}px: centred within 1px (left vs right margin)`, leftMargin, rightMargin, 'mx-auto must centre the capped column.', 1);
       }
       if (layout.composer) {
-        assertClose(`Composer width at ${width}px (Reading column, pre-Save) vs its own earlier Full-width measurement`, layout.composer.width, layout.viewport ? layout.viewport.width - 8 : layout.composer.width, 'FR-073: the composer never follows the transcript cap.', 40);
+        assertClose(`Composer width at ${width}px (Reading column) vs its own pane`, layout.composer.width, layout.viewport.clientWidth, 'FR-073: the composer never follows the transcript cap.', 40);
       }
-      await cdp.screenshot(path.join(SHOTS_DIR, `02-reading-column-presave-${width}.png`));
+      await cdp.screenshot(path.join(SHOTS_DIR, `02-reading-column-saved-${width}.png`));
     }
-    findings.push('Live preview confirmed at 1280/1920/2560px BEFORE Save -- no reload, matching the Theme picker\'s own preview contract (FR-073).');
+    findings.push('Saved via mouse, applied with NO app reload/restart (same running process throughout) at 1280/1920/2560px.');
 
-    // ---- Save the mouse-driven change. ----
+    // ---- Check 3: toggle to "Full" via KEYBOARD (same mount), Save, confirm the transcript
+    // actually uncaps -- "Reading column" is already the saved value from Check 2, so a keyboard
+    // round trip that lands back on it would be a documented no-op (ThemePicker's own FR-002/
+    // FR-006 deviation note: choosing the already-saved entry never re-fires a save), not a real
+    // Save exercise. Ending on "Full" here, then saving back to "Reading column" below, exercises
+    // two REAL keyboard-driven Save round trips, each committing a value that differs from
+    // whatever was persisted a moment before. ----
     await setWindowWidth(cdp, 1280);
     await openSettingsAppearance(cdp);
-    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
-    await cdp.waitFor(`document.querySelector('button')?.disabled !== false || true`, { timeoutMs: 2_000, label: 'Save settle (best-effort)' }).catch(() => {});
-    await sleep(300);
-
-    // ---- Check 3: switch back toward "Full" then to "Reading column" via KEYBOARD, live preview. ----
     const readingColumnRadio = CHAT_WIDTH_READING_COLUMN_RADIO_FINDER;
-    await cdp.click(readingColumnRadio); // focuses the now-checked radio (tabIndex=0 per the roving-tabindex pattern)
+    const fullRadio = CHAT_WIDTH_FULL_RADIO_FINDER;
+    await cdp.click(readingColumnRadio); // focuses the currently-checked radio (tabIndex=0, roving-tabindex pattern)
     await pressArrowUp(cdp); // moves to "Full" (index 0), live-previews it immediately
-    await cdp.waitFor(`(${CHAT_WIDTH_FULL_RADIO_FINDER})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Full" radio checked (keyboard ArrowUp)' });
-    findings.push('Keyboard: ArrowUp moved the roving-tabindex focus AND the live preview to "Full".');
-    const layoutDuringKeyboardFull = await measureLayout(cdp);
-    if (layoutDuringKeyboardFull.column && layoutDuringKeyboardFull.viewport) {
-      assertClose('Keyboard preview "Full" (mid-toggle, pre-Save) at 1280px: column width vs viewport width', layoutDuringKeyboardFull.column.width, layoutDuringKeyboardFull.viewport.width, 'keyboard Arrow navigation must live-preview exactly like a click.', 4);
-    } else {
-      failures.push('Keyboard preview "Full" (mid-toggle): transcript column or viewport not found.');
-    }
-    await pressArrowDown(cdp); // back to "Reading column" (index 1)
-    await cdp.waitFor(`(${readingColumnRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Reading column" radio checked (keyboard ArrowDown)' });
-    findings.push('Keyboard: ArrowDown moved the live preview back to "Reading column".');
-    const layoutDuringKeyboardColumn = await measureLayout(cdp);
-    if (layoutDuringKeyboardColumn.column) {
-      assertClose('Keyboard preview "Reading column" (pre-Save) at 1280px: column width', layoutDuringKeyboardColumn.column.width, READING_COLUMN_PX, '64rem cap via keyboard, FR-073.');
-    } else {
-      failures.push('Keyboard preview "Reading column" (mid-toggle): transcript column not found.');
-    }
-    // Tab from the radio to the Save button, Enter to commit (real keyboard, not a click()).
-    await pressTab(cdp);
-    await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: 'Tab reached the Save button' }).catch(() =>
-      notExercised.push('Tab landed somewhere other than Save immediately after the radiogroup -- DOM order between the radiogroup and the Save button may differ from assumed; Save committed via click instead, not a hard failure of the setting itself.')
-    );
-    const focusedIsSave = await cdp.evaluate(`document.activeElement?.textContent?.trim() === 'Save'`);
-    if (focusedIsSave) {
-      await pressEnterKey(cdp);
-    } else {
-      await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
-    }
-    await sleep(300);
-    const isDirtyAfterKeyboardSave = await cdp.evaluate(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
-    if (isDirtyAfterKeyboardSave) failures.push('After keyboard Save, the Save button is still enabled -- the preview was not committed.');
-    else findings.push('Keyboard Save committed "Reading column" (Save disabled afterward, matching the Theme picker\'s own isDirty gate).');
+    await cdp.waitFor(`(${fullRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Full" radio checked (keyboard ArrowUp)' });
+    findings.push('Keyboard: ArrowUp moved the roving-tabindex focus AND aria-checked to "Full" immediately.');
+    await saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label: 'Full' });
     await closeSettings(cdp);
+    const fullKeyboardLayout = await measureLayout(cdp);
+    if (fullKeyboardLayout.column && fullKeyboardLayout.viewport) {
+      assertClose('Full (keyboard-saved) at 1280px: column width vs viewport content width', fullKeyboardLayout.column.width, fullKeyboardLayout.viewport.clientWidth, 'a real keyboard Save round trip must uncap the transcript, FR-073.', 4);
+    } else {
+      failures.push('Full (keyboard-saved): transcript column or viewport not found after closing Settings.');
+    }
+
+    // ---- Back to "Reading column" via KEYBOARD, a second real Save, leaving it as the
+    // persisted value the narrow-window and relaunch checks below exercise. ----
+    await openSettingsAppearance(cdp);
+    await cdp.click(fullRadio); // focuses the currently-checked "Full" radio
+    await pressArrowDown(cdp); // moves to "Reading column" (index 1), live-previews it immediately
+    await cdp.waitFor(`(${readingColumnRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Reading column" radio checked (keyboard ArrowDown)' });
+    findings.push('Keyboard: ArrowDown moved aria-checked back to "Reading column" immediately.');
+    await saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label: 'Reading column' });
+    await closeSettings(cdp);
+    const keyboardSavedLayout = await measureLayout(cdp);
+    if (keyboardSavedLayout.column && keyboardSavedLayout.viewport) {
+      // Still 1280px here (same as Check 2's own 1280 case): the pane's content width is
+      // narrower than 64rem, so the cap cannot bind -- the column must equal the pane's own
+      // content width exactly, same explicit reasoning as Check 2.
+      assertClose('Reading column (keyboard-saved, second round trip) at 1280px: column width equals pane content width', keyboardSavedLayout.column.width, keyboardSavedLayout.viewport.clientWidth, 'via a real keyboard Save round trip, FR-073.', 4);
+    } else {
+      failures.push('Reading column (keyboard-saved): transcript column or viewport not found after closing Settings.');
+    }
 
     // ---- Check 4: narrow window (360px) -- no horizontal scroll under Reading column. ----
     await setWindowWidth(cdp, NARROW_WIDTH);
@@ -312,7 +357,7 @@ async function main() {
     else findings.push(`No horizontal scroll at ${NARROW_WIDTH}px width under Reading column (the 64rem cap is a maximum, not a minimum).`);
     const narrowLayout = await measureLayout(cdp);
     if (narrowLayout.column && narrowLayout.viewport) {
-      assertClose(`Narrow window (${NARROW_WIDTH}px): column fills the available width (no visible centring below the cap)`, narrowLayout.column.width, narrowLayout.viewport.width, 'below the 64rem cap the column has no reason to be narrower than its viewport.', 4);
+      assertClose(`Narrow window (${NARROW_WIDTH}px): column fills the available width (no visible centring below the cap)`, narrowLayout.column.width, narrowLayout.viewport.clientWidth, 'below the 64rem cap the column has no reason to be narrower than its viewport.', 4);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-narrow-360.png'));
     await setWindowWidth(cdp, 1280);
