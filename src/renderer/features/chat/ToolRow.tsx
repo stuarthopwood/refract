@@ -277,6 +277,9 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
       summary={commandRowText(item)}
       summaryWrap={summaryWrap}
+      // Gate round 1 (code-reviewer High, H4): wrap-on-expand is opt-in now; a tool call's row
+      // text (FR-061) wants it for every tool, not only the command-style ones.
+      wrapWhenOpen
       meta={callMeta(item)}
       triggerAriaLabel={memberAriaLabel}
       // #570 decisions 6, 9: a failed member's own Error line, shown whether this row is
@@ -459,6 +462,8 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       labelClassName={status === 'error' ? 'text-severity-error' : undefined}
       summary={summary}
       summaryWrap={summaryWrap}
+      // Gate round 1 (H4): see `ToolCallRow`'s own comment -- the solo branch is a tool row too.
+      wrapWhenOpen
       meta={meta}
       triggerAriaLabel={triggerAriaLabel}
       // #570 decisions 6, 9: the group's own Error line while collapsed is the LATEST failed
@@ -466,14 +471,10 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       // only for a multi-call group; a solo call's line has no such condition, decision 6, since
       // there is no separate "expanded body" of other members to replace it with).
       // Gate round 1 (accessibility-auditor/code-reviewer Medium, M5): #632 dropped the group
-      // header's own `summary` entirely for a multi-call group (it names the tool and the count
-      // only, never any one call's command) -- the OLD reasoning here ("prefix only when the
-      // failing call differs from the one the header's own summary names") no longer applies,
-      // since the header never names any call, including the last one. The prefix is now
-      // UNCONDITIONAL for a multi-call group, through the same `commandRowText` grammar the row
-      // itself shows (not the raw target, so the prefix and the row read identically once
-      // expanded); a solo group shows the bare Error line with no prefix, since the row directly
-      // above it already is that one call.
+      // header's own `summary` entirely (never any one call's command), so the OLD "prefix only
+      // when it differs from the last call" condition no longer applies -- the prefix is now
+      // UNCONDITIONAL for a multi-call group, through `commandRowText` (matches the row itself);
+      // a solo group shows the bare Error line, since the row directly above it is that call.
       detail={
         lastFailedItem
           ? solo

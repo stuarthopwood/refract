@@ -36,6 +36,14 @@ export interface CollapsedLineProps {
    * lives (no Arguments block, #628) -- so truncating it again while expanded would hide it a
    * third time. Collapsed rows keep truncating regardless of this prop, for fast scanning. */
   summaryWrap?: boolean
+  /** Gate round 1 (code-reviewer High, H4): `summaryWrap || actualOpen` made EVERY
+   * `CollapsedLine` wrap once expanded, including callers that never asked for it
+   * (`AgentMessageRow`, `AdvisoryRow`, `RequestCard`, `NoticeRow`, `ThoughtRunRow`), producing
+   * duplicate/jumpy text as their own already-expanded content repeated the now-wrapped summary.
+   * Opt-in: only `ToolCallRow` and the solo branch of `ToolGroupRow` (#632's own "wrap instead
+   * of truncate once expanded" fix) pass this; every other caller keeps truncating collapsed
+   * and whatever its own expanded body already shows, unaffected by `actualOpen`. */
+  wrapWhenOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultOpen?: boolean
@@ -83,6 +91,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     summaryClassName,
     labelClassName,
     summaryWrap,
+    wrapWhenOpen,
     open,
     onOpenChange,
     defaultOpen,
@@ -126,7 +135,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       )}
       {summary !== undefined ? (
         <span
-          className={cn('min-w-0 flex-1', summaryWrap || actualOpen ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
+          className={cn(
+            'min-w-0 flex-1',
+            summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+            summaryClassName ?? 'text-muted-foreground'
+          )}
         >
           {summary}
         </span>
@@ -164,7 +177,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         tabIndex={-1}
         // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
         // still shows a focus indicator in forced-colours mode, matching the trigger below.
-        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -177,7 +190,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * (hover swapping it to `hover:border-border`), a second box nested right inside whatever
        * ancestor box this row sits in -- the confirmed cause of #430's nested-box bug. Hover is
        * now only the trigger's own ghost `hover:bg-muted` below; the root carries no border. */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
           aria-label={triggerAriaLabel}
@@ -189,7 +202,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             // `outline-offset-2` (the shadcn default) draws OUTSIDE this element's own box and
             // was very likely clipped by that containment. `-2px` draws the ring INSIDE instead,
             // matching the plain row above.
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
           )}
         >
           {row}
