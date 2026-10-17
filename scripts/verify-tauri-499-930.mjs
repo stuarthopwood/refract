@@ -63,7 +63,7 @@ import {
   safeRmSync,
   requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';
-import { addRepository } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -271,6 +271,29 @@ async function main() {
       })()`, { timeoutMs: 10_000, label: 'Review requested becomes active and scrolls into view' }).catch(() => false);
       if (scrolledIntoView) checkPass('Selecting a later tab scrolls it fully into the wrapper\'s own visible bounds');
       else checkFail('Selecting a later tab scrolls it fully into the wrapper\'s own visible bounds');
+
+      // ---- Keyboard on tabs: `activationMode="manual"` -- ArrowLeft moves the roving tab
+      // stop back to the previous tab WITHOUT activating it, Enter then activates the focused
+      // tab (Radix Tabs' own documented manual-activation keyboard contract).
+      await cdp.evaluate(`(() => { const active = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active'); active?.focus(); })()`);
+      await pressKey(cdp, 37, 'ArrowLeft', 'ArrowLeft');
+      await sleep(150);
+      const keyboardFocusMoved = await cdp.evaluate(`(() => ({
+        focused: document.activeElement?.getAttribute('role') === 'tab' ? document.activeElement.textContent.trim() : null,
+        active: Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active')?.textContent.trim() ?? null
+      }))()`);
+      if (keyboardFocusMoved.focused === 'Involves me' && keyboardFocusMoved.active === 'Review requested') {
+        checkPass('ArrowLeft moves tab roving focus to the previous tab without activating it (manual activation mode)', JSON.stringify(keyboardFocusMoved));
+      } else {
+        checkFail('ArrowLeft moves tab roving focus to the previous tab without activating it (manual activation mode)', JSON.stringify(keyboardFocusMoved));
+      }
+      await pressKey(cdp, 13, 'Enter', 'Enter');
+      await sleep(300);
+      const activeAfterEnter = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active')?.textContent.trim() ?? null`);
+      if (activeAfterEnter === 'Involves me') checkPass('Enter activates the keyboard-focused tab (manual activation mode)', activeAfterEnter);
+      else checkFail('Enter activates the keyboard-focused tab (manual activation mode)', String(activeAfterEnter));
+      await cdp.clickByText('All', { tag: '[role="tab"]' }).catch(() => cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'All')`));
+      await sleep(300);
 
       // ---- Filters disclosure: toggle, search + State appear, dot + "N active" label ----
       await cdp.clickByLabel('Filters', { prefix: true });
