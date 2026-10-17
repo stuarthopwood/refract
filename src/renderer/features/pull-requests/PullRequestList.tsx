@@ -81,6 +81,11 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   // Issue #499 decision 2: the active tab scrolls into view on every tab/repository change,
   // scrolling only this row's own wrapper (`PanelTabBar.tsx`'s established pattern for the same
   // problem -- a bare `scrollIntoView` would scroll every ancestor, not just this strip).
+  // `relative` on the wrap (`PanelTabBar.tsx`'s own wrap has it too) is load-bearing, not
+  // decorative: without a positioned wrap, `tab.offsetLeft` is measured against whichever
+  // ancestor further up the tree happens to be `offsetParent`, so the computed scroll target
+  // overshoots the wrap's real scrollable range and the browser silently clamps the assignment
+  // short (caught live 2026-10-17: Enter-activating the last tab left it still partly clipped).
   useLayoutEffect(() => {
     const wrap = tabsWrapRef.current
     const tab = wrap?.querySelector<HTMLElement>('[data-state="active"]')
@@ -105,7 +110,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
       <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)} activationMode="manual">
         <div className="flex items-center gap-0.5">
-          <div ref={tabsWrapRef} className={cn('min-w-0 flex-1 overflow-x-auto', TABS_FADE_MASK_CLASS)}>
+          <div ref={tabsWrapRef} className={cn('relative min-w-0 flex-1 overflow-x-auto', TABS_FADE_MASK_CLASS)}>
             <TabsList className="h-8 w-max shrink-0 justify-start gap-0.5 rounded-none bg-transparent p-0">
               {TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} className={PR_FILTER_TAB_TRIGGER_CLASS}>

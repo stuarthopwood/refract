@@ -3,7 +3,7 @@
 // the selected pull request's detail (PullRequestDetail.tsx) -- scoped to the repository chosen
 // here, written back to the shared `view-store.ts` so the choice survives switching away and
 // back (research.md decision 7).
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -24,13 +24,12 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const openPullRequests = useViewStore((s) => s.openPullRequests)
   const repositoryId = viewRepositoryId ?? repositories[0]?.id ?? null
   const selectedNumber = usePullRequestsStore((s) => s.stateFor(repositoryId ?? '').selectedNumber)
-  const widthPx = usePullRequestsLayoutStore((s) => s.widthPx)
   const headingRef = useRef<HTMLHeadingElement>(null)
   // #930 (bug caught by the live-check driver, first real build of this story): `defaultSize`
   // is ALSO `react-resizable-panels`' own double-click-reset target (`onDocumentDoubleClick`
   // reads `itemWithDefaultSize.constraintProps.defaultSize` live, from whatever this Panel's own
-  // `defaultSize` prop currently evaluates to) -- binding it to the reactively-subscribed
-  // `widthPx` above meant every drag's own `onResize` -> `setWidth` -> re-render cycle silently
+  // `defaultSize` prop currently evaluates to) -- binding it to the layout store's reactively-
+  // subscribed `widthPx` meant every drag's own `onResize` -> `setWidth` -> re-render cycle silently
   // moved the "reset to" target to wherever the panel already was, making double-click reset a
   // no-op. `defaultSize` below stays pinned at the true default; the panel's INITIAL render
   // honours a remembered non-default width via one imperative `resize()` call instead (same
@@ -45,6 +44,29 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
     if (persistedWidthPx !== PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) {
       panelRef.current?.resize(persistedWidthPx)
     }
+  }, [repositoryId])
+
+  // Issue #930 gate-fix (caught live 2026-10-17): the heading row's own wrapper used to track
+  // the layout store's `widthPx`, which `onResize` feeds from `react-resizable-panels`' own
+  // `element.offsetWidth` -- an INTEGER, rounded read. The real panel box the test (and the eye)
+  // measures via `getBoundingClientRect()` is a subpixel float, and at some drag positions the
+  // rounded `widthPx` this wrapper rendered at was wider than the panel's true fractional width,
+  // pushing the Project selector's own right edge past the real column's right edge even though
+  // it stayed inside this wrapper's (slightly too generous) own bounds. Measuring the panel's
+  // actual DOM element directly -- the same element and the same `getBoundingClientRect()` the
+  // live check reads -- makes this wrapper's width byte-identical to the real column, every time.
+  const panelElementRef = useRef<HTMLDivElement | null>(null)
+  const [listColumnWidthPx, setListColumnWidthPx] = useState(
+    () => usePullRequestsLayoutStore.getState().widthPx
+  )
+  useLayoutEffect(() => {
+    const el = panelElementRef.current
+    if (!el) return
+    const measure = () => setListColumnWidthPx(el.getBoundingClientRect().width)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [repositoryId])
 
   // High remediation (a11y, round 3): round 2's tasks.md T028 claimed this was already fixed --
@@ -70,10 +92,12 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           the same prop `ChatPane.tsx` takes. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         {/* Issue #930 (2026-10-16 decision): this wrapper's own width tracks the resizable list
-            column's live `widthPx` so the heading and Project selector truncate in step with it,
-            instead of only shrinking at the app's unrelated 360px window-wide floor (#500's
-            original fix, which this keeps as the Select's own inner `min-w-0 shrink` fallback). */}
-        <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? widthPx : undefined }}>
+            column's real rendered width (`listColumnWidthPx`, measured off the panel's own DOM
+            element -- see the `ResizeObserver` effect above) so the heading and Project selector
+            truncate in step with it, instead of only shrinking at the app's unrelated 360px
+            window-wide floor (#500's original fix, which this keeps as the Select's own inner
+            `min-w-0 shrink` fallback). */}
+        <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
           <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
             Pull requests
           </h2>
@@ -142,6 +166,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           <ResizablePanel
             id="pull-requests-list"
             panelRef={panelRef}
+            elementRef={panelElementRef}
             defaultSize={PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX}
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
             maxSize="50%"

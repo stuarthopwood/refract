@@ -302,6 +302,7 @@ async function main() {
       } else {
         checkFail('ArrowRight x4 moves tab roving focus to the last tab without activating it (manual activation mode)', JSON.stringify(focusMovedForward));
       }
+      const wrapScrollLeftBeforeEnter = await cdp.evaluate(`document.querySelector('[role="tab"]')?.closest('.overflow-x-auto')?.scrollLeft ?? null`);
       await pressKey(cdp, 13, 'Enter', 'Enter');
       let scrollDiagnostic = null;
       const scrolledIntoView = await cdp.waitFor(`(() => {
@@ -319,14 +320,25 @@ async function main() {
           const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Review requested');
           if (!tab) return { tabFound: false };
           const wrap = tab.closest('.overflow-x-auto');
+          const tabOffsetLeft = tab.offsetLeft, tabOffsetWidth = tab.offsetWidth;
+          const wrapScrollLeft = wrap ? wrap.scrollLeft : null;
+          const wrapClientWidth = wrap ? wrap.clientWidth : null;
           return {
             tabFound: true,
             dataState: tab.getAttribute('data-state'),
-            tabOffsetLeft: tab.offsetLeft,
-            tabOffsetWidth: tab.offsetWidth,
+            tabOffsetLeft,
+            tabOffsetWidth,
             wrapFound: !!wrap,
-            wrapScrollLeft: wrap ? wrap.scrollLeft : null,
-            wrapClientWidth: wrap ? wrap.clientWidth : null
+            wrapScrollLeft,
+            wrapClientWidth,
+            // Diagnosability (issue #499 gate-fix, 2026-10-17): distinguishes "the layout effect
+            // never ran" (scrollLeft unchanged from before Enter was pressed) from "it ran but
+            // computed/applied the wrong value" (changed, but not to the expected target) --
+            // the expected target is the same formula PullRequestList.tsx's own effect uses.
+            // (No surrounding backticks here on purpose: this whole block is itself the body of
+            // an outer template literal -- a literal backtick in this comment would terminate it.)
+            effectRan: wrapScrollLeft !== null && wrapScrollLeft !== ${JSON.stringify(wrapScrollLeftBeforeEnter)},
+            expectedScrollLeft: wrapClientWidth !== null ? tabOffsetLeft + tabOffsetWidth - wrapClientWidth : null
           };
         })()`).catch((err) => ({ evaluateFailed: err.message }));
         return false;
