@@ -178,6 +178,30 @@ export function ProfileAlertRows() {
     focusProfileItemName()
   }
 
+  // Gate round 2 (Code FAIL, second finding): a row dismissed via KEYBOARD activation (Enter on
+  // a Tooltip-wrapped Dismiss button) could leave focus on a disconnected, unnamed node instead
+  // of the intended fallback -- confirmed live (verify-tauri-560.mjs): Radix Tooltip's own
+  // Portal content, still mounted while its trigger has keyboard focus-visible, briefly claims
+  // focus as part of its OWN unmount cleanup, racing our redirect below. React 19 focus-handoff
+  // pattern: `handleFocusOut` below only RECORDS intent (never calls `.focus()` directly); one
+  // `requestAnimationFrame` later -- after every other library's own synchronous/microtask
+  // cleanup has had its turn -- the recorded intent is applied ONLY if focus is confirmed still
+  // stranded (disconnected, or fallen back to `<body>`) at that point, never overriding a focus
+  // destination something else legitimately claimed meanwhile. Expires itself every frame: never
+  // left pending across more than one.
+  const pendingFocusHandoffRef = useRef<(() => void) | null>(null)
+  function scheduleFocusHandoff(apply: () => void): void {
+    pendingFocusHandoffRef.current = apply
+    requestAnimationFrame(() => {
+      const pending = pendingFocusHandoffRef.current
+      pendingFocusHandoffRef.current = null
+      if (!pending) return
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (stranded) pending()
+    })
+  }
+
   // Watches each row's own container for a `focusout` caused by the FOCUSED DESCENDANT itself
   // being removed from the DOM (the browser blurs it to `<body>` synchronously as part of that
   // same removal step, before this row's own `focusout` listener is torn down) -- covers BOTH
@@ -204,9 +228,7 @@ export function ProfileAlertRows() {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
       if (!describesRemoval(event)) return
-      queueMicrotask(() => {
-        if (document.activeElement === document.body) redirectFocusFrom('memory')
-      })
+      scheduleFocusHandoff(() => redirectFocusFrom('memory'))
     }
     rowEl.addEventListener('focusout', handleFocusOut)
     return () => rowEl.removeEventListener('focusout', handleFocusOut)
@@ -220,9 +242,7 @@ export function ProfileAlertRows() {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
       if (!describesRemoval(event)) return
-      queueMicrotask(() => {
-        if (document.activeElement === document.body) redirectFocusFrom('ompVersion')
-      })
+      scheduleFocusHandoff(() => redirectFocusFrom('ompVersion'))
     }
     rowEl.addEventListener('focusout', handleFocusOut)
     return () => rowEl.removeEventListener('focusout', handleFocusOut)

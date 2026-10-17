@@ -229,14 +229,10 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMORY_ROW_SPAN }, log);
 
   // ---- Item 2: Memory Triage -- lists the idle Session, per-row Stop with confirmation ----
-  // A settle sleep before this first mouse click is REQUIRED, confirmed live: immediately after
-  // the preceding keyboard-only sequence (Tab walk + Enter-driven HealthCheckDialog open/close),
-  // the very next synthetic mouse click on the Triage button is a proven one-shot miss -- CDP's
-  // elementFromPoint at the click's own coordinates confirms the Triage button genuinely IS the
-  // hit target (no stray overlay, no layout overlap) and the identical click dispatched again a
-  // moment later opens MemoryTriageDialog immediately, so the button/dialog wiring itself is
-  // correct; only the FIRST click right after that keyboard sequence is lost, a timing race in
-  // this script's own input sequencing, not an app bug.
+  // A settle sleep before this first mouse click is REQUIRED, confirmed live: the very next
+  // synthetic mouse click right after the preceding keyboard-only sequence is a proven one-shot
+  // miss (CDP's elementFromPoint confirms the button genuinely IS the hit target -- a timing
+  // race in this script's own input sequencing, not an app bug).
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
@@ -440,6 +436,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   );
   await pressRealEnter(cdp);
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on keyboard-driven Dismiss' });
+  // Gate round 2 fix defers the redirect to one rAF after unmount; sample after it runs.
+  await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
   const postKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
   const postKeyboardDismissConnected = await cdp.evaluate(`document.activeElement !== document.body && document.activeElement?.isConnected === true`);
   assert(
