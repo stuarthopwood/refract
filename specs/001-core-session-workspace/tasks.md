@@ -2711,7 +2711,187 @@ comment was posted on #559 and the PR body's Departures section corrected.
 
 ## Phase 50: Convergence
 
-- [X] T255 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
+- [X] T255 [US1] #560 quiet alert rows (Decided, Skippy, delegated by Stuart 2026-10-16;
+  `ui-architect-v3` roundtable, full decision record on the issue). `ProfileAlertRows.tsx` (new)
+  renders two single-line rows as `App.tsx` siblings directly after `<ProfileItem/>`, replacing
+  `StatusBar.tsx`'s own low-memory and unverified-omp-version `Popover`s (its update badge is
+  unchanged). Low memory keeps a "Triage" action, now opening `MemoryTriageDialog.tsx` (new): a
+  `Dialog` listing every Session whose agent is `idle` -- never `working` (mid-turn) or
+  `needs-you` (waiting on the user), never already `stopped` -- each with a confirmed Stop
+  (`AlertDialog`, naming the Session) and one "Stop idle" bulk confirm targeting every listed
+  Session at once; no per-agent memory figure, since no per-process memory API exists anywhere
+  in src-tauri and none is added by this story. Unverified version keeps a "Check" action
+  opening the existing `HealthCheckDialog`; `ProfileAlertRows.tsx` mounts its own independent
+  instance (its own `open` state and its own `onCloseFocus`), and `ProfileItem.tsx` keeps its
+  own, unchanged instance for the profile menu's Health check item -- the dialog itself supports
+  more than one caller, each owning its own open/close state and its own focus-restore target.
+  Each row dismisses for the run only
+  (two local booleans in `ProfileAlertRows.tsx`, never persisted) -- a restart naturally re-arms
+  both, satisfying "the alert returns if the condition persists after a restart" with no extra
+  logic. Per FR-037 (amended) and new FR-072.
+- [X] T256 [US1] Gate remediation (round 1, four reviewers, one High/High pair confirmed live by
+  a CDP run): `MemoryTriageDialog.tsx` gained busy guards on both confirm flows (Escape and
+  Cancel blocked while a stop is in flight, `stoppingId`/`bulkStopping` gate re-entry), a live
+  re-check of each Session's `idle` status at confirm time (not the snapshot taken when its own
+  Stop button was clicked), a latched last-known confirm target/count (no more text flicker
+  during the close animation), a computed post-stop focus fallback (the next remaining row's own
+  Stop button, else "Stop idle", else the dialog's own now-focusable heading -- never a button
+  the same stop just removed), and `finally`-wrapped `stopAgent` calls so a rejected IPC call
+  can never leave the dialog stuck on "Stopping…". `ProfileAlertRows.tsx`'s announcements moved
+  from a local `useClearedAnnouncement` region (silenced while the nav column is `inert`) to the
+  shared, always-mounted `useChatAreaAnnouncer` App.tsx already renders outside that collapsible
+  subtree, with the two conditions joined into one announcement when both first appear in the
+  same commit (two separate `announce()` calls in the same tick cancelled each other); its own
+  outer padding is now conditional on a row actually showing (`empty:p-0` never matched, since
+  the row always contained the old live region); and "N agents" is pluralised correctly (matches
+  the retired `StatusBar.tsx`'s own `pluralAgents`). The bulk confirm's own destructive button now
+  reads "Stop idle" (was "Stop all", which could be misread as every agent including a working
+  one). Live-verified by `scripts/verify-tauri-560.mjs` (see T257).
+- [X] T257 [US1] Live CDP check (`scripts/verify-tauri-560.mjs`, new, following
+  `verify-tauri-559.mjs`'s own structure): isolated scratch launch per
+  `refract-tauri-live-check-isolation`, with `REFRACT_FORCE_LOW_MEMORY=1` (an existing,
+  pre-reviewed `#[cfg(debug_assertions)]` test knob in `shell/memory.rs`, not added by this
+  story) forcing the low-memory condition, and the fake-omp harness's own hardcoded
+  `omp/18.10.1` version (already outside the specifically re-probed 18.8.x range per
+  `readiness.rs`) triggering the unverified-version condition with no script changes to the app
+  needed for either. Proved live: both rows appear with the exact copy; Triage lists a created
+  idle Session and a confirmed Stop actually stops it; a second idle Session plus "Stop idle"
+  stops it via the bulk confirm, emptying the list; dismissing each row hides it immediately and
+  it does not return on its own within one more memory-sampler tick even though the forced
+  condition still holds; Check opens the real `HealthCheckDialog` showing a genuine
+  "Passed with a warning" omp row; a keyboard-only pass (Tab/Enter) reaches and activates the
+  Check action; every named control's accessible name read via the CDP Accessibility domain
+  (never `textContent`). All checks passed (exit 0); nothing reported as not-exercised. Evidence
+  (`report.json`, screenshots with their own sha256, `git rev-parse HEAD`) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+- [X] T258 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with the
+  reworded FR-037, new FR-072, and a dated `### Session 2026-10-16 (quiet alert rows)`
+  Clarifications entry; amended `specs/008-profile-and-accounts/spec.md` FR-029 to cross-reference
+  both instead of duplicating them; `CONTEXT.md` gained the **Alert row** glossary entry (the term
+  the **Waiting marker** entry's own `_Avoid_` line had already reserved for this issue);
+  `docs/PLAN.md` gets this story's own row. Gate-round corrections: this same task's own T255
+  entry above is corrected to describe the HealthCheckDialog's TWO independent instances built
+  (never a lift into App.tsx, which would have raised App.tsx's own file-size baseline back over
+  its cap); `contracts/ipc.md`'s `memory:warning` row and `memory-store.ts`'s header comment no
+  longer call this the status bar's notice; `HealthCheckDialog.tsx`'s own doc comment names both
+  of its callers.
+- [X] T259 [US1] Gate remediation (round 2, Code/Tests FAIL -> fix): three findings, Decided
+  (Skippy, delegated by Stuart 2026-10-17), recorded on #560.
+  **F1** (focus theft on blank-space click): the round 1 focus-redirect fix's `focusout`
+  listener treated `document.activeElement === document.body` alone as proof the row's focused
+  descendant had been removed from the DOM, but an ordinary click on blank space (anywhere with
+  no focusable target) ALSO blurs the active element to `<body>` without removing anything --
+  the previous version stole focus straight back to the row every time. `ProfileAlertRows.tsx`
+  now additionally checks that the actual element leaving focus (`event.target`) is no longer
+  connected to the document (`describesRemoval()`) -- only a genuine removal causes that; a
+  blank-space click leaves the same button sitting there, still connected, so nothing redirects.
+  Keyboard focus-return after closing Triage (the dialog's own `onCloseAutoFocus`/`onCloseFocus`
+  path) is a separate mechanism, unaffected.
+  **F2** (failed Stop announced as success): `sessions-store.ts`'s `stopAgent` resolved
+  `Promise<void>` unconditionally, so a clean `{ok:false}` stop response (already toasted by the
+  store itself) was announced via `useChatAreaAnnouncer` as a SUCCESS regardless; in bulk,
+  `Promise.allSettled`'s `status === 'rejected'` filter never matched a clean failure either, so a
+  partly- or wholly-failed bulk stop always reported every target as stopped. `stopAgent` now
+  resolves the real `result.ok` boolean (matching `archive`/`restore`'s own established pattern,
+  `sessions-store.ts` interface doc comment added); `MemoryTriageDialog.tsx`'s single and bulk
+  confirm flows announce the true outcome, naming the failing Session(s) by name where available
+  ("Couldn't stop {name}'s agent" / "Couldn't stop {N} agents: {names}"), joined with any success
+  count into ONE `announce()` call for a partial bulk result (two calls in the same tick cancel
+  each other, `chatAreaAnnouncer.ts`).
+  **F3** (spec/UI mismatch on the agent count): FR-037 still promised "Low memory ({N} agents)"
+  on the row itself, but round 1's own "honest agent count" fix (`ProfileAlertRows.tsx` item 5
+  comment) had already dropped it, since the system's live-agent count (idle+working+needs-you)
+  and Triage's idle-only list can legitimately differ. FR-037 reworded to match (the row says
+  just "Low memory"); a new dated Clarifications entry (`### Session 2026-10-17 (quiet alert
+  rows, gate round 2)`) records the decision; `MemoryTriageDialog.tsx`'s own `DialogDescription`
+  now actually states the idle count its comments already claimed it did ("N idle agents using
+  memory..."); `docs/PLAN.md`'s #560 row gets this round's own summary.
+  `pnpm typecheck` and `pnpm vitest run` clean; `node scripts/ci-local.mjs` and a fresh live CDP
+  run (`scripts/verify-tauri-560.mjs`, extended to prove F1 and F2) -- see T260.
+- [X] T260 [US1] Live CDP check, gate round 2 (`scripts/verify-tauri-560.mjs`, extended; new
+  `scripts/verify-tauri-560-gate2.mjs` split out to keep the main file under the #806 600-line
+  cap): proves F1 live -- clicking the low-memory row's own non-focusable label (a real
+  blank-space click inside the row) while Triage is focused leaves focus on `<body>`, never
+  stolen back onto an alert row's own control; a keyboard-driven Dismiss of the last remaining
+  row (Tab + Enter) leaves focus on the profile item's own name button, never a disconnected
+  node. Proves F2 live -- `window.refract.sessions.stopAgent` monkey-patched in the renderer
+  (no real process touched) to force one Session's Stop to resolve `{ok:false}`, single and via
+  bulk "Stop idle" (n=1, reusing the one idle Session rather than a second concurrently-idle
+  one -- issue #512's real low-memory start-defer feature, triggered the whole run by this
+  story's own `REFRACT_FORCE_LOW_MEMORY=1`, would otherwise defer a second Session's start for
+  up to its own 60s ceiling, confirmed live racing this script's own equal 60s wait): both
+  announce the real failure, naming the Session, never success; the toast reads "Couldn't stop
+  {name}'s agent. Try again."; the Session stays listed since it was never actually stopped.
+  Two further bugs found and fixed by this same live-check work, neither part of F1/F2/F3 but
+  blocking a clean run: a WebView2/CDP input-timing click race on destructive confirm buttons
+  (a synthetic click immediately after a dialog/AlertDialog opens is an intermittent one-shot
+  miss in this harness, confirmed via `app.log` showing zero second `stopAgent` IPC call ever
+  reaching the backend when it struck -- settle-sleep guards added at every remaining site that
+  lacked one), and the keyboard-Dismiss focus bug named under F1 above (Radix Tooltip's own
+  Portal content re-stealing focus on its trigger's removal -- fixed by moving the redirect to
+  the Dismiss click site itself, proactively, before the row is ever removed). `node
+  scripts/ci-local.mjs` 16/16 PASS and this live check ALL PASS (exit 0, nothing not-exercised)
+  together on the same final HEAD `91f73e1`; `report.json`'s own `gitHead` matches. Evidence
+  (`report.json`, `report.txt`, `app.log`, six screenshots with their own sha256) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+
+## Phase 51: Convergence
+
+- [X] T261 [US1] #927 quiet composer (v0.3.0 feedback item 4, Decided, Skippy, delegated by
+  Stuart 2026-10-16 -- grilled, all resolved on the issue): in Dark and Obsidian the message
+  box's fill is now `transparent` (`globals.css`'s `--composer-background`, was a solid literal
+  per theme) with a faint new `--composer-border` token (aliases `--divider`) replacing the
+  literal `border-muted-foreground/85` class; the field's own focus-visible state now reads a
+  new `--composer-focus` token for its border colour and a new `--composer-ring` token for its
+  glow (`transparent` in these two themes -- no glow, a quiet border-colour change is the whole
+  cue -- `MessageInput.tsx`). The Approval mode pill, Model picker and Reasoning picker
+  (`pickerShared.tsx`'s shared `PICKER_TRIGGER_CLASS`) move from `badgeVariants({variant:
+  'outline'})` to `badgeVariants({variant: 'ghost'})` (reused, no new classes, `docs/design/
+  components.md` "Button"), with an explicit resting-muted/hover-foreground text-colour pair
+  (the same convention `ReadoutChip.tsx`'s own interactive style already uses) overriding
+  `ghost`'s own opposite-direction hover colour via `cn`'s tailwind-merge. A new `GHOST_FOCUS_
+  CLASS`/`GHOST_BUTTON_FOCUS_CLASS` pair (`pickerShared.tsx`) reads `--composer-focus` for these
+  four controls' own focus outline, split out from the unchanged `COMPOSER_FOCUS_CLASS`/
+  `COMPOSER_BUTTON_FOCUS_CLASS` (still `--ring`, still used by Send/Stop only -- "Send and Stop
+  are unchanged"). Dark (high contrast) is explicitly excluded: its `--composer-background`
+  stays its old opaque literal, and its new `--composer-border`/`--composer-focus`/
+  `--composer-ring` tokens are byte-for-byte token-izations of the prior literal classes
+  (`color-mix(in oklab, var(--muted-foreground) 85%, transparent)`, `var(--ring)`, `color-mix(in
+  oklab, var(--ring) 50%, transparent)` respectively) -- nothing it renders changes. `scripts/
+  theme-contrast-pairs.mjs`: the now-obsolete `border`/`composer-background` pair (the Approval
+  pill's old opaque outline border, gone now that it is `ghost`) removed; `send`/`composer-
+  background` and `muted-foreground`/`composer-background` scoped to Dark high contrast only (a
+  new `send`/`background` pair covers Dark/Obsidian instead, where the fill is transparent);
+  `ring`/`composer-background` replaced by `composer-focus`/`composer-background` (enforced,
+  Dark high contrast only) plus two new `composer-border`/`composer-focus` vs `background` pairs
+  marked `informationalThemes: ['dark', 'obsidian']` (a new per-pair schema field, computed and
+  printed but never counted toward the gate's pass/fail, for Stuart's own accepted departure).
+- [X] T262 [US1] Update the docs: amended `docs/design/product-chat.md`'s "Message box" and
+  "Composer tone" bullets (the latter replacing its 2026-10-04 "strictly darker than the page"
+  rule with the new transparent-fill/faint-border/ghost-control/muted-focus rule, per the issue's
+  own grill), `docs/design/foundations-tokens-theming.md`'s "Canvas colour" bullet (superseded
+  note already landed with the issue's own filing, `docs/PLAN.md` commit 1e191f9), and `docs/
+  design/accessibility.md`'s "Accepted departures" (already landed the same way); this story adds
+  `specs/001-core-session-workspace/spec.md`'s FR-040 and US1 acceptance scenario 11 amendments
+  and this `### Session 2026-10-16 (quiet composer)` Clarifications entry; `MessageInput.tsx`'s
+  own composer-box comment and composer-dimming comment are rewritten to match (the Approval
+  pill's border-for-WCAG-1.4.11 reasoning no longer applies outside Dark high contrast); `docs/
+  PLAN.md`'s "v0.3.0 feedback" row gets an in-flight note for #927/#928 (shipped together per its
+  own "Suggested order" line) with this story's PR link.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #927; a no-build prep
+lane, per `docs/PLAN.md`'s own working rules). `pnpm typecheck`, `pnpm vitest run` (148 tests),
+`node scripts/check-indent.mjs` (0 odd-indent lines) and `node scripts/check-theme-contrast.mjs`
+(436 of 436 enforced pairs PASS across 3 themes, informational Dark/Obsidian composer-border/
+composer-focus pairs printed but not counted) all ran clean after this change; `pnpm build`/
+`pnpm check:ui-text`/the new CDP live check (`scripts/verify-927-928-quiet-composer.mjs`, written
+but deliberately not run, per this prep lane's own NO BUILDS rule) are left for the build lane
+that picks this PR up.
+
+## Phase 52: Convergence
+
+- [X] T263 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
   slash-command search. Added `src/shared/slashCommandSearch.ts` (`rankSlashCommands`, pure, no
   DOM): every listed command -- built-ins, project/user `file` commands, and `skill:<name>`
   entries alike -- is ranked exact/prefix/word-start (after `-`, `_`, `:` or a space)/substring/
@@ -2725,15 +2905,15 @@ comment was posted on #559 and the PR body's Departures section corrected.
   debounced (500ms), `useClearedAnnouncement`-backed result-count announcement mirroring
   `SessionList.tsx`'s own search announcement (re-reading live draft text and commands at fire
   time, never the render-time closure, so the debounce timer does not depend on a fresh array
-  identity every keystroke). Per FR-072.
-- [X] T256 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
+  identity every keystroke). Per FR-073.
+- [X] T264 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
   step, and a command reply no longer stretching the previous turn's own time. `SlashMenu.tsx`
   gained `parseSlashMenuState` (replacing the old bare `parseSlashQuery`): one space after a
   RECOGNISED command with verified subcommands (`command.subcommands`, already pruned to the
   verified set) parses as that command's own subcommand step instead of closing the menu, its
   own query being whatever follows the space; a second space closes it, same as any other
   command. `orderSubcommandsForEmptyQuery` puts `status` first with nothing typed yet (every
-  other subcommand keeps its existing order); a typed query ranks via the same T255 scorer.
+  other subcommand keeps its existing order); a typed query ranks via the same T263 scorer.
   `MessageInput.tsx`'s `completeSlashCommand` (choosing a top-level command) now only ever
   leaves the box reading `/name ` -- the composer text re-parsing as the subcommand step is
   what advances the menu, with no separate step state; a new `completeSubcommand` completes the
@@ -2748,9 +2928,9 @@ comment was posted on #559 and the PR body's Departures section corrected.
   shown elapsed time. The reply itself still renders normally; only the turn-time MATH excludes
   it. The other #938 items (refusal-text wording naming the allowed subcommands, short-notice
   wrapping, a Settings mention, and the suspected duplicate render) are out of scope for this
-  story and remain open on the issue. Per FR-073 and the FR-046 amendment.
-- [X] T257 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
-  FR-072 and FR-073, an amendment to FR-046, and two dated `### Session 2026-10-17` Clarifications
+  story and remain open on the issue. Per FR-074 and the FR-046 amendment.
+- [X] T265 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+  FR-073 and FR-074, an amendment to FR-046, and two dated `### Session 2026-10-17` Clarifications
   entries recording both decision records; `docs/design/product-chat.md`'s "Slash commands"
   bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
   2026-10-16 additions" row records both issues as built, with #938 noting only items 1 and 4 are

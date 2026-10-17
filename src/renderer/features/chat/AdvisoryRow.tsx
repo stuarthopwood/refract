@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-locations'

@@ -136,7 +136,7 @@ There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-c
 | `commands:update` | `{ sessionId, commands: SlashCommand[] }` | Slash-command menu; already filtered to the T093 supported set. |
 | `settings:changed` | `Settings` | Status bar switch. |
 | `ui:open-session` | `{ sessionId }` | Emitted when the user clicks a Windows notification. |
-| `memory:warning` | `{ low: boolean; freeBytes: number; liveAgents: number }` | Status bar low-memory notice; never stops an agent automatically (FR-037). |
+| `memory:warning` | `{ low: boolean; freeBytes: number; liveAgents: number }` | The low-memory alert row's notice, under the profile item (issue #560); never stops an agent automatically (FR-037). |
 
 Streaming is off the renderer's critical path: main normalises OMP frames into `TranscriptItem`s (data-model.md) and keeps the full transcript per Session; the renderer receives patches for the visible Session and asks for a full snapshot via `sessions.open` when it switches. A renderer reload therefore loses nothing.
 

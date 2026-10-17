@@ -19,7 +19,10 @@
 // `{"__delay__": ms}` pauses the tape for `ms` milliseconds before continuing (used to make a
 // streamed reply's own incremental `message_update` deltas land as genuinely separate renders,
 // not one instantaneous final paint); `{"__exit__": {"code": n}}` exits the process immediately
-// (simulates OMP crashing/exiting unexpectedly).
+// (simulates OMP crashing/exiting unexpectedly); `{"__stderr__": "text"}` writes `text` to this
+// process's own real stderr (not an OMP wire frame) and continues (issue #556: the only way a
+// tape can make `build_start_failure`'s stderr tail non-empty for a fixture that deliberately
+// never emits `ready` at all).
 //
 // Scenario selection: `--no-session` on argv ALWAYS selects `readiness` (the Rust readiness
 // probe's own scratch, non-Session OmpProcess) -- a real app launches that probe and a real
@@ -162,6 +165,16 @@ async function main() {
       if (line && typeof line === 'object' && typeof line.__delay__ === 'number') {
         cursor++;
         await new Promise((resolve) => setTimeout(resolve, line.__delay__));
+        continue;
+      }
+      // `__stderr__`: writes `text` to this process's own real stderr (not an OMP wire frame)
+      // and continues -- the one way a tape can make `OmpProcess`'s own `stderr_tail`
+      // non-empty, for a fixture whose whole point is a start failure with no `ready` frame
+      // ever emitted (issue #556 live check): `build_start_failure`'s stderr tail only has
+      // something to show if the child process actually wrote to stderr itself.
+      if (line && typeof line === 'object' && typeof line.__stderr__ === 'string') {
+        cursor++;
+        process.stderr.write(line.__stderr__ + '\n');
         continue;
       }
       emit(line);

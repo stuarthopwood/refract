@@ -338,4 +338,26 @@ export function createReportLogger(filePath) {
   };
 }
 
+/** Item 4 (M3, settled/resolved outline colours, `verify-927-928-quiet-composer.mjs`): the
+ * EXPECTED outline colour for a token like `--composer-focus`/`--ring` is resolved through a
+ * REAL probe element's own `getComputedStyle()` -- several theme presets resolve these through
+ * `color-mix()`/`var()` chains only the browser's own cascade can finish computing, so string-
+ * comparing the token's CSS text would be wrong. */
+export async function resolveCssVarColor(cdp, varName, property = 'outline-color') {
+  return cdp.evaluate(`(() => {
+    const probe = document.createElement('div');
+    probe.style.position = 'fixed';
+    probe.style.top = '-9999px';
+    probe.style.left = '-9999px';
+    probe.style.pointerEvents = 'none';
+    probe.style.outlineStyle = 'solid';
+    probe.style.outlineWidth = '1px';
+    probe.style.setProperty('${property}', 'var(${varName})');
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).outlineColor;
+    probe.remove();
+    return value;
+  })()`);
+}
+
 export { sleep };

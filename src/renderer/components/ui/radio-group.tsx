@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 
 // Hand-written (not `pnpm dlx shadcn add radio-group`, no network in this environment), matching

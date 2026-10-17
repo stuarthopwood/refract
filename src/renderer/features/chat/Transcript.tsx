@@ -8,7 +8,7 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'

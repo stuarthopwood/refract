@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { ChevronRightIcon } from 'lucide-react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 // #565 decision 10: the label column -- row `px-2` (8px) + the icon slot (`size-4`, 16px) +
