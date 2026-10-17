@@ -221,11 +221,12 @@
 - Q: Issue #632's own bug #2 ("the command is cut off twice"): a call's row truncates its
   command with an ellipsis, and the only way to read the whole thing used to be the Arguments
   block #628 already removed. How is the full command shown now that there is no boxed
-  Arguments? → A: A row's own summary text wraps instead of truncating the moment the user
-  expands it (`CollapsedLine`'s existing `summaryWrap` option, now applied automatically while
-  `actualOpen`, not only when a caller opts in for a narrow column); the command never needs the
-  "View full call" dialog just to be read in full, though the dialog (#628) still exists for the
-  exact raw arguments and output.
+  Arguments? → A: A row's own summary text wraps instead of truncating once the user expands
+  it, through `CollapsedLine`'s own opt-in `wrapWhenOpen` prop (gate round 1, H4: every tool row
+  passes it explicitly, rather than every `CollapsedLine` consumer wrapping automatically while
+  open, which would have wrapped callers that never asked for it) -- only the FIRST line of a
+  multi-line command is ever shown this way; the full, exact multi-line command is read in the
+  "View full call" dialog (#628), which still exists for the exact raw arguments and output.
 - Q: Is the "Explored" supergroup (runs of different read-only tools collapsing into one line)
   part of this slice? → A: No, per the issue's own "Open decision (default: not in the first
   slice)": `groupToolItems`'s rule (same tool name only) is unchanged; a future issue may propose

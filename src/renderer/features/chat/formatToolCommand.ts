@@ -22,7 +22,10 @@ function stringField(args: unknown, key: string): string | undefined {
 // read as a duplicate ("grep grep \"...\""). Exported so `ToolRow.tsx`'s two command-style call
 // sites (the solo `ToolGroupRow` branch and each nested `ToolCallRow`) agree on exactly which
 // tools this applies to, matching this file's own reshaping table one-for-one.
-export const COMMAND_STYLE_TOOLS: Record<string, true> = { bash: true, grep: true }
+// Gate round 1 (Main, D3, Security Low): a plain object's `[item.tool]` lookup is vulnerable to
+// an inherited prototype property (e.g. `item.tool === 'toString'`); a `Set` with `.has` has no
+// such surface.
+export const COMMAND_STYLE_TOOLS: ReadonlySet<string> = new Set(['bash', 'grep'])
 export function commandRowText(item: ToolItem): string {
   if (item.tool === 'bash') {
     // The command can be (and often is) multi-line (`cd a; \n gh pr merge ...`); only the FIRST
@@ -30,11 +33,14 @@ export function commandRowText(item: ToolItem): string {
     // origin/main; …`. Gate round 1 (code-reviewer Medium, M4): a bare first line (which could
     // itself be blank, e.g. a leading newline) used to give no signal that further lines
     // existed; a trailing " …" now marks the row whenever the command actually has more than
-    // one line, blank or not, so it never silently implies a one-line command was the whole
-    // thing (the full text is still only ever a click away, the "View full call" dialog, #628).
+    // one NON-EMPTY line, so it never silently implies a one-line command was the whole thing
+    // (the full text is still only ever a click away, the "View full call" dialog, #628). Gate
+    // round 1 (Main, D5): counted on the RAW line count before -- a trailing blank line (e.g.
+    // `ls\n`) wrongly marked a genuinely one-line command as multi-line; counts non-empty lines.
     const lines = item.target.split(/\r\n|\n|\r/)
-    const firstNonEmptyLine = lines.find((line) => line.trim().length > 0) ?? ''
-    return `$ ${firstNonEmptyLine}${lines.length > 1 ? ' …' : ''}`
+    const nonEmptyLines = lines.filter((line) => line.trim().length > 0)
+    const firstNonEmptyLine = nonEmptyLines[0] ?? ''
+    return `$ ${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
   }
   if (item.tool === 'grep') {
     // `item.target` is the pattern alone (`extract_target` in `transcript.rs`); the search path

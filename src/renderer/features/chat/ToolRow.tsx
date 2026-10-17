@@ -155,26 +155,29 @@ function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; r
 // #632 section 3's "muted result" column, for one call's own row (solo or nested `ToolCallRow`):
 // an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the same old/new text
 // `DiffView`'s expanded body already diffs, #630) joined with duration. `grep`/`glob`/`find`/
-// `read` show no result: no documented, fixture-backed OMP output shape to probe first (the
-// issue's own rule is "no count rather than a wrong one"). `write` gets no stat either: no
-// cache of a prior read/edit's content exists yet to diff it against (#630's own open idea).
-// Gate round 1 (Sec Medium H3): gated on `status === 'done'`, same as `ToolCallBody`'s own
-// "Wrote N lines"/quiet-summary text, since `item.edit` is populated while still running too.
+// `read`/`write` get no stat: no documented, fixture-backed OMP output shape to probe first
+// (the issue's own rule is "no count rather than a wrong one"). Gated on `status === 'done'`
+// (Sec Medium H3), same as `ToolCallBody`'s own "Wrote N lines" text.
+function editStatForItem(item: ToolItem): { added: number; removed: number } | undefined {
+  return item.status === 'done' && item.edit ? cachedDiffStat(item.edit) : undefined
+}
+// Gate round 1 (Main, D2): the sr-only "N lines added, M removed" text used to carry inline but
+// was never announced -- an explicit `aria-label` (both `ToolCallRow`'s and the solo
+// `ToolGroupRow`'s own trigger) makes a browser ignore every child. Callers fold this into their
+// own aria-label array; the visual "+N −M" here stays `aria-hidden`.
+function diffStatAriaText(stat: { added: number; removed: number } | undefined): string | undefined {
+  if (!stat) return undefined
+  return `${stat.added} ${stat.added === 1 ? 'line' : 'lines'} added, ${stat.removed} ${stat.removed === 1 ? 'line' : 'lines'} removed`
+}
 // Gate round 1 (ui-architect-v3 High H5): a coloured stat broke #570 decisions 1/3 ("success
-// stays neutral") -- both colour classes dropped, `tabular-nums` kept; an sr-only "N lines
-// added, M removed" sits beside the visual "+N −M" (A11y Low).
+// stays neutral") -- both colour classes dropped, `tabular-nums` kept.
 function callMeta(item: ToolItem): React.ReactNode | undefined {
-  const stat = item.status === 'done' && item.edit ? cachedDiffStat(item.edit) : undefined
+  const stat = editStatForItem(item)
   const duration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   return joinMetaParts([
     stat ? (
-      <span className="tabular-nums">
-        <span aria-hidden="true">
-          +{stat.added} −{stat.removed}
-        </span>
-        <span className="sr-only">
-          {stat.added} {stat.added === 1 ? 'line' : 'lines'} added, {stat.removed} {stat.removed === 1 ? 'line' : 'lines'} removed
-        </span>
+      <span aria-hidden="true" className="tabular-nums">
+        +{stat.added} −{stat.removed}
       </span>
     ) : undefined,
     duration
@@ -256,13 +259,22 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a `bash`/`grep` member's own
   // `summary` (`commandRowText`) already names the tool ("$ ..."/"grep \"...\""), so a separate
   // `label` read as a duplicate word; dropped for exactly those two tools.
-  const isCommandStyle = COMMAND_STYLE_TOOLS[item.tool]
+  const isCommandStyle = COMMAND_STYLE_TOOLS.has(item.tool)
   // Gate round 1 (accessibility-auditor Medium, M1): this row had no explicit accessible name
   // (content-based, lost once `label` is dropped above, and prone to #570's doubled-space
-  // artifact) -- built explicitly from tool, status, `commandRowText` (M1, matches what is
-  // actually shown), and duration.
+  // artifact) -- built explicitly from tool, status, `commandRowText` (M1), and duration.
+  // Gate round 1 (Main, D3): skip the `item.tool` prefix for `grep` -- `commandRowText` already
+  // starts with the literal word "grep", so the prefix read as "grep grep \"...\""; `bash`'s own
+  // text ("$ ...") never says "bash", so its prefix stays. (Main, D2): the edit stat's sr-only
+  // text folds in here instead -- an explicit `aria-label` makes a browser ignore every child.
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
-  const memberAriaLabel = [`${toolStatusLabel(item.status)} ${item.tool} ${commandRowText(item)}`, memberDuration]
+  const memberAriaLabel = [
+    item.tool === 'grep'
+      ? `${toolStatusLabel(item.status)} ${commandRowText(item)}`
+      : `${toolStatusLabel(item.status)} ${item.tool} ${commandRowText(item)}`,
+    diffStatAriaText(editStatForItem(item)),
+    memberDuration
+  ]
     .filter((part): part is string => !!part)
     .join(', ')
   return (
@@ -398,7 +410,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a solo command-style call's own
   // `summary` already names the tool; the bare label repeated it, so it's dropped for those two
   // tools only (`toolLabel` still feeds the accessible name, so this is visual-only).
-  const soloIsCommandStyle = solo && skillName === undefined && COMMAND_STYLE_TOOLS[last.tool]
+  const soloIsCommandStyle = solo && skillName === undefined && COMMAND_STYLE_TOOLS.has(last.tool)
   const visibleLabel = soloIsCommandStyle ? undefined : solo ? toolLabel : `${group.tool} \u00d7${group.items.length}`
   const summary = skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined
   // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
@@ -439,8 +451,16 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // the accessible name's own description of it can never diverge.
   const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
+  // Gate round 1 (Main, D3): skip the tool prefix for a solo `grep` too (same duplicate word);
+  // (Main, D2): the edit stat's aria text folds in here (never read off the visual `meta` JSX).
   const triggerAriaLabel = solo
-    ? [`${toolStatusLabel(status)} ${toolLabel} ${soloSummaryText}`, soloDurationText]
+    ? [
+        soloIsCommandStyle && last.tool === 'grep'
+          ? `${toolStatusLabel(status)} ${soloSummaryText}`
+          : `${toolStatusLabel(status)} ${toolLabel} ${soloSummaryText}`,
+        diffStatAriaText(editStatForItem(last)),
+        soloDurationText
+      ]
         .filter((part): part is string => !!part)
         .join(', ')
     : [

@@ -5,30 +5,27 @@
 // cwd/worktree/`REFRACT_DATA_DIR`, never touching Stuart's real Session list.
 //
 // #632's own structural acceptance (no border, hover tints one row, the Error line under a
-// collapsed failed row, no Arguments/Output on expand) was already live-checked by #565/#570/
-// #628 -- not re-proven here from scratch, except two cheap direct assertions gate round 1 added
-// (no command text in the collapsed header, hover tints one row only) since they interact
-// directly with this story's own changes. Proves everything THIS story added:
-//   (a) a multi-call group's header reads "<tool> ×N" (never a call's command), with the
-//       failed/interrupted counts AND the group's own total time (parsed and summed from every
-//       member, not just regex-matched) in the meta slot;
+// collapsed failed row, no Arguments/Output on expand) was already live-checked by #565/#570
+// (#628 landed no live-check script of its own, so it is not cited here) -- not re-proven from
+// scratch, except two cheap direct assertions gate round 1 added (no command text in the
+// collapsed header, hover tints one row only). Proves everything THIS story added:
+//   (a) a group's header reads "<tool> ×N" (never a call's command), failed/interrupted counts
+//       AND the group's own total time (summed from every member) in the meta slot;
 //   (b) `bash` reads "$ <command>", `grep` reads `grep "<pattern>" <path>`;
-//   (c) a row's command text wraps (computed `white-space`) once expanded, with no code-block
-//       element and no output text (gate round 1, H6: `bash` shows no output at all);
+//   (c) a row's command text wraps once expanded, no code-block element, no output text (H6);
 //   (d) an `edit` call's own row shows its "+N −M" stat alongside duration;
-//   (e) the SAME grammar renders inside the Subagents panel (shared `ToolGroupRow`, design point
-//       4), including its own "N failed" meta, not just the label;
-//   (f) hover tints only the hovered row, never a nested ancestor (gate round 1, M8);
-//   (g) an expanded two-bash group is about 4 lines tall (gate round 1, M8, measured);
-//   (h) keyboard Tab/Shift+Tab reaches the group header with a visible focus outline, and each
-//       member's own accessible name includes its tool and command (gate round 1, M8);
-//   (i) hostile output (ANSI codes, a very long line) renders inert and bounded (gate round 1, M8).
+//   (e) the SAME grammar renders inside the Subagents panel (shared `ToolGroupRow`);
+//   (f) hover tints only the hovered row, never a nested ancestor, collapsed AND expanded (M8, D10);
+//   (g) an expanded two-bash group is about 4 lines tall (M8, measured);
+//   (h) keyboard Tab/Shift+Tab reaches the header with a visible focus outline, each member's
+//       own accessible name includes its tool and command (M8);
+//   (i) hostile output (ANSI byte, a very long line) renders inert and bounded, in BOTH the
+//       Error line and the row's own summary text, collapsed and expanded (M8, D9).
 //
-// Six turns, one scratch Session (Approval mode seeded to Auto, so no approval-card grouping
-// boundary ever exists): (a) two bash, #2 failing -- header grammar, hover, height, keyboard
-// focus, duration sum, expanded-body. (b) grep -- command-style text. (c) read -- UNCHANGED.
-// (d) edit -- the stat. (e) one `task()` subagent, two bash (one failing) -- same grammar, read
-// from the Subagents panel. (f) one bash with an ANSI byte and a very long line, failing.
+// Six turns, one scratch Session (Approval mode seeded to Auto, no approval-card boundary):
+// (a) two bash, #2 failing. (b) grep. (c) read -- UNCHANGED. (d) edit -- the stat. (e) one
+// `task()` subagent, two bash (one failing), read from the Subagents panel. (f) one bash with
+// an ANSI byte and a very long line, failing.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -97,7 +94,12 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // gate round) then drops the label for a solo `bash`/`grep` row -- accepted too when its own
 // summary starts with the command-style grammar (`$ `/`grep "`), confirmed live: without this,
 // `.at(-1)` fell back to the multi-call group's own empty spacer span for turn (b)'s grep row.
+// Gate round 2 (Main, D8): excludes any button inside a Spine `ol.border-l` -- an EXPANDED
+// group's own member buttons (`ToolCallRow`) match the exact same label-less `$ `/`grep "`
+// fallback this finder needs for a solo header, so without this exclusion a header index/count
+// could silently resolve to a member row once a group is expanded.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
+  if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('span.font-medium');
   if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
   const s = el.querySelector('span.min-w-0.flex-1');
@@ -337,6 +339,32 @@ async function main() {
     if (memberCount !== 2) failures.push(`Expected 2 member rows inside the expanded group, found ${memberCount}.`);
     else findings.push('Expanded group shows both members down the shared Spine.');
 
+    // Gate round 2 (Main, D10): hovering a MEMBER of an expanded group must tint only that
+    // member -- never the group's own trigger background nor add a border to any ancestor
+    // (#430's regression class, re-checked here: the member sits in a different ancestor chain).
+    const memberHoverState = `(() => {
+      const h = (${GROUP_HEADERS}).at(0);
+      const b = (${memberButtons}).at(0);
+      if (!h || !b) return null;
+      const ancestorBorders = [];
+      for (let node = b.parentElement; node && node !== document.body; node = node.parentElement) ancestorBorders.push(getComputedStyle(node).borderTopWidth);
+      return { triggerBg: getComputedStyle(h).backgroundColor, ancestorBorders };
+    })()`;
+    const memberHoverBefore = await cdp.evaluate(memberHoverState);
+    const memberHoverRect = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    if (memberHoverRect) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: memberHoverRect.x, y: memberHoverRect.y });
+    const memberHoverAfter = await cdp.evaluate(memberHoverState);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    if (!memberHoverBefore || !memberHoverAfter) {
+      failures.push('Could not measure hover state for an expanded group member (D10).');
+    } else if (memberHoverBefore.triggerBg !== memberHoverAfter.triggerBg) {
+      failures.push(`Hovering an expanded group's own member changed the GROUP TRIGGER's background (${memberHoverBefore.triggerBg} -> ${memberHoverAfter.triggerBg}).`);
+    } else if (JSON.stringify(memberHoverBefore.ancestorBorders) !== JSON.stringify(memberHoverAfter.ancestorBorders)) {
+      failures.push(`Hovering an expanded group's own member changed an ancestor's borderTopWidth (${JSON.stringify(memberHoverBefore.ancestorBorders)} -> ${JSON.stringify(memberHoverAfter.ancestorBorders)}) -- #430's own regression class.`);
+    } else {
+      findings.push(`Hovering an expanded group's own member leaves the trigger (${memberHoverAfter.triggerBg}) and every ancestor's borderTopWidth unchanged (#430's class, not reintroduced).`);
+    }
+
     // Gate round 1 (test-reviewer Medium, M7): the header's own total time must equal the SUM of
     // the member durations (parsed and added, not just "has a trailing duration").
     const memberMetaTexts = await cdp.evaluate(`(${memberButtons}).map((b) => { const m = b.querySelector('span.tabular-nums'); return m ? m.textContent.replace(/^,\\s*/, '').trim() : null; })`);
@@ -393,16 +421,21 @@ async function main() {
       const contentClone = content ? content.cloneNode(true) : null;
       if (contentClone) contentClone.querySelectorAll('button').forEach((btn) => btn.remove());
       const contentText = contentClone ? contentClone.textContent.trim() : null;
-      return { whiteSpace, hasCodeBlock, contentText };
+      return { whiteSpace, hasCodeBlock, contentText, hasContent: !!content };
     })()`);
     if (!member0ExpandedCheck || member0ExpandedCheck.whiteSpace !== 'normal') {
       failures.push(`Expanded first member's own summary computed white-space is "${member0ExpandedCheck?.whiteSpace}", expected "normal" (wraps instead of truncating).`);
     } else {
       findings.push("Expanded first member's own command text computed white-space is \"normal\" (wraps, not truncate).");
     }
-    if (member0ExpandedCheck?.hasCodeBlock) {
+    // Gate round 2 (Main, D8): `content` missing entirely used to fall through to the SAME
+    // "no code block, no output" finding as a genuinely clean expansion -- a vacuous pass that
+    // never actually looked at anything. Checked explicitly first, as its own failure.
+    if (!member0ExpandedCheck?.hasContent) {
+      failures.push("Expanded first member's own collapsible-content region was not found -- cannot confirm no code-block/output element (no vacuous pass).");
+    } else if (member0ExpandedCheck.hasCodeBlock) {
       failures.push("Expanded first member's own body contains a pre/code/code-block element -- #632's own acceptance is no boxed Arguments/Output block.");
-    } else if (member0ExpandedCheck?.contentText) {
+    } else if (member0ExpandedCheck.contentText) {
       failures.push(`Expanded first member's own body shows output text ("${member0ExpandedCheck.contentText}") -- a successful bash call must show none (gate round 1, H6).`);
     } else {
       findings.push('Expanded first member (a successful bash call) shows no code block and no output text at all (gate round 1, H6).');
@@ -499,50 +532,86 @@ async function main() {
 
     // ---- Turn (f): hostile output renders inert, bounded ----
     await cdp.typeIntoByLabel('Message', TURN_F_PROMPT);
+    // Gate round 2 (Main, D9): whether `Input.insertText` preserves a raw ESC byte through the
+    // `<textarea>` is a fact about this TOOL, not #632 -- recorded honestly; the checks below
+    // rely only on the X run either way.
+    const typedEscSurvived = await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return el ? /\\x1b/.test(el.value ?? '') : null; })()`);
+    findings.push(`Turn (f): Input.insertText ${typedEscSurvived ? 'preserved' : 'did NOT preserve'} the raw ESC byte in the Message textarea (tool fact, not a #632 finding either way).`);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632f/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (f) finished' });
-    // Gate round 1 (Main's refinement): the Error line (whichever call it names -- a separate,
-    // out-of-scope errorLine()/OMP line-order observation, filed on #650) renders inert/bounded.
+    const HOSTILE_RE = /Hostile/;
+    const X_RUN_RE = /X{10,}/;
+    const hasColourMarkup = (html) => /color\s*:\s*red|style="[^"]*color/i.test(html);
+    const noOverflow = (s) => s.transcriptScrollWidth != null && s.transcriptScrollWidth <= s.transcriptClientWidth + 2;
+    const isHostile = (text) => HOSTILE_RE.test(text) && X_RUN_RE.test(text);
+    // Gate round 2 (Main, D9, High): requires the checked text to actually CONTAIN the hostile
+    // output -- the Error line can legitimately show OMP's own exit-code footer instead of the
+    // hostile stdout (errorLine()/OMP line-order gap, #650), which has no raw ANSI byte either,
+    // so the old check passed VACUOUSLY without ever seeing the hostile content at all.
     const hostileCheck = await cdp.evaluate(`(() => {
-      const hs = ${GROUP_HEADERS};
-      const h = hs.at(-1);
-      if (!h) return null;
-      const id = h.getAttribute('aria-describedby');
+      const h = (${GROUP_HEADERS}).at(-1);
+      const id = h ? h.getAttribute('aria-describedby') : null;
       const detail = id ? document.getElementById(id) : null;
       if (!detail) return null;
       const t = ${TRANSCRIPT};
-      const rect = detail.getBoundingClientRect();
       return {
-        text: detail.textContent,
-        html: detail.innerHTML,
-        heightPx: rect.height,
-        hasElementChildren: detail.children.length > 0,
-        hasRawAnsiByte: /\\x1b/.test(detail.textContent),
-        transcriptScrollWidth: t ? t.scrollWidth : null,
-        transcriptClientWidth: t ? t.clientWidth : null,
+        text: detail.textContent, html: detail.innerHTML, heightPx: detail.getBoundingClientRect().height,
+        hasElementChildren: detail.children.length > 0, hasRawAnsiByte: /\\x1b/.test(detail.textContent),
+        transcriptScrollWidth: t ? t.scrollWidth : null, transcriptClientWidth: t ? t.clientWidth : null,
       };
     })()`);
     if (!hostileCheck) {
       failures.push('Turn (f) hostile-output call: no Error line (aria-describedby target) found.');
+    } else if (!isHostile(hostileCheck.text)) {
+      failures.push(`Turn (f) Error line reads ${JSON.stringify(hostileCheck.text)} -- does not contain the hostile output at all (errorLine()/OMP line-order gap, #650), so inert/bounded checks here would be vacuous.`);
+    } else if (hostileCheck.hasRawAnsiByte) {
+      failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape byte: ${JSON.stringify(hostileCheck.text)}.`);
+    } else if (hostileCheck.hasElementChildren) {
+      failures.push(`Turn (f) Error line contains injected element(s) instead of plain text: ${hostileCheck.html}.`);
+    } else if (hasColourMarkup(hostileCheck.html)) {
+      failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output: ${hostileCheck.html}.`);
+    } else if (!(hostileCheck.heightPx > 0 && hostileCheck.heightPx <= 60)) {
+      failures.push(`Turn (f) Error line measured ${hostileCheck.heightPx.toFixed(0)}px tall, expected bounded by its own line-clamp-2 cap (<=60px).`);
+    } else if (!noOverflow(hostileCheck)) {
+      failures.push(`Turn (f) caused the transcript to overflow horizontally (scrollWidth ${hostileCheck.transcriptScrollWidth} > clientWidth ${hostileCheck.transcriptClientWidth}).`);
     } else {
-      const hasColourMarkup = /color\s*:\s*red|style="[^"]*color/i.test(hostileCheck.html);
-      const boundedHeight = hostileCheck.heightPx > 0 && hostileCheck.heightPx <= 60;
-      const noOverflow = hostileCheck.transcriptScrollWidth != null && hostileCheck.transcriptScrollWidth <= hostileCheck.transcriptClientWidth + 2;
-      if (hostileCheck.hasRawAnsiByte) {
-        failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape byte: ${JSON.stringify(hostileCheck.text)}.`);
-      } else if (hostileCheck.hasElementChildren) {
-        failures.push(`Turn (f) Error line contains injected element(s) instead of plain text: ${hostileCheck.html}.`);
-      } else if (hasColourMarkup) {
-        failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output: ${hostileCheck.html}.`);
-      } else if (!boundedHeight) {
-        failures.push(`Turn (f) Error line measured ${hostileCheck.heightPx.toFixed(0)}px tall, expected bounded by its own line-clamp-2 cap (<=60px).`);
-      } else if (!noOverflow) {
-        failures.push(`Turn (f) caused the transcript to overflow horizontally (scrollWidth ${hostileCheck.transcriptScrollWidth} > clientWidth ${hostileCheck.transcriptClientWidth}).`);
-      } else {
-        findings.push(`Turn (f) Error line ("${hostileCheck.text}") renders inert (no raw ANSI byte, no injected element, no colour markup) and bounded (${hostileCheck.heightPx.toFixed(0)}px tall; transcript scrollWidth ${hostileCheck.transcriptScrollWidth} <= clientWidth ${hostileCheck.transcriptClientWidth}, no horizontal overflow).`);
-      }
+      findings.push(`Turn (f) Error line ("${hostileCheck.text}") genuinely contains the hostile output and renders inert and bounded (${hostileCheck.heightPx.toFixed(0)}px tall, no horizontal overflow).`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '06-turn-f-hostile-output.png'));
+
+    // Gate round 2 (Main, D9): the row's own SUMMARY span (`commandRowText`) carries the raw
+    // command, including the ×250 X run -- unlike the Error line, OMP's own ARGS transcript
+    // reliably carries it, checked both collapsed (truncates) and expanded (must wrap).
+    const readSummaryState = `(() => {
+      const h = (${GROUP_HEADERS}).at(-1);
+      const s = h ? h.querySelector('span.min-w-0.flex-1') : null;
+      if (!s) return null;
+      const t = ${TRANSCRIPT};
+      return {
+        text: s.textContent, html: s.innerHTML, hasElementChildren: s.children.length > 0,
+        whiteSpace: getComputedStyle(s).whiteSpace,
+        transcriptScrollWidth: t ? t.scrollWidth : null, transcriptClientWidth: t ? t.clientWidth : null,
+      };
+    })()`;
+    function assertSummaryState(state, when) {
+      if (!state) return failures.push(`Turn (f) ${when}: could not find the hostile call's own summary span.`);
+      if (!isHostile(state.text)) return failures.push(`Turn (f) ${when}: summary span reads ${JSON.stringify(state.text)} -- does not contain the hostile output, this check would be vacuous.`);
+      if (state.hasElementChildren) failures.push(`Turn (f) ${when}: summary span contains injected element(s): ${state.html}.`);
+      else if (hasColourMarkup(state.html)) failures.push(`Turn (f) ${when}: summary span's own markup applies colour styling: ${state.html}.`);
+      else if (!noOverflow(state)) failures.push(`Turn (f) ${when}: caused the transcript to overflow horizontally (scrollWidth ${state.transcriptScrollWidth} > clientWidth ${state.transcriptClientWidth}).`);
+      else findings.push(`Turn (f) ${when}: summary span genuinely contains the hostile output, renders inert and bounded (computed white-space "${state.whiteSpace}").`);
+    }
+    assertSummaryState(await cdp.evaluate(readSummaryState), 'collapsed');
+    await cdp.click(`(${GROUP_HEADERS}).at(-1)`);
+    await cdp.waitFor(`(${GROUP_HEADERS}).at(-1).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Turn (f) hostile call expanded' });
+    const summaryExpanded = await cdp.evaluate(readSummaryState);
+    assertSummaryState(summaryExpanded, 'expanded');
+    if (!summaryExpanded || summaryExpanded.whiteSpace !== 'normal') {
+      failures.push(`Turn (f) expanded: summary span computed white-space is "${summaryExpanded?.whiteSpace}", expected "normal" (wraps the ×250 X run).`);
+    } else {
+      findings.push('Turn (f) expanded: summary span computed white-space is "normal" -- the ×250 X run wraps instead of overflowing.');
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '07-turn-f-hostile-output-expanded.png'));
 
     // Gate round 1 (test-reviewer High, M7): a genuine skip must fail the run, not be silently
     // reported as a footnote -- otherwise a drifted selector could stop testing a real acceptance

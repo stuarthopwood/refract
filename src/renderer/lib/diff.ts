@@ -10,11 +10,15 @@ import { type FileData, isDelete, isInsert, parseDiff } from 'react-diff-view'
 // unbounded computational cost run synchronously on every render of every `edit` tool-call row
 // (`ToolRow.tsx`'s `callMeta`) -- capped here so the algorithm gives up and `createTwoFilesPatch`
 // returns `undefined` (the `CreatePatchOptionsAbortable` overload) rather than ever blocking the
-// render on a pathological input; `buildUnifiedDiff` then returns `''`, its own existing
-// "no diff" value every caller already handles.
+// render on a pathological input.
 const MAX_EDIT_LENGTH = 100_000
 
-export function buildUnifiedDiff(path: string, oldText: string, newText: string): string {
+// Gate round 1 (Main, D4): `undefined` (this input genuinely aborted past `MAX_EDIT_LENGTH`) and
+// `''` (the patch computed fine but carries no real diff -- malformed or truly identical input)
+// used to both collapse to `''`, so `DiffView.tsx` showed the exact same "No changes" text for
+// "nothing changed" and "this diff is too big to compute" -- `undefined` now stays `undefined`
+// the whole way through so callers can tell the two apart.
+export function buildUnifiedDiff(path: string, oldText: string, newText: string): string | undefined {
   // Security remediation (Low, PR #597): a crafted file path with embedded CR/LF could
   // otherwise inject extra header lines into the diff text this function returns, which is
   // both parsed for display (DiffView.tsx) and put on the clipboard verbatim by its Copy button.
@@ -23,7 +27,7 @@ export function buildUnifiedDiff(path: string, oldText: string, newText: string)
   const oldName = isAdd ? '/dev/null' : `a/${safePath}`
   const newName = `b/${safePath}`
   const patch = createTwoFilesPatch(oldName, newName, oldText, newText, '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH })
-  if (!patch) return ''
+  if (patch === undefined) return undefined
 
   const lines = patch.split('\n')
   const start = lines.findIndex((line) => line.startsWith('--- '))

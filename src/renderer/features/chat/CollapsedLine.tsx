@@ -30,11 +30,8 @@ export interface CollapsedLineProps {
   /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in
    * while collapsed, because the chat's own rows are deliberately one-line and a narrow side
    * panel (the Subagents panel) needs a long path or paragraph visible instead of losing its
-   * useful tail. #632: a row with `children` always wraps once the user actually expands it --
-   * that is the one place the truncated-twice bug (#430/#632's "a bash command is cut off
-   * twice") actually showed up, and the row's own text is the only place the full command now
-   * lives (no Arguments block, #628) -- so truncating it again while expanded would hide it a
-   * third time. Collapsed rows keep truncating regardless of this prop, for fast scanning. */
+   * useful tail. Collapsed rows otherwise keep truncating regardless of this prop, for fast
+   * scanning; `wrapWhenOpen` below is the separate, opt-in control for wrapping once expanded. */
   summaryWrap?: boolean
   /** Gate round 1 (code-reviewer High, H4): `summaryWrap || actualOpen` made EVERY
    * `CollapsedLine` wrap once expanded, including callers that never asked for it
@@ -126,8 +123,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const row = (
     <>
       {/* #565 decision 7: 16px slot (icon itself stays 14px, `size-3.5`, centred within it) so
-       * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly. */}
-      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
+       * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
+       * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
+       * own height must match the label's 20px line box (`h-5`) for the icon to sit centred on
+       * it rather than flush against the top. */}
+      <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
         <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
@@ -157,7 +157,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
         // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
         // removes the extra boundary that caused it.
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not
@@ -206,7 +206,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           )}
         >
           {row}
-          <ChevronRightIcon className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+          <span className="flex h-5 shrink-0 items-center">
+            <ChevronRightIcon className={cn('size-3.5 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+          </span>
         </CollapsibleTrigger>
         {/* Sibling of the trigger, never nested inside it -- a `<button>` cannot nest inside
          * another interactive trigger (#563 remediation, round 2). Stays in this always-mounted
