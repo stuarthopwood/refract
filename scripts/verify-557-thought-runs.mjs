@@ -49,6 +49,7 @@ import {
   buildAndCopyExeFresh,
   launchBuiltExe,
   safeRmSync,
+  requireSharedCargoTarget,
   assertExeUnchanged,
   getAccessibleNameAndRole,
   switchTheme,
@@ -62,8 +63,8 @@ import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 const SCRIPT_LABEL = 'verify-557-thought-runs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = path.join(tmpdir(), 'refract-557-gate1-shots');
 
 const REASONING_MODEL = { provider: 'github-copilot', id: 'claude-sonnet-5' };

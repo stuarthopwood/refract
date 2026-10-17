@@ -50,13 +50,13 @@ import {
   createReportLogger,
   sleep
 } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, pressEscape, pressKey, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 // Gate round 1 fix (Tests): default from `os.tmpdir()`, never a hardcoded user path.
 const SHOTS_DIR = process.env.REFRACT_569_SHOTS_DIR || path.join(tmpdir(), 'refract-569-shots');
 const GITHUB_SCRATCH_CLONE_URL = 'https://github.com/stuarthopwood/refract.git';
