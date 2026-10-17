@@ -6,27 +6,42 @@
 //
 // #632's own structural acceptance (no border at any level, hover tints one row, the Error line
 // under a collapsed failed row, the expanded body with no Arguments/Output block) was already
-// built and live-checked by #565/#570/#628 -- this script does not re-prove those. It proves
-// only what THIS story added:
+// built and live-checked by #565/#570/#628 -- this script does not re-prove those from scratch,
+// but gate round 1 added direct assertions for the two that are cheap to re-confirm here (no
+// command text in the collapsed header, hover tints one row only) since they interact directly
+// with this story's own changes. It proves everything THIS story added:
 //   (a) a multi-call group's header reads "<tool> ×N" (never a call's own command), with the
 //       failed/interrupted counts AND the group's own total time (the sum of every member's own
-//       duration) in the meta slot;
+//       duration, verified by parsing and summing, not just regex-matching a trailing number) in
+//       the meta slot;
 //   (b) a `bash` call's own row reads "$ <command>", a `grep` call's own row reads
 //       `grep "<pattern>" <path>`;
-//   (c) a row's own command text wraps (not truncates) once the row itself is expanded;
+//   (c) a row's own command text wraps (not truncates, by computed `white-space`) once the row
+//       itself is expanded, with no boxed Arguments/Output block (no `pre`/`code`/code-block
+//       element, no output text) -- gate round 1, H6: a `bash` call shows NO output text at all;
 //   (d) an `edit` call's own row shows its own "+N −M" line stat alongside its duration;
 //   (e) the SAME grammar renders inside the Subagents panel (`ToolGroupRow` is shared, design
-//       point 4: "one row component, used everywhere").
+//       point 4: "one row component, used everywhere"), including its own "N failed · <time>"
+//       meta, not just the label;
+//   (f) hover tints only the hovered row, never a nested ancestor (gate round 1, M8);
+//   (g) an expanded two-bash group is about 4 lines tall (gate round 1, M8, measured);
+//   (h) keyboard Tab/Shift+Tab reaches the group header with a visible focus outline, and each
+//       member's own accessible name includes its tool and its command (gate round 1, M8);
+//   (i) hostile output (ANSI colour codes, a very long line) renders inert (codes stripped) and
+//       bounded (length-capped), never raw or unbounded (gate round 1, M8).
 //
-// Five turns, one scratch Session (Approval mode seeded to Auto, same as every prior script in
+// Six turns, one scratch Session (Approval mode seeded to Auto, same as every prior script in
 // this family, so no approval-card grouping boundary ever exists):
-//   (a) two bash calls, the SECOND deliberately failing -- the group header grammar.
+//   (a) two bash calls, the SECOND deliberately failing -- the group header grammar, hover,
+//       height, keyboard focus, member duration sum, and expanded-body checks.
 //   (b) one grep call with a known pattern and path -- the command-style row text.
 //   (c) one read call -- confirms the row text is UNCHANGED (still just the path), no
 //       regression from the new command-style formatter.
 //   (d) one edit call (append a line to a tracked scratch file) -- the "+N −M" row stat.
 //   (e) one `task()` call starting exactly one subagent that itself makes two bash calls (one
-//       failing) -- the same "<tool> ×N" grammar, read from the Subagents panel.
+//       failing) -- the same "<tool> ×N" grammar plus its own meta, read from the Subagents panel.
+//   (f) one bash call with ANSI colour codes and a very long line, deliberately failing -- the
+//       Error line renders inert and bounded.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -34,7 +49,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, assertExeUnchanged, requireSharedCargoTarget, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
+import {
+  gitHead,
+  buildLauncher,
+  makeScratchRepo,
+  buildAndCopyExeFresh,
+  launchBuiltExe,
+  safeRmSync,
+  assertExeUnchanged,
+  requireSharedCargoTarget,
+  sha256OfFile,
+  getAccessibleNameAndRole
+} from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -72,6 +98,8 @@ const TURN_D_PROMPT =
   "Make exactly ONE edit tool call on the file `t632-edit-target.txt` in the repository root, changing its line `one` to `one-edited`, then reply with exactly the single word 't632d' and nothing else.";
 const TURN_E_PROMPT =
   "Use the task tool to start exactly ONE background subagent (a single entry in `tasks`) whose own prompt instructs it to make exactly TWO bash tool calls, the second one deliberately failing with `exit 9`, then reply with exactly the single word 't632e'. Then, once the subagent has finished, reply with exactly the single word 't632e-done' and nothing else.";
+const TURN_F_PROMPT =
+  "Make exactly ONE bash tool call that runs exactly `printf '\\033[31mHostile\\033[0m %0300d\\n' 7; exit 5` (deliberately fails; its output has an ANSI colour code and a very long line). Then reply with exactly the single word 't632f' and nothing else.";
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // Every top-level TOOL-call group header button in the main transcript. A bare "has a
@@ -87,19 +115,45 @@ const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // `formatToolCommand.ts`'s own `item.tool === 'bash'`/`'grep'` checks match), optionally
 // followed by a multi-call group's own " \u00d7N" count suffix.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => { const l = el.querySelector('span.font-medium'); return l && /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim()); })`;
+const BASH_GROUP_LABEL = /^bash\s*\u00d72$/;
 
+// Gate round 1 (test-reviewer Medium, M7): now also reads the header's own SUMMARY span (never
+// just label/meta) so a caller can assert it is empty -- #632's own acceptance is that a
+// multi-call group's collapsed header never shows any call's own command text.
 function groupHeaderInfo(index) {
   return `(() => {
     const h = (${GROUP_HEADERS}).at(${index});
     if (!h) return null;
     const label = h.querySelector('span.font-medium');
+    const summaryHost = h.querySelector('span.min-w-0.flex-1');
     const metaHost = h.querySelector('span.tabular-nums');
     return {
       labelText: label ? label.textContent.trim() : null,
+      summaryText: summaryHost ? summaryHost.textContent.trim() : null,
       metaText: metaHost ? metaHost.textContent.replace(/^,\\s*/, '').trim() : null,
       ariaExpanded: h.getAttribute('aria-expanded'),
     };
   })()`;
+}
+
+// Parses `formatDuration`'s own two shapes ("127ms", "1.3s") back to milliseconds; `null` for
+// anything else (never guesses). Shared by the member-duration-sum check (M7) below.
+function parseDurationMs(text) {
+  if (!text) return null;
+  const sMatch = text.match(/(\d+(?:\.\d+)?)s$/);
+  if (sMatch) return Math.round(parseFloat(sMatch[1]) * 1000);
+  const msMatch = text.match(/(\d+)ms$/);
+  if (msMatch) return parseInt(msMatch[1], 10);
+  return null;
+}
+
+async function pressKey(cdp, { windowsVirtualKeyCode, key, code, shift = false }) {
+  const modifiers = shift ? 8 : 0;
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode, key, code, modifiers });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode, key, code, modifiers });
+}
+function pressTab(cdp, { shift = false } = {}) {
+  return pressKey(cdp, { windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', shift });
 }
 
 async function main() {
@@ -207,11 +261,17 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '99-diag-turn-a-no-group.png'));
       throw new Error('verify-632: no tool-group header found after turn (a).');
     }
-    const BASH_GROUP_LABEL = /^bash\s*\u00d72$/;
     if (!BASH_GROUP_LABEL.test(headerA.labelText ?? '')) {
       failures.push(`Turn (a) group header label is "${headerA.labelText}", expected to match /${BASH_GROUP_LABEL}/ ("bash ×2", never a call's own command).`);
     } else {
       findings.push(`Turn (a) group header label reads "${headerA.labelText}" (tool + count, not a call's own command).`);
+    }
+    // Gate round 1 (test-reviewer Medium, M7): the header's own summary span must be EMPTY --
+    // #632's own acceptance is that the collapsed header never shows any call's own command.
+    if (headerA.summaryText) {
+      failures.push(`Turn (a) group header's own summary text is "${headerA.summaryText}", expected empty (no call's own command shown in the header).`);
+    } else {
+      findings.push("Turn (a) group header shows no summary text at all (no call's own command named).");
     }
     if (!headerA.metaText || !headerA.metaText.includes('1 failed')) {
       failures.push(`Turn (a) group header meta text is "${headerA.metaText}", expected to contain "1 failed".`);
@@ -222,14 +282,116 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-turn-a-collapsed-group.png'));
 
-    // Expand the group, then expand its first member -- the command must WRAP, not truncate,
-    // and must read "$ <command>".
+    // Gate round 1 (ui-architect-v3 High, M8): hover tints ONLY the hovered row -- the Collapsible
+    // ROOT (an ancestor of the trigger the hover class lives on) must show the SAME background
+    // before and after, while the trigger's own background changes (#430's own regression class).
+    const hoverAncestorBefore = await cdp.evaluate(
+      `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; return root ? getComputedStyle(root).backgroundColor : null; })()`,
+    );
+    const hoverTriggerBefore = await cdp.evaluate(`(() => { const h = (${GROUP_HEADERS}).at(0); return h ? getComputedStyle(h).backgroundColor : null; })()`);
+    const hoverRect = await cdp.evaluate(`(() => { const h = (${GROUP_HEADERS}).at(0); if (!h) return null; const r = h.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    if (hoverRect) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverRect.x, y: hoverRect.y });
+    const hoverAncestorAfter = await cdp.evaluate(
+      `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; return root ? getComputedStyle(root).backgroundColor : null; })()`,
+    );
+    const hoverTriggerAfter = await cdp.evaluate(`(() => { const h = (${GROUP_HEADERS}).at(0); return h ? getComputedStyle(h).backgroundColor : null; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    if (hoverAncestorBefore !== hoverAncestorAfter) {
+      failures.push(`Hovering the group header changed its OWN Collapsible-root ancestor's background (${hoverAncestorBefore} -> ${hoverAncestorAfter}) -- decision 18 requires only the trigger itself to tint, never a nested ancestor box (#430's own regression).`);
+    } else if (hoverTriggerBefore === hoverTriggerAfter) {
+      failures.push(`Hovering the group header did not change its own trigger background (stayed ${hoverTriggerBefore}) -- expected the hover tint to apply.`);
+    } else {
+      findings.push(`Hover tints only the trigger itself (${hoverTriggerBefore} -> ${hoverTriggerAfter}); its own Collapsible-root ancestor stayed ${hoverAncestorAfter} (#430's own regression class, not reintroduced).`);
+    }
+
+    // Expand the group (this click also gives the header DOM focus).
     await cdp.click(`(${GROUP_HEADERS}).at(0)`);
     await cdp.waitFor(`(${GROUP_HEADERS}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Turn (a) group expanded' });
-    const memberButtons = `Array.from(${TRANSCRIPT}.querySelectorAll('li button'))`;
+
+    // Gate round 1 (accessibility-auditor Medium, M8): the click above gave the header focus
+    // WITHOUT `:focus-visible` (mouse-acquired); Tab away then Shift+Tab back is the standard way
+    // to force a genuine KEYBOARD-driven refocus without having to count every other tab stop in
+    // the app, proving the header is keyboard-reachable with a visible focus outline.
+    await pressTab(cdp);
+    await pressTab(cdp, { shift: true });
+    const keyboardFocusCheck = await cdp.evaluate(`(() => {
+      const h = (${GROUP_HEADERS}).at(0);
+      if (!h) return null;
+      const isActive = document.activeElement === h;
+      const s = getComputedStyle(h);
+      return { isActive, outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth };
+    })()`);
+    if (!keyboardFocusCheck || !keyboardFocusCheck.isActive) {
+      failures.push(`Tab then Shift+Tab did not return keyboard focus to the group header (measured ${JSON.stringify(keyboardFocusCheck)}).`);
+    } else if (keyboardFocusCheck.outlineStyle === 'none' || keyboardFocusCheck.outlineWidth === '0px') {
+      failures.push(`Group header has keyboard focus but no visible outline (outlineStyle=${keyboardFocusCheck.outlineStyle}, outlineWidth=${keyboardFocusCheck.outlineWidth}).`);
+    } else {
+      findings.push(`Keyboard Tab/Shift+Tab reaches the group header with a visible focus outline (${keyboardFocusCheck.outlineStyle} ${keyboardFocusCheck.outlineWidth}).`);
+    }
+
+    // Gate round 1 (ui-architect-v3 Medium, M8): the expanded group (members still collapsed)
+    // measured against its own computed line-height -- the issue's own acceptance is "about 4
+    // lines tall, against about 20 today".
+    const heightCheck = await cdp.evaluate(`(() => {
+      const h = (${GROUP_HEADERS}).at(0);
+      const root = h ? h.closest('[data-slot="collapsible"]') : null;
+      if (!root) return null;
+      const rect = root.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(h).lineHeight);
+      return { heightPx: rect.height, lineHeightPx: lineHeight, lines: lineHeight ? rect.height / lineHeight : null };
+    })()`);
+    if (!heightCheck || heightCheck.lines == null) {
+      failures.push(`Could not measure the expanded group's own height against its line-height (${JSON.stringify(heightCheck)}).`);
+    } else if (heightCheck.lines < 3 || heightCheck.lines > 6) {
+      failures.push(`Expanded group (members collapsed) measured ${heightCheck.lines.toFixed(1)} lines tall (${heightCheck.heightPx.toFixed(0)}px / ${heightCheck.lineHeightPx.toFixed(0)}px line-height), expected about 4.`);
+    } else {
+      findings.push(`Expanded group (members collapsed) measured ${heightCheck.lines.toFixed(1)} lines tall -- matches the issue's own "about 4 lines, against about 20 today".`);
+    }
+
+    // Gate round 1 (test-reviewer Medium, M7): scoped to THIS group's own <ol>, not every <li>
+    // in the whole transcript (a future group's own members would otherwise be picked up too).
+    const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li button')) : []; })()`;
     const memberCount = await cdp.evaluate(`(${memberButtons}).length`);
     if (memberCount !== 2) failures.push(`Expected 2 member rows inside the expanded group, found ${memberCount}.`);
     else findings.push('Expanded group shows both members down the shared Spine.');
+
+    // Gate round 1 (test-reviewer Medium, M7): the header's own total time must equal the SUM of
+    // the member durations (parsed and added, not just "has a trailing duration").
+    const memberMetaTexts = await cdp.evaluate(`(${memberButtons}).map((b) => { const m = b.querySelector('span.tabular-nums'); return m ? m.textContent.replace(/^,\\s*/, '').trim() : null; })`);
+    const memberDurationsMs = memberMetaTexts.map(parseDurationMs);
+    const headerTotalMatch = (headerA.metaText ?? '').match(/(\d+(?:\.\d+)?(?:ms|s))$/);
+    const headerTotalMs = headerTotalMatch ? parseDurationMs(headerTotalMatch[1]) : null;
+    if (memberDurationsMs.some((ms) => ms == null) || headerTotalMs == null) {
+      failures.push(`Could not parse every duration to compare the sum (members: ${JSON.stringify(memberMetaTexts)}, header: "${headerA.metaText}").`);
+    } else {
+      const sumMs = memberDurationsMs.reduce((a, b) => a + b, 0);
+      // Rounding allowed: each duration is independently rounded to its own displayed precision
+      // (whole ms under 1s, one decimal of a second at or above), so the displayed total can
+      // differ from the sum of the displayed members by a little; 150ms covers that.
+      const deltaMs = Math.abs(sumMs - headerTotalMs);
+      if (deltaMs > 150) {
+        failures.push(`Group header's own total time (${headerTotalMs}ms) does not equal the sum of its members' own durations (${memberMetaTexts.join(' + ')} = ${sumMs}ms, delta ${deltaMs}ms).`);
+      } else {
+        findings.push(`Group header's own total time (${headerTotalMs}ms) equals the sum of its members' own durations (${memberMetaTexts.join(' + ')} = ${sumMs}ms, delta ${deltaMs}ms, rounding allowed).`);
+      }
+    }
+
+    // Gate round 1 (accessibility-auditor Medium, M8): each member's own accessible name must
+    // include its tool and its command, not just whatever the browser's content-based name
+    // computation happens to concatenate.
+    const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
+    const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
+    if (!member0Ax.name || !member0Ax.name.includes('bash') || !member0Ax.name.includes('t632-one')) {
+      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "bash" and "t632-one".`);
+    } else {
+      findings.push(`First member's own accessible name includes both tool and command: "${member0Ax.name}".`);
+    }
+    if (!member1Ax.name || !member1Ax.name.includes('bash') || !member1Ax.name.includes('exit 9')) {
+      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to include "bash" and "exit 9".`);
+    } else {
+      findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
+    }
+
     const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
     if (!member0Summary || !member0Summary.startsWith('$ ')) {
       failures.push(`First member row's own text is "${member0Summary}", expected it to start with "$ " (the bash command-style form).`);
@@ -238,11 +400,31 @@ async function main() {
     }
     await cdp.click(`(${memberButtons}).at(0)`);
     await cdp.waitFor(`(${memberButtons}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'First member expanded' });
-    const member0WrapClass = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('span.min-w-0.flex-1') : null; return s ? s.className : null; })()`);
-    if (!member0WrapClass || member0WrapClass.includes('truncate')) {
-      failures.push(`Expanded first member's own summary span className is "${member0WrapClass}" -- still truncating instead of wrapping once expanded.`);
+    // Gate round 1 (test-reviewer High, M7): reads the COMPUTED `white-space` (proving it genuinely
+    // wraps, not just absence of a class name that could be renamed later) and asserts the
+    // expanded body itself has no code-block element and no output text at all (#632's own
+    // acceptance for a successful `bash` call, gate round 1 H6).
+    const member0ExpandedCheck = await cdp.evaluate(`(() => {
+      const b = (${memberButtons}).at(0);
+      const s = b ? b.querySelector('span.min-w-0.flex-1') : null;
+      const whiteSpace = s ? getComputedStyle(s).whiteSpace : null;
+      const root = b ? b.closest('[data-slot="collapsible"]') : null;
+      const content = root ? root.querySelector('[data-slot="collapsible-content"]') : null;
+      const hasCodeBlock = content ? !!content.querySelector('pre, code, [data-slot="code-block"]') : null;
+      const contentText = content ? content.textContent.trim() : null;
+      return { whiteSpace, hasCodeBlock, contentText };
+    })()`);
+    if (!member0ExpandedCheck || member0ExpandedCheck.whiteSpace !== 'normal') {
+      failures.push(`Expanded first member's own summary computed white-space is "${member0ExpandedCheck?.whiteSpace}", expected "normal" (wraps instead of truncating).`);
     } else {
-      findings.push('Expanded first member\'s own command text wraps (no `truncate` class) instead of truncating.');
+      findings.push("Expanded first member's own command text computed white-space is \"normal\" (wraps, not truncate).");
+    }
+    if (member0ExpandedCheck?.hasCodeBlock) {
+      failures.push("Expanded first member's own body contains a pre/code/code-block element -- #632's own acceptance is no boxed Arguments/Output block.");
+    } else if (member0ExpandedCheck?.contentText) {
+      failures.push(`Expanded first member's own body shows output text ("${member0ExpandedCheck.contentText}") -- a successful bash call must show none (gate round 1, H6).`);
+    } else {
+      findings.push('Expanded first member (a successful bash call) shows no code block and no output text at all (gate round 1, H6).');
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-turn-a-expanded-member.png'));
 
@@ -309,7 +491,8 @@ async function main() {
           const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('span.font-medium'); return l && /^bash(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
           if (!h) return null;
           const label = h.querySelector('span.font-medium');
-          return { labelText: label.textContent.trim() };
+          const metaHost = h.querySelector('span.tabular-nums');
+          return { labelText: label.textContent.trim(), metaText: metaHost ? metaHost.textContent.replace(/^,\\s*/, '').trim() : null };
         })()`,
         { timeoutMs: 10_000, label: "Subagents panel's own bash group header" },
       );
@@ -322,9 +505,49 @@ async function main() {
       failures.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}", expected the same "bash ×2" grammar the main transcript uses (design point 4, one row component used everywhere).`);
     } else {
       findings.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}" -- the SAME grammar as the main transcript (shared \`ToolGroupRow\`).`);
+      // Gate round 1 (test-reviewer Medium, M7): also assert the meta slot itself, not just the label.
+      if (!panelHeaderInfo.metaText || !panelHeaderInfo.metaText.includes('1 failed') || !/\d+(\.\d+)?(ms|s)$/.test(panelHeaderInfo.metaText)) {
+        failures.push(`Subagents panel's own bash group header meta text is "${panelHeaderInfo.metaText}", expected it to contain "1 failed" and a trailing total time, matching the main transcript's own grammar.`);
+      } else {
+        findings.push(`Subagents panel's own bash group header meta text reads "${panelHeaderInfo.metaText}" (failed count and total time, same grammar as the main transcript).`);
+      }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '05-turn-e-subagents-panel.png'));
 
+    // ---- Turn (f): hostile output (ANSI colour codes, a very long line) renders inert, bounded ----
+    await cdp.typeIntoByLabel('Message', TURN_F_PROMPT);
+    await cdp.clickByLabel('Send message');
+    await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632f/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (f) finished' });
+    const hostileDetail = await cdp.evaluate(`(() => {
+      const hs = ${GROUP_HEADERS};
+      const h = hs.at(-1);
+      if (!h) return null;
+      const id = h.getAttribute('aria-describedby');
+      const detail = id ? document.getElementById(id) : null;
+      return detail ? { text: detail.textContent, html: detail.innerHTML } : null;
+    })()`);
+    if (!hostileDetail) {
+      failures.push('Turn (f) hostile-output call: no Error line (aria-describedby target) found.');
+    } else {
+      const hasRawAnsi = /\x1b\[|\\u001b\[|\\x1b\[/.test(hostileDetail.text) || /\x1b\[/.test(hostileDetail.html);
+      const hasColourMarkup = /color\s*:\s*red|style="[^"]*color/i.test(hostileDetail.html);
+      if (hasRawAnsi) {
+        failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape sequence: ${JSON.stringify(hostileDetail.text)}.`);
+      } else if (hasColourMarkup) {
+        failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output instead of rendering it as inert plain text: ${hostileDetail.html}.`);
+      } else if (hostileDetail.text.length > 205) {
+        failures.push(`Turn (f) Error line's own text is ${hostileDetail.text.length} characters, expected it bounded to about 200 (QUIET_SUMMARY_MAX_CHARS) plus an ellipsis.`);
+      } else {
+        findings.push(`Turn (f) Error line renders the hostile output inert (no raw ANSI escape, no colour markup) and bounded (${hostileDetail.text.length} characters): "${hostileDetail.text}".`);
+      }
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '06-turn-f-hostile-output.png'));
+
+    // Gate round 1 (test-reviewer High, M7): a genuine skip must fail the run, not be silently
+    // reported as a footnote -- otherwise a drifted selector could stop testing a real acceptance
+    // criterion forever while every run still prints DONE.
+    const hasNotExercised = notExercised.length > 0;
+    const exitCode = failures.length > 0 || hasNotExercised ? 1 : 0;
     const report = {
       gitHead: gitHeadSha,
       dirty: dirtyFlag,
@@ -333,7 +556,7 @@ async function main() {
       findings,
       failures,
       notExercised,
-      exitCode: failures.length > 0 ? 1 : 0,
+      exitCode,
     };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     console.log('\n=== verify-632: FAILURES (always fail the run) ===');
@@ -341,12 +564,12 @@ async function main() {
     for (const f of failures) console.log(`- ${f}`);
     console.log('\n=== verify-632: FINDINGS ===');
     for (const f of findings) console.log(`- ${f}`);
-    console.log('\n=== verify-632: NOT EXERCISED (genuine skips only) ===');
+    console.log('\n=== verify-632: NOT EXERCISED (genuine skips only; any entry here fails the run) ===');
     if (notExercised.length === 0) console.log('(none)');
     for (const n of notExercised) console.log(`- ${n}`);
     console.log(`\nScreenshots and report.json: ${SHOTS_DIR}`);
-    console.log(`verify-632: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
-    process.exitCode = failures.length > 0 ? 1 : 0;
+    console.log(`verify-632: ${exitCode !== 0 ? 'FAILED' : 'DONE'}.`);
+    process.exitCode = exitCode;
   } catch (err) {
     try {
       writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, dirty: dirtyFlag, exeSha256: exeHash, scriptSha256: sha256OfFile(fileURLToPath(import.meta.url)), findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
@@ -357,7 +580,11 @@ async function main() {
     process.exitCode = 1;
   } finally {
     if (cdp) cdp.close();
-    if (child) await stopLauncher(child).catch(() => {});
+    if (child) {
+      await stopLauncher(child).catch((err) => {
+        console.error('verify-632: stopLauncher failed:', err?.stack ?? err);
+      });
+    }
     await safeRmSync(dataDir);
     await safeRmSync(importSourceDir);
     await safeRmSync(repoDir);
