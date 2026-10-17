@@ -2775,3 +2775,37 @@ comment was posted on #559 and the PR body's Departures section corrected.
   its cap); `contracts/ipc.md`'s `memory:warning` row and `memory-store.ts`'s header comment no
   longer call this the status bar's notice; `HealthCheckDialog.tsx`'s own doc comment names both
   of its callers.
+- [X] T259 [US1] Gate remediation (round 2, Code/Tests FAIL -> fix): three findings, Decided
+  (Skippy, delegated by Stuart 2026-10-17), recorded on #560.
+  **F1** (focus theft on blank-space click): the round 1 focus-redirect fix's `focusout`
+  listener treated `document.activeElement === document.body` alone as proof the row's focused
+  descendant had been removed from the DOM, but an ordinary click on blank space (anywhere with
+  no focusable target) ALSO blurs the active element to `<body>` without removing anything --
+  the previous version stole focus straight back to the row every time. `ProfileAlertRows.tsx`
+  now additionally checks that the actual element leaving focus (`event.target`) is no longer
+  connected to the document (`describesRemoval()`) -- only a genuine removal causes that; a
+  blank-space click leaves the same button sitting there, still connected, so nothing redirects.
+  Keyboard focus-return after closing Triage (the dialog's own `onCloseAutoFocus`/`onCloseFocus`
+  path) is a separate mechanism, unaffected.
+  **F2** (failed Stop announced as success): `sessions-store.ts`'s `stopAgent` resolved
+  `Promise<void>` unconditionally, so a clean `{ok:false}` stop response (already toasted by the
+  store itself) was announced via `useChatAreaAnnouncer` as a SUCCESS regardless; in bulk,
+  `Promise.allSettled`'s `status === 'rejected'` filter never matched a clean failure either, so a
+  partly- or wholly-failed bulk stop always reported every target as stopped. `stopAgent` now
+  resolves the real `result.ok` boolean (matching `archive`/`restore`'s own established pattern,
+  `sessions-store.ts` interface doc comment added); `MemoryTriageDialog.tsx`'s single and bulk
+  confirm flows announce the true outcome, naming the failing Session(s) by name where available
+  ("Couldn't stop {name}'s agent" / "Couldn't stop {N} agents: {names}"), joined with any success
+  count into ONE `announce()` call for a partial bulk result (two calls in the same tick cancel
+  each other, `chatAreaAnnouncer.ts`).
+  **F3** (spec/UI mismatch on the agent count): FR-037 still promised "Low memory ({N} agents)"
+  on the row itself, but round 1's own "honest agent count" fix (`ProfileAlertRows.tsx` item 5
+  comment) had already dropped it, since the system's live-agent count (idle+working+needs-you)
+  and Triage's idle-only list can legitimately differ. FR-037 reworded to match (the row says
+  just "Low memory"); a new dated Clarifications entry (`### Session 2026-10-17 (quiet alert
+  rows, gate round 2)`) records the decision; `MemoryTriageDialog.tsx`'s own `DialogDescription`
+  now actually states the idle count its comments already claimed it did ("N idle agents using
+  memory..."); `docs/PLAN.md`'s #560 row gets this round's own summary.
+  `pnpm typecheck` and `pnpm vitest run` clean; `node scripts/ci-local.mjs` and a fresh live CDP
+  run (`scripts/verify-tauri-560.mjs`, extended to prove F1 and F2) pending a build slot -- see
+  T260.
