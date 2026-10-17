@@ -126,14 +126,28 @@ function assertBundleMatchesStory556() {
   // Fix 1 (gate round 2, M1): the new `box="inline"` Alert variant's own className string
   // (`alert.tsx`'s `cva` config, a literal object value -- unaffected by JSX prop-name
   // minification, unlike asserting the call-site `box="inline"` prop text itself would be).
-  // Gate round 2 (test reviewer): a single `.includes()` can't distinguish "the variant exists"
-  // from "all three call sites actually reference it" -- a global occurrence count tied to the
-  // three edited call sites (AskCard.tsx:321, RequestCard.tsx:419, RequestCard.tsx:586) is a
-  // low-risk, minifier-agnostic proxy (exact-match split/count, not a fragile proximity scan of
-  // minified output).
+  // Correction (this run): the gate round 2 test-reviewer's ">= 3, one per call site" count was
+  // wrong about how Rollup/esbuild bundle shared code -- `alertVariants`'s `box.inline` string is
+  // a single literal defined once in `alert.tsx`'s `cva` config; `<Alert box="inline">` call sites
+  // pass a prop into that one shared function, they don't each get their own copy of the string in
+  // the bundle. The real two-part proof is: (1) the literal exists in the built bundle at all, and
+  // (2) all three call sites actually reference `box="inline"` in SOURCE (a static, pre-bundle
+  // check -- immune to any bundler inlining/dedup behavior).
   const inlineAlertMarker = 'border-0 bg-transparent px-0 py-0 rounded-none';
   const inlineAlertCount = combined.split(inlineAlertMarker).length - 1;
-  assertTrue(inlineAlertCount >= 3, `built bundle has the Fix 1 Alert box="inline" variant className only ${inlineAlertCount} time(s), expected >= 3 (one per call site)`);
+  assertTrue(inlineAlertCount >= 1, `built bundle is missing the Fix 1 Alert box="inline" variant className (${inlineAlertMarker})`);
+  const callSites = [
+    { file: 'src/renderer/features/chat/AskCard.tsx', line: 321 },
+    { file: 'src/renderer/features/chat/RequestCard.tsx', line: 419 },
+    { file: 'src/renderer/features/chat/RequestCard.tsx', line: 586 },
+  ];
+  for (const { file, line } of callSites) {
+    const src = readFileSync(path.join(REPO_ROOT, file), 'utf8').split('\n');
+    assertTrue(
+      /box="inline"/.test(src[line - 1] ?? ''),
+      `${file}:${line} is missing box="inline" on its Alert call site`
+    );
+  }
   console.log('verify-556: bundle marker check PASS (new unboxed classNames present, old boxed classNames absent, Fix 1 inline Alert variant present).');
   return { inlineAlertCount };
 }
