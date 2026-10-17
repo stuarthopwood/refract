@@ -2807,5 +2807,30 @@ comment was posted on #559 and the PR body's Departures section corrected.
   now actually states the idle count its comments already claimed it did ("N idle agents using
   memory..."); `docs/PLAN.md`'s #560 row gets this round's own summary.
   `pnpm typecheck` and `pnpm vitest run` clean; `node scripts/ci-local.mjs` and a fresh live CDP
-  run (`scripts/verify-tauri-560.mjs`, extended to prove F1 and F2) pending a build slot -- see
-  T260.
+  run (`scripts/verify-tauri-560.mjs`, extended to prove F1 and F2) -- see T260.
+- [X] T260 [US1] Live CDP check, gate round 2 (`scripts/verify-tauri-560.mjs`, extended; new
+  `scripts/verify-tauri-560-gate2.mjs` split out to keep the main file under the #806 600-line
+  cap): proves F1 live -- clicking the low-memory row's own non-focusable label (a real
+  blank-space click inside the row) while Triage is focused leaves focus on `<body>`, never
+  stolen back onto an alert row's own control; a keyboard-driven Dismiss of the last remaining
+  row (Tab + Enter) leaves focus on the profile item's own name button, never a disconnected
+  node. Proves F2 live -- `window.refract.sessions.stopAgent` monkey-patched in the renderer
+  (no real process touched) to force one Session's Stop to resolve `{ok:false}`, single and via
+  bulk "Stop idle" (n=1, reusing the one idle Session rather than a second concurrently-idle
+  one -- issue #512's real low-memory start-defer feature, triggered the whole run by this
+  story's own `REFRACT_FORCE_LOW_MEMORY=1`, would otherwise defer a second Session's start for
+  up to its own 60s ceiling, confirmed live racing this script's own equal 60s wait): both
+  announce the real failure, naming the Session, never success; the toast reads "Couldn't stop
+  {name}'s agent. Try again."; the Session stays listed since it was never actually stopped.
+  Two further bugs found and fixed by this same live-check work, neither part of F1/F2/F3 but
+  blocking a clean run: a WebView2/CDP input-timing click race on destructive confirm buttons
+  (a synthetic click immediately after a dialog/AlertDialog opens is an intermittent one-shot
+  miss in this harness, confirmed via `app.log` showing zero second `stopAgent` IPC call ever
+  reaching the backend when it struck -- settle-sleep guards added at every remaining site that
+  lacked one), and the keyboard-Dismiss focus bug named under F1 above (Radix Tooltip's own
+  Portal content re-stealing focus on its trigger's removal -- fixed by moving the redirect to
+  the Dismiss click site itself, proactively, before the row is ever removed). `node
+  scripts/ci-local.mjs` 16/16 PASS and this live check ALL PASS (exit 0, nothing not-exercised)
+  together on the same final HEAD `91f73e1`; `report.json`'s own `gitHead` matches. Evidence
+  (`report.json`, `report.txt`, `app.log`, six screenshots with their own sha256) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
