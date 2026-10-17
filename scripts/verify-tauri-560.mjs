@@ -33,16 +33,15 @@
 //   - Gate round 2 F1 (focus theft on blank-space click): clicking the low-memory row's own
 //     non-focusable label (a real blank-space click inside the row) while Triage is focused
 //     leaves focus on <body> -- never redirected back onto an alert row's own control, the bug
-//     the round 1 focus-redirect fix introduced. Keyboard-only close of the Triage dialog (two
-//     Escapes) still returns focus to the row's own Triage button, unaffected.
+//     the round 1 focus-redirect fix introduced. A keyboard-only close of the Triage dialog
+//     (two Escapes) still returns focus to the row's own Triage button, unaffected.
 //   - Gate round 2 F2 (failed Stop announced as success): `window.refract.sessions.stopAgent`
 //     is monkey-patched in the renderer (no real process touched) to force one Session's Stop
-//     to resolve `{ok:false}` -- both its own per-row Stop AND "Stop idle" (bulk, n=1 -- a
-//     second concurrently-idle Session would race issue #512's real low-memory start-defer
-//     feature this harness's own REFRACT_FORCE_LOW_MEMORY=1 triggers, confirmed live) -- and
-//     confirms the live region announces the real outcome, naming the failing Session, never
-//     claiming success; the forced-failed Session stays listed since it was never actually
-//     stopped.
+//     to resolve `{ok:false}` -- both its own per-row Stop AND "Stop idle" (bulk, n=1: a second
+//     concurrently-idle Session would race issue #512's real low-memory start-defer feature
+//     this harness's own REFRACT_FORCE_LOW_MEMORY=1 triggers, confirmed live) -- confirming the
+//     live region announces the real outcome, naming the failing Session, never success; the
+//     forced-failed Session stays listed since it was never actually stopped.
 //
 // Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-559.mjs.
 // Uses the already-frozen exe named by REFRACT_560_FROZEN_EXE (default: the path this story's
@@ -390,8 +389,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionB.id, 'idle');
   log('STEP PASS: Escape-cancelling the bulk confirm never stops any Session, and a second Escape returns focus to the alert row\'s own Triage button.');
 
-  // Re-open the Dialog and "Stop idle" again to actually perform the bulk stop below. Same
-  // settle-sleep race guard as the per-Session re-open above.
+  // Re-open and "Stop idle" again to perform the bulk stop. Same settle-sleep guard as above.
   await cdp.evaluate(`document.activeElement?.blur()`);
   await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
@@ -399,6 +397,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await sleep(300);
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
+  // Settle-sleep race guard on the destructive "Stop" click (confirmed live, run 4/7: lost silently).
+  await sleep(300);
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
   await waitForSessionStatus(cdp, sessionB.id, 'stopped');
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk confirmation closed after Stop idle' });

@@ -87,6 +87,7 @@ export async function runForcedStopFailureRegressionTests(
   await cdp.waitFor(sessionCRow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionC.name}" listed in Triage` });
   await cdp.click(`(${sessionCRow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionC.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'forced-failure Stop confirmation opened' });
+  await sleep(300); // settle-sleep race guard: see verify-tauri-560.mjs's own bulk-confirm comment
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() !== 'Cancel')`);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'forced-failure confirm closed' });
   await sleep(300);
@@ -105,6 +106,7 @@ export async function runForcedStopFailureRegressionTests(
   // Session.
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk forced-failure confirmation opened' });
+  await sleep(300); // settle-sleep race guard: see verify-tauri-560.mjs's own bulk-confirm comment
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
   await cdp.waitFor(`!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk forced-failure confirmation closed' });
   await sleep(300);
