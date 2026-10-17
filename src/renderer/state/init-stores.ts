@@ -19,6 +19,7 @@ import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
 import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
+import { useChatWidthStore } from './chat-width-store'
 import { useUpdateStore } from './update-store'
 import { getDefaultRepositoryId } from '../lib/defaultRepository'
 
@@ -103,6 +104,7 @@ export function initStores(): void {
   window.refract.onSettingsChanged((settings) => {
     useSettingsStore.getState().setSettings(settings)
     useThemeStore.getState().setTheme(settings.theme)
+    useChatWidthStore.getState().setChatWidth(settings.chatWidth)
   })
   window.refract.onReadoutUpdate(({ sessionId, readout }) => {
     useReadoutStore.getState().applyReadout(sessionId, readout)
@@ -332,6 +334,7 @@ export function initStores(): void {
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
+    useChatWidthStore.getState().setChatWidth(settingsLoad.value.chatWidth)
     // #735 decision 19: restored in this same Promise.all block, right alongside Settings,
     // not deferred to themeBootstrap -- the Sessions arrive in this same load, so nothing
     // visible is held back by doing it here. Repositories load separately (below) and would

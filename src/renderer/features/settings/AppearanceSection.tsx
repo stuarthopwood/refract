@@ -10,11 +10,16 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
-import { useSettingsStore, useThemeStore } from '@/state'
+import { useChatWidthStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
+import { ChatWidthPicker } from './ChatWidthPicker'
 
 export function AppearanceSection() {
-  const isDirty = useThemeStore((state) => state.previewing !== null)
+  // Issue #554: the Save/Cancel row below now governs both pickers -- dirty if EITHER has an
+  // open preview, same "disabled={!isDirty}" gate as before.
+  const themeDirty = useThemeStore((state) => state.previewing !== null)
+  const chatWidthDirty = useChatWidthStore((state) => state.previewing !== null)
+  const isDirty = themeDirty || chatWidthDirty
   const watermarkEnabled = useSettingsStore((state) => state.settings.watermarkEnabled)
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -50,7 +55,7 @@ export function AppearanceSection() {
       const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
       if (!activeWasOutside) {
         const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
-          '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"]'
+          '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"], [role="radiogroup"][aria-label="Chat width"] [role="radio"][aria-checked="true"]'
         )
         if (checkedRadio) checkedRadio.focus()
         else headingRef.current?.focus()
@@ -91,9 +96,12 @@ export function AppearanceSection() {
       // `[role="menubar"]` would also match ANY future unrelated menubar Refract adds, silently
       // disabling this Escape-to-cancel guard for every one of them too.
       if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"][aria-label="App menu"]')) return
-      if (useThemeStore.getState().previewing === null) return
+      // Issue #554: Escape cancels whichever preview(s) are actually open -- a no-op call to
+      // `cancelPreview()` when nothing is previewed is harmless (both stores' own contract).
+      if (useThemeStore.getState().previewing === null && useChatWidthStore.getState().previewing === null) return
       event.preventDefault()
       useThemeStore.getState().cancelPreview()
+      useChatWidthStore.getState().cancelPreview()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -104,16 +112,20 @@ export function AppearanceSection() {
   useEffect(() => {
     return () => {
       useThemeStore.getState().cancelPreview()
+      useChatWidthStore.getState().cancelPreview()
     }
   }, [])
 
   function handleSave() {
-    const state = useThemeStore.getState()
-    void state.save(state.previewing ?? state.theme)
+    const themeState = useThemeStore.getState()
+    if (themeState.previewing !== null) void themeState.save(themeState.previewing)
+    const chatWidthState = useChatWidthStore.getState()
+    if (chatWidthState.previewing !== null) void chatWidthState.save(chatWidthState.previewing)
   }
 
   function handleCancel() {
     useThemeStore.getState().cancelPreview()
+    useChatWidthStore.getState().cancelPreview()
   }
 
   return (
@@ -121,6 +133,9 @@ export function AppearanceSection() {
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">Appearance</h2>
       <p className="mb-4 text-sm text-muted-foreground">Choose the colour theme used across the app.</p>
       <ThemePicker />
+      <h3 className="mt-4 mb-1 text-sm font-medium">Chat width</h3>
+      <p className="mb-2 text-xs text-muted-foreground">Choose how wide the chat transcript reads.</p>
+      <ChatWidthPicker />
       <div className="mt-4 flex gap-2">
         <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
           Save

@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
+import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
@@ -335,7 +335,7 @@ export function Transcript({
   // clobbered by the other pane's.
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
-  const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
+  const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay), chatWidth = useActiveChatWidth() // Issue #554 (FR-073): 'reading-column' caps at 64rem, centred, transcript only.
   const items = transcript.items
   const receivedAt = transcript.receivedAt
   // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
@@ -867,7 +867,7 @@ export function Transcript({
         >
           <MessageScrollerContent
             ref={contentRef}
-            className="mx-auto w-full max-w-4xl px-4 py-4"
+            className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 sm:px-10 md:px-14 lg:px-16')}
             // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
             // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
             // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of

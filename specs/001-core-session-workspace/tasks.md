@@ -3007,3 +3007,64 @@ plus count plus failed plus total-time grammar, the failed call's own visible Er
 wrap-on-expand fix, the ~4-line expanded height, hostile-output rendering inert and bounded both
 collapsed and expanded, keyboard/accessible-name form, and a live Subagents-panel check) was
 confirmed live on a real scratch instance across gate rounds 1 and 2.
+
+## Phase 53: Convergence
+
+- [X] T267 [US1] #554 chat reading width setting. Amended spec 001 -- FR-049 (now amended
+  "unless the reading column is chosen" via FR-073) and new FR-073 (the Full/Reading column
+  Settings choice, Save/Cancel live preview, the 64rem cap, no special-cased narrow-window
+  breakpoint) -- plus a dated `### Session 2026-10-18 (chat reading width)` Clarifications entry
+  recording the ui-architect-v3 roundtable ruling: the existing unconditional `max-w-4xl` on
+  `MessageScrollerContent` (authored 2026-10-08, same day as the #474 grill) was an incidental
+  stopgap, not a deliberate "Reading column" -- "Full" removes it entirely (edge to edge);
+  "Reading column" is the issue's own 64rem/padding-ladder design; the composer, status line,
+  brand watermark (spec 012) and scroll-to-end button all stay unaffected by the choice. `git
+  diff --numstat origin/main -- specs/001-core-session-workspace/tasks.md` confirmed 0 deletions
+  before this phase was appended.
+
+- [X] T268 [US1] Implementation. Renderer: `Settings.chatWidth: ChatWidth` (new
+  `src/shared/chatWidth.ts`, its own file rather than inline in `model.ts`/`ipc.ts` -- both
+  already at their own `check:file-size` baseline with no slack, the same reasoning `ThemeId`
+  already lives in `themes.ts` rather than `model.ts`; `TranscriptDisplaySettings` and
+  `LowMemoryWarning` moved out to `transcriptDisplay.ts`/re-exported from `model.ts` for the same
+  reason, zero behaviour change, every existing import keeps working); `settings.setChatWidth`
+  IPC method (`shared/ipc.ts`, `tauri-bridge/index.ts`); new `chat-width-store.ts` mirroring
+  `theme-store.ts`'s `preview`/`save`/`cancelPreview` shape exactly (no `chatWidth.preview` IPC
+  round trip -- unlike theme, there is no main-process effect for a reading-width preview to
+  apply, so preview is renderer-local only); new `ChatWidthPicker.tsx` mirroring `ThemePicker.tsx`
+  (hand-rolled roving-tabindex radiogroup, two entries); `AppearanceSection.tsx` extended so its
+  Save/Cancel row, Escape handler, focus-restoration query and unmount-revert effect all cover
+  both pickers. `Transcript.tsx`'s `MessageScrollerContent` className is now conditional on
+  `useActiveChatWidth()`: `'w-full px-4 py-4'` (Full) vs `'mx-auto max-w-[64rem] px-6 sm:px-10
+  md:px-14 lg:px-16'` (Reading column), replacing the old unconditional `max-w-4xl mx-auto`.
+  Rust: `ChatWidth` enum (new `src-tauri/src/store/chat_width.rs`, re-exported from
+  `store::settings`, the same file-size-slack reasoning as the TS side), `Settings.chat_width`
+  field, `SettingsStore::set_chat_width`, and the `settings.setChatWidth` IPC handler
+  (`ipc/settings.rs`), registered in the dispatcher (`check:parity --gate` 99/99 requests).
+
+- [X] T269 [US1] Docs and live check. Updated `docs/design/product-chat.md`'s "Chat text fills
+  the full width..." bullet, `docs/design/product-first-run-and-settings.md`'s "Settings in the
+  first build" list (Chat width: shipped, Appearance section, Full/Reading column, Save/Cancel
+  live preview), `CONTEXT.md` (a **Chat width** glossary entry), `specs/001-core-session-
+  workspace/data-model.md` (`Settings.chatWidth`) and `contracts/ipc.md`
+  (`settings.setChatWidth`); `docs/PLAN.md`'s UI-refresh row gets an in-flight note for #554.
+  `scripts/verify-554-chat-width.mjs` (new, modelled on `verify-927-928-quiet-composer.mjs` and
+  `verify-tauri-scratch-helpers.mjs`): default Full at 1280/1920px (column fills its viewport,
+  no cap), Reading column via mouse AND via keyboard (Tab/Arrow/Enter) with live preview measured
+  at 1280/1920/2560px before Save (64rem width, centred margins equal), composer width unchanged
+  across both options, no horizontal scroll at 360px, and persistence across a full relaunch of
+  the same built exe against the same scratch `REFRACT_DATA_DIR` -- written but deliberately NOT
+  run, per this prep lane's own NO BUILDS rule (no `cargo`/`tauri`/`ci-local` command starts
+  before Main hands over the shared build slot). `pnpm typecheck`, `pnpm vitest run` (148 tests),
+  `node scripts/check-indent.mjs` (0 odd-indent lines), `node scripts/check-theme-contrast.mjs`
+  (437 of 437 pairs PASS across 3 themes), `node scripts/check-file-size.mjs` (0 cap violations,
+  three pre-existing-baseline files -- `ipc.ts`, `model.ts`, `Transcript.tsx` -- kept at or under
+  their recorded baseline via the `chatWidth.ts`/`transcriptDisplay.ts`/`lowMemoryWarning`-in-
+  `model.ts` extractions above), `node scripts/check-parity.mjs --gate` (99 of 99 requests, 23 of
+  23 events) and `node --check scripts/verify-554-chat-width.mjs` all ran clean. `pnpm build`/
+  `pnpm tauri build`/the new live check itself (deliberately not run, per this prep lane's own
+  NO BUILDS rule) are left for the build lane that picks this PR up.
+
+Opened as draft PR (`feat/554-chat-width`). **Refs #554** for now (not Closes -- no build or live
+check has run yet in this no-build prep lane); switches to **Closes #554** once a build lane runs
+`ci-local` and the new live check green on a real scratch instance.

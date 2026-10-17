@@ -2,6 +2,8 @@
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
 import type { ThemeId } from './themes';
+import type { ChatWidth } from './chatWidth';
+import type { TranscriptDisplaySettings } from './transcriptDisplay';
 
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
@@ -109,6 +111,7 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
+  chatWidth: ChatWidth; // issue #554, FR-049/FR-073: default 'full'
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration.
@@ -117,23 +120,7 @@ export interface Settings {
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
 export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });
-/** Issue #457: two independent view filters for the chat transcript, applied in the renderer
- * (never main's `HIDDEN_TOOLS` path -- that path removes a tool call from the transcript
- * entirely, before it ever reaches the renderer, which would also hide the always-visible
- * exceptions this issue requires: approvals, answered/pending `ask` questions, and failed tool
- * calls). Hiding is a view filter only: hidden items stay in the persisted Conversation, so
- * turning a toggle back on restores them with no reload. The renderer consumer is
- * `Transcript.tsx`'s `rowVisibility`. */
-export interface TranscriptDisplaySettings {
-  thinking: boolean;
-  toolCalls: boolean;
-}
-
-/** Defaults (issue #457): both on, so nothing changes until the user opts out. */
-// Quality-gate fix (security-auditor, Low): frozen so this shared default object can never be
-// mutated in place by a future call site (every current reader already spreads it, never writes
-// through it, but a frozen object makes that the only option instead of an unenforced convention).
-export const DEFAULT_TRANSCRIPT_DISPLAY: Readonly<TranscriptDisplaySettings> = Object.freeze({ thinking: true, toolCalls: true });
+export { type TranscriptDisplaySettings, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
 
 /** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat
  * roles plus model-kind roles. A role's VALUE is a plain model selector OMP itself resolves
@@ -653,4 +640,13 @@ export interface FilePreview {
    * decision 4). Detected by magic bytes, never by file extension. */
   base64?: string;
   mimeType?: string;
+}
+
+/** `memory:warning` payload (issue #560, spec 001 FR-037; contracts/ipc.md). Moved here (not
+ * inline in `shared/ipc.ts`) to keep that file within this build's 600-line cap (issue #806);
+ * re-exported from `shared/ipc.ts` so every existing import from there keeps working unchanged. */
+export interface LowMemoryWarning {
+  low: boolean;
+  freeBytes: number;
+  liveAgents: number;
 }
