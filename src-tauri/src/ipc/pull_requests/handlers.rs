@@ -83,30 +83,6 @@ pub(super) fn pull_requests_list(state: AppState, args: Vec<Value>) -> HandlerFu
     })
 }
 
-#[cfg(test)]
-mod state_filter_tests {
-    use super::*;
-
-    #[test]
-    fn parse_state_filter_accepts_every_valid_literal() {
-        assert_eq!(
-            parse_state_filter("open"),
-            Some(PullRequestStateFilter::Open)
-        );
-        assert_eq!(
-            parse_state_filter("closed"),
-            Some(PullRequestStateFilter::Closed)
-        );
-        assert_eq!(parse_state_filter("all"), Some(PullRequestStateFilter::All));
-    }
-
-    #[test]
-    fn parse_state_filter_rejects_unknown_and_empty() {
-        assert_eq!(parse_state_filter("bogus"), None);
-        assert_eq!(parse_state_filter(""), None);
-    }
-}
-
 pub(super) fn pull_requests_detail(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
@@ -533,4 +509,28 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         state.session_manager.notify_list_changed();
         Ok(serde_json::to_value(session).expect("Session is always JSON-serialisable"))
     })
+}
+
+#[cfg(test)]
+mod state_filter_tests {
+    use super::*;
+
+    #[test]
+    fn parse_state_filter_accepts_every_valid_literal() {
+        assert_eq!(
+            parse_state_filter("open"),
+            Some(PullRequestStateFilter::Open)
+        );
+        assert_eq!(
+            parse_state_filter("closed"),
+            Some(PullRequestStateFilter::Closed)
+        );
+        assert_eq!(parse_state_filter("all"), Some(PullRequestStateFilter::All));
+    }
+
+    #[test]
+    fn parse_state_filter_rejects_unknown_and_empty() {
+        assert_eq!(parse_state_filter("bogus"), None);
+        assert_eq!(parse_state_filter(""), None);
+    }
 }
