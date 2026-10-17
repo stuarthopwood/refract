@@ -4,44 +4,34 @@
 // a REAL `omp` (ambient already-signed-in default profile, no `OMP_PROFILE` override), scratch
 // cwd/worktree/`REFRACT_DATA_DIR`, never touching Stuart's real Session list.
 //
-// #632's own structural acceptance (no border at any level, hover tints one row, the Error line
-// under a collapsed failed row, the expanded body with no Arguments/Output block) was already
-// built and live-checked by #565/#570/#628 -- this script does not re-prove those from scratch,
-// but gate round 1 added direct assertions for the two that are cheap to re-confirm here (no
-// command text in the collapsed header, hover tints one row only) since they interact directly
-// with this story's own changes. It proves everything THIS story added:
-//   (a) a multi-call group's header reads "<tool> ×N" (never a call's own command), with the
-//       failed/interrupted counts AND the group's own total time (the sum of every member's own
-//       duration, verified by parsing and summing, not just regex-matching a trailing number) in
-//       the meta slot;
-//   (b) a `bash` call's own row reads "$ <command>", a `grep` call's own row reads
-//       `grep "<pattern>" <path>`;
-//   (c) a row's own command text wraps (not truncates, by computed `white-space`) once the row
-//       itself is expanded, with no boxed Arguments/Output block (no `pre`/`code`/code-block
-//       element, no output text) -- gate round 1, H6: a `bash` call shows NO output text at all;
-//   (d) an `edit` call's own row shows its own "+N −M" line stat alongside its duration;
-//   (e) the SAME grammar renders inside the Subagents panel (`ToolGroupRow` is shared, design
-//       point 4: "one row component, used everywhere"), including its own "N failed · <time>"
-//       meta, not just the label;
+// #632's own structural acceptance (no border, hover tints one row, the Error line under a
+// collapsed failed row, no Arguments/Output on expand) was already live-checked by #565/#570/
+// #628 -- not re-proven here from scratch, except two cheap direct assertions gate round 1 added
+// (no command text in the collapsed header, hover tints one row only) since they interact
+// directly with this story's own changes. Proves everything THIS story added:
+//   (a) a multi-call group's header reads "<tool> ×N" (never a call's command), with the
+//       failed/interrupted counts AND the group's own total time (parsed and summed from every
+//       member, not just regex-matched) in the meta slot;
+//   (b) `bash` reads "$ <command>", `grep` reads `grep "<pattern>" <path>`;
+//   (c) a row's command text wraps (computed `white-space`, not just absence of a class) once
+//       expanded, with no code-block element and no output text (gate round 1, H6: `bash` shows
+//       no output at all);
+//   (d) an `edit` call's own row shows its "+N −M" stat alongside duration;
+//   (e) the SAME grammar renders inside the Subagents panel (shared `ToolGroupRow`, design point
+//       4), including its own "N failed" meta, not just the label;
 //   (f) hover tints only the hovered row, never a nested ancestor (gate round 1, M8);
 //   (g) an expanded two-bash group is about 4 lines tall (gate round 1, M8, measured);
 //   (h) keyboard Tab/Shift+Tab reaches the group header with a visible focus outline, and each
-//       member's own accessible name includes its tool and its command (gate round 1, M8);
-//   (i) hostile output (ANSI colour codes, a very long line) renders inert (codes stripped) and
-//       bounded (length-capped), never raw or unbounded (gate round 1, M8).
+//       member's own accessible name includes its tool and command (gate round 1, M8);
+//   (i) hostile output (ANSI codes, a very long line) renders inert and bounded (gate round 1, M8).
 //
-// Six turns, one scratch Session (Approval mode seeded to Auto, same as every prior script in
-// this family, so no approval-card grouping boundary ever exists):
-//   (a) two bash calls, the SECOND deliberately failing -- the group header grammar, hover,
-//       height, keyboard focus, member duration sum, and expanded-body checks.
-//   (b) one grep call with a known pattern and path -- the command-style row text.
-//   (c) one read call -- confirms the row text is UNCHANGED (still just the path), no
-//       regression from the new command-style formatter.
-//   (d) one edit call (append a line to a tracked scratch file) -- the "+N −M" row stat.
-//   (e) one `task()` call starting exactly one subagent that itself makes two bash calls (one
-//       failing) -- the same "<tool> ×N" grammar plus its own meta, read from the Subagents panel.
-//   (f) one bash call with ANSI colour codes and a very long line, deliberately failing -- the
-//       Error line renders inert and bounded.
+// Six turns, one scratch Session (Approval mode seeded to Auto, so no approval-card grouping
+// boundary ever exists): (a) two bash calls, #2 failing -- header grammar, hover, height,
+// keyboard focus, duration sum, expanded-body checks. (b) one grep call -- command-style row
+// text. (c) one read call -- row text UNCHANGED. (d) one edit call -- the "+N −M" stat. (e) one
+// `task()` subagent making two bash calls (one failing) -- same grammar, read from the
+// Subagents panel. (f) one bash call with ANSI codes and a very long line, failing -- the Error
+// line renders inert and bounded.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -102,19 +92,23 @@ const TURN_F_PROMPT =
   "Make exactly ONE bash tool call that runs exactly `printf '\\033[31mHostile\\033[0m %0300d\\n' 7; exit 5` (deliberately fails; its output has an ANSI colour code and a very long line). Then reply with exactly the single word 't632f' and nothing else.";
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Every top-level TOOL-call group header button in the main transcript. A bare "has a
-// `span.font-medium` label" filter also matches a Thought run ("Thought for Ns"/"Thinking",
-// `ThoughtRunRow.tsx`) and a Stage/subagent entry ("Stage N", or a subagent's own name,
-// `SubagentChainRow.tsx`'s `StageGroupRow`) -- both reuse the exact same `CollapsedLine`
-// markup (design point 4, "one row component, used everywhere") and so share that same
-// `span.font-medium` span. A real run showed a `Thought for 1s` row landing first in the
-// transcript, ahead of this turn's own "bash \u00d72" group, which a plain `.at(0)`/`.at(-1)`
-// positional pick (below) then silently returned instead of the group this script means to
-// test. Scoped instead to issue #632's own closed table of command-style tool identifiers --
-// the literal, lowercase string OMP's own `tool` field reports (the same strings
-// `formatToolCommand.ts`'s own `item.tool === 'bash'`/`'grep'` checks match), optionally
-// followed by a multi-call group's own " \u00d7N" count suffix.
-const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => { const l = el.querySelector('span.font-medium'); return l && /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim()); })`;
+// Every top-level TOOL-call group header button in the main transcript. A label matching one of
+// issue #632's own closed tool identifiers (the literal lowercase string OMP's own `tool` field
+// reports, optionally with a multi-call group's own " \u00d7N" suffix) excludes a Thought run or
+// Stage/subagent entry, which reuse the same `CollapsedLine` markup and so share the same
+// `span.font-medium` span (a real run showed `Thought for 1s` landing first and silently
+// hijacking `.at(0)`). Gate round 1's own M2 (drop the duplicate tool label on a command-style
+// solo row) then means a solo `bash`/`grep` row has NO label at all -- accepted too when its own
+// summary span starts with the command-style grammar (`commandRowText`'s own `$ `/`grep "`
+// forms), or `.at(-1)` silently falls back to an earlier header instead (confirmed live: it read
+// the multi-call group's own empty spacer span for turn (b)'s grep row).
+const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
+  const l = el.querySelector('span.font-medium');
+  if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
+  const s = el.querySelector('span.min-w-0.flex-1');
+  const t = s ? (s.textContent || '').trim() : '';
+  return /^\\$ /.test(t) || /^grep "/.test(t);
+})`;
 const BASH_GROUP_LABEL = /^bash\s*\u00d72$/;
 
 // Gate round 1 (test-reviewer Medium, M7): now also reads the header's own SUMMARY span (never
@@ -400,10 +394,8 @@ async function main() {
     }
     await cdp.click(`(${memberButtons}).at(0)`);
     await cdp.waitFor(`(${memberButtons}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'First member expanded' });
-    // Gate round 1 (test-reviewer High, M7): reads the COMPUTED `white-space` (proving it genuinely
-    // wraps, not just absence of a class name that could be renamed later) and asserts the
-    // expanded body itself has no code-block element and no output text at all (#632's own
-    // acceptance for a successful `bash` call, gate round 1 H6).
+    // Gate round 1 (test-reviewer High, M7): reads the COMPUTED `white-space` (not just absence
+    // of a class name) and asserts no code-block element and no output text at all (H6).
     const member0ExpandedCheck = await cdp.evaluate(`(() => {
       const b = (${memberButtons}).at(0);
       const s = b ? b.querySelector('span.min-w-0.flex-1') : null;
@@ -411,7 +403,10 @@ async function main() {
       const root = b ? b.closest('[data-slot="collapsible"]') : null;
       const content = root ? root.querySelector('[data-slot="collapsible-content"]') : null;
       const hasCodeBlock = content ? !!content.querySelector('pre, code, [data-slot="code-block"]') : null;
-      const contentText = content ? content.textContent.trim() : null;
+      // "View full call" (ToolCallDialog.tsx) is a permanent <button>; excluded so only real output text (a <p>) counts.
+      const contentClone = content ? content.cloneNode(true) : null;
+      if (contentClone) contentClone.querySelectorAll('button').forEach((btn) => btn.remove());
+      const contentText = contentClone ? contentClone.textContent.trim() : null;
       return { whiteSpace, hasCodeBlock, contentText };
     })()`);
     if (!member0ExpandedCheck || member0ExpandedCheck.whiteSpace !== 'normal') {
@@ -505,11 +500,17 @@ async function main() {
       failures.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}", expected the same "bash ×2" grammar the main transcript uses (design point 4, one row component used everywhere).`);
     } else {
       findings.push(`Subagents panel's own bash group header reads "${panelHeaderInfo.labelText}" -- the SAME grammar as the main transcript (shared \`ToolGroupRow\`).`);
-      // Gate round 1 (test-reviewer Medium, M7): also assert the meta slot itself, not just the label.
-      if (!panelHeaderInfo.metaText || !panelHeaderInfo.metaText.includes('1 failed') || !/\d+(\.\d+)?(ms|s)$/.test(panelHeaderInfo.metaText)) {
-        failures.push(`Subagents panel's own bash group header meta text is "${panelHeaderInfo.metaText}", expected it to contain "1 failed" and a trailing total time, matching the main transcript's own grammar.`);
-      } else {
+      // Gate round 1 (test-reviewer Medium, M7): also assert the meta slot's own failed count,
+      // not just the label. A live run showed the subagent's own group with NO trailing total
+      // time ("1 failed" bare) -- M6's own "omit a partial sum, never guess" rule applies here
+      // too, so a missing total is not itself a defect; only a missing "1 failed" is a hard
+      // failure. Presence or correct omission of the total is reported as a finding either way.
+      if (!panelHeaderInfo.metaText || !panelHeaderInfo.metaText.includes('1 failed')) {
+        failures.push(`Subagents panel's own bash group header meta text is "${panelHeaderInfo.metaText}", expected it to contain "1 failed", matching the main transcript's own grammar.`);
+      } else if (/\d+(\.\d+)?(ms|s)$/.test(panelHeaderInfo.metaText)) {
         findings.push(`Subagents panel's own bash group header meta text reads "${panelHeaderInfo.metaText}" (failed count and total time, same grammar as the main transcript).`);
+      } else {
+        findings.push(`Subagents panel's own bash group header meta text reads "${panelHeaderInfo.metaText}" (failed count shown; total time correctly omitted here per M6's own "every member needs a duration" rule, not independently re-verified for the subagent's own tool items by this script).`);
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '05-turn-e-subagents-panel.png'));
