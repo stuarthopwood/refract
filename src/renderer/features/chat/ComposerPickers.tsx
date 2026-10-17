@@ -173,7 +173,22 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
             // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
             // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
-            className={cn(COMPOSER_DISABLED_CLASS, 'dark:aria-disabled:hover:bg-transparent', GHOST_BUTTON_FOCUS_CLASS)}
+            //
+            // Live-check fix (verify-927-928-quiet-composer.mjs, real failure not a script bug):
+            // Attach never picked up the SAME U1/U2 treatment `PICKER_TRIGGER_CLASS` already
+            // gives its three siblings (Approval/Model/Reasoning) -- issue #927's own "Intended
+            // behaviour" names all four as one set of ghost buttons, but Attach stayed on the
+            // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
+            // Dark-high-contrast resting border (U1, `border-composer-control-border`,
+            // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
+            // itself -- that's sized as a padded text+icon pill (`h-6 px-2.5`); Attach stays the
+            // icon-only square `size="icon-xs"` square its own design already is.
+            className={cn(
+              'cursor-pointer border-composer-control-border',
+              COMPOSER_DISABLED_CLASS,
+              'dark:aria-disabled:hover:bg-transparent',
+              GHOST_BUTTON_FOCUS_CLASS
+            )}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()
