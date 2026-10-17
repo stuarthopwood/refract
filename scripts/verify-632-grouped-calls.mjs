@@ -27,11 +27,10 @@
 //
 // Six turns, one scratch Session (Approval mode seeded to Auto, so no approval-card grouping
 // boundary ever exists): (a) two bash calls, #2 failing -- header grammar, hover, height,
-// keyboard focus, duration sum, expanded-body checks. (b) one grep call -- command-style row
-// text. (c) one read call -- row text UNCHANGED. (d) one edit call -- the "+N −M" stat. (e) one
-// `task()` subagent making two bash calls (one failing) -- same grammar, read from the
-// Subagents panel. (f) one bash call with ANSI codes and a very long line, failing -- the Error
-// line renders inert and bounded.
+// keyboard focus, duration sum, expanded-body checks. (b) grep -- command-style row text. (c)
+// read -- row text UNCHANGED. (d) edit -- the "+N −M" stat. (e) one `task()` subagent making
+// two bash calls (one failing) -- same grammar, read from the Subagents panel. (f) one bash
+// call with an ANSI byte and a very long line, failing -- the Error line renders inert/bounded.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -88,8 +87,11 @@ const TURN_D_PROMPT =
   "Make exactly ONE edit tool call on the file `t632-edit-target.txt` in the repository root, changing its line `one` to `one-edited`, then reply with exactly the single word 't632d' and nothing else.";
 const TURN_E_PROMPT =
   "Use the task tool to start exactly ONE background subagent (a single entry in `tasks`) whose own prompt instructs it to make exactly TWO bash tool calls, the second one deliberately failing with `exit 9`, then reply with exactly the single word 't632e'. Then, once the subagent has finished, reply with exactly the single word 't632e-done' and nothing else.";
+// A REAL ESC byte (U+001B) embedded directly in the prompt text -- `echo` emits it verbatim, no
+// shell-side escape interpretation (a prior `printf '\033[...'` attempt never reached `item.output`).
+const HOSTILE_LONG_LINE = 'X'.repeat(250);
 const TURN_F_PROMPT =
-  "Make exactly ONE bash tool call that runs exactly `printf '\\033[31mHostile\\033[0m %s\\n' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'; exit 5` (deliberately fails; its output has an ANSI colour code and a very long line, with no shell-side width-specifier or arithmetic that could behave differently across printf implementations). Then reply with exactly the single word 't632f' and nothing else.";
+  `Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: \`echo '\x1b[31mHostile\x1b[0m ${HOSTILE_LONG_LINE}'; exit 5\` (deliberately fails; its output has a real ANSI colour escape byte and a very long line). Then reply with exactly the single word 't632f' and nothing else.`;
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // Every top-level TOOL-call group header button in the main transcript. A label matching one of
@@ -170,12 +172,9 @@ async function main() {
     writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
 
     // Scratch targets turns (b)/(c)/(d) read or edit, COMMITTED (not merely written to `repoDir`'s
-    // own working copy) so `grep`/`read`/`edit` all see a real, tracked file. A live run first
-    // proved why this matters: Refract creates a brand-new `git worktree` per Session (checked
-    // out from the repository's own committed tree, `src-tauri/src/git/worktrees.rs`), which
-    // never materialises an uncommitted or untracked file sitting only in `repoDir`'s own working
-    // copy -- the agent's `read`/`edit` calls landed in that separate worktree and genuinely
-    // failed with "not found" even though this script had written the files right here.
+    // own working copy) so `grep`/`read`/`edit` all see a real, tracked file: Refract creates a
+    // brand-new `git worktree` per Session (`src-tauri/src/git/worktrees.rs`), which only ever
+    // materialises committed content -- an uncommitted file here would read "not found" there.
     writeFileSync(path.join(repoDir, 't632-read-target.txt'), 'one\ntwo\nthree\n');
     writeFileSync(path.join(repoDir, 't632-edit-target.txt'), 'one\ntwo\nthree\n');
     appendFileSync(path.join(repoDir, 'README-t632grep.txt'), 'line containing t632GrepMarker here\n');
