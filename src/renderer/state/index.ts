@@ -22,6 +22,7 @@ import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WI
 import { useSplitStore } from './split-store'
 import { useSessionListStore } from './session-list-store'
 import { usePullRequestsStore } from './pull-requests-store'
+import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { useThemeStore } from './theme-store'
 import { useUpdateStore } from './update-store'
 
@@ -52,6 +53,7 @@ export { useSplitStore }
 export { useSessionListStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState, PullRequestsActiveCount } from './pull-requests-store'
+export { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore }
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 export { useUpdateStore }
 
@@ -78,6 +80,7 @@ export interface RefractDevStores {
   rightPane: typeof useRightPaneStore
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
+  pullRequestsLayout: typeof usePullRequestsLayoutStore
   theme: typeof useThemeStore
   updates: typeof useUpdateStore
 }
@@ -114,6 +117,7 @@ if (import.meta.env.DEV) {
     rightPane: useRightPaneStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
+    pullRequestsLayout: usePullRequestsLayoutStore,
     theme: useThemeStore,
     updates: useUpdateStore
   }

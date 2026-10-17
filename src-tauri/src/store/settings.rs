@@ -99,6 +99,7 @@ pub struct Settings {
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
     pub session_list_collapse: SessionListCollapse,
+    pub pull_requests_list_width_px: i64,
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
     /// main-process features are frozen, epic #797), so this field has no TypeScript
     /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
@@ -113,7 +114,7 @@ pub struct Settings {
     /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
     /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
     /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
-    /// overlaps a known field above (`SettingsStore::open` excludes all eleven by name).
+    /// overlaps a known field above (`SettingsStore::open` excludes all twelve by name).
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -202,6 +203,11 @@ fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
         collapsed_repository_ids,
         archived_open,
     })
+}
+
+/// #930: clamps a corrupt/out-of-range value; the renderer enforces its own live min/50%-of-view max too.
+pub(crate) fn clamp_pull_requests_list_width_px(value: i64) -> i64 {
+    value.clamp(280, 4000)
 }
 
 pub struct SettingsStore {
@@ -312,8 +318,10 @@ impl SettingsStore {
             }
             _ => default_session_list_collapse(),
         };
+        // #930: one width for every Project; clamped rather than trusted.
+        let pull_requests_list_width_px = object.get("pullRequestsListWidthPx").and_then(Value::as_i64).map(clamp_pull_requests_list_width_px).unwrap_or(320);
 
-        const KNOWN_FIELDS: [&str; 11] = [
+        const KNOWN_FIELDS: [&str; 12] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -325,6 +333,7 @@ impl SettingsStore {
             "detectImagePathsOnPaste",
             "wordPredictionEnabled",
             "sessionListCollapse",
+            "pullRequestsListWidthPx",
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -344,6 +353,7 @@ impl SettingsStore {
             detect_image_paths_on_paste,
             word_prediction_enabled,
             session_list_collapse,
+            pull_requests_list_width_px,
             extra,
         };
 
@@ -411,11 +421,10 @@ impl SettingsStore {
             "sessionListCollapse".to_string(),
             json!(self.data.session_list_collapse),
         );
-        // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `data.extra` excludes all eleven
-        // of them), so a renderer feature's own not-yet-ported setting survives every save. Also
-        // now the same field `settings.get`/`settings:changed` flatten into the wire shape (see
-        // `Settings::extra`'s own doc comment).
+        map.insert("pullRequestsListWidthPx".to_string(), json!(self.data.pull_requests_list_width_px));
+        // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
+        // a known key; `data.extra` excludes all twelve), so an unported setting survives every
+        // save, and `settings.get`/`settings:changed` flatten it onto the wire too.
         for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
         }
@@ -571,6 +580,12 @@ impl SettingsStore {
             session_list_collapse: value,
             ..self.data.clone()
         };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
+    pub async fn set_pull_requests_list_width_px(&mut self, width_px: i64) -> std::io::Result<Settings> {
+        let next = Settings { pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px), ..self.data.clone() };
         self.persist_whole(next).await
     }
 }

@@ -4,8 +4,9 @@
 // here, written back to the shared `view-store.ts` so the choice survives switching away and
 // back (research.md decision 7).
 import { useEffect, useRef } from 'react'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { usePullRequestsStore, useRepositoriesStore, useViewStore } from '@/state'
+import { PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore, usePullRequestsStore, useRepositoriesStore, useViewStore } from '@/state'
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 
@@ -15,6 +16,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const openPullRequests = useViewStore((s) => s.openPullRequests)
   const repositoryId = viewRepositoryId ?? repositories[0]?.id ?? null
   const selectedNumber = usePullRequestsStore((s) => s.stateFor(repositoryId ?? '').selectedNumber)
+  const widthPx = usePullRequestsLayoutStore((s) => s.widthPx)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   // High remediation (a11y, round 3): round 2's tasks.md T028 claimed this was already fixed --
@@ -39,26 +41,31 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           whenever the right pane shell is the one holding that corner (FR-011, "exactly once"),
           the same prop `ChatPane.tsx` takes. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
-        <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
-          Pull requests
-        </h2>
-        {repositoryId && (
-          <Select value={repositoryId} onValueChange={(value) => openPullRequests(value)}>
-            {/* Quality-gate remediation (code-reviewer, Medium): the chat panel can shrink to
-             * 360px (`App.tsx`'s `minSize={360}`); without `min-w-0`/`shrink` this `w-56` trigger
-             * held its full width and pushed the trailing corner spacer past the window's right
-             * edge, where it was clipped -- the Select's own right end then sat back under the
-             * window buttons, the exact dead-click conflict #500 removed. `min-w-0`/`shrink` let
-             * it shrink and truncate instead (the trigger's inner `SelectValue` already
-             * `line-clamp-1`s, per `select.tsx`). */}
-            <SelectTrigger
-              size="sm"
-              aria-label="Repository"
-              title={repositories.find((repo) => repo.id === repositoryId)?.name}
-              className="no-drag-region w-56 min-w-0 shrink"
-            >
-              <SelectValue placeholder="Select a repository" />
-            </SelectTrigger>
+        {/* Issue #930 (2026-10-16 decision): this wrapper's own width tracks the resizable list
+            column's live `widthPx` so the heading and Project selector truncate in step with it,
+            instead of only shrinking at the app's unrelated 360px window-wide floor (#500's
+            original fix, which this keeps as the Select's own inner `min-w-0 shrink` fallback). */}
+        <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? widthPx : undefined }}>
+          <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
+            Pull requests
+          </h2>
+          {repositoryId && (
+            <Select value={repositoryId} onValueChange={(value) => openPullRequests(value)}>
+              {/* Quality-gate remediation (code-reviewer, Medium): the chat panel can shrink to
+               * 360px (`App.tsx`'s `minSize={360}`); without `min-w-0`/`shrink` this `w-56` trigger
+               * held its full width and pushed the trailing corner spacer past the window's right
+               * edge, where it was clipped -- the Select's own right end then sat back under the
+               * window buttons, the exact dead-click conflict #500 removed. `min-w-0`/`shrink` let
+               * it shrink and truncate instead (the trigger's inner `SelectValue` already
+               * `line-clamp-1`s, per `select.tsx`). */}
+              <SelectTrigger
+                size="sm"
+                aria-label="Repository"
+                title={repositories.find((repo) => repo.id === repositoryId)?.name}
+                className="no-drag-region w-56 min-w-0 shrink"
+              >
+                <SelectValue placeholder="Select a repository" />
+              </SelectTrigger>
             {/* Quality-gate remediation (accessibility-auditor, Medium): the default
              * `position="item-aligned"` lays the selected item over the trigger, so any item
              * above it (every item before the current selection) renders upward into this row's
@@ -74,6 +81,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             </SelectContent>
           </Select>
         )}
+        </div>
         {reservesWindowControls && (
           <div
             aria-hidden
@@ -87,20 +95,42 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           Add a repository to browse its pull requests.
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <div className="w-80 shrink-0 overflow-hidden border-r border-divider">
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="min-h-0 flex-1"
+          onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
+        >
+          {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
+              320px, one width for every Project. Native to `react-resizable-panels` 4.14.1:
+              `defaultSize`/`minSize` as plain numbers are pixels, `maxSize` as a percentage
+              string is relative to the Group's own measured width -- no manual px/percent
+              conversion needed. Double-click-to-reset and arrow-key resize on the handle are
+              both this library's own built-in `Separator` behaviour (`disableDoubleClick`
+              defaults to `false`; keyboard handling needs no code here -- `App.tsx`'s own
+              comment records how wrapping the Separator once broke it by accident). */}
+          <ResizablePanel
+            id="pull-requests-list"
+            defaultSize={widthPx}
+            minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
+            maxSize="50%"
+            className="overflow-hidden border-r border-divider"
+            onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
+          >
             <PullRequestList repositoryId={repositoryId} />
-          </div>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            {selectedNumber !== null ? (
-              <PullRequestDetail repositoryId={repositoryId} number={selectedNumber} />
-            ) : (
-              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                Select a pull request to view its details.
-              </div>
-            )}
-          </div>
-        </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle aria-label="Resize pull request list" />
+          <ResizablePanel id="pull-requests-detail">
+            <div className="h-full min-w-0 overflow-hidden">
+              {selectedNumber !== null ? (
+                <PullRequestDetail repositoryId={repositoryId} number={selectedNumber} />
+              ) : (
+                <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+                  Select a pull request to view its details.
+                </div>
+              )}
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       )}
     </div>
   )

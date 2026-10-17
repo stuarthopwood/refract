@@ -52,6 +52,10 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setSessionListCollapse",
         settings_set_session_list_collapse,
     );
+    d.register(
+        "settings.setPullRequestsListWidth",
+        settings_set_pull_requests_list_width,
+    );
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -337,6 +341,28 @@ pub fn settings_set_session_list_collapse(state: AppState, args: Vec<Value>) -> 
             .lock()
             .await
             .set_session_list_collapse(value)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// #930 contracts/ipc.md `settings.setPullRequestsListWidth(px)`: one width for every Project,
+/// clamped (not rejected) by `SettingsStore` itself, the same shape `settings.setTheme` would
+/// use if it did not also track a raw value -- a plain-replace setter with no raw/lazy-correction
+/// tracking needed.
+pub fn settings_set_pull_requests_list_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let width_px = args.first().and_then(Value::as_i64).ok_or_else(|| {
+            invalid_argument("settings.setPullRequestsListWidth expects a number of pixels")
+        })?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_pull_requests_list_width_px(width_px)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
