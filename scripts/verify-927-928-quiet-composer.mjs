@@ -236,21 +236,46 @@ async function readGhostControlRestingStyles(cdp) {
   })()`);
 }
 
-/** (c)/(d) above: a REAL keyboard Tab chain -- Approval pill (script-focused, the known starting
- * point; its OWN focus-visible state is never asserted) -> Model -> Reasoning -> Attach -> Send,
- * reading each destination's `:focus-visible` match and computed `outline-color` as it is
- * reached by the real `Input.dispatchKeyEvent` Tab, never a script `.focus()` call -- a
- * `<button>`'s `:focus-visible` genuinely depends on keyboard-vs-pointer input modality, so this
- * is the one path that actually proves the muted/opaque outline split. */
+/** (c)/(d) above: a REAL keyboard Tab chain starting from a REAL click on the message field
+ * (verified against `document.elementFromPoint`, never a scripted `.focus()` call anywhere in
+ * this chain) -- confirmed live (gate feedback): a scripted `.focus()` starting point produced
+ * unreliable subsequent Tab landings (Send's own step intermittently landed in the sidebar's
+ * session-search field instead of the composer's Send button). Walks forward with a bounded
+ * step cap, recording each of Model/Reasoning/Attach/Send the first time its own aria-label is
+ * reached (never assuming a fixed step count per destination, since an intervening tabbable
+ * element -- e.g. the right-pane `ResizableHandle` -- can sit between any two of them); Send
+ * not reached within the cap is a real failure, not a skip. */
 async function readFocusOutlineChain(cdp) {
-  await cdp.evaluate(`(${APPROVAL_PILL_FINDER})?.focus()`);
+  const fieldRect = await cdp.evaluate(`(() => {
+    const field = document.querySelector('[aria-label="Message"]');
+    const r = field.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: fieldRect.x, y: fieldRect.y });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: fieldRect.x, y: fieldRect.y, button: 'left', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: fieldRect.x, y: fieldRect.y, button: 'left', clickCount: 1 });
   await sleep(50);
+  const clickLanded = await cdp.evaluate(`(() => {
+    const field = document.querySelector('[aria-label="Message"]');
+    const hit = document.elementFromPoint(${fieldRect.x}, ${fieldRect.y});
+    return field === hit && document.activeElement === field;
+  })()`);
+  if (!clickLanded) throw new Error('verify-927-928: a real click at the message textarea\'s own centre did not focus it (document.elementFromPoint/activeElement mismatch) -- cannot trust the Tab chain below.');
+
+  const KIND_MATCHERS = [
+    ['Approval', (label) => label.endsWith(', approval mode')],
+    ['Model', (label) => label.includes('model (')],
+    ['Reasoning', (label) => label.includes('reasoning')],
+    ['Attach', (label) => label.startsWith('Attach images')],
+    ['Send', (label) => label === 'Send message']
+  ];
+  const STEP_CAP = 10;
   const steps = [];
-  const labels = ['Model', 'Reasoning', 'Attach', 'Send'];
-  for (const label of labels) {
+  const found = new Set();
+  for (let i = 0; i < STEP_CAP && !found.has('Send'); i++) {
     await pressTab(cdp);
     await sleep(50);
-    let read = await cdp.evaluate(`(() => {
+    const read = await cdp.evaluate(`(() => {
       const el = document.activeElement;
       if (!el) return null;
       const cs = getComputedStyle(el);
@@ -262,32 +287,16 @@ async function readFocusOutlineChain(cdp) {
         outlineWidth: cs.outlineWidth
       };
     })()`);
-    // Issue #927 split-proof step (Send): App.tsx's own split-pane `ResizableHandle` ("Resize
-    // right pane") sits in real DOM/tab order between the composer's Attach button and Send
-    // (a layout fact, not something either issue touches) -- confirmed live (this script's own
-    // first real run landed here instead of Send every time). Presses a few more real Tabs,
-    // bounded, to genuinely reach Send rather than reporting a permanent "not exercised" skip.
-    if (label === 'Send') {
-      let extra = 0;
-      while (read?.ariaLabel !== 'Send message' && extra < 4) {
-        await pressTab(cdp);
-        await sleep(50);
-        read = await cdp.evaluate(`(() => {
-          const el = document.activeElement;
-          if (!el) return null;
-          const cs = getComputedStyle(el);
-          return {
-            ariaLabel: el.getAttribute('aria-label'),
-            matchesFocusVisible: el.matches(':focus-visible'),
-            outlineStyle: cs.outlineStyle,
-            outlineColor: cs.outlineColor,
-            outlineWidth: cs.outlineWidth
-          };
-        })()`);
-        extra += 1;
-      }
+    if (!read) continue;
+    const label = read.ariaLabel || '';
+    const kind = KIND_MATCHERS.find(([name, test]) => !found.has(name) && test(label))?.[0];
+    if (kind) {
+      found.add(kind);
+      steps.push({ expectedLabel: kind, ...read });
     }
-    steps.push({ expectedLabel: label, ...read });
+  }
+  if (!found.has('Send')) {
+    steps.push({ expectedLabel: 'Send', ariaLabel: null, matchesFocusVisible: false, outlineStyle: 'none', outlineColor: null, outlineWidth: null, notReached: true });
   }
   return steps;
 }
@@ -414,21 +423,6 @@ async function main() {
       throw new Error('verify-927-928: composer box not found via [aria-label="Message"]\'s own .closest(\'.rounded-lg\') -- cannot measure anything below.');
     }
 
-    // Issue #928: `on_launch`'s own unconditional first `schedule_readout_update` call (Rust
-    // `session/readout.rs`) runs `READOUT_COALESCE_MS` (100ms) after launch, computing a real
-    // `diff_stat` (git status) even with zero changes -- `ChangesChip` renders once that
-    // `readout:update` event lands, with no turn needed. Waits for the FIRST `.text-readout`
-    // chip once, before the per-theme loop (not per-theme -- this is launch-time state, not
-    // theme-dependent), so the per-theme reads below measure real chips rather than racing this
-    // async round trip.
-    let readoutChipsConfirmed = false;
-    try {
-      await cdp.waitFor(`document.querySelectorAll('.text-readout').length > 0`, { timeoutMs: 15_000, label: 'Status line chip (.text-readout) rendered' });
-      readoutChipsConfirmed = true;
-      findings.push('Status line chip(s) rendered after the launch-time readout update (no turn needed).');
-    } catch (err) {
-      notExercised.push(`Status line: no .text-readout chip rendered within 15s of session creation (${err.message}) -- issue #928's font-size/icon-size checks below will report no chips found for every theme.`);
-    }
 
     for (const theme of THEMES) {
       try {
@@ -506,8 +500,10 @@ async function main() {
           findings.push(`${theme.name}: real keyboard Tab landed on "${step.ariaLabel}" with a visible :focus-visible outline (${step.outlineStyle}, ${step.outlineColor}, ${step.outlineWidth}).`);
         }
       }
-      if (!sendStep || sendStep.outlineStyle === 'none') {
-        notExercised.push(`${theme.name}: could not read Send's own real-Tab outline (sendStep=${JSON.stringify(sendStep)}).`);
+      if (!sendStep || sendStep.notReached) {
+        failures.push(`${theme.name}: the real Tab walk from the message field never reached Send within its step cap (last chain: ${JSON.stringify(chain.map((s) => s.expectedLabel))}) -- Send must be reachable by keyboard.`);
+      } else if (sendStep.outlineStyle === 'none') {
+        failures.push(`${theme.name}: Send's own real-Tab outline is 'none' -- Send (unchanged by #927) must keep a visible focus outline.`);
       } else {
         findings.push(`${theme.name}: Send (unchanged by #927) shows its own real-Tab outline: ${sendStep.outlineStyle}, ${sendStep.outlineColor}, ${sendStep.outlineWidth}.`);
         const ghostOutlineColors = new Set(ghostSteps.filter((s) => s && s.outlineStyle !== 'none').map((s) => s.outlineColor));
@@ -523,10 +519,22 @@ async function main() {
       await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
 
       // ---- (e), issue #928: status line chip text/icon sizes ----
+      // Issue #928: `on_launch`'s own unconditional first `schedule_readout_update` call (Rust
+      // `session/readout.rs`) runs `READOUT_COALESCE_MS` (100ms) after launch, computing a real
+      // `diff_stat` (git status) even with zero changes -- `ChangesChip` renders once that
+      // `readout:update` event lands, with no turn needed. Confirmed live (this script's own
+      // screenshots): the chip DOES render, just not always inside a short post-launch window
+      // (readout-computation latency, the same pre-existing gap `verify-563-subagent-stage.mjs`
+      // already documents for the Subagents chip) -- polls generously here, per theme, rather
+      // than a single early timed-out wait that masked a real, measurable chip as "absent".
+      try {
+        await cdp.waitFor(`document.querySelectorAll('.text-readout').length > 0`, { timeoutMs: 25_000, label: 'Status line chip (.text-readout) rendered' });
+      } catch {
+        // fall through -- the size check below reports a real failure if still genuinely absent.
+      }
       const chipSizes = await readStatusLineChipSizes(cdp);
       if (!chipSizes || chipSizes.length === 0) {
-        if (readoutChipsConfirmed) failures.push(`${theme.name}: no .text-readout status-line chips found even though a chip rendered earlier in this same session -- a theme switch should never hide every chip.`);
-        else notExercised.push(`${theme.name}: no .text-readout status-line chips found (no chip ever rendered in this session within the pre-loop wait -- see the standalone finding above).`);
+        failures.push(`${theme.name}: no .text-readout status-line chips found after a 25s poll -- DEFAULT_SESSION_READOUT turns changes/context-usage/turn-time on, at least one should render.`);
       } else {
         for (const chip of chipSizes) {
           if (chip.fontSize !== '13px') failures.push(`${theme.name}: status line chip "${chip.text}" computed font-size is ${chip.fontSize}, expected 13px (issue #928).`);
