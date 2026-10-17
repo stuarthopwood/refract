@@ -2,6 +2,22 @@ import type { TranscriptItem } from '../../../shared/model'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
+// #962 (follow-up from #632/#950): shared with `ToolRow.tsx`'s own `errorLine` -- strips terminal
+// control sequences (CSI/OSC), C0 controls and bidi-override characters so neither a stray
+// terminal code nor a spoofing override can leak into a plain-text row (security hardening, gate
+// round 1 of #632). `commandRowText` below now runs its own command/path text through the exact
+// same cleaning, one helper, never a second copy of the regex.
+const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
+// eslint-disable-next-line no-control-regex -- deliberately matching C0 controls/DEL/bidi overrides to strip them
+const UNSAFE_CHARS_PATTERN = /[\u0000-\u0008\u000B-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g
+
+export function sanitizeLines(raw: string): string[] {
+  return raw
+    .split(/\r\n|\n|\r/)
+    .map((line) => line.replace(ANSI_PATTERN, '').replace(UNSAFE_CHARS_PATTERN, '').trim())
+    .filter((line) => line.length > 0)
+}
+
 function stringField(args: unknown, key: string): string | undefined {
   if (typeof args !== 'object' || args === null) return undefined
   const value = (args as Record<string, unknown>)[key]
@@ -39,16 +55,21 @@ export function commandRowText(item: ToolItem): string {
     // `ls\n`) wrongly marked a genuinely one-line command as multi-line; counts non-empty lines.
     const lines = item.target.split(/\r\n|\n|\r/)
     const nonEmptyLines = lines.filter((line) => line.trim().length > 0)
-    const firstNonEmptyLine = nonEmptyLines[0] ?? ''
+    // #962: the raw first line can carry a control or bidi-override character (never visible,
+    // but able to visually reorder the row); `sanitizeLines` strips it the same way `errorLine`
+    // strips the error text, so a spoofed command can never read differently from what it does.
+    const firstNonEmptyLine = sanitizeLines(nonEmptyLines[0] ?? '')[0] ?? ''
     return `$ ${firstNonEmptyLine}${nonEmptyLines.length > 1 ? ' …' : ''}`
   }
   if (item.tool === 'grep') {
     // `item.target` is the pattern alone (`extract_target` in `transcript.rs`); the search path
     // is a separate argument, read directly off the call's own `args` when it is a plain string
     // (never guessed, never shown when the shape doesn't match -- same "no wrong fact" rule the
-    // derived result below follows).
+    // derived result below follows). #962: both sanitized the same way as the bash command above.
+    const pattern = sanitizeLines(item.target)[0] ?? ''
     const path = stringField(item.args, 'path')
-    return path ? `grep "${item.target}" ${path}` : `grep "${item.target}"`
+    const sanitizedPath = path ? sanitizeLines(path)[0] : undefined
+    return sanitizedPath ? `grep "${pattern}" ${sanitizedPath}` : `grep "${pattern}"`
   }
   return item.target
 }
