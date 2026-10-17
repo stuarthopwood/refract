@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
 // High remediation (a11y): the Off-state track was ~1.5:1 against the page (bg-input, 15%

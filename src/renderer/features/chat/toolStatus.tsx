@@ -1,4 +1,4 @@
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import { STATUS_GLYPH, type StatusGlyphKey } from './statusGlyph'
 
 // Quality-gate remediation (Low, round 2): split out of `ToolRow.tsx` so it and

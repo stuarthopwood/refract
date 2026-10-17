@@ -31,7 +31,7 @@ import {
 export function ComposerStatusLine({ sessionId }: { sessionId: string }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
-    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
+    <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
       {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
       {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
