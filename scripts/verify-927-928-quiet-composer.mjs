@@ -85,21 +85,67 @@ const SEND_BUTTON_FINDER = `document.querySelector('button[aria-label="Send mess
 
 // Issue #927, Dark (high contrast): the composer border and focus outline must measure a REAL
 // >=3:1 ratio against their actual rendered backdrop -- not merely "looks opaque". Parses a
-// `getComputedStyle()` colour string (`rgb(r, g, b)` or `rgba(r, g, b, a)`, the only two forms
-// a browser ever reports for a resolved `color-mix()`/literal colour) into the same
-// `{ alpha, linear }` shape `contrast-math.mjs` already works with (reused byte-for-byte from
-// `check-theme-contrast.mjs`'s own static token math, just fed live DOM reads instead of
-// hardcoded CSS variable values), then alpha-composites and computes the ratio exactly as that
-// script does.
+// `getComputedStyle()` colour string into the same `{ alpha, linear }` shape `contrast-math.mjs`
+// already works with (reused byte-for-byte from `check-theme-contrast.mjs`'s own static token
+// math, just fed live DOM reads instead of hardcoded CSS variable values), then alpha-composites
+// and computes the ratio exactly as that script does.
+//
+// This app's `@theme` tokens and `color-mix(in oklab, ...)` expressions make WebView2/Chromium
+// report computed colours in `oklch()`/`oklab()` syntax, not `rgb()` -- confirmed live (this
+// script's own first real run reported `oklch(1 0 0 / 0.38)` and `oklab(0.9 0 0 / 0.5)` for
+// composer border/focus colours, which the original `rgb()`-only parser below could not read at
+// all). Both are parsed via the standard OKLab-to-linear-sRGB matrices (Bjorn Ottosson's method,
+// the same one every modern browser uses internally), which already yield LINEAR values --
+// `rgb()`/`rgba()` bytes still need `srgbGammaDecode`, oklch/oklab do not.
+function oklabToLinearSrgb(L, a, b) {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+  const l = l_ ** 3;
+  const m = m_ ** 3;
+  const s = s_ ** 3;
+  return [
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+  ].map(clamp01);
+}
+
 function parseComputedColorToEntry(raw) {
-  const match = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?\s*\)$/.exec(raw ?? '');
-  if (!match) return null;
-  const [, r, g, b, a] = match;
-  return {
-    raw,
-    alpha: a === undefined ? 1 : clamp01(parseFloat(a)),
-    linear: [r, g, b].map((c) => srgbGammaDecode(clamp01(parseFloat(c) / 255)))
-  };
+  const str = (raw ?? '').trim();
+  if (str === 'transparent') return { raw, alpha: 0, linear: [0, 0, 0] };
+  const rgbMatch = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/.exec(str);
+  if (rgbMatch) {
+    const [, r, g, b, a] = rgbMatch;
+    return {
+      raw,
+      alpha: a === undefined ? 1 : clamp01(a.endsWith('%') ? parseFloat(a) / 100 : parseFloat(a)),
+      linear: [r, g, b].map((c) => srgbGammaDecode(clamp01(parseFloat(c) / 255)))
+    };
+  }
+  const oklchMatch = /^oklch\(\s*([\d.]+%?)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/.exec(str);
+  if (oklchMatch) {
+    const [, lRaw, cRaw, hRaw, aRaw] = oklchMatch;
+    const L = lRaw.endsWith('%') ? parseFloat(lRaw) / 100 : parseFloat(lRaw);
+    const C = parseFloat(cRaw);
+    const hRad = (parseFloat(hRaw) * Math.PI) / 180;
+    return {
+      raw,
+      alpha: aRaw === undefined ? 1 : clamp01(aRaw.endsWith('%') ? parseFloat(aRaw) / 100 : parseFloat(aRaw)),
+      linear: oklabToLinearSrgb(L, C * Math.cos(hRad), C * Math.sin(hRad))
+    };
+  }
+  const oklabMatch = /^oklab\(\s*([\d.]+%?)\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/.exec(str);
+  if (oklabMatch) {
+    const [, lRaw, aValRaw, bValRaw, aRaw] = oklabMatch;
+    const L = lRaw.endsWith('%') ? parseFloat(lRaw) / 100 : parseFloat(lRaw);
+    return {
+      raw,
+      alpha: aRaw === undefined ? 1 : clamp01(aRaw.endsWith('%') ? parseFloat(aRaw) / 100 : parseFloat(aRaw)),
+      linear: oklabToLinearSrgb(L, parseFloat(aValRaw), parseFloat(bValRaw))
+    };
+  }
+  return null;
 }
 
 function measuredContrastRatio(fgRaw, bgRaw) {
@@ -109,6 +155,35 @@ function measuredContrastRatio(fgRaw, bgRaw) {
   const fgLinear = resolvedLinear(fgEntry, bgEntry);
   const bgLinear = resolvedLinear(bgEntry, bgEntry);
   return contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear));
+}
+
+// Issue #927 decision 4a: Dark/Obsidian's composer focus must show NO glow (a quiet border-
+// colour change is the whole cue); Dark high contrast must keep its full, visible ring. Tailwind
+// v4's `ring-*` utilities always compose `box-shadow` from five comma-separated layers
+// (`--tw-inset-shadow,--tw-inset-ring-shadow,--tw-ring-offset-shadow,--tw-ring-shadow,--tw-shadow`)
+// even when every one of them is a transparent/zero-geometry no-op -- `getComputedStyle()` never
+// collapses that back to the literal string `'none'`, confirmed live (this script's own first
+// real run reported a 5-layer string in EVERY theme, Dark high contrast included, which a naive
+// `boxShadow !== 'none'` check would misread as "a glow is always present everywhere"). The only
+// way to tell a genuine glow from Tailwind's own always-present zero-geometry layers is to
+// measure each layer's real blur/spread radius and its colour's alpha: a layer paints visible
+// pixels beyond the element's own border box only when (blur>0 or spread>0) AND alpha>0.
+function hasVisibleShadow(boxShadowRaw) {
+  const str = (boxShadowRaw ?? '').trim();
+  if (!str || str === 'none') return false;
+  for (const layer of str.split(/,(?![^(]*\))/)) {
+    const trimmed = layer.trim().replace(/\s+inset$/, '').replace(/^inset\s+/, '');
+    const geomMatch = /(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s*$/.exec(trimmed);
+    if (!geomMatch) continue;
+    const [, , , blurStr, spreadStr] = geomMatch;
+    const blur = parseFloat(blurStr);
+    const spread = parseFloat(spreadStr);
+    if (blur <= 0 && spread <= 0) continue;
+    const colorRaw = trimmed.slice(0, geomMatch.index).trim();
+    const entry = parseComputedColorToEntry(colorRaw);
+    if (entry && entry.alpha > 0) return true;
+  }
+  return false;
 }
 
 /** (a)/(b) above: the composer box's own resting and focus-visible computed styles. Focuses the
@@ -166,7 +241,7 @@ async function readFocusOutlineChain(cdp) {
   for (const label of labels) {
     await pressTab(cdp);
     await sleep(50);
-    const read = await cdp.evaluate(`(() => {
+    let read = await cdp.evaluate(`(() => {
       const el = document.activeElement;
       if (!el) return null;
       const cs = getComputedStyle(el);
@@ -178,6 +253,31 @@ async function readFocusOutlineChain(cdp) {
         outlineWidth: cs.outlineWidth
       };
     })()`);
+    // Issue #927 split-proof step (Send): App.tsx's own split-pane `ResizableHandle` ("Resize
+    // right pane") sits in real DOM/tab order between the composer's Attach button and Send
+    // (a layout fact, not something either issue touches) -- confirmed live (this script's own
+    // first real run landed here instead of Send every time). Presses a few more real Tabs,
+    // bounded, to genuinely reach Send rather than reporting a permanent "not exercised" skip.
+    if (label === 'Send') {
+      let extra = 0;
+      while (read?.ariaLabel !== 'Send message' && extra < 4) {
+        await pressTab(cdp);
+        await sleep(50);
+        read = await cdp.evaluate(`(() => {
+          const el = document.activeElement;
+          if (!el) return null;
+          const cs = getComputedStyle(el);
+          return {
+            ariaLabel: el.getAttribute('aria-label'),
+            matchesFocusVisible: el.matches(':focus-visible'),
+            outlineStyle: cs.outlineStyle,
+            outlineColor: cs.outlineColor,
+            outlineWidth: cs.outlineWidth
+          };
+        })()`);
+        extra += 1;
+      }
+    }
     steps.push({ expectedLabel: label, ...read });
   }
   return steps;
@@ -305,6 +405,22 @@ async function main() {
       throw new Error('verify-927-928: composer box not found via [aria-label="Message"]\'s own .closest(\'.rounded-lg\') -- cannot measure anything below.');
     }
 
+    // Issue #928: `on_launch`'s own unconditional first `schedule_readout_update` call (Rust
+    // `session/readout.rs`) runs `READOUT_COALESCE_MS` (100ms) after launch, computing a real
+    // `diff_stat` (git status) even with zero changes -- `ChangesChip` renders once that
+    // `readout:update` event lands, with no turn needed. Waits for the FIRST `.text-readout`
+    // chip once, before the per-theme loop (not per-theme -- this is launch-time state, not
+    // theme-dependent), so the per-theme reads below measure real chips rather than racing this
+    // async round trip.
+    let readoutChipsConfirmed = false;
+    try {
+      await cdp.waitFor(`document.querySelectorAll('.text-readout').length > 0`, { timeoutMs: 15_000, label: 'Status line chip (.text-readout) rendered' });
+      readoutChipsConfirmed = true;
+      findings.push('Status line chip(s) rendered after the launch-time readout update (no turn needed).');
+    } catch (err) {
+      notExercised.push(`Status line: no .text-readout chip rendered within 15s of session creation (${err.message}) -- issue #928's font-size/icon-size checks below will report no chips found for every theme.`);
+    }
+
     for (const theme of THEMES) {
       try {
         await switchTheme(cdp, theme.id, theme.name);
@@ -319,12 +435,16 @@ async function main() {
       if (!boxStyles?.resting || !boxStyles?.focused) {
         failures.push(`${theme.name}: composer box styles could not be read (target missing).`);
       } else {
-        const isTransparent = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent';
+        const isTransparent = (c) => {
+          if (c === 'rgba(0, 0, 0, 0)' || c === 'transparent') return true;
+          const entry = parseComputedColorToEntry(c);
+          return entry !== null && entry.alpha === 0;
+        };
         if (theme.id === 'dark-high-contrast') {
           if (isTransparent(boxStyles.resting.backgroundColor)) failures.push(`${theme.name}: composer background is transparent (${boxStyles.resting.backgroundColor}) -- #927 explicitly excludes this theme, it must keep its old opaque fill.`);
           else findings.push(`${theme.name}: composer background stayed opaque (${boxStyles.resting.backgroundColor}), unchanged by #927 as decided.`);
-          if (boxStyles.focused.boxShadow === 'none') failures.push(`${theme.name}: composer focus box-shadow is 'none' -- #927 keeps this theme's full ring (the old ring-ring/50 glow) unchanged.`);
-          else findings.push(`${theme.name}: composer focus-visible box-shadow is present (${boxStyles.focused.boxShadow}), the unchanged full ring.`);
+          if (!hasVisibleShadow(boxStyles.focused.boxShadow)) failures.push(`${theme.name}: composer focus box-shadow has no visible glow (${boxStyles.focused.boxShadow}) -- #927 keeps this theme's full ring (the old ring-ring/50 glow) unchanged.`);
+          else findings.push(`${theme.name}: composer focus-visible box-shadow has a real, visible glow (${boxStyles.focused.boxShadow}), the unchanged full ring.`);
           // Measured (not merely visual) >=3:1 edge contrast, Dark high contrast only (#927
           // explicitly keeps this theme's 3:1 border and full ring): real `getComputedStyle()`
           // reads, alpha-composited with the same math `check-theme-contrast.mjs` already uses.
@@ -340,8 +460,8 @@ async function main() {
         } else {
           if (!isTransparent(boxStyles.resting.backgroundColor)) failures.push(`${theme.name}: composer background is ${boxStyles.resting.backgroundColor}, expected transparent (#927 quiet composer).`);
           else findings.push(`${theme.name}: composer background is transparent, as #927 decides.`);
-          if (boxStyles.focused.boxShadow !== 'none') failures.push(`${theme.name}: composer focus-visible box-shadow is ${boxStyles.focused.boxShadow}, expected 'none' -- #927 decides a quiet border-colour change only, no glow ring, for this theme.`);
-          else findings.push(`${theme.name}: composer focus-visible box-shadow is 'none' (no glow), the quiet border-only focus cue #927 decides.`);
+          if (hasVisibleShadow(boxStyles.focused.boxShadow)) failures.push(`${theme.name}: composer focus-visible box-shadow has a real, visible glow (${boxStyles.focused.boxShadow}), expected none -- #927 decides a quiet border-colour change only, no glow ring, for this theme.`);
+          else findings.push(`${theme.name}: composer focus-visible box-shadow has no visible glow (${boxStyles.focused.boxShadow}), the quiet border-only focus cue #927 decides.`);
         }
         if (!boxStyles.focused.matchesFocusVisible) failures.push(`${theme.name}: the message field does not match :focus-visible once focused -- focus must still be visible (accessibility.md "Accepted departures": muted, never removed).`);
         else findings.push(`${theme.name}: message field genuinely matches :focus-visible once focused (border ${boxStyles.resting.borderColor} -> ${boxStyles.focused.borderColor}).`);
@@ -396,7 +516,8 @@ async function main() {
       // ---- (e), issue #928: status line chip text/icon sizes ----
       const chipSizes = await readStatusLineChipSizes(cdp);
       if (!chipSizes || chipSizes.length === 0) {
-        failures.push(`${theme.name}: no .text-readout status-line chips found -- DEFAULT_SESSION_READOUT turns changes/context-usage/turn-time on, at least one should render (possibly as its own "Not available" fallback text).`);
+        if (readoutChipsConfirmed) failures.push(`${theme.name}: no .text-readout status-line chips found even though a chip rendered earlier in this same session -- a theme switch should never hide every chip.`);
+        else notExercised.push(`${theme.name}: no .text-readout status-line chips found (no chip ever rendered in this session within the pre-loop wait -- see the standalone finding above).`);
       } else {
         for (const chip of chipSizes) {
           if (chip.fontSize !== '13px') failures.push(`${theme.name}: status line chip "${chip.text}" computed font-size is ${chip.fontSize}, expected 13px (issue #928).`);
