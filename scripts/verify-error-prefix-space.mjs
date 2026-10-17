@@ -218,6 +218,14 @@ async function main() {
     }
 
     // ---- Turn (b): one bash call whose own command embeds a real U+202E override byte ----
+    // Gate round 0 (self-caught, first run of this script): a naive "marker text somewhere in
+    // the transcript" wait races the USER's OWN message bubble, which legitimately renders the
+    // marker (it is literally part of the prompt text) well before the tool call itself ever
+    // mounts -- `GROUP_HEADERS.at(-1)` then silently resolved back to turn (a)'s own "bash ×2"
+    // header (summary deliberately empty for a multi-call group), making the very next check
+    // vacuous. Captures the header count BEFORE sending, waits for a genuinely NEW header whose
+    // own summary span contains the marker.
+    const headerCountBeforeB = await cdp.evaluate(`(${GROUP_HEADERS}).length`);
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
@@ -225,17 +233,33 @@ async function main() {
       { timeoutMs: 180_000, label: 'Turn (b) finished' }
     );
     await cdp.waitFor(
-      `(() => { const t = ${TRANSCRIPT}; return !!t && t.textContent.includes('t962BidiMarker'); })()`,
-      { timeoutMs: 15_000, label: "Turn (b) bash row mounted (marker text visible)" }
+      `(() => {
+        const hs = (${GROUP_HEADERS});
+        if (hs.length <= ${headerCountBeforeB}) return false;
+        const s = hs.at(-1).querySelector('span.min-w-0.flex-1');
+        return !!s && s.textContent.includes('t962BidiMarker');
+      })()`,
+      { timeoutMs: 15_000, label: "Turn (b) new bash row's own summary shows the marker" }
     );
-    const transcriptText = await cdp.evaluate(`(${TRANSCRIPT}).textContent`);
+    // Scoped to the command row's OWN summary span (never the whole transcript): the user's own
+    // typed prompt bubble legitimately renders the raw U+202E byte verbatim too (plain user text
+    // is never sanitized, nor should it be) -- the only thing #962 is about is `commandRowText`'s
+    // own rendering of the bash command, so only that span is checked.
+    const bidiRowText = await cdp.evaluate(`(() => {
+      const h = (${GROUP_HEADERS}).at(-1);
+      if (!h) return null;
+      const s = h.querySelector('span.min-w-0.flex-1');
+      return s ? s.textContent : null;
+    })()`);
     await cdp.screenshot(path.join(SHOTS_DIR, '02-turn-b-bidi-override.png'));
-    if (!transcriptText.includes('t962BidiMarker')) {
-      failures.push('Turn (b): the bidi-marker command row never rendered at all (marker text not found in the transcript) -- this check would be vacuous.');
-    } else if (transcriptText.includes('\u202E')) {
-      failures.push('Turn (b): the transcript still renders a real U+202E (RIGHT-TO-LEFT OVERRIDE) character -- `commandRowText` leaked an unsanitized bidi-override byte into the row text.');
+    if (bidiRowText === null) {
+      failures.push("Turn (b): could not find the bidi-marker command row's own summary span.");
+    } else if (!bidiRowText.includes('t962BidiMarker')) {
+      failures.push(`Turn (b): the command row's own summary text is ${JSON.stringify(bidiRowText)}, expected it to include "t962BidiMarker" -- this check would be vacuous.`);
+    } else if (bidiRowText.includes('\u202E')) {
+      failures.push(`Turn (b): the command row's own summary text still contains a real U+202E (RIGHT-TO-LEFT OVERRIDE) character: ${JSON.stringify(bidiRowText)} -- \`commandRowText\` leaked an unsanitized bidi-override byte into the row text.`);
     } else {
-      findings.push('Turn (b): the marker command rendered, with no U+202E override character anywhere in the transcript -- `commandRowText` strips it the same way `errorLine` already did.');
+      findings.push(`Turn (b): the command row's own summary text reads ${JSON.stringify(bidiRowText)} -- no U+202E override character, \`commandRowText\` strips it the same way \`errorLine\` already did.`);
     }
 
     const hasNotExercised = notExercised.length > 0;
