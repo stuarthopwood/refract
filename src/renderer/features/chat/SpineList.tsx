@@ -8,7 +8,7 @@
 // issue #563's Stage group member rows and the Subagent chain's own stage-to-stage list; #565
 // extends it to tool-group and thought-run spines without changing this file.
 import * as React from 'react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 
 // #565 decision 8/11: once a `Collapsible`'s own content is a `SpineList`, the sole geometry in
 // play is the list's own `ml-4`/`pt-1` -- every host zeroes its `CollapsedLine`'s own

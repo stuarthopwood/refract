@@ -2837,10 +2837,64 @@ comment was posted on #559 and the PR body's Departures section corrected.
 
 ## Phase 51: Convergence
 
-(Renumbered from provisional Phase 50/T255-T257: PR #945 (#560) merged into `main` first and
-claimed Phase 50/T255-T260.)
+- [X] T261 [US1] #927 quiet composer (v0.3.0 feedback item 4, Decided, Skippy, delegated by
+  Stuart 2026-10-16 -- grilled, all resolved on the issue): in Dark and Obsidian the message
+  box's fill is now `transparent` (`globals.css`'s `--composer-background`, was a solid literal
+  per theme) with a faint new `--composer-border` token (aliases `--divider`) replacing the
+  literal `border-muted-foreground/85` class; the field's own focus-visible state now reads a
+  new `--composer-focus` token for its border colour and a new `--composer-ring` token for its
+  glow (`transparent` in these two themes -- no glow, a quiet border-colour change is the whole
+  cue -- `MessageInput.tsx`). The Approval mode pill, Model picker and Reasoning picker
+  (`pickerShared.tsx`'s shared `PICKER_TRIGGER_CLASS`) move from `badgeVariants({variant:
+  'outline'})` to `badgeVariants({variant: 'ghost'})` (reused, no new classes, `docs/design/
+  components.md` "Button"), with an explicit resting-muted/hover-foreground text-colour pair
+  (the same convention `ReadoutChip.tsx`'s own interactive style already uses) overriding
+  `ghost`'s own opposite-direction hover colour via `cn`'s tailwind-merge. A new `GHOST_FOCUS_
+  CLASS`/`GHOST_BUTTON_FOCUS_CLASS` pair (`pickerShared.tsx`) reads `--composer-focus` for these
+  four controls' own focus outline, split out from the unchanged `COMPOSER_FOCUS_CLASS`/
+  `COMPOSER_BUTTON_FOCUS_CLASS` (still `--ring`, still used by Send/Stop only -- "Send and Stop
+  are unchanged"). Dark (high contrast) is explicitly excluded: its `--composer-background`
+  stays its old opaque literal, and its new `--composer-border`/`--composer-focus`/
+  `--composer-ring` tokens are byte-for-byte token-izations of the prior literal classes
+  (`color-mix(in oklab, var(--muted-foreground) 85%, transparent)`, `var(--ring)`, `color-mix(in
+  oklab, var(--ring) 50%, transparent)` respectively) -- nothing it renders changes. `scripts/
+  theme-contrast-pairs.mjs`: the now-obsolete `border`/`composer-background` pair (the Approval
+  pill's old opaque outline border, gone now that it is `ghost`) removed; `send`/`composer-
+  background` and `muted-foreground`/`composer-background` scoped to Dark high contrast only (a
+  new `send`/`background` pair covers Dark/Obsidian instead, where the fill is transparent);
+  `ring`/`composer-background` replaced by `composer-focus`/`composer-background` (enforced,
+  Dark high contrast only) plus two new `composer-border`/`composer-focus` vs `background` pairs
+  marked `informationalThemes: ['dark', 'obsidian']` (a new per-pair schema field, computed and
+  printed but never counted toward the gate's pass/fail, for Stuart's own accepted departure).
+- [X] T262 [US1] Update the docs: amended `docs/design/product-chat.md`'s "Message box" and
+  "Composer tone" bullets (the latter replacing its 2026-10-04 "strictly darker than the page"
+  rule with the new transparent-fill/faint-border/ghost-control/muted-focus rule, per the issue's
+  own grill), `docs/design/foundations-tokens-theming.md`'s "Canvas colour" bullet (superseded
+  note already landed with the issue's own filing, `docs/PLAN.md` commit 1e191f9), and `docs/
+  design/accessibility.md`'s "Accepted departures" (already landed the same way); this story adds
+  `specs/001-core-session-workspace/spec.md`'s FR-040 and US1 acceptance scenario 11 amendments
+  and this `### Session 2026-10-16 (quiet composer)` Clarifications entry; `MessageInput.tsx`'s
+  own composer-box comment and composer-dimming comment are rewritten to match (the Approval
+  pill's border-for-WCAG-1.4.11 reasoning no longer applies outside Dark high contrast); `docs/
+  PLAN.md`'s "v0.3.0 feedback" row gets an in-flight note for #927/#928 (shipped together per its
+  own "Suggested order" line) with this story's PR link.
 
-- [X] T261 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #927; a no-build prep
+lane, per `docs/PLAN.md`'s own working rules). `pnpm typecheck`, `pnpm vitest run` (148 tests),
+`node scripts/check-indent.mjs` (0 odd-indent lines) and `node scripts/check-theme-contrast.mjs`
+(436 of 436 enforced pairs PASS across 3 themes, informational Dark/Obsidian composer-border/
+composer-focus pairs printed but not counted) all ran clean after this change; `pnpm build`/
+`pnpm check:ui-text`/the new CDP live check (`scripts/verify-927-928-quiet-composer.mjs`, written
+but deliberately not run, per this prep lane's own NO BUILDS rule) are left for the build lane
+that picks this PR up.
+
+## Phase 52: Convergence
+
+(Renumbered from provisional Phase 51/T261-T263: PR #951 (#927/#928) merged into `main` first and
+claimed Phase 51/T261-T262.)
+
+- [X] T263 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
   (supersedes #430; close #430 when this lands). Amended spec 001 -- FR-008 (a multi-call
   group's own header reads the tool name plus the run's own count, "bash ×2", never a call's
   own command; the group's own total time, the sum of every member's own duration, joins the
@@ -2853,7 +2907,7 @@ claimed Phase 50/T255-T260.)
   --numstat origin/main -- specs/001-core-session-workspace/tasks.md` confirmed 0 deletions
   before this phase was appended.
 
-- [X] T262 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
+- [X] T264 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
   `src-tauri/src/omp/transcript.rs` already gives every row its own raw target string, so no
   transcript-builder change was needed): new `formatToolCommand.ts` (`commandRowText`) gives
   `bash` its own `$ <first line of the command>` row text and `grep` its own
@@ -2867,34 +2921,36 @@ claimed Phase 50/T255-T260.)
   once settled, and only when every member carries its own duration -- gate round 1 fix, M6)
   alongside the existing failed/interrupted counts, joined by a new shared `joinMetaParts` helper
   (the exact visible-middot-plus-sr-only-comma grammar #570 established, now reusable instead of
-  hand-copied). A new `callMeta` helper gives one call's own row (solo or nested `ToolCallRow`)
-  its duration plus, for a SETTLED (`status === 'done'`, gate round 1 fix, H3) `edit` call, its
-  own neutral "+N −M" added/removed line stat (gate round 1 fix, H5: dropped the coloured
-  `text-state-working`/`text-destructive` classes that broke #570's "success stays neutral" rule,
-  added an sr-only "N lines added, M removed") -- a new `diffStat`/`countChanges` export in
-  `lib/diff.ts`, reusing the same `buildUnifiedDiff`/`parseDiff` pipeline `DiffView.tsx`'s own
-  expanded-body stat now also calls (gate round 1 fix, H2: one shared counter, plus a
-  `maxEditLength` cap and a memoising `WeakMap` keyed on `item.edit` so an unbounded diff is never
-  recomputed on every render), so the two can never disagree; `write` gets no such stat (no prior
-  read/edit content is cached to diff it against, #630's own open idea, not built here). A
-  command-style (`bash`/`grep`) row's own separate tool-name label is dropped, solo and member
-  alike (gate round 1 fix, M2: the row's own command-style summary already names the tool,
-  "grep grep ..." read as a duplicate); each row's own `triggerAriaLabel` is built explicitly from
-  `commandRowText` (gate round 1 fix, M1, WCAG 2.5.3: the visible text and the accessible name's
-  own description of it can never diverge), including the member row, which previously had no
-  explicit accessible name at all. A multi-call group's own collapsed Error line is now always
-  prefixed with the failing call's own `commandRowText` (gate round 1 fix, M5: the group header's
-  `summary` no longer names any call at all, so the old "only when it differs from the last call"
-  condition no longer holds). `CollapsedLine.tsx`: a row's own summary now wraps
-  (`break-words whitespace-normal`, not `truncate`) once `actualOpen` is true, in addition to the
-  existing opt-in `summaryWrap` prop for a narrow column (Subagents panel) -- fixes the issue's
-  own bug #2 ("the command is cut off twice") without adding any new Arguments/Output block
-  (#628's own rule is unchanged; gate round 1 fix, H6: a `bash` call's own quiet-summary output
-  text is now skipped entirely on expand, matching the issue's own "no output text" acceptance).
-  The Subagents panel needed no changes of its own: it already renders through the same
-  `ToolGroupRow` (design point 4), so every change above applies there automatically.
+  hand-copied). A new `callMeta` helper (later moved into `toolRowLabels.tsx`, gate round 2) gives
+  one call's own row (solo or nested `ToolCallRow`) its duration plus, for a SETTLED
+  (`status === 'done'`, gate round 1 fix, H3) `edit` call, its own neutral "+N −M" added/removed
+  line stat (gate round 1 fix, H5: dropped the coloured `text-state-working`/`text-destructive`
+  classes that broke #570's "success stays neutral" rule) -- a new `diffStat`/`countChanges`
+  export in `lib/diff.ts`, reusing the same `buildUnifiedDiff`/`parseDiff` pipeline
+  `DiffView.tsx`'s own expanded-body stat now also calls (gate round 1 fix, H2: one shared
+  counter, plus a `maxEditLength` cap and a memoising `WeakMap` keyed on `item.edit` so an
+  unbounded diff is never recomputed on every render), so the two can never disagree; `write`
+  gets no such stat (no prior read/edit content is cached to diff it against, #630's own open
+  idea, not built here). A command-style (`bash`/`grep`) row's own separate tool-name label is
+  dropped, solo and member alike (gate round 1 fix, M2: the row's own command-style summary
+  already names the tool, "grep grep ..." read as a duplicate); each row's own
+  `triggerAriaLabel` is built explicitly from `commandRowText` (gate round 1 fix, M1, WCAG
+  2.5.3: the visible text and the accessible name's own description of it can never diverge),
+  including the member row, which previously had no explicit accessible name at all. A
+  multi-call group's own collapsed Error line is now always prefixed with the failing call's
+  own `commandRowText` (gate round 1 fix, M5: the group header's `summary` no longer names any
+  call at all, so the old "only when it differs from the last call" condition no longer holds).
+  `CollapsedLine.tsx`: a row's own summary now wraps (`break-words whitespace-normal`, not
+  `truncate`) once `actualOpen` is true for a tool row specifically, through an opt-in
+  `wrapWhenOpen` prop (gate round 1 fix, H4: NOT every `CollapsedLine` consumer, which would
+  have wrapped callers that never asked for it) -- fixes the issue's own bug #2 ("the command is
+  cut off twice") without adding any new Arguments/Output block (#628's own rule is unchanged;
+  gate round 1 fix, H6: a `bash` call's own quiet-summary output text is now skipped entirely on
+  expand, matching the issue's own "no output text" acceptance). The Subagents panel needed no
+  changes of its own: it already renders through the same `ToolGroupRow` (design point 4), so
+  every change above applies there automatically.
 
-- [X] T263 [US1] Gate round 1 remediation (code-reviewer/accessibility-auditor/ui-architect-v3/
+- [X] T265 [US1] Gate round 1 remediation (code-reviewer/accessibility-auditor/ui-architect-v3/
   test-reviewer, High/Medium/Low findings, all fixed): H1 (verify-565-spine.mjs/
   verify-570-tool-colours.mjs's own `BASH_HEADER_FINDER` broke on the new "bash ×N" label, fixed
   to match it; verify-565's own "+ N other(s)" multi-group detection, removed by #632, replaced
@@ -2910,10 +2966,44 @@ claimed Phase 50/T255-T260.)
   drop the stale "prefix only when it differs from the last call" wording (M5); FR-061's own
   "single line, 200 characters or fewer, shows verbatim" rule now excludes `bash` (H6); a new
   dated `### Session 2026-10-17 (gate round 1)` Clarifications entry records M2/M4/M5/M6.
-  `pnpm typecheck`/`pnpm vitest run` clean; `node scripts/ci-local.mjs` 16/16 and
-  `scripts/verify-632-grouped-calls.mjs`/`verify-565-spine.mjs`/`verify-570-tool-colours.mjs` all
-  green on the final pushed head -- see PR #950 for the exact commit and evidence.
 
-Opened as draft PR #950 (`feat/632-grouped-calls`). Switched to **Closes #632** and
-**Closes #430** once gate round 1's live-check re-run confirmed every one of the issue's own
-acceptance bullets live on a real scratch instance.
+- [X] T266 [US1] Gate round 2 remediation (Main's own review of the gate round 1 live-check
+  evidence, D1 through D11 plus two corrections, all fixed): D1 `CollapsedLine.tsx`'s row is
+  `items-start`, not `items-center` -- the icon slot (`h-5 w-4`), the chevron's own wrapper
+  (`h-5`) and the meta span (`leading-5`) now match the label's 20px line box instead of sitting
+  2-3px high on a single-line row. D2 the edit stat's own sr-only text was never announced under
+  an explicit `aria-label` -- folded into both triggers' own `aria-label` arrays instead, sr-only
+  span dropped. D3 `COMMAND_STYLE_TOOLS` is now a `Set` (Security Low); `grep`'s own prefix
+  dropped from its aria-label/solo-group label (duplicate word). D4 a diff that aborts past
+  `MAX_EDIT_LENGTH` now returns a distinct `undefined` (vs `''`), rendering "Diff too large to
+  show" instead of "No changes". D5 the "..." marker now counts non-empty lines only. D6 stale
+  doc text reworded (`spec.md`, `product-chat.md`, `CollapsedLine.tsx`'s `summaryWrap` comment).
+  D7 decision comment posted on #632; follow-up issue #958 filed (grep/glob/find/read counts, a
+  `write` diff stat, the Explored supergroup) and added to `docs/PLAN.md`. D8 the member-expand
+  "no code block/output" check no longer passes vacuously when the content region itself was
+  never found; `GROUP_HEADERS` excludes an expanded group's own member buttons. D9 the turn (f)
+  hostile-output check no longer fails on the Error line not containing the hostile text (the
+  out-of-scope `errorLine()`/OMP line-order gap, **#650**) -- recorded as a finding instead; the
+  reliable assertion moved to the row's own summary span, checked collapsed and expanded, which
+  still requires the hostile content present. D10 hover check extended to an expanded group's
+  own member row. D11 removed a stale "#628 was live-checked" claim. Second correction: `ToolRow.
+  tsx` split (`#806`) -- `joinMetaParts`/`cachedDiffStat`/`editStatForItem`/`diffStatAriaText`/
+  `callMeta` moved into new `toolRowLabels.tsx`, back under the 600-line cap, no baseline entry.
+  Two more script-only bugs found live during the final chained run (both pre-existing,
+  `errorLine()` itself unchanged by this story): `verify-632-grouped-calls.mjs`'s own D10 check
+  captured its "before" hover baseline without resetting the mouse off the header first (the
+  expand click leaves it there) -- fixed. `verify-570-tool-colours.mjs` had a case-sensitivity
+  bug (`/Exited .../` vs OMP's real lowercase "exited" text) and one more instance of the #650
+  line-order gap in its own solo-failed-call check -- fixed/softened the same way as D9.
+  `pnpm typecheck`/`pnpm vitest run`/`check:indent`/`check:file-size`/`check:ui-text` all clean;
+  `node scripts/ci-local.mjs` 16/16 PASS and `scripts/verify-632-grouped-calls.mjs`/
+  `verify-565-spine.mjs`/`verify-570-tool-colours.mjs` all exit 0 (0 failures each) on this
+  phase's own final head -- see PR #950 for the exact commits, report.json gitHeads and
+  screenshot evidence.
+
+Opened as draft PR #950 (`feat/632-grouped-calls`). **Closes #632** and **Closes #430**: every
+one of the issue's own acceptance bullets (no border at any level, the collapsed header's tool
+plus count plus failed plus total-time grammar, the failed call's own visible Error line, the
+wrap-on-expand fix, the ~4-line expanded height, hostile-output rendering inert and bounded both
+collapsed and expanded, keyboard/accessible-name form, and a live Subagents-panel check) was
+confirmed live on a real scratch instance across gate rounds 1 and 2.

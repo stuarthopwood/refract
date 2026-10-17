@@ -1339,41 +1339,38 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
           every re-render while the count stays above 0. */}
       {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching image…</p>}
-      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04); spec 007 T014
-          token-ized (FR-007): the composer's fill is a per-theme `--composer-background`
-          custom property (globals.css), not a literal colour -- each built-in theme sets its own
-          value, required to render strictly darker than that theme's own `--background` so the
-          composer reads as the page's most recessive field (docs/DESIGN.md "Composer tone"); the
-          one exception is the high-contrast preset, whose `--background` is literal pure black
-          with no lightness value below it -- see that token's own comment in globals.css for how
-          it resolves the edge case instead. A solid colour (rather than an alpha composite over
-          `--card`/`--muted`) remains deliberate: the original `bg-black/20` attempt actually read
-          LIGHTER once composited (Chromium's `color-mix(in oklab, black 20%, transparent)`
-          resolves missing "transparent" channels to the *other* operand's lightness at zero
-          weight, not literally black, so alpha-blend math does not hold here -- confirmed
-          empirically via a scratch-instance pixel sample, not by reasoning about the spec), and
-          `bg-muted/60` was an alpha composite of `--muted`, which sits *lighter* than
-          `--background` in the original dark theme, so it read as a no-op lightening instead of
-          the intended recessive fill. Plus a `border-muted-foreground/85` border re-measured at
-          >=3:1 against both the page background and this fill (WCAG 1.4.11), Send/Stop moved
-          inside as round icon-only buttons, and the provider/model/effort readout along the
-          bottom. The box's own focus ring is scoped to the textarea alone (gate round 5; see the
-          composer-dimming comment below). */}
+      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04), SUPERSEDED 2026-10-16
+          (#927 grill, "Composer tone" in product-chat.md): the composer's fill, border and
+          focus outline are per-theme custom properties (globals.css) -- in Dark and Obsidian
+          the fill is now `transparent` (the chat background shows straight through, like the
+          GitHub Copilot composer Stuart's screenshot referenced) with a faint
+          `--composer-border` (around the `--divider` tone) instead of the original solid,
+          strictly-darker-than-`--background` fill; Dark (high contrast) is explicitly excluded
+          from this change and keeps its old solid fill and opaque 3:1 border, now token-ized as
+          `--composer-border` for exact parity (see each token's own comment in globals.css for
+          the full history, including why an alpha composite over `--card`/`--muted` never
+          worked here). Send/Stop stay round icon-only buttons centered on the field's right
+          edge, with the provider/model/effort readout along the bottom. The box's own focus
+          outline is scoped to the textarea alone (gate round 5; see the composer-dimming
+          comment below). */}
       {/* Composer-dimming decision (Stuart, 2026-10-15, reviewing PR #877; refined gate round 4):
           the box no longer grows a grey fill on its own text area while disabled (`Textarea`'s
           vendored `disabled:bg-input/50`/`dark:disabled:bg-input/80` overridden below) -- the
           unusable parts (text field, Send/Stop, Model/Reasoning pickers, Attach) dim as one
           `opacity-60` layer instead, never a colour-opacity modifier. The outer box's own
           border/background never dims: the Approval pill DOES still work while stopped, so it
-          sits on the undimmed `bg-composer-background` with its full-strength border either way
-          (measured, WCAG 1.4.11). `disabled` is the same boolean already driving the native
-          `disabled` attribute below; the 3:1 control-edge rule applies to the enabled border
-          only. Gate round 5 fix (Visual Medium #4): the ring shows only on the TEXTAREA's own
-          `:focus-visible` (`has-[textarea:focus-visible]`, was `focus-within`, which lit the
-          whole box for a pill/picker/Attach/Send focus too -- each now draws its OWN opaque
-          outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS`, gate4
-          `11-pill-keyboard-focused.png`). */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50">
+          sits on the undimmed `bg-composer-background` with its own full-strength border either
+          way in Dark (high contrast) (measured, WCAG 1.4.11) -- in Dark/Obsidian the border is
+          deliberately faint instead (#927's own accepted departure, not a floor this comment's
+          "3:1" claims there anymore). `disabled` is the same boolean already driving the native
+          `disabled` attribute below; the 3:1 control-edge rule still applies to the enabled
+          border in Dark (high contrast). Gate round 5 fix (Visual Medium #4): the ring shows
+          only on the TEXTAREA's own `:focus-visible` (`has-[textarea:focus-visible]`, was
+          `focus-within`, which lit the whole box for a pill/picker/Attach/Send focus too -- each
+          now draws its OWN outline, `pickerShared.tsx`'s `COMPOSER_FOCUS_CLASS` (Send/Stop,
+          still opaque) or `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS` (the Approval pill,
+          Model, Reasoning, Attach, muted since #927), gate4 `11-pill-keyboard-focused.png`). */}
+      <div className="flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring">
         <div className={cn('relative flex items-end', disabled && 'opacity-60')}>
           {showSlashMenu && (
             <SlashMenu
