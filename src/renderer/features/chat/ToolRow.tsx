@@ -6,7 +6,7 @@ import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
-import { COMMAND_STYLE_TOOLS, commandRowText } from './formatToolCommand'
+import { COMMAND_STYLE_TOOLS, commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
@@ -49,26 +49,13 @@ function quietSummary(output: string | undefined): string | undefined {
 // output AND no exit/timeout information at all. Every other tool is unaffected: no footer, no
 // fallback, just its own FIRST non-empty line. Control sequences (CSI/OSC), C0 controls, and
 // bidi-override characters are stripped first so a stray terminal code or a spoofing override
-// never leaks into the plain-text row (security hardening, gate round 1).
-const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
-// eslint-disable-next-line no-control-regex -- deliberately matching C0 controls/DEL/bidi overrides to strip them
-const UNSAFE_CHARS_PATTERN = /[\u0000-\u0008\u000B-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g
+// never leaks into the plain-text row (security hardening, gate round 1). #962: `sanitizeLines`
+// moved to `formatToolCommand.ts` so its own `commandRowText` can run the same cleaning over its
+// command and path text -- one copy of the regex, imported above.
 const WALL_TIME_LINE = /^Wall time: \d+(?:\.\d+)? seconds$/
 const EXIT_CODE_LINE = /^Command exited with code (-?\d+)$/
 const TIMEOUT_LINE = /^Command timed out after (\d+) seconds$/
 const TIMEOUT_BRACKETED = /\[Command timed out after (\d+) seconds\]/
-
-// Gate round 2 (G909Arch N3/N4/N8): split into lines FIRST (so a bare `\r` -- a progress-bar
-// redraw -- still acts as its own line break, not a dead branch in the split regex stripped away
-// before it could ever match) and only strip ANSI/control characters PER LINE afterward. Shared
-// by `errorLine()` and the group-detail attribution prefix below, so both go through the exact
-// same cleaning.
-function sanitizeLines(raw: string): string[] {
-  return raw
-    .split(/\r\n|\n|\r/)
-    .map((line) => line.replace(ANSI_PATTERN, '').replace(UNSAFE_CHARS_PATTERN, '').trim())
-    .filter((line) => line.length > 0)
-}
 
 function errorLine(item: ToolItem): string {
   const raw = item.output
@@ -441,9 +428,15 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
                   failingCommandText && failingCommandText.length > ATTRIBUTION_PREFIX_MAX_CHARS
                     ? `${failingCommandText.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…`
                     : failingCommandText
+                // #962: the colon used to sit INSIDE the `bdi`, with the space right after it --
+                // the space was then the last character of the inline-block's own line box, and
+                // CSS collapses/drops trailing whitespace at the end of an inline formatting
+                // context, so the visible gap vanished even though the space was in the markup
+                // ("$ exit 9:Command exited with code 9"). The space now sits OUTSIDE the `bdi`,
+                // an ordinary sibling text node between two inline elements, never collapsed.
                 return truncatedPrefix ? (
                   <>
-                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}: </bdi>
+                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-muted-foreground">{truncatedPrefix}:</bdi>{' '}
                     {errorLine(lastFailedItem)}
                   </>
                 ) : (
