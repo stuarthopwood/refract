@@ -29,19 +29,17 @@
 //       failing) -- the same "<tool> ×N" grammar, read from the Subagents panel.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, assertExeUnchanged, requireSharedCargoTarget, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-if (!CARGO_TARGET_DIR) {
-  throw new Error('verify-632: CARGO_TARGET_DIR is required (the shared lane target, never a worktree-local src-tauri/target -- see skill://refract-ui-lane-gate-checklist).');
-}
-const BUILD_OUTPUT_DIR = path.join(CARGO_TARGET_DIR, 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_632_SHOTS_DIR || path.join(tmpdir(), 'refract-632-grouped-calls-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 // #632-only source text: `commandRowText`'s grep branch builds `grep "<pattern>"` -- the literal
@@ -104,6 +102,7 @@ async function main() {
   const notExercised = [];
   let exeHash = null;
   let gitHeadSha = null;
+  let dirtyFlag = 'unknown';
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-632-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-632-import-'));
@@ -121,7 +120,12 @@ async function main() {
 
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
-    console.log(`verify-632: git HEAD ${gitHeadSha}`);
+    const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
+    if (gitStatusResult.status === 0) {
+      const dirtyLines = gitStatusResult.stdout.split('\n').filter(Boolean);
+      dirtyFlag = dirtyLines.length ? dirtyLines : false;
+    }
+    console.log(`verify-632: git HEAD ${gitHeadSha}${dirtyFlag === 'unknown' ? ' (dirty flag unknown: git status failed)' : dirtyFlag ? ` (DIRTY: ${dirtyFlag.length} path(s))` : ''}`);
     console.log(`verify-632: shots dir ${SHOTS_DIR}`);
 
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-632' });
@@ -281,7 +285,9 @@ async function main() {
 
     const report = {
       gitHead: gitHeadSha,
+      dirty: dirtyFlag,
       exeSha256: exeHash,
+      scriptSha256: sha256OfFile(fileURLToPath(import.meta.url)),
       findings,
       failures,
       notExercised,
@@ -301,7 +307,7 @@ async function main() {
     process.exitCode = failures.length > 0 ? 1 : 0;
   } catch (err) {
     try {
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
+      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, dirty: dirtyFlag, exeSha256: exeHash, scriptSha256: sha256OfFile(fileURLToPath(import.meta.url)), findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
     } catch {
       // best-effort only
     }
