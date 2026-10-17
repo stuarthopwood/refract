@@ -53,8 +53,19 @@ const TURN_B_SENTINEL = 'spine565b';
 // ("bash"), never a substring match against a button's whole textContent -- a streaming Thinking
 // row's own trigger can contain the word "bash" in its preview text and sits earlier in the DOM,
 // which a loose `.includes('bash')` match would click or measure instead.
+// Gate round 1 (test-reviewer High, H1): #632 renamed a multi-call group's own label from the
+// bare tool name to "bash ×N" -- the exact-match regex below now matches both forms. M2 (this
+// same gate round) then drops the label ENTIRELY for a solo `bash` row (its own summary already
+// names the tool) -- a live run of THIS fixed finder still found only 1 header after turn (b)'s
+// new solo bash call, confirming the fix needed here too: a label-less button is also accepted
+// when its own summary span starts with the command-style grammar ($ `commandRowText` uses).
 const BASH_HEADER_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && label.textContent.trim() === 'bash'; })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
+    const label = el.querySelector('span.font-medium');
+    if (label) return /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
+    const s = el.querySelector('span.min-w-0.flex-1');
+    return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
+  })`;
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -357,10 +368,13 @@ async function main() {
     if (headerCountAfterA !== 1) {
       failures.push(`Expected exactly 1 bash ToolGroupRow header after turn (a) (Auto mode set, no approval boundary), found ${headerCountAfterA} -- the two calls did not merge into one multi-call group; see turn-a-transcript.html.`);
     }
-    const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\bother(s)?\\b/.test(el.textContent))`);
+    // Gate round 1 (test-reviewer High, H1): #632 dropped the "+ N other(s)" summary text
+    // entirely (the group header now folds the count into its own label, "bash ×2") -- a
+    // multi-call group is detected by that "×N" suffix on the label instead.
+    const multiGroupIndex = await cdp.evaluate(`(${BASH_HEADER_FINDER}).findIndex((el) => /\\u00d7\\d+$/.test(el.querySelector('span.font-medium')?.textContent.trim() ?? ''))`);
     const groupExercised = multiGroupIndex !== -1;
     if (!groupExercised) {
-      failures.push(`No bash header's collapsed summary shows the multi-call "+ N other(s)" text after turn (a) -- decision 8/10's multi-call Spine geometry, the "1 failed" summary text, and the member-body padding cannot be exercised; see turn-a-transcript.html.`);
+      failures.push(`No bash header's own label shows the multi-call "bash ×N" count after turn (a) -- decision 8/10's multi-call Spine geometry, the "1 failed" meta text, and the member-body padding cannot be exercised; see turn-a-transcript.html.`);
     } else {
       findings.push(`Multi-call bash ToolGroupRow rendered after turn (a) (header index ${multiGroupIndex} of ${headerCountAfterA}, exact label match, not a substring).`);
     }

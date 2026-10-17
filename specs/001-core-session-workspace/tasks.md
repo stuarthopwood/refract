@@ -2891,7 +2891,126 @@ that picks this PR up.
 
 ## Phase 52: Convergence
 
-- [X] T263 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
+(Renumbered from provisional Phase 51/T261-T263: PR #951 (#927/#928) merged into `main` first and
+claimed Phase 51/T261-T262.)
+
+- [X] T263 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
+  (supersedes #430; close #430 when this lands). Amended spec 001 -- FR-008 (a multi-call
+  group's own header reads the tool name plus the run's own count, "bash ×2", never a call's
+  own command; the group's own total time, the sum of every member's own duration, joins the
+  "N failed"/"N interrupted" counts in the meta slot), FR-061 (a row's own command text wraps
+  instead of truncating once the row itself is expanded) -- plus a dated
+  `### Session 2026-10-17 (grouped and command-style calls)` Clarifications entry recording the
+  decision to skip a derived result for `grep`/`glob`/`find`/`read` (no fixture-backed OMP
+  output shape in this codebase to probe first, unlike `bash`'s own gated footer) and the
+  "Explored" supergroup staying out of this slice per the issue's own default. `git diff
+  --numstat origin/main -- specs/001-core-session-workspace/tasks.md` confirmed 0 deletions
+  before this phase was appended.
+
+- [X] T264 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
+  `src-tauri/src/omp/transcript.rs` already gives every row its own raw target string, so no
+  transcript-builder change was needed): new `formatToolCommand.ts` (`commandRowText`) gives
+  `bash` its own `$ <first line of the command>` row text and `grep` its own
+  `grep "<pattern>" <path>` (the path read off the call's own `args` only when it is a plain
+  string, never guessed); `glob`/`find`/`read`/`write`/`edit` keep showing `item.target`
+  untouched (a `read`'s own `:start-end` range, when given, already lives inside that string).
+  `ToolRow.tsx`'s `ToolGroupRow`: a multi-call group's own `label` becomes `${tool} ×${count}`
+  (bare tool name for the aria composition, kept separate so the accessible name never doubles
+  "2 calls" and "×2"), its `summary` drops the old "last call's target + N others" text
+  entirely, and its `meta` gains the run's own total duration (summed across members, shown only
+  once settled, and only when every member carries its own duration -- gate round 1 fix, M6)
+  alongside the existing failed/interrupted counts, joined by a new shared `joinMetaParts` helper
+  (the exact visible-middot-plus-sr-only-comma grammar #570 established, now reusable instead of
+  hand-copied). A new `callMeta` helper (later moved into `toolRowLabels.tsx`, gate round 2) gives
+  one call's own row (solo or nested `ToolCallRow`) its duration plus, for a SETTLED
+  (`status === 'done'`, gate round 1 fix, H3) `edit` call, its own neutral "+N −M" added/removed
+  line stat (gate round 1 fix, H5: dropped the coloured `text-state-working`/`text-destructive`
+  classes that broke #570's "success stays neutral" rule) -- a new `diffStat`/`countChanges`
+  export in `lib/diff.ts`, reusing the same `buildUnifiedDiff`/`parseDiff` pipeline
+  `DiffView.tsx`'s own expanded-body stat now also calls (gate round 1 fix, H2: one shared
+  counter, plus a `maxEditLength` cap and a memoising `WeakMap` keyed on `item.edit` so an
+  unbounded diff is never recomputed on every render), so the two can never disagree; `write`
+  gets no such stat (no prior read/edit content is cached to diff it against, #630's own open
+  idea, not built here). A command-style (`bash`/`grep`) row's own separate tool-name label is
+  dropped, solo and member alike (gate round 1 fix, M2: the row's own command-style summary
+  already names the tool, "grep grep ..." read as a duplicate); each row's own
+  `triggerAriaLabel` is built explicitly from `commandRowText` (gate round 1 fix, M1, WCAG
+  2.5.3: the visible text and the accessible name's own description of it can never diverge),
+  including the member row, which previously had no explicit accessible name at all. A
+  multi-call group's own collapsed Error line is now always prefixed with the failing call's
+  own `commandRowText` (gate round 1 fix, M5: the group header's `summary` no longer names any
+  call at all, so the old "only when it differs from the last call" condition no longer holds).
+  `CollapsedLine.tsx`: a row's own summary now wraps (`break-words whitespace-normal`, not
+  `truncate`) once `actualOpen` is true for a tool row specifically, through an opt-in
+  `wrapWhenOpen` prop (gate round 1 fix, H4: NOT every `CollapsedLine` consumer, which would
+  have wrapped callers that never asked for it) -- fixes the issue's own bug #2 ("the command is
+  cut off twice") without adding any new Arguments/Output block (#628's own rule is unchanged;
+  gate round 1 fix, H6: a `bash` call's own quiet-summary output text is now skipped entirely on
+  expand, matching the issue's own "no output text" acceptance). The Subagents panel needed no
+  changes of its own: it already renders through the same `ToolGroupRow` (design point 4), so
+  every change above applies there automatically.
+
+- [X] T265 [US1] Gate round 1 remediation (code-reviewer/accessibility-auditor/ui-architect-v3/
+  test-reviewer, High/Medium/Low findings, all fixed): H1 (verify-565-spine.mjs/
+  verify-570-tool-colours.mjs's own `BASH_HEADER_FINDER` broke on the new "bash ×N" label, fixed
+  to match it; verify-565's own "+ N other(s)" multi-group detection, removed by #632, replaced
+  with a "×N" suffix match) through H6, M1 through M8 (`scripts/verify-632-grouped-calls.mjs`
+  rewritten: no command text in a collapsed header's own summary span; the total time equals the
+  sum of member durations; member-button queries scoped to the first group; the expanded check
+  reads computed `white-space` and asserts no `pre`/`code`/`[data-slot="code-block"]`; the
+  Subagents panel asserts "1 failed · <total>"; `notExercised.length > 0` now fails the run; new
+  assertions added for hover-tints-one-row, the ~4-line expanded height, keyboard Tab reaching
+  every row with a visible focus outline, each member's accessible name, and hostile ANSI/long-
+  line output rendering inert and bounded), and LOW (verify-632's own `stopLauncher` catch now
+  logs its error instead of swallowing it silently). Spec amended: FR-008/FR-061 corrected to
+  drop the stale "prefix only when it differs from the last call" wording (M5); FR-061's own
+  "single line, 200 characters or fewer, shows verbatim" rule now excludes `bash` (H6); a new
+  dated `### Session 2026-10-17 (gate round 1)` Clarifications entry records M2/M4/M5/M6.
+
+- [X] T266 [US1] Gate round 2 remediation (Main's own review of the gate round 1 live-check
+  evidence, D1 through D11 plus two corrections, all fixed): D1 `CollapsedLine.tsx`'s row is
+  `items-start`, not `items-center` -- the icon slot (`h-5 w-4`), the chevron's own wrapper
+  (`h-5`) and the meta span (`leading-5`) now match the label's 20px line box instead of sitting
+  2-3px high on a single-line row. D2 the edit stat's own sr-only text was never announced under
+  an explicit `aria-label` -- folded into both triggers' own `aria-label` arrays instead, sr-only
+  span dropped. D3 `COMMAND_STYLE_TOOLS` is now a `Set` (Security Low); `grep`'s own prefix
+  dropped from its aria-label/solo-group label (duplicate word). D4 a diff that aborts past
+  `MAX_EDIT_LENGTH` now returns a distinct `undefined` (vs `''`), rendering "Diff too large to
+  show" instead of "No changes". D5 the "..." marker now counts non-empty lines only. D6 stale
+  doc text reworded (`spec.md`, `product-chat.md`, `CollapsedLine.tsx`'s `summaryWrap` comment).
+  D7 decision comment posted on #632; follow-up issue #958 filed (grep/glob/find/read counts, a
+  `write` diff stat, the Explored supergroup) and added to `docs/PLAN.md`. D8 the member-expand
+  "no code block/output" check no longer passes vacuously when the content region itself was
+  never found; `GROUP_HEADERS` excludes an expanded group's own member buttons. D9 the turn (f)
+  hostile-output check no longer fails on the Error line not containing the hostile text (the
+  out-of-scope `errorLine()`/OMP line-order gap, **#650**) -- recorded as a finding instead; the
+  reliable assertion moved to the row's own summary span, checked collapsed and expanded, which
+  still requires the hostile content present. D10 hover check extended to an expanded group's
+  own member row. D11 removed a stale "#628 was live-checked" claim. Second correction: `ToolRow.
+  tsx` split (`#806`) -- `joinMetaParts`/`cachedDiffStat`/`editStatForItem`/`diffStatAriaText`/
+  `callMeta` moved into new `toolRowLabels.tsx`, back under the 600-line cap, no baseline entry.
+  Two more script-only bugs found live during the final chained run (both pre-existing,
+  `errorLine()` itself unchanged by this story): `verify-632-grouped-calls.mjs`'s own D10 check
+  captured its "before" hover baseline without resetting the mouse off the header first (the
+  expand click leaves it there) -- fixed. `verify-570-tool-colours.mjs` had a case-sensitivity
+  bug (`/Exited .../` vs OMP's real lowercase "exited" text) and one more instance of the #650
+  line-order gap in its own solo-failed-call check -- fixed/softened the same way as D9.
+  `pnpm typecheck`/`pnpm vitest run`/`check:indent`/`check:file-size`/`check:ui-text` all clean;
+  `node scripts/ci-local.mjs` 16/16 PASS and `scripts/verify-632-grouped-calls.mjs`/
+  `verify-565-spine.mjs`/`verify-570-tool-colours.mjs` all exit 0 (0 failures each) on this
+  phase's own final head -- see PR #950 for the exact commits, report.json gitHeads and
+  screenshot evidence.
+
+Opened as draft PR #950 (`feat/632-grouped-calls`). **Closes #632** and **Closes #430**: every
+one of the issue's own acceptance bullets (no border at any level, the collapsed header's tool
+plus count plus failed plus total-time grammar, the failed call's own visible Error line, the
+wrap-on-expand fix, the ~4-line expanded height, hostile-output rendering inert and bounded both
+collapsed and expanded, keyboard/accessible-name form, and a live Subagents-panel check) was
+confirmed live on a real scratch instance across gate rounds 1 and 2.
+
+## Phase 53: Convergence
+
+- [X] T267 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
   slash-command search. Added `src/shared/slashCommandSearch.ts` (`rankSlashCommands`, pure, no
   DOM): every listed command -- built-ins, project/user `file` commands, and `skill:<name>`
   entries alike -- is ranked exact/prefix/word-start (after `-`, `_`, `:` or a space)/substring/
@@ -2906,14 +3025,14 @@ that picks this PR up.
   `SessionList.tsx`'s own search announcement (re-reading live draft text and commands at fire
   time, never the render-time closure, so the debounce timer does not depend on a fresh array
   identity every keystroke). Per FR-073.
-- [X] T264 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
+- [X] T268 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
   step, and a command reply no longer stretching the previous turn's own time. `SlashMenu.tsx`
   gained `parseSlashMenuState` (replacing the old bare `parseSlashQuery`): one space after a
   RECOGNISED command with verified subcommands (`command.subcommands`, already pruned to the
   verified set) parses as that command's own subcommand step instead of closing the menu, its
   own query being whatever follows the space; a second space closes it, same as any other
   command. `orderSubcommandsForEmptyQuery` puts `status` first with nothing typed yet (every
-  other subcommand keeps its existing order); a typed query ranks via the same T263 scorer.
+  other subcommand keeps its existing order); a typed query ranks via the same T267 scorer.
   `MessageInput.tsx`'s `completeSlashCommand` (choosing a top-level command) now only ever
   leaves the box reading `/name ` -- the composer text re-parsing as the subcommand step is
   what advances the menu, with no separate step state; a new `completeSubcommand` completes the
@@ -2929,7 +3048,7 @@ that picks this PR up.
   it. The other #938 items (refusal-text wording naming the allowed subcommands, short-notice
   wrapping, a Settings mention, and the suspected duplicate render) are out of scope for this
   story and remain open on the issue. Per FR-074 and the FR-046 amendment.
-- [X] T265 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+- [X] T269 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
   FR-073 and FR-074, an amendment to FR-046, and two dated `### Session 2026-10-17` Clarifications
   entries recording both decision records; `docs/design/product-chat.md`'s "Slash commands"
   bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
