@@ -11,9 +11,18 @@ const alertVariants = cva(
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
       },
+      box: {
+        default: "",
+        // Gate round 2 (code-reviewer/architect M1): for Alerts already nested inside a Card
+        // (e.g. decision-card submit errors), the outer Card is the box -- this strips the
+        // Alert's own border/fill/padding/radius so it doesn't double-box, while keeping the
+        // icon-grid layout and `role="alert"` semantics untouched.
+        inline: "border-0 bg-transparent px-0 py-0 rounded-none",
+      },
     },
     defaultVariants: {
       variant: "default",
+      box: "default",
     },
   }
 )
@@ -21,13 +30,14 @@ const alertVariants = cva(
 function Alert({
   className,
   variant,
+  box,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
   return (
     <div
       data-slot="alert"
       role="alert"
-      className={cn(alertVariants({ variant }), className)}
+      className={cn(alertVariants({ variant, box }), className)}
       {...props}
     />
   )
