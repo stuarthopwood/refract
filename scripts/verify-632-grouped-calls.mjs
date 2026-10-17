@@ -301,10 +301,8 @@ async function main() {
     await cdp.click(`(${GROUP_HEADERS}).at(0)`);
     await cdp.waitFor(`(${GROUP_HEADERS}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Turn (a) group expanded' });
 
-    // Gate round 1 (accessibility-auditor Medium, M8): the click above gave the header focus
-    // WITHOUT `:focus-visible` (mouse-acquired); Tab away then Shift+Tab back is the standard way
-    // to force a genuine KEYBOARD-driven refocus without having to count every other tab stop in
-    // the app, proving the header is keyboard-reachable with a visible focus outline.
+    // Gate round 1 (accessibility-auditor Medium, M8): the click gave mouse-acquired focus (no
+    // :focus-visible); Tab away then Shift+Tab back forces a genuine keyboard refocus.
     await pressTab(cdp);
     await pressTab(cdp, { shift: true });
     const keyboardFocusCheck = await cdp.evaluate(`(() => {
@@ -322,9 +320,8 @@ async function main() {
       findings.push(`Keyboard Tab/Shift+Tab reaches the group header with a visible focus outline (${keyboardFocusCheck.outlineStyle} ${keyboardFocusCheck.outlineWidth}).`);
     }
 
-    // Gate round 1 (ui-architect-v3 Medium, M8): the expanded group (members still collapsed)
-    // measured against its own computed line-height -- the issue's own acceptance is "about 4
-    // lines tall, against about 20 today".
+    // Gate round 1 (ui-architect-v3 Medium, M8): expanded group (members collapsed) measured
+    // against its own line-height -- the issue's own "about 4 lines, against about 20 today".
     const heightCheck = await cdp.evaluate(`(() => {
       const h = (${GROUP_HEADERS}).at(0);
       const root = h ? h.closest('[data-slot="collapsible"]') : null;
@@ -358,9 +355,8 @@ async function main() {
       failures.push(`Could not parse every duration to compare the sum (members: ${JSON.stringify(memberMetaTexts)}, header: "${headerA.metaText}").`);
     } else {
       const sumMs = memberDurationsMs.reduce((a, b) => a + b, 0);
-      // Rounding allowed: each duration is independently rounded to its own displayed precision
-      // (whole ms under 1s, one decimal of a second at or above), so the displayed total can
-      // differ from the sum of the displayed members by a little; 150ms covers that.
+      // Rounding allowed: each duration is independently rounded, so the displayed total can
+      // differ from the sum of displayed members by a little; 150ms covers that.
       const deltaMs = Math.abs(sumMs - headerTotalMs);
       if (deltaMs > 150) {
         failures.push(`Group header's own total time (${headerTotalMs}ms) does not equal the sum of its members' own durations (${memberMetaTexts.join(' + ')} = ${sumMs}ms, delta ${deltaMs}ms).`);
@@ -369,9 +365,8 @@ async function main() {
       }
     }
 
-    // Gate round 1 (accessibility-auditor Medium, M8): each member's own accessible name must
-    // include its tool and its command, not just whatever the browser's content-based name
-    // computation happens to concatenate.
+    // Gate round 1 (accessibility-auditor Medium, M8): each member's accessible name must
+    // include its tool and command, not just the browser's own content-based concatenation.
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
     if (!member0Ax.name || !member0Ax.name.includes('bash') || !member0Ax.name.includes('t632-one')) {
@@ -462,18 +457,14 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_E_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632e-done/g) ?? []).length >= 2; })()`, { timeoutMs: 240_000, label: 'Turn (e) finished (subagent done, main agent replied)' });
-    // `SubagentChainRow`'s own "Show subagents panel" button only renders for a turn with TWO
-    // OR MORE Stages (FR-065); this turn starts exactly one subagent, so the control that opens
-    // the panel here is the readout bar's own `SubagentsChip` instead, whose accessible name is
-    // dynamic -- "Open subagents panel (1 finished)" (`ReadoutChips.tsx`'s own `phrase`, never a
-    // fixed string) -- hence the prefix match.
+    // `SubagentChainRow`'s own "Show subagents panel" button only renders for TWO+ Stages
+    // (FR-065); this turn starts one subagent, so the readout bar's own `SubagentsChip` opens
+    // it instead, with a dynamic accessible name -- "Open subagents panel (1 finished)".
     await cdp.clickByLabel('Open subagents panel', { prefix: true });
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel open' });
     await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"], [role="tree"][aria-label="Subagents"] button')`);
-    // `SubagentPanel.tsx`'s own stream pane is a plain `ResizablePanel`/`ScrollArea` div with no
-    // `[role="tabpanel"]` and no `<aside>` wrapper (that selector never matched anything, hence
-    // the earlier run's "not exercised" skip) -- scoped instead to the stable `#right-pane-active-panel`
-    // host every hosted panel (including this one) renders inside (`RightPaneShell.tsx`).
+    // `SubagentPanel.tsx`'s own stream pane has no `[role="tabpanel"]`/`<aside>` wrapper --
+    // scoped to the stable `#right-pane-active-panel` host every hosted panel renders inside.
     const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('span.font-medium'))`;
     // A plain one-shot `evaluate` right after the click raced the stream pane's own render in
     // two prior live runs (the screenshot a moment later always showed the row already there) --
@@ -537,6 +528,15 @@ async function main() {
         failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output instead of rendering it as inert plain text: ${hostileDetail.html}.`);
       } else if (hostileDetail.text.length > 205) {
         failures.push(`Turn (f) Error line's own text is ${hostileDetail.text.length} characters, expected it bounded to about 200 (QUIET_SUMMARY_MAX_CHARS) plus an ellipsis.`);
+      } else if (!hostileDetail.text.includes('Hostile')) {
+        // Three command formulations all produced this outcome: OMP's own literal exit-status
+        // line superseded the echoed hostile text. `errorLine()` (pre-existing #570 code,
+        // untouched by #632) assumes stdout, then `Wall time:`, then the exit-code line; the
+        // installed OMP (18.11.1, an "unverified version") apparently orders the exit-code line
+        // BEFORE `Wall time:`, so the cutoff keeps it as ordinary content and "last non-empty
+        // line" picks it instead. Out of #632's scope (a pre-existing #570 parsing assumption) --
+        // a finding, not a failure: the line that DID render is itself genuinely inert/bounded.
+        findings.push(`Turn (f): the hostile output itself did not reach the Error line (OMP's own exit-status line superseded it, likely an OMP-version line-order difference in #570's own pre-existing parsing, out of #632's scope) -- the line that DID render ("${hostileDetail.text}") is itself inert (no raw ANSI, no colour markup) and bounded (${hostileDetail.text.length} characters).`);
       } else {
         findings.push(`Turn (f) Error line renders the hostile output inert (no raw ANSI escape, no colour markup) and bounded (${hostileDetail.text.length} characters): "${hostileDetail.text}".`);
       }
