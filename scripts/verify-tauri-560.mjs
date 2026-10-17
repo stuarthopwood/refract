@@ -436,8 +436,8 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   );
   await pressRealEnter(cdp);
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on keyboard-driven Dismiss' });
-  // Gate round 2 fix defers the redirect to one rAF after unmount; sample after it runs.
-  await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  // Gate round 2 fix retries for up to 500ms; poll (not a fixed sleep) until it settles.
+  await cdp.waitFor(`document.activeElement !== document.body && document.activeElement?.isConnected === true`, { timeoutMs: 2_000, label: 'focus settles on a real connected control after keyboard-driven Dismiss' });
   const postKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
   const postKeyboardDismissConnected = await cdp.evaluate(`document.activeElement !== document.body && document.activeElement?.isConnected === true`);
   assert(

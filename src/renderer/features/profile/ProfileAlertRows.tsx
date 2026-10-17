@@ -180,26 +180,40 @@ export function ProfileAlertRows() {
 
   // Gate round 2 (Code FAIL, second finding): a row dismissed via KEYBOARD activation (Enter on
   // a Tooltip-wrapped Dismiss button) could leave focus on a disconnected, unnamed node instead
-  // of the intended fallback -- confirmed live (verify-tauri-560.mjs): Radix Tooltip's own
-  // Portal content, still mounted while its trigger has keyboard focus-visible, briefly claims
-  // focus as part of its OWN unmount cleanup, racing our redirect below. React 19 focus-handoff
-  // pattern: `handleFocusOut` below only RECORDS intent (never calls `.focus()` directly); one
-  // `requestAnimationFrame` later -- after every other library's own synchronous/microtask
-  // cleanup has had its turn -- the recorded intent is applied ONLY if focus is confirmed still
-  // stranded (disconnected, or fallen back to `<body>`) at that point, never overriding a focus
-  // destination something else legitimately claimed meanwhile. Expires itself every frame: never
-  // left pending across more than one.
+  // of the intended fallback -- confirmed live (verify-tauri-560.mjs), still reproducing after a
+  // single-rAF recheck: the Tooltip's own Portal content (still mounted while its trigger had
+  // keyboard focus-visible) can re-steal focus on ITS OWN delayed unmount, over more than one
+  // frame. React 19 focus-handoff pattern: `handleFocusOut` below only RECORDS intent (never
+  // calls `.focus()` directly); a `requestAnimationFrame` loop then re-applies it EVERY frame
+  // for up to 500ms, each time focus is STILL confirmed stranded (disconnected, or fallen back
+  // to `<body>`) -- stopping the moment it lands on something real, whether ours or a genuinely
+  // different destination something else legitimately claimed. Outlasts a delayed library
+  // cleanup instead of losing a one-shot race against it; never left pending past its own
+  // 500ms budget.
   const pendingFocusHandoffRef = useRef<(() => void) | null>(null)
   function scheduleFocusHandoff(apply: () => void): void {
     pendingFocusHandoffRef.current = apply
-    requestAnimationFrame(() => {
+    // 500ms: comfortably past this app's own longest documented transition (panel open/close,
+    // up to 200ms, docs/PLAN.md "Motion and focus"), so a delayed library cleanup can never
+    // outlast this retry window.
+    const deadline = performance.now() + 500
+    function tick(): void {
       const pending = pendingFocusHandoffRef.current
-      pendingFocusHandoffRef.current = null
       if (!pending) return
       const active = document.activeElement
       const stranded = !active || active === document.body || !active.isConnected
-      if (stranded) pending()
-    })
+      if (!stranded) {
+        pendingFocusHandoffRef.current = null
+        return
+      }
+      pending()
+      if (performance.now() >= deadline) {
+        pendingFocusHandoffRef.current = null
+        return
+      }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
   }
 
   // Watches each row's own container for a `focusout` caused by the FOCUSED DESCENDANT itself
