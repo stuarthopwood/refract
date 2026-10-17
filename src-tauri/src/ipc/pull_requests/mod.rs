@@ -157,7 +157,7 @@ where
     results
 }
 
-pub(super) async fn list_pull_requests(
+pub(in crate::ipc::pull_requests) async fn list_pull_requests(
     repo_path: &Path,
     repo_label: &str,
     tab: FilterTab,
