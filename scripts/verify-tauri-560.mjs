@@ -30,6 +30,17 @@
 //   - Dismissing either alert row is immediate, LOCAL-ONLY state (never persisted): the
 //     low-memory row's dismissal survives a second real memory-sampler tick (~6s) even though
 //     REFRACT_FORCE_LOW_MEMORY=1 keeps the underlying condition true the whole run.
+//   - Gate round 2 F1 (focus theft on blank-space click): clicking the low-memory row's own
+//     non-focusable label (a real blank-space click inside the row) while Triage is focused
+//     leaves focus on <body> -- never redirected back onto an alert row's own control, the bug
+//     the round 1 focus-redirect fix introduced. Keyboard-only close of the Triage dialog (two
+//     Escapes) still returns focus to the row's own Triage button, unaffected.
+//   - Gate round 2 F2 (failed Stop announced as success): `window.refract.sessions.stopAgent`
+//     is monkey-patched in the renderer (no real process touched) to force one Session's Stop
+//     to resolve `{ok:false}` -- single and bulk (mixed with genuinely-succeeding Sessions) --
+//     and confirms the live region announces the real outcome, naming the failing Session(s),
+//     never claiming success; the forced-failed Session stays listed since it was never
+//     actually stopped.
 //
 // Isolation (refract-tauri-live-check-isolation skill): same pattern as verify-tauri-559.mjs.
 // Uses the already-frozen exe named by REFRACT_560_FROZEN_EXE (default: the path this story's
@@ -81,6 +92,7 @@ import {
   waitForSessionStatus,
   latestSessionIdAndName
 } from './verify-tauri-560-helpers.mjs';
+import { runFocusTheftRegressionTest, runForcedStopFailureRegressionTests } from './verify-tauri-560-gate2.mjs';
 
 // #946 (PR #949): refuses to build without the shared CARGO_TARGET_DIR, never falling back to a
 // worktree-local `src-tauri/target` (that fallback already filled this session's disk once,
@@ -212,6 +224,9 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   tabOrder.push({ step: 'Tab 5 (post Health-check close)', ...active });
   log(`STEP PASS: full documented Tab order confirmed: ${tabOrder.map((s) => JSON.stringify(s.name)).join(' -> ')}.`);
 
+  // ---- Item 9: gate round 2 F1 regression test (verify-tauri-560-gate2.mjs) ----
+  await runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMORY_ROW_SPAN }, log);
+
   // ---- Item 2: Memory Triage -- lists the idle Session, per-row Stop with confirmation ----
   // A settle sleep before this first mouse click is REQUIRED, confirmed live: immediately after
   // the preceding keyboard-only sequence (Tab walk + Enter-driven HealthCheckDialog open/close),
@@ -254,7 +269,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
     `Escape-cancelling the per-Session confirm then the Dialog must return focus to "Open memory triage" (got ${JSON.stringify(postEscapeCancelActive)})`
   );
   await waitForSessionStatus(cdp, sessionA.id, 'idle');
-  log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape returns focus to the alert row\'s own Triage button.');
+  log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape (a keyboard-only close of the Triage dialog) returns focus to the alert row\'s own Triage button -- F1\'s second half, unaffected by the blank-space-click fix above.');
 
   // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below.
   await cdp.click(TRIAGE_BUTTON);
@@ -382,6 +397,13 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await pressEscape(cdp);
   await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage dialog closed via Escape' });
 
+  // ---- Item 11: gate round 2 F2 regression tests (verify-tauri-560-gate2.mjs) ----
+  await runForcedStopFailureRegressionTests(
+    cdp,
+    { repoName, sessionA, sessionB, evidenceDir, DIALOG_TITLE, ALERT_DIALOG_TITLE, ALERT_DIALOG, DIALOG, TRIAGE_BUTTON, CHAT_AREA_ANNOUNCE_REGION },
+    log
+  );
+
   // ---- Item 4: dismissing the low-memory row is immediate and LOCAL-only (survives a second
   // real memory-sampler tick, ~6s, even though REFRACT_FORCE_LOW_MEMORY=1 never stops being
   // true) ----
@@ -442,7 +464,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
 async function main() {
   clearKnownOutputFiles(SHOT_DIR, 'refract-560-', [
     '01-both-alert-rows.png', '02-health-check-dialog-warning.png', '03-triage-dialog-after-stop-A.png',
-    '04-triage-dialog-empty-after-bulk-stop.png', '05-both-rows-dismissed.png',
+    '04-triage-dialog-empty-after-bulk-stop.png', '05-both-rows-dismissed.png', '06-forced-stop-failure-still-listed.png',
     '99-diag-add-repository-failure.png', 'report.json', 'report.txt', 'app.log', 'fake-omp-invocations.log'
   ]);
   const log = createReportLogger(path.join(SHOT_DIR, 'report.txt'));
@@ -511,7 +533,7 @@ async function main() {
     log(`verify-tauri-560: ALL PASS. Evidence and screenshots: ${SHOT_DIR}`);
     const screenshots = citeScreenshots(SHOT_DIR, [
       '01-both-alert-rows.png', '02-health-check-dialog-warning.png', '03-triage-dialog-after-stop-A.png',
-      '04-triage-dialog-empty-after-bulk-stop.png', '05-both-rows-dismissed.png'
+      '04-triage-dialog-empty-after-bulk-stop.png', '05-both-rows-dismissed.png', '06-forced-stop-failure-still-listed.png'
     ]);
     writeFileSync(
       path.join(SHOT_DIR, 'report.json'),
