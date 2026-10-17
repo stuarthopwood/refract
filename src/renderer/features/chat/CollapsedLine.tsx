@@ -27,10 +27,20 @@ export interface CollapsedLineProps {
   /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
    * label and icon render in the error colour, #570 decision 4; the target stays muted). */
   labelClassName?: string
-  /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in,
-   * because the chat's own rows are deliberately one-line, but a narrow side panel (the
-   * Subagents panel) needs a long path or paragraph visible instead of losing its useful tail. */
+  /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in
+   * while collapsed, because the chat's own rows are deliberately one-line and a narrow side
+   * panel (the Subagents panel) needs a long path or paragraph visible instead of losing its
+   * useful tail. Collapsed rows otherwise keep truncating regardless of this prop, for fast
+   * scanning; `wrapWhenOpen` below is the separate, opt-in control for wrapping once expanded. */
   summaryWrap?: boolean
+  /** Gate round 1 (code-reviewer High, H4): `summaryWrap || actualOpen` made EVERY
+   * `CollapsedLine` wrap once expanded, including callers that never asked for it
+   * (`AgentMessageRow`, `AdvisoryRow`, `RequestCard`, `NoticeRow`, `ThoughtRunRow`), producing
+   * duplicate/jumpy text as their own already-expanded content repeated the now-wrapped summary.
+   * Opt-in: only `ToolCallRow` and the solo branch of `ToolGroupRow` (#632's own "wrap instead
+   * of truncate once expanded" fix) pass this; every other caller keeps truncating collapsed
+   * and whatever its own expanded body already shows, unaffected by `actualOpen`. */
+  wrapWhenOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultOpen?: boolean
@@ -78,6 +88,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     summaryClassName,
     labelClassName,
     summaryWrap,
+    wrapWhenOpen,
     open,
     onOpenChange,
     defaultOpen,
@@ -112,8 +123,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const row = (
     <>
       {/* #565 decision 7: 16px slot (icon itself stays 14px, `size-3.5`, centred within it) so
-       * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly. */}
-      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
+       * every node centres on the 4px grid; every label/summary/meta moves 2px right, evenly.
+       * Gate round 1 (Main, D1): the row is `items-start` (not `items-center`), so this slot's
+       * own height must match the label's 20px line box (`h-5`) for the icon to sit centred on
+       * it rather than flush against the top. */}
+      <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
         <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
@@ -121,7 +135,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       )}
       {summary !== undefined ? (
         <span
-          className={cn('min-w-0 flex-1', summaryWrap ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
+          className={cn(
+            'min-w-0 flex-1',
+            summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+            summaryClassName ?? 'text-muted-foreground'
+          )}
         >
           {summary}
         </span>
@@ -139,7 +157,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
         // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
         // removes the extra boundary that caused it.
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not
@@ -159,7 +177,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         tabIndex={-1}
         // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
         // still shows a focus indicator in forced-colours mode, matching the trigger below.
-        className={cn('flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -172,7 +190,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * (hover swapping it to `hover:border-border`), a second box nested right inside whatever
        * ancestor box this row sits in -- the confirmed cause of #430's nested-box bug. Hover is
        * now only the trigger's own ghost `hover:bg-muted` below; the root carries no border. */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
           aria-label={triggerAriaLabel}
@@ -184,11 +202,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             // `outline-offset-2` (the shadcn default) draws OUTSIDE this element's own box and
             // was very likely clipped by that containment. `-2px` draws the ring INSIDE instead,
             // matching the plain row above.
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
           )}
         >
           {row}
-          <ChevronRightIcon className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+          <span className="flex h-5 shrink-0 items-center">
+            <ChevronRightIcon className={cn('size-3.5 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+          </span>
         </CollapsibleTrigger>
         {/* Sibling of the trigger, never nested inside it -- a `<button>` cannot nest inside
          * another interactive trigger (#563 remediation, round 2). Stays in this always-mounted
