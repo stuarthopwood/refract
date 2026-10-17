@@ -41,13 +41,14 @@ import {
   safeRmSync,
   assertExeUnchanged,
   getAccessibleNameAndRole,
-  switchTheme
+  switchTheme,
+  requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 // Gate round 1 (code-reviewer Low): a hard-coded user path. Overridable; defaults to a fresh,
 // timestamped folder under the OS temp dir so a rerun never mixes its own screenshots with a
 // stale prior run's (the exact confusion gate round 1's test-reviewer/G909Arch findings caught:
