@@ -638,3 +638,27 @@ assignment, to avoid two agents racing a heavy build at once) and any live Elect
 of the new tree's keyboard behaviour or the opener-based focus return -- the latter's real
 end-to-end trigger (a chat Stage/chain row's own "Show subagents panel" button) does not exist
 until that sibling slice lands.
+
+## Phase 37: Convergence
+
+- [X] T132 [US1] #928 status line type (v0.3.0 feedback item 5, Decided, Skippy, delegated by
+  Stuart 2026-10-16 -- grilled, resolved on the issue): `ReadoutChip.tsx`'s shared baseline moves
+  from `text-xs`/`size-3` (12px/12px) to `text-readout`/`size-3.5` (13px/14px) at its three icon
+  render sites and its one shared `baseClasses` string -- every status-line readout (`ReadoutChip`
+  is used nowhere else today) picks this up automatically, read-only ones and interactive ones
+  alike. `globals.css` gains `--text-readout: 13px` in the theme-independent `@theme { ... }`
+  font-role block (generates the `text-readout` utility), the one new named type-scale step, not
+  a bare `text-[13px]` arbitrary value.
+- [X] T133 [US1] Update the docs: amended `specs/004-session-readout/spec.md`'s FR-023 and this
+  `### Session 2026-10-16 (status line type)` Clarifications entry; `docs/design/foundations-
+  typography-spacing.md` gains a new "Status line type" section documenting the 13px/14px step
+  and the `--text-readout` token; `docs/PLAN.md`'s "v0.3.0 feedback" row gets an in-flight note
+  (shipped together with #927, per its own "Suggested order" line).
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #928; a no-build prep
+lane, per `docs/PLAN.md`'s own working rules). `pnpm typecheck`, `pnpm vitest run` (148 tests)
+and `node scripts/check-indent.mjs` (0 odd-indent lines) all ran clean after this change; this
+ships in the same PR as #927 (`specs/001-core-session-workspace/tasks.md` Phase 50), which also
+records the no-build-lane items (`pnpm build`/`pnpm check:ui-text`/the new CDP live check) left
+for the build lane that picks the PR up.

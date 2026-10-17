@@ -40,6 +40,17 @@ Decided by the ui-architect-v3 roundtable, 2026-10-15 (issue #567, the type-scal
 
 Hand-measured reason for dropping the mock's own grey: muted text on a selected/hovered row's fill measures 5.8:1 (Dark), 5.1:1 (Obsidian) and 9.8:1 (Dark, high contrast) using `--muted-foreground`; the mock's own `#737373` measures 3.2:1 to 3.8:1 on the same fills, under the 4.5:1 text floor.
 
+## Status line type
+
+Decided 2026-10-16 (issue #928, v0.3.0 feedback item 5): the composer status line's chips (changes, context, elapsed, todo, subagents, pull request, current time) read 13px text and 14px icons, up from the original 12px/12px -- Stuart chose this over a 14px TEXT step, which would read "as loud as the chat". No existing Tailwind step is 13px (`text-xs` is 12px, `text-sm` is 14px), so this adds the one named step, `--text-readout` (globals.css), generating the `text-readout` utility rather than a bare `text-[13px]` arbitrary value.
+
+| Element | Classes |
+| --- | --- |
+| Status line chip text (`ReadoutChip.tsx`) | `text-readout text-muted-foreground` (13px) |
+| Status line chip icon (`ReadoutChip.tsx`) | `size-3.5` (14px) |
+
+Scoped to `ReadoutChip.tsx` alone, the status line's own shared baseline component -- nothing else reads `text-readout` today.
+
 
 ## Spacing grid
 

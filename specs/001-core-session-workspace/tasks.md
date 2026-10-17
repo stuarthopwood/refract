@@ -2834,3 +2834,57 @@ comment was posted on #559 and the PR body's Departures section corrected.
   together on the same final HEAD `91f73e1`; `report.json`'s own `gitHead` matches. Evidence
   (`report.json`, `report.txt`, `app.log`, six screenshots with their own sha256) under
   `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+
+## Phase 51: Convergence
+
+- [X] T261 [US1] #927 quiet composer (v0.3.0 feedback item 4, Decided, Skippy, delegated by
+  Stuart 2026-10-16 -- grilled, all resolved on the issue): in Dark and Obsidian the message
+  box's fill is now `transparent` (`globals.css`'s `--composer-background`, was a solid literal
+  per theme) with a faint new `--composer-border` token (aliases `--divider`) replacing the
+  literal `border-muted-foreground/85` class; the field's own focus-visible state now reads a
+  new `--composer-focus` token for its border colour and a new `--composer-ring` token for its
+  glow (`transparent` in these two themes -- no glow, a quiet border-colour change is the whole
+  cue -- `MessageInput.tsx`). The Approval mode pill, Model picker and Reasoning picker
+  (`pickerShared.tsx`'s shared `PICKER_TRIGGER_CLASS`) move from `badgeVariants({variant:
+  'outline'})` to `badgeVariants({variant: 'ghost'})` (reused, no new classes, `docs/design/
+  components.md` "Button"), with an explicit resting-muted/hover-foreground text-colour pair
+  (the same convention `ReadoutChip.tsx`'s own interactive style already uses) overriding
+  `ghost`'s own opposite-direction hover colour via `cn`'s tailwind-merge. A new `GHOST_FOCUS_
+  CLASS`/`GHOST_BUTTON_FOCUS_CLASS` pair (`pickerShared.tsx`) reads `--composer-focus` for these
+  four controls' own focus outline, split out from the unchanged `COMPOSER_FOCUS_CLASS`/
+  `COMPOSER_BUTTON_FOCUS_CLASS` (still `--ring`, still used by Send/Stop only -- "Send and Stop
+  are unchanged"). Dark (high contrast) is explicitly excluded: its `--composer-background`
+  stays its old opaque literal, and its new `--composer-border`/`--composer-focus`/
+  `--composer-ring` tokens are byte-for-byte token-izations of the prior literal classes
+  (`color-mix(in oklab, var(--muted-foreground) 85%, transparent)`, `var(--ring)`, `color-mix(in
+  oklab, var(--ring) 50%, transparent)` respectively) -- nothing it renders changes. `scripts/
+  theme-contrast-pairs.mjs`: the now-obsolete `border`/`composer-background` pair (the Approval
+  pill's old opaque outline border, gone now that it is `ghost`) removed; `send`/`composer-
+  background` and `muted-foreground`/`composer-background` scoped to Dark high contrast only (a
+  new `send`/`background` pair covers Dark/Obsidian instead, where the fill is transparent);
+  `ring`/`composer-background` replaced by `composer-focus`/`composer-background` (enforced,
+  Dark high contrast only) plus two new `composer-border`/`composer-focus` vs `background` pairs
+  marked `informationalThemes: ['dark', 'obsidian']` (a new per-pair schema field, computed and
+  printed but never counted toward the gate's pass/fail, for Stuart's own accepted departure).
+- [X] T262 [US1] Update the docs: amended `docs/design/product-chat.md`'s "Message box" and
+  "Composer tone" bullets (the latter replacing its 2026-10-04 "strictly darker than the page"
+  rule with the new transparent-fill/faint-border/ghost-control/muted-focus rule, per the issue's
+  own grill), `docs/design/foundations-tokens-theming.md`'s "Canvas colour" bullet (superseded
+  note already landed with the issue's own filing, `docs/PLAN.md` commit 1e191f9), and `docs/
+  design/accessibility.md`'s "Accepted departures" (already landed the same way); this story adds
+  `specs/001-core-session-workspace/spec.md`'s FR-040 and US1 acceptance scenario 11 amendments
+  and this `### Session 2026-10-16 (quiet composer)` Clarifications entry; `MessageInput.tsx`'s
+  own composer-box comment and composer-dimming comment are rewritten to match (the Approval
+  pill's border-for-WCAG-1.4.11 reasoning no longer applies outside Dark high contrast); `docs/
+  PLAN.md`'s "v0.3.0 feedback" row gets an in-flight note for #927/#928 (shipped together per its
+  own "Suggested order" line) with this story's PR link.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #927; a no-build prep
+lane, per `docs/PLAN.md`'s own working rules). `pnpm typecheck`, `pnpm vitest run` (148 tests),
+`node scripts/check-indent.mjs` (0 odd-indent lines) and `node scripts/check-theme-contrast.mjs`
+(436 of 436 enforced pairs PASS across 3 themes, informational Dark/Obsidian composer-border/
+composer-focus pairs printed but not counted) all ran clean after this change; `pnpm build`/
+`pnpm check:ui-text`/the new CDP live check (`scripts/verify-927-928-quiet-composer.mjs`, written
+but deliberately not run, per this prep lane's own NO BUILDS rule) are left for the build lane
+that picks this PR up.

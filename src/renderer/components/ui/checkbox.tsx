@@ -1,6 +1,6 @@
 import * as React from "react"
 import { CheckIcon } from "lucide-react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 import { Checkbox as CheckboxPrimitive } from "radix-ui"
 
 // New for #572 (issue #572 decision D9): a copy of `radio-group.tsx` on Radix Checkbox, so the

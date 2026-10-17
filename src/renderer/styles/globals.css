@@ -22,6 +22,10 @@
   --color-foreground: var(--foreground);
   --color-chat-foreground: var(--chat-foreground);
   --color-composer-background: var(--composer-background);
+  --color-composer-border: var(--composer-border);
+  --color-composer-focus: var(--composer-focus);
+  --color-composer-ring: var(--composer-ring);
+  --color-composer-control-border: var(--composer-control-border);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -118,11 +122,18 @@
 /* Font family roles (docs/DESIGN.md "Look and feel"): theme-independent, so declared once as
  * real Tailwind theme values rather than through the light/dark indirection above. Generates
  * the `font-ui`, `font-code`, and `font-brand` utility classes. `font-brand` is the one
- * exception to the no-bundled-fonts default: the "Refract" wordmark and tagline only. */
+ * exception to the no-bundled-fonts default: the "Refract" wordmark and tagline only.
+ *
+ * `--text-readout` (issue #928, docs/design/foundations-typography-spacing.md "Status line
+ * type"): a new 13px step for the composer status line's chips, between Tailwind's own
+ * `text-xs` (12px) and `text-sm` (14px) -- 14px read "as loud as the chat" (Stuart's own
+ * wording, declined); generates the `text-readout` utility, the one sanctioned named step
+ * rather than a bare `text-[13px]` arbitrary value. */
 @theme {
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --font-brand: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --text-readout: 13px;
 }
 
 :root {
@@ -150,13 +161,35 @@
    * reads as indistinguishable from pure white) and well short of --muted-foreground's 0.708
    * (~7.6:1, reserved for secondary/meta text). */
   --chat-foreground: oklch(0.90 0 0);
-  /* Composer fill (docs/DESIGN.md "Composer tone"; MessageInput.tsx): a literal, solid colour
-   * rather than an alpha composite over --card/--muted, matched exactly to this theme's previous
-   * hardcoded `bg-[oklch(0.09_0_0)]` so nothing visibly changes now that it is a token
-   * (MessageInput.tsx's own comment records why an alpha composite doesn't work here). Must stay
-   * strictly darker than --background (0.145) so the composer reads as the page's most recessive
-   * field; 0.09 clears that with room to spare. */
-  --composer-background: oklch(0.09 0 0);
+  /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill, "Composer tone" in product-chat.md) --
+   * this theme's old `oklch(0.09 0 0)` solid fill (kept strictly darker than --background, the
+   * original 2026-10-04 rule) is now transparent, so the composer shows the chat background
+   * straight through, like the GitHub Copilot composer Stuart's screenshot referenced. The
+   * field is now demarcated by `--composer-border` alone (faint, around the `--divider` tone)
+   * instead of a darker fill. */
+  --composer-background: transparent;
+  /* New #927 tokens. `--composer-border` is deliberately faint (the same soft tone `--divider`
+   * already uses for decorative edges elsewhere) -- the field's resting border is meant to sit
+   * below the WCAG 1.4.11 3:1 non-text floor on purpose (Stuart's accepted departure,
+   * docs/design/accessibility.md "Accepted departures"); `scripts/check-theme-contrast.mjs`
+   * marks this pair informational for this reason, never enforced. `--composer-focus` is the
+   * muted focus outline (decision 4a): a translucent, still-below-3:1 step up from the resting
+   * border, reused by the composer field's own focus-visible border AND by the ghost
+   * Approval/Model/Reasoning/Attach triggers' shared focus outline (`pickerShared.tsx`'s
+   * `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS`) -- one token, one visual language. The
+   * composer field no longer draws an additional glow ring on top of the border change in this
+   * theme (`--composer-ring: transparent`): a quiet border-colour change is the whole focus
+   * cue, matching the mock's own quiet aesthetic; Send/Stop and every other control keep their
+   * existing full `--ring` treatment untouched (`pickerShared.tsx`'s own
+   * `COMPOSER_FOCUS_CLASS`/`COMPOSER_BUTTON_FOCUS_CLASS`, unchanged by this issue). */
+  --composer-border: var(--divider);
+  --composer-focus: oklch(1 0 0 / 35%);
+  --composer-ring: transparent;
+  /* U1/A1 (gate951UI/A11y High): Approval/Model/Reasoning triggers keep NO visible border in
+   * Dark/Obsidian (ghost, decision 4a) but Dark high contrast keeps its unchanged edges
+   * (decision 3) -- this token lets `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` add an explicit
+   * `border` unconditionally while only Dark high contrast's own value ever paints it. */
+  --composer-control-border: transparent;
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -412,10 +445,25 @@
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
   --chat-foreground: #DFE0E2;
-  /* Composer fill: strictly darker than this canvas (0.0052 relative luminance) -- 0.0027
-   * clears that; near-black, as the design doc's "Canvas colour" section calls for on this
-   * preset specifically ("on Obsidian it will be near black"). */
-  --composer-background: #08090C;
+  /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill) -- this preset's old near-black
+   * `#08090C` solid fill (strictly darker than this canvas's 0.0052 relative luminance, the
+   * original "Canvas colour" rule) is now transparent, matching Dark's own #927 change; the
+   * field reads through to the chat background instead. See `.theme-dark`'s own comment just
+   * above for the full `--composer-border`/`--composer-focus`/`--composer-ring` rationale,
+   * identical here except for the actual muted values (tuned to this preset's own `--border`,
+   * `#6F7C9D`, rather than an achromatic literal). */
+  --composer-background: transparent;
+  --composer-border: var(--divider);
+  /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
+   * measured ~2.20:1 against this theme's own `--background` -- noticeably weaker than Dark's
+   * equivalent `oklch(1 0 0 / 35%)` at ~3.14:1 -- so the muted focus cue read as a different
+   * strength per theme though both are meant to be the same "quiet border-colour change"
+   * departure. Raised to 75% to bring it to ~3.08:1, matching Dark's own strength (measured via
+   * `scripts/check-theme-contrast.mjs`'s informational Obsidian composer-focus/background row).
+   */
+  --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
+  --composer-ring: transparent;
+  --composer-control-border: transparent;
   --card: var(--surface-1);
   --card-foreground: var(--foreground);
   --popover: var(--surface-2);
@@ -514,13 +562,31 @@
    * "Composer tone"). Resolving that by inverting the technique instead of the darkness: the
    * composer reads as a raised surface (matching --card/--popover's own 0.14 "panel" tone, one
    * step lighter than the page) bounded by the field's existing visible border
-   * (border-muted-foreground/85 in MessageInput.tsx, itself >=3:1 against both this fill and
+   * (`--composer-border` below, token-ized by #927 -- itself >=3:1 against both this fill and
    * --background), so it still reads as a clearly bounded, recessive-from-the-content field --
    * just demarcated by a border against a lighter fill rather than by a darker fill against no
    * border, which pure black makes impossible. Picking a value darker than --card (0.08, versus
    * --card's 0.14) keeps the composer visually distinct from (not identical to) dialogs/popovers
    * while staying lighter than --background. */
   --composer-background: oklch(0.08 0 0);
+  /* #927 (quiet composer, Dark and Obsidian only): this preset is explicitly excluded --
+   * "Dark (high contrast) keeps its 3:1 edges and full ring", Stuart 2026-10-16 -- so every
+   * value below is a byte-for-byte token-ization of what MessageInput.tsx used to hardcode as
+   * literal Tailwind classes, not a new design: `--composer-border` replaces the literal
+   * `border-muted-foreground/85` (`color-mix(in oklab, var(--muted-foreground) 85%,
+   * transparent)` is exactly how Tailwind's own `/85` alpha modifier resolves a token colour);
+   * `--composer-focus` replaces `border-ring` (the focus-visible border colour);
+   * `--composer-ring` replaces `ring-ring/50` (the focus glow). Nothing this preset renders
+   * changes. */
+  --composer-border: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
+  --composer-focus: var(--ring);
+  --composer-ring: color-mix(in oklab, var(--ring) 50%, transparent);
+  /* U1 (High, gate951UI/A11y): the Approval/Model/Reasoning triggers must keep a visible,
+   * enforced >=3:1 resting border in this theme (decision 3) -- `var(--border)` is already
+   * >=3:1 against `--composer-background` (see `scripts/theme-contrast-pairs.mjs`'s own new
+   * `composer-control-border`/`composer-background` pair, `onlyThemes: ['dark-high-contrast']`).
+   */
+  --composer-control-border: var(--border);
   --card: oklch(0.14 0 0);
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.14 0 0);

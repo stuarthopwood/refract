@@ -324,10 +324,20 @@ for (const id of declaredThemeIds) {
 }
 
 for (const [themeId, props] of Object.entries(themes)) {
-  for (const { fg, bg, min } of PAIRS) {
+  for (const { fg, bg, min, onlyThemes, informationalThemes } of PAIRS) {
+    // #927 (quiet composer): `onlyThemes`/`informationalThemes` (theme-contrast-pairs.mjs's own
+    // comment documents both) restrict a pair to the named theme ids; `informationalThemes`
+    // additionally means "never enforced" -- computed and printed, tagged, but never counted
+    // toward `checkedCount`/`failCount`, the same "doesn't fail the run" shape the 'token
+    // missing' case already has, just for a real (not missing) ratio Stuart accepted as below
+    // the floor on purpose.
+    const scopedThemes = informationalThemes ?? onlyThemes
+    if (scopedThemes && !scopedThemes.includes(themeId)) continue
+    const informational = Boolean(informationalThemes)
     const fgEntry = props[fg]
     const bgEntry = props[bg]
     if (!fgEntry || !bgEntry) {
+      if (informational) continue
       checkedCount++
       failCount++
       rows.push({ themeId, fg, bg, min, ratio: null, pass: false, note: 'token missing' })
@@ -337,6 +347,21 @@ for (const [themeId, props] of Object.entries(themes)) {
     const bgLinear = resolvedLinear(bgEntry, bgEntry)
     const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
     const pass = ratio >= min
+    if (informational) {
+      rows.push({
+        themeId,
+        fg,
+        bg,
+        min,
+        ratio,
+        pass,
+        fgHex: linearToHex(fgLinear),
+        bgHex: linearToHex(bgLinear),
+        informational: true,
+        note: 'informational, #927 accepted departure -- not enforced',
+      })
+      continue
+    }
     checkedCount++
     if (!pass) failCount++
     rows.push({
@@ -700,7 +725,7 @@ for (const r of rows) {
     console.log(row([r.themeId, pairLabel, 'n/a', r.min, 'FAIL']) + `  (${r.note}: ${r.fg} or ${r.bg} not found)`)
     continue
   }
-  const result = r.pass ? 'PASS' : 'FAIL'
+  const result = r.informational ? 'INFO' : r.pass ? 'PASS' : 'FAIL'
   const suffix = r.note ? `  (${r.fgHex} on ${r.bgHex}, ${r.note})` : `  (${r.fgHex} on ${r.bgHex})`
   console.log(row([r.themeId, pairLabel, r.ratio.toFixed(2) + ':1', r.min, result]) + suffix)
 }
