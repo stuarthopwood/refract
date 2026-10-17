@@ -72,12 +72,13 @@ import {
   citeScreenshots,
   clearKnownOutputFiles,
   sha256OfFile,
+  requireSharedCargoTarget,
 } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_556_SHOTS_DIR || path.join(tmpdir(), `refract-556-zero-box-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   'a01-long-notice-collapsed.png',
