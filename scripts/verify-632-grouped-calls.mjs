@@ -294,7 +294,11 @@ async function main() {
     await cdp.clickByLabel('Open subagents panel', { prefix: true });
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel open' });
     await cdp.click(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"], [role="tree"][aria-label="Subagents"] button')`);
-    const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('[role="tabpanel"] button, aside button')).filter((el) => el.querySelector('span.font-medium'))`;
+    // `SubagentPanel.tsx`'s own stream pane is a plain `ResizablePanel`/`ScrollArea` div with no
+    // `[role="tabpanel"]` and no `<aside>` wrapper (that selector never matched anything, hence
+    // the earlier run's "not exercised" skip) -- scoped instead to the stable `#right-pane-active-panel`
+    // host every hosted panel (including this one) renders inside (`RightPaneShell.tsx`).
+    const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('span.font-medium'))`;
     const panelHeaderInfo = await cdp.evaluate(`(() => {
       const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('span.font-medium'); return l && /^bash(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
       if (!h) return null;
