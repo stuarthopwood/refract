@@ -335,14 +335,20 @@ async function main() {
       const rendered = await readSlashMenu(cdp);
       const expectedOrder = rankCommandsJs(query.needle, realCommands).map((c) => c.name);
       const renderedOrder = (rendered?.options ?? []).map((o) => o.name.replace(/^\//, ''));
-      // Hard requirement (always fails the run): the TOP-ranked option is exactly the command
-      // this query was algorithmically built to surface at this tier.
-      if (renderedOrder[0] !== query.name) {
+      // Hard requirement (always fails the run): the TOP-ranked option matches the independently
+      // computed ranking's own top entry. Compared against `expectedOrder[0]`, NOT the tier
+      // target this query was built around (`query.name`) -- a different real command can
+      // legitimately outrank that target at a BETTER tier for the very same needle (for example
+      // a word-start target losing to an unrelated command that happens to PREFIX-match the same
+      // query), which is correct tier-precedence behaviour, not a failure.
+      if (renderedOrder[0] !== expectedOrder[0]) {
         failures.push(
-          `"${tierName}" tier query "/${query.needle}": top-ranked option "${renderedOrder[0]}" is not "${query.name}", the real command this query was built to surface at the "${tierName}" tier.`
+          `"${tierName}" tier query "/${query.needle}": top-ranked option "${renderedOrder[0]}" does not match the independently computed top "${expectedOrder[0]}" (query built around "${query.name}" at the "${tierName}" tier).`
         );
       } else {
-        findings.push(`"${tierName}" tier query "/${query.needle}": top-ranked option is "${query.name}", exactly as this tier's own query was built to surface.`);
+        findings.push(
+          `"${tierName}" tier query "/${query.needle}" (built around "${query.name}" at the "${tierName}" tier): top-ranked option "${renderedOrder[0]}" matches the independently computed top exactly.`
+        );
       }
       // Best-effort full-order cross-check against an independent JS port of the real scorer
       // (`rankSlashCommands`): informational only, never a failure -- this install's 225 real
