@@ -319,7 +319,11 @@ impl SettingsStore {
             _ => default_session_list_collapse(),
         };
         // #930: one width for every Project; clamped rather than trusted.
-        let pull_requests_list_width_px = object.get("pullRequestsListWidthPx").and_then(Value::as_i64).map(clamp_pull_requests_list_width_px).unwrap_or(320);
+        let pull_requests_list_width_px = object
+            .get("pullRequestsListWidthPx")
+            .and_then(Value::as_i64)
+            .map(clamp_pull_requests_list_width_px)
+            .unwrap_or(320);
 
         const KNOWN_FIELDS: [&str; 12] = [
             "version",
@@ -421,7 +425,10 @@ impl SettingsStore {
             "sessionListCollapse".to_string(),
             json!(self.data.session_list_collapse),
         );
-        map.insert("pullRequestsListWidthPx".to_string(), json!(self.data.pull_requests_list_width_px));
+        map.insert(
+            "pullRequestsListWidthPx".to_string(),
+            json!(self.data.pull_requests_list_width_px),
+        );
         // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
         // a known key; `data.extra` excludes all twelve), so an unported setting survives every
         // save, and `settings.get`/`settings:changed` flatten it onto the wire too.
@@ -584,8 +591,14 @@ impl SettingsStore {
     }
 
     /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
-    pub async fn set_pull_requests_list_width_px(&mut self, width_px: i64) -> std::io::Result<Settings> {
-        let next = Settings { pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px), ..self.data.clone() };
+    pub async fn set_pull_requests_list_width_px(
+        &mut self,
+        width_px: i64,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px),
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 }

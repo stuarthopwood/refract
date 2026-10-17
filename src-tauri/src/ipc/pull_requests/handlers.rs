@@ -89,8 +89,14 @@ mod state_filter_tests {
 
     #[test]
     fn parse_state_filter_accepts_every_valid_literal() {
-        assert_eq!(parse_state_filter("open"), Some(PullRequestStateFilter::Open));
-        assert_eq!(parse_state_filter("closed"), Some(PullRequestStateFilter::Closed));
+        assert_eq!(
+            parse_state_filter("open"),
+            Some(PullRequestStateFilter::Open)
+        );
+        assert_eq!(
+            parse_state_filter("closed"),
+            Some(PullRequestStateFilter::Closed)
+        );
         assert_eq!(parse_state_filter("all"), Some(PullRequestStateFilter::All));
     }
 

@@ -209,7 +209,8 @@ pub(super) async fn list_pull_requests(
         PullRequestStateFilter::Closed => Some("closed"),
         PullRequestStateFilter::All => None,
     };
-    let entries = gh_pull_requests::search_pull_requests(repo_path, qualifier, gh_state_arg, query).await?;
+    let entries =
+        gh_pull_requests::search_pull_requests(repo_path, qualifier, gh_state_arg, query).await?;
     // The search surface has no `statusCheckRollup`; fetched per-row for these smaller, non-All
     // tab result counts. `owner/repo` is resolved ONCE here, not per row.
     let (owner, repo) = gh::owner_repo_for(repo_path).await?;
