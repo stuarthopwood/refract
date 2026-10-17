@@ -7,7 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
 import { COMMAND_STYLE_TOOLS, commandRowText } from './formatToolCommand'
-import { diffStat } from '@/lib/diff'
+import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
@@ -112,76 +112,6 @@ function errorLine(item: ToolItem): string {
   if (lines.length === 0) return fallback ?? 'Failed.'
   const line = item.tool === 'bash' ? lines[lines.length - 1]! : lines[0]!
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
-}
-
-// #632: a row's meta slot can now carry more than one fact (a derived result alongside the
-// duration, or a group's failed/interrupted counts alongside its total time) -- joined with a
-// visible middot (`aria-hidden`, decorative) plus an sr-only ", " so a screen reader hears each
-// as its own word, never one run-on string (the exact grammar #570 decision 12 established for
-// "N failed"/"N interrupted"; this is that same rule, generalised to every meta slot rather than
-// copied by hand at each call site). `undefined` when every part is `undefined`, never an empty
-// wrapper `CollapsedLine` would still render a bare leading separator for.
-function joinMetaParts(parts: Array<React.ReactNode | undefined>): React.ReactNode | undefined {
-  const visible = parts.filter((part): part is React.ReactNode => part !== undefined)
-  if (visible.length === 0) return undefined
-  return (
-    <>
-      {visible.map((part, index) => (
-        <React.Fragment key={index}>
-          {index > 0 && (
-            <>
-              <span aria-hidden="true"> · </span>
-              <span className="sr-only">, </span>
-            </>
-          )}
-          {part}
-        </React.Fragment>
-      ))}
-    </>
-  )
-}
-
-// Gate round 1 (code-reviewer High, H2): `diffStat` re-diffs on every render of every `edit`
-// row; memoised in a `WeakMap` keyed on `item.edit` (stable for that `TranscriptItem`'s life --
-// a genuinely new result gets a new `edit` object, never a stale cache hit).
-const diffStatCache = new WeakMap<NonNullable<ToolItem['edit']>, { added: number; removed: number } | undefined>()
-function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; removed: number } | undefined {
-  if (diffStatCache.has(edit)) return diffStatCache.get(edit)
-  const stat = diffStat(edit.path, edit.oldText, edit.newText)
-  diffStatCache.set(edit, stat)
-  return stat
-}
-
-// #632 section 3's "muted result" column, for one call's own row (solo or nested `ToolCallRow`):
-// an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the same old/new text
-// `DiffView`'s expanded body already diffs, #630) joined with duration. `grep`/`glob`/`find`/
-// `read`/`write` get no stat: no documented, fixture-backed OMP output shape to probe first
-// (the issue's own rule is "no count rather than a wrong one"). Gated on `status === 'done'`
-// (Sec Medium H3), same as `ToolCallBody`'s own "Wrote N lines" text.
-function editStatForItem(item: ToolItem): { added: number; removed: number } | undefined {
-  return item.status === 'done' && item.edit ? cachedDiffStat(item.edit) : undefined
-}
-// Gate round 1 (Main, D2): the sr-only "N lines added, M removed" text used to carry inline but
-// was never announced -- an explicit `aria-label` (both `ToolCallRow`'s and the solo
-// `ToolGroupRow`'s own trigger) makes a browser ignore every child. Callers fold this into their
-// own aria-label array; the visual "+N −M" here stays `aria-hidden`.
-function diffStatAriaText(stat: { added: number; removed: number } | undefined): string | undefined {
-  if (!stat) return undefined
-  return `${stat.added} ${stat.added === 1 ? 'line' : 'lines'} added, ${stat.removed} ${stat.removed === 1 ? 'line' : 'lines'} removed`
-}
-// Gate round 1 (ui-architect-v3 High H5): a coloured stat broke #570 decisions 1/3 ("success
-// stays neutral") -- both colour classes dropped, `tabular-nums` kept.
-function callMeta(item: ToolItem): React.ReactNode | undefined {
-  const stat = editStatForItem(item)
-  const duration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
-  return joinMetaParts([
-    stat ? (
-      <span aria-hidden="true" className="tabular-nums">
-        +{stat.added} −{stat.removed}
-      </span>
-    ) : undefined,
-    duration
-  ])
 }
 
 // The expansion content for one tool call (#628, #630): an edit's diff (capped, with its own

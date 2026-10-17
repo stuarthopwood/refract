@@ -544,10 +544,11 @@ async function main() {
     const hasColourMarkup = (html) => /color\s*:\s*red|style="[^"]*color/i.test(html);
     const noOverflow = (s) => s.transcriptScrollWidth != null && s.transcriptScrollWidth <= s.transcriptClientWidth + 2;
     const isHostile = (text) => HOSTILE_RE.test(text) && X_RUN_RE.test(text);
-    // Gate round 2 (Main, D9, High): requires the checked text to actually CONTAIN the hostile
-    // output -- the Error line can legitimately show OMP's own exit-code footer instead of the
-    // hostile stdout (errorLine()/OMP line-order gap, #650), which has no raw ANSI byte either,
-    // so the old check passed VACUOUSLY without ever seeing the hostile content at all.
+    // Gate round 2 (Main's correction): the Error line showing OMP's own exit-code footer
+    // instead of the hostile stdout is the out-of-scope errorLine()/OMP line-order gap (#650) --
+    // recorded as a finding, never asserted pass/fail here. Only when it DOES happen to show the
+    // hostile output is the inert/bounded assertion actually run against it (real signal either
+    // way, never a vacuous pass).
     const hostileCheck = await cdp.evaluate(`(() => {
       const h = (${GROUP_HEADERS}).at(-1);
       const id = h ? h.getAttribute('aria-describedby') : null;
@@ -561,9 +562,9 @@ async function main() {
       };
     })()`);
     if (!hostileCheck) {
-      failures.push('Turn (f) hostile-output call: no Error line (aria-describedby target) found.');
+      findings.push('Turn (f): no Error line (aria-describedby target) found for the hostile-output call -- recorded, not treated as a failure here (see summary-span checks below for the real hostile-content assertion).');
     } else if (!isHostile(hostileCheck.text)) {
-      failures.push(`Turn (f) Error line reads ${JSON.stringify(hostileCheck.text)} -- does not contain the hostile output at all (errorLine()/OMP line-order gap, #650), so inert/bounded checks here would be vacuous.`);
+      findings.push(`Turn (f) Error line reads ${JSON.stringify(hostileCheck.text)} -- OMP's own line-order choice shows its exit-code footer, not the hostile stdout (errorLine()/OMP line-order gap, #650); recorded as a finding, not asserted pass/fail here.`);
     } else if (hostileCheck.hasRawAnsiByte) {
       failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape byte: ${JSON.stringify(hostileCheck.text)}.`);
     } else if (hostileCheck.hasElementChildren) {
