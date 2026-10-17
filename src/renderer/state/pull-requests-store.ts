@@ -12,6 +12,12 @@ export interface PullRequestsRepoState {
   /** Issue #499 (2026-10-16 decision): the State control, independent of `tab`; default `'open'`. */
   state: PullRequestStateFilter
   query: string
+  /** Gate-fix (H3, caught live 2026-10-18): the Filters disclosure's own "N active"/dot must
+   *  count what was actually SENT to the last `refresh()` call, never the raw, still-typed
+   *  `query` above -- a developer mid-keystroke (before Enter) saw "Filters, 1 active" and a
+   *  dot for a filter that had not actually narrowed anything yet. Set by `refresh()` itself,
+   *  from the query it is about to fetch with; `setQuery` never touches this directly. */
+  appliedQuery: string
   items: PullRequestSummary[]
   fetchedAt: string | null
   loading: boolean
@@ -20,7 +26,7 @@ export interface PullRequestsRepoState {
 }
 
 function emptyRepoState(): PullRequestsRepoState {
-  return { tab: 'all', state: 'open', query: '', items: [], fetchedAt: null, loading: false, error: null, selectedNumber: null }
+  return { tab: 'all', state: 'open', query: '', appliedQuery: '', items: [], fetchedAt: null, loading: false, error: null, selectedNumber: null }
 }
 
 // Stable reference for a repository with no store entry yet, so `stateFor` never returns a fresh
@@ -56,6 +62,11 @@ interface PullRequestsState {
   /** Issue #499 (2026-10-16 decision): the State control, re-fetching like `setTab`. */
   setState(repositoryId: string, state: PullRequestStateFilter): void
   setQuery(repositoryId: string, query: string): void
+  /** Gate-fix (M5, caught live 2026-10-18): the "No pull requests match these filters." empty
+   *  state's own "Clear filters" button -- resets both the query and the State control to their
+   *  defaults and refetches, the same shape `ManageSessionsScreen.tsx`'s own `handleClearFilters`
+   *  uses for its own "Clear filters" button. */
+  clearFilters(repositoryId: string): void
   selectPullRequest(repositoryId: string, number: number | null): void
   refresh(repositoryId: string): Promise<void>
   activeCountByRepository: Record<string, PullRequestsActiveCount>
@@ -110,6 +121,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   },
   setQuery: (repositoryId, query) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { query }) })
+    // Gate-fix (H3, caught live 2026-10-18): clearing the box to empty refetches immediately
+    // rather than leaving the (still-filtered) rows showing until an Enter that will never
+    // come -- Enter still drives every OTHER narrowing edit, this is the one exception.
+    if (query === '') void get().refresh(repositoryId)
+  },
+  clearFilters: (repositoryId) => {
+    set({ byRepository: patch(get().byRepository, repositoryId, { query: '', state: 'open', selectedNumber: null }) })
+    void get().refresh(repositoryId)
   },
   selectPullRequest: (repositoryId, number) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { selectedNumber: number }) })
@@ -121,7 +140,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // newer one that already landed -- `refresh` had no request-sequencing token at all before.
     refreshSequence[repositoryId] = (refreshSequence[repositoryId] ?? 0) + 1
     const sequence = refreshSequence[repositoryId]
-    set({ byRepository: patch(get().byRepository, repositoryId, { loading: true, error: null }) })
+    set({ byRepository: patch(get().byRepository, repositoryId, { loading: true, error: null, appliedQuery: before.query }) })
     const result = await window.refract.pullRequests.list(repositoryId, before.tab, before.state, before.query || undefined)
     if (refreshSequence[repositoryId] !== sequence) return
     if (!result.ok) {

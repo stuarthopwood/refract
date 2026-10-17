@@ -450,8 +450,12 @@ creation rules from spec 001.
   filters (for example "Filters, 1 active") whenever the search text is non-empty or the State
   control is not at its default (Open), and MUST never rely on colour alone (issue #499).
 - **FR-034**: The list column MUST be resizable by a drag handle (280px to half the view, default
-  320px), remembered across restarts as one width for every Project; a double-click or the
-  equivalent keyboard action on the handle MUST reset it to the default (issue #930).
+  320px), remembered across restarts as one width for every Project; the handle MUST be
+  keyboard-operable (arrow keys resize it while focused) and a double-click on the handle MUST
+  reset it to the default (issue #930; amended 2026-10-18, Decided (Skippy, delegated by Stuart
+  2026-10-18): the issue's own decision record never asked for a keyboard-equivalent RESET, only
+  for arrow-key RESIZING as the handle's keyboard alternative to dragging -- `react-resizable-
+  panels` has no built-in reset key either; double-click stays the sole reset affordance).
 - **FR-035**: The Project selector in the header MUST shrink and truncate to the list column's
   own current width, not only to the window's unrelated minimum width (issue #930).
 

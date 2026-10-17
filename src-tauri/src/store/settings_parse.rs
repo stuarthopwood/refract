@@ -94,7 +94,18 @@ pub(super) fn parse_session_list_collapse(value: &Value) -> Option<SessionListCo
     })
 }
 
+/// #930 gate-fix (M8, caught live 2026-10-18): named, not bare, so `settings.rs`'s own
+/// `.unwrap_or(...)` default and this clamp's bounds can never drift apart from each other or
+/// from `pull-requests-layout-store.ts`'s own `PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX`/`_MIN_WIDTH_PX`
+/// (320/280; the renderer's own `maxSize="50%"` has no fixed Rust-side counterpart).
+pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT: i64 = 320;
+pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_MIN: i64 = 280;
+pub(crate) const PULL_REQUESTS_LIST_WIDTH_PX_MAX: i64 = 4000;
+
 /// #930: clamps a corrupt/out-of-range value; the renderer enforces its own live min/50%-of-view max too.
 pub(crate) fn clamp_pull_requests_list_width_px(value: i64) -> i64 {
-    value.clamp(280, 4000)
+    value.clamp(
+        PULL_REQUESTS_LIST_WIDTH_PX_MIN,
+        PULL_REQUESTS_LIST_WIDTH_PX_MAX,
+    )
 }

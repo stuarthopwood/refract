@@ -24,33 +24,37 @@
 //   - Clicking a later tab (Review requested) makes it `data-state="active"` and scrolls it
 //     fully into the wrapper's own visible bounds (not merely clipped at an edge).
 //   - Filters button: `aria-expanded` toggles, the disclosure (search input + State select)
-//     mounts/unmounts with it; typing a query and picking a non-Open State both update the
-//     button's own `aria-label` to "Filters, N active" and show the dot, and keep applying while
-//     the section is closed again (re-opened, the same query/state are still there).
-//   - Tab-row geometry measured at 4 real window widths (240, 320, 380, 520), not estimated:
-//     the row still never wraps and the wrapper's `scrollWidth`/`clientWidth` relationship is
-//     recorded at each.
+//     mounts/unmounts with it; the label/dot name the APPLIED filter (set by `refresh()` itself),
+//     never a still-typed keystroke -- typing alone leaves "Filters" unchanged, Enter updates it
+//     to "Filters, N active"; the narrowed list and query text both keep applying/surviving while
+//     the section is closed and reopened. The State control is actually driven, not just claimed:
+//     Closed on the All tab AND on one relation tab (Authored by me) each render real rows and
+//     update the label. "Clear filters" (the filtered-to-nothing empty state's own recovery
+//     button) empties the query, resets State, and refetches the unfiltered list.
+//   - Tab-row geometry measured at 4 real window widths (240, 320, 380, 520), not estimated: the
+//     row still never wraps, the wrapper's `scrollWidth`/`clientWidth` relationship is recorded
+//     at each, and the list column itself never shrinks below its own 280px minimum even at
+//     widths where that minimum exceeds 50% of the window.
 //   - Resizable list column: the handle (`aria-label="Resize pull request list"`) exists; a real
 //     pointer drag changes the rendered list-column width by roughly the dragged distance;
 //     double-clicking the handle resets it to 320px; arrow-key resize while the handle is
 //     focused changes the width without any pointer event.
-//   - The header's Project selector sits inside the list column's own current width at a
-//     resized size, never overflowing it.
-//   - Remembered width: the resized width is still applied after a full relaunch against the
-//     same scratch data dir (a genuine `settings.json` round trip, not a store-only check).
-//   - Dark, Dark (high contrast) and Obsidian screenshots.
+//   - The header's Project selector sits inside the list column's own current width at a resized
+//     size, never overflowing it, and shows a real, unclipped focus indicator when focused.
+//   - Remembered width: a double-click RESET to the default (not just a plain drag) is still
+//     applied after a full relaunch against the same scratch data dir (a genuine `settings.json`
+//     round trip, not a store-only check) -- the specific case the library's own double-click
+//     handler never routed through the persist path on its own.
+//   - Dark, Dark (high contrast) and Obsidian screenshots, taken once the list has real,
+//     populated rows and the Filters section is open (never mid-"Loading…").
 
-import { mkdtempSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import {
   getFreePort,
-  waitForCdpTarget,
-  CdpSession,
   stopLauncher,
-  isTargetOwningPort,
   assertExeMatchesProcess,
   createReportLogger,
   sleep
@@ -64,99 +68,23 @@ import {
   requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
+import {
+  assertBundleContainsStory499930Marker,
+  connectCdp,
+  dragHandleBy,
+  makeGithubScratchClone
+} from './verify-tauri-499-930-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_499_930_SHOTS_DIR || path.join(tmpdir(), 'refract-499-930-shots');
-const GITHUB_SCRATCH_CLONE_URL = 'https://github.com/stuarthopwood/refract.git';
 const TAB_GEOMETRY_WIDTHS = [240, 320, 380, 520];
 const DEFAULT_WIDTH_PX = 320;
-
-function spawnSync_(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
-}
-
-function assert(cond, message) {
-  if (!cond) throw new Error(`ASSERTION FAILED: ${message}`);
-}
-
-async function connectCdp(port, targetPid) {
-  const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
-  const cdp = await CdpSession.connect(wsUrl);
-  if (!isTargetOwningPort(port, targetPid)) {
-    throw new Error(`verify-tauri-499-930: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid}) -- refusing to drive it`);
-  }
-  return cdp;
-}
-
-/** Clones `stuarthopwood/refract` itself, shallow and read-only, into `dir` -- real PR data
- * without ever writing to a real repository. Returns `null` (never throws) if the clone fails
- * (offline, rate-limited) so the caller fails the run loudly instead of faking a pass. */
-function makeGithubScratchClone(dir) {
-  mkdirSync(path.dirname(dir), { recursive: true });
-  const result = spawnSync_('git', ['clone', '--depth', '1', '--quiet', GITHUB_SCRATCH_CLONE_URL, dir], { timeout: 60_000 });
-  if (result.status !== 0) {
-    console.warn(`verify-tauri-499-930: could not clone ${GITHUB_SCRATCH_CLONE_URL} (${result.stderr || result.error})`);
-    return null;
-  }
-  return dir;
-}
-
-/** Asserts a #499/#930-only marker exists in the built renderer bundle, per
- * `refract-ui-lane-gate-checklist`'s own rule, before trusting anything else. Two independent,
- * story-only literals (never introduced by any other issue): the Filters disclosure's own
- * fixed element id, and the resize handle's own accessible name. */
-function assertBundleContainsStory499930Marker() {
-  const bundleRoot = path.join(REPO_ROOT, 'out', 'tauri-web');
-  if (!existsSync(bundleRoot)) {
-    throw new Error(`verify-tauri-499-930: no built renderer bundle at ${bundleRoot} -- run \`pnpm tauri build --debug --no-bundle\` first (the exe build below rebuilds it, but this static check runs before launch).`);
-  }
-  const grep = spawnSync_('node', ['-e', `
-    const fs = require('node:fs');
-    const path = require('node:path');
-    function* walk(dir) {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) { yield* walk(full); }
-        else if (entry.name.endsWith('.js')) yield full;
-      }
-    }
-    let found = false;
-    for (const file of walk(${JSON.stringify(bundleRoot)})) {
-      const text = fs.readFileSync(file, 'utf8');
-      if (text.includes('pull-request-filters-panel') && text.includes('Resize pull request list')) { found = true; break; }
-    }
-    console.log(found ? 'FOUND' : 'MISSING');
-  `]);
-  assert(grep.stdout.includes('FOUND'), '#499/#930-only marker (Filters panel id + resize handle aria-label) not found in the built renderer bundle -- the exe under test may not actually contain this story\'s code');
-}
-
-/** Real pointer drag of the resize handle (CDP `Input.dispatchMouseEvent` press/move/release --
- * no library drag helper exists in this harness; a bare click/release pair never engages
- * `react-resizable-panels`' own pointer-drag state machine the way a real OS drag does). Moves
- * in several small steps, matching how a real user's pointer is sampled, not one large jump.
- * Mirrors `verify-tauri-session-list-helpers.mjs`'s own `dragResizeHandleBy`: an initial hover
- * `mouseMoved` (no button) before the press, then each drag-step `mouseMoved` carries `buttons:
- * 1` (the bitmask of currently-held buttons CDP uses to synthesize a real `pointermove` with
- * the button still down) -- NOT `button: 'left'` (CDP's singular `button` field only names
- * which button triggered a press/release/click event; passing it on `mouseMoved` leaves no
- * button recorded as held, so `react-resizable-panels`' `pointermove` listener sees an
- * unpressed hover and ignores it for resizing, the bug that shipped here first). */
-async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
-  const rect = await cdp.evaluate(`(() => { const el = ${handleFinderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-  assert(rect, `resize handle not found for drag: ${handleFinderExpr}`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
-  const steps = 10;
-  for (let i = 1; i <= steps; i++) {
-    const x = rect.x + (deltaX * i) / steps;
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y: rect.y, buttons: 1 });
-    await sleep(20);
-  }
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x + deltaX, y: rect.y, button: 'left', clickCount: 1 });
-}
+// Mirrors `pull-requests-layout-store.ts`'s own `PULL_REQUESTS_LIST_MIN_WIDTH_PX` (M6 gate-fix,
+// caught live 2026-10-18) -- this standalone Node script has no access to the TS module directly.
+const MIN_WIDTH_PX = 280;
 
 const LIST_PANEL_FINDER = `document.getElementById('pull-requests-list')`;
 const HANDLE_FINDER = `document.querySelector('[aria-label="Resize pull request list"]')`;
@@ -186,7 +114,7 @@ async function main() {
   let cdp;
   try {
     try {
-      assertBundleContainsStory499930Marker();
+      assertBundleContainsStory499930Marker(REPO_ROOT);
       checkPass('#499/#930-only DOM/bundle marker present');
     } catch (err) {
       checkFail('#499/#930-only DOM/bundle marker present', err.message);
@@ -373,36 +301,45 @@ async function main() {
       if (activeAfterEnter === 'All') checkPass('Enter activates the keyboard-focused first tab (manual activation mode), restoring All', activeAfterEnter);
       else checkFail('Enter activates the keyboard-focused first tab (manual activation mode), restoring All', String(activeAfterEnter));
 
-      // ---- Filters disclosure: toggle, search + State appear, dot + "N active" label, query
-      // keeps narrowing the real rendered list (never a dev-only `window.__refractStores`
-      // shortcut -- that global is DEV-only (`import.meta.env.DEV`) and absent from this built,
-      // production-mode renderer bundle; store state must be observed through the real DOM). ----
+      // ---- Filters disclosure: toggle, search + State appear, label/dot count the APPLIED
+      // filter (not every keystroke), query keeps narrowing the real rendered list, Clear
+      // filters resets everything (never a dev-only `window.__refractStores` shortcut -- that
+      // global is DEV-only (`import.meta.env.DEV`) and absent from this built, production-mode
+      // renderer bundle; store state must be observed through the real DOM). ----
       await cdp.clickByLabel('Filters', { prefix: true });
       const filtersOpened = await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'Filters panel mounts' }).catch(() => false);
       const expandedAttr = await cdp.evaluate(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters')); return btn ? btn.getAttribute('aria-expanded') : null; })()`);
       if (filtersOpened && expandedAttr === 'true') checkPass('Filters button discloses the search field and State select, aria-expanded=true');
       else checkFail('Filters button discloses the search field and State select, aria-expanded=true', JSON.stringify({ filtersOpened, expandedAttr }));
 
+      // Gate-fix (H3, caught live 2026-10-18): the label/dot now count the APPLIED query (set by
+      // `refresh()` itself), never the raw, still-typed one -- typing alone, before Enter, must
+      // leave the label exactly "Filters" (no "N active" suffix, no dot).
       await cdp.typeIntoByLabel('Filter pull requests by title or label', 'zzz-verify-499');
-      const dotAfterQuery = await cdp.waitFor(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters')); return btn ? btn.getAttribute('aria-label') : null; })()`, { timeoutMs: 5_000, label: 'Filters label updates to N active' }).catch(() => null);
-      if (dotAfterQuery === 'Filters, 1 active') checkPass('Typing a query updates the Filters label to "Filters, 1 active" with a dot', dotAfterQuery);
-      else checkFail('Typing a query updates the Filters label to "Filters, 1 active" with a dot', String(dotAfterQuery));
+      await sleep(200);
+      const labelWhileTyping = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
+      if (labelWhileTyping === 'Filters') checkPass('Typing a query without pressing Enter leaves the Filters label (and dot) unchanged -- it names the APPLIED filter, not every keystroke', labelWhileTyping);
+      else checkFail('Typing a query without pressing Enter leaves the Filters label (and dot) unchanged -- it names the APPLIED filter, not every keystroke', String(labelWhileTyping));
 
       // Enter triggers the real re-fetch with the query (never auto-applied on keystroke); a
       // garbage query no real pull request title/label matches settles the list to its own
-      // empty-state copy -- positive proof the State/search narrowing genuinely reaches the IPC
-      // call, not just the input's own local value.
+      // filtered-empty-state copy -- positive proof the State/search narrowing genuinely reaches
+      // the IPC call, not just the input's own local value -- with a "Clear filters" recovery.
       await pressKey(cdp, 13, 'Enter', 'Enter');
-      const narrowedToNoMatches = await cdp.waitFor(`(() => { const empty = Array.from(document.querySelectorAll('div')).find((el) => el.textContent.trim() === 'No pull requests match this tab.'); return !!empty; })()`, { timeoutMs: 15_000, label: 'list narrows to "No pull requests match this tab."' }).catch(() => false);
-      if (narrowedToNoMatches) checkPass('Pressing Enter in the search field narrows the real rendered list (settles to the empty-state copy)');
-      else checkFail('Pressing Enter in the search field narrows the real rendered list (settles to the empty-state copy)');
+      const dotAfterEnter = await cdp.waitFor(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters')); return btn ? btn.getAttribute('aria-label') : null; })()`, { timeoutMs: 5_000, label: 'Filters label updates to N active after Enter' }).catch(() => null);
+      if (dotAfterEnter === 'Filters, 1 active') checkPass('Pressing Enter updates the Filters label to "Filters, 1 active" with a dot', dotAfterEnter);
+      else checkFail('Pressing Enter updates the Filters label to "Filters, 1 active" with a dot', String(dotAfterEnter));
+
+      const narrowedToNoMatches = await cdp.waitFor(`(() => { const empty = Array.from(document.querySelectorAll('div')).find((el) => el.textContent.trim() === 'No pull requests match these filters.'); return !!empty; })()`, { timeoutMs: 15_000, label: 'list narrows to "No pull requests match these filters."' }).catch(() => false);
+      if (narrowedToNoMatches) checkPass('Pressing Enter in the search field narrows the real rendered list (settles to the filtered-empty-state copy)');
+      else checkFail('Pressing Enter in the search field narrows the real rendered list (settles to the filtered-empty-state copy)');
 
       // Closes the section, confirms the narrowed (empty) list is STILL shown -- the query keeps
       // applying to the real rendered list while the Filters section is hidden, not just to the
       // input's own value -- then reopens and confirms the query text itself also survived.
       await cdp.clickByLabel('Filters, 1 active');
       await sleep(200);
-      const stillNarrowedWhileClosed = await cdp.evaluate(`!document.getElementById('pull-request-filters-panel') && Array.from(document.querySelectorAll('div')).some((el) => el.textContent.trim() === 'No pull requests match this tab.')`);
+      const stillNarrowedWhileClosed = await cdp.evaluate(`!document.getElementById('pull-request-filters-panel') && Array.from(document.querySelectorAll('div')).some((el) => el.textContent.trim() === 'No pull requests match these filters.')`);
       if (stillNarrowedWhileClosed) checkPass('The narrowed (empty) list keeps applying while the Filters section is closed');
       else checkFail('The narrowed (empty) list keeps applying while the Filters section is closed', String(stillNarrowedWhileClosed));
       await cdp.clickByLabel('Filters, 1 active');
@@ -410,20 +347,63 @@ async function main() {
       if (queryTextSurvivedReopen === 'zzz-verify-499') checkPass('The query text itself survives closing and reopening the Filters section', queryTextSurvivedReopen);
       else checkFail('The query text itself survives closing and reopening the Filters section', String(queryTextSurvivedReopen));
 
-      // Clears the query with real key events (Ctrl+A then Backspace, the same pattern
-      // `verify-tauri-session-list-helpers.mjs`'s own `typeIntoSessionSearch` uses) and
-      // re-fetches so the rest of this run (screenshot included) exercises a real, populated
-      // list again.
-      await cdp.evaluate(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.focus()`);
-      await cdp.waitFor(`document.activeElement === document.querySelector('[aria-label="Filter pull requests by title or label"]')`, { timeoutMs: 5_000, label: 'search field focused before clearing' });
-      await pressKey(cdp, 65, 'a', 'KeyA', 2);
-      await pressKey(cdp, 8, 'Backspace', 'Backspace');
-      await cdp.waitFor(`(document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'search field cleared' });
-      await pressKey(cdp, 13, 'Enter', 'Enter');
-      await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after clearing the query' }).catch(() => false);
-      await cdp.clickByLabel('Filters, 1 active').catch(() => {});
+      // Gate-fix (M5, caught live 2026-10-18): the filtered-to-nothing empty state's own "Clear
+      // filters" button resets both the query and the State control and refetches -- the real
+      // recovery path, not a manual field-by-field clear. Also satisfies H3's own "clear ->
+      // unfiltered" case: the button IS the clear action here.
+      await cdp.clickByText('Clear filters');
+      const clearedQueryValue = await cdp.waitFor(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null`, { timeoutMs: 5_000, label: 'search field cleared by Clear filters' }).catch(() => undefined);
+      const rowsAfterClear = await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after Clear filters' }).catch(() => false);
+      const labelAfterClear = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
+      if (clearedQueryValue === '' && rowsAfterClear && labelAfterClear === 'Filters') {
+        checkPass('"Clear filters" empties the query, resets State, and refetches the unfiltered list', JSON.stringify({ clearedQueryValue, rowsAfterClear, labelAfterClear }));
+      } else {
+        checkFail('"Clear filters" empties the query, resets State, and refetches the unfiltered list', JSON.stringify({ clearedQueryValue, rowsAfterClear, labelAfterClear }));
+      }
 
-      // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured ----
+      // ---- #499 gate-fix (H4, caught live 2026-10-18): the State control itself was never
+      // actually driven by this script -- only claimed in this file's own header comment. Picks
+      // Closed on the All tab (the real GitHub scratch clone has closed/merged history), then on
+      // one relation tab too, asserting real rows render each time and the label still counts
+      // the non-default State as one active filter. ----
+      await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'All')`);
+      await cdp.click(`document.querySelector('[aria-label="State"]')`);
+      await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === 'Closed')`);
+      const closedOnAll = await cdp.waitFor(`(() => {
+        const rows = document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button');
+        const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
+        return rows.length > 0 && btn?.getAttribute('aria-label') === 'Filters, 1 active' ? { rows: rows.length, label: btn.getAttribute('aria-label') } : null;
+      })()`, { timeoutMs: 15_000, label: 'State=Closed on All tab settles to real rows' }).catch(() => null);
+      if (closedOnAll) checkPass('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(closedOnAll));
+      else checkFail('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(closedOnAll));
+
+      await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'Authored by me')`);
+      const closedOnRelationTab = await cdp.waitFor(`(() => {
+        const rows = document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button');
+        const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
+        return rows.length > 0 && btn?.getAttribute('aria-label') === 'Filters, 1 active' ? { rows: rows.length, label: btn.getAttribute('aria-label') } : null;
+      })()`, { timeoutMs: 15_000, label: 'State=Closed on Authored by me tab settles to real rows' }).catch(() => null);
+      if (closedOnRelationTab) checkPass('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(closedOnRelationTab));
+      else checkFail('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(closedOnRelationTab));
+
+      // Resets State back to Open and the tab back to All before everything downstream (tab
+      // geometry, resize, relaunch) runs against the same baseline every prior round used.
+      await cdp.click(`document.querySelector('[aria-label="State"]')`);
+      await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === 'Open')`);
+      await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'All')`);
+      await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after resetting State to Open' }).catch(() => false);
+
+      // Gate-fix (L5, caught live 2026-10-18): closes by whatever the Filters button's CURRENT
+      // aria-label actually is, never a hardcoded guess swallowed into a silent `.catch(() => {})`
+      // -- a real mismatch (this flow leaving the label somewhere unexpected) used to be invisible.
+      const filtersLabelBeforeClose = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
+      if (filtersLabelBeforeClose) await cdp.clickByLabel(filtersLabelBeforeClose);
+
+      // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured; the
+      // list column itself never shrinks below its own 280px minimum even where that minimum
+      // EXCEEDS 50% of the window (240/320/380px all do: `minSize` wins over `maxSize` by the
+      // library's own own design, gate-fix M6 caught live 2026-10-18 -- previously asserted only
+      // in a code comment, never actually measured here). ----
       for (const width of TAB_GEOMETRY_WIDTHS) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(400);
@@ -432,10 +412,12 @@ async function main() {
           if (!wrap) return null;
           const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
           const tops = new Set(tabs.map((el) => el.getBoundingClientRect().top));
-          return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth };
+          const panel = ${LIST_PANEL_FINDER};
+          return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth, panelWidth: panel ? panel.getBoundingClientRect().width : null };
         })()`);
-        if (geometry && geometry.oneRow) checkPass(`Tab row never wraps at ${width}px window width`, JSON.stringify(geometry));
-        else checkFail(`Tab row never wraps at ${width}px window width`, JSON.stringify(geometry));
+        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= MIN_WIDTH_PX - 1;
+        if (geometry && geometry.oneRow && panelAtLeastMin) checkPass(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
+        else checkFail(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
       }
       await cdp.send('Emulation.clearDeviceMetricsOverride');
       await sleep(300);
@@ -473,12 +455,15 @@ async function main() {
         checkFail('Arrow-key resize on the focused handle changes the column width', JSON.stringify({ widthAfterDoubleClick, widthAfterArrowKey }));
       }
 
-      // ---- Project selector truncates to the resized column's own width, never overflows it ----
+      // ---- Project selector truncates to the resized column's own width, never overflows it.
+      // Gate-fix (M3, caught live 2026-10-18): the trigger's own accessible name is now
+      // "Project: <name>" (an `aria-label` that grows with the Project name), never the bare,
+      // exact "Repository" string -- a prefix match is the only one that survives that. ----
       await dragHandleBy(cdp, HANDLE_FINDER, -60);
       await sleep(400);
       const selectorFit = await cdp.evaluate(`(() => {
         const panel = ${LIST_PANEL_FINDER};
-        const select = document.querySelector('[aria-label="Repository"]');
+        const select = Array.from(document.querySelectorAll('[aria-label]')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Project'));
         if (!panel || !select) return null;
         const panelRect = panel.getBoundingClientRect();
         const selectRect = select.getBoundingClientRect();
@@ -487,17 +472,56 @@ async function main() {
       if (selectorFit === true) checkPass('Project selector stays inside the resized list column\'s own width');
       else checkFail('Project selector stays inside the resized list column\'s own width', String(selectorFit));
 
+      // ---- Gate-fix (H2, caught live 2026-10-18): the header wrapper's own `overflow-hidden`
+      // used to clip the Project selector's own focus ring on its right edge, where the
+      // wrapper's width is pinned flush against the panel's real edge with no slack to spare.
+      // `.focus()` (not a real Tab traversal -- every other focus-visible check in this script
+      // uses the same pattern) matches real keyboard focus for `:focus-visible` purposes;
+      // confirms a real, non-empty focus indicator renders AND the wrapper that used to clip it
+      // no longer computes `overflow: hidden`. ----
+      const focusRingState = await cdp.evaluate(`(() => {
+        const select = Array.from(document.querySelectorAll('[aria-label]')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Project'));
+        if (!select) return null;
+        select.focus();
+        const style = getComputedStyle(select);
+        const wrapper = select.closest('.drag-region > div');
+        const wrapperOverflow = wrapper ? getComputedStyle(wrapper).overflow : null;
+        return {
+          focused: document.activeElement === select,
+          outlineWidth: style.outlineWidth,
+          boxShadow: style.boxShadow,
+          wrapperOverflow
+        };
+      })()`);
+      const hasVisibleFocusIndicator = focusRingState?.focused && (focusRingState.outlineWidth !== '0px' || (focusRingState.boxShadow && focusRingState.boxShadow !== 'none'));
+      const wrapperNoLongerClips = focusRingState?.wrapperOverflow !== 'hidden';
+      if (hasVisibleFocusIndicator && wrapperNoLongerClips) {
+        checkPass('Project selector shows a real, unclipped focus indicator (the former overflow-hidden wrapper no longer clips it)', JSON.stringify(focusRingState));
+      } else {
+        checkFail('Project selector shows a real, unclipped focus indicator (the former overflow-hidden wrapper no longer clips it)', JSON.stringify(focusRingState));
+      }
+      await cdp.screenshot(path.join(SHOTS_DIR, '04-project-selector-focus.png'));
+
       await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-pull-requests.png'));
     } else {
       notExercised('Every live PR-data check (Filter tabs, Filters disclosure, tab geometry, resizable column, Project selector fit)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
     }
 
-    // ---- Remembered width: resize, record the persisted settings value, relaunch the SAME
-    // scratch data dir, confirm the column renders at that width again (a genuine settings.json
-    // round trip, not a store-only check). ----
+    // ---- Gate-fix (H1, caught live 2026-10-18): drags away from the default, double-clicks to
+    // reset (the library's own internal reset fires alongside our `onDoubleClick` persist), then
+    // relaunches the SAME scratch data dir and confirms the column renders at the DEFAULT width
+    // again -- a genuine `settings.json` round trip proving the reset itself persisted, not just
+    // a plain drag (`commit(true)` already covered that path; the reset's own `commit(false)` /
+    // no-commit-at-all path was the one silently dropping it). ----
     if (reachedPrData) {
       await dragHandleBy(cdp, HANDLE_FINDER, 120);
-      await sleep(600); // clears the ~300ms debounce before the relaunch below.
+      await sleep(400);
+      const handleRectForReset = await cdp.evaluate(`(() => { const el = ${HANDLE_FINDER}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: handleRectForReset.x, y: handleRectForReset.y, button: 'left', clickCount: 2 });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: handleRectForReset.x, y: handleRectForReset.y, button: 'left', clickCount: 2 });
+      await sleep(400);
+      const widthAfterReset = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
+      await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
       const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
       cdp.close();
       await stopLauncher(child);
@@ -511,12 +535,23 @@ async function main() {
       await cdp.clickByLabel('Pull requests', { prefix: true });
       await sleep(500);
       const widthAfterRelaunch = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
-      const remembered = persistedWidthPx != null && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - persistedWidthPx) <= 3;
-      if (remembered) checkPass('Resized width is remembered across a relaunch', JSON.stringify({ persistedWidthPx, widthAfterRelaunch }));
-      else checkFail('Resized width is remembered across a relaunch', JSON.stringify({ persistedWidthPx, widthAfterRelaunch }));
+      const remembered = widthAfterReset != null && Math.abs(widthAfterReset - DEFAULT_WIDTH_PX) <= 3
+        && persistedWidthPx != null && Math.abs(persistedWidthPx - DEFAULT_WIDTH_PX) <= 3
+        && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - DEFAULT_WIDTH_PX) <= 3;
+      if (remembered) checkPass('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
+      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
     } else {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }
+
+    // Gate-fix (M9, caught live 2026-10-18): both theme screenshots used to be taken while the
+    // freshly-relaunched app's Pull requests list was still mid-fetch ("Loading…"), proving
+    // nothing about either theme's own rendering of the real rows or the Filters disclosure.
+    // Waits for real rows to settle and opens Filters once (stays open across the theme switch
+    // below -- a class toggle, not a remount) so both screenshots show the full, populated view.
+    await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'rows settled before theme screenshots' }).catch(() => false);
+    await cdp.clickByLabel('Filters', { prefix: true });
+    await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'Filters open before theme screenshots' }).catch(() => false);
 
     await cdp.evaluate(`window.refract.theme.set('dark-high-contrast')`);
     await cdp.waitFor(`document.documentElement.className.includes('dark-high-contrast')`, { timeoutMs: 10_000, label: 'high-contrast theme applied' });
@@ -525,6 +560,7 @@ async function main() {
 
     await cdp.evaluate(`window.refract.theme.set('obsidian')`);
     await cdp.waitFor(`document.documentElement.className.includes('obsidian')`, { timeoutMs: 10_000, label: 'obsidian theme applied' });
+    await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'rows still settled before obsidian screenshot' }).catch(() => false);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-theme-obsidian.png'));
     checkPass('Obsidian theme screenshot captured');
 

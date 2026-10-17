@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX,
   PULL_REQUESTS_LIST_MIN_WIDTH_PX,
@@ -38,7 +39,15 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const panelRef = useRef<PanelImperativeHandle>(null)
   const hasAppliedInitialWidth = useRef(false)
   useLayoutEffect(() => {
-    if (!repositoryId || hasAppliedInitialWidth.current) return
+    if (!repositoryId) {
+      // Gate-fix (L1, caught live 2026-10-18): used to return here with no reset, so if every
+      // Project were removed and a new one added later, `hasAppliedInitialWidth.current` was
+      // already (permanently) `true` from the very first mount and the remembered width was
+      // never re-applied to the newly-added Project's own panel.
+      hasAppliedInitialWidth.current = false
+      return
+    }
+    if (hasAppliedInitialWidth.current) return
     hasAppliedInitialWidth.current = true
     const persistedWidthPx = usePullRequestsLayoutStore.getState().widthPx
     if (persistedWidthPx !== PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) {
@@ -91,6 +100,8 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
     headingRef.current?.focus()
   }, [])
 
+  const selectedRepositoryName = repositories.find((repo) => repo.id === repositoryId)?.name
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Issue #500: this row used to have neither `drag-region` nor `no-drag-region` --
@@ -108,9 +119,19 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             element -- see the `ResizeObserver` effect above) so the heading and Project selector
             truncate in step with it, instead of only shrinking at the app's unrelated 360px
             window-wide floor (#500's original fix, which this keeps as the Select's own inner
-            `min-w-0 shrink` fallback). */}
-        <div ref={headerWrapperRef} className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
-          <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
+            `min-w-0 shrink` fallback). Gate-fix (H2, caught live 2026-10-18): no `overflow-hidden`
+            here -- `min-w-0` on both this wrapper and its children already truncates everything
+            that needs it, and `overflow-hidden` was additionally clipping the Project selector's
+            own focus ring on its right edge, where the wrapper's width is now pinned flush
+            against the panel's real edge with no slack to spare. */}
+        <div ref={headerWrapperRef} className="flex min-w-0 shrink-0 items-center gap-2" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
+          {/* Gate-fix (M6, caught live 2026-10-18): `min-w-0 shrink truncate`, not `shrink-0` --
+              at the narrowest emulated widths (280px list column, 50%-vs-280px-min conflict
+              resolved in the library's own favour of the min) this heading used to claim its
+              full intrinsic width unconditionally, forcing the Project selector to absorb the
+              ENTIRE shortfall alone; both now share the squeeze and this truncates instead of
+              overflowing. */}
+          <h2 ref={headingRef} tabIndex={-1} className="min-w-0 shrink truncate text-sm font-semibold outline-none">
             Pull requests
           </h2>
           {repositoryId && (
@@ -121,15 +142,26 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
                * edge, where it was clipped -- the Select's own right end then sat back under the
                * window buttons, the exact dead-click conflict #500 removed. `min-w-0`/`shrink` let
                * it shrink and truncate instead (the trigger's inner `SelectValue` already
-               * `line-clamp-1`s, per `select.tsx`). */}
-              <SelectTrigger
-                size="sm"
-                aria-label="Repository"
-                title={repositories.find((repo) => repo.id === repositoryId)?.name}
-                className="no-drag-region w-56 min-w-0 shrink"
-              >
-                <SelectValue placeholder="Select a repository" />
-              </SelectTrigger>
+               * `line-clamp-1`s, per `select.tsx`).
+               * Gate-fix (M3, caught live 2026-10-18): the Project name used to be a bare
+               * `title` attribute (a native browser tooltip, inconsistent styling, no delay/
+               * dismiss control, invisible to touch) -- a Radix `Tooltip` matches the Filters
+               * button's own established pattern (`aria-describedby={undefined}` stops Radix
+               * doubling the announcement against the trigger's own `aria-label`, which now
+               * reads "Project: <name>" -- "Repository" was never the UI's own word for this,
+               * `CONTEXT.md`'s own Project entry is). */}
+              <Tooltip>
+                <TooltipTrigger asChild aria-describedby={undefined}>
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={selectedRepositoryName ? `Project: ${selectedRepositoryName}` : 'Project'}
+                    className="no-drag-region w-56 min-w-0 shrink"
+                  >
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{selectedRepositoryName ?? 'Project'}</TooltipContent>
+              </Tooltip>
             {/* Quality-gate remediation (accessibility-auditor, Medium): the default
              * `position="item-aligned"` lays the selected item over the trigger, so any item
              * above it (every item before the current selection) renders upward into this row's
@@ -182,12 +214,23 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             defaultSize={PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX}
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
             maxSize="50%"
-            className="overflow-hidden border-r border-divider"
+            className="overflow-hidden"
             onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>
-          <ResizableHandle withHandle aria-label="Resize pull request list" />
+          {/* Gate-fix (H1, caught live 2026-10-18): the library's own double-click reset calls
+              `panel.resize(defaultSize)` directly, never through `onLayoutChanged`'s own
+              `isUserInteraction` meta, so `commit(false)` (or no commit call at all) never
+              persisted it -- the UI showed 320px but `settings.json` still held whatever was
+              dragged before, silently un-resetting on the next relaunch. `onDoubleClick` here
+              runs independently of (and alongside) the library's own internal reset, persisting
+              the same default the library just applied visually. */}
+          <ResizableHandle
+            withHandle
+            aria-label="Resize pull request list"
+            onDoubleClick={() => usePullRequestsLayoutStore.getState().resetToDefault()}
+          />
           <ResizablePanel id="pull-requests-detail">
             <div className="h-full min-w-0 overflow-hidden">
               {selectedNumber !== null ? (

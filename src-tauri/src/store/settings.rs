@@ -126,7 +126,7 @@ mod settings_parse;
 pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
 use settings_parse::{
     clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
-    parse_split_layout,
+    parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
 };
 
 pub struct SettingsStore {
@@ -242,7 +242,7 @@ impl SettingsStore {
             .get("pullRequestsListWidthPx")
             .and_then(Value::as_i64)
             .map(clamp_pull_requests_list_width_px)
-            .unwrap_or(320);
+            .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
         const KNOWN_FIELDS: [&str; 12] = [
             "version",

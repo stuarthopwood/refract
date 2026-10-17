@@ -10,12 +10,13 @@
 // closed, with a small dot on the Filters button when either is non-default. A "last updated"
 // label and the no-github-remote/gh-unavailable/rate-limited error states round out the column.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { FunnelIcon } from 'lucide-react'
+import { FunnelIcon, SearchXIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { SearchField } from '@/components/SearchField'
 import { useAccountsStore, usePullRequestsStore } from '@/state'
 import type { FilterTab, PullRequestStateFilter } from '../../../shared/github'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
@@ -43,13 +44,22 @@ const STATE_OPTIONS: Array<{ value: PullRequestStateFilter; label: string }> = [
 // state -- same contrast problem, same established fix, applied to this view's own Filter tabs
 // now that #499 redesigns them (the old `TabsTrigger` default, `data-[state=active]:bg-background`
 // against the list's `bg-muted` container, measured ~1.3:1 per the issue's own gate-round note).
+// Gate-fix (M2, caught live 2026-10-18): `focus-visible:outline-offset-[-2px] focus-visible:ring-
+// inset` -- this strip's wrap is `overflow-x-auto`, which clips a tab's own focus ring/outline at
+// the wrap's edge for the first or last visible tab; drawing both inward (`DiffView.tsx`'s own
+// established pattern for the identical overflow-clipping problem) keeps them visible.
 const PR_FILTER_TAB_TRIGGER_CLASS =
-  'relative flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-2 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-foreground forced-colors:data-[state=active]:border forced-colors:data-[state=active]:border-[Highlight]'
+  'relative flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset data-[state=active]:bg-muted data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-2 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-foreground forced-colors:data-[state=active]:border forced-colors:data-[state=active]:border-[Highlight]'
 
-// A soft fade at the clipped edge (decision 2): `-webkit-` kept alongside the unprefixed property
-// since this app's Chromium/WebView2 baseline for plain element masking is not otherwise pinned.
-const TABS_FADE_MASK_CLASS =
-  '[mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]'
+// Gate-fix (M1, caught live 2026-10-18): a STATIC mask used to fade both edges unconditionally,
+// even the start edge while already fully scrolled to the start (nothing clipped there to fade).
+// `TABS_FADE_PX` is shared between the CSS (`globals.css`'s own `.pr-tabs-fade[data-fade-*]`
+// rules, which must use the identical literal pixel value) and the scroll-into-view margin below,
+// so the active tab never lands flush behind its own fade. The wrap's own `data-fade-left`/
+// `data-fade-right` attributes (toggled by the effect below, from real `scrollLeft`/`scrollWidth`/
+// `clientWidth` measurements, on every scroll and `ResizeObserver` tick) drive which, if either,
+// of those CSS rules actually applies -- never a fade on an edge that has nothing clipped.
+const TABS_FADE_PX = 24
 
 // FR-002, FR-026: actionable text, never an empty or broken list in place of these.
 const ERROR_MESSAGES: Record<string, string> = {
@@ -67,6 +77,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   const setTab = usePullRequestsStore((s) => s.setTab)
   const setStateFilter = usePullRequestsStore((s) => s.setState)
   const setQuery = usePullRequestsStore((s) => s.setQuery)
+  const clearFilters = usePullRequestsStore((s) => s.clearFilters)
   const selectPullRequest = usePullRequestsStore((s) => s.selectPullRequest)
   const refresh = usePullRequestsStore((s) => s.refresh)
   const refreshActiveCount = usePullRequestsStore((s) => s.refreshActiveCount)
@@ -86,14 +97,33 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   // ancestor further up the tree happens to be `offsetParent`, so the computed scroll target
   // overshoots the wrap's real scrollable range and the browser silently clamps the assignment
   // short (caught live 2026-10-17: Enter-activating the last tab left it still partly clipped).
+  // Gate-fix (M1, caught live 2026-10-18): the scroll-into-view margin now leaves `TABS_FADE_PX`
+  // of slack on whichever side the active tab approaches, so it never lands flush behind its own
+  // fade; `updateFade` (scroll + `ResizeObserver`, not just the tab/repository change this effect
+  // already re-runs on) keeps `data-fade-left`/`data-fade-right` honest the rest of the time too
+  // -- a manual trackpad/wheel scroll, or the column being resized, with no tab switch at all.
   useLayoutEffect(() => {
     const wrap = tabsWrapRef.current
-    const tab = wrap?.querySelector<HTMLElement>('[data-state="active"]')
-    if (!wrap || !tab) return
-    const tabLeft = tab.offsetLeft
-    const tabRight = tab.offsetLeft + tab.offsetWidth
-    if (tabLeft < wrap.scrollLeft) wrap.scrollLeft = tabLeft
-    else if (tabRight > wrap.scrollLeft + wrap.clientWidth) wrap.scrollLeft = tabRight - wrap.clientWidth
+    if (!wrap) return
+    const updateFade = () => {
+      wrap.toggleAttribute('data-fade-left', wrap.scrollLeft > 0)
+      wrap.toggleAttribute('data-fade-right', wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1)
+    }
+    const tab = wrap.querySelector<HTMLElement>('[data-state="active"]')
+    if (tab) {
+      const tabLeft = tab.offsetLeft
+      const tabRight = tab.offsetLeft + tab.offsetWidth
+      if (tabLeft < wrap.scrollLeft + TABS_FADE_PX) wrap.scrollLeft = Math.max(0, tabLeft - TABS_FADE_PX)
+      else if (tabRight > wrap.scrollLeft + wrap.clientWidth - TABS_FADE_PX) wrap.scrollLeft = tabRight - wrap.clientWidth + TABS_FADE_PX
+    }
+    updateFade()
+    wrap.addEventListener('scroll', updateFade, { passive: true })
+    const observer = new ResizeObserver(updateFade)
+    observer.observe(wrap)
+    return () => {
+      wrap.removeEventListener('scroll', updateFade)
+      observer.disconnect()
+    }
   }, [state.tab, repositoryId])
 
   // Fetches on open and whenever the scoped repository changes (FR-001); never polled
@@ -103,14 +133,27 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   }, [repositoryId, refresh])
 
   const friendlyError = state.error ? (ERROR_MESSAGES[state.error.code] ?? state.error.message) : null
-  const activeFilterCount = (state.query.trim() !== '' ? 1 : 0) + (state.state !== 'open' ? 1 : 0)
+  // Gate-fix (H3, caught live 2026-10-18): `appliedQuery` (set by `refresh()` itself, from the
+  // query it actually fetched with), never the raw, still-typed `state.query` -- a developer
+  // mid-keystroke, before Enter, used to see "Filters, 1 active" and a dot for a filter that had
+  // not narrowed anything yet.
+  const activeFilterCount = (state.appliedQuery.trim() !== '' ? 1 : 0) + (state.state !== 'open' ? 1 : 0)
   const filtersLabel = activeFilterCount > 0 ? `Filters, ${activeFilterCount} active` : 'Filters'
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
       <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)} activationMode="manual">
         <div className="flex items-center gap-0.5">
-          <div ref={tabsWrapRef} className={cn('relative min-w-0 flex-1 overflow-x-auto', TABS_FADE_MASK_CLASS)}>
+          {/* Gate-fix (M1, caught live 2026-10-18): the mask is now driven entirely by
+              `data-fade-left`/`data-fade-right` (`globals.css`'s own `.pr-tabs-fade` rules), never
+              a static gradient on both edges regardless of whether either is actually clipped.
+              `[scrollbar-width:none]`/`[&::-webkit-scrollbar]:hidden` hide the native scrollbar
+              this row never needed visible -- its own fade already signals more content, and the
+              bare scrollbar track pushed the tab row's own vertical centring off by its height. */}
+          <div
+            ref={tabsWrapRef}
+            className="relative min-w-0 flex-1 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <TabsList className="h-8 w-max shrink-0 justify-start gap-0.5 rounded-none bg-transparent p-0">
               {TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} className={PR_FILTER_TAB_TRIGGER_CLASS}>
@@ -130,9 +173,16 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
                   size="icon-sm"
                   aria-label={filtersLabel}
                   aria-expanded={filtersOpen}
-                  aria-controls="pull-request-filters-panel"
+                  // Gate-fix (L2, caught live 2026-10-18): `aria-controls` used to point at
+                  // `pull-request-filters-panel` unconditionally, including while the section was
+                  // closed and that id did not exist in the DOM at all (the panel only mounts
+                  // while open) -- a reference to a non-existent element is invalid ARIA.
+                  aria-controls={filtersOpen ? 'pull-request-filters-panel' : undefined}
                   onClick={() => setFiltersOpen((open) => !open)}
-                  className={cn('relative', COMPOSER_BUTTON_FOCUS_CLASS)}
+                  // Gate-fix (L4, caught live 2026-10-18): `aria-expanded:bg-muted` keeps this
+                  // button visually marked as open for as long as the section stays open, not
+                  // only while it is hovered or focused.
+                  className={cn('relative aria-expanded:bg-muted aria-expanded:text-foreground', COMPOSER_BUTTON_FOCUS_CLASS)}
                 >
                   <FunnelIcon aria-hidden className="size-4" />
                   {/* Decision 4: a small dot, never relied on alone -- the accessible name above
@@ -161,15 +211,23 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
         </div>
       </Tabs>
       {filtersOpen && (
-        <div id="pull-request-filters-panel" className="flex items-center gap-2">
-          <Input
+        <div
+          id="pull-request-filters-panel"
+          className="flex items-center gap-2"
+          // Gate-fix (M4, caught live 2026-10-18): the shared `SearchField` owns its own Esc-
+          // clear keydown handling internally and does not expose a raw `onKeyDown` override (by
+          // design: a caller never gets to fight its own Esc contract) -- Enter-to-refresh is
+          // wired one level up instead, scoped to the input itself so a State-select Enter (which
+          // commits the highlighted option, not a search) is never also treated as a refresh.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.target instanceof HTMLInputElement) void refresh(repositoryId)
+          }}
+        >
+          <SearchField
             value={state.query}
-            onChange={(e) => setQuery(repositoryId, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void refresh(repositoryId)
-            }}
+            onValueChange={(value) => setQuery(repositoryId, value)}
+            label="Filter pull requests by title or label"
             placeholder="Filter by title or label"
-            aria-label="Filter pull requests by title or label"
             className="h-8 flex-1"
           />
           <Select value={state.state} onValueChange={(value) => setStateFilter(repositoryId, value as PullRequestStateFilter)}>
@@ -195,7 +253,27 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
             {friendlyError}
           </div>
         ) : state.items.length === 0 && !state.loading ? (
-          <div className="p-3 text-sm text-muted-foreground">No pull requests match this tab.</div>
+          // Gate-fix (M5, caught live 2026-10-18): a filtered-to-nothing list used to show the
+          // exact same "No pull requests match this tab." copy as a genuinely empty tab, with no
+          // way back to the unfiltered list except manually clearing the search box and the State
+          // select one at a time.
+          activeFilterCount > 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <SearchXIcon aria-hidden />
+                </EmptyMedia>
+                <EmptyTitle>No pull requests match these filters.</EmptyTitle>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={() => clearFilters(repositoryId)}>
+                  Clear filters
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <div className="p-3 text-sm text-muted-foreground">No pull requests match this tab.</div>
+          )
         ) : (
           <div className="flex flex-col divide-y divide-divider">
             {state.items.map((pr) => (

@@ -19,6 +19,13 @@ interface PullRequestsLayoutState {
    *  CURRENT `widthPx` only when `isUserInteraction` is true (a pointer drag or an arrow-key
    *  resize), never for a programmatic layout set (initial mount, a window resize re-clamp). */
   commit(isUserInteraction: boolean): void
+  /** Gate-fix (H1, caught live 2026-10-18): `react-resizable-panels`' own double-click reset
+   *  calls `panel.resize(defaultSize)` directly, never through `onLayoutChanged`'s
+   *  `isUserInteraction` meta -- `commit(false)` (or no commit at all) never persists it, so the
+   *  UI shows 320px but `settings.json` still holds whatever was dragged before, and a relaunch
+   *  silently un-resets. Called from the handle's own `onDoubleClick` alongside the library's
+   *  reset, so the reset is persisted the same way a drag is (`persist`, debounced). */
+  resetToDefault(): void
   /** App start: seeds the live value from the persisted `Settings` row. */
   restoreFromSettings(widthPx: number): void
 }
@@ -46,6 +53,10 @@ export const usePullRequestsLayoutStore = create<PullRequestsLayoutState>((set, 
   setWidth: (widthPx) => set({ widthPx }),
   commit: (isUserInteraction) => {
     if (isUserInteraction) persist(get().widthPx)
+  },
+  resetToDefault: () => {
+    set({ widthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX })
+    persist(PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX)
   },
   restoreFromSettings: (widthPx) => set({ widthPx })
 }))

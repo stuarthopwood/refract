@@ -964,3 +964,26 @@
  * everywhere else in that row, matching Electron's `-webkit-app-region` contract. */
 .drag-region { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }
+
+/* Issue #499 gate-fix (M1, caught live 2026-10-18): the Pull requests Filter tab row's own edge
+ * fade (`PullRequestList.tsx`'s `tabsWrapRef`). A STATIC mask used to fade both edges always,
+ * even the start edge while already scrolled fully to the start -- nothing is clipped there to
+ * fade. `data-fade-left`/`data-fade-right` are toggled by that component's own effect, from real
+ * `scrollLeft`/`scrollWidth`/`clientWidth` measurements (on mount, every scroll, and every
+ * `ResizeObserver` tick), so only an edge with content actually clipped past it ever fades. `24px`
+ * here MUST match `PullRequestList.tsx`'s own `TABS_FADE_PX` constant -- the scroll-into-view
+ * margin that constant also drives assumes the fade is exactly this wide. */
+.pr-tabs-fade {
+  --pr-tabs-fade-mask: none;
+  mask-image: var(--pr-tabs-fade-mask);
+  -webkit-mask-image: var(--pr-tabs-fade-mask);
+}
+.pr-tabs-fade[data-fade-left] {
+  --pr-tabs-fade-mask: linear-gradient(to right, transparent, black 24px);
+}
+.pr-tabs-fade[data-fade-right] {
+  --pr-tabs-fade-mask: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.pr-tabs-fade[data-fade-left][data-fade-right] {
+  --pr-tabs-fade-mask: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
