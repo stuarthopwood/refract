@@ -2770,7 +2770,7 @@ comment was posted on #559 and the PR body's Departures section corrected.
   with its own failing bash pair, read back from the Subagents panel, proving the SAME grammar
   renders there (design point 4).
 
-Opened as draft PR (`feat/632-grouped-calls`). Kept **Refs #632**, not **Closes**, and does not
+Opened as draft PR #950 (`feat/632-grouped-calls`). Kept **Refs #632**, not **Closes**, and does
 close #430 either, since the live-check list above (SC-008-adjacent, the issue's own "Verified
 live on a scratch instance" acceptance line) has not run yet -- this is the no-build prep lane;
 code-verified only. Both issues switch to Closes once the build lane runs
