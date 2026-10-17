@@ -136,15 +136,23 @@ function assertBundleContainsStory499930Marker() {
 /** Real pointer drag of the resize handle (CDP `Input.dispatchMouseEvent` press/move/release --
  * no library drag helper exists in this harness; a bare click/release pair never engages
  * `react-resizable-panels`' own pointer-drag state machine the way a real OS drag does). Moves
- * in several small steps, matching how a real user's pointer is sampled, not one large jump. */
+ * in several small steps, matching how a real user's pointer is sampled, not one large jump.
+ * Mirrors `verify-tauri-session-list-helpers.mjs`'s own `dragResizeHandleBy`: an initial hover
+ * `mouseMoved` (no button) before the press, then each drag-step `mouseMoved` carries `buttons:
+ * 1` (the bitmask of currently-held buttons CDP uses to synthesize a real `pointermove` with
+ * the button still down) -- NOT `button: 'left'` (CDP's singular `button` field only names
+ * which button triggered a press/release/click event; passing it on `mouseMoved` leaves no
+ * button recorded as held, so `react-resizable-panels`' `pointermove` listener sees an
+ * unpressed hover and ignores it for resizing, the bug that shipped here first). */
 async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
   const rect = await cdp.evaluate(`(() => { const el = ${handleFinderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   assert(rect, `resize handle not found for drag: ${handleFinderExpr}`);
-  const steps = 10;
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
+  const steps = 10;
   for (let i = 1; i <= steps; i++) {
     const x = rect.x + (deltaX * i) / steps;
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y: rect.y, button: 'left' });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y: rect.y, buttons: 1 });
     await sleep(20);
   }
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x + deltaX, y: rect.y, button: 'left', clickCount: 1 });
@@ -259,8 +267,27 @@ async function main() {
         checkFail('5 Filter tabs present, one row, "All" active by default', JSON.stringify(tabShape));
       }
 
-      // ---- Active tab scrolls fully into the wrapper's visible bounds ----
-      await cdp.clickByText('Review requested', { tag: '[role="tab"]' }).catch(() => cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Review requested')`));
+      // ---- Keyboard on tabs + active tab scrolls into view: driven entirely by focus/keys,
+      // never a coordinate click on "Review requested" -- at the default 320px list-column
+      // width the tab row does not fit all 5 tabs, so that tab is genuinely scrolled out of the
+      // wrapper's visible bounds and a `getBoundingClientRect()`-centre mouse click would miss
+      // it. `activationMode="manual"` (Radix Tabs): ArrowRight/ArrowLeft move the roving tab
+      // stop WITHOUT activating it; Enter activates whichever tab currently has focus.
+      await cdp.evaluate(`(() => { const active = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active'); active?.focus(); })()`);
+      for (let i = 0; i < 4; i++) {
+        await pressKey(cdp, 39, 'ArrowRight', 'ArrowRight');
+        await sleep(80);
+      }
+      const focusMovedForward = await cdp.evaluate(`(() => ({
+        focused: document.activeElement?.getAttribute('role') === 'tab' ? document.activeElement.textContent.trim() : null,
+        active: Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active')?.textContent.trim() ?? null
+      }))()`);
+      if (focusMovedForward.focused === 'Review requested' && focusMovedForward.active === 'All') {
+        checkPass('ArrowRight x4 moves tab roving focus to the last tab without activating it (manual activation mode)', JSON.stringify(focusMovedForward));
+      } else {
+        checkFail('ArrowRight x4 moves tab roving focus to the last tab without activating it (manual activation mode)', JSON.stringify(focusMovedForward));
+      }
+      await pressKey(cdp, 13, 'Enter', 'Enter');
       const scrolledIntoView = await cdp.waitFor(`(() => {
         const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Review requested');
         if (!tab || tab.getAttribute('data-state') !== 'active') return null;
@@ -269,33 +296,32 @@ async function main() {
         const tabLeft = tab.offsetLeft, tabRight = tabLeft + tab.offsetWidth;
         return tabLeft >= wrap.scrollLeft - 1 && tabRight <= wrap.scrollLeft + wrap.clientWidth + 1;
       })()`, { timeoutMs: 10_000, label: 'Review requested becomes active and scrolls into view' }).catch(() => false);
-      if (scrolledIntoView) checkPass('Selecting a later tab scrolls it fully into the wrapper\'s own visible bounds');
-      else checkFail('Selecting a later tab scrolls it fully into the wrapper\'s own visible bounds');
+      if (scrolledIntoView) checkPass('Enter activates the keyboard-focused last tab, which scrolls fully into the wrapper\'s own visible bounds');
+      else checkFail('Enter activates the keyboard-focused last tab, which scrolls fully into the wrapper\'s own visible bounds');
 
-      // ---- Keyboard on tabs: `activationMode="manual"` -- ArrowLeft moves the roving tab
-      // stop back to the previous tab WITHOUT activating it, Enter then activates the focused
-      // tab (Radix Tabs' own documented manual-activation keyboard contract).
-      await cdp.evaluate(`(() => { const active = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active'); active?.focus(); })()`);
-      await pressKey(cdp, 37, 'ArrowLeft', 'ArrowLeft');
-      await sleep(150);
-      const keyboardFocusMoved = await cdp.evaluate(`(() => ({
+      for (let i = 0; i < 4; i++) {
+        await pressKey(cdp, 37, 'ArrowLeft', 'ArrowLeft');
+        await sleep(80);
+      }
+      const focusMovedBack = await cdp.evaluate(`(() => ({
         focused: document.activeElement?.getAttribute('role') === 'tab' ? document.activeElement.textContent.trim() : null,
         active: Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active')?.textContent.trim() ?? null
       }))()`);
-      if (keyboardFocusMoved.focused === 'Involves me' && keyboardFocusMoved.active === 'Review requested') {
-        checkPass('ArrowLeft moves tab roving focus to the previous tab without activating it (manual activation mode)', JSON.stringify(keyboardFocusMoved));
+      if (focusMovedBack.focused === 'All' && focusMovedBack.active === 'Review requested') {
+        checkPass('ArrowLeft x4 moves tab roving focus back to the first tab without activating it (manual activation mode)', JSON.stringify(focusMovedBack));
       } else {
-        checkFail('ArrowLeft moves tab roving focus to the previous tab without activating it (manual activation mode)', JSON.stringify(keyboardFocusMoved));
+        checkFail('ArrowLeft x4 moves tab roving focus back to the first tab without activating it (manual activation mode)', JSON.stringify(focusMovedBack));
       }
       await pressKey(cdp, 13, 'Enter', 'Enter');
       await sleep(300);
       const activeAfterEnter = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.getAttribute('data-state') === 'active')?.textContent.trim() ?? null`);
-      if (activeAfterEnter === 'Involves me') checkPass('Enter activates the keyboard-focused tab (manual activation mode)', activeAfterEnter);
-      else checkFail('Enter activates the keyboard-focused tab (manual activation mode)', String(activeAfterEnter));
-      await cdp.clickByText('All', { tag: '[role="tab"]' }).catch(() => cdp.click(`Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'All')`));
-      await sleep(300);
+      if (activeAfterEnter === 'All') checkPass('Enter activates the keyboard-focused first tab (manual activation mode), restoring All', activeAfterEnter);
+      else checkFail('Enter activates the keyboard-focused first tab (manual activation mode), restoring All', String(activeAfterEnter));
 
-      // ---- Filters disclosure: toggle, search + State appear, dot + "N active" label ----
+      // ---- Filters disclosure: toggle, search + State appear, dot + "N active" label, query
+      // keeps narrowing the real rendered list (never a dev-only `window.__refractStores`
+      // shortcut -- that global is DEV-only (`import.meta.env.DEV`) and absent from this built,
+      // production-mode renderer bundle; store state must be observed through the real DOM). ----
       await cdp.clickByLabel('Filters', { prefix: true });
       const filtersOpened = await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'Filters panel mounts' }).catch(() => false);
       const expandedAttr = await cdp.evaluate(`(() => { const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters')); return btn ? btn.getAttribute('aria-expanded') : null; })()`);
@@ -307,12 +333,40 @@ async function main() {
       if (dotAfterQuery === 'Filters, 1 active') checkPass('Typing a query updates the Filters label to "Filters, 1 active" with a dot', dotAfterQuery);
       else checkFail('Typing a query updates the Filters label to "Filters, 1 active" with a dot', String(dotAfterQuery));
 
-      // Closes the section, confirms the query is still applied (persists while closed), then reopens.
+      // Enter triggers the real re-fetch with the query (never auto-applied on keystroke); a
+      // garbage query no real pull request title/label matches settles the list to its own
+      // empty-state copy -- positive proof the State/search narrowing genuinely reaches the IPC
+      // call, not just the input's own local value.
+      await pressKey(cdp, 13, 'Enter', 'Enter');
+      const narrowedToNoMatches = await cdp.waitFor(`(() => { const empty = Array.from(document.querySelectorAll('div')).find((el) => el.textContent.trim() === 'No pull requests match this tab.'); return !!empty; })()`, { timeoutMs: 15_000, label: 'list narrows to "No pull requests match this tab."' }).catch(() => false);
+      if (narrowedToNoMatches) checkPass('Pressing Enter in the search field narrows the real rendered list (settles to the empty-state copy)');
+      else checkFail('Pressing Enter in the search field narrows the real rendered list (settles to the empty-state copy)');
+
+      // Closes the section, confirms the narrowed (empty) list is STILL shown -- the query keeps
+      // applying to the real rendered list while the Filters section is hidden, not just to the
+      // input's own value -- then reopens and confirms the query text itself also survived.
       await cdp.clickByLabel('Filters, 1 active');
-      const closedButQueryKept = await cdp.evaluate(`!document.getElementById('pull-request-filters-panel') && window.__refractStores?.pullRequests.getState().byRepository && Object.values(window.__refractStores.pullRequests.getState().byRepository).some((s) => s.query === 'zzz-verify-499')`);
-      if (closedButQueryKept) checkPass('Query keeps applying while the Filters section is closed');
-      else checkFail('Query keeps applying while the Filters section is closed', String(closedButQueryKept));
+      await sleep(200);
+      const stillNarrowedWhileClosed = await cdp.evaluate(`!document.getElementById('pull-request-filters-panel') && Array.from(document.querySelectorAll('div')).some((el) => el.textContent.trim() === 'No pull requests match this tab.')`);
+      if (stillNarrowedWhileClosed) checkPass('The narrowed (empty) list keeps applying while the Filters section is closed');
+      else checkFail('The narrowed (empty) list keeps applying while the Filters section is closed', String(stillNarrowedWhileClosed));
       await cdp.clickByLabel('Filters, 1 active');
+      const queryTextSurvivedReopen = await cdp.evaluate(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null`);
+      if (queryTextSurvivedReopen === 'zzz-verify-499') checkPass('The query text itself survives closing and reopening the Filters section', queryTextSurvivedReopen);
+      else checkFail('The query text itself survives closing and reopening the Filters section', String(queryTextSurvivedReopen));
+
+      // Clears the query with real key events (Ctrl+A then Backspace, the same pattern
+      // `verify-tauri-session-list-helpers.mjs`'s own `typeIntoSessionSearch` uses) and
+      // re-fetches so the rest of this run (screenshot included) exercises a real, populated
+      // list again.
+      await cdp.evaluate(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.focus()`);
+      await cdp.waitFor(`document.activeElement === document.querySelector('[aria-label="Filter pull requests by title or label"]')`, { timeoutMs: 5_000, label: 'search field focused before clearing' });
+      await pressKey(cdp, 65, 'a', 'KeyA', 2);
+      await pressKey(cdp, 8, 'Backspace', 'Backspace');
+      await cdp.waitFor(`(document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'search field cleared' });
+      await pressKey(cdp, 13, 'Enter', 'Enter');
+      await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after clearing the query' }).catch(() => false);
+      await cdp.clickByLabel('Filters, 1 active').catch(() => {});
 
       // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured ----
       for (const width of TAB_GEOMETRY_WIDTHS) {

@@ -3,10 +3,18 @@
 // the selected pull request's detail (PullRequestDetail.tsx) -- scoped to the repository chosen
 // here, written back to the shared `view-store.ts` so the choice survives switching away and
 // back (research.md decision 7).
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore, usePullRequestsStore, useRepositoriesStore, useViewStore } from '@/state'
+import {
+  PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX,
+  PULL_REQUESTS_LIST_MIN_WIDTH_PX,
+  usePullRequestsLayoutStore,
+  usePullRequestsStore,
+  useRepositoriesStore,
+  useViewStore
+} from '@/state'
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 
@@ -18,6 +26,26 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const selectedNumber = usePullRequestsStore((s) => s.stateFor(repositoryId ?? '').selectedNumber)
   const widthPx = usePullRequestsLayoutStore((s) => s.widthPx)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  // #930 (bug caught by the live-check driver, first real build of this story): `defaultSize`
+  // is ALSO `react-resizable-panels`' own double-click-reset target (`onDocumentDoubleClick`
+  // reads `itemWithDefaultSize.constraintProps.defaultSize` live, from whatever this Panel's own
+  // `defaultSize` prop currently evaluates to) -- binding it to the reactively-subscribed
+  // `widthPx` above meant every drag's own `onResize` -> `setWidth` -> re-render cycle silently
+  // moved the "reset to" target to wherever the panel already was, making double-click reset a
+  // no-op. `defaultSize` below stays pinned at the true default; the panel's INITIAL render
+  // honours a remembered non-default width via one imperative `resize()` call instead (same
+  // `panelRef`/`useLayoutEffect` pattern `App.tsx`'s own `rightPaneRef` uses for its collapse/
+  // expand), applied once per mount via `hasAppliedInitialWidth`, never on every Project switch.
+  const panelRef = useRef<PanelImperativeHandle>(null)
+  const hasAppliedInitialWidth = useRef(false)
+  useLayoutEffect(() => {
+    if (!repositoryId || hasAppliedInitialWidth.current) return
+    hasAppliedInitialWidth.current = true
+    const persistedWidthPx = usePullRequestsLayoutStore.getState().widthPx
+    if (persistedWidthPx !== PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) {
+      panelRef.current?.resize(persistedWidthPx)
+    }
+  }, [repositoryId])
 
   // High remediation (a11y, round 3): round 2's tasks.md T028 claimed this was already fixed --
   // it was never written at all (confirmed: zero commits touched this file for it). Matches
@@ -107,10 +135,14 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
               conversion needed. Double-click-to-reset and arrow-key resize on the handle are
               both this library's own built-in `Separator` behaviour (`disableDoubleClick`
               defaults to `false`; keyboard handling needs no code here -- `App.tsx`'s own
-              comment records how wrapping the Separator once broke it by accident). */}
+              comment records how wrapping the Separator once broke it by accident).
+              `defaultSize` is pinned at the fixed default (not the live `widthPx` state) so
+              double-click-reset keeps resetting to 320px even after a drag; the `panelRef`
+              effect above applies a remembered non-default width once, imperatively. */}
           <ResizablePanel
             id="pull-requests-list"
-            defaultSize={widthPx}
+            panelRef={panelRef}
+            defaultSize={PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX}
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
             maxSize="50%"
             className="overflow-hidden border-r border-divider"
