@@ -271,9 +271,16 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionA.id, 'idle');
   log('STEP PASS: Escape-cancelling the per-Session confirm never stops the Session, and a second Escape (a keyboard-only close of the Triage dialog) returns focus to the alert row\'s own Triage button -- F1\'s second half, unaffected by the blank-space-click fix above.');
 
-  // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below.
+  // Re-open the Dialog and the SAME Session's confirm to actually perform the stop below. A
+  // settle sleep before each of these two clicks is REQUIRED (same race already documented
+  // above for the Triage button's own first click and the Escape-cancel sequence): the very
+  // next synthetic mouse click right after a flurry of dialog open/close churn is an
+  // intermittent one-shot miss in this WebView2/CDP harness, not an app bug.
+  await cdp.evaluate(`document.activeElement?.blur()`);
+  await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened' });
+  await sleep(300);
   await cdp.click(`(${sessionARow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation reopened' });
 
@@ -383,9 +390,13 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await waitForSessionStatus(cdp, sessionB.id, 'idle');
   log('STEP PASS: Escape-cancelling the bulk confirm never stops any Session, and a second Escape returns focus to the alert row\'s own Triage button.');
 
-  // Re-open the Dialog and "Stop idle" again to actually perform the bulk stop below.
+  // Re-open the Dialog and "Stop idle" again to actually perform the bulk stop below. Same
+  // settle-sleep race guard as the per-Session re-open above.
+  await cdp.evaluate(`document.activeElement?.blur()`);
+  await sleep(300);
   await cdp.click(TRIAGE_BUTTON);
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened for the real bulk stop' });
+  await sleep(300);
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
