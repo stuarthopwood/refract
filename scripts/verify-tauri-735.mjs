@@ -70,18 +70,19 @@ import {
   addRepository,
   buildMixedStateAndCheckDecision29
 } from './verify-tauri-session-list-helpers.mjs';
+import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 
 // Gate round 2 fix (architect/test-reviewer Low): this is now where screenshots ACTUALLY land
 // (round 1 logged this path but wrote every screenshot to a separate `evidenceDir` instead) --
 // the run's STEP-PASS report, app logs and settings.json dumps live here too, and NONE of it is
 // deleted in the `finally` block below (round 1 did not delete it either, but a later manual
 // cleanup pass did -- this round's run is kept deliberately as the gate's own audit trail).
-const SHOT_DIR = process.env.REFRACT_735_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-735-gate2-shots';
+const SHOT_DIR = process.env.REFRACT_735_SHOT_DIR || path.join(tmpdir(), 'refract-735-gate2-shots');
 
 const PROMPT_MESSAGE = 'Please respond now.';
 
@@ -130,12 +131,7 @@ function buildLauncher(dir) {
 function buildTauriDebugNoBundle() {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const env = { ...process.env };
-    if (CARGO_TARGET_DIR) {
-      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
-      env.CARGO_INCREMENTAL = '0';
-      env.CARGO_BUILD_JOBS = '4';
-    }
+    const env = { ...process.env, CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR, CARGO_INCREMENTAL: '0', CARGO_BUILD_JOBS: '4' };
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
       env,

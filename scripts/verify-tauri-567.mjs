@@ -69,7 +69,7 @@ import { groupTriggerFinder, ARCHIVED_TRIGGER_FINDER, createSessionViaQuickCreat
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const SHOT_DIR = process.env.REFRACT_567_SHOT_DIR || 'C:/Users/shopwood/AppData/Local/Temp/refract-567-gate1-shots';
+const SHOT_DIR = process.env.REFRACT_567_SHOT_DIR || path.join(tmpdir(), 'refract-567-gate1-shots');
 const PRE_BUILT_EXE = process.env.REFRACT_567_PREBUILT_EXE;
 const PROMPT_MESSAGE = 'Please respond now.';
 
