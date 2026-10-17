@@ -38,10 +38,18 @@
 // of this flow was at commit cd4b0e3, against an earlier version of this script -- the round-1
 // (f3014ae) and round-2 (this commit's own) code fixes below are NOT YET verified live, pending
 // a fresh chained build+run once a build slot is available.
-// 6. A thrown/rejected `stopAgent` now surfaces via `notify()` (single: one failure; bulk: one
-//    notification naming the failure count, not once per Session), and a successful stop is
-//    announced via `useChatAreaAnnouncer` ("Stopped {name}'s agent" / "Stopped {N} agents"); the
-//    idle-moved-on skip (`isStillIdle` above) now announces instead of silently closing.
+// 6. Gate round 2 (Code/Tests FAIL): the PREVIOUS version of this fix assumed `stopAgent`
+//    rejected on failure, but `sessions-store.ts`'s own `stopAgent` only ever resolved `void`
+//    (never threw) on a clean `{ok:false}` result -- so a FAILED stop was announced as a SUCCESS
+//    here (single: unconditional "Stopped {name}'s agent"; bulk: `Promise.allSettled`'s
+//    `status === 'rejected'` filter never matched a clean failure, so `successCount` always
+//    equalled the full target count). `stopAgent` now resolves the real `result.ok` boolean
+//    (matching `archive`/`restore`'s own established pattern); both handlers announce the real
+//    outcome via `useChatAreaAnnouncer`, naming the failing Session(s) where available ("Couldn't
+//    stop {name}'s agent" / "Couldn't stop {N} agents: {names}"), joined with any success count
+//    into ONE `announce()` call per gate round-2 fix (a second call in the same tick cancels the
+//    first's still-pending text). The idle-moved-on skip (`isStillIdle` above) still announces
+//    instead of silently closing.
 // 7. `stoppedIdsRef` tracks Session ids whose stop is currently in flight (added right before
 //    each `stopAgent` call, single and bulk alike) and excludes them from `focusAfterStop()`'s
 //    own candidate search -- `idleSessions` is re-read live there, which could otherwise still
@@ -237,10 +245,15 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
     setStoppingId(target.id)
     stoppedIdsRef.current.add(target.id)
     try {
-      await stopAgent(target.id)
-      useChatAreaAnnouncer.getState().announce(`Stopped ${target.name}'s agent`)
+      const ok = await stopAgent(target.id)
+      // #560 gate round-2 fix: `stopAgent` used to resolve `void` unconditionally, so a clean
+      // `{ok:false}` IPC result (already toasted by the store itself) was announced here as a
+      // SUCCESS regardless. Announce the real outcome; the store's own `notify` already covers
+      // the toast for this branch, so only the thrown/rejected branch below needs its own.
+      useChatAreaAnnouncer.getState().announce(ok ? `Stopped ${target.name}'s agent` : `Couldn't stop ${target.name}'s agent`)
     } catch {
       notify({ code: 'agent-not-running', message: `Couldn't stop ${target.name}'s agent. Try again.` })
+      useChatAreaAnnouncer.getState().announce(`Couldn't stop ${target.name}'s agent`)
     } finally {
       stoppedIdsRef.current.delete(target.id)
       setStoppingId(null)
@@ -251,19 +264,50 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
   async function handleConfirmBulkStop(): Promise<void> {
     if (bulkStopping) return
     setBulkStopping(true)
+    // Built before filtering below, since `targets` can drop ids `isStillIdle` excludes --
+    // the name lookup still needs to work for every id this bulk action was opened with.
+    const idToName = new Map(bulkTargetIds.map((id, index) => [id, bulkTargetNames[index]]))
     const targets = bulkTargetIds.filter(isStillIdle)
     targets.forEach((id) => stoppedIdsRef.current.add(id))
     try {
-      const results = await Promise.allSettled(targets.map((id) => stopAgent(id)))
-      const failureCount = results.filter((result) => result.status === 'rejected').length
-      const successCount = results.length - failureCount
-      if (failureCount > 0) {
+      // #560 gate round-2 fix: `stopAgent` used to never reject on a clean `{ok:false}` result,
+      // so filtering on `status === 'rejected'` only ever caught a thrown/network-level failure
+      // -- a business failure (the common case) was silently counted as a success below. Each
+      // outcome pairs its own `id` with the real boolean via closure (never an array index into
+      // `targets`/`outcomes`, which `noUncheckedIndexedAccess` correctly treats as possibly
+      // undefined); a thrown/rejected call is caught per-id so it never loses its own `id`.
+      const outcomes = await Promise.all(
+        targets.map(async (id) => {
+          try {
+            return { id, ok: await stopAgent(id) }
+          } catch {
+            return { id, ok: false }
+          }
+        })
+      )
+      const failedNames = outcomes.filter((outcome) => !outcome.ok).map((outcome) => idToName.get(outcome.id) ?? outcome.id)
+      const successCount = outcomes.length - failedNames.length
+      if (failedNames.length > 0) {
         notify({
           code: 'agent-not-running',
-          message: `Couldn't stop ${failureCount} agent${failureCount === 1 ? '' : 's'}. Try again.`
+          message:
+            failedNames.length === 1
+              ? `Couldn't stop ${failedNames[0]}'s agent. Try again.`
+              : `Couldn't stop ${failedNames.length} agents: ${failedNames.join(', ')}. Try again.`
         })
       }
-      if (successCount > 0) useChatAreaAnnouncer.getState().announce(`Stopped ${successCount} agent${successCount === 1 ? '' : 's'}`)
+      // One joined announce() call (chatAreaAnnouncer.ts: a second call in the same tick cancels
+      // the first's still-pending text) so a partial bulk result reports BOTH halves truthfully.
+      const parts: string[] = []
+      if (successCount > 0) parts.push(`Stopped ${successCount} agent${successCount === 1 ? '' : 's'}`)
+      if (failedNames.length > 0) {
+        parts.push(
+          failedNames.length === 1
+            ? `Couldn't stop ${failedNames[0]}'s agent`
+            : `Couldn't stop ${failedNames.length} agents: ${failedNames.join(', ')}`
+        )
+      }
+      if (parts.length > 0) useChatAreaAnnouncer.getState().announce(parts.join('. '))
     } finally {
       targets.forEach((id) => stoppedIdsRef.current.delete(id))
       setBulkStopping(false)
@@ -293,7 +337,11 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
             <DialogTitle ref={dialogTitleRef} tabIndex={-1}>
               Free up memory
             </DialogTitle>
-            <DialogDescription>Refract never stops an agent on its own. Stop an idle agent below to free memory.</DialogDescription>
+            <DialogDescription>
+              {idleSessions.length > 0
+                ? `${idleSessions.length} idle agent${idleSessions.length === 1 ? '' : 's'} using memory. Refract never stops one on its own -- stop one below to free it.`
+                : 'Refract never stops an agent on its own.'}
+            </DialogDescription>
           </DialogHeader>
           {idleSessions.length === 0 ? (
             <p className="text-sm text-muted-foreground">No idle agents to stop right now.</p>
