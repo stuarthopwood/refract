@@ -132,6 +132,17 @@ field whose bottom bar shows the mode, model, and agent.
   DISPLAYED percent instead (FR-003 amended): the warning must always agree with what the
   developer actually reads.
 
+### Session 2026-10-16 (status line type)
+
+- Q: Issue #928 (v0.3.0 feedback item 5): "Increase font size of composer status bar items" --
+  the status line's 12px text and 12px icons read too small. What size, and does it apply to
+  every readout kind? → A: 13px text, 14px icons, Stuart's own choice over a 14px text step
+  (which would read "as loud as the chat"); applies to every readout kind in the row (Changes,
+  Context usage, Turn time, Todo progress, Subagents, Pull request, Current time), including the
+  interactive ones (FR-023 amended). No existing Tailwind step is 13px, so this adds one named
+  step, `--text-readout` (`globals.css`, `docs/design/foundations-typography-spacing.md` "Status
+  line type"), rather than a bare arbitrary `text-[13px]` value.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -487,7 +498,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   (2026-10-15 grill, issue #564, decision 1): a read-only readout (Changes, Todo progress,
   Context window usage, Turn time, Current time) MUST show as an icon plus text with no border or
   fill; a readout that opens something (Pull request, Subagents) MUST show as a quiet text
-  control with a hover background and no border, never a bordered or filled pill.
+  control with a hover background and no border, never a bordered or filled pill. (Amended
+  2026-10-16, issue #928, v0.3.0 feedback item 5: every readout's text is 13px, not the original
+  12px -- `--text-readout`, the one new named type-scale step this adds, `docs/design/
+  foundations-typography-spacing.md` "Status line type" -- and its icon is 14px, not 12px; Stuart
+  chose 13px/14px over a 14px TEXT step, which would read "as loud as the chat".)
 - **FR-024** (renumbered from FR-023 during the #877/#563 merge, 2026-10-15 -- both stories
   independently claimed FR-023; #877 merged first, so #563's own subagent-panel FRs move to the
   next free numbers): The Subagent panel MUST show the Session's subagents as a `role="tree"`

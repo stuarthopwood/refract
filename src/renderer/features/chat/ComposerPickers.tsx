@@ -39,7 +39,7 @@ import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from 
 import { attachImageFile } from './attachImage'
 import { notify, useSessionsStore } from '@/state'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
-import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
+import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 export { ModelPicker } from './ModelPicker'
 
@@ -173,7 +173,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
             // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
             // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
             // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
-            className={cn(COMPOSER_DISABLED_CLASS, 'dark:aria-disabled:hover:bg-transparent', COMPOSER_BUTTON_FOCUS_CLASS)}
+            className={cn(COMPOSER_DISABLED_CLASS, 'dark:aria-disabled:hover:bg-transparent', GHOST_BUTTON_FOCUS_CLASS)}
             onClick={() => {
               if (disabled) return
               fileInputRef.current?.click()

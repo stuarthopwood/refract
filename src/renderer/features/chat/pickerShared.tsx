@@ -35,16 +35,30 @@ export function usePickerOpenState(disabled: boolean) {
 }
 
 /** Gate round 5 fix (Visual Medium #4, #11): one shared composer focus treatment instead of each
- * control drawing its own mix of ring/outline/border-colour -- the Approval pill, both pickers,
- * Attach, Send and Stop all now draw the SAME opaque 2px outline with a 2px offset.
- * `badgeVariants`-based triggers (the pill, the pickers) already show a visible outline once a
- * width utility is applied (their base class never sets `outline-style: none`); `Button`-based
- * controls (`button.tsx`) start from `outline-none` and draw their own `ring`/`border-ring`
- * focus instead, so `COMPOSER_BUTTON_FOCUS_CLASS` additionally turns the outline style back on
- * (`outline-solid`) and drops Button's own ring/border-colour change so the two never show at
- * once. */
+ * control drawing its own mix of ring/outline/border-colour. `badgeVariants`-based triggers
+ * (the pill, the pickers) already show a visible outline once a width utility is applied (their
+ * base class never sets `outline-style: none`); `Button`-based controls (`button.tsx`) start
+ * from `outline-none` and draw their own `ring`/`border-ring` focus instead, so
+ * `COMPOSER_BUTTON_FOCUS_CLASS` additionally turns the outline style back on (`outline-solid`)
+ * and drops Button's own ring/border-colour change so the two never show at once.
+ *
+ * #927 split (quiet composer, decision 4a): Send and Stop are the one pair left on this full,
+ * opaque `--ring` treatment ("Send and Stop are unchanged (filled, round)") -- every OTHER
+ * composer control (the Approval pill, Model, Reasoning, Attach) is now a borderless ghost
+ * trigger and moved to `GHOST_FOCUS_CLASS`/`GHOST_BUTTON_FOCUS_CLASS` below, which read the new
+ * `--composer-focus` token (muted in Dark/Obsidian, an exact alias of `--ring` in Dark high
+ * contrast, so that theme's own ghost triggers still draw the full opaque outline). */
 export const COMPOSER_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 export const COMPOSER_BUTTON_FOCUS_CLASS = cn(COMPOSER_FOCUS_CLASS, 'focus-visible:border-transparent focus-visible:outline-solid')
+
+/** #927 (quiet composer, decision 4a): the SAME shape as `COMPOSER_FOCUS_CLASS`/
+ * `COMPOSER_BUTTON_FOCUS_CLASS` above, reading `--composer-focus` instead of `--ring` directly
+ * -- the muted outline every ghost composer trigger (Approval pill, Model, Reasoning, Attach)
+ * now shares. Focus is never invisible, only muted (the accepted WCAG 1.4.11 departure,
+ * docs/design/accessibility.md "Accepted departures"), and Dark (high contrast) renders this
+ * identically to the opaque pair above since its own `--composer-focus` aliases `--ring`. */
+export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-composer-focus'
+export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:border-transparent focus-visible:outline-solid')
 
 /** Gate round 5 fix (Visual LOW): disabled composer triggers used two different opacities (0.5,
  * `badgeVariants`' own `aria-disabled:opacity-50`; 0.6, the box-dim-matching override gate round
@@ -66,13 +80,20 @@ export const COMPOSER_DISABLED_HOVER_RESET_CLASS = 'aria-disabled:hover:bg-trans
 export const COMPOSER_DISABLED_CLASS = cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_DISABLED_HOVER_RESET_CLASS)
 
 export const PICKER_TRIGGER_CLASS = cn(
-  badgeVariants({ variant: 'outline' }),
+  // #927 (quiet composer, decision 4a): `outline` (a visible `border-border`) -> `ghost` (no
+  // border or fill at rest, the variant `components.md` "Button" already documents for
+  // icon-only toolbar actions, reused here rather than inventing new classes). The explicit
+  // `text-muted-foreground`/`hover:text-foreground`/`aria-expanded:text-foreground` below win
+  // over `ghost`'s own (opposite-direction) hover text colour via `cn`'s tailwind-merge, so a
+  // trigger reads quiet at rest and brightens on hover/open -- the same resting-muted,
+  // hover-foreground convention `ReadoutChip.tsx`'s own interactive style already uses.
+  badgeVariants({ variant: 'ghost' }),
   // Gate round 6 fix (Visual, `agent://Arch877`): `gap-1.5` (6px) is off the 4px spacing grid
   // (`docs/design/foundations-typography-spacing.md` lists it as one of the exact violations the
   // #474 audit found, not an exception) -- `gap-2` (8px) is the nearest on-grid step.
-  'h-6 shrink-0 gap-2 px-2.5 hover:bg-muted aria-expanded:bg-muted',
+  'h-6 shrink-0 gap-2 px-2.5 text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
   COMPOSER_DISABLED_CLASS,
-  COMPOSER_FOCUS_CLASS
+  GHOST_FOCUS_CLASS
 )
 
 /** The keyboard-active option highlight (gate round 2, accessibility-auditor HIGH): a plain

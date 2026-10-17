@@ -8,6 +8,11 @@
 // mock): a read-only Readout is an icon plus text with no border or fill; one that opens
 // something (onActivate/href) is a quiet text control with a hover background, still no border.
 // This retires the earlier pill/chip look (CONTEXT.md "Status line").
+//
+// Issue #928 (status line font size, 2026-10-16 grill): every chip's text is `text-readout`
+// (13px, docs/design/foundations-typography-spacing.md "Status line type", globals.css) and
+// every icon is `size-3.5` (14px) -- up from the original `text-xs`/`size-3` (12px/12px), Stuart's
+// own choice over a 14px TEXT step, which would read "as loud as the chat".
 import type { ComponentType, MouseEvent, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +35,7 @@ export interface ReadoutChipProps {
 }
 
 export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className }: ReadoutChipProps) {
-  const baseClasses = cn('inline-flex h-6 shrink-0 items-center gap-1.5 text-xs text-muted-foreground', className)
+  const baseClasses = cn('inline-flex h-6 shrink-0 items-center gap-1.5 text-readout text-muted-foreground', className)
   // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
   // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
   // explicit focus style at all, only the browser default outline. Opaque (no `/50` alpha),
@@ -43,7 +48,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
   if (href) {
     return (
       <a href={href} target="_blank" rel="noreferrer noopener" aria-label={accessibleName} className={interactiveClasses}>
-        {Icon && <Icon aria-hidden className="size-3" />}
+        {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </a>
     )
@@ -52,7 +57,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
   if (onActivate) {
     return (
       <button type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
-        {Icon && <Icon aria-hidden className="size-3" />}
+        {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>
     )
@@ -60,7 +65,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   return (
     <span className={baseClasses} aria-label={accessibleName}>
-      {Icon && <Icon aria-hidden className="size-3" />}
+      {Icon && <Icon aria-hidden className="size-3.5" />}
       {children}
     </span>
   )

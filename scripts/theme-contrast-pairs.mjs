@@ -16,6 +16,17 @@
 // below). `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
 // rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
 // `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
+//
+// Two optional per-pair fields (#927, quiet composer): `onlyThemes: string[]` restricts a pair
+// to the named theme ids (default: every declared theme, the original behaviour, unchanged for
+// every pair above that omits it) -- for a token that only renders on a real, meaningful
+// surface in SOME themes (Dark/Obsidian's `--composer-background` is `transparent` since #927,
+// so a pair against it only makes sense in Dark high contrast). `informationalThemes:
+// string[]` ALSO restricts to the named themes, but additionally marks the pair never-enforced
+// there (`check-theme-contrast.mjs` still computes and prints its real ratio, tagged
+// "informational", but never counts it toward `checkedCount`/`failCount`) -- for a pair that is
+// Stuart's own accepted WCAG departure (docs/design/accessibility.md "Accepted departures"),
+// kept visible in the gate's output for anyone re-measuring it, never failing the run.
 
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
@@ -25,7 +36,13 @@ export const PAIRS = [
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },
   { fg: 'primary-foreground', bg: 'primary', min: 4.5 },
   { fg: 'send-foreground', bg: 'send', min: 3 },
-  { fg: 'send', bg: 'composer-background', min: 3 },
+  // #927 (quiet composer): `--composer-background` is now `transparent` in Dark and Obsidian
+  // (the field shows the chat background through instead of a solid fill), so Send no longer
+  // renders on it there -- `onlyThemes` scopes this pair to Dark (high contrast), the one
+  // preset #927 leaves on a real, opaque `--composer-background`. The pair just below measures
+  // Send against `--background` instead, the real backdrop in the other two themes.
+  { fg: 'send', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian'] },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
@@ -73,12 +90,11 @@ export const PAIRS = [
   { fg: 'border', bg: 'card', min: 3 },
   { fg: 'border', bg: 'popover', min: 3 },
   { fg: 'border', bg: 'muted', min: 3 },
-  // Gate round 4 (#564 follow-up): the Approval mode pill's own `badgeVariants({variant:
-  // 'outline'})` renders `border-border` (opaque), not the composer box's own translucent
-  // `border-muted-foreground/85` -- a different token, never checked against this specific
-  // surface, since the composer-dimming change now leaves the pill resting directly on
-  // `--composer-background` in both the enabled and the (never-dimmed-anymore) disabled state.
-  { fg: 'border', bg: 'composer-background', min: 3 },
+  // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode
+  // pill's own `badgeVariants({variant: 'outline'})` used to render an opaque `border-border`
+  // directly on `--composer-background` -- #927 moved the Approval pill, Model and Reasoning
+  // triggers to `badgeVariants({variant: 'ghost'})` (`pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`),
+  // which has no border in any theme, so nothing renders this pair any more.
   { fg: 'border-strong', bg: 'background', min: 3 },
   { fg: 'border-strong', bg: 'card', min: 3 },
   { fg: 'border-strong', bg: 'popover', min: 3 },
@@ -165,7 +181,10 @@ export const PAIRS = [
   // `--background` the `muted-foreground`/`background` pair above already covers). That token
   // already carried real text -- the old native placeholder and the typed draft itself -- this
   // pair was simply missing from the gate, not newly rendered text; closes a pre-existing gap.
-  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5 },
+  // #927 scopes this to Dark (high contrast): Dark/Obsidian's `--composer-background` is now
+  // `transparent`, so the hint text there actually sits on `--background`, already covered by
+  // the generic `muted-foreground`/`background` pair above.
+  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
   // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
   // every focus ring actually render, checked only against `--background` before -- dialogs
   // and menus sit on `--popover`/`--muted`, not the page.
@@ -173,12 +192,21 @@ export const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
-  // Gate round 4 (#564 follow-up): the Approval mode pill's `focus-visible:outline-ring` (and
-  // the Model/Reasoning picker triggers' own, `PICKER_TRIGGER_CLASS`, already live since gate
-  // round 1) both render their opaque focus outline directly on `--composer-background`, never
-  // checked against that specific surface before -- closes the same kind of pre-existing gap
-  // the `muted-foreground`/`composer-background` pair above closed.
-  { fg: 'ring', bg: 'composer-background', min: 3 },
+  // Gate round 4 (#564 follow-up): the Approval mode pill's `focus-visible:outline-ring` used to
+  // render its opaque focus outline directly on `--composer-background`. #927 (quiet composer)
+  // replaced that token with `--composer-focus` (muted in Dark/Obsidian, an exact `--ring` alias
+  // in Dark high contrast) for every ghost composer trigger (Approval pill, Model, Reasoning,
+  // Attach) -- checking `composer-focus` here, not `ring`, per #570's own "check the token
+  // actually rendered, not an alias" rule. Scoped to Dark (high contrast), the one theme #927
+  // keeps enforced (Dark/Obsidian's own ratio is deliberately below 3:1, the accepted WCAG
+  // 1.4.11 departure, docs/design/accessibility.md "Accepted departures") -- the two
+  // `informationalThemes` pairs just below surface that real, unenforced ratio for Dark/
+  // Obsidian instead, against `--background` (their real backdrop, now that the composer's own
+  // fill is transparent).
+  { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
+  { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
   // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
   // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
   // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.
