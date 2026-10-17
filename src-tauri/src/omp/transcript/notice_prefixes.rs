@@ -18,4 +18,3 @@ pub(super) const STARTUP_NOTICE_PREFIX: &str = "startup-notice:";
 /// reply that is only excluded from the time sum). Only the `command_output` frame type uses
 /// this prefix; a plain `notice` frame keeps the ordinary `notice-N` id.
 pub(super) const COMMAND_OUTPUT_NOTICE_PREFIX: &str = "command-output:";
-

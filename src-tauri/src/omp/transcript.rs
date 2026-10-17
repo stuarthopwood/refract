@@ -33,7 +33,9 @@ use subagent_items::{
     subagent_name, task_text, try_apply_async_result, upsert_subagent_items,
 };
 mod notice_prefixes;
-use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
+use notice_prefixes::{
+    COMMAND_OUTPUT_NOTICE_PREFIX, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX,
+};
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
