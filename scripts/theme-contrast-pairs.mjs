@@ -207,6 +207,11 @@ export const PAIRS = [
   { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
   { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
+  // U1 (gate951UI/A11y High): Dark high contrast's Approval/Model/Reasoning triggers keep a
+  // real, enforced resting border (`--composer-control-border`, `var(--border)` there) -- the
+  // reinstated equivalent of the stale `border-strong`/`background` comment just above, scoped
+  // to the one theme #927 actually keeps bordered.
+  { fg: 'composer-control-border', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
   // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
   // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.

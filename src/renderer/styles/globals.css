@@ -25,6 +25,7 @@
   --color-composer-border: var(--composer-border);
   --color-composer-focus: var(--composer-focus);
   --color-composer-ring: var(--composer-ring);
+  --color-composer-control-border: var(--composer-control-border);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -184,6 +185,11 @@
   --composer-border: var(--divider);
   --composer-focus: oklch(1 0 0 / 35%);
   --composer-ring: transparent;
+  /* U1/A1 (gate951UI/A11y High): Approval/Model/Reasoning triggers keep NO visible border in
+   * Dark/Obsidian (ghost, decision 4a) but Dark high contrast keeps its unchanged edges
+   * (decision 3) -- this token lets `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS` add an explicit
+   * `border` unconditionally while only Dark high contrast's own value ever paints it. */
+  --composer-control-border: transparent;
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -448,8 +454,16 @@
    * `#6F7C9D`, rather than an achromatic literal). */
   --composer-background: transparent;
   --composer-border: var(--divider);
-  --composer-focus: color-mix(in oklab, var(--border) 55%, transparent);
+  /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
+   * measured ~2.20:1 against this theme's own `--background` -- noticeably weaker than Dark's
+   * equivalent `oklch(1 0 0 / 35%)` at ~3.14:1 -- so the muted focus cue read as a different
+   * strength per theme though both are meant to be the same "quiet border-colour change"
+   * departure. Raised to 75% to bring it to ~3.08:1, matching Dark's own strength (measured via
+   * `scripts/check-theme-contrast.mjs`'s informational Obsidian composer-focus/background row).
+   */
+  --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
   --composer-ring: transparent;
+  --composer-control-border: transparent;
   --card: var(--surface-1);
   --card-foreground: var(--foreground);
   --popover: var(--surface-2);
@@ -567,6 +581,12 @@
   --composer-border: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
   --composer-focus: var(--ring);
   --composer-ring: color-mix(in oklab, var(--ring) 50%, transparent);
+  /* U1 (High, gate951UI/A11y): the Approval/Model/Reasoning triggers must keep a visible,
+   * enforced >=3:1 resting border in this theme (decision 3) -- `var(--border)` is already
+   * >=3:1 against `--composer-background` (see `scripts/theme-contrast-pairs.mjs`'s own new
+   * `composer-control-border`/`composer-background` pair, `onlyThemes: ['dark-high-contrast']`).
+   */
+  --composer-control-border: var(--border);
   --card: oklch(0.14 0 0);
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.14 0 0);

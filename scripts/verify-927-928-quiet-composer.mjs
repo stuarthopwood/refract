@@ -301,15 +301,15 @@ async function readFocusOutlineChain(cdp) {
   return steps;
 }
 
-/** (e) above: every `.text-readout` status-line chip's computed font-size, plus its icon's
- * computed width/height -- `.text-readout` is the literal Tailwind class issue #928 adds
- * (globals.css's own `@theme { --text-readout: 13px }`), so this never needs to know which
- * specific chip kind happens to be visible (`sessionReadout`'s defaults, `DEFAULT_SESSION_
- * READOUT`, turn several on at once; `ChangesChip`/`ContextUsageChip` both render through
- * `ReadoutChip` even in their own "Not available"/null fallback text). */
+/** (e) above: every status-line chip's computed font-size, plus its icon's computed width/
+ * height. H1 (gate951Test/Code): finds chips by the structural `data-slot="readout-chip"`
+ * attribute (`ReadoutChip.tsx`), NEVER by `.text-readout` -- that literal class is itself the
+ * thing issue #928 changes, so a regression there (confirmed live: `cn`'s tailwind-merge
+ * stripped it, rendering every chip at the browser default ~16px) would otherwise go
+ * undetected by a selector built from the very class under test. */
 async function readStatusLineChipSizes(cdp) {
   return cdp.evaluate(`(() => {
-    const chips = Array.from(document.querySelectorAll('.text-readout'));
+    const chips = Array.from(document.querySelectorAll('[data-slot="readout-chip"]'));
     return chips.map((chip) => {
       const icon = chip.querySelector('svg');
       return {
@@ -491,11 +491,17 @@ async function main() {
       const chain = await readFocusOutlineChain(cdp);
       const ghostSteps = chain.filter((s) => s.expectedLabel !== 'Send');
       const sendStep = chain.find((s) => s.expectedLabel === 'Send');
+      const EXPECTED_GHOST_LABELS = ['Approval', 'Model', 'Reasoning', 'Attach'];
+      for (const expected of EXPECTED_GHOST_LABELS) {
+        if (!chain.some((s) => s.expectedLabel === expected)) {
+          failures.push(`${theme.name}: the real Tab walk from the message field never reached "${expected}" within its step cap (chain: ${JSON.stringify(chain.map((s) => s.expectedLabel))}) -- every ghost control must be keyboard-reachable.`);
+        }
+      }
       for (const step of ghostSteps) {
         if (!step || step.outlineStyle === 'none') {
           failures.push(`${theme.name}: real Tab did not produce a visible focus outline on the step expected to land on "${step?.expectedLabel}" (aria-label "${step?.ariaLabel}") -- focus must never be invisible (decision 4a).`);
         } else if (!step.matchesFocusVisible) {
-          notExercised.push(`${theme.name}: step expected to land on "${step.expectedLabel}" did not report :focus-visible (aria-label "${step.ariaLabel}") -- possibly landed on an unexpected element; outline was still present (${step.outlineColor}).`);
+          failures.push(`${theme.name}: step expected to land on "${step.expectedLabel}" did not report :focus-visible (aria-label "${step.ariaLabel}") -- possibly landed on an unexpected element; outline was still present (${step.outlineColor}).`);
         } else {
           findings.push(`${theme.name}: real keyboard Tab landed on "${step.ariaLabel}" with a visible :focus-visible outline (${step.outlineStyle}, ${step.outlineColor}, ${step.outlineWidth}).`);
         }
@@ -509,7 +515,7 @@ async function main() {
         const ghostOutlineColors = new Set(ghostSteps.filter((s) => s && s.outlineStyle !== 'none').map((s) => s.outlineColor));
         if (theme.id === 'dark-high-contrast') {
           if (ghostOutlineColors.size === 1 && [...ghostOutlineColors][0] === sendStep.outlineColor) findings.push(`${theme.name}: ghost controls' outline colour (${[...ghostOutlineColors][0]}) matches Send's (${sendStep.outlineColor}) -- expected here, since this theme's --composer-focus aliases --ring.`);
-          else notExercised.push(`${theme.name}: expected the ghost controls' outline colour to match Send's in this theme (an exact --ring alias); observed ghost colours ${JSON.stringify([...ghostOutlineColors])} vs Send ${sendStep.outlineColor}.`);
+          else failures.push(`${theme.name}: expected the ghost controls' outline colour to match Send's in this theme (an exact --ring alias); observed ghost colours ${JSON.stringify([...ghostOutlineColors])} vs Send ${sendStep.outlineColor}.`);
         } else {
           if (ghostOutlineColors.size > 0 && ![...ghostOutlineColors].includes(sendStep.outlineColor)) findings.push(`${theme.name}: ghost controls' outline colour (${[...ghostOutlineColors]}) is DISTINCT from Send's unchanged full outline (${sendStep.outlineColor}) -- confirms the #927 muted/opaque split took effect.`);
           else failures.push(`${theme.name}: ghost controls' outline colour (${JSON.stringify([...ghostOutlineColors])}) is NOT distinct from Send's (${sendStep.outlineColor}) -- expected a muted colour here, different from Send's unchanged --ring.`);
@@ -528,13 +534,13 @@ async function main() {
       // already documents for the Subagents chip) -- polls generously here, per theme, rather
       // than a single early timed-out wait that masked a real, measurable chip as "absent".
       try {
-        await cdp.waitFor(`document.querySelectorAll('.text-readout').length > 0`, { timeoutMs: 25_000, label: 'Status line chip (.text-readout) rendered' });
+        await cdp.waitFor(`document.querySelectorAll('[data-slot="readout-chip"]').length > 0`, { timeoutMs: 25_000, label: 'Status line chip rendered' });
       } catch {
         // fall through -- the size check below reports a real failure if still genuinely absent.
       }
       const chipSizes = await readStatusLineChipSizes(cdp);
       if (!chipSizes || chipSizes.length === 0) {
-        failures.push(`${theme.name}: no .text-readout status-line chips found after a 25s poll -- DEFAULT_SESSION_READOUT turns changes/context-usage/turn-time on, at least one should render.`);
+        failures.push(`${theme.name}: no [data-slot="readout-chip"] status-line chips found after a 25s poll -- DEFAULT_SESSION_READOUT turns changes/context-usage/turn-time on, at least one should render.`);
       } else {
         for (const chip of chipSizes) {
           if (chip.fontSize !== '13px') failures.push(`${theme.name}: status line chip "${chip.text}" computed font-size is ${chip.fontSize}, expected 13px (issue #928).`);

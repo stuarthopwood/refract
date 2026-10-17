@@ -45,9 +45,13 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
     'rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
   )
 
+  // H1 (gate951Test/Code): a stable structural hook for `scripts/verify-927-928-quiet-composer.mjs`
+  // (and any future live check) to find every status-line chip by -- never by `.text-readout`,
+  // the literal class issue #928 itself changes, which a #928 regression could silently strip
+  // (as #928's own `cn` tailwind-merge bug did) without any selector ever reporting it missing.
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noreferrer noopener" aria-label={accessibleName} className={interactiveClasses}>
+      <a data-slot="readout-chip" href={href} target="_blank" rel="noreferrer noopener" aria-label={accessibleName} className={interactiveClasses}>
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </a>
@@ -56,7 +60,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   if (onActivate) {
     return (
-      <button type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
+      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>
@@ -64,7 +68,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
   }
 
   return (
-    <span className={baseClasses} aria-label={accessibleName}>
+    <span data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
       {Icon && <Icon aria-hidden className="size-3.5" />}
       {children}
     </span>

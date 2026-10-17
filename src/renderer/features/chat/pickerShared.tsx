@@ -57,8 +57,13 @@ export const COMPOSER_BUTTON_FOCUS_CLASS = cn(COMPOSER_FOCUS_CLASS, 'focus-visib
  * now shares. Focus is never invisible, only muted (the accepted WCAG 1.4.11 departure,
  * docs/design/accessibility.md "Accepted departures"), and Dark (high contrast) renders this
  * identically to the opaque pair above since its own `--composer-focus` aliases `--ring`. */
-export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-composer-focus'
-export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:border-transparent focus-visible:outline-solid')
+// M2 (gate951UI): a bare `focus-visible:outline-composer-focus` left `ghost`'s own resting
+// `border-transparent` unset on focus, so a BORDERED theme (Dark high contrast) could show a
+// stray border edge alongside the muted outline -- `focus-visible:border-transparent` matches
+// `GHOST_BUTTON_FOCUS_CLASS`'s own pair below, so keyboard focus reads as the muted outline
+// alone, consistently.
+export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-composer-focus focus-visible:border-transparent'
+export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:outline-solid')
 
 /** Gate round 5 fix (Visual LOW): disabled composer triggers used two different opacities (0.5,
  * `badgeVariants`' own `aria-disabled:opacity-50`; 0.6, the box-dim-matching override gate round
@@ -75,7 +80,10 @@ export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:bor
  * resting state) dropped the indigo fill to transparent, leaving a bare white arrow. Send now
  * takes `COMPOSER_DISABLED_OPACITY_CLASS` alone; everything that was transparent at rest keeps
  * the combined `COMPOSER_DISABLED_CLASS` below, unchanged. */
-export const COMPOSER_DISABLED_OPACITY_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-60'
+// A2 (gate951A11y): a disabled-but-still-focusable trigger (stopped, last-known value shown)
+// dimmed its own keyboard focus outline along with everything else at `opacity-60` -- the
+// outline must read at full strength on focus regardless of the disabled dim.
+export const COMPOSER_DISABLED_OPACITY_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-60 focus-visible:aria-disabled:opacity-100'
 export const COMPOSER_DISABLED_HOVER_RESET_CLASS = 'aria-disabled:hover:bg-transparent aria-disabled:hover:text-current'
 export const COMPOSER_DISABLED_CLASS = cn(COMPOSER_DISABLED_OPACITY_CLASS, COMPOSER_DISABLED_HOVER_RESET_CLASS)
 
@@ -88,10 +96,14 @@ export const PICKER_TRIGGER_CLASS = cn(
   // trigger reads quiet at rest and brightens on hover/open -- the same resting-muted,
   // hover-foreground convention `ReadoutChip.tsx`'s own interactive style already uses.
   badgeVariants({ variant: 'ghost' }),
-  // Gate round 6 fix (Visual, `agent://Arch877`): `gap-1.5` (6px) is off the 4px spacing grid
-  // (`docs/design/foundations-typography-spacing.md` lists it as one of the exact violations the
-  // #474 audit found, not an exception) -- `gap-2` (8px) is the nearest on-grid step.
-  'h-6 shrink-0 gap-2 px-2.5 text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
+  // U1 (gate951UI/A11y High): `ghost`'s own border-less resting state applied in EVERY theme,
+  // including Dark high contrast -- but #927 decision 3 keeps that theme's edges unchanged, so
+  // its triggers must keep a visible resting border. `--composer-control-border` is transparent
+  // in Dark/Obsidian (matches ghost's own look) and `var(--border)` in Dark high contrast
+  // (globals.css); `border` (1px) is added explicitly since `ghost` sets none of its own.
+  // U2: `cursor-pointer`/`aria-disabled:cursor-not-allowed` -- hover must show the pointer
+  // cursor (decision 4a), never the default disabled-looking arrow, except while truly disabled.
+  'h-6 shrink-0 gap-2 px-2.5 border border-composer-control-border cursor-pointer aria-disabled:cursor-not-allowed text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:aria-disabled:hover:bg-transparent',
   COMPOSER_DISABLED_CLASS,
   GHOST_FOCUS_CLASS
 )
