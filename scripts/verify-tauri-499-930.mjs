@@ -250,7 +250,15 @@ async function main() {
       await addRepository(cdp, repoClone);
       checkPass('Added scratch stuarthopwood/refract clone as a Project');
 
-      await cdp.clickByText('Pull requests');
+      // Gate-fix (relaunch, caught live 2026-10-17/18): `clickByText('Pull requests')` matches a
+      // button's EXACT trimmed text content. `SessionList.tsx`'s own nav button's text (and its
+      // `aria-label`) grows a trailing ", N active" badge once `refreshActiveCount` resolves --
+      // reliably not yet on this FIRST navigation (moments after readiness), but reliably
+      // already loaded by the time of the relaunch below, where the exact-text match silently
+      // failed (`.catch(() => {})` swallowed it) and left the app on its default view, reading
+      // `widthAfterRelaunch` as null. `clickByLabel(..., { prefix: true })` (the same pattern
+      // this script already uses for the Filters button two sections down) matches either form.
+      await cdp.clickByLabel('Pull requests', { prefix: true });
       await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
       checkPass('Navigated to Pull requests view');
 
@@ -495,7 +503,12 @@ async function main() {
       await stopLauncher(child);
       ({ child, cdp } = await launch());
       await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!document.querySelector('.drag-region')`, { timeoutMs: 45_000, label: 'app ready after relaunch' });
-      await cdp.clickByText('Pull requests').catch(() => {});
+      // Same gate-fix as the first navigation above: prefix-matched aria-label, not exact text
+      // (the active-count badge has reliably already loaded by relaunch time). No `.catch(()
+      // => {})` either -- swallowing this let the step below silently read a `null` width off
+      // whatever view the app happened to default to, instead of surfacing the real navigation
+      // failure.
+      await cdp.clickByLabel('Pull requests', { prefix: true });
       await sleep(500);
       const widthAfterRelaunch = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
       const remembered = persistedWidthPx != null && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - persistedWidthPx) <= 3;
