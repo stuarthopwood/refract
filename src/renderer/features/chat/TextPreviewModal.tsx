@@ -64,7 +64,7 @@ export function TextPreviewModal({ chip, trigger, restoreFocusTo }: TextPreviewM
           tabIndex={0}
           role="region"
           aria-label="Pasted text"
-          className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted p-3 text-xs break-words whitespace-pre-wrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted p-3 text-xs break-words whitespace-pre-wrap outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
           {chip.text}
         </pre>

@@ -1,0 +1,15 @@
+// SYNTHESIZED, not captured live: issue #556's own live check needs a genuine, deterministic
+// `start-failed` Session with a real, non-empty `startFailureDetails` disclosure to assert the
+// unboxed ChatPane.tsx Start-failure-details `<pre>` against -- never emits `ready` at all, so
+// `OmpProcess::wait_ready` (src-tauri/src/omp/process.rs) runs out its own READY_CEILING_MS
+// (180s) and records a start failure with reason "ready frame not seen within 180s". The
+// `__stderr__` line (scripts/verify-tauri-fake-omp.mjs's own tape-engine extension, added for
+// this story) writes a real line to this process's own stderr containing the word "error", so
+// `build_start_failure`'s stderr tail -- and so `startFailureDetails`, everything after the
+// reason's own first line -- is genuinely non-empty, not merely the bare headline reason alone
+// (which has no embedded newline and would leave the "Details" disclosure with nothing to show).
+// This tape is NEVER selected for the readiness probe's own scratch `OmpProcess`: `--no-session`
+// on argv always forces the `readiness` fixture regardless of `REFRACT_FAKE_OMP_SCENARIO` (this
+// README's "Scenario selection" section), so readiness itself goes green normally and "Add
+// repository" becomes reachable before this tape's own (separate) Session process ever spawns.
+{"__stderr__":"verify-556: synthetic omp startup error (fixture never emits ready, by design)"}
