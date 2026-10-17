@@ -74,10 +74,19 @@ const TURN_E_PROMPT =
   "Use the task tool to start exactly ONE background subagent (a single entry in `tasks`) whose own prompt instructs it to make exactly TWO bash tool calls, the second one deliberately failing with `exit 9`, then reply with exactly the single word 't632e'. Then, once the subagent has finished, reply with exactly the single word 't632e-done' and nothing else.";
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Every top-level tool-group header button in the main transcript, identified structurally (a
-// `CollapsedLine` trigger directly inside the transcript's own list), not by its text -- the
-// text is exactly what this script is proving, so the finder must not assume it.
-const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => el.querySelector('span.font-medium'))`;
+// Every top-level TOOL-call group header button in the main transcript. A bare "has a
+// `span.font-medium` label" filter also matches a Thought run ("Thought for Ns"/"Thinking",
+// `ThoughtRunRow.tsx`) and a Stage/subagent entry ("Stage N", or a subagent's own name,
+// `SubagentChainRow.tsx`'s `StageGroupRow`) -- both reuse the exact same `CollapsedLine`
+// markup (design point 4, "one row component, used everywhere") and so share that same
+// `span.font-medium` span. A real run showed a `Thought for 1s` row landing first in the
+// transcript, ahead of this turn's own "bash \u00d72" group, which a plain `.at(0)`/`.at(-1)`
+// positional pick (below) then silently returned instead of the group this script means to
+// test. Scoped instead to issue #632's own closed table of command-style tool identifiers --
+// the literal, lowercase string OMP's own `tool` field reports (the same strings
+// `formatToolCommand.ts`'s own `item.tool === 'bash'`/`'grep'` checks match), optionally
+// followed by a multi-call group's own " \u00d7N" count suffix.
+const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => { const l = el.querySelector('span.font-medium'); return l && /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim()); })`;
 
 function groupHeaderInfo(index) {
   return `(() => {
