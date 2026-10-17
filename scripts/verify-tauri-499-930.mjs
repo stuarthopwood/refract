@@ -219,9 +219,24 @@ async function main() {
         importSourceDir,
         logFile: path.join(SHOTS_DIR, 'app-run.log')
       });
-      const c = await connectCdp(port, launched.targetPid);
-      assertExeMatchesProcess(launched.targetPid, exePath, exeHash);
-      return { child: launched.child, cdp: c };
+      // Gate-fix (hang, caught live 2026-10-17): `connectCdp`/`assertExeMatchesProcess` used to
+      // run with no cleanup of their own -- if either threw (a port-reuse race against the
+      // previous session's own teardown, or a mismatched exe), `launched.child` was never
+      // assigned to this function's own caller (the destructuring assignment never runs), so
+      // nothing ever called `stopLauncher` on it. The newly-spawned, kill-on-close-Job-Object
+      // process then ran forever with no script left tracking it, and this job's own stdout/
+      // stderr pipes stayed open waiting for that orphan's inherited handles to close -- the
+      // script itself had already thrown and exited; the "hang" was an invisible leaked process,
+      // not a stuck await. Every failure path from here on must stop the process it just
+      // launched before propagating.
+      try {
+        const c = await connectCdp(port, launched.targetPid);
+        assertExeMatchesProcess(launched.targetPid, exePath, exeHash);
+        return { child: launched.child, cdp: c };
+      } catch (err) {
+        await stopLauncher(launched.child).catch(() => {});
+        throw err;
+      }
     }
 
     ({ child, cdp } = await launch());
@@ -288,6 +303,7 @@ async function main() {
         checkFail('ArrowRight x4 moves tab roving focus to the last tab without activating it (manual activation mode)', JSON.stringify(focusMovedForward));
       }
       await pressKey(cdp, 13, 'Enter', 'Enter');
+      let scrollDiagnostic = null;
       const scrolledIntoView = await cdp.waitFor(`(() => {
         const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Review requested');
         if (!tab || tab.getAttribute('data-state') !== 'active') return null;
@@ -295,9 +311,28 @@ async function main() {
         if (!wrap) return null;
         const tabLeft = tab.offsetLeft, tabRight = tabLeft + tab.offsetWidth;
         return tabLeft >= wrap.scrollLeft - 1 && tabRight <= wrap.scrollLeft + wrap.clientWidth + 1;
-      })()`, { timeoutMs: 10_000, label: 'Review requested becomes active and scrolls into view' }).catch(() => false);
+      })()`, { timeoutMs: 10_000, label: 'Review requested becomes active and scrolls into view' }).catch(async () => {
+        // Gate-fix (diagnosability, caught live 2026-10-17): the previous version swallowed the
+        // timeout into a bare `false`, leaving no record of WHY (active vs not, actual
+        // scrollLeft/offsetLeft/clientWidth) for a future run to diagnose from.
+        scrollDiagnostic = await cdp.evaluate(`(() => {
+          const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.textContent.trim() === 'Review requested');
+          if (!tab) return { tabFound: false };
+          const wrap = tab.closest('.overflow-x-auto');
+          return {
+            tabFound: true,
+            dataState: tab.getAttribute('data-state'),
+            tabOffsetLeft: tab.offsetLeft,
+            tabOffsetWidth: tab.offsetWidth,
+            wrapFound: !!wrap,
+            wrapScrollLeft: wrap ? wrap.scrollLeft : null,
+            wrapClientWidth: wrap ? wrap.clientWidth : null
+          };
+        })()`).catch((err) => ({ evaluateFailed: err.message }));
+        return false;
+      });
       if (scrolledIntoView) checkPass('Enter activates the keyboard-focused last tab, which scrolls fully into the wrapper\'s own visible bounds');
-      else checkFail('Enter activates the keyboard-focused last tab, which scrolls fully into the wrapper\'s own visible bounds');
+      else checkFail('Enter activates the keyboard-focused last tab, which scrolls fully into the wrapper\'s own visible bounds', JSON.stringify(scrollDiagnostic));
 
       for (let i = 0; i < 4; i++) {
         await pressKey(cdp, 37, 'ArrowLeft', 'ArrowLeft');
