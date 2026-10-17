@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { CheckIcon, CircleQuestionMarkIcon, XIcon } from 'lucide-react'
+import { CheckIcon, CircleQuestionMarkIcon, OctagonXIcon, XIcon } from 'lucide-react'
 import type { ChatAnswer } from '../../../shared/ipc'
 import type { PendingRequest, TranscriptItem } from '../../../shared/model'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -416,8 +416,8 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {error && (
           <CardContent>
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive" box="inline">
+              <OctagonXIcon aria-hidden /><AlertDescription>{error}</AlertDescription>
             </Alert>
           </CardContent>
         )}
@@ -583,8 +583,8 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </div>
         )}
         {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+          <Alert variant="destructive" box="inline">
+            <OctagonXIcon aria-hidden /><AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
       </CardContent>

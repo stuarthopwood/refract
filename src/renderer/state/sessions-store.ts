@@ -33,7 +33,11 @@ interface SessionsState {
    * already reported through `notify`'s own toast. */
   archive(id: string): Promise<boolean>
   restore(id: string): Promise<boolean>
-  stopAgent(id: string): Promise<void>
+  /** Matches `archive`/`restore`'s own pattern above: resolves `result.ok` so a caller can
+   * announce a genuine success -- never a failure already reported through `notify`'s own
+   * toast (#560 gate round-2 fix: a caller awaiting this unconditionally previously announced
+   * "Stopped" even when `result.ok` was false). */
+  stopAgent(id: string): Promise<boolean>
 }
 
 // Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
@@ -208,5 +212,6 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   stopAgent: async (id) => {
     const result = await window.refract.sessions.stopAgent(id)
     if (!result.ok) notify(result.error)
+    return result.ok
   }
 }))

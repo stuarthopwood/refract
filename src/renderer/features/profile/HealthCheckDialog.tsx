@@ -24,9 +24,11 @@ import { CHECK_LABELS, CHECK_ORDER, CheckRow } from '../readiness/CheckRow'
 export interface HealthCheckDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
-  /** Called on close (Esc, the X button, Done, or programmatically) -- the caller
-   *  (ProfileItem.tsx) returns focus to the profile item's name button, the same explicit
-   *  close-auto-focus every dialog here needs since none is given a `Trigger`. */
+  /** Called on close (Esc, the X button, Done, or programmatically) -- each caller
+   *  (ProfileItem.tsx's profile-menu item, ProfileAlertRows.tsx's "Check" action, issue #560)
+   *  owns its own `open` state and its own instance of this dialog, and returns focus to
+   *  whichever control it opened from, the same explicit close-auto-focus every dialog here
+   *  needs since none is given a `Trigger`. */
   onCloseFocus?(): void
 }
 

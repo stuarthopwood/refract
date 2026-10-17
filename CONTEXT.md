@@ -48,6 +48,10 @@ _Avoid_: status line (from PR #877 on, **Status line** is the composer row), sub
 The status icon on a collapsed Group header showing the most urgent state among the Sessions it hides: Needs you, then Terminated unexpectedly, then Unread response.
 _Avoid_: badge, dot, hidden-state marker (Hidden is #748's term), alert (#560's term)
 
+**Alert row**:
+A quiet, single-line notice directly under the profile item, naming one condition (low memory, an unverified omp version) with one text action and a small dismiss-for-the-run control. Never boxed or pill-shaped like a badge, and never part of a status bar (the app does not have one).
+_Avoid_: alert bar, notice banner, status bar
+
 **Worktree**:
 The isolated checkout of a **Project** that a **Session** works in. Created by Refract when the **Session** is created.
 _Avoid_: Branch, folder, clone
