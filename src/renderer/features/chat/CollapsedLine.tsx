@@ -27,9 +27,14 @@ export interface CollapsedLineProps {
   /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
    * label and icon render in the error colour, #570 decision 4; the target stays muted). */
   labelClassName?: string
-  /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in,
-   * because the chat's own rows are deliberately one-line, but a narrow side panel (the
-   * Subagents panel) needs a long path or paragraph visible instead of losing its useful tail. */
+  /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in
+   * while collapsed, because the chat's own rows are deliberately one-line and a narrow side
+   * panel (the Subagents panel) needs a long path or paragraph visible instead of losing its
+   * useful tail. #632: a row with `children` always wraps once the user actually expands it --
+   * that is the one place the truncated-twice bug (#430/#632's "a bash command is cut off
+   * twice") actually showed up, and the row's own text is the only place the full command now
+   * lives (no Arguments block, #628) -- so truncating it again while expanded would hide it a
+   * third time. Collapsed rows keep truncating regardless of this prop, for fast scanning. */
   summaryWrap?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -121,7 +126,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       )}
       {summary !== undefined ? (
         <span
-          className={cn('min-w-0 flex-1', summaryWrap ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
+          className={cn('min-w-0 flex-1', summaryWrap || actualOpen ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
         >
           {summary}
         </span>

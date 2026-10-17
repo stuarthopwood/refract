@@ -6,6 +6,8 @@ import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
 import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import { formatElapsed } from './formatElapsed'
+import { commandRowText } from './formatToolCommand'
+import { diffStat } from '@/lib/diff'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
@@ -112,6 +114,57 @@ function errorLine(item: ToolItem): string {
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
 }
 
+// #632: a row's meta slot can now carry more than one fact (a derived result alongside the
+// duration, or a group's failed/interrupted counts alongside its total time) -- joined with a
+// visible middot (`aria-hidden`, decorative) plus an sr-only ", " so a screen reader hears each
+// as its own word, never one run-on string (the exact grammar #570 decision 12 established for
+// "N failed"/"N interrupted"; this is that same rule, generalised to every meta slot rather than
+// copied by hand at each call site). `undefined` when every part is `undefined`, never an empty
+// wrapper `CollapsedLine` would still render a bare leading separator for.
+function joinMetaParts(parts: Array<React.ReactNode | undefined>): React.ReactNode | undefined {
+  const visible = parts.filter((part): part is React.ReactNode => part !== undefined)
+  if (visible.length === 0) return undefined
+  return (
+    <>
+      {visible.map((part, index) => (
+        <React.Fragment key={index}>
+          {index > 0 && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="sr-only">, </span>
+            </>
+          )}
+          {part}
+        </React.Fragment>
+      ))}
+    </>
+  )
+}
+
+// #632 section 3's "muted result" column, for one call's own row (both the solo branch and each
+// nested `ToolCallRow`): an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the
+// same old/new text `DiffView`'s expanded body already diffs, #630) joined with the call's own
+// duration. Every other tool in the table (`grep`, `glob`, `find`, `read`) has no result shown
+// here: none of their OMP output shapes is a documented, fixture-backed contract in this
+// codebase (unlike `bash`'s own `Wall time:`/exit-code footer, which `errorLine` above already
+// has a probed, gated format for) -- the issue's own rule is "no count rather than a wrong one",
+// so this does not guess at one from unparsed free text. `write` is the same story as those
+// three: #630's own field comment notes a diff against "a cached prior read/edit of the same
+// path" was the original idea, but no such cache exists yet (a separate, substantial piece of
+// work), so `write` keeps its existing "Wrote N lines" body text and gets no new row stat either.
+function callMeta(item: ToolItem): React.ReactNode | undefined {
+  const stat = item.edit ? diffStat(item.edit.path, item.edit.oldText, item.edit.newText) : undefined
+  const duration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
+  return joinMetaParts([
+    stat ? (
+      <span className="tabular-nums">
+        <span className="text-state-working">+{stat.added}</span> <span className="text-destructive">−{stat.removed}</span>
+      </span>
+    ) : undefined,
+    duration
+  ])
+}
+
 // The expansion content for one tool call (#628, #630): an edit's diff (capped, with its own
 // Expand/Collapse, `DiffView`'s `capped` prop), a successful write's "Wrote N lines to <path>"
 // line, or a short successful call's own one-line result -- never a boxed Arguments/Output/
@@ -185,9 +238,9 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       icon={<StatusIcon status={item.status} />}
       label={item.tool}
       labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
-      summary={item.target}
+      summary={commandRowText(item)}
       summaryWrap={summaryWrap}
-      meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
+      meta={callMeta(item)}
       // #570 decisions 6, 9: a failed member's own Error line, shown whether this row is
       // collapsed or expanded -- no `hideDetailWhenOpen` here, that only applies to the GROUP
       // header below, which this member row is not.
@@ -219,12 +272,14 @@ interface ToolGroupRowProps {
 // Collapsible that holds the trigger's focus and open state; see `groupToolItems`, which now
 // always hands this a `ToolGroup`, even for a run of one). A one-item group's `CollapsedLine` gets
 // the same label/summary/meta a lone call used to show, with that call's own body as the content
-// (no "+ N others" summary, no extra nesting). A multi-item group's own status is running while
-// any call runs, else failed when any call failed; the summary is just the last call's target
-// plus "+ N others" -- the failed/interrupted counts live in the never-shrinking `meta` slot
-// instead (#570 decision 12, text AND colour: "N failed" reads in the error colour) -- and only
-// the *children* of this one `CollapsedLine` -- never its own presence or type -- switch to the
-// per-call list.
+// (no multi-call header, no extra nesting). A multi-item group's own status is running while
+// any call runs, else failed when any call failed; #632 replaced its old summary ("the last
+// call's target, plus + N others") with an explicit count folded into the label itself ("bash
+// ×2") and no summary text at all -- the failed/interrupted counts and the run's own total
+// duration live in the never-shrinking `meta` slot instead (#570 decision 12, text AND colour:
+// "N failed" reads in the error colour; #632: all three join with the same "·" grammar) -- and
+// only the *children* of this one `CollapsedLine` -- never its own presence or type -- switch to
+// the per-call list.
 //
 // Quality-gate remediation (A11y, High round 3; Medium round 2): `openDialogItemId` (which
 // call's "View full call" dialog, if any, is open) is held HERE, above the solo/multi switch
@@ -286,64 +341,66 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
   const last = group.items[group.items.length - 1]!
-  const othersCount = group.items.length - 1
   // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
   // guarantees it is always solo -- it is exempted from every run, never merged with the calls
   // around it) reads "Using skill: <name>" instead of the raw tool name; the icon and the usual
   // running/done/failed status are unchanged (Accessibility note on #543: "status is icon plus
   // text", the same convention every other row already uses).
   const skillName = solo ? last.skill?.name : undefined
-  const label = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
-  const summary =
-    skillName !== undefined
-      ? <bdi>{skillName}</bdi>
-      : solo
-        ? last.target
-        : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}`
+  // `toolLabel` is the bare tool name (or "Using skill:"), read by the aria-label composition
+  // below; `visibleLabel` is what the row itself shows -- for a multi-call group that folds the
+  // run's own count in (#632: "bash ×2", never the last call's own command). The group header
+  // used to show `${last.target} + N others` as its `summary`, which named one call and implied
+  // the rest were minor variants of it; the fix is a header that is honestly about every call at
+  // once, so a multi-call group's `summary` below is dropped entirely (no text between the
+  // label and the meta slot, matching the issue's own mockup), not replaced with a different
+  // single-call description.
+  const toolLabel = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
+  const visibleLabel = solo ? toolLabel : `${group.tool} \u00d7${group.items.length}`
+  const summary = skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined
+  // #632: a multi-call group's own total time -- the sum of every member's own `durationMs`,
+  // matching the mockup's own worked example (11.8s + 4.1s = 15.9s) -- joins the failed/
+  // interrupted counts below in the meta slot, instead of being left out of the header entirely
+  // (the aria-label a few lines down already illustrated this fact in its own gate-round-2
+  // comment, "...15.9 seconds", before any code actually computed it).
+  const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
+  const hasDuration = group.items.some((item) => item.durationMs != null)
+  const totalDuration = !isRunning && hasDuration ? formatDuration(totalDurationMs) : undefined
   // #570 decision 12: a multi-call group's own failed/interrupted counts move from the summary
   // text above into this never-shrinking meta slot, "N failed" in the error colour the instant
   // any member fails -- even mid-run, since colour here is reinforcement, not the only signal
   // (the word itself carries it) -- while "N interrupted" stays neutral (decision 5: interrupted
-  // is never red). A solo call's own meta is unchanged: its duration.
+  // is never red). A solo call's own meta reuses the same per-call stat `ToolCallRow` shows (an
+  // `edit`'s own "+N −M", #632, alongside its duration) -- one function, so the two can never
+  // show a different stat for what is otherwise the identical row.
   const meta = solo
-    ? last.status !== 'running' && last.durationMs != null
-      ? formatDuration(last.durationMs)
-      : undefined
-    : failedCount > 0 || interruptedCount > 0
-      ? (
-          <>
-            {failedCount > 0 && <span className="text-severity-error">{failedCount} failed</span>}
-            {failedCount > 0 && interruptedCount > 0 && (
-              // Gate round 1 (code-reviewer/accessibility-auditor Medium): two bare sibling spans
-              // with only a CSS margin between them read as one joined word to a screen reader
-              // ("1 failed2 interrupted") -- the #632 meta grammar instead: a visible middle dot,
-              // `aria-hidden` (decorative), plus an sr-only ", " so the two counts stay distinct
-              // words in both the visual and the accessible name.
-              <>
-                <span aria-hidden="true"> · </span>
-                <span className="sr-only">, </span>
-              </>
-            )}
-            {interruptedCount > 0 && <span>{interruptedCount} interrupted</span>}
-          </>
-        )
-      : undefined
+    ? callMeta(last)
+    : joinMetaParts([
+        failedCount > 0 ? <span className="text-severity-error">{failedCount} failed</span> : undefined,
+        interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
+        totalDuration
+      ])
 
   // Gate round 2 (Main, G909Arch): an explicit accessible name, matching decision 15's own
   // illustrated form ("Failed bash, 2 calls, 1 failed, 15.9 seconds"), bypassing the browser's
   // content-based name computation entirely -- that computation inserts its own space at every
   // sibling-element boundary regardless of nesting, which produced a doubled space before the
   // meta separator's comma ("...+ 2 others , 1 failed") no amount of DOM restructuring removed.
+  // Read straight off the raw fields (never off the visual `meta` JSX above, which can carry a
+  // coloured diff-stat span the aria string has no use for) so this never breaks if that JSX
+  // shape changes.
   const soloSummaryText = skillName !== undefined ? skillName : last.target
+  const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
   const triggerAriaLabel = solo
-    ? [`${toolStatusLabel(status)} ${label} ${soloSummaryText}`, typeof meta === 'string' ? meta : undefined]
+    ? [`${toolStatusLabel(status)} ${toolLabel} ${soloSummaryText}`, soloDurationText]
         .filter((part): part is string => !!part)
         .join(', ')
     : [
-        `${toolStatusLabel(status)} ${label}`,
+        `${toolStatusLabel(status)} ${toolLabel}`,
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
-        interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined
+        interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
+        totalDuration
       ]
         .filter((part): part is string => !!part)
         .join(', ')
@@ -351,7 +408,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   return (
     <CollapsedLine
       icon={<StatusIcon status={status} />}
-      label={label}
+      label={visibleLabel}
       labelClassName={status === 'error' ? 'text-severity-error' : undefined}
       summary={summary}
       summaryWrap={summaryWrap}

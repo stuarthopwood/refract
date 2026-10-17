@@ -4,6 +4,7 @@
 // `diff --git a/<path> b/<path>` header instead. `oldText === ''` is treated as a new file
 // (`--- /dev/null`) so `parseDiff` infers `type: 'add'` rather than `'modify'`.
 import { createTwoFilesPatch } from 'diff'
+import { isDelete, isInsert, parseDiff } from 'react-diff-view'
 
 export function buildUnifiedDiff(path: string, oldText: string, newText: string): string {
   // Security remediation (Low, PR #597): a crafted file path with embedded CR/LF could
@@ -21,4 +22,24 @@ export function buildUnifiedDiff(path: string, oldText: string, newText: string)
   const body = lines.slice(start).join('\n')
   const header = `diff --git a/${safePath} b/${safePath}\n${isAdd ? 'new file mode 100644\n' : ''}`
   return header + body + (body.endsWith('\n') ? '' : '\n')
+}
+
+// #632: the "+N −M" one-line stat a collapsed/expanded `edit` call shows in its own row (never
+// a wrong count: `undefined` when the two texts parse to no hunks at all, e.g. an unreadable or
+// identical pair) -- shares `buildUnifiedDiff`/`parseDiff` with `DiffView.tsx`'s own expanded
+// diff body instead of a second hand-rolled line-count, so the row's stat and the dialog's own
+// header stat (#630) can never disagree.
+export function diffStat(path: string, oldText: string, newText: string): { added: number; removed: number } | undefined {
+  const patch = buildUnifiedDiff(path, oldText, newText)
+  const parsed = patch ? parseDiff(patch)[0] : undefined
+  if (!parsed || parsed.hunks.length === 0) return undefined
+  let added = 0
+  let removed = 0
+  for (const hunk of parsed.hunks) {
+    for (const change of hunk.changes) {
+      if (isInsert(change)) added++
+      else if (isDelete(change)) removed++
+    }
+  }
+  return { added, removed }
 }

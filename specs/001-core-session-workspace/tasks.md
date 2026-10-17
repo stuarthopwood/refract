@@ -2708,3 +2708,70 @@ the SearchField wrapper (not just the input), `inputProps`'s `Omit`-narrowed typ
 `sessionSearchSelector.ts` for the `data-session-search-input` hook, a stale screenshot sitting in
 the evidence folder, and a tooltip-ghost in screenshot 03 were all fixed; a D20/D28 amendment
 comment was posted on #559 and the PR body's Departures section corrected.
+
+## Phase 50: Convergence
+
+- [X] T255 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
+  (supersedes #430; close #430 when this lands). Amended spec 001 -- FR-008 (a multi-call
+  group's own header reads the tool name plus the run's own count, "bash ×2", never a call's
+  own command; the group's own total time, the sum of every member's own duration, joins the
+  "N failed"/"N interrupted" counts in the meta slot), FR-061 (a row's own command text wraps
+  instead of truncating once the row itself is expanded) -- plus a dated
+  `### Session 2026-10-17 (grouped and command-style calls)` Clarifications entry recording the
+  decision to skip a derived result for `grep`/`glob`/`find`/`read` (no fixture-backed OMP
+  output shape in this codebase to probe first, unlike `bash`'s own gated footer) and the
+  "Explored" supergroup staying out of this slice per the issue's own default. `git diff
+  --numstat origin/main -- specs/001-core-session-workspace/tasks.md` confirmed 0 deletions
+  before this phase was appended.
+
+- [X] T256 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
+  `src-tauri/src/omp/transcript.rs` already gives every row its own raw target string, so no
+  transcript-builder change was needed): new `formatToolCommand.ts` (`commandRowText`) gives
+  `bash` its own `$ <first line of the command>` row text and `grep` its own
+  `grep "<pattern>" <path>` (the path read off the call's own `args` only when it is a plain
+  string, never guessed); `glob`/`find`/`read`/`write`/`edit` keep showing `item.target`
+  untouched (a `read`'s own `:start-end` range, when given, already lives inside that string).
+  `ToolRow.tsx`'s `ToolGroupRow`: a multi-call group's own `label` becomes `${tool} ×${count}`
+  (bare tool name for the aria composition, kept separate so the accessible name never doubles
+  "2 calls" and "×2"), its `summary` drops the old "last call's target + N others" text
+  entirely, and its `meta` gains the run's own total duration (summed across members, shown only
+  once settled) alongside the existing failed/interrupted counts, joined by a new shared
+  `joinMetaParts` helper (the exact visible-middot-plus-sr-only-comma grammar #570 established,
+  now reusable instead of hand-copied). A new `callMeta` helper gives one call's own row (solo or
+  nested `ToolCallRow`) its duration plus, for an `edit` call, its own "+N −M" added/removed line
+  stat -- a new `diffStat` export in `lib/diff.ts`, reusing the same `buildUnifiedDiff`/
+  `parseDiff`/`isInsert`/`isDelete` pipeline `DiffView.tsx`'s own expanded-body stat already
+  uses, so the two can never disagree; `write` gets no such stat (no prior read/edit content is
+  cached to diff it against, #630's own open idea, not built here). `CollapsedLine.tsx`: a row's
+  own summary now wraps (`break-words whitespace-normal`, not `truncate`) once `actualOpen` is
+  true, in addition to the existing opt-in `summaryWrap` prop for a narrow column (Subagents
+  panel) -- fixes the issue's own bug #2 ("the command is cut off twice") without adding any new
+  Arguments/Output block (#628's own rule is unchanged). The Subagents panel needed no changes
+  of its own: it already renders through the same `ToolGroupRow` (design point 4), so every
+  change above applies there automatically.
+
+- [X] T257 [US1] Non-build verification: `pnpm typecheck` (clean), `pnpm vitest run` (148/148,
+  no test touches these rows directly -- none exists for `ToolRow`/`CollapsedLine` render output
+  in this repo today, confirmed by search before relying on a green run alone), `node
+  scripts/check-file-size.mjs` (0 cap violations), `node scripts/check-indent.mjs` (0 odd-indent
+  lines), `node scripts/check-theme-contrast.mjs` (442/442 pairs pass -- the new "+N −M" row stat
+  reuses `DiffView.tsx`'s own already-gated `text-state-working`/`text-destructive` tokens, no
+  new pair needed), `node scripts/check-drag-regions.mjs` (0 violations). `node
+  scripts/check-ui-text.mjs` could not run (needs a built bundle; this is a no-build prep lane).
+  Wrote `scripts/verify-632-grouped-calls.mjs` (modelled on `verify-570-tool-colours.mjs`/
+  `verify-565-spine.mjs`: real ambient `omp`, scratch cwd/worktree/data dir, `CARGO_TARGET_DIR`
+  required, exe copied to its own scratch folder and sha256-asserted before and after launch, a
+  `grep "` renderer-bundle marker asserted before trusting the build, a story-only DOM check --
+  the group header's own visible label text -- never a loose substring match): NOT YET RUN (the
+  build lane owns the one heavy `cargo`/CDP slot per skill://refract-ui-lane-gate-checklist).
+  Five turns: two bash calls (one failing) for the group-header grammar and the wrap-on-expand
+  fix; a `grep` call for the command-style row text; a `read` call proving the row text is
+  unchanged; an `edit` call for the new "+N −M" row stat; a `task()` call starting one subagent
+  with its own failing bash pair, read back from the Subagents panel, proving the SAME grammar
+  renders there (design point 4).
+
+Opened as draft PR (`feat/632-grouped-calls`). Kept **Refs #632**, not **Closes**, and does not
+close #430 either, since the live-check list above (SC-008-adjacent, the issue's own "Verified
+live on a scratch instance" acceptance line) has not run yet -- this is the no-build prep lane;
+code-verified only. Both issues switch to Closes once the build lane runs
+`scripts/verify-632-grouped-calls.mjs` green on a real scratch instance.
