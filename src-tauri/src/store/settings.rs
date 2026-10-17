@@ -121,6 +121,7 @@ pub struct Settings {
 // Lazy-correction parsers and clamps (issue #806, keeps this file under the 600-line cap): see
 // `settings_parse.rs` for `parse_split_layout`/`default_session_list_collapse`/
 // `parse_session_list_collapse`/`clamp_pull_requests_list_width_px`'s own doc comments.
+#[path = "settings_parse.rs"]
 mod settings_parse;
 pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
 use settings_parse::{
