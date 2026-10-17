@@ -179,17 +179,17 @@ export function ProfileAlertRows() {
   }
 
   // Gate round 2 (Code FAIL, second finding): a row dismissed via KEYBOARD activation (Enter on
-  // a Tooltip-wrapped Dismiss button) could leave focus on a disconnected, unnamed node instead
-  // of the intended fallback -- confirmed live (verify-tauri-560.mjs), still reproducing after a
-  // single-rAF recheck: the Tooltip's own Portal content (still mounted while its trigger had
-  // keyboard focus-visible) can re-steal focus on ITS OWN delayed unmount, over more than one
-  // frame. React 19 focus-handoff pattern: `handleFocusOut` below only RECORDS intent (never
-  // calls `.focus()` directly); a `requestAnimationFrame` loop then re-applies it EVERY frame
-  // for up to 500ms, each time focus is STILL confirmed stranded (disconnected, or fallen back
-  // to `<body>`) -- stopping the moment it lands on something real, whether ours or a genuinely
-  // different destination something else legitimately claimed. Outlasts a delayed library
-  // cleanup instead of losing a one-shot race against it; never left pending past its own
-  // 500ms budget.
+  // a Tooltip-wrapped Dismiss button) could leave focus on a disconnected, unnamed node --
+  // confirmed live (verify-tauri-560.mjs) even after retrying the REACTIVE redirect below for up
+  // to 500ms: whatever delayed cleanup re-steals focus on removal (Radix Tooltip's own Portal
+  // content unmounting after its trigger is gone) can keep re-stealing it indefinitely, so no
+  // reactive retry window can be guaranteed to outlast it. Fixed instead at the SOURCE for the
+  // Dismiss case: each row's own `onDismiss` (below, in the JSX) now calls `redirectFocusFrom`
+  // PROACTIVELY, before the click handler's state update ever removes the row -- focus has
+  // already moved to the real fallback by the time anything unmounts, so there is nothing left
+  // for Radix's own cleanup to race. The reactive mechanism below stays as the fallback for the
+  // OTHER trigger item 2 names: the row's own condition clearing on its own (never user-clicked
+  // Dismiss), which has no click site to hook proactively.
   const pendingFocusHandoffRef = useRef<(() => void) | null>(null)
   function scheduleFocusHandoff(apply: () => void): void {
     pendingFocusHandoffRef.current = apply
@@ -218,10 +218,10 @@ export function ProfileAlertRows() {
 
   // Watches each row's own container for a `focusout` caused by the FOCUSED DESCENDANT itself
   // being removed from the DOM (the browser blurs it to `<body>` synchronously as part of that
-  // same removal step, before this row's own `focusout` listener is torn down) -- covers BOTH
-  // triggers item 2 names: the row's own condition clearing on its own, and the user clicking
-  // Dismiss (which removes the row the same way). A normal Tab-away is never affected:
-  // `relatedTarget` there is the real next focusable element, not `null`/outside the row.
+  // same removal step, before this row's own `focusout` listener is torn down) -- the FALLBACK
+  // for the row's own condition clearing on its own (the Dismiss case is now handled
+  // proactively at its own click site, above the JSX below). A normal Tab-away is never
+  // affected: `relatedTarget` there is the real next focusable element, not `null`/outside the row.
   //
   // Gate round 2 (Code FAIL): `document.activeElement === document.body` alone is NOT a removal
   // signal -- an ordinary click on blank space (anywhere with no focusable target) ALSO blurs
@@ -275,7 +275,10 @@ export function ProfileAlertRows() {
           onAction={() => setTriageOpen(true)}
           dismissAriaLabel="Dismiss low memory alert"
           dismissTooltip="Dismiss this alert"
-          onDismiss={dismissMemory}
+          onDismiss={() => {
+            redirectFocusFrom('memory')
+            dismissMemory()
+          }}
         />
       )}
       {ompVersionShown && ompVersionWarning && (
@@ -289,7 +292,10 @@ export function ProfileAlertRows() {
           onAction={() => setHealthOpen(true)}
           dismissAriaLabel="Dismiss unverified version alert"
           dismissTooltip="Dismiss this alert"
-          onDismiss={dismissOmpVersion}
+          onDismiss={() => {
+            redirectFocusFrom('ompVersion')
+            dismissOmpVersion()
+          }}
         />
       )}
       <MemoryTriageDialog
