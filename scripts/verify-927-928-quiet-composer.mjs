@@ -195,7 +195,15 @@ async function readComposerBoxStyles(cdp) {
     const box = ${COMPOSER_BOX_FINDER};
     if (!box) return null;
     const cs = getComputedStyle(box);
-    return { backgroundColor: cs.backgroundColor, borderColor: cs.borderColor, borderWidth: cs.borderTopWidth };
+    return {
+      backgroundColor: cs.backgroundColor,
+      borderColor: cs.borderColor,
+      borderWidth: cs.borderTopWidth,
+      htmlClassName: document.documentElement.className,
+      composerBackgroundVarOnHtml: getComputedStyle(document.documentElement).getPropertyValue('--composer-background').trim(),
+      composerBackgroundVarOnBox: cs.getPropertyValue('--composer-background').trim(),
+      colorComposerBackgroundVarOnBox: cs.getPropertyValue('--color-composer-background').trim()
+    };
   })()`);
   await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.focus()`);
   await sleep(100);
@@ -441,7 +449,7 @@ async function main() {
           return entry !== null && entry.alpha === 0;
         };
         if (theme.id === 'dark-high-contrast') {
-          if (isTransparent(boxStyles.resting.backgroundColor)) failures.push(`${theme.name}: composer background is transparent (${boxStyles.resting.backgroundColor}) -- #927 explicitly excludes this theme, it must keep its old opaque fill.`);
+          if (isTransparent(boxStyles.resting.backgroundColor)) failures.push(`${theme.name}: composer background is transparent (${boxStyles.resting.backgroundColor}) -- #927 explicitly excludes this theme, it must keep its old opaque fill. Diagnostic: <html> className "${boxStyles.resting.htmlClassName}", --composer-background on <html> "${boxStyles.resting.composerBackgroundVarOnHtml}", --composer-background on the box itself "${boxStyles.resting.composerBackgroundVarOnBox}", --color-composer-background on the box "${boxStyles.resting.colorComposerBackgroundVarOnBox}".`);
           else findings.push(`${theme.name}: composer background stayed opaque (${boxStyles.resting.backgroundColor}), unchanged by #927 as decided.`);
           if (!hasVisibleShadow(boxStyles.focused.boxShadow)) failures.push(`${theme.name}: composer focus box-shadow has no visible glow (${boxStyles.focused.boxShadow}) -- #927 keeps this theme's full ring (the old ring-ring/50 glow) unchanged.`);
           else findings.push(`${theme.name}: composer focus-visible box-shadow has a real, visible glow (${boxStyles.focused.boxShadow}), the unchanged full ring.`);
