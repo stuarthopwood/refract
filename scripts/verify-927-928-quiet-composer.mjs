@@ -43,6 +43,7 @@
 // anything else.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,7 @@ import {
   switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { pressTab } from './verify-tauri-session-list-helpers.mjs';
+import { clamp01, srgbGammaDecode, resolvedLinear, relativeLuminance, contrastRatio } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -80,6 +82,34 @@ const APPROVAL_PILL_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').endsWith(', approval mode'))`;
 const ATTACH_BUTTON_FINDER = `document.querySelector('button[aria-label^="Attach images"]')`;
 const SEND_BUTTON_FINDER = `document.querySelector('button[aria-label="Send message"]')`;
+
+// Issue #927, Dark (high contrast): the composer border and focus outline must measure a REAL
+// >=3:1 ratio against their actual rendered backdrop -- not merely "looks opaque". Parses a
+// `getComputedStyle()` colour string (`rgb(r, g, b)` or `rgba(r, g, b, a)`, the only two forms
+// a browser ever reports for a resolved `color-mix()`/literal colour) into the same
+// `{ alpha, linear }` shape `contrast-math.mjs` already works with (reused byte-for-byte from
+// `check-theme-contrast.mjs`'s own static token math, just fed live DOM reads instead of
+// hardcoded CSS variable values), then alpha-composites and computes the ratio exactly as that
+// script does.
+function parseComputedColorToEntry(raw) {
+  const match = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?\s*\)$/.exec(raw ?? '');
+  if (!match) return null;
+  const [, r, g, b, a] = match;
+  return {
+    raw,
+    alpha: a === undefined ? 1 : clamp01(parseFloat(a)),
+    linear: [r, g, b].map((c) => srgbGammaDecode(clamp01(parseFloat(c) / 255)))
+  };
+}
+
+function measuredContrastRatio(fgRaw, bgRaw) {
+  const fgEntry = parseComputedColorToEntry(fgRaw);
+  const bgEntry = parseComputedColorToEntry(bgRaw);
+  if (!fgEntry || !bgEntry) return null;
+  const fgLinear = resolvedLinear(fgEntry, bgEntry);
+  const bgLinear = resolvedLinear(bgEntry, bgEntry);
+  return contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear));
+}
 
 /** (a)/(b) above: the composer box's own resting and focus-visible computed styles. Focuses the
  * textarea directly via `.focus()` -- a genuine `:focus-visible` test, since text fields always
@@ -206,6 +236,7 @@ async function main() {
   const notExercised = []; // Genuine skips only (timing, an optional path not reached).
   let exeHash = null;
   let gitHeadSha = null;
+  let dirty = 'unknown';
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-927-928-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-927-928-import-'));
@@ -215,8 +246,11 @@ async function main() {
     mkdirSync(SHOTS_DIR, { recursive: true });
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
+    const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
+    const dirtyLines = gitStatusResult.status === 0 ? gitStatusResult.stdout.split('\n').filter(Boolean) : null;
+    dirty = dirtyLines === null ? 'unknown' : dirtyLines.length ? dirtyLines : false;
 
-    console.log(`verify-927-928: git HEAD ${gitHeadSha}`);
+    console.log(`verify-927-928: git HEAD ${gitHeadSha}${dirtyLines && dirtyLines.length ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
     console.log(`verify-927-928: data dir ${dataDir}`);
     console.log(`verify-927-928: shots dir ${SHOTS_DIR}`);
     console.log(`verify-927-928: CDP port ${port}`);
@@ -291,6 +325,18 @@ async function main() {
           else findings.push(`${theme.name}: composer background stayed opaque (${boxStyles.resting.backgroundColor}), unchanged by #927 as decided.`);
           if (boxStyles.focused.boxShadow === 'none') failures.push(`${theme.name}: composer focus box-shadow is 'none' -- #927 keeps this theme's full ring (the old ring-ring/50 glow) unchanged.`);
           else findings.push(`${theme.name}: composer focus-visible box-shadow is present (${boxStyles.focused.boxShadow}), the unchanged full ring.`);
+          // Measured (not merely visual) >=3:1 edge contrast, Dark high contrast only (#927
+          // explicitly keeps this theme's 3:1 border and full ring): real `getComputedStyle()`
+          // reads, alpha-composited with the same math `check-theme-contrast.mjs` already uses.
+          const pageBackground = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
+          const borderRatio = measuredContrastRatio(boxStyles.resting.borderColor, pageBackground);
+          if (borderRatio === null) failures.push(`${theme.name}: could not parse composer border (${boxStyles.resting.borderColor}) or page background (${pageBackground}) for a measured contrast ratio.`);
+          else if (borderRatio < 3) failures.push(`${theme.name}: composer border measures ${borderRatio.toFixed(2)}:1 against the page background (${boxStyles.resting.borderColor} on ${pageBackground}), below the 3:1 floor this theme must keep.`);
+          else findings.push(`${theme.name}: composer border measures ${borderRatio.toFixed(2)}:1 against the page background (${boxStyles.resting.borderColor} on ${pageBackground}), >=3:1 as this theme requires.`);
+          const focusRatio = measuredContrastRatio(boxStyles.focused.borderColor, boxStyles.resting.backgroundColor);
+          if (focusRatio === null) failures.push(`${theme.name}: could not parse composer focus border (${boxStyles.focused.borderColor}) or composer background (${boxStyles.resting.backgroundColor}) for a measured contrast ratio.`);
+          else if (focusRatio < 3) failures.push(`${theme.name}: composer focus border measures ${focusRatio.toFixed(2)}:1 against the composer's own background (${boxStyles.focused.borderColor} on ${boxStyles.resting.backgroundColor}), below the 3:1 floor this theme must keep.`);
+          else findings.push(`${theme.name}: composer focus border measures ${focusRatio.toFixed(2)}:1 against the composer's own background (${boxStyles.focused.borderColor} on ${boxStyles.resting.backgroundColor}), >=3:1 as this theme requires.`);
         } else {
           if (!isTransparent(boxStyles.resting.backgroundColor)) failures.push(`${theme.name}: composer background is ${boxStyles.resting.backgroundColor}, expected transparent (#927 quiet composer).`);
           else findings.push(`${theme.name}: composer background is transparent, as #927 decides.`);
@@ -366,6 +412,7 @@ async function main() {
 
     const report = {
       gitHead: gitHeadSha,
+      dirty,
       exeSha256: exeHash,
       findings,
       failures,
@@ -386,7 +433,7 @@ async function main() {
     process.exitCode = failures.length > 0 ? 1 : 0;
   } catch (err) {
     try {
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
+      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
     } catch {
       // best-effort only
     }
