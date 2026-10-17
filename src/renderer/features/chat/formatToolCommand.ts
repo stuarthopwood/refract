@@ -15,6 +15,7 @@ function stringField(args: unknown, key: string): string | undefined {
 // pattern, unchanged), `read`'s target already carries its own `:start-end` range suffix when one
 // was given (the tool's own argument convention, not something this file adds), and `write`/`edit`
 // already show their own path. A tool with no special form (or an item outside this table) falls
+// back to its own raw `item.target`, matching #469's "no special form falls back to today's row".
 // Gate round 1 (code-reviewer/ui-architect-v3 Medium, M2): a `bash`/`grep` row's own `summary`
 // text already names the tool (`$ <command>` reads as a shell prompt; `grep "<pattern>"`
 // literally repeats the word), so a caller's own separate `label` showing the bare tool name too
@@ -24,10 +25,16 @@ function stringField(args: unknown, key: string): string | undefined {
 export const COMMAND_STYLE_TOOLS: Record<string, true> = { bash: true, grep: true }
 export function commandRowText(item: ToolItem): string {
   if (item.tool === 'bash') {
-    // The command can be (and often is) multi-line (`cd a; \n gh pr merge ...`); only the first
-    // line is shown, same as the mockup's `$ cd …/docs-plan-c; git diff --stat origin/main; …`.
-    const firstLine = item.target.split(/\r\n|\n|\r/, 1)[0] ?? item.target
-    return `$ ${firstLine}`
+    // The command can be (and often is) multi-line (`cd a; \n gh pr merge ...`); only the FIRST
+    // NON-EMPTY line is shown, same as the mockup's `$ cd …/docs-plan-c; git diff --stat
+    // origin/main; …`. Gate round 1 (code-reviewer Medium, M4): a bare first line (which could
+    // itself be blank, e.g. a leading newline) used to give no signal that further lines
+    // existed; a trailing " …" now marks the row whenever the command actually has more than
+    // one line, blank or not, so it never silently implies a one-line command was the whole
+    // thing (the full text is still only ever a click away, the "View full call" dialog, #628).
+    const lines = item.target.split(/\r\n|\n|\r/)
+    const firstNonEmptyLine = lines.find((line) => line.trim().length > 0) ?? ''
+    return `$ ${firstNonEmptyLine}${lines.length > 1 ? ' …' : ''}`
   }
   if (item.tool === 'grep') {
     // `item.target` is the pattern alone (`extract_target` in `transcript.rs`); the search path
