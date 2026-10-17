@@ -64,7 +64,8 @@ import {
   makeScratchRepo,
   safeRmSync,
   citeScreenshots,
-  clearKnownOutputFiles
+  clearKnownOutputFiles,
+  requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';
 import {
   assert,
@@ -81,25 +82,14 @@ import {
   latestSessionIdAndName
 } from './verify-tauri-560-helpers.mjs';
 
-
-// Item 6 (gate round 2, MEDIUM): throws immediately, before anything else in this script runs,
-// unless CARGO_TARGET_DIR is set AND resolves to exactly the one shared cargo target dir this
-// machine uses for Refract builds -- never a silent fallback to `src-tauri/target` (that
-// fallback already filled this session's disk once, building a SECOND full target tree
-// alongside the real one).
-const REQUIRED_CARGO_TARGET_DIR = 'C:/Users/shopwood/.cargo-target/refract';
-function normalizeDirForComparison(dir) {
-  return path.resolve(dir).replace(/\\/g, '/').toLowerCase();
-}
-if (!process.env.CARGO_TARGET_DIR || normalizeDirForComparison(process.env.CARGO_TARGET_DIR) !== normalizeDirForComparison(REQUIRED_CARGO_TARGET_DIR)) {
-  throw new Error(
-    `verify-tauri-560: CARGO_TARGET_DIR must be set and resolve to exactly ${REQUIRED_CARGO_TARGET_DIR} (got ${JSON.stringify(process.env.CARGO_TARGET_DIR ?? null)}) -- refusing to silently fall back to src-tauri/target, which already filled this session's disk once.`
-  );
-}
+// #946 (PR #949): refuses to build without the shared CARGO_TARGET_DIR, never falling back to a
+// worktree-local `src-tauri/target` (that fallback already filled this session's disk once,
+// building a SECOND full target tree alongside the real one) -- same shared guard every other
+// live-check script in this repo now uses, rather than this file's own earlier hardcoded-path
+// check (gate round 2, item 6).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOT_DIR = process.env.REFRACT_560_SHOT_DIR || path.join(tmpdir(), 'refract-560-shots');
 
 // Frozen-exe reuse-vs-rebuild constants and `resolveExe`'s own logic now live in
