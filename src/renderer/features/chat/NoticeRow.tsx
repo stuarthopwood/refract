@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react'
-import { cn } from 'cn'
+import { cn } from '@/lib/utils'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 
