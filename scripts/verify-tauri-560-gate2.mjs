@@ -88,16 +88,16 @@ export async function runForcedStopFailureRegressionTests(
   await cdp.waitFor(sessionCRow + ' !== undefined', { timeoutMs: 5_000, label: `Session "${sessionC.name}" must STILL be listed in Triage (the forced failure never actually stopped it)` });
   log(`STEP PASS: a forced single Stop failure is announced truthfully as ${JSON.stringify(announceAfterForcedFailure)} (never success), and the Session stays listed since it was never actually stopped (F2).`);
 
-  // Bulk partial failure: two more idle Sessions, one forced to fail, one routed through the
-  // REAL backend and genuinely stopped -- proves the announced success COUNT and the failing
-  // Session's NAME are both truthful for a mixed outcome, not just an all-fail/all-succeed case.
+  // Bulk partial failure: reuses sessionC (still idle, never actually stopped above -- the
+  // forced single-failure test only ever intercepted its OWN IPC call) as the Session that goes
+  // through the REAL backend and gets genuinely stopped, plus ONE new Session forced to fail --
+  // proves the announced success COUNT and the failing Session's NAME are both truthful for a
+  // mixed outcome, not just an all-fail/all-succeed case, without needing a third fresh Session
+  // (keeps this run's total Session count down).
   await createSessionViaQuickCreate(cdp, repoName);
   const sessionD = await latestSessionIdAndName(cdp, repoName, [sessionA.id, sessionB.id, sessionC.id]);
   await waitForSessionStatus(cdp, sessionD.id, 'idle');
-  await createSessionViaQuickCreate(cdp, repoName);
-  const sessionE = await latestSessionIdAndName(cdp, repoName, [sessionA.id, sessionB.id, sessionC.id, sessionD.id]);
-  await waitForSessionStatus(cdp, sessionE.id, 'idle');
-  log(`STEP PASS: two more idle Sessions "${sessionD.name}" and "${sessionE.name}" created, for the bulk partial-failure test.`);
+  log(`STEP PASS: fourth Session "${sessionD.name}" (${sessionD.id}) created and reached idle, for the bulk partial-failure test.`);
 
   await cdp.evaluate(`(() => {
     window.refract.sessions.stopAgent = (id) => {
@@ -110,10 +110,8 @@ export async function runForcedStopFailureRegressionTests(
   await cdp.click(TRIAGE_BUTTON);
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened for the bulk partial-failure test' });
   const sessionDRow = `Array.from(document.querySelectorAll('[role="dialog"] li')).find((li) => li.textContent.includes(${JSON.stringify(sessionD.name)}))`;
-  const sessionERow = `Array.from(document.querySelectorAll('[role="dialog"] li')).find((li) => li.textContent.includes(${JSON.stringify(sessionE.name)}))`;
   await cdp.waitFor(sessionCRow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionC.name}" still listed in Triage` });
   await cdp.waitFor(sessionDRow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionD.name}" listed in Triage` });
-  await cdp.waitFor(sessionERow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionE.name}" listed in Triage` });
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   await cdp.waitFor(`!!(${ALERT_DIALOG})`, { timeoutMs: 10_000, label: 'bulk partial-failure confirmation opened' });
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
@@ -121,13 +119,12 @@ export async function runForcedStopFailureRegressionTests(
   await sleep(300);
   const announceAfterBulkForcedFailure = await cdp.evaluate(`(${CHAT_AREA_ANNOUNCE_REGION})?.textContent ?? null`);
   assert(
-    announceAfterBulkForcedFailure === `Stopped 2 agents. Couldn't stop ${sessionD.name}'s agent`,
+    announceAfterBulkForcedFailure === `Stopped 1 agent. Couldn't stop ${sessionD.name}'s agent`,
     `a partially-failed bulk Stop must announce the real success count AND name the failing Session, never report every target as stopped (gate round 2 F2 regression; got ${JSON.stringify(announceAfterBulkForcedFailure)})`
   );
   await cdp.waitFor(sessionDRow + ' !== undefined', { timeoutMs: 5_000, label: `Session "${sessionD.name}" must STILL be listed (the forced failure never actually stopped it)` });
   await waitForSessionStatus(cdp, sessionC.id, 'stopped');
-  await waitForSessionStatus(cdp, sessionE.id, 'stopped');
-  log(`STEP PASS: a partially-failed bulk Stop (2 genuinely stopped via the real backend, 1 forced-failed) announces truthfully: ${JSON.stringify(announceAfterBulkForcedFailure)}; the failed Session stays listed, the genuinely-stopped ones do not (F2).`);
+  log(`STEP PASS: a partially-failed bulk Stop (1 genuinely stopped via the real backend, 1 forced-failed) announces truthfully: ${JSON.stringify(announceAfterBulkForcedFailure)}; the failed Session stays listed, the genuinely-stopped one does not (F2).`);
   await cdp.screenshot(path.join(evidenceDir, '06-forced-stop-failure-still-listed.png'));
 
   await cdp.evaluate(`(() => { window.refract.sessions.stopAgent = window.__origStopAgent; delete window.__origStopAgent; })()`);
