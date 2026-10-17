@@ -85,6 +85,7 @@ export async function runForcedStopFailureRegressionTests(
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog opened for the forced single-failure test' });
   const sessionCRow = `Array.from(document.querySelectorAll('[role="dialog"] li')).find((li) => li.textContent.includes(${JSON.stringify(sessionC.name)}))`;
   await cdp.waitFor(sessionCRow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionC.name}" listed in Triage` });
+  await sleep(300); // same settle-sleep race guard as every other post-dialog-open click in this file
   await cdp.click(`(${sessionCRow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionC.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'forced-failure Stop confirmation opened' });
   await sleep(300); // settle-sleep race guard: see verify-tauri-560.mjs's own bulk-confirm comment

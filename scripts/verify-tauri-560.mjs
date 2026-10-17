@@ -244,6 +244,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   assert(/Idle (just now|\d+m)/.test(sessionARowText), `Session row must show "Idle <relative time>" (got ${JSON.stringify(sessionARowText)})`);
   log(`STEP PASS: Triage lists the idle Session with its repository and relative time: ${JSON.stringify(sessionARowText)}.`);
 
+  await sleep(300); // same settle-sleep race guard as every other post-dialog-open click in this file
   await cdp.click(`(${sessionARow})?.querySelector('button')`);
   await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionA.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'per-Session Stop confirmation opened' });
   log('STEP PASS: the Session\'s own Stop button opens a confirmation naming that exact Session.');
@@ -350,6 +351,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(sessionBRow + ' !== undefined', { timeoutMs: 10_000, label: `Session "${sessionB.name}" listed in Triage` });
   const stillHasSessionA = await cdp.evaluate(`(${DIALOG})?.textContent.includes(${JSON.stringify(sessionA.name)})`);
   assert(stillHasSessionA === false, `the already-stopped Session "${sessionA.name}" must never reappear (status filter is by construction, not a one-time snapshot)`);
+  await sleep(300); // same settle-sleep race guard as every other post-dialog-open click in this file
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   const bulkTitle = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
   assert(bulkTitle === 'Stop 1 idle agent?', `the bulk confirmation must name the real idle count (got ${JSON.stringify(bulkTitle)})`);
