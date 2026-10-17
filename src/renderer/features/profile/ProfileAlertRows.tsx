@@ -28,11 +28,13 @@
 //    component's own remount lifetime.
 // 2. A row that disappears -- by its own condition clearing OR by Dismiss -- while focus was
 //    inside it now redirects focus to the OTHER row's own action button if still shown, else
-//    `focusProfileItemName()`. Detected via a native `focusout` listener on each row's own
-//    container: when a focused descendant is removed from the DOM, the browser synchronously
-//    blurs it (to `<body>`) as part of the SAME removal step, before React's commit phase ends --
-//    `relatedTarget` lets a normal Tab-away (focus moving to some other real element) fall
-//    through untouched, so only a genuine "focus got lost" case redirects.
+//    `focusProfileItemName()`. Dismiss is handled proactively, at its own click site (a
+//    Tooltip-wrapped trigger's delayed Portal cleanup can outlast any reactive retry); a row
+//    clearing on its own is detected via a native `focusout` listener whose own redirect is
+//    deferred one animation frame, since Chromium/WebView2 fires `focusout` BEFORE the removed
+//    node is actually detached -- see the gate round 3 comment further down for the full
+//    reasoning. `relatedTarget` lets a normal Tab-away (focus moving to some other real element)
+//    fall through untouched, so only a genuine "focus got lost" case redirects.
 // 3. The four action/dismiss buttons carry `COMPOSER_BUTTON_FOCUS_CLASS` (pickerShared.tsx's own
 //    forced-colors-safe focus-visible treatment) instead of inventing a new one; the link-style
 //    Triage/Check buttons swap `h-auto p-0` for `Markdown.tsx`'s own "show source" button
@@ -52,7 +54,7 @@
 //    agents it found.
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { focusProfileItemName } from '@/lib/focus'
+import { focusProfileItemName, isFocusStranded } from '@/lib/focus'
 import { cn } from '@/lib/utils'
 import { AlertTriangleIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -178,71 +180,39 @@ export function ProfileAlertRows() {
     focusProfileItemName()
   }
 
-  // Gate round 2 (Code FAIL, second finding): a row dismissed via KEYBOARD activation (Enter on
-  // a Tooltip-wrapped Dismiss button) could leave focus on a disconnected, unnamed node --
-  // confirmed live (verify-tauri-560.mjs) even after retrying the REACTIVE redirect below for up
-  // to 500ms: whatever delayed cleanup re-steals focus on removal (Radix Tooltip's own Portal
-  // content unmounting after its trigger is gone) can keep re-stealing it indefinitely, so no
-  // reactive retry window can be guaranteed to outlast it. Fixed instead at the SOURCE for the
-  // Dismiss case: each row's own `onDismiss` (below, in the JSX) now calls `redirectFocusFrom`
-  // PROACTIVELY, before the click handler's state update ever removes the row -- focus has
-  // already moved to the real fallback by the time anything unmounts, so there is nothing left
-  // for Radix's own cleanup to race. The reactive mechanism below stays as the fallback for the
-  // OTHER trigger item 2 names: the row's own condition clearing on its own (never user-clicked
-  // Dismiss), which has no click site to hook proactively.
-  const pendingFocusHandoffRef = useRef<(() => void) | null>(null)
-  function scheduleFocusHandoff(apply: () => void): void {
-    pendingFocusHandoffRef.current = apply
-    // 500ms: comfortably past this app's own longest documented transition (panel open/close,
-    // up to 200ms, docs/PLAN.md "Motion and focus"), so a delayed library cleanup can never
-    // outlast this retry window.
-    const deadline = performance.now() + 500
-    function tick(): void {
-      const pending = pendingFocusHandoffRef.current
-      if (!pending) return
-      const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
-      if (!stranded) {
-        pendingFocusHandoffRef.current = null
-        return
-      }
-      pending()
-      if (performance.now() >= deadline) {
-        pendingFocusHandoffRef.current = null
-        return
-      }
-      requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  }
-
-  // Watches each row's own container for a `focusout` caused by the FOCUSED DESCENDANT itself
-  // being removed from the DOM (the browser blurs it to `<body>` synchronously as part of that
-  // same removal step, before this row's own `focusout` listener is torn down) -- the FALLBACK
-  // for the row's own condition clearing on its own (the Dismiss case is now handled
-  // proactively at its own click site, above the JSX below). A normal Tab-away is never
-  // affected: `relatedTarget` there is the real next focusable element, not `null`/outside the row.
+  // Gate round 3 (Code+A11y+UI High): a row that clears ON ITS OWN (memory recovers, the omp
+  // version becomes verified) while focus was inside it never redirected. The round-2 fix read
+  // `event.target.isConnected` SYNCHRONOUSLY inside the `focusout` handler, but Chromium/WebView2
+  // fires blur/focusout BEFORE the removed node is actually detached
+  // (`ContainerNode::RemoveChild` runs `RemoveFocusedElementOfSubtree` -- the blur step -- first),
+  // so `isConnected` always read `true` at that exact synchronous moment even for a genuine
+  // removal, and the early return (added for the blank-space-click fix, item 2 below) let a REAL
+  // removal through just as wrongly as a fake one. Fixed per the same pattern
+  // `FileExplorerPanel.tsx`'s own `handleFocusOut` already uses: `lost` (`event.target`) is
+  // captured WITHOUT checking its connectedness yet, and that check is deferred to the NEXT
+  // animation frame, by which point a genuine removal has actually completed -- a blank-space
+  // click never removes `lost` at all, so it is still connected at that later check too, and the
+  // blank-space-click fix (item 2) stays intact. Uses the shared `isFocusStranded` (`@/lib/focus`)
+  // rather than an inline copy of the same check.
   //
-  // Gate round 2 (Code FAIL): `document.activeElement === document.body` alone is NOT a removal
-  // signal -- an ordinary click on blank space (anywhere with no focusable target) ALSO blurs
-  // the active element to `<body>` without removing anything, and the previous version redirected
-  // focus straight back to this row every time, stealing it from wherever the user had just
-  // clicked. The actual discriminator is whether `event.target` (the descendant that lost focus)
-  // is still connected to the document: removed-from-DOM leaves it `isConnected === false`, while
-  // a blank-space click leaves the same button sitting right there, still connected.
-  function describesRemoval(event: FocusEvent): boolean {
-    const leaving = event.target as Node | null
-    return leaving !== null && !leaving.isConnected
-  }
-
+  // The Dismiss case (a row removed by the user's own click/keyboard activation of its Dismiss
+  // button) is handled separately, proactively, at the Dismiss click site itself (in the JSX
+  // below) -- a Tooltip-wrapped trigger's own Portal content can re-steal focus on ITS delayed
+  // unmount, which a reactive fix here could never reliably outlast (gate round 2 finding); this
+  // reactive mechanism is the fallback for the row's own condition clearing WITHOUT a click to
+  // hook, which has no such Tooltip-unmount race to lose.
   useEffect(() => {
     const rowEl = memoryShown ? memoryRowRef.current : null
     if (!rowEl) return
     function handleFocusOut(event: FocusEvent): void {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
-      if (!describesRemoval(event)) return
-      scheduleFocusHandoff(() => redirectFocusFrom('memory'))
+      const lost = event.target as Element | null
+      requestAnimationFrame(() => {
+        if (!lost || lost.isConnected) return
+        if (!isFocusStranded(document.activeElement, rowEl)) return
+        redirectFocusFrom('memory')
+      })
     }
     rowEl.addEventListener('focusout', handleFocusOut)
     return () => rowEl.removeEventListener('focusout', handleFocusOut)
@@ -255,8 +225,12 @@ export function ProfileAlertRows() {
     function handleFocusOut(event: FocusEvent): void {
       const next = event.relatedTarget as Node | null
       if (next && rowEl?.contains(next)) return
-      if (!describesRemoval(event)) return
-      scheduleFocusHandoff(() => redirectFocusFrom('ompVersion'))
+      const lost = event.target as Element | null
+      requestAnimationFrame(() => {
+        if (!lost || lost.isConnected) return
+        if (!isFocusStranded(document.activeElement, rowEl)) return
+        redirectFocusFrom('ompVersion')
+      })
     }
     rowEl.addEventListener('focusout', handleFocusOut)
     return () => rowEl.removeEventListener('focusout', handleFocusOut)
