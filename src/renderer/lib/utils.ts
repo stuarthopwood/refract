@@ -14,5 +14,10 @@
 // Verified with a throwaway `node -e` against this exact config: `cn('text-readout
 // text-muted-foreground')` now returns both classes, unchanged from the input order.
 import { createCn } from 'cn/config'
+import type { CnFunction } from 'cn'
 
-export const cn = createCn({ extend: { classGroups: { 'font-size': [{ text: ['readout'] }] } } })
+// Gate round 2 (found live, found-and-fixed as part of a later merge): `createCn`'s own return
+// type is only nameable through `cn/config`'s internal, non-exported module path -- TS cannot
+// portably infer it without this explicit annotation (TS2883). `CnFunction` is `cn`'s own public
+// type export for exactly this shape, re-used here rather than invented.
+export const cn: CnFunction = createCn({ extend: { classGroups: { 'font-size': [{ text: ['readout'] }] } } })
