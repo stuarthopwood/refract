@@ -13,9 +13,8 @@
 //       failed/interrupted counts AND the group's own total time (parsed and summed from every
 //       member, not just regex-matched) in the meta slot;
 //   (b) `bash` reads "$ <command>", `grep` reads `grep "<pattern>" <path>`;
-//   (c) a row's command text wraps (computed `white-space`, not just absence of a class) once
-//       expanded, with no code-block element and no output text (gate round 1, H6: `bash` shows
-//       no output at all);
+//   (c) a row's command text wraps (computed `white-space`) once expanded, with no code-block
+//       element and no output text (gate round 1, H6: `bash` shows no output at all);
 //   (d) an `edit` call's own row shows its "+N −M" stat alongside duration;
 //   (e) the SAME grammar renders inside the Subagents panel (shared `ToolGroupRow`, design point
 //       4), including its own "N failed" meta, not just the label;
@@ -26,11 +25,10 @@
 //   (i) hostile output (ANSI codes, a very long line) renders inert and bounded (gate round 1, M8).
 //
 // Six turns, one scratch Session (Approval mode seeded to Auto, so no approval-card grouping
-// boundary ever exists): (a) two bash calls, #2 failing -- header grammar, hover, height,
-// keyboard focus, duration sum, expanded-body checks. (b) grep -- command-style row text. (c)
-// read -- row text UNCHANGED. (d) edit -- the "+N −M" stat. (e) one `task()` subagent making
-// two bash calls (one failing) -- same grammar, read from the Subagents panel. (f) one bash
-// call with an ANSI byte and a very long line, failing -- the Error line renders inert/bounded.
+// boundary ever exists): (a) two bash, #2 failing -- header grammar, hover, height, keyboard
+// focus, duration sum, expanded-body. (b) grep -- command-style text. (c) read -- UNCHANGED.
+// (d) edit -- the stat. (e) one `task()` subagent, two bash (one failing) -- same grammar, read
+// from the Subagents panel. (f) one bash with an ANSI byte and a very long line, failing.
 
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -58,11 +56,9 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_632_SHOTS_DIR || path.join(tmpdir(), 'refract-632-grouped-calls-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
 // #632-only source text: `commandRowText`'s grep branch builds `grep "<pattern>"` -- the literal
-// `grep "` substring does not exist anywhere else in this codebase (confirmed with `grep` over
-// `src/` before this script was written), so its presence in the built, non-minified dev
-// renderer bundle is a real, cheap proof this exe actually contains #632's code, independent of
-// git-log timing reasoning (the same pattern `verify-570-tool-colours.mjs`'s own
-// `assertBundleContainsStory570Marker` established, same `out/tauri-web/assets` convention).
+// `grep "` substring does not exist anywhere else in this codebase, so its presence in the
+// built, non-minified dev renderer bundle cheaply proves this exe contains #632's own code
+// (same pattern `verify-570-tool-colours.mjs`'s own marker check established).
 function assertBundleContainsStory632Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory632Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
@@ -94,16 +90,13 @@ const TURN_F_PROMPT =
   `Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: \`echo '\x1b[31mHostile\x1b[0m ${HOSTILE_LONG_LINE}'; exit 5\` (deliberately fails; its output has a real ANSI colour escape byte and a very long line). Then reply with exactly the single word 't632f' and nothing else.`;
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Every top-level TOOL-call group header button in the main transcript. A label matching one of
-// issue #632's own closed tool identifiers (the literal lowercase string OMP's own `tool` field
-// reports, optionally with a multi-call group's own " \u00d7N" suffix) excludes a Thought run or
-// Stage/subagent entry, which reuse the same `CollapsedLine` markup and so share the same
-// `span.font-medium` span (a real run showed `Thought for 1s` landing first and silently
-// hijacking `.at(0)`). Gate round 1's own M2 (drop the duplicate tool label on a command-style
-// solo row) then means a solo `bash`/`grep` row has NO label at all -- accepted too when its own
-// summary span starts with the command-style grammar (`commandRowText`'s own `$ `/`grep "`
-// forms), or `.at(-1)` silently falls back to an earlier header instead (confirmed live: it read
-// the multi-call group's own empty spacer span for turn (b)'s grep row).
+// Every top-level TOOL-call group header button. A label matching issue #632's own closed tool
+// identifiers (OMP's own `tool` field, optionally with a " \u00d7N" multi-call suffix) excludes
+// a Thought run or Stage/subagent entry, which share the same `CollapsedLine` markup and
+// `span.font-medium` span (a real run showed `Thought for 1s` hijacking `.at(0)`). M2 (this same
+// gate round) then drops the label for a solo `bash`/`grep` row -- accepted too when its own
+// summary starts with the command-style grammar (`$ `/`grep "`), confirmed live: without this,
+// `.at(-1)` fell back to the multi-call group's own empty spacer span for turn (b)'s grep row.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   const l = el.querySelector('span.font-medium');
   if (l) return /^(?:bash|grep|glob|find|read|write|edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
@@ -132,8 +125,7 @@ function groupHeaderInfo(index) {
   })()`;
 }
 
-// Parses `formatDuration`'s own two shapes ("127ms", "1.3s") back to milliseconds; `null` for
-// anything else (never guesses). Shared by the member-duration-sum check (M7) below.
+// Parses `formatDuration`'s two shapes ("127ms", "1.3s") back to ms; `null` for anything else.
 function parseDurationMs(text) {
   if (!text) return null;
   const sMatch = text.match(/(\d+(?:\.\d+)?)s$/);
@@ -505,40 +497,49 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '05-turn-e-subagents-panel.png'));
 
-    // ---- Turn (f): hostile output (ANSI colour codes, a very long line) renders inert, bounded ----
+    // ---- Turn (f): hostile output renders inert, bounded ----
     await cdp.typeIntoByLabel('Message', TURN_F_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632f/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (f) finished' });
-    const hostileDetail = await cdp.evaluate(`(() => {
+    // Gate round 1 (Main's refinement): the Error line (whichever call it names -- a separate,
+    // out-of-scope errorLine()/OMP line-order observation, filed on #650) renders inert/bounded.
+    const hostileCheck = await cdp.evaluate(`(() => {
       const hs = ${GROUP_HEADERS};
       const h = hs.at(-1);
       if (!h) return null;
       const id = h.getAttribute('aria-describedby');
       const detail = id ? document.getElementById(id) : null;
-      return detail ? { text: detail.textContent, html: detail.innerHTML } : null;
+      if (!detail) return null;
+      const t = ${TRANSCRIPT};
+      const rect = detail.getBoundingClientRect();
+      return {
+        text: detail.textContent,
+        html: detail.innerHTML,
+        heightPx: rect.height,
+        hasElementChildren: detail.children.length > 0,
+        hasRawAnsiByte: /\\x1b/.test(detail.textContent),
+        transcriptScrollWidth: t ? t.scrollWidth : null,
+        transcriptClientWidth: t ? t.clientWidth : null,
+      };
     })()`);
-    if (!hostileDetail) {
+    if (!hostileCheck) {
       failures.push('Turn (f) hostile-output call: no Error line (aria-describedby target) found.');
     } else {
-      const hasRawAnsi = /\x1b\[|\\u001b\[|\\x1b\[/.test(hostileDetail.text) || /\x1b\[/.test(hostileDetail.html);
-      const hasColourMarkup = /color\s*:\s*red|style="[^"]*color/i.test(hostileDetail.html);
-      if (hasRawAnsi) {
-        failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape sequence: ${JSON.stringify(hostileDetail.text)}.`);
+      const hasColourMarkup = /color\s*:\s*red|style="[^"]*color/i.test(hostileCheck.html);
+      const boundedHeight = hostileCheck.heightPx > 0 && hostileCheck.heightPx <= 60;
+      const noOverflow = hostileCheck.transcriptScrollWidth != null && hostileCheck.transcriptScrollWidth <= hostileCheck.transcriptClientWidth + 2;
+      if (hostileCheck.hasRawAnsiByte) {
+        failures.push(`Turn (f) Error line's own text still contains a raw ANSI escape byte: ${JSON.stringify(hostileCheck.text)}.`);
+      } else if (hostileCheck.hasElementChildren) {
+        failures.push(`Turn (f) Error line contains injected element(s) instead of plain text: ${hostileCheck.html}.`);
       } else if (hasColourMarkup) {
-        failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output instead of rendering it as inert plain text: ${hostileDetail.html}.`);
-      } else if (hostileDetail.text.length > 205) {
-        failures.push(`Turn (f) Error line's own text is ${hostileDetail.text.length} characters, expected it bounded to about 200 (QUIET_SUMMARY_MAX_CHARS) plus an ellipsis.`);
-      } else if (!hostileDetail.text.includes('Hostile')) {
-        // Three command formulations all produced this outcome: OMP's own literal exit-status
-        // line superseded the echoed hostile text. `errorLine()` (pre-existing #570 code,
-        // untouched by #632) assumes stdout, then `Wall time:`, then the exit-code line; the
-        // installed OMP (18.11.1, an "unverified version") apparently orders the exit-code line
-        // BEFORE `Wall time:`, so the cutoff keeps it as ordinary content and "last non-empty
-        // line" picks it instead. Out of #632's scope (a pre-existing #570 parsing assumption) --
-        // a finding, not a failure: the line that DID render is itself genuinely inert/bounded.
-        findings.push(`Turn (f): the hostile output itself did not reach the Error line (OMP's own exit-status line superseded it, likely an OMP-version line-order difference in #570's own pre-existing parsing, out of #632's scope) -- the line that DID render ("${hostileDetail.text}") is itself inert (no raw ANSI, no colour markup) and bounded (${hostileDetail.text.length} characters).`);
+        failures.push(`Turn (f) Error line's own markup applies colour styling from the hostile output: ${hostileCheck.html}.`);
+      } else if (!boundedHeight) {
+        failures.push(`Turn (f) Error line measured ${hostileCheck.heightPx.toFixed(0)}px tall, expected bounded by its own line-clamp-2 cap (<=60px).`);
+      } else if (!noOverflow) {
+        failures.push(`Turn (f) caused the transcript to overflow horizontally (scrollWidth ${hostileCheck.transcriptScrollWidth} > clientWidth ${hostileCheck.transcriptClientWidth}).`);
       } else {
-        findings.push(`Turn (f) Error line renders the hostile output inert (no raw ANSI escape, no colour markup) and bounded (${hostileDetail.text.length} characters): "${hostileDetail.text}".`);
+        findings.push(`Turn (f) Error line ("${hostileCheck.text}") renders inert (no raw ANSI byte, no injected element, no colour markup) and bounded (${hostileCheck.heightPx.toFixed(0)}px tall; transcript scrollWidth ${hostileCheck.transcriptScrollWidth} <= clientWidth ${hostileCheck.transcriptClientWidth}, no horizontal overflow).`);
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '06-turn-f-hostile-output.png'));
