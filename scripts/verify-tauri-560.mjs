@@ -93,7 +93,12 @@ import {
   waitForSessionStatus,
   latestSessionIdAndName
 } from './verify-tauri-560-helpers.mjs';
-import { runFocusTheftRegressionTest, runForcedStopFailureRegressionTests } from './verify-tauri-560-gate2.mjs';
+import {
+  runFocusTheftRegressionTest,
+  runTabWalkAndHealthCheckDialogTest,
+  runSelfClearingRowFocusRegressionTest,
+  runForcedStopFailureRegressionTests
+} from './verify-tauri-560-gate2.mjs';
 
 // #946 (PR #949): refuses to build without the shared CARGO_TARGET_DIR, never falling back to a
 // worktree-local `src-tauri/target` (that fallback already filled this session's disk once,
@@ -113,6 +118,7 @@ const SHOT_DIR = process.env.REFRACT_560_SHOT_DIR || path.join(tmpdir(), 'refrac
 // matching is needed). ----
 const PROFILE_NAME_BUTTON = `document.querySelector('[data-profile-name-button]')`;
 const TRIAGE_BUTTON = `document.querySelector('[aria-label="Open memory triage"]')`;
+const CHECK_BUTTON = `document.querySelector('[aria-label="Open Health check"]')`;
 const DISMISS_MEMORY_BUTTON = `document.querySelector('[aria-label="Dismiss low memory alert"]')`;
 const DISMISS_OMPVERSION_BUTTON = `document.querySelector('[aria-label="Dismiss unverified version alert"]')`;
 // Item 12 (gate round 2): the row no longer states a Session count (`warning.liveAgents`
@@ -170,60 +176,18 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: unverified-omp-version alert row present with the exact expected text, with zero extra setup beyond the normal fake-omp harness launch.');
   await cdp.screenshot(path.join(evidenceDir, '01-both-alert-rows.png'));
 
-  // ---- Items 7 & 8: a real keyboard-only Tab walk from the profile name button, through the
-  // cog, through both alert rows -- reading every control's own accessible name off the
-  // Accessibility domain as it goes (never textContent) -- then Enter (not a click) on Check to
-  // open the real HealthCheckDialog, satisfying item 5 (the warning state word, Done, and the
-  // focus-return) in the same pass. ----
-  await cdp.evaluate(`(() => { const el = ${PROFILE_NAME_BUTTON}; el?.focus(); return !!el; })()`);
-  const nameButtonAx = await getActiveElementAccessibleName(cdp);
-  assert(nameButtonAx.role === 'button', `the profile item's own name control must be a button (got role ${JSON.stringify(nameButtonAx.role)}, name ${JSON.stringify(nameButtonAx.name)})`);
-  const tabOrder = [{ step: 'start (profile name button)', ...nameButtonAx }];
+  // ---- Item 12: gate round 3 H1 regression test (verify-tauri-560-gate2.mjs) -- run here,
+  // before anything else touches either row's own dismiss/condition state, and restores both
+  // rows to their exact original state before returning. Gracefully reports NOT EXERCISED (into
+  // `notExercised`, surfaced in the final summary) rather than throwing if window.__refractStores
+  // is unavailable in this build. ----
+  await runSelfClearingRowFocusRegressionTest(cdp, { TRIAGE_BUTTON, CHECK_BUTTON, LOW_MEMORY_ROW_SPAN, OMPVERSION_ROW_SPAN }, log, notExercised);
 
-  await pressTab(cdp);
-  let active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Settings', `Tab from the name button must land on the Settings cog (got ${JSON.stringify(active)})`);
-  tabOrder.push({ step: 'Tab 1', ...active });
-
-  await pressTab(cdp);
-  active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Open memory triage', `Tab from Settings must land on the Triage button (got ${JSON.stringify(active)})`);
-  tabOrder.push({ step: 'Tab 2', ...active });
-
-  await pressTab(cdp);
-  active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Dismiss low memory alert', `Tab from Triage must land on the low-memory Dismiss button (got ${JSON.stringify(active)})`);
-  tabOrder.push({ step: 'Tab 3', ...active });
-
-  await pressTab(cdp);
-  active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Open Health check', `Tab from the low-memory Dismiss button must land on the Check button (got ${JSON.stringify(active)})`);
-  tabOrder.push({ step: 'Tab 4', ...active });
-  log(`STEP PASS: real Tab order from the profile name button: ${tabOrder.map((s) => `${s.step}=${JSON.stringify(s.name)}`).join(' -> ')}.`);
-
-  await pressRealEnter(cdp);
-  await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Health check'`, { timeoutMs: 10_000, label: 'HealthCheckDialog opened via Enter (not a click)' });
-  log('STEP PASS: Enter on the focused Check button opened the real HealthCheckDialog (keyboard-only activation).');
-
-  await cdp.waitFor(`(${OMP_CHECK_ROW})?.textContent.includes('Passed with a warning')`, { timeoutMs: 20_000, label: 'omp row shows "Passed with a warning"' });
-  const ompCheckRowName = await axText(cdp, `(${OMP_CHECK_ROW})?.querySelector('span')?.querySelector('span')`); // CheckRow.tsx: the li's own FIRST span is the label span, and the state word is a span NESTED inside that one -- a warning Check ALSO renders a later sibling hint span at the li level, so ".pop()" (last span overall) grabbed that hint text in round 1, confirmed live, instead of the state word
-  assert((ompCheckRowName ?? '').includes('Passed with a warning'), `the omp CheckRow's own rendered state word must be "Passed with a warning" (got ${JSON.stringify(ompCheckRowName)}), never an invented string`);
-  log(`STEP PASS: HealthCheckDialog's omp row renders its own real state word: ${JSON.stringify(ompCheckRowName)}.`);
-  await cdp.screenshot(path.join(evidenceDir, '02-health-check-dialog-warning.png'));
-
-  const preDoneActive = await getActiveElementAccessibleName(cdp);
-  assert(preDoneActive.name === 'Done', `Done must still be focused (it is auto-focused on open and nothing should have stolen focus) (got ${JSON.stringify(preDoneActive)})`);
-  await pressRealEnter(cdp);
-  await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'HealthCheckDialog closed via Enter on Done' });
-  const postCloseActive = await getActiveElementAccessibleName(cdp);
-  assert(postCloseActive.name === 'Open Health check', `Done must return focus to the alert row's own Check button, not <body>/the Settings cog (got ${JSON.stringify(postCloseActive)})`);
-  log('STEP PASS: Done closes HealthCheckDialog and returns focus to the alert row\'s own Check button (never <body>).');
-
-  await pressTab(cdp);
-  active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Dismiss unverified version alert', `Tab from Check must land on the omp-version Dismiss button (got ${JSON.stringify(active)})`);
-  tabOrder.push({ step: 'Tab 5 (post Health-check close)', ...active });
-  log(`STEP PASS: full documented Tab order confirmed: ${tabOrder.map((s) => JSON.stringify(s.name)).join(' -> ')}.`);
+  // ---- Items 7 & 8: a real keyboard-only Tab walk, HealthCheckDialog open/close via keyboard
+  // (verify-tauri-560-gate2.mjs, split out round 3 to keep this file under the 600-line soft
+  // cap -- no behaviour change). Returns the profile name button's own accessible name, needed
+  // later for item 6's keyboard-driven Dismiss fallback assertion. ----
+  const nameButtonAx = await runTabWalkAndHealthCheckDialogTest(cdp, { PROFILE_NAME_BUTTON, DIALOG_TITLE, DIALOG, OMP_CHECK_ROW }, evidenceDir, log);
 
   // ---- Item 9: gate round 2 F1 regression test (verify-tauri-560-gate2.mjs) ----
   await runFocusTheftRegressionTest(cdp, { TRIAGE_BUTTON, LOW_MEMORY_ROW_SPAN }, log);
@@ -330,10 +294,10 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   log('STEP PASS: the busy guard held -- exactly one real stopAgent call reached the IPC bridge despite a second real Enter keypress while "Stopping…".');
   const postStopActive = await getActiveElementAccessibleName(cdp);
   assert(
-    postStopActive.role === 'heading' && postStopActive.name === 'Free up memory',
-    `focus after a successful single Stop must land on a genuine, named, connected control, never <body> -- with no idle Sessions remaining (this Session was the only one), focusAfterStop()'s own documented fallback order lands on the dialog's own heading (role=heading name="Free up memory"); got role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}`
+    postStopActive.role === 'button' && postStopActive.name === 'Done',
+    `focus after a successful single Stop must land on a genuine, named, connected control, never <body> -- with no idle Sessions remaining (this Session was the only one) and "Stop idle" also gone, focusAfterStop()'s own documented fallback order (gate round 3, L3) lands on the always-present Done button before the dialog's own heading; got role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}`
   );
-  log(`STEP PASS: confirming Stop actually stopped the agent (sessions.list() status now 'stopped'), the row is gone, the dialog shows the empty-state copy, and focus landed on a real connected control: the dialog's own heading (role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}), never <body>.`);
+  log(`STEP PASS: confirming Stop actually stopped the agent (sessions.list() status now 'stopped'), the row is gone, the dialog shows the empty-state copy, and focus landed on a real connected control: the Done button (role=${JSON.stringify(postStopActive.role)} name=${JSON.stringify(postStopActive.name)}), never <body>.`);
   await cdp.screenshot(path.join(evidenceDir, '03-triage-dialog-after-stop-A.png'));
   await pressEscape(cdp);
   await cdp.waitFor(`!(${DIALOG})`, { timeoutMs: 10_000, label: 'Triage dialog closed via Escape' });
@@ -354,7 +318,9 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await sleep(300); // same settle-sleep race guard as every other post-dialog-open click in this file
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
   const bulkTitle = await cdp.evaluate(`(${ALERT_DIALOG_TITLE})?.textContent.trim()`);
-  assert(bulkTitle === 'Stop 1 idle agent?', `the bulk confirmation must name the real idle count (got ${JSON.stringify(bulkTitle)})`);
+  // Gate round 3 (L4): a bulk confirm targeting exactly one Session reuses the single-stop
+  // wording verbatim, not "Stop 1 idle agent?".
+  assert(bulkTitle === `Stop ${sessionB.name}'s agent?`, `a bulk confirmation targeting exactly one Session must reuse the single-stop wording (got ${JSON.stringify(bulkTitle)})`);
   const ALERT_DIALOG_DESCRIPTION = `document.querySelector('[data-slot="alert-dialog-description"]')`;
   const bulkDescription = await cdp.evaluate(`(${ALERT_DIALOG_DESCRIPTION})?.textContent.trim()`);
   assert(
@@ -394,7 +360,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.waitFor(`(${DIALOG_TITLE})?.textContent.trim() === 'Free up memory'`, { timeoutMs: 10_000, label: 'MemoryTriageDialog reopened for the real bulk stop' });
   await sleep(300);
   await cdp.click(`Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Stop idle')`);
-  await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === 'Stop 1 idle agent?'`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
+  await cdp.waitFor(`(${ALERT_DIALOG_TITLE})?.textContent.trim() === ${JSON.stringify(`Stop ${sessionB.name}'s agent?`)}`, { timeoutMs: 10_000, label: 'bulk confirmation reopened' });
   // Settle-sleep race guard on the destructive "Stop" click (confirmed live, run 4/7: lost silently).
   await sleep(300);
   await cdp.click(`Array.from((${ALERT_DIALOG})?.querySelectorAll('button') ?? []).find((b) => b.textContent.trim() === 'Stop')`);
@@ -438,15 +404,24 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   );
   await pressRealEnter(cdp);
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' === undefined', { timeoutMs: 5_000, label: 'omp-version row removed immediately on keyboard-driven Dismiss' });
-  // Gate round 2 fix retries for up to 500ms; poll (not a fixed sleep) until it settles.
-  await cdp.waitFor(`document.activeElement !== document.body && document.activeElement?.isConnected === true`, { timeoutMs: 2_000, label: 'focus settles on a real connected control after keyboard-driven Dismiss' });
+  // Gate round 3 fix (M4): asserts the EXACT expected fallback (the proactive Dismiss-click
+  // redirect, since the low-memory row is already dismissed, falls through to
+  // `focusProfileItemName()`) immediately after the keypress, then AGAIN about a second later,
+  // rather than accepting any named connected control within a generous window -- a later
+  // library cleanup stealing focus back to something else, still connected and named, would
+  // have passed the old assertion.
   const postKeyboardDismissActive = await getActiveElementAccessibleName(cdp);
-  const postKeyboardDismissConnected = await cdp.evaluate(`document.activeElement !== document.body && document.activeElement?.isConnected === true`);
   assert(
-    postKeyboardDismissConnected === true && !!postKeyboardDismissActive.name,
-    `after a keyboard-driven Dismiss (Tab + Enter), focus must land on a real, named, connected control, never <body> (got connected=${postKeyboardDismissConnected}, ${JSON.stringify(postKeyboardDismissActive)})`
+    postKeyboardDismissActive.role === 'button' && postKeyboardDismissActive.name === nameButtonAx.name,
+    `after a keyboard-driven Dismiss (Tab + Enter) of the last remaining row, focus must land EXACTLY on the profile item's own name button (role=button name=${JSON.stringify(nameButtonAx.name)}), never <body> or any other control (got ${JSON.stringify(postKeyboardDismissActive)})`
   );
-  log(`STEP PASS: dismissing the unverified-version row via Tab + Enter hides it immediately and leaves focus on a real connected control: role=${JSON.stringify(postKeyboardDismissActive.role)} name=${JSON.stringify(postKeyboardDismissActive.name)}.`);
+  await sleep(1_000);
+  const postKeyboardDismissActiveLater = await getActiveElementAccessibleName(cdp);
+  assert(
+    postKeyboardDismissActiveLater.role === 'button' && postKeyboardDismissActiveLater.name === nameButtonAx.name,
+    `focus on the profile item's own name button must still hold about a second later, not get stolen back by a delayed cleanup (got ${JSON.stringify(postKeyboardDismissActiveLater)})`
+  );
+  log(`STEP PASS: dismissing the unverified-version row via Tab + Enter hides it immediately and leaves focus EXACTLY on the profile item's own name button (${JSON.stringify(nameButtonAx.name)}), confirmed both immediately and ~1s later.`);
   await cdp.screenshot(path.join(evidenceDir, '05-both-rows-dismissed.png'));
 
   // ---- Item 5e (round 2): a Settings round trip must not resurrect a dismissed row or
