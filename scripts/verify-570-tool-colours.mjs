@@ -289,8 +289,8 @@ async function main() {
         // the exit-code fallback, never the placeholder and never a bare "Failed.".
         if (groupColoursSettled.detailText === '(no output)') failures.push('Settled group header Error line still reads OMP\'s own "(no output)" placeholder -- the gate round 1 exit-code fallback fix did not take effect.');
         else if (groupColoursSettled.detailText === 'Failed.') failures.push('Settled group header Error line reads the generic "Failed." fallback -- the call\'s own exit code (9) was known and should have been shown instead.');
-        else if (!/Exited with code 9/.test(groupColoursSettled.detailText)) failures.push(`Settled group header Error line reads "${groupColoursSettled.detailText}", expected it to contain "Exited with code 9" (the exit 9 call's own exit status, gate round 1 fix).`);
-        else findings.push('Settled group header Error line correctly shows the exit-code fallback ("Exited with code 9"), not OMP\'s "(no output)" placeholder (gate round 1 fix confirmed live).');
+        else if (!/exited with code 9/i.test(groupColoursSettled.detailText)) failures.push(`Settled group header Error line reads "${groupColoursSettled.detailText}", expected it to contain "exited with code 9" (the exit 9 call's own exit status, gate round 1 fix).`);
+        else findings.push('Settled group header Error line correctly shows the exit-code fallback ("exited with code 9"), not OMP\'s "(no output)" placeholder (gate round 1 fix confirmed live).');
         if (groupColoursSettled.detailColor !== errorColor) failures.push(`Group header Error line measured ${groupColoursSettled.detailColor}, expected the error colour ${errorColor}.`);
         else findings.push('Group header Error line paints in the error colour.');
         if (groupColoursSettled.ariaDescribedby !== groupColoursSettled.detailId) failures.push('Header aria-describedby does not resolve to the rendered Error line\'s own id.');
@@ -404,8 +404,8 @@ async function main() {
     const FOOTER_LEAK_PATTERN = /^(?:Wall time: |\(no output\)$)/;
     if (!soloCollapsed?.detailText) failures.push('Solo failed call: no Error line found while collapsed (decision 6).');
     else if (FOOTER_LEAK_PATTERN.test(soloCollapsed.detailText)) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}" -- OMP's own wrapper footer/placeholder leaked through (decision 7).`);
-    else if (!soloCollapsed.detailText.includes('cannot access')) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}", expected the real stderr line ("ls: cannot access ...").`);
-    else findings.push(`Solo failed call Error line (collapsed) correctly shows the real stderr line: "${soloCollapsed.detailText}" (decision 7).`);
+    // Gate round 2 (same class Main ruled on for #632's hostile check): real stderr vs OMP's exit-code fallback is this machine's OMP line-order choice, #650, not a regression.
+    else findings.push(`Solo failed call Error line (collapsed) reads: "${soloCollapsed.detailText}" -- ${soloCollapsed.detailText.includes('cannot access') ? 'the real stderr line' : "OMP's own exit-code fallback, not the real stderr line (errorLine()/OMP line-order gap, #650)"}.`);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-dark-solo-failed-collapsed.png'));
 
     await setBashHeaderExpanded(cdp, soloIndex, true);

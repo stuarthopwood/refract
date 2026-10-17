@@ -350,6 +350,9 @@ async function main() {
       for (let node = b.parentElement; node && node !== document.body; node = node.parentElement) ancestorBorders.push(getComputedStyle(node).borderTopWidth);
       return { triggerBg: getComputedStyle(h).backgroundColor, ancestorBorders };
     })()`;
+    // The expand click above leaves the real cursor on the header (CDP's click moves it there
+    // first) -- reset off it first, or the header's own stale hover tint reads as a false change.
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     const memberHoverBefore = await cdp.evaluate(memberHoverState);
     const memberHoverRect = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     if (memberHoverRect) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: memberHoverRect.x, y: memberHoverRect.y });
