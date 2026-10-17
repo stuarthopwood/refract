@@ -152,17 +152,12 @@ function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; r
   return stat
 }
 
-// #632 section 3's "muted result" column, for one call's own row (both the solo branch and each
-// nested `ToolCallRow`): an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the
-// same old/new text `DiffView`'s expanded body already diffs, #630) joined with the call's own
-// duration. Every other tool in the table (`grep`, `glob`, `find`, `read`) has no result shown
-// here: none of their OMP output shapes is a documented, fixture-backed contract in this
-// codebase (unlike `bash`'s own `Wall time:`/exit-code footer, which `errorLine` above already
-// has a probed, gated format for) -- the issue's own rule is "no count rather than a wrong one",
-// so this does not guess at one from unparsed free text. `write` is the same story as those
-// three: #630's own field comment notes a diff against "a cached prior read/edit of the same
-// path" was the original idea, but no such cache exists yet (a separate, substantial piece of
-// work), so `write` keeps its existing "Wrote N lines" body text and gets no new row stat either.
+// #632 section 3's "muted result" column, for one call's own row (solo or nested `ToolCallRow`):
+// an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the same old/new text
+// `DiffView`'s expanded body already diffs, #630) joined with duration. `grep`/`glob`/`find`/
+// `read` show no result: no documented, fixture-backed OMP output shape to probe first (the
+// issue's own rule is "no count rather than a wrong one"). `write` gets no stat either: no
+// cache of a prior read/edit's content exists yet to diff it against (#630's own open idea).
 // Gate round 1 (Sec Medium H3): gated on `status === 'done'`, same as `ToolCallBody`'s own
 // "Wrote N lines"/quiet-summary text, since `item.edit` is populated while still running too.
 // Gate round 1 (ui-architect-v3 High H5): a coloured stat broke #570 decisions 1/3 ("success
@@ -275,7 +270,10 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       icon={<StatusIcon status={item.status} />}
       label={isCommandStyle ? undefined : item.tool}
       labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}
+      // Gate round 1 fix (H1/M2 interaction, found live): #570 decision 4 colours icon+label
+      // red on failure; a command-style row's dropped label left no coloured text -- restored here.
       summary={commandRowText(item)}
+      summaryClassName={isCommandStyle && item.status === 'error' ? 'text-severity-error' : undefined}
       summaryWrap={summaryWrap}
       // Gate round 1 (code-reviewer High, H4): wrap-on-expand is opt-in now; a tool call's row
       // text (FR-061) wants it for every tool, not only the command-style ones.
@@ -460,7 +458,9 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       icon={<StatusIcon status={status} />}
       label={visibleLabel}
       labelClassName={status === 'error' ? 'text-severity-error' : undefined}
+      // See `ToolCallRow`'s own identical comment -- the solo branch needs the same restore.
       summary={summary}
+      summaryClassName={soloIsCommandStyle && status === 'error' ? 'text-severity-error' : undefined}
       summaryWrap={summaryWrap}
       // Gate round 1 (H4): see `ToolCallRow`'s own comment -- the solo branch is a tool row too.
       wrapWhenOpen

@@ -19,13 +19,12 @@
 //       to catch decision 12's "N failed" meta colour showing mid-run while the header's own
 //       icon/label stay neutral until the group SETTLES.
 //   (b) a solo failing bash call -- decision 6's Error line must show whether collapsed or
-//       expanded, decision 4's icon+label colour, decision 10's no-duplicate-in-expansion.
+//       expanded, decision 4's icon+label/summary colour (M2 moves it to summary once the
+//       label is dropped for this command-style call), decision 10's no-duplicate-in-expansion.
 //   (c) a slow bash call, stopped (Stop button) before it finishes -- PURELY DIAGNOSTIC (gate
-//       round 1, G909Arch M3 [INFERENCE]): `model.ts`'s own doc comment on `'interrupted'`
-//       (ToolItem status) says that status is derived from `detectUnexpectedTermination` on a
-//       Conversation whose PROCESS has actually died, never from an ordinary graceful Stop --
-//       so this turn does not assert a specific resulting status, it only RECORDS whatever the
-//       row settles to (colour, label, status word) for the record.
+//       round 1, G909Arch M3 [INFERENCE]): an ordinary graceful Stop is not what model.ts's own
+//       'interrupted' status comes from (a died PROCESS), so this turn asserts nothing, only
+//       RECORDS what the row settles to (colour, label, status word).
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,13 +62,16 @@ const TURN_C_PROMPT =
   "Make exactly ONE bash tool call: run exactly `sleep 20`. Then reply with exactly the single word 't570c' and nothing else.";
 const TURN_A_SENTINEL = 't570a';
 const TURN_B_SENTINEL = 't570b';
-// #570-only DOM marker: matches a `ToolGroupRow`/solo header by its EXACT label text ("bash"),
-// never a substring match against a button's whole textContent (a streaming Thinking row's own
-// trigger can contain the word "bash" in its preview text and sits earlier in the DOM).
-// Gate round 1 (test-reviewer High, H1): #632 renamed a multi-call group's own label from the
-// bare tool name to "bash ×N" -- matched here too, so turn (a)'s own 3-call group is still found.
+// #570-only DOM marker: matches a `ToolGroupRow`/solo header by its label text ("bash", matching
+// #632's "bash ×N" multi-call form too), falling back to a label-less button whose own summary
+// starts with "$ " (M2 drops the label for a solo/member command-style row; `commandRowText`).
 const BASH_HEADER_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim()); })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
+    const label = el.querySelector('span.font-medium');
+    if (label) return /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
+    const s = el.querySelector('span.min-w-0.flex-1');
+    return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
+  })`;
 
 async function countBashHeaders(cdp) {
   return cdp.evaluate(`(${BASH_HEADER_FINDER}).length`);
@@ -89,15 +91,16 @@ async function setBashHeaderExpanded(cdp, index, wantOpen) {
   );
 }
 
-/** Reads the real computed colour of a header's icon, label, and (if present) its linked Error
- * line, plus the Error line's own id/aria-describedby wiring -- decisions 1-6. Never guesses from
- * class names: every value is `getComputedStyle(...).color`, the actual painted pixel colour. */
+/** Reads the real computed colour of a header's icon, label, summary (M2's error-colour restore
+ * for a label-less command-style row), and (if present) its linked Error line -- decisions 1-6.
+ * Never guesses from class names: every value is `getComputedStyle(...).color`. */
 async function readHeaderColours(cdp, index) {
   return cdp.evaluate(`(() => {
     const header = (${BASH_HEADER_FINDER}).at(${index});
     if (!header) return null;
     const icon = header.querySelector('span.flex svg, span > svg');
     const label = header.querySelector('span.font-medium');
+    const summary = header.querySelector('span.min-w-0.flex-1');
     const describedby = header.getAttribute('aria-describedby');
     const detail = describedby ? document.getElementById(describedby) : null;
     const metaFailed = Array.from(header.querySelectorAll('span')).find((s) => /\\d+ failed/.test(s.textContent));
@@ -105,6 +108,7 @@ async function readHeaderColours(cdp, index) {
       iconColor: icon ? getComputedStyle(icon).color : null,
       labelColor: label ? getComputedStyle(label).color : null,
       labelText: label ? label.textContent.trim() : null,
+      summaryColor: summary ? getComputedStyle(summary).color : null,
       detailText: detail ? detail.textContent.trim() : null,
       detailColor: detail ? getComputedStyle(detail).color : null,
       detailId: detail ? detail.id : null,
@@ -335,12 +339,19 @@ async function main() {
       const stillDescribed = header ? header.getAttribute('aria-describedby') : 'MISSING-HEADER';
       const ol = document.querySelector('[aria-label="Transcript"] ol.border-l');
       const members = ol ? Array.from(ol.querySelectorAll('li')) : [];
+      // M2 drops every (bash) member's own label; the error colour moved onto its summary span.
       const memberInfo = members.map((li) => {
         const label = li.querySelector('span.font-medium');
+        const summary = li.querySelector('span.min-w-0.flex-1');
         const btn = li.querySelector('button');
         const describedby = btn ? btn.getAttribute('aria-describedby') : null;
         const detail = describedby ? document.getElementById(describedby) : null;
-        return { labelColor: label ? getComputedStyle(label).color : null, hasDetail: !!detail, detailText: detail ? detail.textContent.trim() : null };
+        return {
+          labelColor: label ? getComputedStyle(label).color : null,
+          summaryColor: summary ? getComputedStyle(summary).color : null,
+          hasDetail: !!detail,
+          detailText: detail ? detail.textContent.trim() : null
+        };
       });
       const markedNode = document.querySelector('[data-verify-marker]');
       return { stillDescribed, memberCount: members.length, memberInfo, markerStillMounted: !!markedNode, markerHidden: markedNode ? markedNode.hasAttribute('hidden') : null };
@@ -358,11 +369,12 @@ async function main() {
     else findings.push('Group header\'s own Error line/aria-describedby is gone once expanded (decision 9, hideDetailWhenOpen).');
     if (expandedCheck.memberCount !== 3) failures.push(`Expected 3 members in the expanded group, found ${expandedCheck.memberCount}.`);
     else findings.push('Expanded group shows all 3 members.');
-    const failedMembers = expandedCheck.memberInfo.filter((m) => m.labelColor === errorColor);
-    if (failedMembers.length !== 1) failures.push(`Expected exactly 1 member with an error-coloured label, found ${failedMembers.length} (${JSON.stringify(expandedCheck.memberInfo)}).`);
+    const isErrorColoured = (m) => m.labelColor === errorColor || m.summaryColor === errorColor;
+    const failedMembers = expandedCheck.memberInfo.filter(isErrorColoured);
+    if (failedMembers.length !== 1) failures.push(`Expected exactly 1 member with an error-coloured label/summary, found ${failedMembers.length} (${JSON.stringify(expandedCheck.memberInfo)}).`);
     else if (!failedMembers[0].hasDetail) failures.push('The one failed member has no Error line of its own once expanded (decision 9).');
     else findings.push(`The one failed member shows its own Error line once expanded: "${failedMembers[0].detailText}".`);
-    const okMembers = expandedCheck.memberInfo.filter((m) => m.labelColor !== errorColor);
+    const okMembers = expandedCheck.memberInfo.filter((m) => !isErrorColoured(m));
     if (okMembers.some((m) => m.hasDetail)) failures.push('A successful member row shows an Error line -- only a failed member should.');
     else findings.push('Successful member rows show no Error line.');
     await setBashHeaderExpanded(cdp, 0, false);
@@ -386,8 +398,9 @@ async function main() {
     const headerCountAfterB = await countBashHeaders(cdp);
     const soloIndex = headerCountAfterB - 1;
     const soloCollapsed = await readHeaderColours(cdp, soloIndex);
-    if (!soloCollapsed || soloCollapsed.labelColor !== errorColor) failures.push(`Solo failed call: header label measured ${soloCollapsed?.labelColor}, expected ${errorColor} (decision 4).`);
-    else findings.push(`Solo failed call: header label/icon paint in the error colour (${soloCollapsed.labelColor}), decision 4.`);
+    const soloColoured = soloCollapsed && (soloCollapsed.labelColor === errorColor || soloCollapsed.summaryColor === errorColor); // M2: label dropped for bash, colour moves to summary
+    if (!soloColoured) failures.push(`Solo failed call: header label/summary measured label=${soloCollapsed?.labelColor} summary=${soloCollapsed?.summaryColor}, expected ${errorColor} (decision 4).`);
+    else findings.push(`Solo failed call: header icon/summary paint in the error colour (${soloCollapsed.summaryColor}), decision 4 (label dropped by M2 for this command-style row).`);
     const FOOTER_LEAK_PATTERN = /^(?:Wall time: |\(no output\)$)/;
     if (!soloCollapsed?.detailText) failures.push('Solo failed call: no Error line found while collapsed (decision 6).');
     else if (FOOTER_LEAK_PATTERN.test(soloCollapsed.detailText)) failures.push(`Solo failed call Error line reads "${soloCollapsed.detailText}" -- OMP's own wrapper footer/placeholder leaked through (decision 7).`);
@@ -509,11 +522,13 @@ async function main() {
         const h = (${BASH_HEADER_FINDER}).at(-1);
         if (!h) return null;
         const label = h.querySelector('span.font-medium');
+        const summary = h.querySelector('span.min-w-0.flex-1');
         const srWord = h.querySelector('span.sr-only');
         const describedby = h.getAttribute('aria-describedby');
         const detail = describedby ? document.getElementById(describedby) : null;
         return {
           labelColor: label ? getComputedStyle(label).color : null,
+          summaryColor: summary ? getComputedStyle(summary).color : null,
           srStatusWord: srWord ? srWord.textContent.trim() : null,
           hasErrorLine: !!detail,
           detailText: detail ? detail.textContent.trim() : null,
@@ -523,15 +538,16 @@ async function main() {
       if (!stoppedRowInfo) {
         notExercised.push('Turn (c): no bash header found after Stop -- could not observe the post-Stop state at all.');
       } else {
-        findings.push(`Turn (c), 3s after clicking Stop mid-flight (M3, diagnostic only, no specific value asserted): status word "${stoppedRowInfo.srStatusWord}", label colour ${stoppedRowInfo.labelColor}, Error line ${stoppedRowInfo.hasErrorLine ? `present ("${stoppedRowInfo.detailText}")` : 'absent'}.`);
-        if (stoppedRowInfo.labelColor === errorColor) {
+        findings.push(`Turn (c), 3s after clicking Stop mid-flight (M3, diagnostic only, no specific value asserted): status word "${stoppedRowInfo.srStatusWord}", label colour ${stoppedRowInfo.labelColor}, summary colour ${stoppedRowInfo.summaryColor}, Error line ${stoppedRowInfo.hasErrorLine ? `present ("${stoppedRowInfo.detailText}")` : 'absent'}.`);
+        const stoppedColoured = stoppedRowInfo.labelColor === errorColor || stoppedRowInfo.summaryColor === errorColor;
+        if (stoppedColoured) {
           // Informational, NOT a script failure: #570's own code (toolStatus.tsx's
           // 'interrupted'/'exited' branches) is unmodified here, and the gate explicitly scoped
           // M3 as "no code change in this PR" -- a pre-existing #510/#490 question, surfaced for
           // the record, never a #570 regression this script should fail on.
-          findings.push(`Turn (c), M3 CONFIRMED (not merely [INFERENCE]): a user-initiated Stop produced the FULL error-colour treatment (label ${stoppedRowInfo.labelColor}, status word "${stoppedRowInfo.srStatusWord}") -- decision 5's reasoning ("nothing is known to have gone wrong") argues this should stay neutral. PRE-EXISTING #510 behaviour, unmodified by #570; a gap for #510/#490 to resolve, not scored as a #570 failure.`);
+          findings.push(`Turn (c), M3 CONFIRMED (not merely [INFERENCE]): a user-initiated Stop produced the FULL error-colour treatment (label ${stoppedRowInfo.labelColor}, summary ${stoppedRowInfo.summaryColor}, status word "${stoppedRowInfo.srStatusWord}") -- decision 5's reasoning ("nothing is known to have gone wrong") argues this should stay neutral. PRE-EXISTING #510 behaviour, unmodified by #570; a gap for #510/#490 to resolve, not scored as a #570 failure.`);
         } else {
-          findings.push(`Turn (c): a user-initiated Stop did NOT produce the error colour (stayed ${stoppedRowInfo.labelColor}) -- M3's [INFERENCE] does not reproduce in this run.`);
+          findings.push(`Turn (c): a user-initiated Stop did NOT produce the error colour (label stayed ${stoppedRowInfo.labelColor}, summary ${stoppedRowInfo.summaryColor}) -- M3's [INFERENCE] does not reproduce in this run.`);
         }
       }
     } catch (err) {

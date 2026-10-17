@@ -54,10 +54,18 @@ const TURN_B_SENTINEL = 'spine565b';
 // row's own trigger can contain the word "bash" in its preview text and sits earlier in the DOM,
 // which a loose `.includes('bash')` match would click or measure instead.
 // Gate round 1 (test-reviewer High, H1): #632 renamed a multi-call group's own label from the
-// bare tool name to "bash ×N" -- the exact-match regex below now matches both forms, so a
-// multi-call group is found by this SAME finder instead of silently vanishing from it.
+// bare tool name to "bash ×N" -- the exact-match regex below now matches both forms. M2 (this
+// same gate round) then drops the label ENTIRELY for a solo `bash` row (its own summary already
+// names the tool) -- a live run of THIS fixed finder still found only 1 header after turn (b)'s
+// new solo bash call, confirming the fix needed here too: a label-less button is also accepted
+// when its own summary span starts with the command-style grammar ($ `commandRowText` uses).
 const BASH_HEADER_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim()); })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
+    const label = el.querySelector('span.font-medium');
+    if (label) return /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
+    const s = el.querySelector('span.min-w-0.flex-1');
+    return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
+  })`;
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
