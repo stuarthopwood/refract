@@ -266,6 +266,51 @@ call sites; 360px pane width and 400% zoom on the restyled row and detail header
   60s window-focus throttle / active-GitHub-account-change cache-clear paths (code-verified only
   -- see the issue's #650 comment for the full code-verified-only list).
 
+## Phase 10: Convergence -- #499 filter redesign, #930 resizable column (issues #499, #930)
+
+- [X] T043 [P] `FilterTab`/`PullRequestStateFilter` split (FR-003, FR-004): renamed `FilterTab`'s
+  `'open'` literal to `'all'` (`src/shared/github.ts`, `FilterTab::All` in Rust), added
+  `PullRequestStateFilter` (`'open' | 'closed' | 'all'`), threaded through `pullRequests.list`'s
+  new `state` arg, `list_pull_requests_by_state` (generalised from `list_open_pull_requests`),
+  and `search_pull_requests`'s new `state` arg (`gh_pull_requests.rs`).
+  -- Implemented (a359aca): `src/shared/github.ts`, `src/shared/ipc.ts`,
+  `src-tauri/src/ipc/pull_requests/{mod,handlers}.rs`, `src-tauri/src/github/gh_pull_requests.rs`;
+  `pull-requests-store.ts`'s `refreshActiveCount` (#569) now passes `state: 'open'` directly
+  instead of the old `query: 'is:open'` free-text hack.
+- [X] T044 (FR-003, FR-004, FR-033) `PullRequestList.tsx` redesign: one non-wrapping,
+  horizontally-scrollable ghost Filter tab row (soft edge fade, active tab scrolled into view,
+  underline shape cue on the active tab matching `PanelTabBar.tsx`'s own WCAG 1.4.11 fix for the
+  identical contrast problem #568's gate round flagged on this issue); a ghost Filters button
+  (dot plus "Filters, N active" when non-default) pinned with Refresh at the row's right end,
+  disclosing the search field and the State select, both applying while closed.
+  -- Implemented (a359aca): `PullRequestList.tsx` (`PR_FILTER_TAB_TRIGGER_CLASS`,
+  `TABS_FADE_MASK_CLASS`, the `tabsWrapRef` scroll-into-view effect).
+- [X] T045 (FR-034, FR-035) Resizable list column: `pull-requests-layout-store.ts` (new, mirrors
+  `split-store.ts`'s live-value/debounced-persist split), `Settings.pullRequestsListWidthPx`
+  end to end (`shared/model.ts`, `settings-store.ts`, Rust `store/settings.rs`/`ipc/settings.rs`,
+  new `settings.setPullRequestsListWidth` channel), `PullRequestsView.tsx`'s list/detail split as
+  a `ResizablePanel`/`ResizableHandle` (280px to 50%, default/remembered 320px -- plain pixel
+  `minSize`/`defaultSize` numbers, no percent conversion needed on `react-resizable-panels`
+  4.14.1; double-click reset and arrow-key resize are the library's own built-in `Separator`
+  behaviour). The header's heading+Project-selector wrapper now tracks the same live `widthPx`.
+  -- Implemented (a359aca).
+- [X] T046 Update `specs/003-pull-request-management/spec.md` (FR-003/FR-004 amended, new
+  FR-033 to FR-035, Clarifications Session 2026-10-16), `data-model.md` (`FilterTab`/
+  `PullRequestStateFilter`, `Settings.pullRequestsListWidthPx`) and `contracts/ipc.md`
+  (`pullRequests.list`'s `state` param, new `settings.setPullRequestsListWidth`) to record both
+  issues' own decision records; `CONTEXT.md`'s **Filter tab** entry was already updated for #499
+  in commit `62fe017` (pre-dating this PR).
+  -- Implemented (08f8453).
+- [ ] T047 Live verification per both issues' own decision records (tab geometry at 240/320/380/
+  520px, keyboard-only Filters/State/resize, a remembered width across a relaunch). NOT run this
+  pass (no-build prep lane): `scripts/verify-tauri-499-930.mjs` is written (modelled on
+  `verify-tauri-568.mjs`) but not executed; no Rust build was run either.
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test` (148/148), `node scripts/check-indent.mjs`,
+`check-file-size.mjs`, `check-drag-regions.mjs`, `check-theme-contrast.mjs` and `check-parity.mjs`
+all pass. `check:ui-text` needs a built bundle (not run). `cargo build`/`test`/`clippy`/`fmt` not
+run (no-build prep lane) -- the Rust changes above are code-reviewed only, not compiled. Full
+live check (T047) left to the build lane.
 
 ---
 
