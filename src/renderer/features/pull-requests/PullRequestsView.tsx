@@ -46,26 +46,38 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
     }
   }, [repositoryId])
 
-  // Issue #930 gate-fix (caught live 2026-10-17): the heading row's own wrapper used to track
-  // the layout store's `widthPx`, which `onResize` feeds from `react-resizable-panels`' own
-  // `element.offsetWidth` -- an INTEGER, rounded read. The real panel box the test (and the eye)
-  // measures via `getBoundingClientRect()` is a subpixel float, and at some drag positions the
-  // rounded `widthPx` this wrapper rendered at was wider than the panel's true fractional width,
-  // pushing the Project selector's own right edge past the real column's right edge even though
-  // it stayed inside this wrapper's (slightly too generous) own bounds. Measuring the panel's
-  // actual DOM element directly -- the same element and the same `getBoundingClientRect()` the
-  // live check reads -- makes this wrapper's width byte-identical to the real column, every time.
+  // Issue #930 gate-fix (caught live 2026-10-17, round 2): the heading row's own wrapper used to
+  // track the layout store's `widthPx` (an integer read off `react-resizable-panels`' own
+  // `onResize`). Matching the panel's real rendered WIDTH turned out not to be enough on its
+  // own: the drag-region header row above has its own `px-3` horizontal padding, while the
+  // `ResizablePanelGroup`/panel below it has none, so this wrapper's own LEFT edge sits ~12px
+  // to the right of the panel's real left edge. Pinning the wrapper's width to the panel's
+  // width alone still left its RIGHT edge ~12px past the panel's real right edge -- invisible
+  // while the Select had slack to spare, but the moment the column got narrow enough that the
+  // Select had to shrink to fill the wrapper, it shrank to fill the WRAPPER's edge, not the
+  // panel's, landing the Project selector exactly that ~12px past the real column (confirmed
+  // live: the overflow amount didn't change between runs, consistent with a fixed geometry
+  // offset rather than any timing/rounding drift). Measuring BOTH elements' own
+  // `getBoundingClientRect()` and computing this wrapper's width as the exact gap between the
+  // panel's real right edge and this wrapper's own real left edge removes the padding
+  // mismatch as a variable entirely: wrapperRight is always, by construction, panelRight.
   const panelElementRef = useRef<HTMLDivElement | null>(null)
+  const headerWrapperRef = useRef<HTMLDivElement | null>(null)
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
   useLayoutEffect(() => {
-    const el = panelElementRef.current
-    if (!el) return
-    const measure = () => setListColumnWidthPx(el.getBoundingClientRect().width)
+    const panelEl = panelElementRef.current
+    const wrapperEl = headerWrapperRef.current
+    if (!panelEl || !wrapperEl) return
+    const measure = () => {
+      const panelRight = panelEl.getBoundingClientRect().right
+      const wrapperLeft = wrapperEl.getBoundingClientRect().left
+      setListColumnWidthPx(panelRight - wrapperLeft)
+    }
     measure()
     const observer = new ResizeObserver(measure)
-    observer.observe(el)
+    observer.observe(panelEl)
     return () => observer.disconnect()
   }, [repositoryId])
 
@@ -97,7 +109,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             truncate in step with it, instead of only shrinking at the app's unrelated 360px
             window-wide floor (#500's original fix, which this keeps as the Select's own inner
             `min-w-0 shrink` fallback). */}
-        <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
+        <div ref={headerWrapperRef} className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
           <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
             Pull requests
           </h2>
