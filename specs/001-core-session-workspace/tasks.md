@@ -2711,7 +2711,136 @@ comment was posted on #559 and the PR body's Departures section corrected.
 
 ## Phase 50: Convergence
 
-- [X] T255 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
+- [X] T255 [US1] #560 quiet alert rows (Decided, Skippy, delegated by Stuart 2026-10-16;
+  `ui-architect-v3` roundtable, full decision record on the issue). `ProfileAlertRows.tsx` (new)
+  renders two single-line rows as `App.tsx` siblings directly after `<ProfileItem/>`, replacing
+  `StatusBar.tsx`'s own low-memory and unverified-omp-version `Popover`s (its update badge is
+  unchanged). Low memory keeps a "Triage" action, now opening `MemoryTriageDialog.tsx` (new): a
+  `Dialog` listing every Session whose agent is `idle` -- never `working` (mid-turn) or
+  `needs-you` (waiting on the user), never already `stopped` -- each with a confirmed Stop
+  (`AlertDialog`, naming the Session) and one "Stop idle" bulk confirm targeting every listed
+  Session at once; no per-agent memory figure, since no per-process memory API exists anywhere
+  in src-tauri and none is added by this story. Unverified version keeps a "Check" action
+  opening the existing `HealthCheckDialog`; `ProfileAlertRows.tsx` mounts its own independent
+  instance (its own `open` state and its own `onCloseFocus`), and `ProfileItem.tsx` keeps its
+  own, unchanged instance for the profile menu's Health check item -- the dialog itself supports
+  more than one caller, each owning its own open/close state and its own focus-restore target.
+  Each row dismisses for the run only
+  (two local booleans in `ProfileAlertRows.tsx`, never persisted) -- a restart naturally re-arms
+  both, satisfying "the alert returns if the condition persists after a restart" with no extra
+  logic. Per FR-037 (amended) and new FR-072.
+- [X] T256 [US1] Gate remediation (round 1, four reviewers, one High/High pair confirmed live by
+  a CDP run): `MemoryTriageDialog.tsx` gained busy guards on both confirm flows (Escape and
+  Cancel blocked while a stop is in flight, `stoppingId`/`bulkStopping` gate re-entry), a live
+  re-check of each Session's `idle` status at confirm time (not the snapshot taken when its own
+  Stop button was clicked), a latched last-known confirm target/count (no more text flicker
+  during the close animation), a computed post-stop focus fallback (the next remaining row's own
+  Stop button, else "Stop idle", else the dialog's own now-focusable heading -- never a button
+  the same stop just removed), and `finally`-wrapped `stopAgent` calls so a rejected IPC call
+  can never leave the dialog stuck on "Stopping…". `ProfileAlertRows.tsx`'s announcements moved
+  from a local `useClearedAnnouncement` region (silenced while the nav column is `inert`) to the
+  shared, always-mounted `useChatAreaAnnouncer` App.tsx already renders outside that collapsible
+  subtree, with the two conditions joined into one announcement when both first appear in the
+  same commit (two separate `announce()` calls in the same tick cancelled each other); its own
+  outer padding is now conditional on a row actually showing (`empty:p-0` never matched, since
+  the row always contained the old live region); and "N agents" is pluralised correctly (matches
+  the retired `StatusBar.tsx`'s own `pluralAgents`). The bulk confirm's own destructive button now
+  reads "Stop idle" (was "Stop all", which could be misread as every agent including a working
+  one). Live-verified by `scripts/verify-tauri-560.mjs` (see T257).
+- [X] T257 [US1] Live CDP check (`scripts/verify-tauri-560.mjs`, new, following
+  `verify-tauri-559.mjs`'s own structure): isolated scratch launch per
+  `refract-tauri-live-check-isolation`, with `REFRACT_FORCE_LOW_MEMORY=1` (an existing,
+  pre-reviewed `#[cfg(debug_assertions)]` test knob in `shell/memory.rs`, not added by this
+  story) forcing the low-memory condition, and the fake-omp harness's own hardcoded
+  `omp/18.10.1` version (already outside the specifically re-probed 18.8.x range per
+  `readiness.rs`) triggering the unverified-version condition with no script changes to the app
+  needed for either. Proved live: both rows appear with the exact copy; Triage lists a created
+  idle Session and a confirmed Stop actually stops it; a second idle Session plus "Stop idle"
+  stops it via the bulk confirm, emptying the list; dismissing each row hides it immediately and
+  it does not return on its own within one more memory-sampler tick even though the forced
+  condition still holds; Check opens the real `HealthCheckDialog` showing a genuine
+  "Passed with a warning" omp row; a keyboard-only pass (Tab/Enter) reaches and activates the
+  Check action; every named control's accessible name read via the CDP Accessibility domain
+  (never `textContent`). All checks passed (exit 0); nothing reported as not-exercised. Evidence
+  (`report.json`, screenshots with their own sha256, `git rev-parse HEAD`) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+- [X] T258 [US1] Update the docs: amended `specs/001-core-session-workspace/spec.md` with the
+  reworded FR-037, new FR-072, and a dated `### Session 2026-10-16 (quiet alert rows)`
+  Clarifications entry; amended `specs/008-profile-and-accounts/spec.md` FR-029 to cross-reference
+  both instead of duplicating them; `CONTEXT.md` gained the **Alert row** glossary entry (the term
+  the **Waiting marker** entry's own `_Avoid_` line had already reserved for this issue);
+  `docs/PLAN.md` gets this story's own row. Gate-round corrections: this same task's own T255
+  entry above is corrected to describe the HealthCheckDialog's TWO independent instances built
+  (never a lift into App.tsx, which would have raised App.tsx's own file-size baseline back over
+  its cap); `contracts/ipc.md`'s `memory:warning` row and `memory-store.ts`'s header comment no
+  longer call this the status bar's notice; `HealthCheckDialog.tsx`'s own doc comment names both
+  of its callers.
+- [X] T259 [US1] Gate remediation (round 2, Code/Tests FAIL -> fix): three findings, Decided
+  (Skippy, delegated by Stuart 2026-10-17), recorded on #560.
+  **F1** (focus theft on blank-space click): the round 1 focus-redirect fix's `focusout`
+  listener treated `document.activeElement === document.body` alone as proof the row's focused
+  descendant had been removed from the DOM, but an ordinary click on blank space (anywhere with
+  no focusable target) ALSO blurs the active element to `<body>` without removing anything --
+  the previous version stole focus straight back to the row every time. `ProfileAlertRows.tsx`
+  now additionally checks that the actual element leaving focus (`event.target`) is no longer
+  connected to the document (`describesRemoval()`) -- only a genuine removal causes that; a
+  blank-space click leaves the same button sitting there, still connected, so nothing redirects.
+  Keyboard focus-return after closing Triage (the dialog's own `onCloseAutoFocus`/`onCloseFocus`
+  path) is a separate mechanism, unaffected.
+  **F2** (failed Stop announced as success): `sessions-store.ts`'s `stopAgent` resolved
+  `Promise<void>` unconditionally, so a clean `{ok:false}` stop response (already toasted by the
+  store itself) was announced via `useChatAreaAnnouncer` as a SUCCESS regardless; in bulk,
+  `Promise.allSettled`'s `status === 'rejected'` filter never matched a clean failure either, so a
+  partly- or wholly-failed bulk stop always reported every target as stopped. `stopAgent` now
+  resolves the real `result.ok` boolean (matching `archive`/`restore`'s own established pattern,
+  `sessions-store.ts` interface doc comment added); `MemoryTriageDialog.tsx`'s single and bulk
+  confirm flows announce the true outcome, naming the failing Session(s) by name where available
+  ("Couldn't stop {name}'s agent" / "Couldn't stop {N} agents: {names}"), joined with any success
+  count into ONE `announce()` call for a partial bulk result (two calls in the same tick cancel
+  each other, `chatAreaAnnouncer.ts`).
+  **F3** (spec/UI mismatch on the agent count): FR-037 still promised "Low memory ({N} agents)"
+  on the row itself, but round 1's own "honest agent count" fix (`ProfileAlertRows.tsx` item 5
+  comment) had already dropped it, since the system's live-agent count (idle+working+needs-you)
+  and Triage's idle-only list can legitimately differ. FR-037 reworded to match (the row says
+  just "Low memory"); a new dated Clarifications entry (`### Session 2026-10-17 (quiet alert
+  rows, gate round 2)`) records the decision; `MemoryTriageDialog.tsx`'s own `DialogDescription`
+  now actually states the idle count its comments already claimed it did ("N idle agents using
+  memory..."); `docs/PLAN.md`'s #560 row gets this round's own summary.
+  `pnpm typecheck` and `pnpm vitest run` clean; `node scripts/ci-local.mjs` and a fresh live CDP
+  run (`scripts/verify-tauri-560.mjs`, extended to prove F1 and F2) -- see T260.
+- [X] T260 [US1] Live CDP check, gate round 2 (`scripts/verify-tauri-560.mjs`, extended; new
+  `scripts/verify-tauri-560-gate2.mjs` split out to keep the main file under the #806 600-line
+  cap): proves F1 live -- clicking the low-memory row's own non-focusable label (a real
+  blank-space click inside the row) while Triage is focused leaves focus on `<body>`, never
+  stolen back onto an alert row's own control; a keyboard-driven Dismiss of the last remaining
+  row (Tab + Enter) leaves focus on the profile item's own name button, never a disconnected
+  node. Proves F2 live -- `window.refract.sessions.stopAgent` monkey-patched in the renderer
+  (no real process touched) to force one Session's Stop to resolve `{ok:false}`, single and via
+  bulk "Stop idle" (n=1, reusing the one idle Session rather than a second concurrently-idle
+  one -- issue #512's real low-memory start-defer feature, triggered the whole run by this
+  story's own `REFRACT_FORCE_LOW_MEMORY=1`, would otherwise defer a second Session's start for
+  up to its own 60s ceiling, confirmed live racing this script's own equal 60s wait): both
+  announce the real failure, naming the Session, never success; the toast reads "Couldn't stop
+  {name}'s agent. Try again."; the Session stays listed since it was never actually stopped.
+  Two further bugs found and fixed by this same live-check work, neither part of F1/F2/F3 but
+  blocking a clean run: a WebView2/CDP input-timing click race on destructive confirm buttons
+  (a synthetic click immediately after a dialog/AlertDialog opens is an intermittent one-shot
+  miss in this harness, confirmed via `app.log` showing zero second `stopAgent` IPC call ever
+  reaching the backend when it struck -- settle-sleep guards added at every remaining site that
+  lacked one), and the keyboard-Dismiss focus bug named under F1 above (Radix Tooltip's own
+  Portal content re-stealing focus on its trigger's removal -- fixed by moving the redirect to
+  the Dismiss click site itself, proactively, before the row is ever removed). `node
+  scripts/ci-local.mjs` 16/16 PASS and this live check ALL PASS (exit 0, nothing not-exercised)
+  together on the same final HEAD `91f73e1`; `report.json`'s own `gitHead` matches. Evidence
+  (`report.json`, `report.txt`, `app.log`, six screenshots with their own sha256) under
+  `C:/Users/shopwood/AppData/Local/Temp/refract-560-shots/`.
+
+## Phase 51: Convergence
+
+(Renumbered from provisional Phase 50/T255-T257: PR #945 (#560) merged into `main` first and
+claimed Phase 50/T255-T260.)
+
+- [X] T261 [US1] #632 borderless thread for grouped tool calls and bash/grep/glob/read calls
   (supersedes #430; close #430 when this lands). Amended spec 001 -- FR-008 (a multi-call
   group's own header reads the tool name plus the run's own count, "bash ×2", never a call's
   own command; the group's own total time, the sum of every member's own duration, joins the
@@ -2724,7 +2853,7 @@ comment was posted on #559 and the PR body's Departures section corrected.
   --numstat origin/main -- specs/001-core-session-workspace/tasks.md` confirmed 0 deletions
   before this phase was appended.
 
-- [X] T256 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
+- [X] T262 [US1] Implementation, renderer-only (no Rust/cargo touched; `extract_target` in
   `src-tauri/src/omp/transcript.rs` already gives every row its own raw target string, so no
   transcript-builder change was needed): new `formatToolCommand.ts` (`commandRowText`) gives
   `bash` its own `$ <first line of the command>` row text and `grep` its own
@@ -2735,43 +2864,56 @@ comment was posted on #559 and the PR body's Departures section corrected.
   (bare tool name for the aria composition, kept separate so the accessible name never doubles
   "2 calls" and "×2"), its `summary` drops the old "last call's target + N others" text
   entirely, and its `meta` gains the run's own total duration (summed across members, shown only
-  once settled) alongside the existing failed/interrupted counts, joined by a new shared
-  `joinMetaParts` helper (the exact visible-middot-plus-sr-only-comma grammar #570 established,
-  now reusable instead of hand-copied). A new `callMeta` helper gives one call's own row (solo or
-  nested `ToolCallRow`) its duration plus, for an `edit` call, its own "+N −M" added/removed line
-  stat -- a new `diffStat` export in `lib/diff.ts`, reusing the same `buildUnifiedDiff`/
-  `parseDiff`/`isInsert`/`isDelete` pipeline `DiffView.tsx`'s own expanded-body stat already
-  uses, so the two can never disagree; `write` gets no such stat (no prior read/edit content is
-  cached to diff it against, #630's own open idea, not built here). `CollapsedLine.tsx`: a row's
-  own summary now wraps (`break-words whitespace-normal`, not `truncate`) once `actualOpen` is
-  true, in addition to the existing opt-in `summaryWrap` prop for a narrow column (Subagents
-  panel) -- fixes the issue's own bug #2 ("the command is cut off twice") without adding any new
-  Arguments/Output block (#628's own rule is unchanged). The Subagents panel needed no changes
-  of its own: it already renders through the same `ToolGroupRow` (design point 4), so every
-  change above applies there automatically.
+  once settled, and only when every member carries its own duration -- gate round 1 fix, M6)
+  alongside the existing failed/interrupted counts, joined by a new shared `joinMetaParts` helper
+  (the exact visible-middot-plus-sr-only-comma grammar #570 established, now reusable instead of
+  hand-copied). A new `callMeta` helper gives one call's own row (solo or nested `ToolCallRow`)
+  its duration plus, for a SETTLED (`status === 'done'`, gate round 1 fix, H3) `edit` call, its
+  own neutral "+N −M" added/removed line stat (gate round 1 fix, H5: dropped the coloured
+  `text-state-working`/`text-destructive` classes that broke #570's "success stays neutral" rule,
+  added an sr-only "N lines added, M removed") -- a new `diffStat`/`countChanges` export in
+  `lib/diff.ts`, reusing the same `buildUnifiedDiff`/`parseDiff` pipeline `DiffView.tsx`'s own
+  expanded-body stat now also calls (gate round 1 fix, H2: one shared counter, plus a
+  `maxEditLength` cap and a memoising `WeakMap` keyed on `item.edit` so an unbounded diff is never
+  recomputed on every render), so the two can never disagree; `write` gets no such stat (no prior
+  read/edit content is cached to diff it against, #630's own open idea, not built here). A
+  command-style (`bash`/`grep`) row's own separate tool-name label is dropped, solo and member
+  alike (gate round 1 fix, M2: the row's own command-style summary already names the tool,
+  "grep grep ..." read as a duplicate); each row's own `triggerAriaLabel` is built explicitly from
+  `commandRowText` (gate round 1 fix, M1, WCAG 2.5.3: the visible text and the accessible name's
+  own description of it can never diverge), including the member row, which previously had no
+  explicit accessible name at all. A multi-call group's own collapsed Error line is now always
+  prefixed with the failing call's own `commandRowText` (gate round 1 fix, M5: the group header's
+  `summary` no longer names any call at all, so the old "only when it differs from the last call"
+  condition no longer holds). `CollapsedLine.tsx`: a row's own summary now wraps
+  (`break-words whitespace-normal`, not `truncate`) once `actualOpen` is true, in addition to the
+  existing opt-in `summaryWrap` prop for a narrow column (Subagents panel) -- fixes the issue's
+  own bug #2 ("the command is cut off twice") without adding any new Arguments/Output block
+  (#628's own rule is unchanged; gate round 1 fix, H6: a `bash` call's own quiet-summary output
+  text is now skipped entirely on expand, matching the issue's own "no output text" acceptance).
+  The Subagents panel needed no changes of its own: it already renders through the same
+  `ToolGroupRow` (design point 4), so every change above applies there automatically.
 
-- [X] T257 [US1] Non-build verification: `pnpm typecheck` (clean), `pnpm vitest run` (148/148,
-  no test touches these rows directly -- none exists for `ToolRow`/`CollapsedLine` render output
-  in this repo today, confirmed by search before relying on a green run alone), `node
-  scripts/check-file-size.mjs` (0 cap violations), `node scripts/check-indent.mjs` (0 odd-indent
-  lines), `node scripts/check-theme-contrast.mjs` (442/442 pairs pass -- the new "+N −M" row stat
-  reuses `DiffView.tsx`'s own already-gated `text-state-working`/`text-destructive` tokens, no
-  new pair needed), `node scripts/check-drag-regions.mjs` (0 violations). `node
-  scripts/check-ui-text.mjs` could not run (needs a built bundle; this is a no-build prep lane).
-  Wrote `scripts/verify-632-grouped-calls.mjs` (modelled on `verify-570-tool-colours.mjs`/
-  `verify-565-spine.mjs`: real ambient `omp`, scratch cwd/worktree/data dir, `CARGO_TARGET_DIR`
-  required, exe copied to its own scratch folder and sha256-asserted before and after launch, a
-  `grep "` renderer-bundle marker asserted before trusting the build, a story-only DOM check --
-  the group header's own visible label text -- never a loose substring match): NOT YET RUN (the
-  build lane owns the one heavy `cargo`/CDP slot per skill://refract-ui-lane-gate-checklist).
-  Five turns: two bash calls (one failing) for the group-header grammar and the wrap-on-expand
-  fix; a `grep` call for the command-style row text; a `read` call proving the row text is
-  unchanged; an `edit` call for the new "+N −M" row stat; a `task()` call starting one subagent
-  with its own failing bash pair, read back from the Subagents panel, proving the SAME grammar
-  renders there (design point 4).
+- [X] T263 [US1] Gate round 1 remediation (code-reviewer/accessibility-auditor/ui-architect-v3/
+  test-reviewer, High/Medium/Low findings, all fixed): H1 (verify-565-spine.mjs/
+  verify-570-tool-colours.mjs's own `BASH_HEADER_FINDER` broke on the new "bash ×N" label, fixed
+  to match it; verify-565's own "+ N other(s)" multi-group detection, removed by #632, replaced
+  with a "×N" suffix match) through H6, M1 through M8 (`scripts/verify-632-grouped-calls.mjs`
+  rewritten: no command text in a collapsed header's own summary span; the total time equals the
+  sum of member durations; member-button queries scoped to the first group; the expanded check
+  reads computed `white-space` and asserts no `pre`/`code`/`[data-slot="code-block"]`; the
+  Subagents panel asserts "1 failed · <total>"; `notExercised.length > 0` now fails the run; new
+  assertions added for hover-tints-one-row, the ~4-line expanded height, keyboard Tab reaching
+  every row with a visible focus outline, each member's accessible name, and hostile ANSI/long-
+  line output rendering inert and bounded), and LOW (verify-632's own `stopLauncher` catch now
+  logs its error instead of swallowing it silently). Spec amended: FR-008/FR-061 corrected to
+  drop the stale "prefix only when it differs from the last call" wording (M5); FR-061's own
+  "single line, 200 characters or fewer, shows verbatim" rule now excludes `bash` (H6); a new
+  dated `### Session 2026-10-17 (gate round 1)` Clarifications entry records M2/M4/M5/M6.
+  `pnpm typecheck`/`pnpm vitest run` clean; `node scripts/ci-local.mjs` 16/16 and
+  `scripts/verify-632-grouped-calls.mjs`/`verify-565-spine.mjs`/`verify-570-tool-colours.mjs` all
+  green on the final pushed head -- see PR #950 for the exact commit and evidence.
 
-Opened as draft PR #950 (`feat/632-grouped-calls`). Kept **Refs #632**, not **Closes**, and does
-close #430 either, since the live-check list above (SC-008-adjacent, the issue's own "Verified
-live on a scratch instance" acceptance line) has not run yet -- this is the no-build prep lane;
-code-verified only. Both issues switch to Closes once the build lane runs
-`scripts/verify-632-grouped-calls.mjs` green on a real scratch instance.
+Opened as draft PR #950 (`feat/632-grouped-calls`). Switched to **Closes #632** and
+**Closes #430** once gate round 1's live-check re-run confirmed every one of the issue's own
+acceptance bullets live on a real scratch instance.

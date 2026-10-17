@@ -1,5 +1,6 @@
 import { initStores } from './init-stores'
 import { notify } from './notify'
+import { useAlertDismissStore } from './alert-dismiss-store'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useHealthStore } from './health-store'
@@ -28,6 +29,7 @@ import { useUpdateStore } from './update-store'
 export { initStores }
 export { notify }
 export { useAccountsStore }
+export { useAlertDismissStore }
 export type { GithubStatus } from './accounts'
 export { useCommandsStore }
 export { useHealthStore }
@@ -58,7 +60,7 @@ export { useUpdateStore }
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
   accounts: typeof useAccountsStore
-  commands: typeof useCommandsStore
+  alertDismiss: typeof useAlertDismissStore
   health: typeof useHealthStore
   draft: typeof useDraftStore
   memory: typeof useMemoryStore
@@ -94,7 +96,7 @@ declare global {
 if (import.meta.env.DEV) {
   window.__refractStores = {
     accounts: useAccountsStore,
-    commands: useCommandsStore,
+    alertDismiss: useAlertDismissStore,
     health: useHealthStore,
     draft: useDraftStore,
     memory: useMemoryStore,

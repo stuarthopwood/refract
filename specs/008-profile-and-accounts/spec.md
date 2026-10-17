@@ -352,10 +352,7 @@ a session, confirming each action's confirmation names what will be lost.
   a sign-in or sign-out state) MUST be conveyed by an icon or text, never by colour alone.
 - **FR-028**: A display name too long to fit its container MUST truncate with an ellipsis rather
   than wrap or overflow.
-- **FR-029**: While the machine's free memory is low (spec 001 FR-037), the profile item MUST show a
-  badge, with a text cue and not colour alone, that opens a popover naming the running agents with
-  a Stop agent action for each; Refract MUST NOT stop any agent on its own. The badge replaces the
-  status bar's low-memory notice, because the app has no status bar (spec 001 FR-056).
+- **FR-029**: The low-memory and unverified-OMP-version alert rows under the profile item are specified in full by spec 001 FR-037 and FR-072; this spec only fixes their position, directly beneath the profile item, replacing the status bar's old low-memory notice (spec 001 FR-056).
 
 ### Key Entities
 
