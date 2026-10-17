@@ -191,3 +191,66 @@ export async function switchTheme(cdp, themeId, themeName) {
     label: `<html> class theme-${themeId} applied (real store round trip, not just the title-bar preview)`
   });
 }
+
+/** #946: refuses to build without the shared `CARGO_TARGET_DIR`, never falling back to a
+ * worktree-local `src-tauri/target` (a 2026-10-16 live-check built into one and consumed 5.9 GB,
+ * dropping C: to 1.3 GB free mid-build for another lane). `repoRoot` is only used to reject a
+ * `CARGO_TARGET_DIR` that resolves inside the repo/worktree itself, which is the same fallback in
+ * disguise; the actual shared directory is machine-specific and deliberately not hardcoded here.
+ * Refuses a relative path outright (ambiguous against whatever `cwd` happens to be). Compares
+ * `fs.realpathSync.native` output (resolves symlinks/junctions and 8.3 short names, e.g. a
+ * worktree reached through a junction or `RUNNER~1`) case-insensitively on win32, where the
+ * filesystem itself is case-insensitive. `CARGO_TARGET_DIR` need not exist yet (cargo creates it
+ * on first build), so the nearest EXISTING ancestor is realpath'd and the not-yet-created
+ * remainder re-appended rather than giving up on symlink/junction resolution entirely; a leading
+ * Windows `\\?\` (or `\\?\UNC\`) extended-length prefix is stripped from the realpath'd half so
+ * it never breaks the suffix join or the prefix comparison below (`fs.realpathSync.native` adds
+ * it, `path.resolve` on the caller's input never does). */
+function nearestExistingRealpath(p) {
+  const segments = [];
+  let current = p;
+  while (true) {
+    try {
+      const real = realpathSync.native(current);
+      const stripped = real.replace(/^\\\\\?\\UNC\\/, '\\\\').replace(/^\\\\\?\\/, '');
+      return segments.length ? path.join(stripped, ...segments) : stripped;
+    } catch (err) {
+      if (err.code !== 'ENOENT') return segments.length ? path.join(current, ...segments) : current;
+      const parent = path.dirname(current);
+      if (parent === current) return segments.length ? path.join(current, ...segments) : current;
+      segments.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+export function requireSharedCargoTarget(repoRoot) {
+  const value = process.env.CARGO_TARGET_DIR;
+  if (!value) {
+    throw new Error(
+      'CARGO_TARGET_DIR is not set. Live-check scripts and ci-local refuse to fall back to a ' +
+        "worktree-local `src-tauri/target` (issue #946): set CARGO_TARGET_DIR to the machine's " +
+        'shared cargo target directory before running this script.'
+    );
+  }
+  if (!path.isAbsolute(value)) {
+    throw new Error(
+      `CARGO_TARGET_DIR (${value}) is a relative path (issue #946): set it to an absolute path to ` +
+        'a shared directory outside any repo/worktree.'
+    );
+  }
+  const resolved = path.resolve(value);
+  const repoResolved = path.resolve(repoRoot);
+  let comparedTarget = nearestExistingRealpath(resolved);
+  let comparedRepo = nearestExistingRealpath(repoResolved);
+  if (process.platform === 'win32') {
+    comparedTarget = comparedTarget.toLowerCase();
+    comparedRepo = comparedRepo.toLowerCase();
+  }
+  if (comparedTarget === comparedRepo || comparedTarget.startsWith(comparedRepo + path.sep)) {
+    throw new Error(
+      `CARGO_TARGET_DIR (${resolved}) resolves inside the repo (${repoResolved}); this is the ` +
+        'worktree-local fallback in disguise (issue #946). Point it at a shared directory outside any repo/worktree.'
+    );
+  }
+  return path.join(resolved, 'debug');
+}

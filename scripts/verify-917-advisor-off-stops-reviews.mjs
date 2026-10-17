@@ -38,12 +38,12 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, launchBuiltExe, safeRmSync, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, launchBuiltExe, safeRmSync, sha256OfFile, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
-const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
   process.env.REFRACT_917B_SHOTS_DIR || path.join(tmpdir(), 'refract-917-advisor-off-probe', new Date().toISOString().replace(/[:.]/g, '-'));
 
