@@ -89,7 +89,7 @@ const TURN_D_PROMPT =
 const TURN_E_PROMPT =
   "Use the task tool to start exactly ONE background subagent (a single entry in `tasks`) whose own prompt instructs it to make exactly TWO bash tool calls, the second one deliberately failing with `exit 9`, then reply with exactly the single word 't632e'. Then, once the subagent has finished, reply with exactly the single word 't632e-done' and nothing else.";
 const TURN_F_PROMPT =
-  "Make exactly ONE bash tool call that runs exactly `printf '\\033[31mHostile\\033[0m %0300d\\n' 7; exit 5` (deliberately fails; its output has an ANSI colour code and a very long line). Then reply with exactly the single word 't632f' and nothing else.";
+  "Make exactly ONE bash tool call that runs exactly `printf '\\033[31mHostile\\033[0m %s\\n' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'; exit 5` (deliberately fails; its output has an ANSI colour code and a very long line, with no shell-side width-specifier or arithmetic that could behave differently across printf implementations). Then reply with exactly the single word 't632f' and nothing else.";
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 // Every top-level TOOL-call group header button in the main transcript. A label matching one of
