@@ -2708,3 +2708,56 @@ the SearchField wrapper (not just the input), `inputProps`'s `Omit`-narrowed typ
 `sessionSearchSelector.ts` for the `data-session-search-input` hook, a stale screenshot sitting in
 the evidence folder, and a tooltip-ghost in screenshot 03 were all fixed; a D20/D28 amendment
 comment was posted on #559 and the PR body's Departures section corrected.
+
+## Phase 50: Convergence
+
+- [X] T255 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
+  slash-command search. Added `src/shared/slashCommandSearch.ts` (`rankSlashCommands`, pure, no
+  DOM): every listed command -- built-ins, project/user `file` commands, and `skill:<name>`
+  entries alike -- is ranked exact/prefix/word-start (after `-`, `_`, `:` or a space)/substring/
+  subsequence (fzy-style), ties keeping the input order; a skill's own `skill:` prefix is tried
+  both with and without it, so `/rev` finds `skill:code-review` and `/skill` lists every skill
+  via an ordinary prefix match; a command's description is searched too, but a description-only
+  match always ranks below a name match. `SlashMenu.tsx`'s old prefix-only `filterSlashCommands`
+  is replaced by `rankSlashMenuCommands` (wrapping the new scorer); matched name characters
+  render in `<b>` inside the option's own single text node (`renderMatchedName`), so the
+  accessible name is never split into separate announcements. `MessageInput.tsx` gained a
+  debounced (500ms), `useClearedAnnouncement`-backed result-count announcement mirroring
+  `SessionList.tsx`'s own search announcement (re-reading live draft text and commands at fire
+  time, never the render-time closure, so the debounce timer does not depend on a fresh array
+  identity every keystroke). Per FR-072.
+- [X] T256 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
+  step, and a command reply no longer stretching the previous turn's own time. `SlashMenu.tsx`
+  gained `parseSlashMenuState` (replacing the old bare `parseSlashQuery`): one space after a
+  RECOGNISED command with verified subcommands (`command.subcommands`, already pruned to the
+  verified set) parses as that command's own subcommand step instead of closing the menu, its
+  own query being whatever follows the space; a second space closes it, same as any other
+  command. `orderSubcommandsForEmptyQuery` puts `status` first with nothing typed yet (every
+  other subcommand keeps its existing order); a typed query ranks via the same T255 scorer.
+  `MessageInput.tsx`'s `completeSlashCommand` (choosing a top-level command) now only ever
+  leaves the box reading `/name ` -- the composer text re-parsing as the subcommand step is
+  what advances the menu, with no separate step state; a new `completeSubcommand` completes the
+  full `/name subcommand ` invocation, and `handleSlashMenuSelect` routes Enter/Tab/mousedown to
+  whichever one the current parsed step calls for. Separately, `command_output` frames now get
+  a distinct `command-output:` id prefix (`COMMAND_OUTPUT_NOTICE_PREFIX`, added to
+  `src/shared/model.ts` and `src-tauri/src/omp/transcript.rs`'s `apply_frame_items`, replacing
+  the generic `notice-N` id that frame type used to share with a plain `notice` frame) instead
+  of the generic `notice-N` id; `Transcript.tsx`'s `computeTurnEnd` skips any notice carrying
+  that prefix entirely (neither its `receivedAt` arrival time nor any `itemEndTime` counts), so
+  a reply that arrives after its turn has already settled no longer stretches that turn's own
+  shown elapsed time. The reply itself still renders normally; only the turn-time MATH excludes
+  it. The other #938 items (refusal-text wording naming the allowed subcommands, short-notice
+  wrapping, a Settings mention, and the suspected duplicate render) are out of scope for this
+  story and remain open on the issue. Per FR-073 and the FR-046 amendment.
+- [X] T257 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+  FR-072 and FR-073, an amendment to FR-046, and two dated `### Session 2026-10-17` Clarifications
+  entries recording both decision records; `docs/design/product-chat.md`'s "Slash commands"
+  bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
+  2026-10-16 additions" row records both issues as built, with #938 noting only items 1 and 4 are
+  covered (the rest stay open on the issue).
+
+This phase was written retroactively after the implementation above, the same reasoning Phase 48
+(#917) used: no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue. `pnpm typecheck`
+and `pnpm vitest run` were run after the build; see the PR body for the exact result and the
+live-check evidence (an unrun `scripts/verify-947-fuzzy-slash-search.mjs`, prep-lane: code-
+verified only, no live run this pass).

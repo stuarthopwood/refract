@@ -17,10 +17,11 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
-import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
+import { parseSlashMenuState, rankSlashMenuCommands, SlashMenu, slashOptionId, type SlashCommandMatch } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
@@ -53,6 +54,8 @@ type StopReason = SessionStatusEvent['stopReason']
 // match; a new `[]` literal every call breaks useSyncExternalStore's snapshot stability and
 // causes an infinite re-render loop.
 const EMPTY_COMMANDS: SlashCommand[] = []
+// Same stable-reference reasoning as `EMPTY_COMMANDS` above, for the ranked-match list below.
+const EMPTY_MATCHES: SlashCommandMatch[] = []
 
 // T103, FR-058: debounce before a predict_word request, and a local mirror of the server's own
 // gating (rpc.md "Word prediction"): the cursor must sit at the end of its line and end a
@@ -267,9 +270,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const notStarted = status === 'stopped' && stopReason === 'not-started'
   const disabled = status === 'stopped' && !notStarted
 
-  const slashQuery = parseSlashQuery(text)
-  const slashMatches = slashQuery !== null ? filterSlashCommands(slashQuery, commands) : EMPTY_COMMANDS
-  const showSlashMenu = slashQuery !== null && !slashDismissed
+  const slashMenuState = parseSlashMenuState(text, commands)
+  const slashMatches = slashMenuState !== null ? rankSlashMenuCommands(slashMenuState, commands) : EMPTY_MATCHES
+  const showSlashMenu = slashMenuState !== null && !slashDismissed
+  // A stable string key for the parsed step, used both to reset the active row below and to
+  // debounce the result-count announcement (issue #947): distinct per PARENT command too for a
+  // subcommand step (issue #938 item 1), so switching from typing `/advisor` to its own
+  // subcommand step counts as a real change even when both happen to read the same raw text.
+  const slashMenuKey =
+    slashMenuState === null ? null : slashMenuState.step === 'command' ? `c:${slashMenuState.query}` : `s:${slashMenuState.parent.name}:${slashMenuState.query}`
   // `slashActiveIndex` is reset to 0 by the post-commit effect below, but for the one commit in
   // between a shorter filtered list and that effect running, it can still reference a row past
   // the end -- clamp at render so `aria-activedescendant` and the highlighted option never
@@ -428,7 +437,26 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // never survives into a shorter, filtered one.
   useEffect(() => {
     setSlashActiveIndex(0)
-  }, [slashQuery])
+  }, [slashMenuKey])
+  // Issue #947 ("Announce the result count politely when it changes... debounced", mirroring
+  // `SessionList.tsx`'s own search-result announcement): a fresh 500ms timer per real change to
+  // `slashMenuKey`. Re-reads live state at fire time (same reasoning as that pattern) rather than
+  // closing over this render's own `slashMatches`, so the debounce itself does not need that
+  // array in its dependencies (a fresh `[]`/mapped array identity every render would otherwise
+  // retrigger the timer on every keystroke, defeating the debounce).
+  const [slashAnnouncement, announceSlashResultCount] = useClearedAnnouncement()
+  useEffect(() => {
+    if (!showSlashMenu) return
+    const timer = setTimeout(() => {
+      const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
+      const liveCommands = useCommandsStore.getState().bySession[sessionId] ?? EMPTY_COMMANDS
+      const liveState = parseSlashMenuState(liveText, liveCommands)
+      if (liveState === null) return
+      const liveMatches = rankSlashMenuCommands(liveState, liveCommands)
+      announceSlashResultCount(liveMatches.length === 0 ? 'No matching commands' : `${liveMatches.length} matching command${liveMatches.length === 1 ? '' : 's'}`)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [slashMenuKey, showSlashMenu, sessionId, announceSlashResultCount])
 
   // Ctrl+Shift+X stops the running turn while this pane is mounted AND focused (docs/DESIGN.md
   // "Keyboard"; spec 005 FR-010: acts only on the focused/owning pane while a split is open).
@@ -648,11 +676,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     clearGhostState()
   }
 
-  /** Enter or Tab on a highlighted slash command (FR-032): fills the box with `/name ` so the
-   * box no longer parses as a bare slash query, which closes the menu without extra state. */
-  function completeSlashCommand(command: SlashCommand) {
+  /** Shared completion logic (issue #938 item 1 adds the subcommand step on top of this): fills
+   * the box with `nextText` so it no longer parses as the CURRENT slash-menu step, which closes
+   * or advances the menu purely by what the composer text now parses as (`parseSlashMenuState`
+   * above) -- no separate step state needed. */
+  function completeSlashText(nextText: string) {
     clearGhostState() // bypasses the normal onChange path too (#358/#359 remediation)
-    const nextText = `/${command.name} `
     useDraftStore.getState().setText(sessionId, nextText)
     setSlashDismissed(false)
     // Medium remediation (test-reviewer): this also bypasses onChange's own `pruneDanglingChips`
@@ -664,6 +693,31 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (prunedChips.length !== attachments.textChips.length) {
       announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
       useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
+    }
+  }
+
+  /** Enter or Tab on a highlighted top-level slash command (FR-032). A command with verified
+   * subcommands (issue #938 item 1) is left with a trailing space rather than sent: the composer
+   * text now parses as that command's own subcommand step, so the menu advances to it instead of
+   * closing. */
+  function completeSlashCommand(command: SlashCommand) {
+    completeSlashText(`/${command.name} `)
+  }
+
+  /** Enter or Tab on a highlighted subcommand (issue #938 item 1): completes the FULL
+   * `/parent subcommand ` invocation, which closes the menu (a trailing space after the
+   * subcommand no longer parses as an in-progress subcommand query). */
+  function completeSubcommand(parent: SlashCommand, subcommand: SlashCommand) {
+    completeSlashText(`/${parent.name} ${subcommand.name} `)
+  }
+
+  /** Routes a selection (mousedown, or Enter/Tab below) to the right completion for whichever
+   * step is currently showing. */
+  function handleSlashMenuSelect(command: SlashCommand) {
+    if (slashMenuState?.step === 'subcommand') {
+      completeSubcommand(slashMenuState.parent, command)
+    } else {
+      completeSlashCommand(command)
     }
   }
 
@@ -785,8 +839,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       }
       if ((event.key === 'Enter' || event.key === 'Tab') && slashMatches.length > 0) {
         event.preventDefault()
-        const command = slashMatches[Math.min(slashActiveIndex, slashMatches.length - 1)]
-        if (command) completeSlashCommand(command)
+        const match = slashMatches[Math.min(slashActiveIndex, slashMatches.length - 1)]
+        if (match) handleSlashMenuSelect(match.command)
         return
       }
       if (event.key === 'Escape') {
@@ -1302,7 +1356,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         </span>
       )}
       <div role="status" aria-live="polite" className="sr-only">
-        {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
+        {slashAnnouncement}
       </div>
       {/* Accessibility remediation (High): announces a chip/image being created or a chip being
           silently dropped (`announceChipRemoval`, `handlePaste`) -- separate from the slash-menu
@@ -1380,7 +1434,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               id={slashMenuId}
               commands={slashMatches}
               activeIndex={clampedSlashActiveIndex}
-              onSelect={completeSlashCommand}
+              labelPrefix={slashMenuState?.step === 'subcommand' ? '' : '/'}
+              ariaLabel={slashMenuState?.step === 'subcommand' ? `/${slashMenuState.parent.name} subcommands` : 'Slash commands'}
+              onSelect={handleSlashMenuSelect}
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}

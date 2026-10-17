@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from 'cn'
 import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
-import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
@@ -92,10 +92,19 @@ function itemEndTime(item: TranscriptItem): number | undefined {
 // return a defined value for every turn and defeat the "omitted when no item carries usable
 // timing" rule below -- a reopened Conversation with no real timing would show "0s" instead of
 // nothing.
+// Issue #938 item 4: a command-output notice's id carries `COMMAND_OUTPUT_NOTICE_PREFIX` (Rust's
+// `apply_frame_items`) -- a user-run slash command's own reply is not part of any turn's own
+// timing, so it is skipped here exactly like the turn's own leading `user` item, taking neither
+// its live `receivedAt` arrival time nor any `itemEndTime` (notices have none anyway) into the
+// turn's total. The reply itself still renders normally (never suppressed, unlike a startup
+// notice); only the turn-time MATH leaves it out, so a command run after a turn settles no
+// longer stretches that turn's own shown elapsed time (22s becoming "1m 17s" in the #917 live
+// screenshots).
 function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
   let maxEnd: number | undefined
   for (const item of turnItems) {
     if (item.kind === 'user') continue
+    if (item.kind === 'notice' && item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)) continue
     const end = receivedAt[item.id] ?? itemEndTime(item)
     if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
   }

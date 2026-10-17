@@ -251,6 +251,15 @@ const HIDDEN_TOOL_NOTICE_PREFIX: &str = "hidden-tool-error:";
 /// the user had taken any action in this agent process (`STARTUP_NOTICE_PREFIX`).
 const STARTUP_NOTICE_PREFIX: &str = "startup-notice:";
 
+/// `id` prefix for a `notice` built specifically from a real, post-startup `command_output`
+/// frame (issue #938 item 4, `COMMAND_OUTPUT_NOTICE_PREFIX` in `src/shared/model.ts`): the
+/// renderer's `computeTurnEnd` excludes any notice carrying this prefix from a turn's own total
+/// time, since a command reply is not part of any turn's own timing. Distinct from
+/// `STARTUP_NOTICE_PREFIX` above (that one is suppressed from view; this one is a real, shown
+/// reply that is only excluded from the time sum). Only the `command_output` frame type uses
+/// this prefix; a plain `notice` frame keeps the ordinary `notice-N` id.
+const COMMAND_OUTPUT_NOTICE_PREFIX: &str = "command-output:";
+
 const ASYNC_RESULT_CUSTOM_TYPE: &str = "async-result";
 const ADVISORY_CUSTOM_TYPE: &str = "advisor";
 const AGENT_MESSAGE_CUSTOM_TYPES: &[&str] = &[
@@ -1457,7 +1466,7 @@ fn apply_frame_items(
             }
             let mut items = items;
             let id = if has_user_acted {
-                format!("notice-{}", items.len())
+                format!("{COMMAND_OUTPUT_NOTICE_PREFIX}{}", items.len())
             } else {
                 format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
             };

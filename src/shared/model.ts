@@ -543,6 +543,18 @@ export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
  * regardless of this prefix, since an error is always a real outcome worth showing. */
 export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
 
+/** `id` prefix for a `notice` built specifically from a real, post-startup `command_output`
+ * frame (issue #938 item 4): a user-run slash command's own reply, which otherwise joined the
+ * PREVIOUS turn's own activity block and stretched its total time (`Transcript.tsx`'s
+ * `computeTurnEnd`, FR-046) whenever it arrived after that turn had already settled -- a command
+ * reply is not part of any turn's own timing, so `computeTurnEnd` skips any notice carrying this
+ * prefix entirely (neither its `itemEndTime` nor its live `receivedAt` arrival time ever counts).
+ * Distinct from `STARTUP_NOTICE_PREFIX` above: that one marks the unsolicited startup banner
+ * (suppressed from view); this one marks a real, shown reply (never suppressed, only excluded
+ * from the turn-time sum). A plain `notice` frame (not `command_output`) keeps the ordinary
+ * `notice-N` id and still counts, since only a command's own output is excluded. */
+export const COMMAND_OUTPUT_NOTICE_PREFIX = 'command-output:';
+
 /** One question of an `ask`-tool batch (`omp://rpc.md` "Extension UI Sub-Protocol"); `preview`
  * is rich-dialog-only and never sent, so it is not represented here. */
 export interface AskQuestion { id: string; question: string; header?: string; options: { label: string; description?: string }[]; multi: boolean; recommended?: number; }
