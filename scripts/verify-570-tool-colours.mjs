@@ -66,8 +66,10 @@ const TURN_B_SENTINEL = 't570b';
 // #570-only DOM marker: matches a `ToolGroupRow`/solo header by its EXACT label text ("bash"),
 // never a substring match against a button's whole textContent (a streaming Thinking row's own
 // trigger can contain the word "bash" in its preview text and sits earlier in the DOM).
+// Gate round 1 (test-reviewer High, H1): #632 renamed a multi-call group's own label from the
+// bare tool name to "bash ×N" -- matched here too, so turn (a)'s own 3-call group is still found.
 const BASH_HEADER_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && label.textContent.trim() === 'bash'; })`;
+  `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => { const label = el.querySelector('span.font-medium'); return label && /^bash(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim()); })`;
 
 async function countBashHeaders(cdp) {
   return cdp.evaluate(`(${BASH_HEADER_FINDER}).length`);
