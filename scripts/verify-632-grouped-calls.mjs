@@ -299,12 +299,23 @@ async function main() {
     // the earlier run's "not exercised" skip) -- scoped instead to the stable `#right-pane-active-panel`
     // host every hosted panel (including this one) renders inside (`RightPaneShell.tsx`).
     const PANEL_GROUP_HEADERS = `Array.from(document.querySelectorAll('#right-pane-active-panel button')).filter((el) => el.querySelector('span.font-medium'))`;
-    const panelHeaderInfo = await cdp.evaluate(`(() => {
-      const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('span.font-medium'); return l && /^bash(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
-      if (!h) return null;
-      const label = h.querySelector('span.font-medium');
-      return { labelText: label.textContent.trim() };
-    })()`);
+    // A plain one-shot `evaluate` right after the click raced the stream pane's own render in
+    // two prior live runs (the screenshot a moment later always showed the row already there) --
+    // polled instead, same as every other post-click assertion in this file.
+    let panelHeaderInfo = null;
+    try {
+      panelHeaderInfo = await cdp.waitFor(
+        `(() => {
+          const h = (${PANEL_GROUP_HEADERS}).find((el) => { const l = el.querySelector('span.font-medium'); return l && /^bash(\\s*\\u00d72)?$/.test(l.textContent.trim()); });
+          if (!h) return null;
+          const label = h.querySelector('span.font-medium');
+          return { labelText: label.textContent.trim() };
+        })()`,
+        { timeoutMs: 10_000, label: "Subagents panel's own bash group header" },
+      );
+    } catch {
+      panelHeaderInfo = null;
+    }
     if (!panelHeaderInfo) {
       notExercised.push('Could not find the subagent\'s own bash group header inside the Subagents panel stream (panel layout or timing did not match this script\'s selector); the main-transcript assertions above already cover the shared component.');
     } else if (!BASH_GROUP_LABEL.test(panelHeaderInfo.labelText)) {
