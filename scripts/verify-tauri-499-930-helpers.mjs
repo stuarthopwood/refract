@@ -103,9 +103,14 @@ export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
  * (C1, test-reviewer Critical, round 2): `setStateFilter` updates the label SYNCHRONOUSLY while
  * `refresh()` keeps the OLD (stale, still-Open) rows mounted until the fetch resolves -- waiting
  * on `rows.length > 0` alone (the previous version of this check) passed on those stale rows
- * every time. Each row's own state span is its FIRST `span.flex.items-center.gap-1`
- * (`PullRequestRow.tsx`) -- never the row's title text, which could coincidentally contain these
- * words. Returns the settled `{ rows, label, stateTexts }` or `null` on timeout. */
+ * every time. Each row's own state span is the FIRST DIRECT CHILD of its metadata container
+ * (`.flex.flex-wrap.items-center.gap-1`, `PullRequestRow.tsx` -- uniquely identified by its own
+ * `flex-wrap` class, which the state/check spans inside it do NOT carry; a plain
+ * `span.flex.items-center.gap-1` selector matches that OUTER container too, since CSS class
+ * selectors only require the listed classes to be a SUBSET, and being the parent it then sorts
+ * FIRST in `querySelectorAll`'s document order -- caught live round 3, rows genuinely showed
+ * Merged but `[0]` was the whole concatenated metadata text, not the state label alone).
+ * Returns the settled `{ rows, label, stateTexts }` or `null` on timeout. */
 export async function driveStateFilter(cdp, tabLabel, optionLabel) {
   await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(tabLabel)})`);
   if (optionLabel) {
@@ -117,7 +122,7 @@ export async function driveStateFilter(cdp, tabLabel, optionLabel) {
     if (loadingNow) return false;
     const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
     if (rows.length === 0) return false;
-    const stateTexts = rows.map((r) => r.querySelectorAll('span.flex.items-center.gap-1')[0]?.textContent?.trim());
+    const stateTexts = rows.map((r) => r.querySelectorAll('.flex.flex-wrap.items-center.gap-1 > span')[0]?.textContent?.trim());
     const hasOpenOrDraft = stateTexts.some((t) => t === 'Open' || t === 'Draft');
     const hasClosedOrMerged = stateTexts.some((t) => t === 'Closed' || t === 'Merged');
     const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
@@ -132,6 +137,6 @@ export async function driveStateFilter(cdp, tabLabel, optionLabel) {
 export async function stateFilterDiagnostic(cdp) {
   return cdp.evaluate(`(() => {
     const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
-    return { loading: document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled'), rowCount: rows.length, stateTexts: rows.map((r) => r.querySelectorAll('span.flex.items-center.gap-1')[0]?.textContent?.trim()) };
+    return { loading: document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled'), rowCount: rows.length, stateTexts: rows.map((r) => r.querySelectorAll('.flex.flex-wrap.items-center.gap-1 > span')[0]?.textContent?.trim()) };
   })()`);
 }
