@@ -222,7 +222,22 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           elementRef={groupElementRef}
           orientation="horizontal"
           className="min-h-0 flex-1"
-          onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
+          // Gate-fix (round 4, re-confirmed live after a false-negative revert): reads the
+          // panel's own real DOM width, not the layout store's `widthPx` -- the library calls
+          // `onResize` (wires `widthPx`) and `onLayoutChanged` with no guaranteed relative
+          // order, and the session-list's own dblclick/resize fires THIS (unrelated) group's
+          // own `onLayoutChanged(isUserInteraction=true)` too (M3's own shared-dblclick-
+          // detection note below) -- reading `get().widthPx` here at that moment could read a
+          // stale pre-interaction value (even the untouched mount default, 320) instead of this
+          // panel's REAL current width, persisting the wrong one. A live full run reproduced
+          // exactly this after a previous round's revert of this same fix, on an unsubstantiated
+          // "no bug" read of a partial diagnostic log -- restoring it fixes both the sidebar-
+          // dblclick-persists-320 and the reset-persisted-a-later-drag's-stale-width failures.
+          onLayoutChanged={(_layout, meta) => {
+            if (!meta.isUserInteraction) return
+            const width = panelElementRef.current?.getBoundingClientRect().width
+            if (width != null) usePullRequestsLayoutStore.getState().commit(width)
+          }}
           // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
           // own double-click-to-reset is detected via a native `dblclick` listener shared across
           // every Group on the page, and it calls `event.preventDefault()` on the bubbling event
