@@ -38,7 +38,7 @@
 // script in this repo (it is a ~40-line dependency-free file, never exported, same precedent as
 // `verify-556-zero-box.mjs`/`verify-563-subagent-stage.mjs`/etc.).
 
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -56,10 +56,12 @@ const LOG = 'verify-985';
 const SHOTS_DIR =
   process.env.REFRACT_985_SHOTS_DIR || path.join(tmpdir(), 'refract-985-queued-refresh-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// Only needs to outlast C1/D staying spawned (not `ready`) through this script's own few seconds
-// of DOM/IPC round trips -- unlike `verify-672-start-message.mjs`'s "long" launch, nothing here
-// needs to clear the real 60s `READY_PROMPT_AFTER_MS` threshold, so this stays well short of it.
-const READY_DELAY_MS = 30_000;
+// Must outlast this script's own worst-case cumulative wait (~60s: 10s C1 'waiting' + 20s D
+// 'memory-deferred' + 15s E 'queued' + up to 10s for the refresh-event-then-sample window below)
+// with real margin, or a slow run can free a slot before the check finishes and fail a correct
+// build -- but stays comfortably under the real Rust `READY_CEILING_MS` (180_000,
+// `src-tauri/src/omp/process.rs`) so a start-failure ceiling never fires mid-check either.
+const READY_DELAY_MS = 120_000;
 
 async function main() {
   let launch = null;
@@ -102,10 +104,15 @@ async function main() {
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
 
+    // No REFRACT_FAKE_OMP_DEBUG_LOG override: `setupLaunch`'s own default writes it inside the
+    // freshly `mkdtemp`'d `launchDir` (guaranteed unique every run, never stale) -- pointing it
+    // at SHOTS_DIR instead (overridable to the SAME directory across runs via
+    // REFRACT_985_SHOTS_DIR) would let a leftover log from an earlier run satisfy `setupLaunch`'s
+    // own "shim confirmed" guard without this run's shim ever having written anything. Copied out
+    // to SHOTS_DIR for archival in the `finally` block below, before teardown deletes `launchDir`.
     launch = await setupLaunch(exePath, launcherExe, 'queued-refresh', {
       REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_MS),
-      REFRACT_FORCE_LOW_MEMORY: '1',
-      REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp.log')
+      REFRACT_FORCE_LOW_MEMORY: '1'
     }, shimDir);
     const cdp = launch.cdp;
     const muted = await resolveCssVarColor(cdp, '--muted-foreground', 'color');
@@ -142,7 +149,14 @@ async function main() {
 
         // ---- The #985 regression: trigger a genuinely UNRELATED sessions.list() refresh (a
         // real `repositories.rename` on the one scratch repository in this launch) while E is
-        // still held `queued`. ----
+        // still held `queued`. Registers our own real `onSessionListChanged` listener first --
+        // the SAME public preload API `init-stores.ts` itself subscribes with, never a dev-only
+        // seam -- so we can tell the refresh genuinely landed, not guess an arbitrary instant. ----
+        await cdp.evaluate(`(() => {
+          window.__verify985ListChanged = false;
+          window.refract.onSessionListChanged(() => { window.__verify985ListChanged = true; });
+          return true;
+        })()`);
         const repoListBefore = await cdp.evaluate('window.refract.repositories.list().then((r) => r.ok ? r.value : null)');
         if (!Array.isArray(repoListBefore) || repoListBefore.length !== 1) {
           throw new Error(`${LOG}: expected exactly 1 repository in this scratch launch, found ${JSON.stringify(repoListBefore)}.`);
@@ -152,32 +166,54 @@ async function main() {
         if (!renameResult?.ok) throw new Error(`${LOG}: repositories.rename did not return ok (${JSON.stringify(renameResult)}) -- cannot trigger the refresh this check depends on.`);
         findings.push(`Repository ${repoId} renamed (real repositories.rename, unrelated to Session E) -- triggers a real notify_list_changed()/sessions.list() refresh (repositories.rs:364).`);
 
-        // `Queued` never re-emits on its own timer (see header), so there is no self-heal race
-        // to beat -- this short poll only guards against the refresh's own async round trip (the
-        // IPC call + store `set()` + React re-render) not having landed yet.
-        const deadline = Date.now() + 5_000;
-        let lastRead = await readVisibleStartKind(cdp);
-        while (Date.now() < deadline && lastRead?.kind === undefined) {
+        const eventDeadline = Date.now() + 5_000;
+        let eventSeen = false;
+        while (Date.now() < eventDeadline) {
+          eventSeen = await cdp.evaluate('window.__verify985ListChanged === true');
+          if (eventSeen) break;
           await sleep(100);
-          lastRead = await readVisibleStartKind(cdp);
         }
-        await cdp.screenshot(path.join(SHOTS_DIR, '02-queued-after-refresh.png'));
-        if (lastRead?.kind !== 'queued') {
-          failures.push(`#985 regression reproduced: Session E's own 'queued' notice did not survive the unrelated repository-rename refresh -- DOM read ${JSON.stringify(lastRead)} (expected {"kind":"queued"}). sessions.list()'s own summary_fields() row for E is missing startProgress (session/agent/mod.rs).`);
+        if (!eventSeen) {
+          failures.push(`repositories.rename resolved ok, but the renderer's own real session:list-changed listener (window.refract.onSessionListChanged) never fired within 5s -- the refresh this check depends on never landed at all.`);
         } else {
-          findings.push(`Session E's 'queued' notice survived the unrelated refresh -- sessions.list() summary row now carries startProgress (session/agent/mod.rs summary_fields fix, issue #985/#988).`);
+          findings.push('Renderer received the real session:list-changed event (window.refract.onSessionListChanged fired) -- the refresh this check depends on genuinely landed.');
         }
 
-        // Independent of the DOM/timing above: the raw IPC row itself either does or does not
-        // carry the field, for every row, on every call -- zero timing dependency at all.
+        // Sample the DOM across the WHOLE remaining window and fail on the FIRST read that is
+        // not 'queued' -- never trust a single lucky read: a store `set()` that landed but whose
+        // React re-render this script's own first poll happened to beat would otherwise look
+        // like a pass even on a genuine wipe.
+        const sampleDeadline = Date.now() + 5_000;
+        let sampleCount = 0;
+        let failingRead = null;
+        while (Date.now() < sampleDeadline) {
+          const read = await readVisibleStartKind(cdp);
+          sampleCount += 1;
+          if (read?.kind !== 'queued') { failingRead = read; break; }
+          await sleep(100);
+        }
+        await cdp.screenshot(path.join(SHOTS_DIR, '02-queued-after-refresh.png'));
+
+        // Independent, zero-timing-dependency ground truth for the message below: the raw IPC
+        // row itself either carries the field or it does not, fetched fresh right now rather
+        // than assumed, so a DOM failure is never blamed on `summary_fields()` without checking
+        // whether Session E's own backend stage is still genuinely `queued` at all.
         const listAfter = await cdp.evaluate('window.refract.sessions.list().then((r) => r.ok ? r.value : null)');
         const rowE = Array.isArray(listAfter) ? listAfter.find((s) => s.id === sessionE.id) : null;
+        const rowEProgressText = rowE ? JSON.stringify(rowE.startProgress) : '(no row at all)';
+
+        if (failingRead) {
+          failures.push(`#985 regression reproduced: Session E's own 'queued' notice did not stay 'queued' across every DOM sample after the unrelated repository-rename refresh -- read ${JSON.stringify(failingRead)} after ${sampleCount} sample(s) (expected {"kind":"queued"} on every one). sessions.list()'s own row for Session E right now has startProgress ${rowEProgressText} (session/agent/mod.rs summary_fields()).`);
+        } else {
+          findings.push(`Session E's 'queued' notice stayed exactly {"kind":"queued"} across all ${sampleCount} DOM samples over the post-refresh window -- sessions.list() summary row now carries startProgress (session/agent/mod.rs summary_fields fix, issue #985/#988).`);
+        }
+
         if (!rowE) {
           failures.push(`sessions.list() after the refresh has no row at all for Session E (id ${sessionE.id}).`);
         } else if (rowE.startProgress?.kind !== 'queued') {
-          failures.push(`sessions.list()'s own summary row for Session E is missing startProgress (got ${JSON.stringify(rowE.startProgress)}) -- summary_fields() did not include it.`);
+          failures.push(`sessions.list()'s own summary row for Session E is missing startProgress (got ${rowEProgressText}) -- summary_fields() did not include it.`);
         } else {
-          findings.push(`sessions.list()'s own summary row for Session E carries startProgress ${JSON.stringify(rowE.startProgress)} directly from the IPC response (summary_fields() fix confirmed at the wire level, not just via the DOM).`);
+          findings.push(`sessions.list()'s own summary row for Session E carries startProgress ${rowEProgressText} directly from the IPC response (summary_fields() fix confirmed at the wire level, not just via the DOM).`);
         }
 
         const cancelE = await cdp.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionE.id)})`);
@@ -195,7 +231,13 @@ async function main() {
       if (!cancelD?.ok) failures.push(`cleanup: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}).`);
     }
 
-    const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
+    // Exit codes: 0 clean pass, 1 a real failure (the regression reproduced, or anything else
+    // genuinely wrong), 2 NOT-PROVEN (no failure, but something this check needed never became
+    // observable live -- D or E never reaching their stage -- so the fix is neither confirmed
+    // nor refuted this run, and that must never look identical to a clean pass).
+    const status = failures.length > 0 ? 'FAILED' : notExercised.length > 0 ? 'NOT-PROVEN' : 'DONE';
+    const exitCode = failures.length > 0 ? 1 : notExercised.length > 0 ? 2 : 0;
+    const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, status, exitCode };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     console.log(`\n=== ${LOG}: FAILURES (always fail the run) ===`);
     if (failures.length === 0) console.log('(none)');
@@ -205,8 +247,8 @@ async function main() {
     console.log(`\n=== ${LOG}: NOT EXERCISED (genuine skips only) ===`);
     for (const n of notExercised) console.log(`- ${n}`);
     console.log(`\nScreenshots and report.json: ${SHOTS_DIR}`);
-    console.log(`${LOG}: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
-    process.exitCode = failures.length > 0 ? 1 : 0;
+    console.log(`${LOG}: ${status}.`);
+    process.exitCode = exitCode;
   } catch (err) {
     try {
       mkdirSync(SHOTS_DIR, { recursive: true });
@@ -220,9 +262,19 @@ async function main() {
     console.error(`${LOG}: FAILED:`, err?.stack ?? err);
     process.exitCode = 1;
   } finally {
+    // Archive the fake-omp debug log before `teardownLaunch` deletes `launchDir` -- best-effort:
+    // absent if `setupLaunch` itself failed before the shim ever ran.
+    if (launch?.launchDir) {
+      try {
+        copyFileSync(path.join(launch.launchDir, 'fake-omp-invocations.log'), path.join(SHOTS_DIR, 'fake-omp-invocations.log'));
+      } catch {
+        // best-effort only
+      }
+    }
     await teardownLaunch(launch);
-    await safeRmSync(exeDir);
-    await safeRmSync(launcherDir);
+    await safeRmSync(exeDir, LOG);
+    await safeRmSync(launcherDir, LOG);
+    await safeRmSync(shimDir, LOG);
   }
 }
 

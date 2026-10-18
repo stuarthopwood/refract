@@ -302,10 +302,9 @@ impl SessionAgent {
         payload
     }
 
-    /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
-    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step.
-    /// `summary_fields` doesn't call this: progress yes (issue #985, read directly there, cheap
-    /// and in memory already), termination no (needs a fresh file re-read per list row).
+    /// Lane R3 (#786): shared by `status_event_locked` (session:status event) and `runtime_view`
+    /// (`SessionSnapshot.runtime`) so both stay in lock-step. `summary_fields` skips it: progress
+    /// yes (#985, cheap, already in memory), termination no (needs a fresh file re-read per row).
     fn insert_termination_and_progress_fields(
         obj: &mut serde_json::Map<String, Value>,
         state: &AgentState,
@@ -408,7 +407,8 @@ impl SessionAgent {
         }
     }
 
-    /// `sessions.list()`'s live-runtime fields. Gate-fix (issue #985): `startProgress` now included -- omitted, a DIFFERENT Session's `notify_list_changed()` made `refresh()` wipe this one's live notice until its next tick.
+    /// `sessions.list()`'s live-runtime fields (#985): `startProgress` now included -- omitted,
+    /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
         let state = self.state.lock().await;
