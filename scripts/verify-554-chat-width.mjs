@@ -65,16 +65,12 @@ const NARROW_WIDTH = 360;
 // Key codes.
 const KEY_ARROW_DOWN = { code: 40, key: 'ArrowDown', codeName: 'ArrowDown' };
 const KEY_ARROW_UP = { code: 38, key: 'ArrowUp', codeName: 'ArrowUp' };
-const KEY_ENTER = { code: 13, key: 'Enter', codeName: 'Enter' };
 
 async function pressArrowDown(cdp) {
   await pressKey(cdp, KEY_ARROW_DOWN.code, KEY_ARROW_DOWN.key, KEY_ARROW_DOWN.codeName);
 }
 async function pressArrowUp(cdp) {
   await pressKey(cdp, KEY_ARROW_UP.code, KEY_ARROW_UP.key, KEY_ARROW_UP.codeName);
-}
-async function pressEnterKey(cdp) {
-  await pressKey(cdp, KEY_ENTER.code, KEY_ENTER.key, KEY_ENTER.codeName);
 }
 
 const TRANSCRIPT_COLUMN_FINDER = `document.querySelector('[data-slot="message-scroller-content"]')`;
@@ -118,42 +114,19 @@ async function closeSettings(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
-/** Tab from the currently-focused radio to the Save button, Enter to commit (real keyboard, not
- * a click()) -- falls back to a plain click on Save if Tab lands somewhere else (DOM order
- * between the radiogroup and the row of Save/Cancel buttons may differ from assumed), AND falls
- * back to a direct click on the still-focused, still-enabled Save button if a raw CDP
- * `Input.dispatchKeyEvent` Enter does not trigger this WebView2 build's native "Enter activates
- * the focused button" behaviour (confirmed live: Tab reliably reaches Save and ArrowUp/ArrowDown
- * reliably toggle the radiogroup's own live preview, so the gap is specifically Enter's native
- * button-activation default action, not this harness's keyboard dispatch in general). Both
- * fallbacks are recorded as `notExercised`, never silently swallowed -- the keyboard NAVIGATION
- * to and onto Save is still real in both cases; only the final activation key falls back. */
-async function saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label }) {
+/** Tab from the currently-focused radio to the Save button, a REAL Enter keypress to commit.
+ * Uses `cdp.pressEnter()` (sends `text`/`unmodifiedText: '\r'` alongside the keycode), NOT the
+ * bare `pressKey` helper (keycode only) -- a native `<button>`'s own default "Enter activates the
+ * focused button" behaviour needs those text fields to fire in this WebView2 build, the exact
+ * gap this codebase already documents at `verify-tauri-560-helpers.mjs`'s own `pressRealEnter`
+ * doc comment and `verify-tauri-567.mjs`'s own Delete-dialog Enter press (`pressKey` alone "does
+ * not reliably trigger it"). No fallback click: a hard failure here is real, not swallowed. */
+async function saveViaKeyboard(cdp, { findings, label }) {
   await pressTab(cdp);
-  const tabReachedSave = await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` })
-    .then(() => true)
-    .catch(() => {
-      notExercised.push(`Tab landed somewhere other than Save immediately after the radiogroup (${label}) -- DOM order between the radiogroup and the Save button may differ from assumed; falling back to a direct click.`);
-      return false;
-    });
-  if (tabReachedSave) {
-    await pressEnterKey(cdp);
-    const enterCommitted = await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 2_000, label: `Enter committed Save (${label})` })
-      .then(() => true)
-      .catch(() => false);
-    if (!enterCommitted) {
-      notExercised.push(`A real Tab-focused Enter keypress did not activate the focused Save button (${label}) in this WebView2/CDP harness -- falling back to a direct click on the still-focused, still-enabled button.`);
-      await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
-    }
-  } else {
-    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
-  }
-  try {
-    await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 5_000, label: `Keyboard Save committed (${label}, Save disabled afterward)` });
-    findings.push(`Keyboard Save committed "${label}" (Save disabled afterward, matching the Theme picker's own isDirty gate).`);
-  } catch {
-    failures.push(`After keyboard Save (${label}), the Save button is still enabled -- the preview was not committed.`);
-  }
+  await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` });
+  await cdp.pressEnter();
+  await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 5_000, label: `Keyboard Enter committed Save (${label}, Save disabled afterward)` });
+  findings.push(`Keyboard Save committed "${label}" via a real Tab + Enter (Save disabled afterward, matching the Theme picker's own isDirty gate).`);
 }
 
 /** Reads the transcript column's own measured rect, the pane viewport's rect (its direct
@@ -336,7 +309,7 @@ async function main() {
     await pressArrowUp(cdp); // moves to "Full" (index 0), live-previews it immediately
     await cdp.waitFor(`(${fullRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Full" radio checked (keyboard ArrowUp)' });
     findings.push('Keyboard: ArrowUp moved the roving-tabindex focus AND aria-checked to "Full" immediately.');
-    await saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label: 'Full' });
+    await saveViaKeyboard(cdp, { findings, label: 'Full' });
     await closeSettings(cdp);
     const fullKeyboardLayout = await measureLayout(cdp);
     if (fullKeyboardLayout.column && fullKeyboardLayout.viewport) {
@@ -352,7 +325,7 @@ async function main() {
     await pressArrowDown(cdp); // moves to "Reading column" (index 1), live-previews it immediately
     await cdp.waitFor(`(${readingColumnRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Reading column" radio checked (keyboard ArrowDown)' });
     findings.push('Keyboard: ArrowDown moved aria-checked back to "Reading column" immediately.');
-    await saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label: 'Reading column' });
+    await saveViaKeyboard(cdp, { findings, label: 'Reading column' });
     await closeSettings(cdp);
     const keyboardSavedLayout = await measureLayout(cdp);
     if (keyboardSavedLayout.column && keyboardSavedLayout.viewport) {
