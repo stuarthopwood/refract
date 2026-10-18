@@ -22,15 +22,12 @@
 // guessed sleep. Opacity reads poll with a timeout; split-pane/short-window are FORCED via
 // `Emulation.setDeviceMetricsOverride`; a failed `theme.set` is a failure, not `notExercised`.
 //
-// Root cause found (2026-10-18): this script never built or PATH-prepended the recorded-frame
-// omp shim, so every run before this fix silently launched the REAL omp (ready in 1-2s, no
-// real `prompt`/`extended` transition, 0s elapsedMs placeholders). Fixed: the shim is built
-// once in `main()`, passed as `pathPrepend` to both launches; `setupLaunch` refuses unless the
-// fake-omp's own persisted debug log (`SHOTS_DIR`, survives teardown) proves it ran; a real
-// turn now clicks the tape's own Approve card too (the fake always replays `session.jsonl`'s
-// recorded `extension_ui_request` regardless of the omp CLI's `--approval-mode` flag, which
-// only a REAL binary would ever honour by skipping the ask). `prompt`/`extended`/`queued` are
-// asserted for real again below.
+// Root cause (2026-10-18): this script never built/PATH-prepended the recorded-frame omp shim, so
+// every run before this fix silently launched the REAL omp (ready in 1-2s, no real
+// `prompt`/`extended`, 0s elapsedMs). Fixed: shim builds once in `main()`, passed as `pathPrepend`
+// to both launches; `setupLaunch` refuses unless the fake-omp's own persisted debug log proves it
+// ran; a real turn also clicks the tape's own Approve card (fake always replays the recorded
+// `extension_ui_request` regardless of `--approval-mode`, which only a REAL binary would honour).
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -53,13 +50,11 @@ const LOG = 'verify-672';
 const SHOTS_DIR =
   process.env.REFRACT_672_SHOTS_DIR || path.join(tmpdir(), 'refract-672-start-message-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; the "brief" delay must clear
-// enough real headroom for the several checks between a restart and composer-ready while
-// staying well below 60s (nothing on this launch ever reaches `prompt`, unlike
-// `READY_DELAY_LONG_MS` below); the "long" delay must clear 60s with headroom but stay
-// comfortably under `READY_CEILING_MS` (180_000). Back to its original 15s (2026-10-18): the
-// root cause of the two races this margin briefly compensated for was the missing omp shim
-// (see the header comment), not an undersized delay -- nothing else depends on the larger value.
+// `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; "brief" clears enough real
+// headroom for restart-to-composer-ready checks while staying well below 60s (nothing on this
+// launch reaches `prompt`, unlike `READY_DELAY_LONG_MS` below); "long" must clear 60s with headroom
+// but stay under `READY_CEILING_MS` (180_000). Back to its original 15s (2026-10-18): the two races
+// this margin briefly compensated for were the missing omp shim, not an undersized delay.
 const READY_DELAY_BRIEF_MS = 15_000;
 const READY_DELAY_LONG_MS = 150_000;
 
@@ -250,13 +245,18 @@ async function main() {
       const probe = await cdp1.evaluate(`(() => {
         const region = ${REGION0}, group = ${GROUP};
         if (!region) return null;
-        const rr = region.getBoundingClientRect();
-        const x = rr.x + 16, y = rr.y + 16;
-        const hit = document.elementFromPoint(x, y);
-        return { x, y, landsInTranscript: !!hit && region.contains(hit), landsInNotice: !!hit && !!group && group.contains(hit) };
+        const rr = region.getBoundingClientRect(), gr = group ? group.getBoundingClientRect() : null;
+        // Gate-fix: a larger notice can overflow 260px and 'items-center-safe' pins it to the TOP (CSS safe-centering) -- scan all 4 corners, not just top-left.
+        const candidates = [[rr.x+16,rr.y+16],[rr.x+16,rr.y+rr.height-16],[rr.x+rr.width-16,rr.y+16],[rr.x+rr.width-16,rr.y+rr.height-16]];
+        for (const [x, y] of candidates) {
+          const hit = document.elementFromPoint(x, y);
+          const landsInTranscript = !!hit && region.contains(hit), landsInNotice = !!hit && !!group && group.contains(hit);
+          if (landsInTranscript && !landsInNotice) return { x, y, landsInTranscript, landsInNotice, groupRect: gr };
+        }
+        return { landsInTranscript: false, landsInNotice: false, groupRect: gr };
       })()`);
       if (!probe || !probe.landsInTranscript || probe.landsInNotice) {
-        failures.push(`history/wheel: could not find a point confirmed (elementFromPoint) inside the transcript and outside the notice (${JSON.stringify(probe)}).`);
+        failures.push(`history/wheel: could not find a point confirmed (elementFromPoint) inside the transcript and outside the notice in any of 4 corners (${JSON.stringify(probe)}).`);
         return;
       }
       const before = await cdp1.evaluate(`${REGION0}?.scrollTop ?? null`);
@@ -387,9 +387,9 @@ async function main() {
     const cWaitingProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 15_000);
     findings.push(`Session C's own real start reached 'waiting' (${JSON.stringify(cWaitingProgress)}) after C1/D/E were cancelled.`);
 
-    // ---- Build real history on Session C (1st start reaches ready); its own brand-new prompt/
-    // extended exercise is dropped on purpose (test-efficiency: the restart below needs Keep waiting/Cancel reachability anyway). ----
-    await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: READY_DELAY_LONG_MS, label: 'Session C ready (1st start reaches ready)' });
+    // ---- Build real history on Session C (1st start reaches ready); its own brand-new prompt/extended
+    // exercise is dropped on purpose (restart below needs Keep waiting/Cancel reachability anyway). Gate-fix (confirmed live): the shim's OWN ready-delay is also `READY_DELAY_LONG_MS` (a literal tie, no margin) -- add slack past it, staying under the Rust-side `READY_CEILING_MS` (180_000) ceiling. ----
+    await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: READY_DELAY_LONG_MS + 20_000, label: 'Session C ready (1st start reaches ready)' });
     await cdp2.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp2.send('Input.insertText', { text: 'Reply with exactly the single word t672turnC and nothing else.' });
     await cdp2.clickByLabel('Send message');
