@@ -3591,7 +3591,7 @@ yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot grante
 `verify-938-slash-rest.mjs` run live against a real app are each pending the build slot grant
 from Main.
 
-Opened as draft PR #TBD (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
+Opened as draft PR #996 (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
 here; item 1 and 4 already shipped via #954; item 6 was resolved by investigation, no code to
 ship) until the live check above confirms every item; the PR switches to **Closes #938** only
 once it does, per the working rule that every remaining item must land AND be live-proven first.
