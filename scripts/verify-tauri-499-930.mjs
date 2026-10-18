@@ -517,10 +517,8 @@ async function main() {
       notExercised('Every live PR-data check (Filter tabs, Filters disclosure, tab geometry, resizable column, Project selector fit)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
     }
 
-    // Gate-fix (H1, caught live 2026-10-18): drags away from the default, double-clicks to
-    // reset, then relaunches the SAME scratch data dir and confirms the column renders at the
-    // DEFAULT width again -- a genuine `settings.json` round trip (the reset's own path used to
-    // silently drop the persist, unlike a plain drag). ----
+    // Gate-fix (H1, caught live 2026-10-18): drags away, double-clicks to reset, relaunches the
+    // SAME scratch data dir, confirms the column renders at the DEFAULT width again. ----
     if (reachedPrData) {
       await dragHandleBy(cdp, HANDLE_FINDER, 120);
       await sleep(400);
@@ -531,6 +529,9 @@ async function main() {
       const widthAfterReset = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
       await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
       const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
+      // TEMPORARY diagnostic capture (round 4) -- read before cdp.close() loses this page's state.
+      const relaunchPersistLog = await cdp.evaluate(`window.__pullRequestsPersistLog ?? null`);
+      const relaunchClickLog = await cdp.evaluate(`window.__pullRequestsClickLog ?? null`);
       cdp.close();
       await stopLauncher(child);
       ({ child, cdp } = await launch());
@@ -547,7 +548,7 @@ async function main() {
         && persistedWidthPx != null && Math.abs(persistedWidthPx - DEFAULT_WIDTH_PX) <= 3
         && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - DEFAULT_WIDTH_PX) <= 3;
       if (remembered) checkPass('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
-      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
+      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch, relaunchPersistLog, relaunchClickLog }));
     } else {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }

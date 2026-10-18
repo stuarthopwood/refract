@@ -243,9 +243,13 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           onDoubleClick={(e) => {
             if (!e.defaultPrevented) return
             const handleRect = handleElementRef.current?.getBoundingClientRect()
-            if (handleRect && Math.abs(e.clientX - (handleRect.left + handleRect.width / 2)) <= 5) {
-              usePullRequestsLayoutStore.getState().resetToDefault()
-            }
+            const distance = handleRect ? Math.abs(e.clientX - (handleRect.left + handleRect.width / 2)) : null
+            const withinProximity = handleRect != null && distance != null && distance <= 5
+            // TEMPORARY diagnostic instrumentation (caught live round 4) -- see
+            // `pull-requests-layout-store.ts`'s own TEMPORARY `window.__pullRequestsPersistLog`
+            // comment. Remove alongside it once the root cause is found and fixed.
+            ;(window.__pullRequestsClickLog ??= []).push({ clientX: e.clientX, handleRect: handleRect ? { left: handleRect.left, width: handleRect.width } : null, distance, withinProximity, at: performance.now() })
+            if (withinProximity) usePullRequestsLayoutStore.getState().resetToDefault()
           }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered

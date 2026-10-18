@@ -44,7 +44,20 @@ interface PullRequestsLayoutState {
 
 let persistTimer: number | undefined
 
-function persist(widthPx: number): void {
+// TEMPORARY diagnostic instrumentation (caught live round 4, two confirmed-wrong diagnoses in a
+// row): exposes every persist() call -- its caller and the exact width -- on `window` so a live
+// verify run can observe the real call sequence directly instead of guessing at it again.
+// Remove once the actual root cause of the sidebar-dblclick/relaunch persist mismatch is found
+// and fixed.
+declare global {
+  interface Window {
+    __pullRequestsPersistLog?: Array<{ source: string; widthPx: number; at: number }>
+    __pullRequestsClickLog?: Array<{ clientX: number; handleRect: { left: number; width: number } | null; distance: number | null; withinProximity: boolean; at: number }>
+  }
+}
+
+function persist(widthPx: number, source: string): void {
+  ;(window.__pullRequestsPersistLog ??= []).push({ source, widthPx, at: performance.now() })
   if (persistTimer) {
     clearTimeout(persistTimer)
     persistTimer = undefined
@@ -68,11 +81,11 @@ export const usePullRequestsLayoutStore = create<PullRequestsLayoutState>((set, 
   widthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX,
   setWidth: (widthPx) => set({ widthPx }),
   commit: (widthPx) => {
-    persist(widthPx)
+    persist(widthPx, 'commit')
   },
   resetToDefault: () => {
     set({ widthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX })
-    persist(PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX)
+    persist(PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, 'resetToDefault')
   },
   restoreFromSettings: (widthPx) => set({ widthPx })
 }))

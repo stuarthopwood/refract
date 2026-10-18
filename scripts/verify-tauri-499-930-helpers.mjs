@@ -181,7 +181,12 @@ export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFi
   await sleep(700);
   const after = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   const persisted = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
-  const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted };
+  // TEMPORARY diagnostic capture (caught live round 4) -- see the layout store's own
+  // `window.__pullRequestsPersistLog`/`PullRequestsView.tsx`'s own `__pullRequestsClickLog`
+  // comments. Remove alongside them once the root cause is found and fixed.
+  const persistLog = await cdp.evaluate(`window.__pullRequestsPersistLog ?? null`);
+  const clickLog = await cdp.evaluate(`window.__pullRequestsClickLog ?? null`);
+  const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted, persistLog, clickLog };
   const persistedMatchesRealWidth = after != null && persisted != null && Math.abs(persisted - after) <= 1;
   const suspiciousDefaultReset = persisted != null && Math.abs(persisted - defaultWidthPx) <= 1 && before != null && Math.abs(before - defaultWidthPx) > 1;
   const pass = persistedMatchesRealWidth && !suspiciousDefaultReset;
