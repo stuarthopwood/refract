@@ -458,6 +458,10 @@ async function main() {
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, 'Here are five files.'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
+    const preSendButtonState = await cdp.evaluate(
+      `(() => { const b = document.querySelector('[aria-label^="Send"]'); return b ? { ariaDisabled: b.getAttribute('aria-disabled'), ariaLabel: b.getAttribute('aria-label') } : { notFound: true }; })()`
+    );
+    console.log(`${LOG}: DIAG Send button state right before click: ${JSON.stringify(preSendButtonState)}`);
     await cdp.clickByLabel('Send message');
 
     // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
