@@ -69,18 +69,36 @@ impl SessionAgent {
     /// live process.
     pub async fn stop(&self) -> Result<(), AgentError> {
         let (proc, status) = {
-            let state = self.state.lock().await;
-            (state.process.clone(), state.status)
+            let mut state = self.state.lock().await;
+            let proc = state.process.clone();
+            let status = state.status;
+            // Issue #911 (gate-fix, Main 2026-10-18): only set while a turn is genuinely in
+            // flight -- `Working`/`NeedsYou` AND `turn_generation` odd (mid-turn, not yet
+            // settled by `handle_turn_settled`) -- never merely "not Idle" (which also covers
+            // `Stopped` mid-launch, where there is no live turn to cut short). Set BEFORE the
+            // `abort` RPC goes out (same lock the no-op checks below also read `process`/
+            // `status` under), so a `tool_execution_end` this abort cuts short can never race a
+            // flag not yet true.
+            let turn_in_flight = matches!(status, SessionStatus::Working | SessionStatus::NeedsYou)
+                && state.turn_generation % 2 == 1;
+            if proc.is_some() && turn_in_flight {
+                state.turn_abort_requested = true;
+            }
+            (proc, status)
         };
         let Some(proc) = proc else { return Ok(()) };
         if status == SessionStatus::Idle {
             return Ok(());
         }
-        if let Ok(res) = proc
+        match proc
             .request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
         {
-            if res.get("success").and_then(Value::as_bool) != Some(true) {
+            Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true) => {}
+            Ok(res) => {
+                // Issue #911 (gate-fix): the abort did not actually take effect -- never leave
+                // the flag set for a stop that never happened.
+                self.state.lock().await.turn_abort_requested = false;
                 let err_message = res
                     .get("error")
                     .and_then(Value::as_str)
@@ -88,6 +106,10 @@ impl SessionAgent {
                     .to_string();
                 self.append_notice(format!("abort failed: {err_message}"), "error")
                     .await;
+            }
+            Err(_) => {
+                // Issue #911 (gate-fix): request timeout/transport error -- same reasoning.
+                self.state.lock().await.turn_abort_requested = false;
             }
         }
         let mut rx = self.status_tx.subscribe();

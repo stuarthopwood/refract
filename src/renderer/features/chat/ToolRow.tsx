@@ -289,6 +289,11 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // many) calls were cut off without expanding the group (gate round 1, #570: both counts now
   // live in the meta slot instead of the summary text, "N failed" in the error colour).
   const interruptedCount = group.items.filter((item) => item.status === 'interrupted').length
+  // Issue #911: a user-initiated Stop never gets its own count merged into `interruptedCount`
+  // above -- same reasoning as `subagentStatus.tsx`'s own `summarizeSubagentStatuses` doc
+  // comment (decision 15): "cancelled" and "interrupted" are different claims (the user acted
+  // vs. the writing process just vanished) and must never fold into one shared number.
+  const cancelledCount = group.items.filter((item) => item.status === 'cancelled').length
   // #570 decisions 6, 9: the group header's own Error line while collapsed is the LATEST failed
   // member's (replaced by each failed member's own line once expanded, decision 9's
   // `hideDetailWhenOpen` below); for a solo "group" this is simply that one call.
@@ -299,7 +304,9 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
       ? 'error'
       : interruptedCount > 0
         ? 'interrupted'
-        : 'done'
+        : cancelledCount > 0
+          ? 'cancelled'
+          : 'done'
   const isRunning = status === 'running'
   // #565 decision 26 (mirrors `StageGroupRow`'s own seen-set, `SubagentChainRow.tsx`): a member
   // that mounts WHILE this group is live (running) fades in; one already present at a settled
@@ -350,14 +357,17 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // text above into this never-shrinking meta slot, "N failed" in the error colour the instant
   // any member fails -- even mid-run, since colour here is reinforcement, not the only signal
   // (the word itself carries it) -- while "N interrupted" stays neutral (decision 5: interrupted
-  // is never red). A solo call's own meta reuses the same per-call stat `ToolCallRow` shows (an
-  // `edit`'s own "+N -M", #632, alongside its duration) -- one function, so the two can never
-  // show a different stat for what is otherwise the identical row.
+  // is never red). Issue #911: "N stopped" joins them, same neutral treatment as interrupted
+  // (never red -- the user's own action, not a claim anything went wrong). A solo call's own
+  // meta reuses the same per-call stat `ToolCallRow` shows (an `edit`'s own "+N -M", #632,
+  // alongside its duration) -- one function, so the two can never show a different stat for
+  // what is otherwise the identical row.
   const meta = solo
     ? callMeta(last)
     : joinMetaParts([
         failedCount > 0 ? <span className="text-severity-error">{failedCount} failed</span> : undefined,
         interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
+        cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
         totalDuration
       ])
 
@@ -393,6 +403,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
+        cancelledCount > 0 ? `${cancelledCount} stopped` : undefined,
         totalDuration
       ]
         .filter((part): part is string => !!part)
