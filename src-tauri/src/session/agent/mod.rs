@@ -303,9 +303,9 @@ impl SessionAgent {
     }
 
     /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
-    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step --
-    /// `summary_fields` (registry-only `sessions.list` rows) deliberately does not call this: no
-    /// live agent computes a crash's tail detection for a Session nobody has opened this run.
+    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step.
+    /// `summary_fields` doesn't call this: progress yes (issue #985, read directly there, cheap
+    /// and in memory already), termination no (needs a fresh file re-read per list row).
     fn insert_termination_and_progress_fields(
         obj: &mut serde_json::Map<String, Value>,
         state: &AgentState,
