@@ -750,7 +750,7 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
      `--accent-text`/`--active-indicator` went through two retunes before landing: first raised
      to `oklch(0.88 0.17 45)`, which gate round 2 found clipped to a real post-clip hue of ~57.7
      -- only 16-17 degrees from `--severity-warning` -- then corrected to the final shipped
-     `oklch(0.82 0.10 40)` (hex `#fcae93`, real hue 39.9, entirely in-gamut): now 33.95 degrees
+     `oklch(0.82 0.10 40)` (hex `#fcae93`, real hue 39.9, entirely in-gamut): now ~34 degrees
      from warning's real ~73.8 and 1.54:1 apart from error (swatch contrast), every existing pair
      still passing (error 4.74:1 on its own `--muted`, the narrowest case; accent 8.59:1 on
      `--popover`, the narrowest case).

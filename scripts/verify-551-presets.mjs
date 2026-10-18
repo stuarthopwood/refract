@@ -5,8 +5,10 @@
 // per gate round 1 item 13) -- for each, confirms persistence across a full stop-and-relaunch on
 // the same scratch data dir, screenshots the chat/composer, the session list, the Settings
 // screen, and a dialog, and reads REAL rendered-surface contrast (not just hidden CSS-var
-// probes, gate round 1 item 11) plus a real OKLab hue/lightness distance between the accent and
-// info/error tokens (gate round 1 item 12, replacing a naive string-inequality check). Also
+// probes, gate round 1 item 11) plus real OKLab hue/lightness-distance checks: accent-vs-info in
+// every theme, and (Cyber Amber only) accent-vs-warning hue distance plus accent-vs-error swatch
+// contrast (gate round 1 item 12; gate round 3 item 1 added the warning floor so a 16-17-degree
+// regression like round 1's own first candidate would fail here, not just be noted). Also
 // includes Dark (high contrast) (gate round 1 item 14): reads its own red severity colour live
 // on a real hovered session row at the theme's declared 7:1 target, sends one real prompt that
 // asks for a fenced code block and a small Mermaid diagram and screenshots the rendered result
@@ -24,7 +26,7 @@
 // same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script documents). NOT run by this
 // prep lane (NO-BUILD; held for the build slot) -- syntax-checked only (`node --check`).
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -43,7 +45,13 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { pressEscape } from './verify-tauri-session-list-helpers.mjs';
 import { measuredContrastRatio, parseComputedColorToEntry } from './contrast-math.mjs';
-import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor } from './verify-551-helpers.mjs';
+import {
+  hueDistanceDegrees,
+  describeHueLightness,
+  requireResolvedCssVarColor,
+  worktreesDirFor,
+  assertBundleContainsPresetMarkers
+} from './verify-551-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -57,6 +65,13 @@ const NEW_THEMES = [
   { id: 'nordic-frost', name: 'Nordic Frost', switchVia: 'settings' },
   { id: 'cyber-amber', name: 'Cyber Amber', switchVia: 'profile-menu' }
 ];
+
+// Gate round 3 item 6: named thresholds, not magic numbers -- both decided and documented in
+// globals.css's own `.theme-cyber-amber` header comment. The swatch floor is #551's own gate
+// round 1 decision; the hue floor is new this round, set below round 1's own failed 16-17-degree
+// first candidate with margin, so that exact regression would fail here, not pass silently.
+const CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR = 1.5;
+const CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR = 30;
 
 // Items 10/12 (missing-token guard, real OKLab hue/lightness distance): `linearSrgbToOklab`/
 // `oklabHueDegrees`/`hueDistanceDegrees`/`describeHueLightness`/`cssVarRawValue`/
@@ -99,8 +114,9 @@ async function readRealSurfaceColours(cdp) {
  * a box-shadow-based ring, not a CSS `border` -- so `border-color`/`border-style` are never
  * actually set and reading them does not correspond to anything visually rendered. Reported as
  * informational only below (never a pass/fail gate) rather than asserting a floor against a
- * property this component doesn't use. */
-async function readRealDialogBorder(cdp) {
+ * property this component doesn't use. Renamed from `readRealDialogBorder` (gate round 3 item
+ * 4): it never read a border, only the dialog's own background and real box-shadow ring. */
+async function readRealDialogSurfaces(cdp) {
   return cdp.evaluate(`(() => {
     const dialog = document.querySelector('[role="dialog"]');
     if (!dialog) return null;
@@ -109,32 +125,9 @@ async function readRealDialogBorder(cdp) {
   })()`);
 }
 
-/** Ties the exe under test to the actual commit: both new theme ids, literally present only
- * from this story's commits onward, grepped out of the just-built renderer bundle -- a real,
- * cheap proof this build contains #551's code, independent of git log reasoning about timing
- * (same pattern `verify-927-928-quiet-composer.mjs`'s own marker-assertion established). */
-function assertBundleContainsPresetMarkers() {
-  const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
-  let files;
-  try {
-    files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
-  } catch (err) {
-    throw new Error(`verify-551: could not read built bundle directory ${assetsDir} (${err.message}) -- run 'pnpm tauri build --debug --no-bundle' first.`);
-  }
-  const found = { 'nordic-frost': false, 'cyber-amber': false };
-  for (const file of files) {
-    const text = readFileSync(path.join(assetsDir, file), 'utf8');
-    if (text.includes('nordic-frost')) found['nordic-frost'] = true;
-    if (text.includes('cyber-amber')) found['cyber-amber'] = true;
-  }
-  const missing = Object.entries(found)
-    .filter(([, present]) => !present)
-    .map(([id]) => id);
-  if (missing.length > 0) {
-    throw new Error(`verify-551: built bundle is missing the theme id marker(s) ${missing.join(', ')} -- this exe predates #551, rebuild before running this check.`);
-  }
-  console.log('verify-551: confirmed both #551 theme id markers (nordic-frost, cyber-amber) are present in the built renderer bundle.');
-}
+// Gate round 3 item 5: `worktreesDirFor` and `assertBundleContainsPresetMarkers` both live in
+// `./verify-551-helpers.mjs` now (#806 ratchet -- this round's own fixes pushed the main script
+// back over its 600-line soft cap; pure-logic, behaviour-preserving extraction, imported above).
 
 async function openSettingsAppearance(cdp) {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
@@ -192,7 +185,7 @@ async function main() {
     console.log(`verify-551: shots dir ${SHOTS_DIR}`);
 
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-551' });
-    assertBundleContainsPresetMarkers();
+    assertBundleContainsPresetMarkers(REPO_ROOT);
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
@@ -276,16 +269,31 @@ async function main() {
         else findings.push(`${theme.name}: Send button real text/fill measures ${sendRatio.toFixed(2)}:1 (>=3:1).`);
       }
       if (!realSurfaces.sessionRowText || !realSurfaces.sidebarBackground) {
-        notExercised.push(`${theme.name}: session-list row title / sidebar background could not both be read -- real DOM shape may differ from this script's selector assumption.`);
+        // Gate round 3 item 3: a session row is known to be on screen here -- a missed selector
+        // is a real DOM-shape regression, not a legitimate absence to record as notExercised.
+        failures.push(`${theme.name}: session-list row title or sidebar background selector matched nothing, though a session row is known to be on screen at this point.`);
       } else {
-        const rowRatio = measuredContrastRatio(realSurfaces.sessionRowText, realSurfaces.sidebarBackground);
-        if (rowRatio === null) failures.push(`${theme.name}: could not parse session-row text/sidebar background for a measured ratio.`);
-        else if (rowRatio < 4.5) failures.push(`${theme.name}: session-row title text measures ${rowRatio.toFixed(2)}:1 on the real sidebar background, below 4.5:1.`);
-        else findings.push(`${theme.name}: session-row title text measures ${rowRatio.toFixed(2)}:1 on the real sidebar background (>=4.5:1).`);
+        const sidebarEntry = parseComputedColorToEntry(realSurfaces.sidebarBackground);
+        if (!sidebarEntry) {
+          failures.push(`${theme.name}: could not parse the real sidebar background (${realSurfaces.sidebarBackground}) for alpha/colour.`);
+        } else if (sidebarEntry.alpha < 1) {
+          // Gate round 3 item 2: alpha < 1 (not just fully transparent) means this backdrop's
+          // true rendered colour depends on whatever paints behind it, which this check never
+          // reads -- a contrast ratio computed directly against a semi-transparent string would
+          // be unreliable, not just a 0-alpha one.
+          failures.push(`${theme.name}: the real session-row backdrop (${realSurfaces.sidebarBackground}) has alpha ${sidebarEntry.alpha} (<1) -- its true rendered colour depends on whatever paints behind it, which this check cannot see.`);
+        } else {
+          const rowRatio = measuredContrastRatio(realSurfaces.sessionRowText, realSurfaces.sidebarBackground);
+          if (rowRatio === null) failures.push(`${theme.name}: could not parse session-row text/sidebar background for a measured ratio.`);
+          else if (rowRatio < 4.5) failures.push(`${theme.name}: session-row title text measures ${rowRatio.toFixed(2)}:1 on the real sidebar background, below 4.5:1.`);
+          else findings.push(`${theme.name}: session-row title text measures ${rowRatio.toFixed(2)}:1 on the real sidebar background (>=4.5:1).`);
+        }
       }
 
-      // ---- A dialog: Keyboard shortcuts (read-only, no mutation risk) -- real border vs real
-      // popover background (item 11's "border on popover/dialog"). ----
+      // ---- A dialog: Keyboard shortcuts (read-only, no mutation risk) -- real background +
+      // box-shadow ring vs real popover background (item 11's surface read; gate round 3 item 4
+      // corrected this comment, which still said "real border" after gate round 2 item 6 found
+      // this component has no border at all, only a `ring-foreground/10` box-shadow). ----
       await cdp.click(`document.querySelector('[data-profile-name-button]')`);
       await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
       await cdp.clickByText('Keyboard shortcuts', { tag: 'div' });
@@ -296,9 +304,9 @@ async function main() {
       if (!dialogOpen) {
         failures.push(`${theme.name}: Keyboard shortcuts dialog did not open from the Profile menu.`);
       } else {
-        const dialogSurfaces = await readRealDialogBorder(cdp);
+        const dialogSurfaces = await readRealDialogSurfaces(cdp);
         if (!dialogSurfaces) {
-          failures.push(`${theme.name}: dialog border/background could not be read.`);
+          failures.push(`${theme.name}: dialog background/box-shadow could not be read.`);
         } else {
           // Informational only (gate round 2 item 6): this component's real edge is a
           // box-shadow ring (`ring-foreground/10`), not a CSS border -- `borderColor` never
@@ -337,10 +345,25 @@ async function main() {
           const swatchRatio = measuredContrastRatio(accentRaw, errorRaw);
           if (swatchRatio === null) {
             failures.push(`${theme.name}: could not parse --accent-text (${accentRaw}) or --severity-error (${errorRaw}) for a measured swatch contrast ratio.`);
-          } else if (swatchRatio < 1.5) {
-            failures.push(`${theme.name}: --accent-text (${accentRaw}) and --severity-error (${errorRaw}) measure only ${swatchRatio.toFixed(2)}:1 apart (swatch contrast) -- below the 1.5:1 the gate round 1 retune decided.`);
+          } else if (swatchRatio < CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR) {
+            failures.push(`${theme.name}: --accent-text (${accentRaw}) and --severity-error (${errorRaw}) measure only ${swatchRatio.toFixed(2)}:1 apart (swatch contrast) -- below the ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 the gate round 1 retune decided.`);
           } else {
-            findings.push(`${theme.name}: --accent-text and --severity-error measure ${swatchRatio.toFixed(2)}:1 apart (swatch contrast), clearing the decided 1.5:1 separation.`);
+            findings.push(`${theme.name}: --accent-text and --severity-error measure ${swatchRatio.toFixed(2)}:1 apart (swatch contrast), clearing the decided ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 separation.`);
+          }
+
+          // Gate round 3 item 1: live accent-vs-warning hue distance -- the first gate round 2
+          // candidate measured only 16-17 degrees after clipping; this would now fail it.
+          const warningRaw = await requireResolvedCssVarColor(cdp, '--severity-warning', 'color');
+          const warningHL = describeHueLightness(warningRaw);
+          if (!accentHL || !warningHL) {
+            failures.push(`${theme.name}: could not parse --accent-text (${accentRaw}) or --severity-warning (${warningRaw}) for a real OKLab hue read.`);
+          } else {
+            const warningHueDist = hueDistanceDegrees(accentHL.hue, warningHL.hue);
+            if (warningHueDist < CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR) {
+              failures.push(`${theme.name}: --accent-text (hue ${accentHL.hue.toFixed(1)}) and --severity-warning (hue ${warningHL.hue.toFixed(1)}) are only ${warningHueDist.toFixed(1)} degrees apart -- below the ${CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR}-degree floor (the first gate round 2 candidate measured only 16-17 degrees here, exactly the regression this check exists to catch).`);
+            } else {
+              findings.push(`${theme.name}: --accent-text (hue ${accentHL.hue.toFixed(1)}) and --severity-warning (hue ${warningHL.hue.toFixed(1)}) are ${warningHueDist.toFixed(1)} degrees apart (>=${CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR}).`);
+            }
           }
         }
       } catch (err) {
@@ -428,12 +451,14 @@ async function main() {
       // own background; the fill actually painted on hover/selected is `bg-sidebar-accent` on
       // its parent `<div>`, SessionRow.tsx:193-198. Reading the button's own background
       // silently parses as opaque black and can never fail this check -- read the parent
-      // instead and fail outright if its own alpha is 0, rather than let a transparent read
-      // through as a false opaque black). `--severity-error`/`--state-stopped`/`--pr-closed`
-      // are three separate literal duplicates in this theme (#570's own "literal copies, not
-      // var aliases" rule) that happened to share one value before this story's own fix -- all
-      // three are checked against the SAME real backdrop here so a future value split would be
-      // caught, not just the one this story directly retuned.
+      // instead and fail outright if its own alpha is below 1 (gate round 3 item 2 tightened
+      // this from "alpha is 0" -- a partially transparent backdrop has the same underlying
+      // problem, just milder), rather than let a non-opaque read through as if it were opaque.
+      // `--severity-error`/`--state-stopped`/`--pr-closed` are three separate literal duplicates
+      // in this theme (#570's own "literal copies, not var aliases" rule) that happened to share
+      // one value before this story's own fix -- all three are checked against the SAME real
+      // backdrop here so a future value split would be caught, not just the one this story
+      // directly retuned.
       const rowRect = await cdp.evaluate(`(() => {
         const row = ${SESSION_ROW_FINDER};
         if (!row) return null;
@@ -453,8 +478,8 @@ async function main() {
         const backdropEntry = hoverBackground ? parseComputedColorToEntry(hoverBackground) : null;
         if (!hoverBackground || !backdropEntry) {
           failures.push(`Dark (high contrast): could not read the real hovered row's parent backdrop (${hoverBackground}).`);
-        } else if (backdropEntry.alpha === 0) {
-          failures.push(`Dark (high contrast): the real hovered row backdrop (${hoverBackground}) is fully transparent -- this is not the element that actually paints the hover fill; the check cannot trust a transparent read as if it were opaque.`);
+        } else if (backdropEntry.alpha < 1) {
+          failures.push(`Dark (high contrast): the real hovered row backdrop (${hoverBackground}) has alpha ${backdropEntry.alpha} (<1) -- its true rendered colour depends on whatever paints behind it, which this check cannot see, so a contrast ratio computed directly against it would be unreliable.`);
         } else {
           for (const [label, varName] of [['--severity-error', '--severity-error'], ['--state-stopped', '--state-stopped'], ['--pr-closed', '--pr-closed']]) {
             const redRaw = await requireResolvedCssVarColor(cdp, varName, 'color');
@@ -560,6 +585,9 @@ async function main() {
     if (child) await stopLauncher(child).catch(() => {});
     await safeRmSync(dataDir);
     await safeRmSync(importSourceDir);
+    // Gate round 3 item 5: "Add repository" above creates a real Session worktree sibling to
+    // repoDir, the same convention every other verify-5xx/9xx script's `worktreesDirFor` removes.
+    if (repoDir) await safeRmSync(worktreesDirFor(repoDir));
     await safeRmSync(repoDir);
     await safeRmSync(exeDir);
     await safeRmSync(launcherDir);

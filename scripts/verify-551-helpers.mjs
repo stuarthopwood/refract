@@ -5,6 +5,8 @@
 // a real OKLab hue/lightness distance check (not a naive string-inequality check) and a CSS
 // custom property's own raw cascaded value, read before trusting any `var()`-resolved colour.
 
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
 import { parseComputedColorToEntry } from './contrast-math.mjs';
 
@@ -69,4 +71,39 @@ export async function requireResolvedCssVarColor(cdp, varName, property = 'color
     throw new Error(`verify-551: CSS custom property ${varName} is empty/missing on <html> for the active theme -- a var() probe would have silently fallen back to an inherited/initial colour instead of failing.`);
   }
   return resolveCssVarColor(cdp, varName, property);
+}
+
+// ---- Gate round 3 item 5: worktree-cleanup path, same convention every `verify-5xx-*.mjs`/
+// `verify-9xx-*.mjs` script defines locally. Moved here (not left in the main script) because
+// gate round 3's own fixes pushed that file back over the #806 600-line cap. ------------------
+
+export function worktreesDirFor(repoDir) {
+  return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
+}
+
+/** Ties the exe under test to the actual commit: both new theme ids, literally present only
+ * from this story's commits onward, grepped out of the just-built renderer bundle -- a real,
+ * cheap proof this build contains #551's code, independent of git log reasoning about timing
+ * (same pattern `verify-927-928-quiet-composer.mjs`'s own marker-assertion established). */
+export function assertBundleContainsPresetMarkers(repoRoot) {
+  const assetsDir = path.join(repoRoot, 'out', 'tauri-web', 'assets');
+  let files;
+  try {
+    files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
+  } catch (err) {
+    throw new Error(`verify-551: could not read built bundle directory ${assetsDir} (${err.message}) -- run 'pnpm tauri build --debug --no-bundle' first.`);
+  }
+  const found = { 'nordic-frost': false, 'cyber-amber': false };
+  for (const file of files) {
+    const text = readFileSync(path.join(assetsDir, file), 'utf8');
+    if (text.includes('nordic-frost')) found['nordic-frost'] = true;
+    if (text.includes('cyber-amber')) found['cyber-amber'] = true;
+  }
+  const missing = Object.entries(found)
+    .filter(([, present]) => !present)
+    .map(([id]) => id);
+  if (missing.length > 0) {
+    throw new Error(`verify-551: built bundle is missing the theme id marker(s) ${missing.join(', ')} -- this exe predates #551, rebuild before running this check.`);
+  }
+  console.log('verify-551: confirmed both #551 theme id markers (nordic-frost, cyber-amber) are present in the built renderer bundle.');
 }

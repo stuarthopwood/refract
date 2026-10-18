@@ -906,7 +906,7 @@
  * The shipped hex is an 8-bit quantization of that candidate, so its own real measured hue
  * (decoded back from `#fcae93` the same way) is 39.88, not quite the candidate's exact 40.0.
  * Real measured results (from the shipped `#fcae93`, Main's own re-check): accent's own hue is
- * 39.9 (not 40.0 -- 8-bit quantization), 33.95 degrees from warning's real ~73.83 (versus the
+ * 39.9 (not 40.0 -- 8-bit quantization), ~34 degrees from warning's real ~73.8 (versus the
  * prior fix's 16-17); accent-vs-error swatch ratio 1.54:1 (corrected from this comment's earlier
  * 1.55:1 -- still above the 1.5:1 floor, not merely at it); accent-vs-background/card/popover
  * 11.04/9.77/8.59:1 (corrected from this comment's earlier 11.07/9.79/8.65:1 -- all comfortably
