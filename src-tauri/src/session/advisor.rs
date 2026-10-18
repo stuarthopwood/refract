@@ -65,7 +65,7 @@ fn parse_toggle_reply(text: &str) -> Option<bool> {
 
 /// `/advisor status`'s own reply text, used only by the silent attach/resume probe: only an
 /// unambiguous "Advisor is enabled"/"Advisor is disabled" substring is trusted (see this file's
-/// own header); anything else -- including the real, observed "Advisor \"<name>\" is running."
+/// own header); anything else -- including the real, observed `Advisor "<name>" is running.`
 /// wording -- stays `None`: unknown, chip hidden, never a guessed state.
 fn parse_status_reply(text: &str) -> Option<bool> {
     if text.contains("Advisor is enabled") {
