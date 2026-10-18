@@ -343,9 +343,14 @@ async function main() {
     if (!cancelD?.ok) failures.push(`memory-deferred: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}) -- Session D may still hold its real slot, risking cross-talk with Session C's own later restart.`);
     else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot before Session C's own later restart.");
 
-    // Re-focus Session C (a real plain click, not Ctrl) so GROUP/REGIONS scope back to it.
+    // Re-focus Session C (a real plain click, not Ctrl). Gate-fix (confirmed live, bg_843):
+    // re-mounting C's own ChatPane fires a 2nd `sessions.open(C.id)` (the same effect every
+    // Session-switch runs, SessionRow.tsx/ChatPane.tsx), which can take a real moment to restore
+    // `startProgress` visibility -- only waits for the pane itself here (same condition Session
+    // A's own, already-proven refocus uses above), not the notice; the long `waitForStartProgressKind`
+    // call right below already polls patiently for it to reappear.
     await clickSessionRow(cdp2, sessionC.id);
-    await cdp2.waitFor(`${REGIONS}.length >= 1 && ${GROUP}`, { timeoutMs: 10_000, label: 'Session C refocused after the memory-deferred check' });
+    await cdp2.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session C refocused after the memory-deferred check' });
 
     // ---- Brand-new prompt/extended: Session C's own 1st start naturally crosses the real 60s
     // prompt threshold before it ever reaches ready -- exercised here, before any history
