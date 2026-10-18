@@ -29,8 +29,9 @@ use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFin
 
 mod subagent_items;
 use subagent_items::{
-    apply_async_result_jobs, apply_batch_task_result, jobs_from_details, read_task_specs,
-    subagent_name, task_text, try_apply_async_result, upsert_subagent_items,
+    apply_async_result_jobs, apply_batch_task_result, build_message_subagent_items,
+    jobs_from_details, read_batch_context, read_task_specs, try_apply_async_result,
+    upsert_subagent_items,
 };
 mod notice_prefixes;
 use notice_prefixes::{
@@ -114,6 +115,13 @@ pub enum TranscriptItem {
         spec_index: u32,
         name: String,
         task: String,
+        /// The owning batch `task()` call's own shared `context` argument (sibling of `tasks[]`
+        /// on the wire, `omp/tools/task.md`'s own batch schema): the Stage's batch brief, whose
+        /// first line names the Stage (issue #941). Absent for a flat (non-batch) call or a
+        /// malformed/missing string -- the renderer then falls back to the agents' shared name
+        /// prefix, then a bare "Stage N".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<String>,
         status: SubagentStatus,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         started_at: Option<i64>,
@@ -954,53 +962,15 @@ fn build_assistant_items(
                 if name == "task" {
                     let specs = read_task_specs(&arguments);
                     if !specs.is_empty() {
-                        for (spec_index, spec) in specs.iter().enumerate() {
-                            let sub_id = format!("subagent:{part_id}:{spec_index}");
-                            let sub_name = subagent_name(spec);
-                            let task = task_text(spec);
-                            let existing = existing_items
-                                .iter()
-                                .map(|item| item.as_ref())
-                                .find(|item| matches!(item, TranscriptItem::Subagent { id, .. } if *id == sub_id));
-                            match existing {
-                                Some(TranscriptItem::Subagent {
-                                    id,
-                                    tool_call_id,
-                                    spec_index,
-                                    status,
-                                    started_at,
-                                    duration_ms,
-                                    result: sub_result,
-                                    job_id,
-                                    ..
-                                }) => result.push(TranscriptItem::Subagent {
-                                    id: id.clone(),
-                                    tool_call_id: tool_call_id.clone(),
-                                    spec_index: *spec_index,
-                                    name: sub_name,
-                                    task,
-                                    status: *status,
-                                    started_at: *started_at,
-                                    duration_ms: *duration_ms,
-                                    result: sub_result.clone(),
-                                    job_id: job_id.clone(),
-                                    message_id: message_id.to_string(),
-                                }),
-                                _ => result.push(TranscriptItem::Subagent {
-                                    id: sub_id,
-                                    tool_call_id: part_id.clone(),
-                                    spec_index: spec_index as u32,
-                                    name: sub_name,
-                                    task,
-                                    status: SubagentStatus::Running,
-                                    started_at: if capture_timing { Some(now_ms()) } else { None },
-                                    duration_ms: None,
-                                    result: None,
-                                    job_id: None,
-                                    message_id: message_id.to_string(),
-                                }),
-                            }
-                        }
+                        let context = read_batch_context(&arguments);
+                        result.extend(build_message_subagent_items(
+                            existing_items,
+                            &part_id,
+                            &specs,
+                            context.as_deref(),
+                            message_id,
+                            capture_timing,
+                        ));
                         continue;
                     }
                 }
@@ -1209,7 +1179,8 @@ fn apply_tool_execution_start(
     if tool_name == "task" {
         let specs = read_task_specs(&args);
         if !specs.is_empty() {
-            return upsert_subagent_items(items, &tool_call_id, &specs);
+            let context = read_batch_context(&args);
+            return upsert_subagent_items(items, &tool_call_id, &specs, context.as_deref());
         }
     }
     let target = extract_target(&tool_name, &args);

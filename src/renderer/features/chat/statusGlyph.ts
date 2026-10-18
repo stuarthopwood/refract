@@ -14,11 +14,15 @@
 // even among several neutral states.
 import { CheckCircle2Icon, CircleStopIcon, LoaderCircleIcon, UnplugIcon, XCircleIcon, type LucideIcon } from 'lucide-react'
 
-export type StatusGlyphKey = 'running' | 'neutral-done' | 'error' | 'neutral-muted' | 'cancelled'
+export type StatusGlyphKey = 'running' | 'neutral-done' | 'success-done' | 'error' | 'neutral-muted' | 'cancelled'
 
 export const STATUS_GLYPH: Record<StatusGlyphKey, { Icon: LucideIcon; className: string }> = {
   running: { Icon: LoaderCircleIcon, className: 'animate-spin text-state-working' },
   'neutral-done': { Icon: CheckCircle2Icon, className: 'text-state-idle' },
+  // Issue #941: finished agents and Stages (Subagent chain, Stage rows, Subagent panel) get a
+  // green check -- the one exception to "done is neutral" (`foundations-icons.md`'s own
+  // amended "Chat Status icons" entry); tool rows/groups keep `neutral-done` unchanged.
+  'success-done': { Icon: CheckCircle2Icon, className: 'text-severity-success' },
   error: { Icon: XCircleIcon, className: 'text-severity-error' },
   'neutral-muted': { Icon: UnplugIcon, className: 'text-muted-foreground' },
   cancelled: { Icon: CircleStopIcon, className: 'text-muted-foreground' }

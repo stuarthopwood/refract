@@ -21,13 +21,33 @@ export const SUBAGENT_STATUS_LABEL: Record<SubagentRowStatus, string> = {
 // below come from `statusGlyph.ts`'s shared `STATUS_GLYPH` table -- the one this module chose
 // first (issue #563) and `toolStatus.tsx`'s own `StatusIcon` now reads too, instead of a second
 // hand-written copy that could drift apart from this one.
+//
+// Issue #941: `finished` maps to the chromatic `success-done` key, not `neutral-done` -- EVERY
+// consumer of this module (`SubagentRow`, the Stage group header, the chain rows, the
+// Subagent panel tree) is one of the surfaces #941 asks for green on; `toolStatus.tsx` is the
+// separate module that keeps tool rows/groups neutral, untouched by this change.
 const GLYPH_KEY_BY_STATUS: Record<SubagentRowStatus, StatusGlyphKey> = {
   running: 'running',
-  finished: 'neutral-done',
+  finished: 'success-done',
   failed: 'error',
   cancelled: 'cancelled',
   exited: 'neutral-muted'
 }
+
+/** Issue #941: true for the one status whose icon AND owning name/label text both switch to
+ * the success token (never any other state) -- derived from the single `GLYPH_KEY_BY_STATUS`
+ * map above so the colour and the "is this the green one" question can never drift apart.
+ * Callers that render a Stage's own label or an agent's own name (`ChainAgentEntry`,
+ * `StageGroupRow`, the Subagent panel tree row) apply `SUBAGENT_SUCCESS_TEXT_CLASS` when this
+ * is true; the icon itself already gets its colour from `STATUS_GLYPH` with no extra wiring. */
+export function isSubagentSuccessStatus(status: SubagentRowStatus): boolean {
+  return GLYPH_KEY_BY_STATUS[status] === 'success-done'
+}
+
+/** The Tailwind class issue #941's "green text" half applies to a finished agent/Stage's own
+ * name or label, alongside the icon colour `STATUS_GLYPH` already supplies -- the same
+ * `--severity-success` token, so the two never read as two different greens. */
+export const SUBAGENT_SUCCESS_TEXT_CLASS = 'text-severity-success'
 
 /** The icon-only markup shared by `SubagentStatusIcon` and `SubagentStatusGlyph` below: a
  * distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop

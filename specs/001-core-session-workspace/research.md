@@ -134,3 +134,25 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 | Sandboxed preload output from electron-vite | First scaffold task (decision 1) |
 | Cold start on an idle machine | Not needed for the build; re-measure when convenient |
 | Free-memory threshold | Tune during use |
+
+## 16. Stage/subagent transcript data model (issue #941, 2026-10-18)
+
+**Decision**: a Stage's own batch `context` (the `task()` call's shared argument, sibling of
+`tasks[]` on the wire) is read off `args.get("context")` in `src-tauri/src/omp/transcript/
+subagent_items.rs`'s `read_batch_context`, and stored on the `TranscriptItem::Subagent`
+variant's own new `context: Option<String>` field -- on spec index 0 only (gate round 1 fix),
+never duplicated across every item of one call; a Stage formed from several `task()` calls in
+one message therefore carries one `context` string per call, on that call's own first item,
+and the renderer (`groupSubagentStages.ts`) dedupes/joins the distinct ones it finds.
+
+**Correction**: `TranscriptItem::Subagent`'s own `status` field is
+`SubagentStatus` (`transcript.rs:187-194`), an enum of **five** variants directly --
+`Running | Done | Error | Cancelled | Exited` (serialized lowercase) -- not three. `Cancelled`
+(issue #563 decision 15: a cancel/abort is not a failure, so it is never folded into `Error`)
+and `Exited` (issue #489: a subagent orphaned by a crashed/restarted process) are both READ
+from live frames/`SessionAgent.reconcileSubagentsOnAttach` the same direct way `Running`/`Done`/
+`Error` are, not "applied elsewhere" as an earlier draft of this note wrongly implied.
+
+**Rationale**: a worktree-root scratch file (`research.md`, written during this story's own
+investigation) made this same claim inaccurately before being deleted; recorded correctly here,
+the one place this repository's own Spec Kit convention keeps durable research notes.

@@ -21,6 +21,12 @@ import { SubagentStatusIcon } from './subagentStatus'
 
 interface SubagentTreeNode {
   id: string
+  /** Gate round 3 fix (issue #941, HIGH): a composite `toolCallId:specIndex` key, unique per
+   * subagent INSTANCE even when two share the same `id` (`SubagentSummary.id` is name-based,
+   * so two agents given the same name by two different `task()` calls collide on `id` alone).
+   * Used for React's own list `key`, the row-ref map, and which row shows selected/receives
+   * focus -- everywhere a specific RENDERED ROW, not merely "a row with this name", matters. */
+  key: string
   nameOrTask: string
   status: SubagentSummary['status']
   durationMs?: number
@@ -35,6 +41,7 @@ interface SubagentTreeNode {
 export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNode[] {
   return subagents.map((subagent) => ({
     id: subagent.id,
+    key: `${subagent.toolCallId}:${subagent.specIndex}`,
     nameOrTask: subagent.nameOrTask,
     status: subagent.status,
     durationMs: subagent.durationMs,
@@ -68,6 +75,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   // (research.md Decision 10), so it always reads THIS sessionId's own subagent list.
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
+  const storeSelectedKey = useSubagentPanelStore((s) => s.selectedKey)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
   const streams = useSubagentPanelStore((s) => s.streams)
   const selectedStream = selectedId ? (streams[selectedId] ?? []) : []
@@ -79,37 +87,74 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     buffer: '',
     timer: undefined
   })
+  // Gate round 3 fix (issue #941, HIGH): WHICH rendered row shows selected/owns the one tab
+  // stop, keyed by the unique `toolCallId:specIndex` composite (`SubagentTreeNode.key`), not
+  // `selectedId` (the store's own name-based field, which two same-named agents both match).
+  // Gate round 4 fix (issue #941, P1, HIGH): sourced from the STORE's `selectedKey`, not this
+  // component's own `useState` -- a tab-switch remount (`RightPaneShell.tsx` unmounts this
+  // panel while its tab is inactive) used to lose a local `selectedKey`, leaving no row
+  // `aria-selected`/indicated and the roving tab stop falling to row 0 regardless of what was
+  // actually selected. Falls back to the first row matching `selectedId` only when the store
+  // itself has no specific instance (a name-only caller, or nothing selected yet) -- the same
+  // ambiguous-match behaviour already accepted elsewhere, never worse.
+  const effectiveSelectedKey = useMemo(() => {
+    // Gate round 5 fix (issue #941, item 4, LOW): the stored key is used only when a CURRENT
+    // row actually carries it -- a stale key (the agent list regenerated, e.g. a new turn
+    // started, before `resetForNewTurn` cleared the store) would otherwise match no row at
+    // all, silently selecting nothing instead of falling back to the same name-based match
+    // every other ambiguous caller already accepts.
+    if (storeSelectedKey && rows.some((row) => row.node.key === storeSelectedKey)) return storeSelectedKey
+    if (!selectedId) return null
+    return rows.find((row) => row.node.id === selectedId)?.node.key ?? null
+  }, [storeSelectedKey, selectedId, rows])
 
   // PR #671's own roving-tabindex precedent (FileExplorerPanel.tsx): the ONE tab stop follows
   // the selected row, falling back to the first row once rendered rows exist but nothing is
   // selected yet, so Tab always has somewhere real to land.
   const tabbableIndex = useMemo(() => {
     if (rows.length === 0) return -1
-    const found = rows.findIndex((row) => row.node.id === selectedId)
+    const found = rows.findIndex((row) => row.node.key === effectiveSelectedKey)
     return found === -1 ? 0 : found
-  }, [rows, selectedId])
+  }, [rows, effectiveSelectedKey])
 
   // Decision 13 (issue #563); gate round 2 fix (High): opening the panel already pre-selected
   // on an agent (the chat pane's Stage/chain rows, via `openPanel`'s `selectSubagentId`)
-  // focuses that row once it is mounted. One-shot (`pendingFocusSubagentId`,
-  // `subagent-store.ts`): the prior `focusRequestId` counter was never consumed or reset, so
-  // this effect ran on EVERY mount while it still read > 0 -- stealing focus into the tree on a
-  // plain tab-switch away and back, or a remount returning from Settings, long after the
-  // pre-selected open that set it. `clearPendingFocus()` consumes the request the instant this
-  // effect focuses the row, so a later remount with no NEW pre-selected open reads `null` and
-  // does nothing.
+  // focuses that row once it is mounted. One-shot (`pendingFocusSubagentId`/
+  // `pendingFocusSubagentKey`, `subagent-store.ts`): the prior `focusRequestId` counter was
+  // never consumed or reset, so this effect ran on EVERY mount while it still read > 0 --
+  // stealing focus into the tree on a plain tab-switch away and back, or a remount returning
+  // from Settings, long after the pre-selected open that set it. `clearPendingFocus()` consumes
+  // the request the instant this effect focuses the row, so a later remount with no NEW
+  // pre-selected open reads `null` and does nothing. Gate round 3 fix (issue #941, HIGH): the
+  // composite key (when the caller resolved one, e.g. a Stage's own "Uses:" link) focuses the
+  // EXACT matched row; a caller that only ever had a name (`pendingFocusSubagentId` alone)
+  // falls back to the first row with that name -- the same ambiguity callers without a key
+  // already had, never worse.
   const pendingFocusSubagentId = useSubagentPanelStore((s) => s.pendingFocusSubagentId)
+  const pendingFocusSubagentKey = useSubagentPanelStore((s) => s.pendingFocusSubagentKey)
   const clearPendingFocus = useSubagentPanelStore((s) => s.clearPendingFocus)
   useEffect(() => {
-    if (!pendingFocusSubagentId) return
-    rowRefs.current.get(pendingFocusSubagentId)?.focus()
-    clearPendingFocus()
-  }, [pendingFocusSubagentId, clearPendingFocus])
+    if (pendingFocusSubagentKey) {
+      // Gate round 4 fix (issue #941, P1): no longer calls a local `setSelectedKey` -- the
+      // store's own `selectedKey` was already set by `openPanel`'s own `selectSubagent` call
+      // at open time (`subagent-store.ts`), so by the time this effect runs `selectedKey`
+      // already reflects this instance; this effect's ONLY remaining job is moving real DOM
+      // focus to the matching row.
+      rowRefs.current.get(pendingFocusSubagentKey)?.focus()
+      clearPendingFocus()
+      return
+    }
+    if (pendingFocusSubagentId) {
+      const row = rows.find((r) => r.node.id === pendingFocusSubagentId)
+      if (row) rowRefs.current.get(row.node.key)?.focus()
+      clearPendingFocus()
+    }
+  }, [pendingFocusSubagentId, pendingFocusSubagentKey, clearPendingFocus, rows])
 
   function moveToRow(index: number): void {
     const row = rows[index]
     if (!row) return
-    rowRefs.current.get(row.node.id)?.focus()
+    rowRefs.current.get(row.node.key)?.focus()
   }
 
   function handleTypeahead(char: string, fromIndex: number): void {
@@ -191,10 +236,10 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
             <div role="tree" aria-label="Subagents" className="flex h-full flex-col gap-0.5 overflow-y-auto px-3 py-2">
               {rows.map((row, index) => (
                 <div
-                  key={row.node.id}
+                  key={row.node.key}
                   ref={(el) => {
-                    if (el) rowRefs.current.set(row.node.id, el)
-                    else rowRefs.current.delete(row.node.id)
+                    if (el) rowRefs.current.set(row.node.key, el)
+                    else rowRefs.current.delete(row.node.key)
                   }}
                   role="treeitem"
                   // Decision 12 (issue #563): `aria-level` always carries the TRUE depth, even
@@ -202,14 +247,14 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   aria-level={row.depth + 1}
                   aria-setsize={row.setsize}
                   aria-posinset={row.posinset}
-                  aria-selected={row.node.id === selectedId}
+                  aria-selected={row.node.key === effectiveSelectedKey}
                   tabIndex={index === tabbableIndex ? 0 : -1}
                   // Gate remediation (Medium, visual): the 2px `--active-indicator` bar below is
                   // `left-0`, so depth 0's prior 0px inset sat it directly on top of the status
                   // icon -- the 8px base inset (kept per-level/3-level cap below unchanged)
                   // gives the bar its own clear lane.
                   style={{ paddingLeft: `${8 + Math.min(row.depth, 2) * 16}px` }}
-                  onFocus={() => void selectSubagent(row.node.id)}
+                  onFocus={() => void selectSubagent(row.node.id, row.node.key)}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
                     'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
@@ -249,7 +294,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   {/* Decision 13 (issue #563): the selected node gets the shared 2px
                       `--active-indicator` bar (SessionList.tsx/ManageSessionRow.tsx precedent)
                       instead of a `bg-muted` background. */}
-                  {row.node.id === selectedId && (
+                  {row.node.key === effectiveSelectedKey && (
                     <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
                   )}
                   <span className="flex shrink-0 items-center gap-1.5">

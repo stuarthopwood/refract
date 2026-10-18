@@ -58,6 +58,10 @@ use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
 
+#[path = "readout_todo.rs"]
+mod readout_todo;
+use readout_todo::{compute_up_next, parse_todo_phases, TodoPhaseState};
+
 /// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
 /// per Session under streaming" -- test-review/perf gate round 1 finding: the PREVIOUS 50 ms value
 /// plus an immediate-rerun-on-pending loop could exceed this; both are fixed together (this
@@ -73,16 +77,6 @@ struct ContextUsageState {
     used_tokens: i64,
     window_tokens: i64,
     percent: f64,
-}
-
-#[derive(Debug, Clone)]
-struct TodoTaskState {
-    status: String,
-}
-
-#[derive(Debug, Clone)]
-struct TodoPhaseState {
-    tasks: Vec<TodoTaskState>,
 }
 
 #[derive(Debug, Clone)]
@@ -312,6 +306,7 @@ fn empty_readout() -> Value {
         "pullRequest": Value::Null,
         "subagentCount": Value::Null,
         "todoProgress": Value::Null,
+        "todoPhases": Value::Null,
         "branch": Value::Null,
     })
 }
@@ -322,33 +317,6 @@ fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
         window_tokens: value.get("contextWindow").and_then(Value::as_i64)?,
         percent: value.get("percent").and_then(Value::as_f64)?,
     })
-}
-
-fn parse_todo_phases(value: &Value) -> Option<Vec<TodoPhaseState>> {
-    let phases = value.as_array()?;
-    Some(
-        phases
-            .iter()
-            .map(|phase| TodoPhaseState {
-                tasks: phase
-                    .get("tasks")
-                    .and_then(Value::as_array)
-                    .map(|tasks| {
-                        tasks
-                            .iter()
-                            .map(|task| TodoTaskState {
-                                status: task
-                                    .get("status")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string(),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            })
-            .collect(),
-    )
 }
 
 /// Debounced to `READOUT_COALESCE_MS`, then single-flight (a trigger arriving while a
@@ -581,6 +549,9 @@ fn build_readout_value(
             .count();
         Some(json!({ "done": done, "total": total }))
     });
+    // Issue #941 "Up next" (`readout_todo.rs`): the agent's own pending Todo phases, shown
+    // after a turn's Stages; `null` when there is no todo list, or every phase is finished.
+    let todo_phases_up_next = compute_up_next(s.todo_phases.as_ref());
     let turn_time = s
         .turn_started_at
         .map(|started_at| json!({ "startedAt": started_at }));
@@ -595,6 +566,7 @@ fn build_readout_value(
         "pullRequest": pull_request,
         "subagentCount": subagent_count,
         "todoProgress": todo_progress,
+        "todoPhases": todo_phases_up_next,
         "branch": branch,
     })
 }
