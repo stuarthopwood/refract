@@ -3403,3 +3403,25 @@ failure it cannot back up. **Still `Refs #937`, not `Closes`**: the silent attac
 probe's own firing (acceptance item 4's "on agent attach" clause) was not independently
 provable without a second across-restart scratch run (tracked on #650), so FR-078's own
 attach-probe guarantee stays code-verified rather than live-proven on that one point.
+
+Merged `origin/main` twice more (`0b63b00`: #967 diff-stat colour/reasoning gauge, 3-file
+conflict resolved keeping both sides, no semantic gap -- #967 touches zero Rust/IPC/shared-
+schema code; `06af543`: #953 PR filters/resizable column, clean auto-merge, no conflicts, no
+gap) and re-ran the full chain on the resulting head. One build-infrastructure issue hit and
+fixed (not a code regression): the shared `CARGO_TARGET_DIR` carried a stale `refract-tauri`
+build-script cache from a different worktree's own prior build, producing a linker error
+(`LNK1327`) that referenced that OTHER worktree's own `windows-app-manifest.xml` path even
+though the file exists correctly at the same relative path in this one. Fixed with a scoped
+`cargo clean -p refract-tauri` (only this one package's cached artifacts in the shared target
+dir, not a wipe of the whole directory) before rebuilding clean. **Final confirmed run, head
+`06af543`** (clean tree, `dirty: false`): `cargo fmt --check`, the full Rust unit suite, and
+the Tauri debug build all passed; `verify-937-advisor-chip.mjs` reports **0 failures**
+(`report.json`), reproducing every finding from the first live run (toggle cycles, geometry,
+order, no-cost-leak, contrast across all 3 themes) with the same `notExercised` disclosures
+(the silent attach-probe's own firing, the tooltip mouse-away harness limitation, the indirect
+busy-window no-op check). All 3 themed screenshots viewed directly again. `pnpm typecheck`,
+`pnpm vitest run` (148/148), `check:indent`, `check:theme-contrast` (455/455),
+`check:file-size`, `check:parity --gate` (24/24 events, 100/100 requests),
+`check:drag-regions`, `check:versions`, `check:omp-schema-drift` all green on this head too.
+PR #972 body and this plan row updated with the final-run evidence; still `Refs #937`, not
+`Closes`, for the same acceptance-item-4 reason as before.
