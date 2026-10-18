@@ -18,7 +18,9 @@
 // no longer adds a lopsided gap above an invisible row) -- never a visible empty bar, since the
 // one guaranteed item (the Approval pill) is gone.
 import { useSettingsStore } from '@/state'
+import type { RefObject } from 'react'
 import {
+  AdvisorChip,
   ChangesChip,
   ContextUsageChip,
   CurrentTimeChip,
@@ -28,10 +30,11 @@ import {
   TurnTimeChip
 } from './readout/ReadoutChips'
 
-export function ComposerStatusLine({ sessionId }: { sessionId: string }) {
+export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
     <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
+      <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
       {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
       {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}

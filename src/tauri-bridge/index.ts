@@ -330,6 +330,7 @@ const refract: RefractApi = {
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
+  onAdvisorUpdate: (handler) => on<{ sessionId: string; advisorOn: boolean }>(IPC_EVENTS.ADVISOR_UPDATE, handler),
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
   onSideChatPatch: (handler) =>

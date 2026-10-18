@@ -1,5 +1,6 @@
 import { initStores } from './init-stores'
 import { notify } from './notify'
+import { useAdvisorStore } from './advisor-store'
 import { useAlertDismissStore } from './alert-dismiss-store'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
@@ -30,6 +31,7 @@ import { useUpdateStore } from './update-store'
 export { initStores }
 export { notify }
 export { useAccountsStore }
+export { useAdvisorStore }
 export { useAlertDismissStore }
 export type { GithubStatus } from './accounts'
 export { useCommandsStore }
@@ -64,6 +66,7 @@ export interface RefractDevStores {
   accounts: typeof useAccountsStore
   alertDismiss: typeof useAlertDismissStore
   health: typeof useHealthStore
+  advisor: typeof useAdvisorStore
   draft: typeof useDraftStore
   memory: typeof useMemoryStore
   modelRoles: typeof useModelRolesStore
@@ -100,6 +103,7 @@ if (import.meta.env.DEV) {
   window.__refractStores = {
     accounts: useAccountsStore,
     alertDismiss: useAlertDismissStore,
+    advisor: useAdvisorStore,
     health: useHealthStore,
     draft: useDraftStore,
     memory: useMemoryStore,

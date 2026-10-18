@@ -5,10 +5,11 @@
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
-import { useEffect, useState } from 'react'
-import type { MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { MouseEvent, RefObject } from 'react'
 import {
   ClockIcon,
+  EyeIcon,
   FileDiffIcon,
   GaugeIcon,
   GitPullRequestIcon,
@@ -16,7 +17,7 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, useAdvisorStore, useDraftStore, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
 import { formatDiffStat, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
@@ -252,6 +253,63 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
       <span aria-hidden>
         Todo {todoProgress.done}/{todoProgress.total}
       </span>
+    </ReadoutChip>
+  )
+}
+
+/** Issue #937 (follow-up to #917/PR #923): a quiet Advisor readout, shown only while omp's
+ * advisor subsystem is on for this Session -- hidden entirely while off (no Settings toggle,
+ * per the issue's own decision); no cost, spend or token figures anywhere in it or its name.
+ * `advisorOn` comes from `session::advisor` (Rust): the authoritative signal is a typed or
+ * chip-sent `/advisor on|off` reply, plus a best-effort silent `/advisor status` probe at
+ * Session attach/resume (see that module's own header for why the probe's own reply is not
+ * trusted the same way).
+ *
+ * Activating it (click, or Enter/Space since it is a real button) sends `/advisor off` through
+ * the same forwarded-command path a typed `/advisor off` already uses (`chat.send`,
+ * `src-tauri/src/ipc/chat.rs`); while that request is in flight it shows a busy accessible name
+ * and ignores repeat clicks. This component is always rendered by `ComposerStatusLine` (no
+ * settings gate) and returns `null` while off, so it never truly unmounts -- the
+ * `useLayoutEffect` below is keyed on `advisorOn` itself (not an empty array) so its cleanup
+ * fires exactly when the chip's own button is about to be removed from the DOM (true on an
+ * actual unmount too), at which point the ref it reads is still the pre-removal one (the same
+ * ordering `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx` already rely on, verified
+ * there against React 19.3's own commit order). Moves focus to the message box and announces
+ * "Advisor off" through `MessageInput.tsx`'s existing shared attachment live region
+ * (`useDraftStore`'s `announceAttachment`, the nearest always-mounted polite region in the
+ * composer -- the chip itself cannot announce its own disappearance, since it is gone from the
+ * DOM in the same render) ONLY when focus was actually on this chip's own button beforehand --
+ * never stealing focus from something else the user moved to, and never double-announcing a
+ * plain typed `/advisor off`, which already has its own visible transcript notice. */
+export function AdvisorChip({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const advisorOn = useAdvisorStore((s) => s.bySession[sessionId] ?? false)
+  const [turningOff, setTurningOff] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useLayoutEffect(() => {
+    return () => {
+      if (!buttonRef.current?.contains(document.activeElement)) return
+      textareaRef.current?.focus()
+      useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
+    }
+  }, [advisorOn, sessionId, textareaRef])
+
+  if (!advisorOn) return null
+
+  function handleActivate() {
+    if (turningOff) return
+    setTurningOff(true)
+    window.refract.chat.send(sessionId, '/advisor off').catch(() => setTurningOff(false))
+  }
+
+  return (
+    <ReadoutChip
+      icon={EyeIcon}
+      buttonRef={buttonRef}
+      onActivate={handleActivate}
+      accessibleName={turningOff ? 'Advisor on. Turning off…' : 'Advisor on. Turn off'}
+    >
+      <span aria-hidden>Advisor</span>
     </ReadoutChip>
   )
 }

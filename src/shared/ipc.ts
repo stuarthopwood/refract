@@ -220,6 +220,9 @@ export interface SessionSnapshot {
   // back) shows the real current list instead of an empty one -- subsequent changes still arrive
   // via `subagents:update`, this is only the seed `sessions.open`/`recover` itself must not drop.
   subagents: SubagentSummary[];
+  // Issue #937: initial Advisor-chip on/off state (session::advisor, Rust); subsequent changes
+  // via advisor:update. Session-scoped, not reset on a Conversation switch.
+  advisorOn: boolean;
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
@@ -414,6 +417,7 @@ export const IPC_EVENTS = {
   MEMORY_WARNING: 'memory:warning',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
+  ADVISOR_UPDATE: 'advisor:update',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
@@ -854,6 +858,7 @@ export interface RefractApi extends UpdatesApi {
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
+  onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
   /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an

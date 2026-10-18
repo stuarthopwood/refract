@@ -13,7 +13,7 @@
 // (13px, docs/design/foundations-typography-spacing.md "Status line type", globals.css) and
 // every icon is `size-3.5` (14px) -- up from the original `text-xs`/`size-3` (12px/12px), Stuart's
 // own choice over a 14px TEXT step, which would read "as loud as the chat".
-import type { ComponentType, MouseEvent, ReactNode } from 'react'
+import type { ComponentType, MouseEvent, ReactNode, Ref } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface ReadoutChipProps {
@@ -29,12 +29,18 @@ export interface ReadoutChipProps {
    * instead of a button, so the system browser opens it (the same pattern Markdown.tsx already
    * uses for external links) with no new IPC. */
   href?: string
+  /** Issue #937: lets a caller capture the underlying `<button>` node (the `onActivate` variant
+   * only) to detect, in its OWN `useLayoutEffect` cleanup, whether this chip had focus right
+   * before a render change removes it -- the same focus-handoff-on-unmount pattern
+   * `RequestCard.tsx`'s `ResolvedRequestSummary` and `AskCard.tsx` already use, now needed here
+   * because the Advisor chip can disappear from the user's OWN click on it. */
+  buttonRef?: Ref<HTMLButtonElement>
   /** Required when `onActivate` or `href` is set: the accessible name stating what it opens. */
   accessibleName?: string
   className?: string
 }
 
-export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className }: ReadoutChipProps) {
+export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className, buttonRef }: ReadoutChipProps) {
   const baseClasses = cn('inline-flex h-6 shrink-0 items-center gap-1.5 text-readout text-muted-foreground', className)
   // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
   // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
@@ -60,7 +66,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   if (onActivate) {
     return (
-      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
+      <button data-slot="readout-chip" ref={buttonRef} type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>
