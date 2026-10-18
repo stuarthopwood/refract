@@ -98,7 +98,12 @@ const SCROLL_PROBE_EXPR = `(() => {
     const style = getComputedStyle(el);
     return (style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
   });
-  const horizontalOverflow = candidates.filter((el) => el.scrollWidth > el.clientWidth);
+  // .sr-only (screen-reader-only) elements are DELIBERATELY clipped to a 1x1px box by the
+  // standard accessibility technique (position:absolute, width/height:1px, overflow:hidden) --
+  // their own scrollWidth naturally exceeds that 1px clientWidth for any real text content,
+  // which is the intended behaviour, not a layout bug; excluded here (and any element nested
+  // inside one) so this assertion measures real, visible horizontal overflow only.
+  const horizontalOverflow = candidates.filter((el) => el.scrollWidth > el.clientWidth && !el.closest('.sr-only'));
   return {
     scrollers: scrollers.map((el) => ({ tag: el.tagName, className: el.className || null, id: el.id || null, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight })),
     horizontalOverflow: horizontalOverflow.map((el) => ({ tag: el.tagName, className: el.className || null, id: el.id || null, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }))
