@@ -29,13 +29,35 @@ function itemEndTime(item: TranscriptItem): number | undefined {
 // notice); only the turn-time MATH leaves it out, so a command run after a turn settles no
 // longer stretches that turn's own shown elapsed time (22s becoming "1m 17s" in the #917 live
 // screenshots).
+function countableItemEnd(item: TranscriptItem, receivedAt: Record<string, number>): number | undefined {
+  if (item.kind === 'user') return undefined
+  if (item.kind === 'notice' && item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)) return undefined
+  return receivedAt[item.id] ?? itemEndTime(item)
+}
+
 export function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
   let maxEnd: number | undefined
   for (const item of turnItems) {
-    if (item.kind === 'user') continue
-    if (item.kind === 'notice' && item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)) continue
-    const end = receivedAt[item.id] ?? itemEndTime(item)
+    const end = countableItemEnd(item, receivedAt)
     if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
   }
   return maxEnd
+}
+
+/** True when this turn has gained a REAL (non-`user`, non-command-output) item whose own end
+ * (same `receivedAt`-first, `itemEndTime`-fallback rule `computeTurnEnd` uses) is newer than
+ * `settledEnd` -- round 2 gate finding (Main, 2026-10-18): `TurnTotalLine` uses this to tell a
+ * genuine resumption of the SAME turn (an async subagent result, an advisor follow-up, a retry
+ * after compaction) apart from an unrelated bare command's own reply, which flips the session
+ * back to "working" for this still-last turn without ever adding an item this function would
+ * count (a command-output notice is excluded exactly like `computeTurnEnd` excludes it) -- so the
+ * turn's own shown time resumes live-ticking only for the former, never stretches for the
+ * latter. `receivedAt` is set the moment an item first arrives (not only once it finishes), so a
+ * still-in-progress resumed item (no `itemEndTime` yet) is already detected via its own
+ * `receivedAt` entry, not held back until it completes. */
+export function hasNewerRealActivity(turnItems: TranscriptItem[], receivedAt: Record<string, number>, settledEnd: number): boolean {
+  return turnItems.some((item) => {
+    const end = countableItemEnd(item, receivedAt)
+    return end != null && end > settledEnd
+  })
 }

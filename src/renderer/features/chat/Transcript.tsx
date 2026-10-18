@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
-import { computeTurnEnd } from './turnTiming'
+import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
@@ -204,24 +204,33 @@ interface TurnTotalLineProps {
 // the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
 // all, which is not a real timing and must not be used to compute an elapsed time).
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
-  // Gate round 1 fix (confirmed live: a settled turn's own shown time jumped 9s -> 14s): `
-  // isTurnRunning` reflects the SESSION's own status, which goes back to 'working' for ANY
-  // later send -- including a bare command whose own `command_output` reply never creates a new
-  // `user` item (`computeTurnEnd` already skips it, but that exclusion only applies on the
-  // FROZEN/settled path below; it never ran at all while `running` was true, since that branch
-  // reads `Date.now()` directly). Without this, this STILL-the-last turn's own display started
-  // live-ticking again purely because a later, unrelated command was being processed -- the exact
-  // "stretches its time, however long after" bug FR-046's amendment exists to prevent. Once this
-  // turn has genuinely settled once (computed a real end with `isTurnRunning` false), that value
-  // is frozen in `frozenEndRef` (stable for this turn's whole lifetime: the parent keys its own
-  // Fragment on `turn.userItem.id`, so this component instance is never remounted mid-turn) and a
-  // LATER re-activation of `isTurnRunning` -- for this same still-last turn -- is recognised as
-  // "already done", never resuming the live `Date.now()` ticking.
-  const frozenEndRef = React.useRef<number | undefined>(undefined)
+  // Round 2 gate finding (Main, 2026-10-18): the gate round 1 fix (confirmed live: a settled
+  // turn's own shown time jumped 9s -> 14s, `isTurnRunning` reflects the SESSION's own status,
+  // which goes back to 'working' for ANY later send -- including a bare command whose own
+  // `command_output` reply never creates a new `user` item) used a ref written during render
+  // that, once set, NEVER cleared -- so a genuine resumption of the SAME turn (an async subagent
+  // result, an advisor follow-up, a retry after compaction) stayed frozen at the stale value
+  // forever too, under-counting the turn's real total. Settled is now always `computeTurnEnd`
+  // directly (pure and deterministic: a command-output notice is excluded from its own scan, so
+  // it is unaffected by how many times an unrelated command cycles `isTurnRunning` true/false in
+  // between) -- no remembered value needed for that path at all. While still running, the only
+  // open question is whether that is GENUINE new activity for this turn or just an unrelated
+  // command's own processing: `lastSettledEnd` (state, set from an effect -- never written during
+  // render) remembers this turn's own last real settle, and `hasNewerRealActivity` (turnTiming.ts)
+  // checks whether anything real has arrived since then. A bare command's own reply can never
+  // satisfy that (its notice is excluded exactly like `computeTurnEnd` excludes it), so the line
+  // stays on the unchanged settled value for that case; a genuine resumption's first real item
+  // satisfies it immediately (`receivedAt` is set the moment an item first arrives, not only once
+  // it finishes), resuming live `Date.now()` ticking until the next real settle.
+  const settledEnd = computeTurnEnd(turn.items, receivedAt)
+  const [lastSettledEnd, setLastSettledEnd] = React.useState<number | undefined>(undefined)
+  React.useEffect(() => {
+    if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd)
+  }, [isLastTurn, isTurnRunning, settledEnd])
   if (!turn.userItem || turn.userItem.at === 0) return null
-  const running = isLastTurn && isTurnRunning && frozenEndRef.current === undefined
-  const end = running ? Date.now() : (frozenEndRef.current ?? computeTurnEnd(turn.items, receivedAt))
-  if (!running && end !== undefined) frozenEndRef.current = end
+  const running =
+    isLastTurn && isTurnRunning && (lastSettledEnd === undefined || hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd))
+  const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
   const elapsed = formatElapsed(elapsedMs)

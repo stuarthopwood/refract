@@ -443,6 +443,46 @@ async function main() {
         findings.push('Tab on a typed exact subcommand match ("status") completed the composer to "/advisor status " without sending -- M4\'s "Tab still completes" rule confirmed.');
       }
       await cdp.screenshot(path.join(SHOTS_DIR, '03-subcommand-completed.png'));
+
+      // ---- (2c) Round 2 gate finding H: a PARTLY typed subcommand query ("sta", a prefix
+      // match for "status", not an exact one) must rank "status" first (the synthetic "Run
+      // /advisor" row only ever shows on an EMPTY query) and Enter must complete to it, never
+      // blind-send the bare command just because the highlight defaulted to index 0 ----
+      await clearComposer(cdp);
+      await cdp.send('Input.insertText', { text: '/advisor sta' });
+      await cdp.waitFor(`(document.querySelector('[aria-label="Message"]')?.value ?? '') === '/advisor sta'`, {
+        timeoutMs: 10_000,
+        label: 'Composer reads "/advisor sta" before Enter'
+      });
+      await cdp.waitFor(`!!document.querySelector('ul[aria-label="/advisor subcommands"] li[role="option"]')`, {
+        timeoutMs: 10_000,
+        label: 'Subcommand step menu mounted for "/advisor sta"'
+      });
+      const partialSubMenu = await readSlashMenu(cdp);
+      const partialSubOptions = (partialSubMenu?.options ?? []).map((o) => o.name);
+      if (partialSubOptions[0] === 'Run /advisor') {
+        failures.push(`"/advisor sta" still lists "Run /advisor" in the menu (options: ${JSON.stringify(partialSubOptions)}) -- the run-bare row must disappear once the subcommand query is non-empty (H).`);
+      } else if (partialSubOptions[0] !== 'status') {
+        failures.push(`"/advisor sta" ranked "${partialSubOptions[0]}" first, not "status" (options: ${JSON.stringify(partialSubOptions)}).`);
+      } else {
+        findings.push(`"/advisor sta": the run-bare row is gone and "status" ranks first (options: ${JSON.stringify(partialSubOptions)}) -- H fix confirmed.`);
+      }
+      const beforePartialNotices = await countNotices(cdp);
+      await pressEnter(cdp);
+      const afterPartialSelect = await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value ?? ''`, {
+        timeoutMs: 10_000,
+        label: 'Composer value settles after Enter on "/advisor sta"'
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2_000)); // real wall-clock gap: a wrongly-sent bare command would show a new notice within this window
+      const afterPartialNotices = await countNotices(cdp);
+      if (afterPartialSelect !== '/advisor status ') {
+        failures.push(`Enter on the partly typed "/advisor sta" left the composer reading "${afterPartialSelect}", not "/advisor status " (H).`);
+      } else if (afterPartialNotices > beforePartialNotices) {
+        failures.push('Enter on the partly typed "/advisor sta" completed the composer correctly but ALSO produced a new notice -- it blind-sent the bare command as well as completing (H regression).');
+      } else {
+        findings.push('"/advisor sta" + Enter completed the composer to "/advisor status " without sending anything -- H fix confirmed (a partly typed subcommand never blind-fires the bare command).');
+      }
+      await cdp.screenshot(path.join(SHOTS_DIR, '03b-partial-subcommand-completed.png'));
     } else {
       notExercised.push('Selecting a subcommand was not exercised -- the subcommand step menu never mounted (see the failure above).');
     }

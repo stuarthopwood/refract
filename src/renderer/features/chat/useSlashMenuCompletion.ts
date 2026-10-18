@@ -85,31 +85,44 @@ export function useSlashMenuCompletion({
   // array in its dependencies (a fresh `[]`/mapped array identity every render would otherwise
   // retrigger the timer on every keystroke, defeating the debounce).
   const [slashAnnouncement, announceSlashResultCount] = useClearedAnnouncement()
-  // M1 (gate round 1): announces only when the COUNT itself actually changes -- `slashMenuKey`
+  // M1 (gate round 1): announces only when the MESSAGE itself actually changes -- `slashMenuKey`
   // changes on every keystroke, but many of those keystrokes narrow nothing (the same set of
-  // commands still matches), and re-announcing an unchanged count on every debounce firing would
-  // be noise, not news.
-  const lastAnnouncedCountRef = useRef<number | null>(null)
+  // commands still matches), and re-announcing an unchanged message on every debounce firing
+  // would be noise, not news. Round 2 gate finding (a11y, Main 2026-10-18): keyed on the full
+  // announced STRING, not a bare count -- a top-level "3 of 192 commands" and a subcommand
+  // step's "/advisor: 3 subcommands" share the number 3 but are different announcements, and a
+  // number-only dedupe would wrongly swallow the second one.
+  const lastAnnouncedTextRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!showSlashMenu) return
+    if (!showSlashMenu) {
+      // L4 (round 2 gate finding): a reopened menu must announce fresh, not silently inherit a
+      // stale dedupe key left over from before it closed.
+      lastAnnouncedTextRef.current = null
+      return
+    }
     const timer = setTimeout(() => {
       const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
       const liveCommands = useCommandsStore.getState().bySession[sessionId] ?? EMPTY_COMMANDS
       const liveState = parseSlashMenuState(liveText, liveCommands)
       if (liveState === null) return
       const liveMatches = rankSlashMenuCommands(liveState, liveCommands)
+      let message: string
       if (liveState.step === 'subcommand') {
-        // The synthetic "Run /<cmd>" row is not itself a subcommand -- excluded from the count.
-        const subcommandCount = liveMatches.length - 1
-        if (subcommandCount === lastAnnouncedCountRef.current) return
-        lastAnnouncedCountRef.current = subcommandCount
-        announceSlashResultCount(subcommandCount === 0 ? 'No matching subcommands' : `/${liveState.parent.name}: ${subcommandCount} subcommand${subcommandCount === 1 ? '' : 's'}`)
-        return
+        // The synthetic "Run /<cmd>" row only exists on an empty query (round 2 gate finding H)
+        // -- excluded from the count only then; a non-empty query's own matches are already all
+        // real subcommands.
+        const subcommandCount = liveState.query === '' ? liveMatches.length - 1 : liveMatches.length
+        message =
+          subcommandCount === 0
+            ? 'No matching subcommands'
+            : `/${liveState.parent.name}: ${subcommandCount} subcommand${subcommandCount === 1 ? '' : 's'}`
+      } else {
+        const shownCount = liveMatches.length
+        message = `${shownCount} of ${liveCommands.length} command${liveCommands.length === 1 ? '' : 's'}`
       }
-      const shownCount = liveMatches.length
-      if (shownCount === lastAnnouncedCountRef.current) return
-      lastAnnouncedCountRef.current = shownCount
-      announceSlashResultCount(`${shownCount} of ${liveCommands.length} command${liveCommands.length === 1 ? '' : 's'}`)
+      if (message === lastAnnouncedTextRef.current) return
+      lastAnnouncedTextRef.current = message
+      announceSlashResultCount(message)
     }, 500)
     return () => clearTimeout(timer)
   }, [slashMenuKey, showSlashMenu, sessionId, announceSlashResultCount])
@@ -168,10 +181,18 @@ export function useSlashMenuCompletion({
 
   /** Resolves a keyboard Enter/Tab against the row currently highlighted at `activeIndex`
    * (component-owned, see `slashMenuKey`'s own doc comment) and routes it through
-   * `handleSlashMenuSelect` -- `'unhandled'` for any other key, an empty list, or Shift+Tab (gate
-   * round 1 Low: left to its normal backward focus-movement behaviour, never captured here). */
+   * `handleSlashMenuSelect` -- `'unhandled'` for any other key, an empty list, Shift+Tab (gate
+   * round 1 Low: left to its normal backward focus-movement behaviour, never captured here), or
+   * Shift+Enter (round 2 gate finding L1: a composer's own newline shortcut, never a completion
+   * or send here either). */
   function handleSlashMenuKey(key: string, shiftKey: boolean, activeIndex: number): { sendText: string } | undefined | 'unhandled' {
-    if ((key !== 'Enter' && key !== 'Tab') || (key === 'Tab' && shiftKey) || slashMatches.length === 0) return 'unhandled'
+    if (
+      (key !== 'Enter' && key !== 'Tab') ||
+      (key === 'Tab' && shiftKey) ||
+      (key === 'Enter' && shiftKey) ||
+      slashMatches.length === 0
+    )
+      return 'unhandled'
     // Gate round 1 fix (confirmed live regression, not just a test gap): the subcommand step's
     // own `activeIndex` defaults to 0 -- the ALWAYS-first "Run /<cmd>" row -- regardless of what
     // the user has typed, and nothing moves it unless they explicitly press an arrow key. Without
@@ -180,8 +201,12 @@ export function useSlashMenuCompletion({
     // at once -- exactly the unwanted blind-send #938 exists to prevent, and the opposite of "Tab
     // still completes" (decided 2026-10-18). An exact, case-insensitive typed match is now found
     // directly in the ranked list and acted on by name, independent of whatever row is currently
-    // highlighted: Enter sends it, Tab only completes to it.
-    if (slashMenuState?.step === 'subcommand' && slashMenuState.query.length > 0) {
+    // highlighted: Enter sends it, Tab only completes to it. Round 2 gate finding L2 (decided
+    // 2026-10-18): gated to `activeIndex === 0` only -- once the user has explicitly arrowed onto
+    // a DIFFERENT row, that deliberate navigation wins over a same-named exact-typed match
+    // elsewhere in the list; this shortcut only ever exists to save an arrow-key press when the
+    // highlight is still sitting wherever it defaulted to.
+    if (slashMenuState?.step === 'subcommand' && slashMenuState.query.length > 0 && activeIndex === 0) {
       const exactMatch = slashMatches.find((row) => !row.isRunBare && row.command.name.toLowerCase() === slashMenuState.query.toLowerCase())
       if (exactMatch) return handleSlashMenuSelect(exactMatch.command, { sendImmediately: key === 'Enter' })
     }
