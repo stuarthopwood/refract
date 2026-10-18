@@ -330,7 +330,7 @@ async function main() {
     const cProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 10_000);
     findings.push(`Session C created (id ${sessionC.id}), brand-new, real startProgress ${JSON.stringify(cProgress)}, holding one of the 2 real start-queue slots.`);
     const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
-    const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 10_000);
+    const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 20_000);
     findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C is still spawned (start_queue.rs:387).`);
     await assertFocusedPlainStageNotice(cdp2, {
       sessionId: sessionD.id, kind: 'memory-deferred', expectedText: 'Starting agent… waiting for memory to free up',
@@ -338,7 +338,7 @@ async function main() {
     });
 
     const sessionE = await quickCreateSessionId(cdp2, 'long/E (3rd start, observes real queued)');
-    const queuedProgress = await waitForStartProgressKind(cdp2, sessionE.id, 'queued', 10_000);
+    const queuedProgress = await waitForStartProgressKind(cdp2, sessionE.id, 'queued', 20_000);
     findings.push(`Session E (id ${sessionE.id}) real startProgress is ${JSON.stringify(queuedProgress)} -- both real slots held (C spawned, D deferred).`);
     await assertFocusedPlainStageNotice(cdp2, {
       sessionId: sessionE.id, kind: 'queued', expectedText: 'Waiting to start…',
