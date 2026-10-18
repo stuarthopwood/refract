@@ -4,13 +4,18 @@
 // alike; the old `inline` variant (a quiet `text-sm` line above the composer, shown whenever a
 // Session had history) is gone, along with the `variant` prop that used to choose between the
 // two. `Transcript.tsx` dims the history behind this notice to about 40% opacity for the
-// Session-with-history case (its own `dimTranscript`) and clones this element with `dimmed`
-// (below) so it can back itself with a solid-reading panel -- otherwise the notice's own text
-// would sit directly on the dimmed, lower-contrast history behind it. Gate-fix (UI/A11y, gate
-// round 1): the transcript itself stays interactive and scrollable throughout (mouse wheel,
-// selection, links) -- `Transcript.tsx` no longer disables pointer-events on it, only fades it,
-// and restores full opacity the moment a focusable element inside it is focused
-// (`focus-within:opacity-100`), so a dimmed focus ring is never harder to see than usual.
+// Session-with-history case (its own `dimTranscript`) and calls this as a render function,
+// `startNotice(dimmed)` (below), so it can back itself with a solid-reading panel -- otherwise
+// the notice's own text would sit directly on the dimmed, lower-contrast history behind it.
+// Gate-fix (UI/A11y, gate round 1): the transcript itself stays interactive and scrollable
+// throughout (mouse wheel, selection, links) -- `Transcript.tsx` no longer disables
+// pointer-events on it, only fades it, and restores full opacity the moment a focusable element
+// inside it is focused (`focus-within:opacity-100`). Gate-fix (A11y, gate round 2, WCAG 2.4.11):
+// that same focus also hides THIS notice (`Transcript.tsx`'s own `peer-focus-within:opacity-0`
+// on its wrapper, not a prop here) so the panel can never sit on top of a focused history
+// control; Tab reaching Keep waiting/Cancel moves focus OUT of the history, which brings the
+// notice straight back in the same frame -- see `Transcript.tsx` for why `opacity`, not
+// `visibility`, is what hides it (the latter would make those buttons untabbable).
 //
 // Sizing (#672): the joke-stage message (`waiting`/`prompt`/`extended` once a message has been
 // picked) renders its emoji on its own line at `text-[40px]` (`@min-[40rem]:text-5xl`, about
@@ -21,8 +26,9 @@
 // has nothing to balance against without a bounded width), and a slow bob
 // (`session-start-emoji-bob`, globals.css) on the emoji in BOTH sizing regimes, neutralised by
 // the global `prefers-reduced-motion` rule the same way the spinner below already is. Gate-fix
-// (A11y, gate round 1, WCAG 2.2.2): the bob runs exactly 3 iterations (about 7.2s total) rather
-// than looping forever, so it is never an indefinitely-repeating motion a user has no way to stop.
+// (A11y, gate round 2, WCAG 2.2.2): the bob runs exactly 2 iterations (about 4.8s total, under
+// the 5s threshold) rather than looping forever, so it is never an indefinitely-repeating motion
+// a user has no way to stop.
 // `queued`/`memory-deferred` (and the brief gap before a start's very first pick lands) keep the
 // original small `text-base` spinner-plus-text look, unchanged by this issue -- they explain a
 // delay rather than entertain, so they stay plain and quiet. The elapsed-seconds counter after
@@ -106,7 +112,7 @@ export function SessionStartNotice({
           <span
             aria-hidden="true"
             data-start-emoji
-            className="block text-[40px] leading-none animate-[session-start-emoji-bob_2.4s_ease-in-out_3] @min-[40rem]:text-5xl"
+            className="block text-[40px] leading-none animate-[session-start-emoji-bob_2.4s_ease-in-out_2] @min-[40rem]:text-5xl"
           >
             {emoji}
           </span>

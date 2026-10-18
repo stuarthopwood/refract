@@ -302,13 +302,12 @@ export function Transcript({
   // can ever show at all: a Session with history never shows it, including while it loads or
   // while its agent is starting.
   hasHistory: boolean
-  // Issue #618 gate-fix (round 3), amended #672: ChatPane.tsx's own SessionStartNotice,
-  // pre-built with this pane's startProgress and picked random message, rendered here --
-  // centred, replacing "Ready…" for a brand-new Session, or overlaid on existing history for a
-  // Session that has any. This component decides whether to dim the transcript behind it
-  // (`dimTranscript` below) and clones the element with that decision (`dimmed`) so the notice
-  // can back itself with a readable panel. Undefined whenever nothing is starting right now.
-  startNotice?: React.ReactElement<{ dimmed?: boolean }>
+  // Issue #618 gate-fix (round 3), amended #672: ChatPane.tsx's own SessionStartNotice, rendered
+  // here -- centred, replacing "Ready…" for a brand-new Session, or overlaid on existing
+  // history for one that has any. This component decides whether to dim the transcript behind
+  // it (`dimTranscript` below) and calls `startNotice(dimTranscript)` (a render function,
+  // gate-fix UI round 2) so the notice can back itself with a panel.
+  startNotice?: (dimmed: boolean) => React.ReactElement
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
@@ -703,7 +702,7 @@ export function Transcript({
       root.removeEventListener('wheel', handleViewportPointerOrWheel)
       root.removeEventListener('keydown', handleKeyInput)
       root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
-      root.removeEventListener('touchstart', handleUserInput)
+      root.removeEventListener('touchstart', handleViewportPointerOrWheel)
       root.removeEventListener('focusin', handleFocusInput)
     }
 
@@ -758,9 +757,8 @@ export function Transcript({
       handleUserInput()
     }
 
-    // Gate-fix (UI round 1, issue #672): a wheel/pointerdown on the start notice's own buttons
-    // (overlaid on `viewport` below) used to bubble to `root` and cancel this landing loop --
-    // scoped the same way `handleFocusInput` already is.
+    // Gate-fix (issue #672, UI round 1; touchstart round 2): a wheel/pointerdown/touch on the
+    // start notice's own buttons used to bubble to `root` and cancel this loop -- scoped like `handleFocusInput`.
     function handleViewportPointerOrWheel(event: Event) {
       if (!viewport || !(event.target instanceof Node) || !viewport.contains(event.target)) return
       handleUserInput()
@@ -769,7 +767,7 @@ export function Transcript({
     root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('keydown', handleKeyInput, { passive: true })
     root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('touchstart', handleUserInput, { passive: true })
+    root.addEventListener('touchstart', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('focusin', handleFocusInput, { passive: true })
 
     function step() {
@@ -857,11 +855,12 @@ export function Transcript({
           // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
           // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
           // bounds would be cut off entirely rather than just visually tight. Issue #672:
-          // `dimTranscript` fades this to ~40% opacity behind the start notice (gate-fix UI/A11y
-          // round 1: stays interactive, no `pointer-events-none`; `focus-within:opacity-100`
-          // restores full strength for a focused control; no transition, so it never mid-fades).
+          // `dimTranscript` fades this to ~40% opacity (gate-fix UI/A11y round 1: stays
+          // interactive, `focus-within:opacity-100` restores full strength for a focused
+          // control). `peer` (A11y round 2) lets the sibling overlay hide itself on focus
+          // (WCAG 2.4.11).
           className={cn(
-            'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
             dimTranscript && 'opacity-40 focus-within:opacity-100'
           )}
         >
@@ -1020,19 +1019,22 @@ export function Transcript({
           </MessageScrollerContent>
         </MessageScrollerViewport>
         {/* Issue #618 gate-fix (code/verif/a11y High), amended #672: a sibling of the viewport,
-            OUTSIDE `MessageScrollerContent`'s own `role="log"` -- its sr-only label was being
-            read as a second announcement on top of `announceStart`, and its Keep waiting/Cancel
-            buttons were focusable controls inside a live log. `MessageScroller`'s root is
-            `relative` (components/ui/message-scroller.tsx), so this overlays centred over the
-            transcript area -- the empty area where "Ready..." would otherwise sit for a
-            brand-new Session, or the dimmed history above (`dimTranscript`) for one that has
-            any; `ChatPane.tsx` already decided whether this placement applies before ever
-            passing `startNotice`. Gate-fix (UI round 1): `items-center-safe`+`overflow-y-auto`
-            keep Keep waiting/Cancel reachable on a short pane; `cloneElement` passes `dimmed`
-            so the notice decides whether to show its own backing panel. */}
+            OUTSIDE `MessageScrollerContent`'s own `role="log"` -- read as a second announcement
+            on top of `announceStart`, and its buttons were focusable inside a live log.
+            `MessageScroller`'s root is `relative`, so this overlays centred over the empty area
+            where "Ready..." would sit for a brand-new Session, or the dimmed history above
+            (`dimTranscript`). Gate-fix (UI round 1): `items-center-safe`+`overflow-y-auto` keep
+            Keep waiting/Cancel reachable on a short pane. Gate-fix (A11y round 2, WCAG 2.4.11):
+            `peer-focus-within:opacity-0` (and `:pointer-events-none`, only while dimmed) hides
+            this wrapper -- not `invisible`, which would pull Keep waiting/Cancel out of the tab
+            order, making them unreachable by Tab from inside the history -- the instant focus
+            moves inside the viewport (`peer` above); the next Tab still lands on one, flipping
+            `:focus-within` back off and restoring this wrapper in the same frame. */}
         {startNotice && (
           <div data-start-overlay className="pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2">
-            <div className="pointer-events-auto">{React.cloneElement(startNotice, { dimmed: dimTranscript })}</div>
+            <div className={cn('pointer-events-auto', dimTranscript && 'peer-focus-within:pointer-events-none peer-focus-within:opacity-0')}>
+              {startNotice(dimTranscript)}
+            </div>
           </div>
         )}
         {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE

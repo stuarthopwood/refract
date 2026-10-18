@@ -1384,19 +1384,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           hasHistory={hasHistory}
           startNotice={
             // Issue #672: one centred presentation for every Session, not only the genuinely
-            // empty case (the old `showInline` branch below `MessageInput` is gone) --
-            // `Transcript.tsx` itself decides whether to dim the history behind this notice
-            // (`hasHistory` above, plus its own items-based `hasConversationStarted`).
-            !showBanner && effectiveStartProgress ? (
-              <SessionStartNotice
-                startProgress={effectiveStartProgress}
-                message={startingMessageText}
-                emoji={startingMessageEmoji}
-                cancelButtonRef={cancelButtonRef}
-                onKeepWaiting={() => void handleKeepWaitingForStart()}
-                onCancel={() => void handleCancelStart()}
-              />
-            ) : undefined
+            // empty case (the old `showInline` branch below `MessageInput` is gone) -- a render
+            // function (gate-fix UI round 2, not a plain element + `cloneElement`), so
+            // `Transcript.tsx` decides whether to dim the history behind this notice AND passes
+            // that decision straight in as the one argument.
+            !showBanner && effectiveStartProgress
+              ? (dimmed: boolean) => (
+                  <SessionStartNotice
+                    startProgress={effectiveStartProgress}
+                    message={startingMessageText}
+                    emoji={startingMessageEmoji}
+                    cancelButtonRef={cancelButtonRef}
+                    onKeepWaiting={() => void handleKeepWaitingForStart()}
+                    onCancel={() => void handleCancelStart()}
+                    dimmed={dimmed}
+                  />
+                )
+              : undefined
           }
         />
       </div>

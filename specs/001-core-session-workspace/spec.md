@@ -740,8 +740,11 @@ The developer types a slash command and finds the ones the agent offers. If a se
   shows, returning to full opacity the instant the start ends or whenever keyboard focus moves
   into the history; the dimmed transcript MUST stay fully interactive throughout (scrollable,
   selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
-  its own text stays readable against the dim. A brand-new Session's placement is unchanged
-  (centred over the otherwise-empty area, no backing panel needed). The randomly-picked joke
+  its own text stays readable against the dim. While keyboard focus is inside that dimmed
+  history, the notice itself MUST hide (not merely dim) so its panel never sits on top of a
+  focused control, reappearing the instant focus leaves the history (for example, by reaching
+  Keep waiting or Cancel). A brand-new Session's placement is unchanged (centred over the
+  otherwise-empty area, no backing panel needed). The randomly-picked joke
   message and its leading emoji (unchanged pool and once-per-start
   pick) MUST render at about `text-2xl` (24px) and `text-5xl` (48px) respectively, in the normal
   foreground colour, the emoji on its own line above the text, with the elapsed-seconds counter
@@ -751,7 +754,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
   centred position but at normal size (`text-base`). Keep waiting and Cancel (#512) stay
   reachable, centred under the message with the existing guidance sentence, never pushed off
   screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on,
-  running a fixed 3 iterations then stopping, per WCAG 2.2.2) MUST be disabled under
+  running a fixed 2 iterations then stopping, under WCAG 2.2.2's 5-second threshold) MUST be
+  disabled under
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
