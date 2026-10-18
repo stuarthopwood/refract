@@ -142,7 +142,11 @@ public static class Refract880 {
 "@
 
 $targetPid = __TARGET_PID__
-$outPath = "__OUT_PATH__"
+# Gate round 1 (LOW finding): the screenshot path arrives via an env var, not interpolated into
+# this script's own text -- a path containing a quote/backtick/dollar sign would otherwise need
+# its own escaping pass (the PID substitution above is safe as-is: FindWindowsForPid's own
+# caller, readWindowIconState, only ever passes a Number, never arbitrary text).
+$outPath = $env:REFRACT_880_SCREENSHOT_PATH
 
 $windows = [Refract880]::FindWindowsForPid([uint32]$targetPid)
 if ($windows.Count -eq 0) {
@@ -179,10 +183,21 @@ $aumid = [Refract880]::GetWindowAppUserModelId($hwnd)
  * native (title-bar-included) screenshot to `screenshotPath`. Throws if PowerShell itself failed
  * or returned no window; otherwise returns `{ hwnd, wmGetIconBig, wmGetIconSmall,
  * classLongHicon, classLongHiconSm, aumid }` (every icon handle as a `number`, `0` meaning null/
- * unset; `aumid` the real `System.AppUserModel.ID` string, or `null` if the window carries none). */
+ * unset; `aumid` the real `System.AppUserModel.ID` string, or `null` if the window carries none).
+ * `classLongHicon`/`classLongHiconSm` are informational only (gate round 1 finding: tao always
+ * registers the window CLASS icons null, see `shell::app_identity::set_window_icons`'s own doc
+ * comment) -- the caller asserts on `wmGetIconBig`/`wmGetIconSmall` and `aumid` only. */
 export function readWindowIconState(pid, screenshotPath) {
-  const script = PS_SCRIPT.replace('__TARGET_PID__', String(pid)).replace('__OUT_PATH__', screenshotPath.replace(/\\/g, '\\\\'));
-  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true, maxBuffer: 10 * 1024 * 1024 });
+  const script = PS_SCRIPT.replace('__TARGET_PID__', String(pid));
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 10 * 1024 * 1024,
+    // Gate round 1 (LOW finding): the screenshot path travels as an env var, never interpolated
+    // into the PowerShell script text itself -- a path containing a quote/backtick/dollar sign
+    // would otherwise need its own escaping pass against PowerShell's own quoting rules.
+    env: { ...process.env, REFRACT_880_SCREENSHOT_PATH: screenshotPath }
+  });
   if (result.status !== 0) {
     throw new Error(`readWindowIconState: powershell exited ${result.status}: ${result.stderr || result.stdout}`);
   }

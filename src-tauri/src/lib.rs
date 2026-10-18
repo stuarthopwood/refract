@@ -379,7 +379,7 @@ pub fn run() {
             // `index.html`, in both `frontendDist` (`out/tauri-web/tauri/index.html`) and the
             // dev server (`http://localhost:5174/tauri/index.html`, `devUrl`'s origin plus this
             // same relative path).
-            let mut window_builder =
+            let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
                     .title("Refract")
                     .inner_size(1280.0, 800.0)
@@ -391,15 +391,16 @@ pub fn run() {
                     // UI (remote origins can already not reach `refract_request`, and wry denies
                     // new windows with no `on_new_window` handler set, but a same-window
                     // navigation away is a separate hole neither of those closes).
-                    .on_navigation(is_allowed_navigation_url);
-            // Issue #880: explicit window icon, matching the Electron precedent (#494, PR #590)
-            // -- this window is built entirely in code, never from a `tauri.conf.json`
-            // `app.windows[]` entry. `app.default_window_icon()` is the SAME `icons/icon.ico`
-            // resource already embedded in this exe, not a second asset.
-            if let Some(icon) = app.default_window_icon().cloned() {
-                window_builder = window_builder.icon(icon)?;
-            }
-            let window = window_builder.build()?;
+                    .on_navigation(is_allowed_navigation_url)
+                    .build()?;
+            // Issue #880 (gate round 1): no explicit `.icon(...)` call here -- it only duplicated
+            // Tauri's own built-in default-icon auto-apply (a no-op either way, neither one ever
+            // reaches the taskbar's own `ICON_BIG` lookup on Windows, see
+            // `shell::app_identity::set_window_icons`'s own doc comment for the full chain of
+            // evidence). The real fix: Windows-only, after the window exists so a real `HWND`
+            // exists to apply it to.
+            #[cfg(windows)]
+            shell::app_identity::apply_to_window(window.hwnd()?);
 
             // Issue #623: reads and applies the saved position/size/maximised state (a
             // one-off, startup-only blocking wait, same justification as the registry/settings

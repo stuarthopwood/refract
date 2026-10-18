@@ -2,8 +2,8 @@
 // Live check for issue #880 ("Bug: Tauri build's taskbar button shows a generic blank icon, not
 // the Refract logo (window icon never set)"). Builds and launches a REAL Tauri debug exe (never
 // a mock), then inspects its own real OS-level window state via native Win32 calls (never a DOM
-// read): `WM_GETICON`/`GetClassLongPtr` (the two places Windows' own taskbar/Alt-Tab icon
-// resolution reads an icon from) and the window's `System.AppUserModel.ID` property via
+// read): `WM_GETICON` (the lookup Windows' own taskbar/Alt-Tab icon resolution reads an icon
+// from first) and the window's `System.AppUserModel.ID` property via
 // `SHGetPropertyStoreForWindow` (the same property `shell::app_identity.rs`'s own doc comment
 // cites Tauri's NSIS installer as writing onto the Start Menu/Desktop shortcut it creates,
 // confirmed there against `tauri-bundler`'s own source). Also captures a native (title-bar
@@ -12,9 +12,12 @@
 // STATED LIMITATIONS (lane gate checklist: "never claim a test that did not happen"):
 //   - The taskbar BUTTON's own glyph is judged by eye from the screenshot/report, not asserted
 //     programmatically -- this script proves the window itself carries a real, non-null icon at
-//     both OS lookup points taskbar/Alt-Tab icon resolution reads from (which is what actually
-//     controls the glyph), and that the running identity is exactly the expected dev AUMID; it
-//     does not additionally screenshot the live Windows taskbar strip itself.
+//     `WM_GETICON(ICON_BIG)`/`WM_GETICON(ICON_SMALL)` (what actually controls the glyph), and
+//     that the running identity is exactly the expected dev AUMID; it does not additionally
+//     screenshot the live Windows taskbar strip itself. `GetClassLongPtr(GCLP_HICON/
+//     GCLP_HICONSM)` is read and reported but never asserted: tao's own window class is always
+//     registered with null class icons by design (`shell::app_identity::set_window_icons`'s own
+//     doc comment), regardless of whether this fix is present.
 //   - The PACKAGED id's shortcut grouping (`APP_USER_MODEL_ID_PACKAGED` matching the real NSIS
 //     installer's own shortcut `PKEY_AppUserModel_ID`) needs an installed build to verify end to
 //     end; this script runs a debug (unpackaged) build, which `shell::app_identity::
@@ -56,7 +59,7 @@ async function main() {
 
   const report = [];
   const notExercised = [
-    "The taskbar BUTTON's own glyph (the literal pixels the Windows taskbar strip renders): judged by eye from this run's own window screenshot and its report, not asserted programmatically -- this script instead asserts the two real OS lookup points (WM_GETICON, GetClassLongPtr) that control what the taskbar draws both carry a real, non-null icon.",
+    "The taskbar BUTTON's own glyph (the literal pixels the Windows taskbar strip renders): judged by eye from this run's own window screenshot and its report, not asserted programmatically -- this script instead asserts WM_GETICON(ICON_BIG)/WM_GETICON(ICON_SMALL) both return a real, non-null icon (the actual lookup the taskbar/Alt-Tab resolution reads from, per `shell::app_identity::set_window_icons`'s own doc comment). GetClassLongPtr(GCLP_HICON/GCLP_HICONSM) is read and reported but never asserted: tao's own window class is always registered with null class icons, by design, regardless of this fix.",
     'The PACKAGED AppUserModelID actually grouping a running window with the Start Menu/Desktop shortcut the real NSIS installer creates: needs an installed build (not exercised by any live-check script in this repo); this run only proves the DEV id a debug build carries, matching `shell::app_identity::current_app_user_model_id`’s own `cfg!(debug_assertions)` routing.'
   ];
 
@@ -115,8 +118,12 @@ async function main() {
     assertTruthy(windowState.hwnd, 'a visible top-level window exists for the launched pid');
     assertTruthy(windowState.wmGetIconBig, 'WM_GETICON(ICON_BIG) returns a non-null HICON');
     assertTruthy(windowState.wmGetIconSmall, 'WM_GETICON(ICON_SMALL) returns a non-null HICON');
-    assertTruthy(windowState.classLongHicon, 'GetClassLongPtr(GCLP_HICON) returns a non-null HICON');
-    assertTruthy(windowState.classLongHiconSm, 'GetClassLongPtr(GCLP_HICONSM) returns a non-null HICON');
+    // Gate round 1 (CRITICAL finding): GetClassLongPtr(GCLP_HICON/GCLP_HICONSM) is read for the
+    // report only, never asserted -- tao's own RegisterClassExW call always registers the
+    // window CLASS icons null (`shell::app_identity::set_window_icons`'s own doc comment cites
+    // tao-0.37.1's window.rs:1434-1441), so asserting non-null here would fail even on a
+    // correctly-fixed build.
+    report.push({ step: 'GetClassLongPtr(GCLP_HICON/GCLP_HICONSM) read (informational, expected null)', ok: true, classLongHicon: windowState.classLongHicon, classLongHiconSm: windowState.classLongHiconSm });
     assertEqual(windowState.aumid, EXPECTED_DEV_AUMID, 'window AppUserModelID (SHGetPropertyStoreForWindow + PKEY_AppUserModel_ID) equals the expected dev id');
 
     report.push({ step: 'native window screenshot (title bar icon included)', ok: true, screenshots: citeScreenshots(SHOTS_DIR, ['window.png']) });

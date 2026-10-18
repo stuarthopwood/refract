@@ -104,8 +104,19 @@ windows = { version = "0.62.2", features = [
   "Win32_Security_Cryptography",
   "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Cryptography_Sip",
-  # Issue #880: `SetCurrentProcessExplicitAppUserModelID` (`shell::app_identity`), so the
-  # taskbar/Alt-Tab/notification identity matches the Start Menu/Desktop shortcut Tauri's own
-  # NSIS installer pins to the same id (`shell::app_identity`'s own doc comment).
+  # Issue #880 (gate round 1 real fix): `SetCurrentProcessExplicitAppUserModelID` and
+  # `SHGetPropertyStoreForWindow`/`IPropertyStore::SetValue(PKEY_AppUserModel_ID)`
+  # (`shell::app_identity`), so the taskbar/Alt-Tab/notification identity matches the Start
+  # Menu/Desktop shortcut Tauri's own NSIS installer pins to the same id, both process-wide and
+  # on the window itself (`shell::app_identity`'s own doc comments).
   "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_Storage_EnhancedStorage",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  # Issue #880 (gate round 1 real fix): `LoadImageW`/`GetSystemMetrics`/`SendMessageW`/
+  # `WM_SETICON` (`shell::app_identity::set_window_icons`) -- sends the taskbar/Alt-Tab `ICON_BIG`
+  # no public Tauri/tao API reaches on Windows (that function's own doc comment).
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_LibraryLoader",
 ] }
