@@ -3824,12 +3824,12 @@ for the full root cause and the bounded-line-streaming design that replaces the 
   stays cheap to list -- all three are proven by reading `read_conversation_file`'s own
   `take()`-enforced hard cap, its early break on match, and its unchanged real-EOF skip path, not
   by constructing the corresponding fixture files on disk (recorded honestly in the script's own
-  `notExercised`). Written, not run end-to-end (no build slot granted for this sub-task):
-  `node --check` plus a real `import()` load-check on every helper module it imports,
-  `node scripts/check-indent.mjs` and `node scripts/check-file-size.mjs` clean,
-  `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` clean, `pnpm typecheck` clean,
-  `pnpm vitest run` (148/148) clean, `node scripts/check-parity.mjs --gate` clean (103/103,
-  24/24).
+  `notExercised`). Checks run before the live check itself: `node --check` plus a real
+  `import()` load-check on every helper module it imports, `node scripts/check-indent.mjs` and
+  `node scripts/check-file-size.mjs` clean, `cargo fmt --manifest-path src-tauri/Cargo.toml --
+  --check` clean, `pnpm typecheck` clean, `pnpm vitest run` (148/148) clean,
+  `node scripts/check-parity.mjs --gate` clean (103/103, 24/24). Run end-to-end once the build
+  slot was granted (below): green.
 - [X] Gate round 1 remediation (code-reviewer FAIL, test-reviewer FAIL, security-auditor PASS,
   PR #1006): the cap was not actually hard -- a plain `BufReader::read_line` over the raw file
   handle only checked an own-tracked byte counter AFTER each complete line, so one sufficiently
@@ -3845,5 +3845,32 @@ for the full root cause and the bounded-line-streaming design that replaces the 
   `mkdirSync(SHOTS_DIR, { recursive: true })` added as belt-and-braces alongside
   `clearKnownOutputFiles`'s own internal one; `notExercised` reworded into the three specific
   entries above; header comment's approximate prefix size corrected to the measured ~9.6 KB.
+- [X] Gate round 2 remediation (code-reviewer PASS, test-reviewer PASS, security-auditor PASS,
+  PR #1006): round 1's cap still had two edge-case gaps, both fixed. (1) Any missing trailing
+  newline unconditionally set `cap_hit`, even genuinely below the cap (a valid final line with
+  no trailing newline lost its own preview; a truncated last line with no user message got
+  listed anyway) -- fixed by checking `bytes_read_total > PREVIEW_SCAN_HARD_CAP_BYTES` first;
+  only that counts as a cap hit, and a within-budget piece missing its newline is now parsed as
+  the file's own genuine last line. (2) `take(cap)` plus a `>= cap` comparison could misreport a
+  real, exactly-cap-sized file with no user message as a cap hit -- fixed by `take(cap + 1)` (one
+  sentinel byte past the cap) and testing `bytes_read_total > cap` (strictly past), so only a
+  file that genuinely holds more than the cap is ever reported as a cap hit. `BufReader::new`
+  replaces `with_capacity(cap, ...)`: `take` already bounds every read, so the extra 64 KiB
+  upfront buffer was wasted I/O/memory. Script: the long-prelude fixture's own upper-bound guard
+  now adds the final user-message line's own bytes to the prelude's, not just the prelude alone;
+  a 4th `notExercised` entry (image-only/empty-content first message) added, cited to the exact
+  lines.
 
+**Live-verified (2026-10-18, build slot granted by Main, PR #1006 at `7b0c936`)**:
+`node scripts/ci-local.mjs` ran all 16 `ci.yml` steps clean -- typecheck; vitest 148/148;
+indent; theme-contrast; drag-regions; IPC parity 103/103 requests, 24/24 events; file-size;
+version consistency; OMP schema drift plus its self-test; `cargo fmt --check`; `cargo test`
+738/738 (0 failed, 1 ignored); `cargo clippy --all-targets -- -D warnings`; `tauri build
+--debug --no-bundle`; UI text. `node scripts/verify-862-conversation-history.mjs` then ran
+green against that build: `report.json` records `failures: []`, `exitCode: 0`; the saved
+screenshot shows the Conversation-history dialog with both rows rendered, the long-prelude
+Conversation's own title and its real preview text ("ISSUE862-LONG-PREVIEW-CHECK: real first
+user message, found past the old 8...") in full, 9,901 bytes into the file -- past the old
+8,192-byte window, under the new 65,536-byte cap. PR #1006 switched from `Refs #862` to
+`Closes #862`.
 

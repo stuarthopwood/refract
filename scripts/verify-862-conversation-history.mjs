@@ -30,9 +30,10 @@
 // file (never pushes a `ConversationInfo` for it), and the Conversation-history dialog renders
 // only ONE row instead of two. This script's own row-count assertion below (`rows.length === 2`)
 // is the one that catches it; explained from the code above, not reproduced by actually running
-// this script against `origin/main` (no build slot granted for this check yet).
+// this script against `origin/main` itself (that comparison run has not been made; only the
+// fixed path, below, has been run and confirmed green).
 //
-// What this script does NOT prove (recorded in its own `notExercised`, gate round 1 reword):
+// What this script does NOT prove (recorded in its own `notExercised`):
 //   - A Conversation whose 64 KiB cap (`PREVIEW_SCAN_HARD_CAP_BYTES`, enforced by reading through
 //     an `AsyncReadExt::take(...)`-limited handle, not merely a byte count checked between lines)
 //     is hit before a user message is found is still listed, with its title and an empty preview.
@@ -48,11 +49,13 @@
 //     message's offset). The two files here are a few KB each, deliberately matching the issue's
 //     own real-world byte offsets rather than its real-world total file size.
 //
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`,
-// a real `import()` load-check on every helper module it imports, `pnpm typecheck`,
-// `pnpm vitest run`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs`,
-// `node scripts/check-parity.mjs --gate`, and `cargo fmt --manifest-path src-tauri/Cargo.toml --
-// --check` are the only commands that have actually been run against this change.
+// RUN END-TO-END (2026-10-18, build slot granted, PR #1006): green against the fixed build --
+// `report.json` records `failures: []`, `exitCode: 0`; the saved screenshot shows the
+// Conversation-history dialog with both rows, the long-prelude Conversation's own title and its
+// real preview text rendered in full. `ci-local.mjs`'s full chain (typecheck, vitest, indent,
+// theme-contrast, drag-regions, IPC parity, file-size, versions, OMP schema drift, `cargo fmt
+// --check`, `cargo test`, `cargo clippy -D warnings`, `tauri build --debug --no-bundle`, UI text)
+// also ran clean on the same commit beforehand.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
