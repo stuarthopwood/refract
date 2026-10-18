@@ -10,9 +10,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
-import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
+import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
+import { isConversationStarted } from './isConversationStarted'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
@@ -275,34 +276,7 @@ function TimeGapDivider({ at }: { at: number }) {
   )
 }
 
-// Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
-// 2026-10-04; narrowed per code/test-reviewer round 2): the only transcript item a brand-new
-// agent process can produce before any real exchange is a `notice` (OMP's own unsolicited
-// startup banner -- a `command_output`/`notice` frame, same mechanism a user-run slash
-// command's own output uses, lists every mounted MCP tool verbatim). Hiding *every* `notice`
-// until a non-notice item exists was too broad: it also hid a start-failure notice, a rejected
-// first prompt's error notice, and a slash command's own output when run as the very first
-// action in a new Session -- none of which is the startup banner, and DESIGN.md's "never a
-// silent no-op" rule for slash commands means the last of those must always be visible. A
-// `notice` now counts as "conversation started" unless it is BOTH an info/warning-level notice
-// (an error is always a real outcome, never the unsolicited banner) AND tagged
-// `STARTUP_NOTICE_PREFIX` (`transcript.ts`'s `applyFrame`, keyed off `SessionAgent.hasUserActed`
-// -- the one case that is unambiguously the agent's own startup dump, not something the user
-// did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
-// real content exists) but are not displayed, replaced by a neutral placeholder instead.
-//
-// Gate-fix (code/a11y/verif High, round 3, Issue #618): exported (was a private inline
-// computation) so `ChatPane.tsx` can read the SAME predicate against the SAME transcript-store
-// items, instead of deciding where the start notice goes from its own, narrower `hasHistory`
-// alone. `hasHistory` (`session.currentConversation !== null`) only flips true at a settle,
-// which left a start that fails or crashes mid-first-turn -- real items already on screen,
-// `recordStartFailure`'s own error notice among them -- with NO notice and NO Keep
-// waiting/Cancel at all on the next Retry/Recover, because the centred placement required
-// `!hasConversationStarted` and the inline placement required `hasHistory`, and neither was
-// true. See `ChatPane.tsx`'s own `conversationStarted`/`showInline` for the fix.
-export function isConversationStarted(items: readonly TranscriptItem[]): boolean {
-  return items.some((item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX))
-}
+export { isConversationStarted } from './isConversationStarted'
 
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
@@ -336,6 +310,8 @@ export function Transcript({
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
   const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
+  // Issue #554 (FR-073): 'reading-column' caps at 64rem, centred, transcript only.
+  const chatWidth = useActiveChatWidth()
   const items = transcript.items
   const receivedAt = transcript.receivedAt
   // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
@@ -867,7 +843,7 @@ export function Transcript({
         >
           <MessageScrollerContent
             ref={contentRef}
-            className="mx-auto w-full max-w-4xl px-4 py-4"
+            className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
             // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
             // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
             // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of

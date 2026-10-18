@@ -10,15 +10,34 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
-import { useSettingsStore, useThemeStore } from '@/state'
+import { useChatWidthStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
+import { ChatWidthPicker } from './ChatWidthPicker'
 
 export function AppearanceSection() {
-  const isDirty = useThemeStore((state) => state.previewing !== null)
+  // Issue #554: the Save/Cancel row below now governs both pickers -- dirty if EITHER has an
+  // open preview, same "disabled={!isDirty}" gate as before.
+  const themeDirty = useThemeStore((state) => state.previewing !== null)
+  const chatWidthDirty = useChatWidthStore((state) => state.previewing !== null)
+  const isDirty = themeDirty || chatWidthDirty
   const watermarkEnabled = useSettingsStore((state) => state.settings.watermarkEnabled)
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
+  // Issue #554 gate round 2 (H1): tracks which group's dirty flag most recently went
+  // false->true, so the focus-restoration effect below knows which group's checked radio to
+  // focus after a Save/Cancel click (when focus was on THAT button, not a radio) -- without
+  // this both previews committing via one shared Save always focused Theme's own radio, even
+  // when only Chat width had actually been touched.
+  const lastDirtyGroupRef = useRef<'theme' | 'chatWidth' | null>(null)
+  const prevThemeDirtyRef = useRef(false)
+  const prevChatWidthDirtyRef = useRef(false)
+  useEffect(() => {
+    if (themeDirty && !prevThemeDirtyRef.current) lastDirtyGroupRef.current = 'theme'
+    if (chatWidthDirty && !prevChatWidthDirtyRef.current) lastDirtyGroupRef.current = 'chatWidth'
+    prevThemeDirtyRef.current = themeDirty
+    prevChatWidthDirtyRef.current = chatWidthDirty
+  }, [themeDirty, chatWidthDirty])
   // Quality-gate remediation (a11y, round 2): scopes the focus-restoration effect below (and
   // its radio-group query) to THIS section's own DOM subtree, so a future section also titled
   // 'Theme' (spec 008's planned Theme submenu) can never be matched by mistake, and so the
@@ -49,11 +68,32 @@ export function AppearanceSection() {
       const active = document.activeElement
       const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
       if (!activeWasOutside) {
-        const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
-          '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"]'
-        )
-        if (checkedRadio) checkedRadio.focus()
-        else headingRef.current?.focus()
+        // Issue #554 gate round 2 (H1, corrected after a live-check falsification): "leave it
+        // alone" must key on the focused radio STILL being the CHECKED one after the revert --
+        // not merely on focus sitting on any radio. Arrowing back to the saved value flips
+        // `chatWidthDirty` false on its own, and the radio focus never left IS the one that
+        // becomes checked again, so this correctly leaves it alone. But Escape (or Cancel) away
+        // from a DIFFERENT previewed value leaves focus on a radio whose `aria-checked` just
+        // flipped to false (the roving-tabindex pattern drops its `tabIndex` to -1 too, but a
+        // DOM element never auto-blurs just because its own tabIndex changed) -- a real bug a
+        // live check caught: focus stayed on the now-unchecked, now off-roving-tabindex "Full"
+        // radio instead of moving to the newly-checked "Reading column" one. Checking
+        // `aria-checked === 'true'` on the focused element itself (not merely its role) covers
+        // both cases correctly, and also the Save/Cancel-button case below (focus there is on a
+        // button, never a radio, so this is false there too).
+        const activeIsCheckedRadio =
+          active instanceof HTMLElement &&
+          active.getAttribute('role') === 'radio' &&
+          active.getAttribute('aria-checked') === 'true' &&
+          (rootRef.current?.contains(active) ?? false)
+        if (!activeIsCheckedRadio) {
+          const groupLabel = lastDirtyGroupRef.current === 'chatWidth' ? 'chat-width-heading' : 'theme-heading'
+          const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
+            `[role="radiogroup"][aria-labelledby="${groupLabel}"] [role="radio"][aria-checked="true"]`
+          )
+          if (checkedRadio) checkedRadio.focus()
+          else headingRef.current?.focus()
+        }
       }
     }
     wasDirtyRef.current = isDirty
@@ -91,9 +131,12 @@ export function AppearanceSection() {
       // `[role="menubar"]` would also match ANY future unrelated menubar Refract adds, silently
       // disabling this Escape-to-cancel guard for every one of them too.
       if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"][aria-label="App menu"]')) return
-      if (useThemeStore.getState().previewing === null) return
+      // Issue #554: Escape cancels whichever preview(s) are actually open -- a no-op call to
+      // `cancelPreview()` when nothing is previewed is harmless (both stores' own contract).
+      if (useThemeStore.getState().previewing === null && useChatWidthStore.getState().previewing === null) return
       event.preventDefault()
       useThemeStore.getState().cancelPreview()
+      useChatWidthStore.getState().cancelPreview()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -104,23 +147,35 @@ export function AppearanceSection() {
   useEffect(() => {
     return () => {
       useThemeStore.getState().cancelPreview()
+      useChatWidthStore.getState().cancelPreview()
     }
   }, [])
 
   function handleSave() {
-    const state = useThemeStore.getState()
-    void state.save(state.previewing ?? state.theme)
+    const themeState = useThemeStore.getState()
+    if (themeState.previewing !== null) void themeState.save(themeState.previewing)
+    const chatWidthState = useChatWidthStore.getState()
+    if (chatWidthState.previewing !== null) void chatWidthState.save(chatWidthState.previewing)
   }
 
   function handleCancel() {
     useThemeStore.getState().cancelPreview()
+    useChatWidthStore.getState().cancelPreview()
   }
 
   return (
     <div ref={rootRef}>
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">Appearance</h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose the colour theme used across the app.</p>
-      <ThemePicker />
+      <p className="mb-4 text-sm text-muted-foreground">Choose how the app looks and reads.</p>
+      {/* Issue #554 gate round 2 (L1): each group now gets its own heading and hint, wired via
+          aria-labelledby/aria-describedby instead of a bare aria-label on the radiogroup -- this
+          intro paragraph above is the shared lead-in for the whole section, not Theme's own. */}
+      <h3 id="theme-heading" className="mb-1 text-sm font-medium">Theme</h3>
+      <p id="theme-hint" className="mb-2 text-xs text-muted-foreground">The colour palette used across the app.</p>
+      <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
+      <h3 id="chat-width-heading" className="mt-4 mb-1 text-sm font-medium">Chat width</h3>
+      <p id="chat-width-hint" className="mb-2 text-xs text-muted-foreground">How wide the chat transcript reads.</p>
+      <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
       <div className="mt-4 flex gap-2">
         <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
           Save

@@ -5,6 +5,7 @@
 // store-backed `settings_get`/theme bootstrap now go through `SettingsStore` directly).
 
 pub mod atomic_json;
+pub mod chat_width;
 pub mod import;
 pub mod profile_cache;
 pub mod registry;

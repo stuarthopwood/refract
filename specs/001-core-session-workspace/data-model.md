@@ -58,6 +58,7 @@ Rules:
 interface Settings {
   version: 1;
   approvalMode: 'ask' | 'edit-freely' | 'auto';   // default 'ask'
+  chatWidth: 'full' | 'reading-column';           // FR-049/FR-073, default 'full'
   sessionListCollapse: SessionListCollapse;       // default { collapsedRepositoryIds: [], archivedOpen: false }
 }
 ```
