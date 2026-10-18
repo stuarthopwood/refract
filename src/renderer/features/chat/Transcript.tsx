@@ -24,6 +24,7 @@ import { groupThoughtItems } from './groupThoughtItems'
 import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
+import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
@@ -576,11 +577,11 @@ export function Transcript({
     loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
     setRevealedAnnouncement(loadEarlierAnnouncement(hiddenCount))
     // Quality-gate fix (a11y, cycle 3, 2026-10-08): `MessageScrollerContent` renders
-    // `role="log"` by default (an implicit polite live region with `aria-relevant="additions"`),
-    // so revealing up to hundreds of hidden turns at once would otherwise queue the WHOLE
-    // revealed history as log-addition announcements, burying the one message that actually
-    // matters. Suppressed for this one reveal only; the layout effect below clears it again
-    // once the new turns have committed.
+    // `role="log"` by default -- an implicit polite live region whose real ARIA default is
+    // `aria-relevant="additions text"`, not merely "additions" -- so revealing up to hundreds
+    // of hidden turns at once would otherwise queue the WHOLE revealed history as log-addition
+    // announcements, burying the one message that actually matters. Suppressed for this one
+    // reveal only; the layout effect below clears it again once the new turns have committed.
     setSuppressLogAnnouncements(true)
     setRevealedEarlier(true)
   }
@@ -848,12 +849,12 @@ export function Transcript({
           <MessageScrollerContent
             ref={contentRef}
             className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
-            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
-            // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
-            // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of
-            // hidden turns at once never queues the whole revealed history as log-addition
-            // announcements. `undefined` (the log's own default) the rest of the time, so
-            // ordinary streamed turns are still announced as they always were.
+            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
+            // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not
+            // merely "additions") -- `off` for the one frame window `handleLoadEarlier`'s reveal
+            // needs, so revealing up to hundreds of hidden turns at once never queues the whole
+            // revealed history as log-addition announcements. `undefined` (the log's own default)
+            // otherwise, so ordinary streamed turns are still announced as before.
             aria-live={suppressLogAnnouncements ? 'off' : undefined}
           >
             {/* Issue #618 gate-fix (code/verif High): "Ready..." is now ALSO gated on
@@ -951,9 +952,7 @@ export function Transcript({
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
                             {/* `rowVisibility` only ever returns `'sr-only'` for a `ToolGroup` or
-                                `StageGroup` now (a bare `subagent` item can't reach here, see
-                                `StageGroupedItem` in groupSubagentStages.ts) -- the final
-                                `undefined` only satisfies the type checker and never renders. */}
+                                `StageGroup` now -- the final `undefined` only satisfies the type checker and never renders. */}
                             <span className="sr-only">
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
@@ -988,6 +987,7 @@ export function Transcript({
                     })}
                     {announceThinking && <span className="sr-only">Thinking</span>}
                     <SubagentChainRow stages={stages} sessionId={sessionId} />
+                    <UpNextList sessionId={sessionId} stagesCount={stages.length} isLastTurn={turnIndex === visibleTurns.length - 1} />
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}
