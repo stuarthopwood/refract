@@ -20,13 +20,10 @@ pub enum ApprovalMode {
     Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ThemeId {
-    Dark,
-    DarkHighContrast,
-    Obsidian,
-}
+// `ThemeId` extracted to `theme_id.rs` (issue #551 gate round 1, #806 ratchet -- see that
+// file's own header comment): re-exported here so every existing caller keeps importing it
+// from `crate::store::settings::ThemeId`, unchanged.
+pub use super::theme_id::ThemeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionReadout {

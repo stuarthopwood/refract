@@ -18,11 +18,12 @@ export interface AgentSpinnerProps {
   className?: string
   /** Colour. `'brand'` (default): **follows the active theme** -- `--agent-spinner-core` is a
    * Layer 3 component token declared once per theme block in `globals.css` (`.theme-dark`,
-   * `.theme-obsidian`, `.theme-dark-high-contrast`), today the same brand violet (`#9A68E4`,
-   * lightened from the removed `BrandSpinner`'s original `#864DD6` by round 5's A11y
-   * remediation -- see below) in every theme (Stuart's #616 review round 4 decision: "same
-   * brand violet in every theme for now"); a custom theme file (#458) may recolour it per-theme
-   * later. `'export'` and `'blue'` remain fixed, NON-theme-derived overrides, set directly on
+   * `.theme-obsidian`, `.theme-dark-high-contrast`, `.theme-nordic-frost`, `.theme-cyber-amber`),
+   * today the same brand violet (`#9A68E4`, lightened from the removed `BrandSpinner`'s original
+   * `#864DD6` by round 5's A11y remediation -- see below) in every theme (Stuart's #616 review
+   * round 4 decision: "same brand violet in every theme for now"); a custom theme file (#458)
+   * may recolour it per-theme later. `'export'` and `'blue'` remain fixed, NON-theme-derived
+   * overrides, set directly on
    * this element (so they win over the inherited theme value regardless of selector
    * specificity): `'export'` is Stuart's SVGator source export's own violet (`#D347FF`, issue
    * #612 "Colours"); `'blue'` is the electric blue from his own reference screenshot of the
@@ -34,11 +35,12 @@ export interface AgentSpinnerProps {
    * `scripts/check-theme-contrast.mjs`'s `PAIRS` list, a real gate in every theme.
    * Quality-gate remediation (A11y HIGH, round 5): the original `#864DD6` measured under 3:1
    * against `--sidebar-accent` in every theme; `#9A68E4` fixes it with margin everywhere
-   * (3.43-4.05:1) while every already-passing surface stays passing (it only gets lighter).
+   * (3.31-4.05:1 across all five built-in presets, #551 added Nordic Frost/Cyber Amber to this
+   * range) while every already-passing surface stays passing (it only gets lighter).
    * `'export'`/`'blue'` are fixed literals outside the token system, so they are not wired into
-   * that script as gates -- their own ratios against all five surfaces were computed once and
-   * reported in the PR body instead (all >=3.4:1, comfortably clearing the 3:1 floor in every
-   * theme). */
+   * that script as gates -- their own ratios against all five surfaces (sidebar, sidebar-accent,
+   * card, popover, background), re-checked across all five themes for #551: all >=3.3:1,
+   * comfortably clearing the 3:1 floor in every theme. */
   palette?: 'brand' | 'export' | 'blue'
 }
 

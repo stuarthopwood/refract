@@ -259,6 +259,13 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                             .await
                             .map_err(map_chat_error);
                     }
+                    // Issue #937, gate round 2 fix (decided): the user is already driving
+                    // `/advisor` themselves -- cancel any still-pending silent attach/resume
+                    // probe (`session::advisor`'s own header) so it can never swallow or race
+                    // this real, user-authored reply.
+                    if name == "advisor" {
+                        crate::session::advisor::cancel_pending_probe(&agent).await;
+                    }
                     // Any other real OMP-side command (from `available_commands_update`): fall
                     // through and forward it as a normal prompt below.
                 }

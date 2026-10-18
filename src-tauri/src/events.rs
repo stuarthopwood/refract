@@ -23,6 +23,7 @@ pub const SETTINGS_CHANGED: &str = "settings:changed";
 pub const UI_OPEN_SESSION: &str = "ui:open-session";
 pub const MEMORY_WARNING: &str = "memory:warning";
 pub const READOUT_UPDATE: &str = "readout:update";
+pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
 pub const SIDE_CHAT_PATCH: &str = "side-chat:patch";
@@ -184,6 +185,17 @@ impl EventSink {
         self.send(
             READOUT_UPDATE,
             serde_json::json!({ "sessionId": session_id, "readout": readout }),
+        );
+    }
+
+    /// `advisor:update` (issue #937): the composer status line's Advisor chip on/off state,
+    /// session-scoped (`session::advisor`'s own state, sourced from `/advisor on|off`'s own
+    /// reply text plus a silent `/advisor status` probe at attach/resume -- see that module's
+    /// own header for why `/advisor status`'s own reply is not trusted the same way).
+    pub fn emit_advisor_update(&self, session_id: &str, advisor_on: bool) {
+        self.send(
+            ADVISOR_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "advisorOn": advisor_on }),
         );
     }
 
