@@ -486,6 +486,34 @@
   (`apply_async_result_jobs`); no wire-format/omp change requested, since no `tool_call_id` is
   available there to request.
 
+### Session 2026-10-18 (async-result Stage scoping, issue #989, gate round 2)
+
+- Q: Gate round 2 (code-reviewer Critical/Q1): the previous Clarification answer above (Scope
+  to `result.is_none()`, job_id tried before label, latest `started_at` as the ONLY tie-break)
+  reopens the exact #989 clobber through a different combination of unresolved rows -- a batch-
+  failed earlier Stage can pick up a `job_id` from its own progress read and, being merely
+  "unresolved" rather than genuinely still running, wrongly out-rank a later Stage that is still
+  actually in flight. The async-result message is also applied TWICE live (`message_start` then
+  `message_end`), risking the same job landing on two different rows across the two deliveries.
+  What is the corrected rule? → A: **The previous answer above is SUPERSEDED by this one.**
+  Two changes: (1) a custom `async-result` message's jobs are now applied exactly ONCE, on
+  `message_end` only (`apply_message_snapshot`'s `streaming` flag gates it) -- matching what
+  history replay already did -- so there is no second delivery to defend against at all; (2)
+  candidates are ranked by THREE tiers, each only a tie-break for the one before it: a still-
+  **Running** row beats one already ended by its own batch result (Error/Cancelled/Done without
+  ever getting a real async result); a `job_id` match beats a label-only match; the latest
+  `started_at` wins any remaining tie. A row still only becomes settled (permanently excluded)
+  once a job carrying REAL data (`resultText`/`errorText`/`schema.data`) resolves it -- a bare
+  label-echo fallback (the `wait` tool's shape with no text at all) never settles a row.
+  **Known, accepted limit (tracked on #712, not fixed here)**: two Stages running the SAME
+  subagent name truly CONCURRENTLY, both already carrying a `job_id` (tier 1 ties, both
+  Running; tier 2 ties, both are `job_id` matches), can still have their results swapped --
+  tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
+  frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. FR-084's
+  guarantee is narrowed accordingly: it holds for Stages that run one after another (including
+  this fixture's own Stage 2/Stage 5, which never overlap), not for two Stages the agent
+  genuinely runs at the same time with an identical subagent name.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -860,22 +888,26 @@ The developer types a slash command and finds the ones the agent offers. If a se
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
 - **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
-  round 1, `agent://Main`, 2026-10-18): A subagent's async-result frame (`details.jobs[]`) MUST
-  only ever resolve the specific `subagent` item that issued the matching tool call, never an
-  unrelated item from a different Stage that happens to share the same subagent `name`/job
-  `label`/`id` string. Concretely: a row only becomes **settled** (permanently ineligible for
-  any further match) once a job carrying a REAL result (`resultText`, `errorText`, or
-  `schema.data`) resolves it -- a job with none of those (the `wait` tool's bare completion
-  shape) MUST NOT settle the row, so a later, genuinely-real job for the same `job_id` can still
-  apply. Among still-unsettled items, a `job_id` match and a label match (the latter only when
-  the item's own `job_id` is still unset) are pooled into ONE candidate set, with NO priority
-  for a `job_id` match over a label match; the candidate with the latest `started_at` MUST be
-  chosen whenever more than one still-unsettled item matches. A single job entry MUST resolve at
-  most one item per async-result frame. Because the live pipeline applies the identical
-  async-result message twice (once per `message_start`/`message_end` pair), matching MUST also
-  be idempotent: before choosing a target, if an already-settled item sharing the job's own
-  `job_id` already holds exactly the status/result/duration this job would write, the job is a
-  pure no-op and MUST NOT be redirected onto a second, different row.
+  round 1, then gate round 2, `agent://Main`, 2026-10-18): A subagent's async-result frame
+  (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that issued the
+  matching tool call, never an unrelated item from a different Stage that happens to share the
+  same subagent `name`/job `label`/`id` string, for Stages that run one after another. A custom
+  `async-result` message's jobs MUST be applied exactly ONCE (on `message_end` only -- matching
+  the already-once-per-message history replay path), not once per `message_start`/`message_end`
+  pair. A row only becomes **settled** (permanently ineligible for any further match) once a job
+  carrying a REAL result (`resultText`, `errorText`, or `schema.data`) resolves it -- a job with
+  none of those (the `wait` tool's bare completion shape) MUST NOT settle the row, so a later,
+  genuinely-real job for the same `job_id` can still apply. Among still-unsettled items,
+  candidates MUST be ranked by three tiers, each only a tie-break for the one before it: (1) a
+  still-Running row beats one already ended by its own batch result (Error/Cancelled/Done
+  without ever getting a real async result); (2) a `job_id` match beats a label-only match (the
+  latter only possible when the item's own `job_id` is still unset); (3) the latest `started_at`
+  wins any remaining tie. A single job entry MUST resolve at most one item per async-result
+  frame. **Known, accepted limit**: two Stages running the SAME subagent name truly
+  concurrently, both already carrying a `job_id` (tiers 1 and 2 both tie), can still have their
+  results swapped by tier 3's best-effort `started_at` guess -- this frame carries no real
+  correlation key to settle it for certain; the real fix is #712's `parentToolCallId`, not yet
+  wired up. This requirement's guarantee therefore holds for sequential Stages only.
 
 ### Key Entities
 

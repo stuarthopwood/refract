@@ -3642,7 +3642,8 @@ protected two ways and found a real clippy violation; all addressed below.
   label-only fallback result (no `resultText`/`schema`/`errorText` at all, e.g. the `wait` job
   for "gamma" in `subagents-background-turn.jsonl`) never sets `async_settled`, so a later real
   result for that same `job_id` still applies. **(3, MEDIUM, Code)** `job_id` matches no longer
-  out-rank label matches by priority alone -- traced live repro: Stage 2's Story559 errors at
+  out-rank label matches by priority alone -- hand-traced repro (not executed against a real
+  build): Stage 2's Story559 errors at
   the batch level with no result (`job_id` already `"Story559"` from its own
   `apply_batch_task_result`-read `progress[].id`, status Error, still unsettled); Stage 5's
   LATER async-result for ITS OWN Story559 then arrives -- pooling both match types and picking
@@ -3671,15 +3672,66 @@ protected two ways and found a real clippy violation; all addressed below.
   (this fixture's two Story559 rows are never BOTH unsettled at once -- Stage 2 settles via its
   own `msg-ar2` well before Stage 5 starts), one job resolving at most one row when two jobs in
   the same frame could otherwise compete, the `from_history` replay path (applies each stored
-  message once, no double-invocation to prove idempotency against), and the `wait`-tool
-  `tool_execution_end` path (`transcript.rs:1293`/`:1529`) -- this fixture drives every job
-  through the `custom`/`async-result` message path only. The double-application-is-a-no-op case
-  itself IS exercised by this fixture's own `message_start`/`message_end` pair for every
-  `async-result` message (both carry identical `details.jobs[]`), so it is a finding, not a
-  `notExercised` entry.
+  message once), and the `wait`-tool `tool_execution_end` path (`transcript.rs:1293`/`:1529`)
+  -- this fixture drives every job through the `custom`/`async-result` message path only.
+  Gate round 2 correction: the "double-application-is-a-no-op case IS exercised" claim this
+  task originally recorded was wrong -- no fixture state lets a second application land on a
+  different row than the first, so it was never actually a proven finding; superseded by T294's
+  design change, which removes the second application entirely (see T298's corrected
+  `notExercised` entry).
 - [X] T290 [US1] Docs: FR-084 added to this spec (`### Session 2026-10-18 (async-result Stage
   scoping, issue #989)` Clarifications entry plus the FR itself), research.md decision 19, and
   this Phase 61.
+
+Gate round 2 (`agent://Main`, Code Critical + Design + Q1, Test HIGH): round 1 shipped a
+compile error and two further design gaps; all addressed.
+
+- [X] T294 [US1] **CRITICAL (Code)**: `upsert_subagent_items` (`subagent_items.rs:88`) lost its
+  own `let existing_pos = items.iter().position(...)` binding during T288's rewrite, leaving a
+  compile error (`match existing_pos` with nothing bound). Restored. Grepped every identifier
+  T288 removed (`targets`, `by_job_id`, `by_label`) for leftover uses -- none found.
+- [X] T295 [US1] **Design change (Code reviewer's option 2)**: a custom `async-result`
+  message's jobs are now applied exactly ONCE, on `message_end` only -- `apply_message_snapshot`
+  (`transcript.rs`) gates the `try_apply_async_result` call on its own `streaming == false`
+  parameter (`message_start`/`message_update` both carry `streaming == true`), matching what
+  `items_from_history` already did. A custom message is never token-streamed (no
+  `message_update` at all); `message_start`/`message_end` arrive back to back with no frame
+  between them for every one of `stages-941.jsonl`'s ten async-result messages (confirmed by
+  reading the raw fixture: `msg-ar1`'s pair sits at lines 19/20), so skipping the
+  `message_start` application leaves no user-visible gap. Round 1's value-based idempotency
+  no-op check (T288) is deleted outright -- no longer needed, and could itself have wrongly
+  no-op'd a genuinely new job that happened to match a settled row's current values.
+- [X] T296 [US1] **(MEDIUM, Code, Q1)** Candidate ranking replaced with three tiers, each only
+  a tie-break for the one before it: (1) a still-**Running** row beats one already ended by its
+  own batch result (Error/Cancelled/Done without a real async result yet); (2) a `job_id` match
+  beats a label-only match; (3) latest `started_at` wins any remaining tie (implemented as one
+  lexicographic tuple comparison `(is_running, matches_job_id, started_at)`). Traced by hand
+  (not executed against a real build) against three scenarios, recorded in research.md decision
+  19's gate-round-2 correction: (a) the sequential repro (Stage 2 batch-errored, not Running;
+  Stage 5 later, Running) -- tier 1 alone decides it, Stage 5 wins outright; (b) the concurrent
+  trace (A: Running, already carries this job's own `job_id`; B: Running, later `started_at`,
+  label-only) -- tier 1 ties, tier 2 decides it, A wins even though B started later ("A must
+  win", Q1's own answer verbatim); (c) the real committed fixture's own Stage 2/Stage 5 path --
+  Stage 2 is excluded entirely at the settlement filter (settled via its own real `msg-ar2`
+  before Stage 5 even starts), so Stage 5 is the only candidate and wins trivially, confirming
+  the fixture itself never exercises (a) or (b) directly.
+- [X] T297 [US1] **(MEDIUM, Test)** Known, accepted limit recorded: two Stages running the SAME
+  subagent name truly concurrently, both already carrying a `job_id` (tiers 1 and 2 both tie),
+  can still have results swapped by tier 3's best-effort `started_at` guess -- there is no real
+  correlation key on this frame to settle it for certain; the real fix is #712's
+  `parentToolCallId`. FR-084's "MUST only ever resolve the specific item" guarantee is narrowed
+  to sequential Stages accordingly; the gate-round-1 Clarifications answer (spec.md, "Session
+  2026-10-18 (async-result Stage scoping, issue #989)") is marked SUPERSEDED by a new, separate
+  gate-round-2 entry (add-only convention), never edited in place.
+- [X] T298 [US1] **(HIGH, Test)** `scripts/verify-941-part2.mjs`'s finding claiming the
+  double-application case "IS exercised" was wrong (no fixture state lets a second application
+  land on a different row than the first -- it was never actually proven); removed, replaced
+  with a `notExercised` entry stating T295 removes the second application entirely, so there is
+  nothing left to exercise either way. All "traced by hand"/"hand-traced ... not executed"
+  language (this file, `subagent_items.rs`'s doc comment, research.md decision 19,
+  `verify-941-part2.mjs`, `docs/PLAN.md`) now says exactly that, replacing "verified"/
+  "live repro"/"proven" wording that overclaimed execution which never happened -- nothing is
+  proven or live until a real build-slot run.
 
 Opened as draft PR (branch `fix/989-async-stage`); `Closes #989` once the live check above is
 confirmed against a real build. No cargo build run in this lane (no-build prep lane, blocked on

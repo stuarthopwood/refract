@@ -278,7 +278,11 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
  * trigger"]')` to the row's whole trigger button -- the same `data-slot` `stageTriggerSelector`
  * already keys on, just scoped one level deeper), not the whole Stage's `textContent` -- Stage
  * 2's sibling member (Story560, 2000ms, also renders "2s") made the old whole-Stage duration
- * check weaker than it looked; row-scoping removes that collision entirely. */
+ * check weaker than it looked; row-scoping removes that collision entirely.
+ *
+ * Gate round 2 (issue #989): a custom `async-result` message's jobs are now applied exactly
+ * ONCE, on `message_end` only (`transcript.rs`'s `apply_message_snapshot`), so there is no
+ * second application of the same message left to observe at all -- see `notExercised` below. */
 async function assertAsyncResultStageScoping(cdp, findings, failures, notExercised) {
   const failuresAtStart = failures.length;
   const expectations = [
@@ -334,13 +338,14 @@ async function assertAsyncResultStageScoping(cdp, findings, failures, notExercis
   }
   if (failures.length === failuresAtStart) {
     findings.push(
-      '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering. The double-application-is-a-no-op case IS exercised here: the live pipeline applies every one of this fixture\u2019s `async-result` messages twice (`message_start` then `message_end`, both carrying identical `details.jobs[]`), and this assertion runs after both have landed.'
+      '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering.'
     );
   }
   notExercised.push(
-    '[issue #989] This fixture\u2019s two Story559 rows are never BOTH still unsettled at once (Stage 2 settles via its own real `msg-ar2` well before Stage 5 even starts), so it cannot prove the pooled job_id/label priority removal or the latest-`started_at` tie-break when TWO candidates are genuinely unsettled at the same moment -- both are proven instead by the gate-round-1 repro trace recorded in `subagent_items.rs`\u2019s own doc comment and research.md decision 19 (a hypothetical Stage 2 batch-failure with no result, never part of this committed fixture), not by a live run of this script; adding that second variant here was judged not worth perturbing this fixture\u2019s own already-passing Stage/chain/panel assertions.',
-    '[issue #989] No job in this fixture ever has TWO still-unsettled same-label candidates competing for it in one async-result frame (so "a single job entry resolves at most one item" is exercised only in the sense that nothing here could violate it, not as a positive two-candidate race).',
-    '[issue #989] The `from_history` replay path (`transcript.rs`\u2019s `items_from_history`) is not driven by this live-CDP fixture at all (it loads a resumed Session\u2019s own stored messages, never live frames) -- it applies each stored `async-result` message exactly once, so it cannot exercise the idempotency no-op path either way.',
+    '[issue #989] Gate round 2: a custom `async-result` message\u2019s jobs are now applied exactly ONCE, on `message_end` only (`transcript.rs`\u2019s `apply_message_snapshot`) -- there is no second application of the same message left to observe at all, so this fixture cannot exercise (and no longer needs to exercise) any double-application behaviour; the design change itself is what prevents it, not a runtime check this script could assert against.',
+    '[issue #989] This fixture\u2019s two Story559 rows are never BOTH still unsettled at once (Stage 2 settles via its own real `msg-ar2` well before Stage 5 even starts), so it cannot exercise the gate-round-2 three-tier ranking (still-Running beats batch-ended, job_id beats label-only, latest `started_at` as the final tie-break) when TWO candidates are genuinely unsettled at the same moment -- that ranking is traced by hand only (not executed against a real build) in `subagent_items.rs`\u2019s own doc comment and research.md decision 19\u2019s gate-round-2 correction (a hypothetical Stage 2 batch-failure with no result, racing a genuinely concurrent Stage 5, never part of this committed fixture); adding that second variant here was judged not worth perturbing this fixture\u2019s own already-passing Stage/chain/panel assertions.',
+    '[issue #989] No job in this fixture ever has TWO still-unsettled same-label candidates competing for it in one async-result frame (so "a single job entry resolves at most one item" is exercised only in the sense that nothing here could violate it, not as a positive two-candidate race). The known, accepted limit (two truly concurrent same-named Stages both already carrying a `job_id` can still have results swapped by the `started_at` tie-break, tracked on #712) is likewise not exercisable here for the same reason.',
+    '[issue #989] The `from_history` replay path (`transcript.rs`\u2019s `items_from_history`) is not driven by this live-CDP fixture at all (it loads a resumed Session\u2019s own stored messages, never live frames) -- it applies each stored `async-result` message exactly once, same as the live path now does.',
     '[issue #989] The `wait` tool\u2019s own `tool_execution_end` carrier (`transcript.rs:1293`/`:1529`, `jobs_from_details` -> `apply_async_result_jobs`) is not reached by this fixture: every job here arrives only through the `custom`/`async-result` message path, never through an explicit `wait()` tool call.'
   );
 }

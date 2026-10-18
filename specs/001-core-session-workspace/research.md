@@ -255,8 +255,9 @@ wire/TS counterpart), set `true` only when a job's real data resolves the row. (
 must not out-rank a label match on priority alone**: the first version tried every unsettled
 item's `job_id` match before ANY label match, globally -- but `apply_batch_task_result` (the
 SAME Stage's own `tool_execution_end`) sets an item's `job_id` from `progress[].id` well before
-its own async-result ever arrives, including on a batch-level failure with no result at all. Live
-repro (gate round 1): Stage 2's Story559 errors at the batch level with no result (status Error,
+its own async-result ever arrives, including on a batch-level failure with no result at all.
+Hand-traced repro (gate round 1, not executed against a real build): Stage 2's Story559 errors
+at the batch level with no result (status Error,
 `job_id` already `"Story559"` from its own progress, still unsettled); Stage 5's LATER
 async-result for its own, different Story559 job then arrived, and because `job_id` matches were
 tried first regardless of recency, Stage 2's row (an unsettled `job_id` match) was wrongly chosen
@@ -271,7 +272,58 @@ REAL result, the first application settles the correct row; before hunting for a
 whose `job_id` an already-settled row holds, with that row's current status/result/duration
 already matching what re-applying it would write, is now recognised as a pure duplicate and
 short-circuits to a no-op rather than going looking for a second row to land on. All three fixes
-verified together against the Stage 2/Stage 5 repro above: first application (message_start)
+traced by hand together against the Stage 2/Stage 5 repro above (not executed against a real
+build): first application (message_start)
 settles Stage 5 correctly (pooled selection, latest `started_at`); second application
 (message_end) recognises the now-settled Stage 5 row already matches and no-ops; Stage 2 is never
 touched by either application.
+
+**Gate round 2 correction (`agent://Main`, Code Critical + Design + Q1, 2026-10-18)**: round 1
+shipped a compile error (`upsert_subagent_items` lost its own `existing_pos` binding during the
+rewrite -- restored, `subagent_items.rs:88`) and two further design gaps.
+
+**Design change (Code reviewer's option 2)**: rather than defending against the SAME
+async-result message landing twice, stop it from being applied twice at all. A custom
+`async-result` message's jobs are now applied exactly ONCE, on `message_end` only
+(`apply_message_snapshot`'s own `streaming` flag is `false` only for that call site;
+`message_start`/`message_update` both carry `streaming: true` and are skipped) -- matching what
+`items_from_history` already did (applies each stored message once). A custom message is never
+token-streamed, so it never gets a `message_update` at all, and `message_start`/`message_end`
+arrive back to back with no other frame between them for every one of `stages-941.jsonl`'s ten
+async-result messages (e.g. `msg-ar1` at lines 19/20) -- skipping the `message_start`
+application leaves no user-visible gap, since nothing it would have rendered differs from what
+`message_end` renders one frame later. Round 1's value-based idempotency no-op check is
+therefore DELETED outright (it is no longer needed, and could itself wrongly no-op a genuinely
+NEW job that happened to already match a settled row's current values).
+
+**Ranking correction (Q1)**: round 1's "no match-type priority at all, pure latest-`started_at`"
+rule reopens the #989 clobber through a different combination of unsettled rows, as the gate
+round 1 repro itself showed once traced further: a batch-failed Stage merely being "unsettled"
+is not the same as it still genuinely being in flight. Replaced with THREE ranked tiers, each
+only a tie-break for the one before it: (1) a still-**Running** row beats one already ended by
+its own batch result (Error/Cancelled/Done without a real async result yet); (2) a `job_id`
+match beats a label-only match; (3) the latest `started_at` wins any remaining tie. Traced
+against three scenarios:
+
+- **(a) Sequential repro** (Stage 2 batch-errors, no result, picks up `job_id="Story559"` from
+  its own progress, status Error/not-Running, unsettled; Stage 5 later, fresh, Running, label
+  match): tier 1 alone decides it -- Stage 5's key starts `(true, ...)`, Stage 2's starts
+  `(false, ...)`, so Stage 5 wins outright, the other two tiers never consulted.
+- **(b) Concurrent trace** (A: Running, already carries this job's own `job_id`; B: Running,
+  later `started_at`, label-only match): tier 1 ties (both Running); tier 2 decides it -- A's
+  `job_id` match beats B's label-only match, so A wins even though B started later. This is the
+  gate round 2 Q1 answer verbatim: "A must win".
+- **(c) The real committed fixture's own Stage 2/Stage 5 path**: Stage 2 settles via its own
+  REAL `msg-ar2` well before Stage 5 even starts, so by the time Stage 5's `msg-ar5` is
+  processed (now only once), Stage 2 is excluded entirely at the settlement filter -- Stage 5 is
+  the only candidate left and wins trivially, unaffected by the ranking tiers at all. This
+  confirms the fixture itself never exercises scenario (a) or (b) directly (both are proven by
+  hand-trace only, not by a live run of this fixture -- see `notExercised`).
+
+**Known, accepted limit**: two Stages running the SAME subagent name truly CONCURRENTLY, both
+already carrying a `job_id` (tiers 1 and 2 both tie), can still have their results swapped --
+tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
+frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. Not fixed here;
+the real fix is #712's `parentToolCallId` once that subscription path is wired up. FR-084's
+guarantee is narrowed to sequential Stages accordingly (spec.md Clarifications, gate round 2
+entry, supersedes the gate round 1 entry above).
