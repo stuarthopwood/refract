@@ -22,6 +22,13 @@ export interface CollapsedLineProps {
   summary?: React.ReactNode
   /** Right-aligned status/duration slot. */
   meta?: React.ReactNode
+  /** Gate round 6 fix (issue #941, item 1, MEDIUM): overrides the meta wrapper's own default
+   * `shrink-0` -- gate round 5 changed that shared default to `min-w-0 shrink` directly, which
+   * silently affected EVERY OTHER `CollapsedLine` caller with a `meta` (`ToolRow.tsx`,
+   * `AdvisoryRow.tsx`, `RequestCard.tsx`, ...), not just the Stage/chain rows the fix was meant
+   * for. The shared default is `shrink-0` again; only the Stage row and the chain header opt
+   * into `min-w-0 shrink` via this prop. */
+  metaClassName?: string
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
   /** Gate round 3 fix (issue #941): the default summary slot is `flex-1 min-w-0` with a 0%
@@ -94,6 +101,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     label,
     summary,
     meta,
+    metaClassName,
     summaryClassName,
     summaryFixedWidth,
     labelClassName,
@@ -191,11 +199,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // the separator's own text -- with the summary's own text ending in no whitespace of its
         // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
         // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
-        // removes the extra boundary that caused it. Gate round 5 fix (issue #941, item 2,
-        // HIGH): `shrink-0` -> `min-w-0 shrink` -- a `shrink-0` meta slot NEVER gives up width,
-        // so at 240-319px the label/chevron absorbed the whole squeeze and the chevron clipped;
-        // the caller's own `meta` content truncates its own roll-up text first instead.
-        <span className="min-w-0 shrink text-xs leading-5 text-muted-foreground tabular-nums">
+        // removes the extra boundary that caused it. Gate round 6 fix (issue #941, item 1,
+        // MEDIUM): the shared default is `shrink-0` again -- gate round 5's own `min-w-0
+        // shrink` fix for the 240-319px Stage/chain chevron clip was applied directly to this
+        // shared base, silently affecting every OTHER caller's own `meta` (`ToolRow.tsx`,
+        // `AdvisoryRow.tsx`, `RequestCard.tsx`, ...) that never asked for it. `metaClassName`
+        // (opt-in, passed only by the Stage row and the chain header) carries that fix now.
+        <span className={cn('shrink-0 text-xs leading-5 text-muted-foreground tabular-nums', metaClassName)}>
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not

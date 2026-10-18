@@ -144,17 +144,16 @@ export function stageTriggerSelector(titleText) {
   return `${titleSelector(titleText)}.closest('[data-slot="collapsible-trigger"]')`;
 }
 
-/** Gate round 5 fix (issue #941, item 9, MEDIUM): `verify-tauri-cdp.mjs`'s own `click()` never
- * scrolls its target into view before computing the click coordinate -- a target scrolled out
- * of the viewport (this app's own long transcript, or a device-metrics-overridden narrow/short
- * viewport, `assertSoloAgentName`'s own 320px/240px passes) would compute a coordinate the
- * synthetic mouse event lands on whatever (or nothing) is actually visible there instead, not
- * the intended element. Scoped to these 941 scripts only (not `verify-tauri-cdp.mjs` itself,
- * which many other already-passing live-check scripts also call unmodified): scrolls the
- * resolved target to the viewport's own centre and waits one frame for the scroll to settle
- * before delegating to the real click. A no-op extra `scrollIntoView` call when the target is
- * already fully in view. */
+/** Gate round 5 fix (item 9, MEDIUM): `verify-tauri-cdp.mjs`'s own `click()` never scrolls its
+ * target into view before computing the click coordinate -- scoped to these 941 scripts only
+ * (not the shared helper itself, which other already-passing live-check scripts also call
+ * unmodified): scrolls the resolved target to the viewport's own centre and waits one frame
+ * before delegating to the real click. Gate round 6 fix (item 3, LOW): `cdp.waitFor` now polls
+ * for the target's own existence FIRST -- a target that did not exist yet (still rendering, a
+ * dialog still opening) used to no-op the scroll silently, with only the later `cdp.click`'s
+ * own internal polling ever finding it, by which point no scroll had happened. */
 export async function clickScrolled(cdp, finderExpr, options) {
+  await cdp.waitFor(`!!(${finderExpr})`, { timeoutMs: options?.timeoutMs ?? 15_000, label: `clickScrolled: waiting for ${finderExpr}` });
   await cdp.evaluate(`(() => { const el = ${finderExpr}; if (el) el.scrollIntoView({ block: 'center' }); })()`);
   await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
   await cdp.click(finderExpr, options);

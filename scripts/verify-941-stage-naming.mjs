@@ -257,8 +257,11 @@ async function main() {
       // running FIRST made the later "starts collapsed" assertion a false failure (the row was
       // already open by the time it ran). `assertDetailsOnExpand`'s own re-expand is a no-op
       // once `assertGreenFinished` later re-touches the same row (`expandByFinder` only clicks
-      // when not already open); `assertContextBriefOverflow` leaves Stage 7 RE-collapsed at the
-      // end of its own cycle, so `assertDependencies`'s later plain `expandRow` is unaffected.
+      // when not already open); `assertContextBriefOverflow` leaves Stage 7's own BRIEF
+      // (the "Show full brief"/"Show less" toggle content nested inside it) re-collapsed at
+      // the end of its own cycle -- the Stage 7 ROW itself stays EXPANDED throughout, opened
+      // once at that function's own start and never closed again -- so `assertDependencies`'s
+      // later plain `expandRow` call for Stage 7 is unaffected either way (already open).
       await assertDetailsOnExpand(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertContextBriefOverflow(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertGreenFinished(cdp, findings, failures, theme.name);
