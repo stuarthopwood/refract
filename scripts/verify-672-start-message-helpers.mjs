@@ -95,6 +95,21 @@ export async function dispatchTab(cdp, { shift = false } = {}) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab', modifiers });
 }
 
+/** Gate round 3 item 2: a region can have real focusable descendants (tool rows, links) after
+ *  its own `tabIndex=0` focus stop -- focusing the region itself does not guarantee the VERY
+ *  NEXT Tab exits it. Focuses the LAST tabbable descendant instead (or the region itself if it
+ *  has none), so the next real Tab is guaranteed to land on the overlay's own first button. */
+export async function focusLastTabbableOrSelf(cdp, regionExpr) {
+  return cdp.evaluate(`(() => {
+    const region = ${regionExpr};
+    if (!region) return false;
+    const selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const candidates = Array.from(region.querySelectorAll(selector));
+    (candidates[candidates.length - 1] || region).focus();
+    return true;
+  })()`);
+}
+
 export async function setStartProgress(cdp, sessionId, startProgress) {
   const value = startProgress === undefined ? 'undefined' : JSON.stringify(startProgress);
   const ok = await cdp.evaluate(`(() => {

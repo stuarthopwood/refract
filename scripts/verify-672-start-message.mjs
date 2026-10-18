@@ -38,7 +38,7 @@ import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSy
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, JOKE_STAGES, PLAIN_STAGES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
-  setStartProgress, waitForRegionOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours
+  setStartProgress, waitForRegionOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf
 } from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -258,51 +258,54 @@ async function main() {
       } else {
         findings.push(`history/wheel: a wheel at a point confirmed (elementFromPoint) inside the transcript and outside the notice decreased scrollTop (${before} -> ${after}), confirming it stays interactive while dimmed.`);
       }
-      await cdp.evaluate(`${REGION0}?.focus()`);
+      await focusLastTabbableOrSelf(cdp, REGION0);
       const focusedOpacity = await waitForRegionOpacity(cdp, (v) => v > 0.95, 2_000);
       if (!focusedOpacity.ok) failures.push(`history/focus: focusing the dimmed transcript region did not restore full opacity (settled at ${focusedOpacity.value}) -- focus-within:opacity-100 regressed.`);
       else findings.push(`history/focus: focusing the dimmed transcript region restored full opacity (${focusedOpacity.value}), as specified.`);
 
-      // ---- Gate round 2 item 9: the NOTICE itself hides while focus sits in the history, and
-      // Tab from there reaches Keep waiting and reveals it again. `prompt` stage so the button
-      // exists; focus is already on the region from the check just above. ----
+      // ---- Gate round 2 item 9 (corrected round 3, items 1/2): the OVERLAY itself (not the
+      // inner wrapper -- see the peer-focus-within fix) hides while focus sits in the history,
+      // and Tab from there reaches Keep waiting and reveals it again. `prompt` stage so the
+      // button exists; `focusLastTabbableOrSelf` guarantees the NEXT Tab exits the history. ----
       await setStartProgress(cdp, sessionAId, { kind: 'prompt', elapsedMs: 20_000 });
-      await cdp.waitFor(`!!document.querySelector('[data-start-notice-wrapper]')`, { timeoutMs: 10_000, label: 'notice wrapper mounted (prompt stage) for the focus-hide check' });
-      await cdp.evaluate(`${REGION0}?.focus()`);
+      await cdp.waitFor(`!!${OVERLAY}`, { timeoutMs: 10_000, label: 'overlay mounted (prompt stage) for the focus-hide check' });
+      await focusLastTabbableOrSelf(cdp, REGION0);
       await sleep(150);
       const hidden = await cdp.evaluate(`(() => {
-        const w = document.querySelector('[data-start-notice-wrapper]');
-        if (!w) return null;
-        const cs = getComputedStyle(w);
+        const overlay = ${OVERLAY};
+        const wrapper = document.querySelector('[data-start-notice-wrapper]');
+        if (!overlay || !wrapper) return null;
         const r = ${REGION0}.getBoundingClientRect();
         const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-        return { opacity: Number(cs.opacity), pointerEvents: cs.pointerEvents, hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy)) };
+        return {
+          overlayOpacity: Number(getComputedStyle(overlay).opacity),
+          wrapperPointerEvents: getComputedStyle(wrapper).pointerEvents,
+          hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy))
+        };
       })()`);
-      if (!hidden || hidden.opacity > 0.05 || hidden.pointerEvents !== 'none') {
-        failures.push(`focus-hide: with focus inside the history, the notice wrapper read opacity ${hidden?.opacity}/pointer-events ${hidden?.pointerEvents}, expected opacity ~0 and pointer-events none (gate round 2, WCAG 2.4.11). Deliberately measuring opacity, not CSS \`visibility\` -- see Transcript.tsx's own comment for why \`visibility:hidden\` would break Tab reachability instead.`);
+      if (!hidden || hidden.overlayOpacity > 0.05 || hidden.wrapperPointerEvents !== 'none') {
+        failures.push(`focus-hide: with focus inside the history, the overlay read opacity ${hidden?.overlayOpacity} and the wrapper read pointer-events ${hidden?.wrapperPointerEvents}, expected overlay opacity ~0 and wrapper pointer-events none (WCAG 2.4.11). Deliberately measuring opacity, not CSS \`visibility\` -- see Transcript.tsx's own comment for why \`visibility:hidden\` would break Tab reachability instead.`);
       } else if (!hidden.hitIsTranscript) {
-        failures.push('focus-hide: the notice is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
+        failures.push('focus-hide: the overlay is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
       } else {
-        findings.push(`focus-hide: with focus inside the history, the notice wrapper reads opacity ${hidden.opacity}, pointer-events ${hidden.pointerEvents} (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
+        findings.push(`focus-hide: with focus inside the history, the overlay reads opacity ${hidden.overlayOpacity} and the wrapper reads pointer-events ${hidden.wrapperPointerEvents} (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
       }
       await dispatchTab(cdp);
       await sleep(150);
       const afterTab = await cdp.evaluate(`(() => {
-        const w = document.querySelector('[data-start-notice-wrapper]');
+        const overlay = ${OVERLAY};
         const active = document.activeElement;
-        if (!w) return null;
-        const cs = getComputedStyle(w);
-        const btn = Array.from(w.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Keep waiting');
+        const btn = overlay ? Array.from(overlay.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Keep waiting') : null;
         let hitIsButton = false;
         if (btn) { const br = btn.getBoundingClientRect(); hitIsButton = document.elementFromPoint(br.x + br.width / 2, br.y + br.height / 2) === btn; }
-        return { opacity: Number(cs.opacity), activeIsKeepWaiting: active === btn, hitIsButton };
+        return { overlayOpacity: overlay ? Number(getComputedStyle(overlay).opacity) : null, activeIsKeepWaiting: active === btn, hitIsButton };
       })()`);
       if (!afterTab || !afterTab.activeIsKeepWaiting) {
         failures.push(`focus-hide: one real Tab press from the history did not land on "Keep waiting" (${JSON.stringify(afterTab)}).`);
-      } else if (afterTab.opacity < 0.95 || !afterTab.hitIsButton) {
-        failures.push(`focus-hide: Tab reached "Keep waiting" but the notice did not fully reappear (wrapper opacity ${afterTab.opacity}, elementFromPoint at its own centre hits the button: ${afterTab.hitIsButton}).`);
+      } else if (afterTab.overlayOpacity === null || afterTab.overlayOpacity < 0.95 || !afterTab.hitIsButton) {
+        failures.push(`focus-hide: Tab reached "Keep waiting" but the overlay did not fully reappear (opacity ${afterTab.overlayOpacity}, elementFromPoint at its own centre hits the button: ${afterTab.hitIsButton}).`);
       } else {
-        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the notice reappeared (wrapper opacity ${afterTab.opacity}), reachable at its own screen position.`);
+        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the overlay reappeared (opacity ${afterTab.overlayOpacity}), reachable at its own screen position.`);
       }
       await cdp.evaluate(`document.activeElement?.blur()`);
     });
@@ -395,7 +398,7 @@ async function main() {
         failures.push(`${theme.name}: could not resolve panel (${panelRaw})/--background/--foreground colours for contrast math.`);
         continue;
       }
-      if (!(panel.a < 0.99)) failures.push(`${theme.name}: panel background-color ${panelRaw} reads fully opaque (alpha ${panel.a}) -- expected ~0.9 (bg-background/90); the panel class may not be applied.`);
+      if (!(panel.a >= 0.85 && panel.a <= 0.95)) failures.push(`${theme.name}: panel background-color ${panelRaw} has alpha ${panel.a}, expected 0.85-0.95 (bg-background/90); the panel class may not be applied correctly.`);
       const worstCaseBackdrop = blendOver({ ...foregroundRgb, a: 0.4 }, backgroundRgb);
       const panelEffectiveCss = rgbToCss(blendOver(panel, worstCaseBackdrop));
       const pairs = [
@@ -421,7 +424,7 @@ async function main() {
         return withPanel !== null && withoutPanel !== null && (withoutPanel < withPanel - 0.05 || withoutPanel < 4.5);
       });
       await cdp.evaluate(`(() => { const el = ${GROUP}; if (el) el.style.removeProperty('background-color'); return true; })()`);
-      if (!hadWorseOrFailing) notExercised.push(`${theme.name}: removing bg-background/90 did not read worse/failing for any measured colour -- could not confirm this contrast check has teeth.`);
+      if (!hadWorseOrFailing) failures.push(`${theme.name}: removing bg-background/90 did not read worse/failing for any measured colour -- this contrast check would not catch that regression.`);
       else findings.push(`${theme.name}: removing bg-background/90 (temporary fault injection) reads a worse or failing contrast for at least one colour, confirming this check would catch a regression.`);
     }
     await cdp.evaluate(`window.refract.theme.set('dark')`);
@@ -466,7 +469,7 @@ async function main() {
       const noScrollHits = await cdp.evaluate(`${GROUP} ? (${buttonHitExpr}).map((h) => h.hitsSelf) : []`);
       await cdp.evaluate(`(() => { const el = ${OVERLAY}; if (el) { el.style.overflowY = el.dataset.verify672OldOverflow; delete el.dataset.verify672OldOverflow; } return true; })()`);
       if (noScrollHits.length > 0 && noScrollHits.every(Boolean)) {
-        notExercised.push('short-window: forcing overflow-y:hidden still reached every button -- could not confirm this check has teeth in this run.');
+        failures.push('short-window: forcing overflow-y:hidden still reached every button -- this check would not catch overflow-y-auto being removed.');
       } else {
         findings.push('short-window: forcing overflow-y:hidden (temporary fault injection) made at least one button unreachable, confirming this check would catch a regression.');
       }
