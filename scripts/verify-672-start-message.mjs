@@ -328,29 +328,33 @@ async function main() {
     // fine, confirmed the click/focus/DOM-read mechanics all work for D), a 3rd session's own
     // `startProgress` consistently never became observable within the wait window, for a reason
     // this investigation did not isolate -- see the `notExercised` entry below. ----
-    const sessionC = await quickCreateSessionId(cdp2, 'long/C (1st start, 1st of 2 real slots)');
-    const cProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 10_000);
-    findings.push(`Session C created (id ${sessionC.id}), brand-new, real startProgress ${JSON.stringify(cProgress)}, holding one of the 2 real start-queue slots.`);
+    const sessionC1 = await quickCreateSessionId(cdp2, 'long/C1 (1st start, 1st of 2 real slots)');
+    const c1Progress = await waitForStartProgressKind(cdp2, sessionC1.id, 'waiting', 10_000);
+    findings.push(`Session C1 created (id ${sessionC1.id}), brand-new, real startProgress ${JSON.stringify(c1Progress)}, holding one of the 2 real start-queue slots.`);
     const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
     const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 20_000);
-    findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C is still spawned (start_queue.rs:387).`);
+    findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C1 is still spawned (start_queue.rs:387).`);
     await assertFocusedPlainStageNotice(cdp2, {
       sessionId: sessionD.id, kind: 'memory-deferred', expectedText: 'Starting agent… waiting for memory to free up',
       muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05a-memory-deferred.png')
     });
 
     const cancelD = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionD.id)})`);
-    if (!cancelD?.ok) failures.push(`memory-deferred: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}) -- Session D may still hold its real slot, risking cross-talk with Session C's own later restart.`);
-    else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot before Session C's own later restart.");
+    if (!cancelD?.ok) failures.push(`memory-deferred: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}) -- Session D may still hold its real slot.`);
+    else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot.");
+    // Gate-fix (confirmed live, bg_843/bg_844): re-opening Session C1 after Session D's own
+    // creation replaced it out of view permanently lost its observable startProgress -- even a
+    // real 150s wait never recovered it (sessions.open()'s 2nd call on a still-mid-start Session
+    // is an edge case this UI was not built to show live progress through). Cancelling C1's
+    // start too (real cancelStart works on an already-spawned, not just queued/deferred, start)
+    // frees BOTH real slots, so a genuinely FRESH Session below gets a clean, undeferred 'waiting'
+    // start instead of trying to resurrect C1's own broken one.
+    const cancelC1 = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionC1.id)})`);
+    if (!cancelC1?.ok) failures.push(`memory-deferred setup: cancelStart(C1) did not return ok (${JSON.stringify(cancelC1)}) -- may still hold a real slot.`);
+    else findings.push("memory-deferred setup: Session C1's start cancelled too, freeing both real slots for a genuinely fresh Session below.");
 
-    // Re-focus Session C (a real plain click, not Ctrl). Gate-fix (confirmed live, bg_843):
-    // re-mounting C's own ChatPane fires a 2nd `sessions.open(C.id)` (the same effect every
-    // Session-switch runs, SessionRow.tsx/ChatPane.tsx), which can take a real moment to restore
-    // `startProgress` visibility -- only waits for the pane itself here (same condition Session
-    // A's own, already-proven refocus uses above), not the notice; the long `waitForStartProgressKind`
-    // call right below already polls patiently for it to reappear.
-    await clickSessionRow(cdp2, sessionC.id);
-    await cdp2.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session C refocused after the memory-deferred check' });
+    const sessionC = await quickCreateSessionId(cdp2, 'long/C (2nd start, brand-new prompt/extended + history)');
+    findings.push(`Session C created (id ${sessionC.id}), brand-new, with both real slots free (C1 and D both cancelled above).`);
 
     // ---- Brand-new prompt/extended: Session C's own 1st start naturally crosses the real 60s
     // prompt threshold before it ever reaches ready -- exercised here, before any history
