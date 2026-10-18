@@ -109,9 +109,8 @@ async function main() {
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
 
-    // ---- Launch 1 ("brief", 15s ready-delay): brand-new sizing/colour, clear-on-ready,
-    // announcement rules, real history, Session-with-history dimmed/wheel/focus, split pane, reduced motion. ----
-    launch1 = await setupLaunch(exePath, launcherExe, 'brief', { REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_BRIEF_MS) }, shimDir);
+    // ---- Launch 1 ("brief", 15s ready-delay): brand-new sizing/colour, clear-on-ready, announcement rules, real history, with-history dimmed/wheel/focus, split pane, reduced motion. ----
+    launch1 = await setupLaunch(exePath, launcherExe, 'brief', { REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_BRIEF_MS), REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-brief.log') }, shimDir);
 
     const cdp1 = launch1.cdp;
     const fg = await resolveCssVarColor(cdp1, '--foreground', 'color');
@@ -323,7 +322,8 @@ async function main() {
     // contrast, the 600px-tall window case; also the real `queued`/`memory-deferred` kinds. ----
     launch2 = await setupLaunch(exePath, launcherExe, 'long', {
       REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS),
-      REFRACT_FORCE_LOW_MEMORY: '1'
+      REFRACT_FORCE_LOW_MEMORY: '1',
+      REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-long.log')
     }, shimDir);
     const cdp2 = launch2.cdp;
 

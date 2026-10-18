@@ -462,7 +462,7 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv, p
       REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
       REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
       REFRACT_FAKE_OMP_NODE: process.execPath,
-      REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
+      REFRACT_FAKE_OMP_DEBUG_LOG: extraEnv.REFRACT_FAKE_OMP_DEBUG_LOG ?? path.join(launchDir, 'fake-omp-invocations.log')
     };
     if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
     const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
@@ -502,6 +502,7 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv, p
     if (!debugLogFirstLine.startsWith('pid=')) {
       throw new Error(`${launchLabel}: fake-omp debug log ${debugLogPath} exists but its first line ("${debugLogFirstLine}") does not match the expected marker -- not confirmed as the shim.`);
     }
+    console.log(`${launchLabel}: shim confirmed (${debugLogFirstLine})`);
 
     return { cdp, child, dataDir, importSourceDir, repoDir, launchDir };
   } catch (err) {
