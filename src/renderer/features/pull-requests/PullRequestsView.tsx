@@ -72,32 +72,45 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   // mismatch as a variable entirely: wrapperRight is always, by construction, panelRight.
   const panelElementRef = useRef<HTMLDivElement | null>(null)
   const headerWrapperRef = useRef<HTMLDivElement | null>(null)
+  const groupElementRef = useRef<HTMLDivElement | null>(null)
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
+  // Gate-fix (M6, caught live 2026-10-18, re-diagnosed): a STATIC `maxSize="50%"` and a STATIC
+  // `minSize={280}` (pixels) are a straight-up numeric conflict whenever the Group's own width
+  // drops below 560px (2 x 280) -- read `react-resizable-panels`' own per-item clamp (`Me` in
+  // the built dist): it clamps UP to `minSize` first, but then runs an UNCONDITIONAL
+  // `Math.min(maxSize, size)` afterward, so `maxSize` always wins a genuine conflict, for every
+  // trigger (passive container resize, drag, arrow-key, and this component's own prior
+  // imperative `panelRef.current?.resize(280)` attempt -- confirmed live: that call went
+  // through the exact same clamp and landed back at `maxSize`'s resolved pixel value every
+  // time, a no-op that also corrupted the panel's internally-stored percentage for whatever
+  // width was current at the time, surfacing later as a stuck/wrong width once the real window
+  // was restored). The only way to make the 280px floor actually win is to never let the two
+  // constraints conflict in the first place: compute `maxSize` as a live percentage of the
+  // Group's OWN measured width, floored so it can never resolve below the 280px minimum.
+  // `Panel`'s own `useLayoutEffect` re-registers (and the library recomputes) whenever its
+  // `maxSize` prop changes, so this needs no imperative nudge of its own.
+  const [listMaxSizePercent, setListMaxSizePercent] = useState(50)
   useLayoutEffect(() => {
     const panelEl = panelElementRef.current
     const wrapperEl = headerWrapperRef.current
-    if (!panelEl || !wrapperEl) return
+    const groupEl = groupElementRef.current
+    if (!panelEl || !wrapperEl || !groupEl) return
     const measure = () => {
       const panelRect = panelEl.getBoundingClientRect()
       const wrapperLeft = wrapperEl.getBoundingClientRect().left
       setListColumnWidthPx(panelRect.right - wrapperLeft)
-      // Gate-fix (M6, caught live 2026-10-18): `react-resizable-panels` re-enforces `maxSize` on
-      // a passive container resize (shrinking the panel toward 50% of a narrower view), but does
-      // NOT also re-check that against `minSize` afterward -- only an interactive drag/arrow-key
-      // resize clamps to the 280px floor (confirmed live: those both correctly clamp; a window
-      // narrowed via `Emulation.setDeviceMetricsOverride` does not, settling at ~49.5% of the new
-      // width regardless of the 280px `minSize` prop). `- 1` tolerates subpixel jitter from this
-      // same imperative `resize()` call's own round trip through the ResizeObserver, so it can
-      // never re-trigger itself forever.
-      if (panelRect.width < PULL_REQUESTS_LIST_MIN_WIDTH_PX - 1) {
-        panelRef.current?.resize(PULL_REQUESTS_LIST_MIN_WIDTH_PX)
+      const groupWidth = groupEl.getBoundingClientRect().width
+      if (groupWidth > 0) {
+        const minPercentForFloor = (PULL_REQUESTS_LIST_MIN_WIDTH_PX / groupWidth) * 100
+        setListMaxSizePercent(Math.max(50, minPercentForFloor))
       }
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(panelEl)
+    observer.observe(groupEl)
     return () => observer.disconnect()
   }, [repositoryId])
 
@@ -203,6 +216,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
         </div>
       ) : (
         <ResizablePanelGroup
+          elementRef={groupElementRef}
           orientation="horizontal"
           className="min-h-0 flex-1"
           onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
@@ -217,14 +231,17 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
               comment records how wrapping the Separator once broke it by accident).
               `defaultSize` is pinned at the fixed default (not the live `widthPx` state) so
               double-click-reset keeps resetting to 320px even after a drag; the `panelRef`
-              effect above applies a remembered non-default width once, imperatively. */}
+              effect above applies a remembered non-default width once, imperatively.
+              `maxSize` is `listMaxSizePercent`, not a static "50%" -- see the M6 gate-fix
+              comment above the measuring effect for why a static percentage genuinely
+              conflicts with the 280px floor below a 560px Group width. */}
           <ResizablePanel
             id="pull-requests-list"
             panelRef={panelRef}
             elementRef={panelElementRef}
             defaultSize={PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX}
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
-            maxSize="50%"
+            maxSize={`${listMaxSizePercent}%`}
             className="overflow-hidden"
             onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
           >

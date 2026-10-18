@@ -407,9 +407,8 @@ async function main() {
 
       // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured; the
       // list column itself never shrinks below its own 280px minimum even where that minimum
-      // EXCEEDS 50% of the window (240/320/380px all do: `minSize` wins over `maxSize` by the
-      // library's own own design, gate-fix M6 caught live 2026-10-18 -- previously asserted only
-      // in a code comment, never actually measured here). ----
+      // EXCEEDS 50% of the window. Gate-fix (M6, caught live 2026-10-18, re-diagnosed; full
+      // root cause in `PullRequestsView.tsx`'s own comment above its `maxSize` prop). ----
       for (const width of TAB_GEOMETRY_WIDTHS) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(400);
