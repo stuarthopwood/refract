@@ -508,10 +508,10 @@ async function main() {
     }
     await cdp2.evaluate(`window.refract.theme.set('dark')`);
 
-    // ---- A genuinely short window, height sized off this run's own overlay measurements (not a fixed guess -- the notice's natural height can change release to release), guaranteeing it overflows: Keep waiting/Cancel reachable via a real wheel scroll + elementFromPoint. ----
-    const preSize = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, winHeight: document.documentElement.clientHeight } : null; })()`);
-    if (!preSize) failures.push('short-window: no overlay element found to measure for dynamic sizing.');
-    const forcedWindowHeight = preSize ? Math.max(300, preSize.winHeight - preSize.clientHeight + Math.round(preSize.scrollHeight * 0.7)) : 600;
+    // ---- A genuinely short window, height sized off this run's own notice/overlay measurements (not a fixed guess), guaranteeing it overflows: Keep waiting/Cancel reachable via a real wheel scroll + elementFromPoint. `groupHeight` (notice's OWN unclamped box) is the real signal -- `overlay.scrollHeight` only reveals it once already overflowing. ----
+    const preSize = await cdp2.evaluate(`(() => { const el = ${OVERLAY}, grp = ${GROUP}; return el && grp ? { groupHeight: grp.getBoundingClientRect().height, clientHeight: el.clientHeight, winHeight: document.documentElement.clientHeight } : null; })()`);
+    if (!preSize) failures.push('short-window: no overlay/notice element found to measure for dynamic sizing.');
+    const forcedWindowHeight = preSize ? Math.max(300, preSize.winHeight - preSize.clientHeight + Math.round(preSize.groupHeight * 0.7)) : 600;
     await withDeviceMetrics(cdp2, 900, forcedWindowHeight, async () => {
       await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted in the short window' });
       const overflowCheck = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight } : null; })()`);

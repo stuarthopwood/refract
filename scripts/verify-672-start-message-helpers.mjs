@@ -396,15 +396,11 @@ export function assertCentred(state, label, failures) {
     return;
   }
   const g = state.groupRect, r = state.regionRect;
-  const gcx = g.x + g.width / 2, gcy = g.y + g.height / 2;
-  const rcx = r.x + r.width / 2, rcy = r.y + r.height / 2;
-  const tolX = Math.max(24, r.width * 0.08);
-  const tolY = Math.max(24, r.height * 0.08);
-  if (Math.abs(gcx - rcx) > tolX || Math.abs(gcy - rcy) > tolY) {
-    failures.push(
-      `${label}: notice centre (${gcx.toFixed(1)}, ${gcy.toFixed(1)}) is not centred in its transcript region (${rcx.toFixed(1)}, ${rcy.toFixed(1)}), region ${r.width.toFixed(0)}x${r.height.toFixed(0)} (tolerance ${tolX.toFixed(0)}x${tolY.toFixed(0)}).`
-    );
-  }
+  const gcx = g.x + g.width / 2, gcy = g.y + g.height / 2, rcx = r.x + r.width / 2, rcy = r.y + r.height / 2;
+  const tolX = Math.max(24, r.width * 0.08), tolY = Math.max(24, r.height * 0.08);
+  if (Math.abs(gcx - rcx) > tolX) failures.push(`${label}: notice is not horizontally centred (cx ${gcx.toFixed(1)} vs region ${rcx.toFixed(1)}, tolerance ${tolX.toFixed(0)}).`);
+  // `items-center-safe` (Transcript.tsx) pins overflowing content to the region's own TOP instead of true-centering (real CSS safe-centering, not a bug) -- only assert vertical centring when the notice genuinely fits.
+  if (g.height <= r.height && Math.abs(gcy - rcy) > tolY) failures.push(`${label}: notice is not vertically centred (cy ${gcy.toFixed(1)} vs region ${rcy.toFixed(1)}, tolerance ${tolY.toFixed(0)}).`);
 }
 
 /** Asserts `message`/`counter` sizing and colour against `expectedSizesForWidth(widthPx)` --
