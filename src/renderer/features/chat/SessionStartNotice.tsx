@@ -11,9 +11,11 @@
 // throughout (mouse wheel, selection, links) -- `Transcript.tsx` no longer disables
 // pointer-events on it, only fades it, and restores full opacity the moment a focusable element
 // inside it is focused (`focus-within:opacity-100`). Gate-fix (A11y, gate round 2, WCAG 2.4.11):
-// that same focus also hides THIS notice (`Transcript.tsx`'s own `peer-focus-within:opacity-0`
-// on its wrapper, not a prop here) so the panel can never sit on top of a focused history
-// control; Tab reaching Keep waiting/Cancel moves focus OUT of the history, which brings the
+// that same focus also hides THIS notice (`Transcript.tsx`'s own overlay, not a prop here, gets
+// `peer-focus-within:opacity-0`; corrected round 3, that class lives on the overlay sibling,
+// never a descendant, per Tailwind's own sibling-combinator compile) so the panel can never sit
+// on top of a focused history control; Tab reaching Keep waiting/Cancel moves focus OUT of the
+// history, which brings the
 // notice straight back in the same frame -- see `Transcript.tsx` for why `opacity`, not
 // `visibility`, is what hides it (the latter would make those buttons untabbable).
 //
