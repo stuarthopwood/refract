@@ -80,9 +80,20 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
     const wrapperEl = headerWrapperRef.current
     if (!panelEl || !wrapperEl) return
     const measure = () => {
-      const panelRight = panelEl.getBoundingClientRect().right
+      const panelRect = panelEl.getBoundingClientRect()
       const wrapperLeft = wrapperEl.getBoundingClientRect().left
-      setListColumnWidthPx(panelRight - wrapperLeft)
+      setListColumnWidthPx(panelRect.right - wrapperLeft)
+      // Gate-fix (M6, caught live 2026-10-18): `react-resizable-panels` re-enforces `maxSize` on
+      // a passive container resize (shrinking the panel toward 50% of a narrower view), but does
+      // NOT also re-check that against `minSize` afterward -- only an interactive drag/arrow-key
+      // resize clamps to the 280px floor (confirmed live: those both correctly clamp; a window
+      // narrowed via `Emulation.setDeviceMetricsOverride` does not, settling at ~49.5% of the new
+      // width regardless of the 280px `minSize` prop). `- 1` tolerates subpixel jitter from this
+      // same imperative `resize()` call's own round trip through the ResizeObserver, so it can
+      // never re-trigger itself forever.
+      if (panelRect.width < PULL_REQUESTS_LIST_MIN_WIDTH_PX - 1) {
+        panelRef.current?.resize(PULL_REQUESTS_LIST_MIN_WIDTH_PX)
+      }
     }
     measure()
     const observer = new ResizeObserver(measure)

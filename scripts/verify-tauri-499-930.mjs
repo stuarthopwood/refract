@@ -352,7 +352,13 @@ async function main() {
       // recovery path, not a manual field-by-field clear. Also satisfies H3's own "clear ->
       // unfiltered" case: the button IS the clear action here.
       await cdp.clickByText('Clear filters');
-      const clearedQueryValue = await cdp.waitFor(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null`, { timeoutMs: 5_000, label: 'search field cleared by Clear filters' }).catch(() => undefined);
+      // Gate-fix (caught live 2026-10-18): `waitFor` only ever resolves on a TRUTHY expression
+      // value -- waiting on the input's own raw `.value` can never succeed once it reaches the
+      // empty string, which is falsy; the search-field-is-cleared SIDE of this check always
+      // timed out and silently read back `undefined`. Waits on a boolean condition instead, then
+      // reads the real value separately.
+      await cdp.waitFor(`(document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null) === ''`, { timeoutMs: 5_000, label: 'search field cleared by Clear filters' }).catch(() => false);
+      const clearedQueryValue = await cdp.evaluate(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null`);
       const rowsAfterClear = await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after Clear filters' }).catch(() => false);
       const labelAfterClear = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
       if (clearedQueryValue === '' && rowsAfterClear && labelAfterClear === 'Filters') {
