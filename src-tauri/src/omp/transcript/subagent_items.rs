@@ -273,7 +273,12 @@ fn safe_stringify(value: &Value) -> String {
 /// any overlap of two same-name jobs whose own async-result is still outstanding -- if both
 /// rows are still Running when a job for their shared name arrives (tiers 1 and 2 both tie),
 /// tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key (there is
-/// no `tool_call_id` on this frame to settle it for certain). The real fix is #712's
+/// no `tool_call_id` on this frame to settle it for certain). Tier 1 itself can also swap a
+/// result the OTHER way (gate round 4, `agent://Main`): row A already ended its own batch call
+/// but is still unsettled (genuinely owed its own real async-result, not yet delivered), row B
+/// is a later, same-named Stage still Running -- a job meant for A can still land on B instead,
+/// since tier 1 always prefers the Running row regardless of which row the job actually
+/// belongs to; A then never settles. The real fix for both shapes of this limit is #712's
 /// `parentToolCallId`.
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,

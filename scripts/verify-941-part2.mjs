@@ -345,6 +345,35 @@ async function assertAsyncResultStageScoping(cdp, findings, failures, notExercis
       '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering.'
     );
   }
+  // Gate round 4 fix (issue #989, `agent://Main` item 2): real omp always sets `display: true`
+  // on an async-result message -- `stages-941.jsonl` now carries it on every one of its ten
+  // (gate round 4, matching `async-job-delivery.ts`'s own builder). Before the gate-round-3
+  // short-circuit, a `message_start` frame (its own job application already skipped by gate
+  // round 2) fell through to the plain `display == true` Notice branch (`transcript.rs`),
+  // building a stray "Info:" notice for every one of this fixture's ten async-result messages
+  // -- `message_end`'s own job application only updates matching `subagent` items, so it never
+  // replaced or removed that earlier Notice item. Every one of this fixture's async-result
+  // messages carries an empty `content: ""`, so the only reliable signal a stray row leaves
+  // behind is its own existence (a blank-text "Info:" notice), not any particular substring;
+  // scanning the whole Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:") catches
+  // it regardless of content. This fails against gate round 2's own code (head `53882ee`, with
+  // this fixture's new `display: true`): ten stray notices survive to the end of the turn
+  // (`message_end`'s own async-result application never removes them). It passes at HEAD: the
+  // gate-round-3 short-circuit returns `items` unchanged on `message_start`, so no Notice item
+  // is ever built for an async-result message at any frame.
+  const strayNoticeCount = await cdp.evaluate(`
+    Array.from(document.querySelectorAll('[aria-label="Transcript"] span.sr-only'))
+      .filter((el) => el.textContent.trim() === 'Info:').length
+  `);
+  if (strayNoticeCount > 0) {
+    failures.push(
+      `[issue #989] REGRESSION -- found ${strayNoticeCount} stray "Info:" notice row(s) in the Transcript after all ten Stages settled; an async-result message (\`display: true\`, content ${JSON.stringify('')}) must never build a Notice item at any frame.`
+    );
+  } else {
+    findings.push(
+      '[issue #989] No stray "Info:" notice row exists anywhere in the Transcript for any async-result message (all ten carry `display: true`, matching real omp) -- the gate-round-3 short-circuit holds.'
+    );
+  }
   findings.push(
     '[issue #989] `stages-941.jsonl` is SYNTHESIZED, not captured live (its own header comment says so) -- the fixture\u2019s own message_start/message_end-arrive-together shape is not what grounds this fix\u2019s design. That is instead confirmed directly from the real installed omp 18.11.1 binary\u2019s own embedded source (`packages/agent/src/agent-loop.ts`\u2019s `rt(e, t)` helper unconditionally pushes a paired `message_start`/`message_end` for every message, with no code path anywhere that pushes one without the other); gate round 3, research.md decision 19.'
   );

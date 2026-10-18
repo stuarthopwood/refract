@@ -1130,15 +1130,16 @@ fn apply_message_snapshot(
             let details = message.get("details").cloned().unwrap_or(Value::Null);
             // Gate round 3 fix (issue #989, `agent://Main`): short-circuit on the custom type
             // itself, before any other `custom` arm -- real omp always sets `display: true` on
-            // an async-result message (confirmed from the installed omp binary's own embedded
-            // source, research.md decision 19), so without this short-circuit a `message_start`
-            // frame (job application skipped below) fell through to the plain `display == true`
-            // Notice branch, leaving a permanent Notice row that `message_end`'s own async-
-            // result application never replaces or removes. An `async-result` message therefore
-            // never builds a Notice/advisory/agent-message item at ANY frame; only `message_end`
-            // ever applies its jobs -- grounded in real omp behaviour, not a fixture assumption:
-            // `message_end` is unconditionally guaranteed for every message (research.md
-            // decision 19's gate-round-3 correction cites the exact omp source).
+            // an async-result message (research.md decision 19), so without this short-circuit
+            // a `message_start` frame (job application skipped below) fell through to the plain
+            // `display == true` Notice branch, leaving a permanent Notice row that `message_end`
+            // never replaces or removes. On this LIVE path only, an `async-result` message
+            // therefore never builds a Notice/advisory/agent-message item at any frame --
+            // `message_end` is the only frame that ever applies its jobs, unconditionally
+            // guaranteed for every message (research.md decision 19's gate-round-3 correction).
+            // The HISTORY replay path (`items_from_history`) keeps its own, unchanged
+            // fallthrough: a stored async-result message with no `details.jobs` at all still
+            // falls through to the same checks this live arm now skips.
             if custom_type == ASYNC_RESULT_CUSTOM_TYPE {
                 if !streaming {
                     if let Some(async_result) =
