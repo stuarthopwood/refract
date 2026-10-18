@@ -789,3 +789,15 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
   (`node --check` clean, 599 lines); `check:theme-contrast` 733/733 pairs across 5 themes PASS;
   `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity --gate`/`vitest run` (148/148)
   all green.
+
+- [X] T033 Hand-format `ThemeId`'s enum variants the way `cargo fmt` would (one variant per
+  line, `ci-local.mjs` runs `cargo fmt --check` -- the single combined line T032 item 1 landed
+  would have failed it) (Main's gate addition, 2026-10-18; depends on T032). (#551)
+  **Done**: `src-tauri/src/store/settings.rs`'s `ThemeId` sat exactly at the 600-line soft cap,
+  so even the correctly-formatted one-variant-per-line layout for the two new variants would
+  have pushed it 3 lines over -- extracted the whole enum into a new
+  `src-tauri/src/store/theme_id.rs` (pure-data, behaviour-preserving move, same pattern as
+  T027's `mermaidThemeData.ts` split), re-exported as `pub use super::theme_id::ThemeId;` so
+  every existing caller (`ipc/theme.rs`, `settings.rs` itself) is unaffected.
+  `check:file-size`: 0 cap violations (398 files scanned, `settings.rs` back under cap,
+  `theme_id.rs` far under it). Code-only, no cargo run.
