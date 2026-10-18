@@ -42,7 +42,9 @@ export const PAIRS = [
   // preset #927 leaves on a real, opaque `--composer-background`. The pair just below measures
   // Send against `--background` instead, the real backdrop in the other two themes.
   { fg: 'send', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian'] },
+  // #551: Nordic Frost and Cyber Amber both follow the same quiet-composer (#927) pattern as
+  // Dark/Obsidian -- a transparent `--composer-background` -- so they join this scope too.
+  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
@@ -205,8 +207,10 @@ export const PAIRS = [
   // fill is transparent).
   { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
-  { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
+  // #551: Nordic Frost and Cyber Amber accept the same WCAG 1.4.11 departure for this pair
+  // (docs/design/accessibility.md "Accepted departures"), so they join the informational scope.
+  { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   // U1 (gate951UI/A11y High): Dark high contrast's Approval/Model/Reasoning triggers keep a
   // real, enforced resting border (`--composer-control-border`, `var(--border)` there) -- the
   // reinstated equivalent of the stale `border-strong`/`background` comment just above, scoped

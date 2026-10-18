@@ -650,3 +650,64 @@ preview never survives closing the app.
 - Stop at any checkpoint to validate a story independently.
 - GitHub issues: every task above has an issue titled `007-Tnnn: ...` (see the mapping comment on
   tracking issue #125, and the `(#NNN)` markers to be added to each task line once created).
+
+---
+
+## Phase 8: Convergence — #551 Nordic Frost and Cyber Amber dark presets (append-only, `/speckit.converge`)
+
+Amends Assumptions (spec.md) with the now-decided five-preset built-in list. Built after #550
+(Obsidian, Phase "theme foundation" above), same additive rule (research.md decision 1): no
+existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed or re-valued.
+
+- [X] T025 Register `nordic-frost` and `cyber-amber` in `src/shared/themes.ts`'s `ThemeId` union
+  and `THEMES` table (`name`, `swatch` matching each preset's own `--background`,
+  `syntaxTheme`, `titleBarOverlay`); **Decided (Skippy, delegated by Stuart 2026-10-18,
+  answering #551's own open question): `nordic-frost` uses Shiki's bundled `nord` theme** (an
+  exact, unambiguous match by name and palette), **`cyber-amber` reuses `github-dark`** (no
+  comparably-matching bundled Shiki theme exists; same "Mermaid/Shiki colours out of this
+  story's scope" precedent #550 set for Obsidian) (depends on T002).
+  **Done**: `src/shared/themes.ts` updated; both ids' `swatch`/`titleBarOverlay.color` verified
+  byte-identical to their own `.theme-*` block's `--background` by `check-theme-contrast.mjs`'s
+  own metadata cross-check.
+- [X] T026 Build `.theme-nordic-frost` and `.theme-cyber-amber` in full in `globals.css` (every
+  token Obsidian's own block defines), correcting the two contrast defects issue #551's mockup
+  audit found: the control-edge `--border` under 3:1 in both presets, and `--accent-text`/
+  `--severity-info` sharing one hue in both presets. **Decided (Skippy, delegated by Stuart
+  2026-10-18): `--severity-info` moves off each preset's own signature accent hue** (periwinkle
+  blue, hue 255, for Nordic Frost's cyan; cool teal, hue 200, for Cyber Amber's warm amber),
+  fixing the shared-hue defect without inventing a sixth distinct severity family (depends on
+  T025).
+  **Done**: both blocks built; `node scripts/check-theme-contrast.mjs`: **all 725 pairs across 5
+  themes PASS** (up from 283 across 3 after #550).
+- [X] T027 Add `nordic-frost`/`cyber-amber` to `MERMAID_THEME_VARIABLES` (same DARK_FAMILY-spread
+  pattern #550 used for Obsidian); extend `scripts/theme-contrast-pairs.mjs`'s quiet-composer
+  (`#927`) `onlyThemes`/`informationalThemes` scopes to include both new ids, since both follow
+  the same transparent-`--composer-background` pattern as Dark/Obsidian (depends on T025, T026).
+  **Done**: both entries added; `#806` file-size ratchet follow-up (the two new entries pushed
+  `mermaidTheme.ts` past its own recorded baseline) resolved by extracting `DARK_FAMILY`/
+  `MERMAID_THEME_VARIABLES` into a new `src/shared/mermaidThemeData.ts` (pure-data,
+  behaviour-preserving move, same pattern #564 used for `theme-contrast-pairs.mjs`) — re-exported
+  so `Markdown.tsx`'s own import site is unchanged; `mermaidTheme.ts` 933 → 526 lines, baseline
+  entry dropped (`--update`).
+- [X] T028 Answer #551's "may Cyber Amber merge accent, warning and info hues?" open question and
+  write the decision into the issue (decision comment) (depends on T026).
+  **Done (Skippy, delegated by Stuart 2026-10-18): partially.** `--accent-text` (orange-amber,
+  hue 45) and `--severity-warning` (golden-amber, hue 75) both stay in the theme's own warm
+  "phosphor amber" family (distinguishable by hue and lightness/chroma, and this app's existing
+  icon-plus-word redundancy already covers 1.4.1); `--severity-info` moves OFF amber entirely —
+  merging a genuinely different severity (info) into warning's hue was the real defect the
+  mock's own audit found, not a stylistic choice worth keeping.
+- [X] T029 Write `scripts/verify-551-presets.mjs` (live Tauri CDP check: switch to each new
+  preset via the real Profile-menu Theme submenu and the Settings Appearance section,
+  screenshot the chat/composer, session list, Settings screen and a dialog, confirm persistence
+  across a full stop-and-relaunch on the same scratch data dir, read real computed colours for
+  the key pairs this story's own audit flagged) (depends on T026, T027). (#551)
+  **Done, NOT run**: this is a no-build prep lane (held for the build slot); syntax-checked only
+  (`node --check`, clean). Live run and its evidence are this story's own remaining step once the
+  build slot opens.
+- [ ] T030 Live-run `scripts/verify-551-presets.mjs` once the build slot opens; record the
+  report/screenshots in the PR body (depends on T029).
+
+Both T025–T028 keep `dark`/`dark-high-contrast`/`obsidian` byte-identical to `origin/main` --
+confirmed by `check-theme-contrast.mjs` re-running their own 283 pairs unchanged inside the new
+725-pair total.

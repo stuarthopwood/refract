@@ -56,6 +56,12 @@ Nothing in Refract exists only in a context menu or only on hover. Every action 
 
 Dark (high contrast) is a theme file, not a separate design: the same components, the same zero-box rule, the same icon set, with only the token values listed above changed. A component must never branch its markup or its icon choice on which theme preset is active; only CSS custom properties change.
 
+**Decision (Stuart, 2026-10-08, agenda items 7 and 9; #552): keep colour-coded glyphs, raise every value.** Dark (high contrast) keeps all state and severity colours and their distinct icons, but raises text to 7:1, every edge including dividers to 4.5:1 (soft dividers switched off), widens the focus ring, and gives borders the depth cue instead of tone — see "High contrast preset" in [foundations-tokens-theming.md](foundations-tokens-theming.md) for the full value list. The mock's alternative **Terminal Monochrome** treatment (every state colour white, glyph-and-label only) is **not adopted**: this app's existing one-icon-per-state convention (1.4.1, above) already removes colour as the only signal, so collapsing every severity to one hue would trade a working redundancy for a new one without fixing anything, and the new pill/count surfaces named in #552 (#529 PR states, #538 change counts) keep their colour-plus-icon-or-sign pairing unchanged. This closes #552's own open question.
+
+#### Known gap
+
+- **`--severity-error` under its own 7:1 target on the hover/muted fill** (#570 decision 20, recorded on #552 2026-10-16): measured about 6.7:1 against `--muted`/hover, under this theme's own declared 7:1 high-contrast text floor (the token still clears the ordinary 4.5:1 AA floor `scripts/theme-contrast-pairs.mjs` enforces for every preset — see `severity-error`/`muted` in that file's `PAIRS`). Not retuned by #570; #552 owns the token itself and the retune is still outstanding, tracked here rather than silently claimed as met.
+
 ### Accepted departures
 
 Departures from the checklist above that Stuart accepted on purpose. Each names its scope, so nothing else may cite it.

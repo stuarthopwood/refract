@@ -10,7 +10,7 @@
 /** Additive: a further dark preset adds a key here, never removes `dark` or
  * `dark-high-contrast` (research.md decision 1). No `mode` field anywhere in this module --
  * every built-in theme is dark-toned, so there is nothing left to distinguish by mode. */
-export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian'
+export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian' | 'nordic-frost' | 'cyber-amber'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -63,6 +63,29 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#0F1014',
     syntaxTheme: 'github-dark',
     titleBarOverlay: { color: '#0F1014', symbolColor: '#F8FAFC' }
+  },
+  // #551 (Nordic Frost / Cyber Amber dark presets): two further additive dark presets, built
+  // out in full the same way #550 built Obsidian. Shiki theme choice (one of #551's own open
+  // questions) -- **Decided (Skippy, delegated by Stuart 2026-10-18): Nordic Frost uses Shiki's
+  // bundled `nord` theme**, an exact, unambiguous match by name and palette (the Nord colour
+  // scheme is itself arctic/navy-toned); **Cyber Amber has no comparably-matching bundled Shiki
+  // theme, so it reuses `github-dark`**, the same "defer precise code-block tuning, Mermaid/
+  // Shiki colours are explicitly out of this story's scope" precedent #550 set for Obsidian.
+  'nordic-frost': {
+    id: 'nordic-frost',
+    name: 'Nordic Frost',
+    // Matches `.theme-nordic-frost`'s own `--background` (globals.css): a deep navy canvas.
+    swatch: '#060f1e',
+    syntaxTheme: 'nord',
+    titleBarOverlay: { color: '#060f1e', symbolColor: '#eff7fb' }
+  },
+  'cyber-amber': {
+    id: 'cyber-amber',
+    name: 'Cyber Amber',
+    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a warm near-black canvas.
+    swatch: '#0f0703',
+    syntaxTheme: 'github-dark',
+    titleBarOverlay: { color: '#0f0703', symbolColor: '#faf4ef' }
   }
 }
 
