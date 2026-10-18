@@ -24,6 +24,7 @@ import { groupThoughtItems } from './groupThoughtItems'
 import { ThoughtRunRow } from './ThoughtRunRow'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
+import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
 import { ToolGroupRow } from './ToolRow'
 import { isBookkeepingRow, rowVisibility, type RowVisibility } from './transcriptRowVisibility'
@@ -956,9 +957,7 @@ export function Transcript({
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
                             {/* `rowVisibility` only ever returns `'sr-only'` for a `ToolGroup` or
-                                `StageGroup` now (a bare `subagent` item can't reach here, see
-                                `StageGroupedItem` in groupSubagentStages.ts) -- the final
-                                `undefined` only satisfies the type checker and never renders. */}
+                                `StageGroup` now -- the final `undefined` only satisfies the type checker and never renders. */}
                             <span className="sr-only">
                               {isStageGroup(row)
                                 ? `${toolStatusLabel('running')} Stage ${row.stageIndex}`
@@ -993,6 +992,7 @@ export function Transcript({
                     })}
                     {announceThinking && <span className="sr-only">Thinking</span>}
                     <SubagentChainRow stages={stages} sessionId={sessionId} />
+                    <UpNextList sessionId={sessionId} stagesCount={stages.length} isLastTurn={turnIndex === visibleTurns.length - 1} />
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}

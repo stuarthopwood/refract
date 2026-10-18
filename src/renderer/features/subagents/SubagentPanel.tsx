@@ -5,6 +5,20 @@
 // (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text). Spec 013: its own title
 // row and Close button moved to the shared shell (`PanelTabBar.tsx`) -- this component renders
 // only the tree and stream content.
+//
+// Issue #941 part 2: every distinct `task()` call (`toolCallId`) with 2+ members now gets its
+// own Stage HEADER treeitem (grouping, FR-079's deferred note), its real member rows nested at
+// `aria-level + 1` beneath it -- a call with exactly ONE member stays a single flat row exactly
+// as before (nothing to group). Green state (FR-079) applies uniformly to every row (header or
+// member) via the same `isSubagentSuccessStatus` check the chat pane's `StageGroupRow` already
+// uses. A Stage header's own real "Uses:" dependencies (`groupSubagentPanelStages.ts`, mirroring
+// `groupSubagentStages.ts`'s algorithm against this panel's own flat data) render via the SAME
+// `StageUsesLine` component the chat uses, forced into its own plain-text fallback mode
+// (`sessionId={null}`) -- the user is already inside this panel, so a second, nested clickable
+// control re-selecting a row they can already see is not worth the nested-interactive-control
+// complexity inside a `role="treeitem"`. Scope boundary (documented, not an oversight): a SOLO
+// call's own real dependency (if any) is not shown here -- there is no Stage header row for a
+// single member to attach one to; it remains visible in the chat pane.
 import { useEffect, useMemo, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -17,7 +31,11 @@ import { ToolGroupRow } from '../chat/ToolRow'
 import { formatElapsed } from '../chat/formatElapsed'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
-import { SubagentStatusIcon } from './subagentStatus'
+import { stageHeading, type StageDependency } from '../chat/stageMeta'
+import { StageUsesLine } from '../chat/StageDependencies'
+import { overallStatus } from '../chat/SubagentChainRow'
+import { groupSubagentsIntoPanelStages } from './groupSubagentPanelStages'
+import { isSubagentSuccessStatus, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusIcon, summarizeSubagentStatuses } from './subagentStatus'
 
 interface SubagentTreeNode {
   id: string
@@ -25,28 +43,63 @@ interface SubagentTreeNode {
    * subagent INSTANCE even when two share the same `id` (`SubagentSummary.id` is name-based,
    * so two agents given the same name by two different `task()` calls collide on `id` alone).
    * Used for React's own list `key`, the row-ref map, and which row shows selected/receives
-   * focus -- everywhere a specific RENDERED ROW, not merely "a row with this name", matters. */
+   * focus -- everywhere a specific RENDERED ROW, not merely "a row with this name", matters.
+   * A Stage header row (issue #941 part 2) instead carries `stage:<toolCallId>` -- a format
+   * that can never collide, since no real member key contains a colon-free `toolCallId`
+   * segment (`specIndex` is always a plain integer). */
   key: string
   nameOrTask: string
   status: SubagentSummary['status']
   durationMs?: number
   children: SubagentTreeNode[]
+  /** Issue #941 part 2: true only for a Stage HEADER row (2+ members) -- never selectable (no
+   * single subagent id to show a stream for), its own `id` stays `''`. */
+  isStage: boolean
+  /** Present only on a Stage header row; `[]` renders no "Uses:" line at all (the common case:
+   * most calls reference nothing earlier). */
+  dependencies?: StageDependency[]
 }
 
 /** FR-024 (issue #563): the Session is the implicit root (never rendered itself); these are its
- * first level, in start order. A node's own `children` would hold the agents IT started, once
- * the tracker can tell which agent started which -- no `parentId` exists on `SubagentSummary`
- * today, so every node's `children` is honestly empty until #712 supplies that data; nothing
- * here needs to change when it does, only this one function. */
+ * first level, in start order -- each one either a single member row (a call with exactly one
+ * subagent, unchanged from before #941 part 2) or a Stage header row with its real members
+ * nested beneath (`groupSubagentsIntoPanelStages`, keyed on `toolCallId`, the only correlation
+ * key `SubagentSummary` carries -- no `messageId`/`parentId` exists on it, so this is strictly
+ * per-call, never merging several calls sharing one assistant message the way the chat pane's
+ * own `messageId`-keyed grouping can). */
 export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNode[] {
-  return subagents.map((subagent) => ({
-    id: subagent.id,
-    key: `${subagent.toolCallId}:${subagent.specIndex}`,
-    nameOrTask: subagent.nameOrTask,
-    status: subagent.status,
-    durationMs: subagent.durationMs,
-    children: []
-  }))
+  return groupSubagentsIntoPanelStages(subagents).map((stage) => {
+    if (stage.items.length === 1) {
+      const item = stage.items[0]!
+      return {
+        id: item.id,
+        key: `${item.toolCallId}:${item.specIndex}`,
+        nameOrTask: item.nameOrTask,
+        status: item.status,
+        durationMs: item.durationMs,
+        children: [],
+        isStage: false
+      }
+    }
+    const aggregateStatus = overallStatus(summarizeSubagentStatuses(stage.items.map((item) => item.status)))
+    return {
+      id: '',
+      key: stage.key,
+      nameOrTask: stageHeading(stage.stageIndex, stage.label),
+      status: aggregateStatus,
+      children: stage.items.map((item) => ({
+        id: item.id,
+        key: `${item.toolCallId}:${item.specIndex}`,
+        nameOrTask: item.nameOrTask,
+        status: item.status,
+        durationMs: item.durationMs,
+        children: [],
+        isStage: false
+      })),
+      isStage: true,
+      dependencies: stage.dependencies
+    }
+  })
 }
 
 interface SubagentTreeRow {
@@ -254,10 +307,19 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   // icon -- the 8px base inset (kept per-level/3-level cap below unchanged)
                   // gives the bar its own clear lane.
                   style={{ paddingLeft: `${8 + Math.min(row.depth, 2) * 16}px` }}
-                  onFocus={() => void selectSubagent(row.node.id, row.node.key)}
+                  // Issue #941 part 2: a Stage header row has no single subagent id to show a
+                  // stream for -- never calls `selectSubagent`, so focusing it neither selects
+                  // nor fetches anything (it stays a pure roving-tabindex stop).
+                  onFocus={() => {
+                    if (!row.node.isStage) void selectSubagent(row.node.id, row.node.key)
+                  }}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
+                    // Issue #941 part 2: `flex-col` unconditionally (was `items-center` on this
+                    // same element) -- an ordinary row's single inner `flex items-center` span
+                    // below renders identically either way; a Stage header row with a real
+                    // "Uses:" line gets a genuine second line underneath it.
+                    'relative flex w-full flex-col gap-0.5 rounded-md py-1.5 pr-2 text-left text-sm',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own forced-colours selected fallback, reused verbatim
                     // so both trees are visually consistent and the selected row survives Windows
@@ -297,14 +359,28 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   {row.node.key === effectiveSelectedKey && (
                     <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
                   )}
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <SubagentStatusIcon status={row.node.status} />
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <SubagentStatusIcon status={row.node.status} />
+                    </span>
+                    {/* Issue #941: a finished agent/Stage row (never a tool row) gets green
+                        name/label text alongside its icon's own `STATUS_GLYPH` colour -- applies
+                        uniformly to a Stage header row (aggregate status) and an ordinary
+                        member/solo row (its own status) alike. */}
+                    <span
+                      className={cn('min-w-0 flex-1 truncate', isSubagentSuccessStatus(row.node.status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
+                      title={row.node.nameOrTask}
+                    >
+                      {row.node.nameOrTask}
+                    </span>
+                    {row.node.status !== 'running' && row.node.durationMs != null && (
+                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>
+                    )}
                   </span>
-                  <span className="min-w-0 flex-1 truncate" title={row.node.nameOrTask}>
-                    {row.node.nameOrTask}
-                  </span>
-                  {row.node.status !== 'running' && row.node.durationMs != null && (
-                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>
+                  {/* Issue #941 part 2: a Stage header's own real "Uses:" dependencies, forced
+                      into StageUsesLine's plain-text fallback (no sessionId -- see file header). */}
+                  {row.node.isStage && row.node.dependencies && row.node.dependencies.length > 0 && (
+                    <StageUsesLine dependencies={row.node.dependencies} sessionId={null} className="pl-6" />
                   )}
                 </div>
               ))}
