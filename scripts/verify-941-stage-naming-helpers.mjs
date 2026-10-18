@@ -1,13 +1,11 @@
 // Shared driving/assertion helpers for `scripts/verify-941-stage-naming.mjs` (issue #941: Stage
-// naming, the one green exception for a finished Subagent/Stage, the Stage's own batch context
-// on expansion, real "Uses:" dependencies, the per-turn Subagent chain row, and the now-UNIFIED
-// solo-vs-multi-agent Stage header), split out to stay under the #806 600-line file-size cap.
+// naming, the one green exception for a finished Subagent/Stage, the Stage's own batch context on
+// expansion, real "Uses:" dependencies, the per-turn Subagent chain row, and the now-UNIFIED solo-vs-multi-agent Stage header, split out to stay under the #806 600-line file-size cap).
 //
 // Gate round 1 rewrite: EVERY Stage (solo or not) gets the same header via `stageHeading()`
 // (`./stageMeta.ts`), a muted roll-up ("N done"/"N done, M failed") plus a muted duration AND
 // start time, all inside `meta`; expanded content order is `StageContextBrief` (only when
-// `group.context` is set), then `StageUsesLine`, then either `SubagentBody` (solo) or a
-// `SpineList` of `SubagentRow`s (multi).
+// `group.context` is set), then `StageUsesLine`, then either `SubagentBody` (solo) or a `SpineList` of `SubagentRow`s (multi).
 //
 // Gate round 2 rewrite (items 9-12, re-grep-verified against the real current source):
 //  - Item 9: `switchTheme` (`verify-tauri-scratch-helpers.mjs`, grep-confirmed) only flips a
@@ -38,20 +36,13 @@
 // Selector strategy unchanged: `CollapsedLine.tsx` sets a plain `title` attribute on a Stage/
 // member row's own visible label SPAN whenever that label is a literal string -- a real,
 // source-grounded way to find one exact row without guessing at the FULL accessible name
-// (`triggerAriaLabel`, a longer, different string). The Naming assertion reads the label SPAN's
-// own accessible name via `Accessibility.getPartialAXTree` (never `.textContent`); every other
-// assertion below that wants visible, non-AX text (meta rollup, solo summary, Uses: lines) reads
-// the trigger/content's own `textContent` instead, since `meta`/`summary` render visibly inside
-// the always-mounted `CollapsibleTrigger`, not only in `triggerAriaLabel`.
+// (`triggerAriaLabel`). The Naming assertion reads the label SPAN's own accessible name via
+// `Accessibility.getPartialAXTree` (never `.textContent`); every other assertion that wants
+// visible, non-AX text (meta rollup, solo summary, Uses: lines) reads `textContent` instead,
+// since `meta`/`summary` render visibly inside the always-mounted `CollapsibleTrigger`.
 //
-// `SubagentPanel.tsx` re-grep-verified (gate round 2, item 11): still `role="tree"`/
-// `role="treeitem"`/`aria-selected={row.node.id === selectedId}` -- unchanged from gate round 1.
-// It carries no `data-tool-call-id`/`data-spec-index` attribute at all (grep-confirmed: neither
-// identifier appears anywhere in this component), so a repeated agent name's two panel rows are
-// genuinely indistinguishable in the DOM beyond their own rendered duration text once both carry
-// `aria-selected="true"` (the pre-existing, already-documented `SubagentSummary.id` name-based
-// ambiguity) -- the duration-text check below is not a weaker proxy standing in for a stronger
-// one that exists in the DOM; it is the strongest claim this component's real markup supports.
+// `SubagentPanel.tsx` now keys its own tree rows by a `toolCallId:specIndex` composite (gate
+// round 3/4), disambiguating two same-named agents -- see `verify-941-stage-naming-panel-helpers.mjs`'s own header.
 import { mkdirSync, createWriteStream } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -78,22 +69,35 @@ export function buildOmpShim(dir) {
   return out;
 }
 
-/** `verify-tauri-scratch-helpers.mjs`'s own shared `launchBuiltExe` has no `pathPrepend`/
- * `extraEnv` parameters (every OTHER `verify-9xx-*.mjs` live check drives a REAL `omp`, never the
- * fake-frame harness) -- this is `verify-563-subagent-stage.mjs`'s own local copy with those two
- * params restored, needed here to put the fake-omp PATH shim first on `PATH` and set
- * `REFRACT_FAKE_OMP_SCENARIO`/`REFRACT_FAKE_OMP_SCRIPT`/`REFRACT_FAKE_OMP_NODE`. */
+/** A local copy of `verify-tauri-scratch-helpers.mjs`'s own `launchBuiltExe`, with
+ * `pathPrepend`/`extraEnv` restored (the fake-omp PATH shim and FAKE_OMP env vars only this
+ * fixture-driven check needs). Live-build fix (first real build-slot run; prior gate rounds
+ * were code-verified only): `REFRACT_CDP_PORT` is not an env var the Rust app reads anywhere
+ * (grep-confirmed) -- swapped for the real, proven `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`/
+ * `WEBVIEW2_USER_DATA_FOLDER` pair the scratch-helpers version already uses.
+ * `launchViaJobObject` also gained an explicit `pidFile` 2nd positional argument since this
+ * was written; the old 3-arg call mis-mapped `[exePath]` onto it and spread `undefined` as
+ * `targetArgs`, throwing "targetArgs is not iterable". */
 export async function launchBuiltExeWithEnv(launcherExe, exePath, { port, dataDir, importSourceDir, pathPrepend, extraEnv = {}, logFile }) {
+  const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${stamp}`);
+  mkdirSync(webview2DataDir, { recursive: true });
+  const pidFile = path.join(path.dirname(exePath), `target-${stamp}.pid`);
   const env = {
     ...process.env,
     PATH: `${pathPrepend}${path.delimiter}${process.env.PATH ?? ''}`,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
     REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    REFRACT_CDP_PORT: String(port),
     ...extraEnv
   };
-  const logStream = createWriteStream(logFile);
-  const { child, targetPid } = await launchViaJobObject(launcherExe, [exePath], { env, stdio: ['ignore', logStream, logStream] });
+  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
+  if (logFile) {
+    const stream = createWriteStream(logFile);
+    child.stdout.pipe(stream, { end: false });
+    child.stderr.pipe(stream, { end: false });
+  }
   return { child, targetPid };
 }
 
