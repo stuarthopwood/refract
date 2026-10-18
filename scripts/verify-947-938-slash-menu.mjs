@@ -294,7 +294,7 @@ async function main() {
       await clearComposer(cdp);
       await cdp.send('Input.insertText', { text: `/${noMatchNeedle}` });
       try {
-        await cdp.waitFor(`document.querySelector('[aria-hidden="true"]')?.textContent?.trim() === 'No matching commands'`, {
+        await cdp.waitFor(`document.querySelector('div[aria-hidden="true"].bg-popover')?.textContent?.trim() === 'No matching commands'`, {
           timeoutMs: 10_000,
           label: `"No matching commands" shown for "/${noMatchNeedle}"`
         });

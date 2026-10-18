@@ -181,17 +181,20 @@ export function findDescriptionOnlyProbe(commands) {
  * rather than trusting an arbitrary string happens to be unused. `null` if every candidate tried
  * happens to match something in this particular install. */
 export function findNoMatchNeedle(commands) {
-  // Gate round 1 (two separate live failures: "/qxj" then "/zqxj" both DID match something,
-  // almost certainly a hidden ALIAS -- invisible to this script, since aliases are never
-  // rendered in the DOM, so `bestNameTier`'s own name/alias guard above can only ever check
-  // `command.name` (plus a skill's stripped form), never an alias it cannot see at all).
-  // Letter-only needles, however long or rare, remain probabilistic against an unknown alias
-  // set. Digits are a near-guarantee instead: every observed command/skill name and alias in
-  // this codebase is kebab-case letters only (`SUPPORTED_OMP_COMMANDS`, `skill:<name>` entries,
-  // the real `/model` alias for `switch`) -- a digit-containing needle cannot subsequence-match
-  // any of them, and a natural-language description sentence containing this EXACT digit
-  // sequence, in order, is vanishingly unlikely. Still `notExercised`, never a false "safe", if
-  // every candidate here happens to collide in a given real install.
+  // Gate round 1: three separate live "failures" ("/qxj", "/zqxj", then even this digit-based
+  // "/9qxj7") all showed the caller's assertion as unmet. Root-caused, NOT an alias blind spot:
+  // the caller's own selector (`verify-947-938-slash-menu.mjs`) used to read
+  // `document.querySelector('[aria-hidden="true"]')` completely unscoped, which grabbed the
+  // FIRST such element anywhere in the page -- in practice the composer's own unrelated
+  // placeholder overlay div (`MessageInput.tsx` "Message the agent ... for commands ...
+  // Markdown supported", also `aria-hidden="true"`), never the slash-menu's actual empty-state
+  // div, regardless of what was typed. Fixed at the call site by scoping to
+  // `div[aria-hidden="true"].bg-popover`, unique to the slash-menu's empty state (checked: no
+  // other `aria-hidden="true"` element in this tree carries `bg-popover`). This needle generator
+  // itself was never the problem, but digit-based needles remain strictly safer than letter-only
+  // ones against a genuine hidden alias this script cannot see (aliases are never rendered in the
+  // DOM, so `bestNameTier`'s guard above can only check `command.name` plus a skill's stripped
+  // form) -- kept as belt-and-braces hardening, not because it fixed anything here.
   const candidates = ['9qxj7', '5vqz3', '8jqx2', '4xzq9', '7qzv1', '3wqx6', '2zjv8', '6kqx4', '1vjz5', '0xqz9'];
   for (const needle of candidates) {
     if (bestNameTier(needle, commands) !== null) continue;
