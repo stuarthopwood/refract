@@ -406,8 +406,8 @@ async function main() {
       if (filtersLabelBeforeClose) await cdp.clickByLabel(filtersLabelBeforeClose);
 
       // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured; the
-      // list column stays at `min(280, groupWidth)` -- at 240px the Group's content area is
-      // itself under 280px, so 280 can't fit there; the honest floor is "takes essentially all of what's available". ----
+      // list column stays at `min(280, groupWidth - 1)` -- groupWidth includes the handle's
+      // own real `w-px` (1px); at 240px the Group's content area is itself under 280px. ----
       for (const width of TAB_GEOMETRY_WIDTHS) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(400);
@@ -420,8 +420,8 @@ async function main() {
           const group = document.querySelector('[data-slot="resizable-panel-group"]');
           return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth, panelWidth: panel ? panel.getBoundingClientRect().width : null, groupWidth: group ? group.getBoundingClientRect().width : null };
         })()`);
-        const effectiveMin = geometry?.groupWidth != null ? Math.min(MIN_WIDTH_PX, geometry.groupWidth) : MIN_WIDTH_PX;
-        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= effectiveMin - 1;
+        const effectiveMin = geometry?.groupWidth != null ? Math.min(MIN_WIDTH_PX, geometry.groupWidth - 1) : MIN_WIDTH_PX;
+        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= effectiveMin - 2;
         if (geometry && geometry.oneRow && panelAtLeastMin) checkPass(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
         else checkFail(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
       }
