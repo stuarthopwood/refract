@@ -215,6 +215,11 @@ pub fn run() {
         std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     }
 
+    // Issue #880: also as early as possible, before any window exists -- see
+    // `shell::app_identity::set_process_app_user_model_id`'s own doc comment for why it must run
+    // before `tauri::Builder` ever shows a window.
+    shell::app_identity::set_process_app_user_model_id();
+
     let data_dir = data_dir();
     std::fs::create_dir_all(&data_dir).unwrap_or_else(|err| {
         panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}")
@@ -374,7 +379,7 @@ pub fn run() {
             // `index.html`, in both `frontendDist` (`out/tauri-web/tauri/index.html`) and the
             // dev server (`http://localhost:5174/tauri/index.html`, `devUrl`'s origin plus this
             // same relative path).
-            let window =
+            let mut window_builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
                     .title("Refract")
                     .inner_size(1280.0, 800.0)
@@ -386,8 +391,15 @@ pub fn run() {
                     // UI (remote origins can already not reach `refract_request`, and wry denies
                     // new windows with no `on_new_window` handler set, but a same-window
                     // navigation away is a separate hole neither of those closes).
-                    .on_navigation(is_allowed_navigation_url)
-                    .build()?;
+                    .on_navigation(is_allowed_navigation_url);
+            // Issue #880: explicit window icon, matching the Electron precedent (#494, PR #590)
+            // -- this window is built entirely in code, never from a `tauri.conf.json`
+            // `app.windows[]` entry. `app.default_window_icon()` is the SAME `icons/icon.ico`
+            // resource already embedded in this exe, not a second asset.
+            if let Some(icon) = app.default_window_icon().cloned() {
+                window_builder = window_builder.icon(icon)?;
+            }
+            let window = window_builder.build()?;
 
             // Issue #623: reads and applies the saved position/size/maximised state (a
             // one-off, startup-only blocking wait, same justification as the registry/settings

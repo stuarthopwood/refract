@@ -104,4 +104,8 @@ windows = { version = "0.62.2", features = [
   "Win32_Security_Cryptography",
   "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Cryptography_Sip",
+  # Issue #880: `SetCurrentProcessExplicitAppUserModelID` (`shell::app_identity`), so the
+  # taskbar/Alt-Tab/notification identity matches the Start Menu/Desktop shortcut Tauri's own
+  # NSIS installer pins to the same id (`shell::app_identity`'s own doc comment).
+  "Win32_UI_Shell",
 ] }
