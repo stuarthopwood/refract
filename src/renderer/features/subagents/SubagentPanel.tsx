@@ -140,9 +140,9 @@ export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNod
 }
 
 /** Gate round 4 fix (issue #941 part 2, item 2, LOW): the Stage header's own trailing roll-up
- * text, computed ONCE and shared between the visible (truncatable) span and its own `title=`
- * tooltip below -- so a truncated roll-up is still recoverable by hovering it with a mouse,
- * same as the label span (`CollapsedLine.tsx`'s own base label slot) already offers. */
+ * text, kept in ONE place and called for both the visible (truncatable) span and its own
+ * `title=` tooltip below -- so a truncated roll-up is still recoverable by hovering it with a
+ * mouse, same as the label span (`CollapsedLine.tsx`'s own base label slot) already offers. */
 function stageRollupDisplayText(node: SubagentTreeNode): string {
   return `${node.rollupText ?? ''}${node.status === 'running' ? ` \u00b7 ${SUBAGENT_STATUS_LABEL.running}` : ''}`
 }
@@ -447,11 +447,11 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                         // own label gets the same `min-w-16` floor `StageGroupRow`'s own
                         // `successLabelClass` call site already gives the chat pane's equivalent
                         // row (`SubagentChainRow.tsx`, `labelClassName={cn('min-w-16', ...)}`).
-                        // Without it, `flex-1`'s own `flex-basis: 0%` meant this label carried NO
-                        // weight in the browser's overflow-shrink distribution at all -- every
-                        // byte of squeeze landed on it anyway (CSS resolves a zero-basis flex
-                        // item's min-content floor first), truncating the agent's own name in a
-                        // narrow pane while the muted roll-up slot beside it stayed full width.
+                        // Without a floor, the zero-basis label's own `min-w-0` had already
+                        // disabled its min-content floor too -- so narrowing the row took this
+                        // label all the way down to 0px before the roll-up gave up anything,
+                        // truncating the agent's own name in a narrow pane while the muted
+                        // roll-up slot beside it stayed full width.
                         row.node.isStage && 'min-w-16',
                         isSubagentSuccessStatus(row.node.status) && SUBAGENT_SUCCESS_TEXT_CLASS
                       )}
@@ -467,13 +467,10 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                         a settled Stage's own "N done"/"N done, M failed" wording already states
                         failed/cancelled/exited, the same rule `StageGroupRow`'s own `meta` slot
                         uses (`SubagentChainRow.tsx`). Gate round 4 fix (item 1, MEDIUM, wrong
-                        comment): `min-w-0 shrink truncate` lets this slot give up width too, but
-                        the label's own NEW `min-w-16` floor above is what actually decides the
-                        real order now -- this slot absorbs squeeze FIRST only down to the
-                        label's 64px floor; past that point further squeeze has nowhere left to
-                        go but this slot's own further truncation, same as before. Gate round 4
-                        fix (item 2, LOW): `title=` recovers a truncated roll-up by mouse, same as
-                        the label span above already offers. */}
+                        comment): the label gives up its own extra width first now, down to its
+                        new `min-w-16` floor above; only once that floor is hit does this slot
+                        start truncating itself. Gate round 4 fix (item 2, LOW): `title=` recovers
+                        a truncated roll-up by mouse, same as the label span above already offers. */}
                     {row.node.isStage && row.node.rollupText && (
                       <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground" title={stageRollupDisplayText(row.node)}>
                         {stageRollupDisplayText(row.node)}

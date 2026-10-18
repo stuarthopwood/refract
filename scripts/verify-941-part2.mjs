@@ -204,7 +204,7 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
       // habit regardless, and getAttribute plus === proves the exact same relationship with no
       // injection surface at all.
       const ul = wrapper ? Array.from(wrapper.children).find((el) => el.tagName === 'UL' && el.getAttribute('aria-labelledby') === heading.id) : null;
-      if (!ul || ul.parentElement !== wrapper) return { transcriptFound: true, headingFound: true, ulFound: false };
+      if (!ul) return { transcriptFound: true, headingFound: true, ulFound: false };
       const items = Array.from(ul.children).filter((el) => el.tagName === 'LI').map((li) => li.textContent);
       const chainButton = Array.from(transcript.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Show subagents panel');
       const afterChain = chainButton ? !!(chainButton.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
