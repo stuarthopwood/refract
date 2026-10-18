@@ -1,27 +1,35 @@
 #!/usr/bin/env node
 // Live CDP check for issue #980 (toasts covering the composer's Send button). `<Toaster />`
 // (`src/renderer/components/ui/sonner.tsx`) ships `position="bottom-center"` with a bottom
-// offset tracking the tallest mounted composer's own measured height
+// offset tracking the tallest mounted composer's own measured CLEARANCE to the viewport bottom
 // (`src/renderer/features/chat/composerHeightVar.ts`, a `ResizeObserver` per `MessageInput`
-// instance), decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 ruling) over
-// `top-right`/`bottom-right` because both of those sit adjacent to the permanent full-height
-// right rail (`IconRail.tsx`) and, for `bottom-right`, directly over the Send button itself.
-// Gate round 1 fix (High): the offset is DYNAMIC, not a fixed guess -- this script proves that
-// across a resting composer, a composer grown to its max height, split-pane mode (two
-// independently-sized composers, two Send buttons), and Sonner's own `@media (max-width:600px)`
-// mobile breakpoint (`mobileOffset`).
+// instance plus a window-resize listener), decided (Skippy, delegated by Stuart 2026-10-18,
+// ui-architect-v3 ruling) over `top-right`/`bottom-right` because both of those sit adjacent to
+// the permanent full-height right rail (`IconRail.tsx`) and, for `bottom-right`, directly over
+// the Send button itself. Gate round 1 fix (High): the offset is DYNAMIC, not a fixed guess --
+// this script proves that across a resting composer, a composer grown to its max height,
+// split-pane mode (two independently-sized composers, two Send buttons), and Sonner's own
+// `@media (max-width:600px)` mobile breakpoint (`mobileOffset`). Gate round 2 fix (Medium):
+// clearance, not height alone -- `StatusBar.tsx` (36px) renders BELOW the whole chat workspace,
+// so a composer's own bottom edge never touches the window's bottom edge; also fixed the
+// ≤600px case overlapping the right rail (Sonner's own mobile CSS makes the toast viewport-wide
+// minus `2 * mobileOffset.left`, so `mobileOffset` now also carries `left`/`right` insets).
 //
 // Modelled on `verify-926-attach-any-file.mjs`'s own session-setup flow (readiness -> Add
 // repository -> New session -> composer enabled) and its own D1 toast trigger: typing the
 // literal `[[refract-attachments]]` marker is a purely client-side refusal (`MessageInput.tsx`)
-// with no agent round trip needed, calling `toast.error(...)` -- the EXACT toast
-// `verify-926-attach-any-file.mjs` itself flagged in a DIAG comment as covering Send under the
-// OLD `bottom-right` default (predating #926, filed from that finding as #980, `docs/PLAN.md`
-// "Toast covers Send" row). This error toast never auto-dismisses
-// (`docs/design/components.md` "Errors never auto-dismiss"), so each check below re-triggers a
-// FRESH one (gate round 1 fix, High: a stale toast from an earlier check could otherwise be
-// mistaken for proof of the current one) and waits for it to be genuinely mounted, visible and
-// not mid-removal before any hit-test.
+// with no agent round trip needed, calling a plain `toast.error(...)` with no `duration`
+// override -- gate round 2 correction (Low): this toast DOES auto-dismiss on Sonner's own
+// default ~4s lifetime (confirmed in `node_modules/sonner`'s own source: only SOME other
+// `toast.error` call sites in this codebase pass `{duration: Infinity}`, this one does not), so
+// each check below tags every toast already on screen, triggers a fresh one, and identifies it
+// as the one UNTAGGED toast that is genuinely mounted, visible and not mid-removal (Sonner
+// PREPENDS new toasts, `dist/index.mjs`: `return [toast, ...toasts]`, so DOM order places the
+// newest FIRST, not last -- a plain count or `.pop()` could silently check a stale toast once
+// more than one is mounted at once) -- never assuming the FIRST trigger's own toast is still
+// the one on screen moments later. This is the EXACT toast `verify-926-attach-any-file.mjs`
+// itself flagged in a DIAG comment as covering Send under the OLD `bottom-right` default
+// (predating #926, filed from that finding as #980, `docs/PLAN.md` "Toast covers Send" row).
 //
 // STATED LIMITATION (lane gate checklist: "never claim a test that did not happen"): no built-in
 // light theme exists in this app (`sonner.tsx`'s own doc comment: "every built-in Refract theme
@@ -69,24 +77,36 @@ const MARKER = '[[refract-attachments]]';
 // `handleSend`'s own refusal is a plain `message.includes(FILE_ATTACHMENTS_MARKER)` substring
 // check (`anyFileAttachments.ts`), so the marker still trips it regardless of surrounding text.
 const TALL_MARKER_TEXT = `${'line\n'.repeat(25)}${MARKER}`;
+// Marks a toast as "already accounted for" before each fresh trigger (gate round 2 fix, High):
+// Sonner PREPENDS new toasts (`node_modules/sonner`'s own `dist/index.mjs`: `return [toast,
+// ...toasts]`), so the newest one is FIRST in DOM order, not last -- this attribute, not a count
+// or `.pop()`, is what identifies which exact toast each check below is about.
+const TOAST_SEEN_ATTR = 'data-980-seen';
+// The OUTER composer wrapper `composerClearanceRef` (MessageInput.tsx) is actually attached to --
+// NOT the inner `.border-composer-border` box nested inside it, which gate round 2 (High, Test)
+// found this script was wrongly measuring/overlap-checking instead. No stable attribute exists
+// on this div today; matched by its own distinctive Tailwind class combination.
+const COMPOSER_ROOT_SELECTOR = '.flex.shrink-0.flex-col.gap-2.border-t.border-divider.px-4.py-3';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
 // One evaluate call computing every geometry fact this script needs, across however many
-// composers/Send buttons are currently mounted (1 in single-pane, 2 in split mode): the latest
-// MOUNTED, VISIBLE, not-mid-removal toast whose text matches this run's own marker-refusal
-// (never a stale one from an earlier check), its own rect against the title-bar
-// window-controls corner (`App.tsx`'s top `drag-region` strip's own `no-drag-region` child), the
-// permanent right rail (`IconRail.tsx`, selected via its own `role="toolbar"` toolbar's parent so
-// the rail's full height counts, not just its button column), every composer box (closest
-// `border-composer-border` ancestor of each Send button), and the Session list's own merged top
-// header row. Also re-proves every Send button's own hit-test (`document.elementFromPoint` at
-// its centre resolves to itself, never an intercepting toast) and that Sonner's own live region
-// (the `<section aria-live="polite">` ancestor Sonner itself renders around the toast list,
-// never the inner `<ol data-sonner-toaster>`, which carries no aria-live attribute of its own) is
-// intact.
+// composers/Send buttons are currently mounted (1 in single-pane, 2 in split mode): the ONE
+// toast this run just triggered (identified by `TOAST_SEEN_ATTR`'s absence, genuinely mounted,
+// visible and not mid-removal -- never a stale toast from an earlier check, see this script's
+// own header for why Sonner's prepend order rules out a plain count or `.pop()`), its own rect
+// against the title-bar window-controls corner (`App.tsx`'s top `drag-region` strip's own
+// `no-drag-region` child), the permanent right rail (`IconRail.tsx`, selected via its own
+// `role="toolbar"` toolbar's parent so the rail's full height counts, not just its button
+// column), every composer's own OUTER root (`COMPOSER_ROOT_SELECTOR`, the actual element
+// `composerClearanceRef` measures -- gate round 2 fix, not the inner `.border-composer-border`
+// box), and the Session list's own merged top header row. Also re-proves every Send button's
+// own hit-test (`document.elementFromPoint` at its centre resolves to itself, never an
+// intercepting toast) and that Sonner's own live region (the `<section aria-live="polite">`
+// ancestor Sonner itself renders around the toast list, never the inner
+// `<ol data-sonner-toaster>`, which carries no aria-live attribute of its own) is intact.
 const CHROME_CHECK_EXPR = `(() => {
   const rectOf = (el) => {
     if (!el) return null;
@@ -94,9 +114,7 @@ const CHROME_CHECK_EXPR = `(() => {
     return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.x + r.width, bottom: r.y + r.height };
   };
   const intersects = (a, b) => !!a && !!b && a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
-  const toasts = Array.from(document.querySelectorAll('[data-sonner-toast][data-mounted="true"][data-visible="true"]:not([data-removed="true"])'))
-    .filter((el) => el.textContent.includes('reserved') && el.textContent.includes('marker'));
-  const toast = toasts.length > 0 ? toasts[toasts.length - 1] : null;
+  const toast = document.querySelector('[data-sonner-toast][data-mounted="true"][data-visible="true"]:not([data-removed="true"]):not([${TOAST_SEEN_ATTR}="true"])');
   const sends = Array.from(document.querySelectorAll('[aria-label^="Send"]'));
   const titleBarCorner = document.querySelector('.drag-region.fixed.left-0.top-0 .no-drag-region.ml-auto.h-full');
   const railToolbar = document.querySelector('[role="toolbar"][aria-label="Panels"]');
@@ -109,7 +127,7 @@ const CHROME_CHECK_EXPR = `(() => {
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return !!top && (top === send || send.contains(top));
   });
-  const composerRects = sends.map((send) => rectOf(send.closest('.border-composer-border'))).filter(Boolean);
+  const composerRects = sends.map((send) => rectOf(send.closest('${COMPOSER_ROOT_SELECTOR}'))).filter(Boolean);
   return {
     hasToast: !!toast,
     sendCount: sends.length,
@@ -164,20 +182,23 @@ async function main() {
   // Types `extraText` (defaults to the bare marker) into the FIRST `[aria-label="Message"]`
   // found in DOM order (pane 0 in split mode) and clicks the FIRST `[aria-label="Send message"]`
   // -- both belong to the same pane, since each ChatPane renders its own header/transcript/
-  // composer fully before the next one starts. Waits for a NEW mounted+visible+not-removed
-  // matching toast (never a stale one left over from an earlier check), then ~400ms more for the
-  // CSS slide-in transition to settle before any hit-test runs.
+  // composer fully before the next one starts. Gate round 2 fix (High): tags every toast
+  // already on screen with `TOAST_SEEN_ATTR` BEFORE triggering (never a count comparison --
+  // Sonner prepends new toasts, so a stale one could sit at any index once more than one is
+  // mounted), then waits for the one UNTAGGED toast that is genuinely mounted, visible, not
+  // mid-removal, and carries this run's own marker-refusal text, then ~400ms more for the CSS
+  // slide-in transition to settle before any hit-test runs.
   async function triggerMarkerToast(cdp, { extraText = MARKER } = {}) {
-    const beforeCount = await cdp.evaluate(
-      `Array.from(document.querySelectorAll('[data-sonner-toast]')).filter((el) => el.textContent.includes('reserved') && el.textContent.includes('marker')).length`
+    await cdp.evaluate(
+      `Array.from(document.querySelectorAll('[data-sonner-toast]')).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`
     );
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ${JSON.stringify(extraText)}); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(
-      `Array.from(document.querySelectorAll('[data-sonner-toast][data-mounted="true"][data-visible="true"]:not([data-removed="true"])')).filter((el) => el.textContent.includes('reserved') && el.textContent.includes('marker')).length > ${beforeCount}`,
-      { timeoutMs: 10_000, label: 'a fresh mounted+visible marker-refusal toast appears' }
+      `(() => { const el = document.querySelector('[data-sonner-toast][data-mounted="true"][data-visible="true"]:not([data-removed="true"]):not([${TOAST_SEEN_ATTR}="true"])'); return !!el && el.textContent.includes('reserved') && el.textContent.includes('marker'); })()`,
+      { timeoutMs: 10_000, label: 'a fresh, untagged, mounted+visible marker-refusal toast appears' }
     );
     await sleep(400);
   }
@@ -284,30 +305,41 @@ async function main() {
 
     // Tall composer (gate round 1 fix, High): the textarea padded past its own `max-h-48` cap
     // (handleSend's refusal leaves the draft untouched, so the tall text survives the trigger),
-    // proving the offset is read from the LIVE measured height, not the old fixed guess -- and
-    // that the published `--refract-composer-height` CSS var matches what was actually measured.
+    // proving the offset is read from the LIVE measured clearance, not the old fixed guess --
+    // compares against a RESTING measurement taken just before (gate round 2 fix: a fixed
+    // numeric threshold doesn't generalise across whatever sits below the composer), and that
+    // the published `--refract-composer-clearance` CSS var matches what was actually measured.
+    const clearanceExpr = `(() => {
+      const send = document.querySelector('[aria-label^="Send"]');
+      const composer = send ? send.closest('${COMPOSER_ROOT_SELECTOR}') : null;
+      const measured = composer ? window.innerHeight - composer.getBoundingClientRect().top : null;
+      const publishedRaw = getComputedStyle(document.documentElement).getPropertyValue('--refract-composer-clearance').trim();
+      return { measured, published: publishedRaw ? parseFloat(publishedRaw) : null };
+    })()`;
+    const restingClearance = await cdp.evaluate(clearanceExpr);
     await triggerMarkerToast(cdp, { extraText: TALL_MARKER_TEXT });
     const tallResult = await assertChromeClear(cdp, 'tall composer', 1);
-    const heightCheck = await cdp.evaluate(`(() => {
-      const send = document.querySelector('[aria-label^="Send"]');
-      const composer = send ? send.closest('.border-composer-border') : null;
-      const measured = composer ? composer.getBoundingClientRect().height : null;
-      const publishedRaw = getComputedStyle(document.documentElement).getPropertyValue('--refract-composer-height').trim();
-      return { measured, published: publishedRaw ? parseFloat(publishedRaw) : null };
-    })()`);
-    assertEqual(heightCheck.measured > 200, true, `tall composer: the composer box grew well past its resting height (measured ${heightCheck.measured}px)`);
+    const tallClearance = await cdp.evaluate(clearanceExpr);
     assertEqual(
-      heightCheck.published !== null && Math.abs(heightCheck.measured - heightCheck.published) <= 2,
+      tallClearance.measured !== null && restingClearance.measured !== null && tallClearance.measured > restingClearance.measured + 50,
       true,
-      `tall composer: published --refract-composer-height (${heightCheck.published}px) matches the measured composer height (${heightCheck.measured}px) within 2px`
+      `tall composer: clearance grew well past resting (resting ${restingClearance.measured}px, tall ${tallClearance.measured}px)`
+    );
+    assertEqual(
+      tallClearance.published !== null && Math.abs(tallClearance.measured - tallClearance.published) <= 2,
+      true,
+      `tall composer: published --refract-composer-clearance (${tallClearance.published}px) matches the measured clearance (${tallClearance.measured}px) within 2px`
     );
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-tall-composer.png'));
-    report.push({ step: 'tall composer: toast clear, offset tracks the live measured height', ok: true, geometry: tallResult, heightCheck });
+    report.push({ step: 'tall composer: toast clear, offset tracks the live measured clearance', ok: true, geometry: tallResult, restingClearance, tallClearance });
 
     // Narrow (<=600px) window: CDP viewport override (see this script's own header for why not
     // an OS-level resize) crossing Sonner's own `@media (max-width:600px)` breakpoint, which
     // switches `bottom` positioning onto `--mobile-offset-bottom` -- proving `mobileOffset`
-    // carries the same live height, not Sonner's bare 16px mobile floor.
+    // carries the same live clearance, not Sonner's bare 16px mobile floor, AND (gate round 2
+    // fix, High) that its own `left`/`right` insets keep the now-full-width toast off the right
+    // rail too (`assertChromeClear`'s `overlapsRail` check, already run for every pass).
+
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 560, height: 700, deviceScaleFactor: 1, mobile: false });
     await triggerMarkerToast(cdp);
     const narrowResult = await assertChromeClear(cdp, 'narrow (<=600px) window', 1);

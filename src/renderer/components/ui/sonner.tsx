@@ -22,12 +22,23 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 // independent composers that can each be a different height at once. Gate round 1 fix (High,
 // product/visual): `offset`/`mobileOffset` below read a live CSS custom property instead of a
 // guessed static value -- `composerHeightVar.ts` tracks every mounted composer's own measured
-// height (a `ResizeObserver` per `MessageInput` instance) and publishes the MAX across however
-// many are mounted, dropping an instance's entry on unmount. `mobileOffset` carries the SAME
-// value: Sonner's own `@media (max-width:600px)` rule (`node_modules/sonner`'s own CSS) switches
-// `bottom` onto `--mobile-offset-bottom` instead of `--offset-bottom` -- leaving it unset would
-// silently fall back to Sonner's bare 16px floor below 600px width, right back onto Send.
-const TOAST_BOTTOM_OFFSET = 'calc(var(--refract-composer-height, 8rem) + 1.5rem)'
+// CLEARANCE (gate round 2 rename, Medium: not just height -- `StatusBar.tsx` renders BELOW the
+// whole chat workspace, `App.tsx`, so a composer's own bottom edge never touches the window's
+// bottom edge; clearance is measured from the composer's own TOP to the viewport bottom, which
+// folds that in without hardcoding the StatusBar's height here) and publishes the MAX across
+// however many composers are mounted, dropping an instance's entry on unmount, and re-measuring
+// on window resize (the viewport height can change independently of any composer's own size).
+// `mobileOffset` carries the SAME clearance value for `bottom`: Sonner's own
+// `@media (max-width:600px)` rule (`node_modules/sonner`'s own CSS) switches `bottom` onto
+// `--mobile-offset-bottom` instead of `--offset-bottom` -- leaving it unset would silently fall
+// back to Sonner's bare 16px floor below 600px width, right back onto Send. Gate round 2 fix
+// (High, Test): below 600px Sonner also makes the toast viewport-wide minus `2 * mobileOffset.
+// left` (its own CSS: `width:calc(100% - var(--mobile-offset-left) * 2)`, confirmed in
+// `node_modules/sonner`'s own dist), so with no `left`/`right` set that full-width toast
+// overlapped the 40px right rail (`IconRail.tsx`); `left`/`right` both now `3.5rem` clear it on
+// both edges (the toast's own width maths off `left` alone, but `right` is set too so the
+// toaster's OWN box -- not just the individual toast -- is symmetric).
+const TOAST_BOTTOM_OFFSET = 'calc(var(--refract-composer-clearance, 8rem) + 1.5rem)'
 
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
@@ -35,7 +46,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="dark"
       position="bottom-center"
       offset={{ bottom: TOAST_BOTTOM_OFFSET }}
-      mobileOffset={{ bottom: TOAST_BOTTOM_OFFSET }}
+      mobileOffset={{ bottom: TOAST_BOTTOM_OFFSET, left: '3.5rem', right: '3.5rem' }}
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
