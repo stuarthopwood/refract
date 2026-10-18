@@ -304,13 +304,17 @@ the OR alone cannot do by itself.
 
 **Decided (Skippy, delegated by Stuart 2026-10-18, gate round 2, UI Lows)**: two edge cases in
 the redesigned toggle, both confirmed as intended behaviour, no code change --
-1. A toggle attempted on the chain row before its own row id exists (`turnKey` undefined, which
-   only ever coincides with `stages.length < 2`, the same condition under which the chain row
-   itself renders `null` with no interactive trigger to toggle at all) is dropped by design: it
-   falls back to local-only state for that render, never persisted, and there is nothing visible
-   for a user to have toggled in the first place.
+1. A toggle attempted on the chain row before its own row id exists (`turnKey` undefined only
+   while `stages` is empty) is dropped by design -- this only ever happens while
+   `stages.length < 2`, the same range the chain row itself renders `null` for (which also
+   covers a turn with exactly one Stage, where the row id IS already defined): it falls back to
+   local-only state for that render, never persisted, and there is nothing visible for a user
+   to have toggled in the first place either way.
 2. A user's own manual CLOSE on a Stage is never overridden by a LATER failure on that same
    Stage (`autoOpen` swinging back to `true`): `open = manualOpen ?? (...)` means a defined
    `manualOpen` always wins, by design -- the user's choice to keep a Stage collapsed is
-   respected even once it fails; the failure itself still surfaces through the chain row's own
-   roll-up and the settle announcer/toast, independent of this one row's own open state.
+   respected even once it fails. Gate round 3 correction (UI): the failure is NOT surfaced by a
+   toast (none exists for a Stage failure) -- it still surfaces through the CLOSED Stage's own
+   header (its red icon and "N done, M failed" roll-up render regardless of expand state), the
+   per-turn chain row's own roll-up (only when the turn has 2 or more Stages), and the
+   screen-reader-only settle announcement.

@@ -9,16 +9,18 @@ import { useStageToggleStore } from '@/state'
  * rises on its own, never falls back closed by itself -- only the user's own `onOpenChange` can
  * lower it, and once they do, that choice wins permanently over any LATER `autoOpen` swing too
  * (issue #991 gate round 1, item 8, decided: a Stage the user closed stays closed even if it
- * later fails -- the failure still surfaces elsewhere, the chain row and the toast/announcer).
+ * later fails -- the failure still surfaces elsewhere: the CLOSED Stage's own header still
+ * shows its red icon and "N done, M failed" roll-up regardless of expand state, the per-turn
+ * chain row's own roll-up when the turn has 2 or more Stages, and the screen-reader-only settle
+ * announcement; there is no toast for a Stage failure).
  * The auto-open latch lives in LOCAL component state only (never persisted: recomputing it
  * fresh on every mount is already correct, since a freshly-mounted row re-reads its own live
  * status regardless); only a user's own manual override needs to survive a remount, so that
- * alone is held in `useStageToggleStore`, keyed by session id + row id. A `null` `sessionId` or
- * `rowId` (no session yet, or the chain row's own brief window before its first Stage exists --
- * that window never renders any interactive trigger a user could toggle anyway, since the chain
- * row itself returns `null` whenever it has fewer than two Stages) falls back to local-only
- * state for that component's lifetime, never persisted -- dropped on purpose once the row
- * actually mounts with a real key, by design, not a bug. */
+ * alone is held in `useStageToggleStore`, keyed by session id + row id. A `null` `sessionId`
+ * (no session yet) or `rowId` (the chain row's own brief window before this turn's first Stage
+ * exists, which only ever happens while `stages.length < 2` and never renders an interactive
+ * trigger regardless) falls back to local-only state ONLY WHILE that id stays null, dropped
+ * once the row gets a real id -- by design, not a bug. */
 export function useStickyDisclosure(
   sessionId: string | null,
   rowId: string | null,
@@ -34,9 +36,16 @@ export function useStickyDisclosure(
   const identityKey = `${sessionId}:${rowId}`
   const [latchedIdentityKey, setLatchedIdentityKey] = React.useState(identityKey)
   const [latchedAutoOpen, setLatchedAutoOpen] = React.useState(autoOpen)
+  const [localManualOpen, setLocalManualOpen] = React.useState<boolean | undefined>(undefined)
   if (identityKey !== latchedIdentityKey) {
     setLatchedIdentityKey(identityKey)
     setLatchedAutoOpen(autoOpen)
+    // Gate round 3 fix (issue #991, LOW, A11y+Code): the identity-reset branch above reset the
+    // auto-open latch but left a STALE `localManualOpen` behind across an id transition (most
+    // concretely: a toggle made while `rowId` was still `null`, kept around even once the chain
+    // row later mounts with a real id) -- reset it here too, so local-only state genuinely lasts
+    // only while an id stays `null`, matching this hook's own doc comment above.
+    setLocalManualOpen(undefined)
   }
   React.useEffect(() => {
     if (autoOpen) setLatchedAutoOpen(true)
@@ -44,7 +53,6 @@ export function useStickyDisclosure(
 
   const storedManualOpen = useStageToggleStore((s) => (sessionId != null && rowId != null ? s.bySession[sessionId]?.[rowId] : undefined))
   const setManualOpen = useStageToggleStore((s) => s.setManualOpen)
-  const [localManualOpen, setLocalManualOpen] = React.useState<boolean | undefined>(undefined)
 
   const manualOpen = sessionId != null && rowId != null ? storedManualOpen : localManualOpen
   // Gate round 2 fix (issue #991, item 5, LOW, code-reviewer): `latchedAutoOpen || autoOpen`,

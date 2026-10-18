@@ -101,6 +101,13 @@ export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
     }
   }
   for (const name of fileNames) {
+    // Gate round 3 fix (issue #991, LOW, security-auditor): refuses a `fileNames` entry that is
+    // not a bare filename -- `path.basename(name) !== name` catches a path separator, `..`, or
+    // a drive-qualified/absolute segment, any of which could otherwise escape `resolved` via
+    // `path.join` and delete something outside this guarded folder entirely.
+    if (path.basename(name) !== name) {
+      throw new Error(`refusing to clear ${resolved} -- fileNames entry ${JSON.stringify(name)} is not a bare filename`);
+    }
     const filePath = path.join(resolved, name);
     if (existsSync(filePath)) rmSync(filePath, { force: true });
   }

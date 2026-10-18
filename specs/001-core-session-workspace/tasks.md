@@ -3631,8 +3631,9 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   non-persisted, `bySession: Record<string, Record<string, boolean>>`, keyed by session id plus
   a Stage's own `group.id` or `chain:<first stage id>` for the chain row): the hook's own LOCAL
   state holds the auto-open latch (needs no persistence), the store holds ONLY a user's own
-  manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or the
-  chain row's own `stages.length < 2` unmount, or `Transcript.tsx`'s sr-only-stub/full-row swap)
+  manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or
+  `Transcript.tsx`'s sr-only-stub/full-row swap -- gate round 2 correction: the chain row's own
+  `stages.length < 2` early return does NOT unmount it; `null` keeps the instance and its hooks)
   (FR-081).
 - [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
   `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
@@ -3666,6 +3667,24 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   comment reworded to the past tense. `clearKnownOutputFiles` (verify-tauri-scratch-helpers.mjs)
   hardened against a symlink/junction planted at the shots-dir path, and now deletes/recreates
   under its own validated, canonical path rather than the caller's raw string.
+- [X] Gate round 3 remediation (test-reviewer, code-reviewer, security-auditor, UI): the
+  `{"__delay__": 1500}` plus the upward-only redesign together mean Stage 1 is now
+  deterministically OPEN by the time `verify-941-stage-naming.mjs`'s own expand-cycle assertion
+  for it ever runs -- fixed to expect `'true'`, not `'false'`; Stage 2/Stage 7 (no delay of
+  their own, unpaced frames) now accept either known boolean instead of asserting a specific
+  starting state. `expandByFinder`/`expandRow`/`assertExpandCycleByFinder` extracted to a new
+  `scripts/verify-941-stage-naming-expand-helpers.mjs` (#806 file-size discipline, re-exported
+  from the main helpers file for every existing consumer). The live check's own Stage-1-closes-
+  on-remount proof is now explicitly recorded (in both the header and a `notExercised` entry) as
+  hardening that cannot fail against `origin/main` on its own -- the genuine red there comes from
+  the earlier stays-open/focus-preserved checks and the Stage 6/chain-row manual-toggle proof.
+  Failure-visibility wording corrected throughout (no toast exists for a Stage failure; the
+  visible signal is the closed Stage's own red icon plus "N done, M failed" header, the chain
+  row's own roll-up only when the turn has 2+ Stages, and the screen-reader-only settle
+  announcement). `useStickyDisclosure`'s identity-reset branch now also clears
+  `localManualOpen`, so local-only state genuinely lasts only while an id stays `null`.
+  `clearKnownOutputFiles` refuses any `fileNames` entry that is not a bare filename
+  (`path.basename(name) !== name`), closing a path-traversal gap.
 
 Draft PR, branch `feat/991-stage-focus`. **Refs #991** until the live check above is actually run
 against a real built exe and confirms every acceptance item; switches to **Closes #991** once it

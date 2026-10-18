@@ -526,10 +526,13 @@
 - Q: Gate round 2 (UI Lows): does a user's manual close on a Stage get overridden if it later
   fails, and what happens to a toggle attempted before the chain row has a real row id? → A:
   Decided (Skippy, delegated by Stuart 2026-10-18): the manual close wins permanently (the
-  failure still surfaces through the chain row's roll-up and the settle announcer/toast,
-  independent of this one row's own open state); the pre-row-id toggle is dropped by design --
-  that window coincides exactly with the chain row rendering nothing at all (FR-068's own
-  `stages.length < 2` gate), so there is never a visible trigger to have toggled.
+  failure still surfaces through the closed Stage's own header -- its red icon and "N done, M
+  failed" roll-up show regardless of expand state -- the chain row's own roll-up when the turn
+  has 2 or more Stages, and the screen-reader-only settle announcement; there is no toast);
+  the pre-row-id toggle (the row id is missing only while `stages` is empty) only ever happens
+  while `stages.length < 2` -- the chain row renders nothing at all for that whole range
+  (FR-068's own gate, which also covers a turn with exactly one Stage, where the row id IS
+  already defined), so there is never a visible trigger to have toggled either way.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -922,11 +925,15 @@ The developer types a slash command and finds the ones the agent offers. If a se
   per row -- scoped to Stage and chain rows only; a tool-call group row and a thought-run row
   still reset their own disclosure on remount, unchanged by this requirement. A user's own
   manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice wins
-  permanently over any later auto-open condition; the failure still surfaces through the chain
-  row's own roll-up and the settle announcer/toast, decided gate round 2). A toggle attempted
-  on the chain row before it has mounted with a real row id is dropped by design (that window
-  coincides exactly with the chain row rendering nothing at all, FR-068's own `stages.length <
-  2` gate, so there is never a visible trigger to have toggled).
+  permanently over any later auto-open condition; the failure still surfaces through the closed
+  Stage's own header -- its red icon and "N done, M failed" roll-up show regardless of expand
+  state -- the chain row's own roll-up when the turn has 2 or more Stages, and the
+  screen-reader-only settle announcement; there is no toast, decided gate round 2). A toggle
+  attempted on the chain row before it has mounted with a real row id (the row id is missing
+  only while the turn has no Stage at all yet) is dropped by design -- this only ever happens
+  while `stages.length < 2`, the same range the chain row renders nothing at all for (FR-068's
+  own gate, which also covers a turn with exactly one Stage, where the row id IS already
+  defined), so there is never a visible trigger to have toggled either way.
 
 ### Key Entities
 

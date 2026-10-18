@@ -8,8 +8,12 @@
 // stageTriggerSelector exports every `verify-941-*` script already shares (AGENTS.md: no new
 // fixtures). The fixture gained one additive `{"__delay__": 1500}` (issue #991, 2026-10-18,
 // see its own header note) right after Stage 1's assistant-message echo, so Stage 1 is
-// genuinely observable as a running, open, two-member Stage for about 1.5s before it settles --
-// nothing else in the tape changed, so every existing `verify-941-*` assertion is unaffected.
+// genuinely observable as a running, open, two-member Stage for about 1.5s before it settles.
+// Final-delta fix (test-reviewer): combined with the upward-only disclosure redesign below,
+// Stage 1 is now deterministically OPEN by the time any `verify-941-stage-naming.mjs` assertion
+// ever runs against it (not closed) -- its own expand-cycle assertion was updated to expect
+// `'true'`, and Stage 2/7 (no fixture delay of their own, so whether either was ever observably
+// open before settling is not reliably reproducible) now accept either known boolean.
 //
 // ui-architect-v3 ruling (posted on #991, recorded in research.md decision 18): item 4 (a mouse
 // user reading a Stage row while it auto-closes on an all-success finish) is fixed by making
@@ -57,12 +61,18 @@
 //      session-switch-and-back REMOUNT (the auto-open latch is local-only and recomputes fresh
 //      from Stage 1's own current, settled state; with no manual override on record, `open`
 //      resolves to `false`) -- proves the store holds ONLY a user's own manual choice, never the
-//      ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign). MUST fail
-//      on `origin/main`: there, `open`/`userToggledRef` are plain `useState`/`useRef`, and the
-//      OLD bidirectional sync already auto-closes Stage 1 the moment it settles (before this
-//      phase even reaches the switch), so it would read "false" for the wrong reason entirely --
-//      this phase's OWN earlier point-1 check (still open while mounted) is what makes this a
-//      genuine redesign proof, not a coincidental match.
+//      ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign). Gate round
+//      3 correction (test-reviewer): this point CANNOT fail against `origin/main` on its own --
+//      there, the OLD bidirectional sync already auto-closes Stage 1 the moment it settles
+//      (long before this phase ever reaches the switch), so `origin/main` ALSO reads "false"
+//      here, coincidentally, for a completely different reason (it was never open after settling
+//      at all, not "open, then correctly forgotten on remount"). Point 1's own earlier "still
+//      open while mounted" check is what makes this redesign real and provable; point 4 alone
+//      is order-independent hardening against the auto-open latch leaking into the store, same
+//      as point 2's selector-scoping hardening, recorded the same honest way in `notExercised`.
+//      The genuine `origin/main`-failing red comes from point 1's own two checks above (stays
+//      open; focus preserved) and point 3's own Stage 6/chain-row manual-toggle persistence --
+//      points 2 and 4 are both hardening only, neither one a red/green regression demonstration.
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check are the only commands that have actually been run against
@@ -400,6 +410,7 @@ async function main() {
     } else {
       findings.push('Stage 1 (never manually touched) is closed after the remount -- its own local auto-open latch recomputed fresh (now false, settled all-success), proving the store never persisted the ephemeral auto-open state, only a genuine manual choice (issue #991 item 2/4 fix confirmed).');
     }
+    notExercised.push('This Stage-1-closes-after-remount check guards against the store persisting the ephemeral auto-open latch -- it cannot fail against origin/main on its own: the OLD bidirectional sync there already auto-closes Stage 1 the moment it settles, long before this phase ever reaches the switch, so origin/main ALSO reads "false" here, coincidentally, for an unrelated reason. The genuine origin/main-failing red for Stage 1 comes from the earlier stays-open-while-mounted and focus-preserved checks above, not this one.');
     await cdp.screenshot(path.join(SHOTS_DIR, '05-manual-toggles-survived-switch.png'));
 
     for (const theme of THEMES) {

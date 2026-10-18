@@ -32,6 +32,8 @@ import { launchViaJobObject } from './verify-tauri-cdp.mjs';
 import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
 import { axText } from './verify-tauri-scratch-helpers.mjs';
 import { measuredContrastRatio } from './contrast-math.mjs';
+import { expandByFinder, expandRow, assertExpandCycleByFinder } from './verify-941-stage-naming-expand-helpers.mjs';
+export { expandByFinder, expandRow, assertExpandCycleByFinder } from './verify-941-stage-naming-expand-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -174,60 +176,10 @@ export async function clickByTextScrolled(cdp, text, options) {
   await clickScrolled(cdp, textFinderExpr(text, options), options);
 }
 
-/** Gate round 2 fix (item 9): generalized over any trigger-finding JS expression (a Stage's own
- * title-keyed trigger, or the chain row's own `aria-label`-keyed trigger) -- reads the REAL
- * current `aria-expanded` value and only clicks when it is not already `'true'`. Driving the
- * SAME scenario across three themes in one script run never re-collapses a row a PRIOR theme's
- * own pass already expanded: `switchTheme` (grep-verified) only flips a live class and never
- * reloads the app or resets React state, so without this guard a later pass would immediately
- * re-collapse a row the first pass already expanded. */
-export async function expandByFinder(cdp, triggerFinderExpr) {
-  const isExpanded = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') === 'true'`);
-  if (!isExpanded) await clickScrolled(cdp, triggerFinderExpr);
-}
-
-export async function expandRow(cdp, titleText) {
-  await expandByFinder(cdp, stageTriggerSelector(titleText));
-}
-
-/** Gate round 2 fix (item 9): asserts a trigger's own `aria-expanded` is a KNOWN boolean string
- * (`'true'` or `'false'`) before expanding -- never specifically `'false'`, since a prior theme
- * pass in the SAME run may have already expanded this exact row (see the module header) -- and
- * is exactly `'true'` after. Generalized over any trigger-finding JS expression so the chain
- * row's own expand click gets the identical guard (previously it had none at all).
- *
- * Gate round 3 fix (item 11): `firstPassExpectedBefore` (when given) asserts the row's own REAL
- * `defaultOpen` starting value exactly, instead of merely "a known boolean" -- a caller passes
- * it only when the theme pass currently running is the FIRST one for this scenario run (nothing
- * has expanded or collapsed any row yet) and the fixture's own data makes that starting value
- * unambiguous: `'false'` for a Stage whose own `defaultOpen` is false (every agent finished, no
- * failure/cancel/exit -- Stage 1/2/7 here), or `'true'` for the chain row (this fixture's own
- * Stage 5 carries one `failed` agent, so `counts.failed > 0` makes the WHOLE TURN's chain row
- * default OPEN, `SubagentChainRow.tsx:429`). On every later pass (and for any row this fixture
- * cannot make an unambiguous claim about) `firstPassExpectedBefore` is left `undefined` and the
- * old "a known boolean, either value" check runs unchanged. */
-export async function assertExpandCycleByFinder(cdp, triggerFinderExpr, findings, failures, themeName, label, firstPassExpectedBefore) {
-  const before = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') ?? null`);
-  if (firstPassExpectedBefore !== undefined) {
-    if (before !== firstPassExpectedBefore) {
-      failures.push(`[${themeName}] ${label}'s own trigger aria-expanded was ${JSON.stringify(before)} before expanding on the FIRST theme pass, expected exactly the string ${JSON.stringify(firstPassExpectedBefore)} (this fixture's own real defaultOpen starting state).`);
-    } else {
-      findings.push(`[${themeName}] ${label}'s own trigger aria-expanded is exactly ${JSON.stringify(firstPassExpectedBefore)} before expanding, as expected on the first theme pass (a genuine starting-state check against this fixture's own real defaultOpen value, not merely a known boolean).`);
-    }
-  } else if (before !== 'true' && before !== 'false') {
-    failures.push(`[${themeName}] ${label}'s own trigger aria-expanded was ${JSON.stringify(before)} before expanding, expected the string "true" or "false" (a known starting state).`);
-  } else {
-    findings.push(`[${themeName}] ${label}'s own trigger aria-expanded is a known starting state (${JSON.stringify(before)}) before expanding (a prior theme pass in this run may have already expanded it -- switchTheme never reloads the app).`);
-  }
-  await expandByFinder(cdp, triggerFinderExpr);
-  const after = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') ?? null`);
-  if (after !== 'true') {
-    failures.push(`[${themeName}] ${label}'s own trigger aria-expanded was ${JSON.stringify(after)} after expanding, expected the string "true".`);
-  } else {
-    findings.push(`[${themeName}] ${label}'s own trigger aria-expanded is the string "true" after expanding.`);
-  }
-}
-
+// `expandByFinder`/`expandRow`/`assertExpandCycleByFinder` moved to
+// `verify-941-stage-naming-expand-helpers.mjs` (issue #991 final-delta gate, #806 file-size
+// discipline); re-imported below since `assertGreenFinished`/`assertDetailsOnExpand`/
+// `assertChainRow` in this same file still call them.
 async function assertExpandCycle(cdp, titleText, findings, failures, themeName, label, firstPassExpectedBefore) {
   await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label, firstPassExpectedBefore);
 }
@@ -522,7 +474,8 @@ export async function assertGreenFinished(cdp, findings, failures, themeName) {
  * `ToolRow.tsx`'s `SubagentRow`, `extractResultSummary`): expanding Stage 1 reveals its own
  * batch context; BOTH members show their result's first line with no need to expand further. */
 export async function assertDetailsOnExpand(cdp, findings, failures, themeName, isFirstThemePass) {
-  await assertExpandCycle(cdp, STAGE1_TITLE, findings, failures, themeName, 'Stage 1', isFirstThemePass ? 'false' : undefined);
+  // Issue #991 final-delta fix: Stage 1 is deterministically open here now (see `assertExpandCycleByFinder`'s own doc comment).
+  await assertExpandCycle(cdp, STAGE1_TITLE, findings, failures, themeName, 'Stage 1', isFirstThemePass ? 'true' : undefined);
   await cdp.waitFor(`${stageContentSelector(STAGE1_TITLE)}?.textContent.includes('Quality gate for #923') ?? false`, {
     timeoutMs: 10_000,
     label: `[${themeName}] Stage 1 expanded content shows its own context`

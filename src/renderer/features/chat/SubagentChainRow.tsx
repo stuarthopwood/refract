@@ -469,10 +469,11 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   const isUnsettled = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
   // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
   // unanimous): shared `useStickyDisclosure`, same rationale as `StageGroupRow` above. `turnKey`
-  // is `undefined` only in the brief window before this turn's first Stage exists --
+  // is `undefined` only when `stages` is empty (no Stage exists yet for this turn) --
   // `useStickyDisclosure` falls back to local-only state for that case, same as a null
-  // `sessionId` (the chain row renders nothing to toggle in that window anyway: `stages.length
-  // < 2` returns `null` just below, the same condition that leaves `turnKey` undefined). A
+  // `sessionId`. This only ever happens while `stages.length < 2` (the early return just below
+  // also covers a turn with exactly one Stage, where `turnKey` IS defined but the chain row
+  // still renders nothing), so there is never anything visible to toggle regardless. A
   // manual toggle survives a SESSION SWITCH -- a different Session's own row set unmounts this
   // component entirely through ordinary keyed-list reconciliation. Gate round 2 correction
   // (code-reviewer): `stages.length` dropping back below 2 is NOT a remount by itself -- React

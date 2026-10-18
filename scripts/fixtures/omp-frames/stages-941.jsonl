@@ -50,10 +50,14 @@
 // `message_id` is already stamped and Stage 1 genuinely renders as an open, running,
 // two-member Stage) and before its `tool_execution_end` -- a deliberate ~1.5s window where
 // Stage 1 is observably still running, for `scripts/verify-991-stage-focus.mjs`'s own
-// keyboard-focus-survives-settling check. Nothing else in this file changes: every frame's
-// own content, order, and every existing `verify-941-*`/`verify-941-part2` assertion (all of
-// which wait on FINAL settled content, 30s timeouts) are unaffected by one extra ~1.5s pause
-// this early in the tape.
+// keyboard-focus-survives-settling check. Nothing else in this file changes: every frame's own
+// content, order, and timing (all of which wait on FINAL settled content, 30s timeouts) are
+// unaffected by one extra ~1.5s pause this early in the tape. The PRODUCT change this delay
+// exists to exercise (issue #991: `StageGroupRow`'s disclosure is now upward-only) DOES change
+// what `verify-941-stage-naming.mjs`'s own expand-cycle assertions see for Stage 1 specifically
+// (deterministically auto-open and staying open by the time they ever run, not closed) -- those
+// assertions were updated to match (`assertExpandCycleByFinder`'s own doc comment has the full
+// story); this fixture's own frames needed no further change beyond the one delay line above.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
