@@ -239,7 +239,16 @@ async function main() {
     );
     findings.push('Readiness green against the REAL ambient omp install, scratch data dir.');
 
-    // ---- Project 1: the local scratch repo, for the composer chip / details card / gauge ----
+    // ---- Project 1: the GitHub clone, added FIRST so it is `repositories[0]` --
+    // `PullRequestsView.tsx:16`'s own default-scope rule (`viewRepositoryId ?? repositories[0]?.id`)
+    // means whichever Project is added first is what the Pull Requests view shows with no repo
+    // explicitly selected; a local-only Project with no GitHub remote added first would leave
+    // that view scoped to a repository `pullRequests.list` can never resolve PRs for (confirmed
+    // root cause of a real run's own "list never settles" failure -- added the local scratch
+    // repo first there, by mistake, a script bug, not a product one). ----
+    if (githubClone) await addRepository(cdp, githubClone);
+
+    // ---- Project 2: the local scratch repo, for the composer chip / details card / gauge ----
     await addRepository(cdp, repoDir);
     const repoName = path.basename(repoDir);
     await createSessionViaQuickCreate(cdp, repoName);
@@ -348,9 +357,10 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-04-details-card-gauge-max.png'));
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
 
-    // ---- Project 2: real GitHub PR data (#925 Changes tab + #919 per-file header) ----
+    // ---- Real GitHub PR data (#925 Changes tab + #919 per-file header): the clone was already
+    // added as Project 1, so it is `repositories[0]` and the Pull Requests view's own default
+    // scope (`PullRequestsView.tsx:16`) with no repository explicitly selected here. ----
     if (githubClone) {
-      await addRepository(cdp, githubClone);
       await cdp.clickByLabel('Pull requests', { prefix: true });
       await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
       const loaded = await cdp.waitFor(
