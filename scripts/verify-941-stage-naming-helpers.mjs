@@ -7,31 +7,15 @@
 // start time, all inside `meta`; expanded content order is `StageContextBrief` (only when
 // `group.context` is set), then `StageUsesLine`, then either `SubagentBody` (solo) or a `SpineList` of `SubagentRow`s (multi).
 //
-// Gate round 2 rewrite (items 9-12, re-grep-verified against the real current source):
-//  - Item 9: `switchTheme` (`verify-tauri-scratch-helpers.mjs`, grep-confirmed) only flips a
-//    live class -- it never reloads the app -- so a row a PRIOR theme pass already expanded is
-//    STILL expanded on a later pass. Every expand-cycle helper below (`expandByFinder`,
-//    `assertExpandCycleByFinder`, used by every Stage row AND the chain row) now reads the
-//    REAL starting `aria-expanded` value and only asserts it is a known boolean string, never
-//    that it must be "false" -- `expandByFinder` itself only clicks when not already expanded.
-//  - Item 10: `StageContextBrief.tsx` no longer applies `inert` to its own container (confirmed
-//    by re-reading it in full) -- only an overflowing FOCUSABLE descendant gets
-//    `tabindex="-1"` while collapsed, restored on expand/no-longer-overflowing. The fixture's
-//    Stage 7 now places its own Markdown heading AND a focusable link near the END of a longer
-//    body; `assertContextBriefOverflow` checks both, each via an independent `if` (never an
-//    `if`/`else if` chain that would silently skip a later check).
-//  - Item 11: a new Stage 8 (no context, names share only a prefix) exercises
-//    `sharedNamePrefix`'s "Stage N · <prefix>" fallback; a new `assertStageMetaRollup` checks
-//    the exact "N done"/"N done, M failed" wording together with a rendered duration AND
-//    "started <time>" in the same trigger; Stage 1/Stage 3's "no Uses:" check now expands first
-//    (`CollapsedLine.tsx`'s own comment confirms Radix unmounts `CollapsibleContent` while
-//    closed, so an unexpanded check was a guaranteed-trivial pass, never a real negative).
-//  - Item 12: a new Stage 9 (solo, NO context) plus the existing Stage 6 (solo, WITH context)
-//    are both checked by `assertSoloAgentName` for the agent's own name appearing in the
-//    visible row either way; a new Stage 10 (borderline-length context) plus
-//    `assertNarrowViewportOverflow` prove the `ResizeObserver` genuinely re-measures on a real
-//    narrow-viewport layout change, via the same `Emulation.setDeviceMetricsOverride` precedent
-//    `verify-tauri-569.mjs`/`verify-557-thought-runs.mjs` already establish.
+// Gate round 2 rewrite (items 9-12, re-grep-verified against the real current source): item 9
+// added the `aria-expanded`-aware expand-cycle guard every Stage/chain row below now uses
+// (`switchTheme` never reloads the app, so a prior pass's own expand survives into the next);
+// item 10 confirmed `StageContextBrief.tsx` never applies `inert` to its own container, only
+// `tabindex="-1"` to an overflowing focusable descendant; item 11 added Stage 8's
+// `sharedNamePrefix` fallback and `assertStageMetaRollup`'s exact counts/duration/start-time
+// check; item 12 added Stage 9 (solo, no context) and Stage 10 (borderline-length,
+// `assertNarrowViewportOverflow` proves `ResizeObserver` genuinely re-measures on a real
+// narrow-viewport change).
 //
 // Selector strategy unchanged: `CollapsedLine.tsx` sets a plain `title` attribute on a Stage/
 // member row's own visible label SPAN whenever that label is a literal string -- a real,
@@ -136,8 +120,15 @@ export const STAGE10_BORDERLINE_TITLE =
 // `title="read"` the same way a Stage/member label does.
 export const PLAIN_TOOL_TITLE = 'read';
 
+/** Live-build fix (first real build-slot run, never exercised before): the old version wrapped
+ * the JSON-stringified attribute value inside an OUTER single-quoted JS string -- an apostrophe
+ * anywhere in `titleText` (STAGE10_BORDERLINE_TITLE's own "brief's own") closed that string
+ * early, a syntax error the instant this title was ever actually waited on. Fixed by building
+ * the CSS value first (escaping backslash/double-quote), then `JSON.stringify`-ing the WHOLE
+ * `querySelector` argument once -- correct for any content, apostrophes included. */
 export function titleSelector(titleText) {
-  return `document.querySelector('[title=${JSON.stringify(titleText)}]')`;
+  const cssValue = titleText.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `document.querySelector(${JSON.stringify(`[title="${cssValue}"]`)})`;
 }
 
 export function stageContentSelector(titleText) {
