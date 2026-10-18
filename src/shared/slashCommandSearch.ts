@@ -12,7 +12,7 @@
 // list built-ins first).
 // Decision 4: the description is searched too, but only once no name/alias match exists at all --
 // a description-only match always ranks below every name match, regardless of tier. Amended
-// (FR-073, gate round 1): a description hit only counts at the word-start or substring tier,
+// (FR-074, gate round 1): a description hit only counts at the word-start or substring tier,
 // never subsequence -- a subsequence match against a whole prose sentence barely narrows
 // anything (the needle's letters merely need to appear somewhere, in order, with unlimited
 // gaps).
@@ -148,7 +148,7 @@ function matchCommand(needle: string, command: SlashCommandDescriptor): CommandM
     }
     return { match: { command, nameMatchRanges: bestNameRanges }, tier: bestTier };
   }
-  // Gate-fix (High, round 1): restricted to word-start or substring (decision 4 amended, FR-073)
+  // Gate-fix (High, round 1): restricted to word-start or substring (decision 4 amended, FR-074)
   // -- a description-only SUBSEQUENCE hit used to count too, which for a two- or three-letter
   // needle matched almost every command's own prose description (the needle's letters merely
   // had to appear somewhere, in order, with unlimited gaps), so the list barely narrowed at all.
@@ -161,7 +161,7 @@ function matchCommand(needle: string, command: SlashCommandDescriptor): CommandM
 
 /** Ranks `commands` against `query` (the typed text, NOT yet lower-cased) per decision 3: exact,
  * prefix, word-start, substring, subsequence, then a description-only match (word-start or
- * substring only, FR-073 amendment), each tier a stable sort keeping `commands`' own input order
+ * substring only, FR-074 amendment), each tier a stable sort keeping `commands`' own input order
  * as the tie-break (decision 3: "ties keep the current order", i.e. built-ins first, since
  * callers already list them first). An empty query matches every command, unchanged order, with
  * no bold spans -- the empty-query shape the slash menu shows the instant `/` is typed, before

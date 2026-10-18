@@ -1,5 +1,5 @@
 // The slash-command menu (contracts/ipc.md `chat.commands`/`commands:update`; FR-032, FR-033,
-// FR-073, FR-074): shown above the message box while the composer's text parses as either step
+// FR-074, FR-075): shown above the message box while the composer's text parses as either step
 // below. No shadcn `Command` (no `cmdk` dependency) in components/ui, so this is a small listbox
 // built by hand.
 import { useEffect, useRef } from 'react'
@@ -97,7 +97,7 @@ export interface SlashMenuProps {
    * two stacked listboxes with the same accessible name are never ambiguous to assistive tech. */
   ariaLabel?: string
   /** Defaults to "No matching commands"; a subcommand step uses "No matching subcommands"
-   * instead (issue #938 item 1, FR-074). */
+   * instead (issue #938 item 1, FR-075). */
   noMatchesText?: string
   /** Whether the caller's own query text is non-empty (round 2 gate finding M2, decided
    * 2026-10-18): the bare `/` list and an empty subcommand step (both effectively "no query yet")

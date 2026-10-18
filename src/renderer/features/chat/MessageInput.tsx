@@ -834,7 +834,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       setAnnouncedSuggestion(null)
       return
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void handleSend()
       return

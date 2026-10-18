@@ -214,25 +214,34 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
   // compaction) apart from a bare command's own processing, which never satisfies it.
   //
   // `undefined` vs `null` (round 3 gate fix, Medium): `undefined` means "never settled yet";
-  // `null` means "settled, but this turn carries no usable timing at all" -- collapsing both
-  // into `undefined` broke on a REMOUNT of an already-settled-but-untimed turn (`react-virtuoso`
-  // windowing it in/out, a session switch resets state to its initial value every time), which
-  // could then tick through an unrelated running command. `null` never ticks and never falls
-  // back to `turn.userItem.at` as a substitute baseline -- there is nothing reliable to tick
-  // FROM. The initial state is computed lazily from the CURRENT props/`settledEnd` so a remount
-  // recovers its correct state on the very first render, not only once an effect gets to run.
+  // `null` means "no settle BASELINE yet" (never a permanent block -- round 4 fix M1 below).
+  // Round 4 gate fix (Main, 2026-10-18, decided: accept the rare remount-during-a-command
+  // flicker rather than a frozen clock -- add to #938): H1 -- the lazy initialiser used to seed
+  // `lastSettledEnd` from `settledEnd` whenever `settledEnd` was already defined, EVEN WHILE
+  // still genuinely running (a remount mid-turn, `react-virtuoso` windowing or a session switch,
+  // can see an already-partially-timed turn) -- that wrongly treated the turn's OWN current
+  // state as its "baseline", so nothing could ever look "newer" than itself and the clock froze
+  // on that value until a later item arrived. The initialiser now ignores `settledEnd` entirely
+  // while `isLastTurn && isTurnRunning`: always `undefined` (ticks live via `Date.now()`
+  // immediately) in that case, only seeding from `settledEnd` once genuinely not running. M1 --
+  // `null` must not block ticking forever either: once `settledEnd` itself later becomes defined
+  // (a genuine resumption's first real item appears) while `lastSettledEnd` is still `null`,
+  // there is no prior real baseline to compare against, so ANY defined `settledEnd` is itself the
+  // signal to resume ticking (a bare command's own reply can still never trigger this: its
+  // notice is excluded from `computeTurnEnd` exactly as before, so `settledEnd` stays `undefined`
+  // for a genuinely untimed turn regardless of how many unrelated commands run against it).
   const settledEnd = computeTurnEnd(turn.items, receivedAt)
   const [lastSettledEnd, setLastSettledEnd] = React.useState<number | null | undefined>(() =>
-    isLastTurn && isTurnRunning && settledEnd === undefined ? undefined : (settledEnd ?? null)
+    isLastTurn && isTurnRunning ? undefined : (settledEnd ?? null)
   )
   React.useEffect(() => {
     if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd ?? null)
   }, [isLastTurn, isTurnRunning, settledEnd])
   if (!turn.userItem || turn.userItem.at === 0) return null
   const running =
-    lastSettledEnd === null
-      ? false
-      : isLastTurn && isTurnRunning && (lastSettledEnd === undefined || hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd))
+    isLastTurn &&
+    isTurnRunning &&
+    (lastSettledEnd === undefined || (lastSettledEnd === null ? settledEnd !== undefined : hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd)))
   const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)

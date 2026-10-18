@@ -4,7 +4,7 @@
 // what this live check proves; this module holds the pure JS scorer port and CDP read/action
 // helpers it drives through, not any of the actual assertions.
 
-import { pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { pressKey, createSessionViaQuickCreate, sessionOpenButtonFinder } from './verify-tauri-session-list-helpers.mjs';
 import path from 'node:path';
 
 // --- Pure JS port of src/shared/slashCommandSearch.ts, for an INDEPENDENT cross-check of the
@@ -299,7 +299,7 @@ export async function readSlashMenu(cdp) {
 // needs no more heuristics at all.
 export const SLASH_ANNOUNCEMENT_FINDER = `document.querySelector('[data-slot="slash-menu-announcement"]')`;
 
-/** The whole subcommand-step live-check sequence (#938 item 1, FR-073/FR-074, plus round 2 gate
+/** The whole subcommand-step live-check sequence (#938 item 1, FR-074/FR-075, plus round 2 gate
  * findings H and M1): split out of verify-947-938-slash-menu.mjs solely to keep that script under
  * the repo's 600-line soft cap (scripts/check-file-size.mjs) -- no behaviour change from the
  * inline version. Mutates the caller's own `findings`/`failures`/`notExercised` arrays in place
@@ -468,4 +468,129 @@ export async function runSubcommandStepChecks(cdp, { SHOTS_DIR, findings, failur
     label: 'Menu closed after Escape'
   });
   findings.push('Escape closed the subcommand step (both the listbox and the "No matching subcommands" empty state are gone).');
+}
+
+/** Parses `formatElapsed`'s own output ("28s", "1m 14s", "2h 3m") into total seconds, for a
+ * numeric ">" comparison between two samples of the SAME turn-total-time text. `null` for
+ * anything that does not match one of those three exact shapes. */
+function parseElapsedSeconds(text) {
+  const hourMatch = text.match(/^(\d+)h (\d+)m$/);
+  if (hourMatch) return Number(hourMatch[1]) * 3600 + Number(hourMatch[2]) * 60;
+  const minuteMatch = text.match(/^(\d+)m (\d+)s$/);
+  if (minuteMatch) return Number(minuteMatch[1]) * 60 + Number(minuteMatch[2]);
+  const secondMatch = text.match(/^(\d+)s$/);
+  if (secondMatch) return Number(secondMatch[1]);
+  return null;
+}
+
+/** Round 4 gate finding H1/M1 live probe (Main, 2026-10-18): proves the turn-total-time line
+ * keeps ticking across a REAL remount mid-turn (switching to another Session and back while a
+ * long-running command is still genuinely in flight), not just that a bare command's own reply
+ * cannot stretch an ALREADY-settled turn (the pre-existing check earlier in this live check).
+ * Sends a prompt that makes the agent run a real ~25s shell command via its bash tool, switches
+ * Sessions away and back once the turn-total-time line confirms it is genuinely running, samples
+ * the line's own text twice 2s apart right after the remount (it MUST increase -- H1's exact bug
+ * froze it at a stale value here), then waits for the real settle and confirms the final value
+ * stays put after a post-settle `/advisor status` reply (the already-covered #938 item 4 case,
+ * re-proved in this harder scenario too). */
+export async function runRemountDuringCommandCheck(cdp, { repoName, SHOTS_DIR, findings, failures, notExercised }) {
+  const activeSessionName = await cdp.evaluate(
+    `(() => { const el = Array.from(document.querySelectorAll('[data-repository-id] li [data-session-open]')).find((b) => b.getAttribute('aria-current') === 'true'); return el ? el.getAttribute('aria-label').split(',')[0] : null; })()`
+  );
+  if (!activeSessionName) {
+    notExercised.push('Could not identify the active Session\'s own row (no aria-current="true" open button found) -- the remount-during-a-command probe could not run.');
+    return;
+  }
+  await clearComposer(cdp);
+  const rowCountBefore = await cdp.evaluate(`(${TURN_TOTAL_FINDER}).length`);
+  await cdp.typeIntoByLabel(
+    'Message',
+    'Use your bash tool to run exactly this command and wait for it to finish, with no other tool calls: powershell -c "Start-Sleep -Seconds 25". Reply with nothing else once it completes.'
+  );
+  await cdp.clickByLabel('Send message');
+
+  let genuinelyRunning = false;
+  try {
+    await cdp.waitFor(`(${TURN_TOTAL_FINDER}).length > ${rowCountBefore}`, { timeoutMs: 30_000, label: 'A NEW turn-total-time line mounted for the long-running command turn' });
+    await cdp.waitFor(
+      `(() => { const rows = (${TURN_TOTAL_FINDER}); const row = rows[rows.length - 1]; return !!row && row.getAttribute('aria-hidden') === 'true'; })()`,
+      { timeoutMs: 15_000, label: 'Turn-total-time line is genuinely live-ticking (still running)' }
+    );
+    genuinelyRunning = true;
+  } catch {
+    notExercised.push('The long-running-command turn never showed a genuinely running turn-total-time line within the timeout -- the remount-during-a-command probe could not run.');
+  }
+  if (!genuinelyRunning) return;
+
+  // Real wall-clock pause so the bash tool call has actually started the 25s sleep, not just the
+  // model still "thinking" about invoking it.
+  await new Promise((resolve) => setTimeout(resolve, 4_000));
+
+  await createSessionViaQuickCreate(cdp, repoName);
+  findings.push(`Switched away to a second Session while "${activeSessionName}"'s own long-running command turn was still genuinely in flight.`);
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+
+  const originalOpenButton = sessionOpenButtonFinder(activeSessionName);
+  await cdp.click(originalOpenButton);
+  await cdp.waitFor(`(${originalOpenButton})?.getAttribute('aria-current') === 'true'`, { timeoutMs: 15_000, label: `Switched back to "${activeSessionName}"` });
+
+  const sample1 = await readLatestTurnTotalText(cdp);
+  const seconds1 = sample1 === null ? null : parseElapsedSeconds(sample1);
+  if (sample1 === null || seconds1 === null) {
+    failures.push(`After switching back to "${activeSessionName}" mid-command, the turn-total-time line read ${JSON.stringify(sample1)} -- expected a real elapsed-time string (H1).`);
+  } else {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const sample2 = await readLatestTurnTotalText(cdp);
+    const seconds2 = sample2 === null ? null : parseElapsedSeconds(sample2);
+    if (seconds2 === null) {
+      failures.push(`The turn-total-time line disappeared or became unparseable (${JSON.stringify(sample2)}) 2s after the remount, while the command was still genuinely running (H1).`);
+    } else if (!(seconds2 > seconds1)) {
+      failures.push(`The turn-total-time line read "${sample1}" then "${sample2}" 2s apart right after switching back mid-command -- it did not increase, meaning the clock froze on the remount (H1 regression).`);
+    } else {
+      findings.push(`Remounting mid-command (switching Sessions away and back while the long-running bash command was still in flight): the turn-total-time line read "${sample1}" then "${sample2}" 2s later -- genuinely still ticking, not frozen (H1 fix confirmed).`);
+    }
+  }
+  await cdp.screenshot(path.join(SHOTS_DIR, '06-remount-mid-command-still-ticking.png'));
+
+  const before = await countNotices(cdp);
+  let settledText = null;
+  try {
+    await cdp.waitFor(
+      `(() => { const rows = (${TURN_TOTAL_FINDER}); const row = rows[rows.length - 1]; return !!row && row.getAttribute('aria-hidden') !== 'true'; })()`,
+      { timeoutMs: 60_000, label: 'Long-running command turn genuinely settled' }
+    );
+    settledText = await readLatestTurnTotalText(cdp);
+  } catch {
+    // handled by the null check below
+  }
+  if (!settledText) {
+    notExercised.push('The long-running command turn never genuinely settled within 60s -- the post-settle command-reply re-check could not run.');
+    return;
+  }
+  findings.push(`The long-running command turn genuinely settled, reading "${settledText}".`);
+  await clearComposer(cdp);
+  await cdp.typeIntoByLabel('Message', '/advisor status');
+  await cdp.clickByLabel('Send message');
+  const deadline = Date.now() + 30_000;
+  let replied = false;
+  while (Date.now() < deadline) {
+    const texts = await allNoticeTexts(cdp);
+    if (texts.slice(before).some((t) => /advisor/i.test(t))) {
+      replied = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (!replied) {
+    notExercised.push('"/advisor status" produced no notice within 30s after the long-running command turn settled -- could not confirm the post-settle time-stretch re-check.');
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2_000)); // settle time for computeTurnEnd's own re-commit
+  const afterText = await readLatestTurnTotalText(cdp);
+  await cdp.screenshot(path.join(SHOTS_DIR, '07-remount-command-settled-after-reply.png'));
+  if (afterText !== settledText) {
+    failures.push(`After a settled long-running-command turn ("${settledText}"), a later "/advisor status" reply changed it to "${afterText}" -- still stretching the turn's own shown time.`);
+  } else {
+    findings.push(`Turn-total-time line is UNCHANGED ("${afterText}") after a command reply, even for a turn that itself contained a long-running tool call and a mid-command remount.`);
+  }
 }

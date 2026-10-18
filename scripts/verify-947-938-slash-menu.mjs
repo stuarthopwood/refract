@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Live CDP check for issues #947 (fuzzy slash-command search, FR-073) and #938 items 1 and 4 (slash
+// Live CDP check for issues #947 (fuzzy slash-command search, FR-074) and #938 items 1 and 4 (slash
 // subcommand step; a command reply no longer stretching the previous turn's own shown time),
 // required before the draft PR. Modelled on `verify-917-advisor-command.mjs`'s own structure and
 // isolation posture.
 //
 // Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
 // override -- only Refract's OWN data, `REFRACT_DATA_DIR`, is scratch). Checks, in order:
-// (0) typing a bare `/` lists every command Refract offers (FR-032, FR-073's own "An empty query
+// (0) typing a bare `/` lists every command Refract offers (FR-032, FR-074's own "An empty query
 // matches every command" rule) -- asserted against the two commands Refract ALWAYS lists itself
 // (`new`, `btw`), not a hardcoded total, since the real ambient install's own command set is not
-// under this script's control; (1) fuzzy ranking order (FR-073): queries are built
+// under this script's control; (1) fuzzy ranking order (FR-074): queries are built
 // ALGORITHMICALLY from whatever commands this real install actually offers (never hardcoded
 // names), one per tier this scorer recognises (prefix, word-start, substring, subsequence), and
 // the full rendered order is asserted against an independent JS port of
@@ -19,7 +19,7 @@
 // entry matches with or without the `skill:` prefix, if this install offers any (genuine
 // `notExercised` otherwise, never faked); (2) the subcommand step -- selecting `/advisor` leaves
 // the composer reading `/advisor ` instead of sending, the menu's own accessible name becomes
-// "/advisor subcommands", and its first row is `status` with nothing typed yet (FR-073);
+// "/advisor subcommands", and its first row is `status` with nothing typed yet (FR-074);
 // selecting that subcommand completes `/advisor status ` without sending; (3) a real turn's own
 // total-time line (the "`Turn took <N>`" sr-only text) does not change after a command reply
 // (`/advisor status`, this story's #938 item 4 fix) arrives once that turn has already settled --
@@ -44,7 +44,8 @@ import {
   countNotices,
   readLatestTurnTotalText,
   TURN_TOTAL_FINDER,
-  runSubcommandStepChecks
+  runSubcommandStepChecks,
+  runRemountDuringCommandCheck
 } from './verify-947-938-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -131,7 +132,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- (0) Bare "/" lists every command (FR-032, FR-073 "empty query matches every command")
+    // ---- (0) Bare "/" lists every command (FR-032, FR-074 "empty query matches every command")
     // ---- also the one place this script reads the REAL command list, which every later section
     // reuses to build its own queries, rather than a hardcoded name.
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
@@ -153,7 +154,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-bare-slash-lists-every-command.png'));
 
-    // ---- (1) Fuzzy ranking order (#947, FR-073): queries built algorithmically from the REAL
+    // ---- (1) Fuzzy ranking order (#947, FR-074): queries built algorithmically from the REAL
     // command list above, one per tier (prefix, word-start, substring, subsequence), each
     // asserted against an independent JS port of the real scorer, not a hardcoded expectation ----
     const tierQueries = buildTierQueries(realCommands);
@@ -207,7 +208,7 @@ async function main() {
       // tier whose match is a genuine NAME hit (every tier query here is, by construction).
       const top = rendered?.options?.[0];
       if (!top || !top.hasBold || top.boldWeight == null || top.normalWeight == null) {
-        failures.push(`"${tierName}" tier query "/${query.needle}": top option "${top?.name}" has no bolded match span (or its computed weight could not be read) -- FR-073 decision 5.`);
+        failures.push(`"${tierName}" tier query "/${query.needle}": top option "${top?.name}" has no bolded match span (or its computed weight could not be read) -- FR-074 decision 5.`);
       } else if (!(top.boldWeight > top.normalWeight)) {
         failures.push(
           `"${tierName}" tier query "/${query.needle}": top option "${top.name}"'s matched span computed font-weight (${top.boldWeight}) is not heavier than the surrounding plain text (${top.normalWeight}) -- bold is not actually rendered bold.`
@@ -325,12 +326,12 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01a-fixed-hard-probes.png'));
     await clearComposer(cdp);
 
-    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix (FR-073 decision
+    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix (FR-074 decision
     // 2) -- only if this real ambient install actually offers one; a genuine environment gap is
     // reported as notExercised, never faked ----
     const skillCommands = realCommands.filter((c) => c.name.toLowerCase().startsWith('skill:'));
     if (skillCommands.length === 0) {
-      notExercised.push('This real ambient omp install offers no skill:<name> commands -- the skill-prefix-optional match (FR-073 decision 2) was not exercised.');
+      notExercised.push('This real ambient omp install offers no skill:<name> commands -- the skill-prefix-optional match (FR-074 decision 2) was not exercised.');
     } else {
       const skill = skillCommands[0];
       const bareName = skill.name.slice('skill:'.length);
@@ -359,7 +360,7 @@ async function main() {
     }
     await clearComposer(cdp);
 
-    // ---- (2) Subcommand step (#938 item 1, FR-073/FR-074, round 2 gate findings H/M1) --
+    // ---- (2) Subcommand step (#938 item 1, FR-074/FR-075, round 2 gate findings H/M1) --
     // extracted to `runSubcommandStepChecks` (verify-947-938-helpers.mjs) solely to keep this
     // file under the repo's 600-line soft cap; no behaviour change from the inline version ----
     await runSubcommandStepChecks(cdp, { SHOTS_DIR, findings, failures, notExercised });
@@ -429,6 +430,12 @@ async function main() {
       }
     }
 
+    // ---- (4) Round 4 gate finding H1/M1 live probe: the turn-total-time line keeps ticking
+    // across a REAL remount mid-turn (switching Sessions away and back while a long-running
+    // bash command is still genuinely in flight), and the final settled value still stays put
+    // after a post-settle command reply -- extracted to `runRemountDuringCommandCheck`
+    // (verify-947-938-helpers.mjs) for the same file-size reason as `runSubcommandStepChecks` ----
+    await runRemountDuringCommandCheck(cdp, { repoName: path.basename(repoDir), SHOTS_DIR, findings, failures, notExercised });
     const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     console.log(`\n=== ${LOG}: FAILURES (always fail the run) ===`);
