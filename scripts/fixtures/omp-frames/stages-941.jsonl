@@ -1,0 +1,64 @@
+// SYNTHESIZED, not captured live: issue #941 (Stage naming, green-finished, context brief,
+// "Uses:" dependencies) needs a batch `task()` call whose owning assistant message actually
+// echoes the call back as a `{"type":"toolCall",...}` content part -- the one shape neither
+// `subagents.jsonl` nor `subagents-background-turn.jsonl` ever sent (both fixtures predate
+// #941 and only ever drove the live `tool_execution_start`/`tool_execution_end` pair, never the
+// message snapshot `build_assistant_items`'s own `"toolCall" =>` arm reads, per
+// `src-tauri/src/omp/transcript.rs`), so neither exercises `message_id` ever getting stamped
+// onto a `subagent` item (`subagent_items.rs`'s own `build_message_subagent_items`) -- without
+// that stamp, `groupSubagentStages.ts` has no real Stage-boundary key to group on at all. Built
+// directly from the documented wire contract (`transcript.rs`'s `"toolCall" =>` arm,
+// `subagent_items.rs`'s `read_batch_context`/`build_message_subagent_items`/
+// `apply_batch_task_result`/`apply_async_result_jobs`) for the R-lane driving issue #941's live
+// check (`scripts/verify-941-stage-naming.mjs`). One user prompt, one agent turn, FOUR serial
+// Stages (four separate `task()` batch calls, each its own assistant message/messageId) --
+// deliberately never four separate prompt turns: `groupSubagentStages` runs once PER TURN
+// (`Transcript.tsx`'s own `splitIntoTurns`, keyed on `kind: 'user'` items), so Stage 2's
+// "Uses: G923Code (Stage 1)" dependency can only resolve against an EARLIER Stage inside the
+// SAME turn's own `stages` array -- across two separate prompt turns, Stage 1 would never be
+// visible to Stage 2's `applyDependencies` scan at all. See README.md's provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stages-941\\conversation.json","sessionId":"sess-stages-941-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage1-task","toolName":"task","args":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]},"intent":"Running the #923 quality gate"}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage1-task","name":"task","arguments":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage1-task","name":"task","arguments":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"stage1-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"G923Code","status":"finished","task":"Review the code changes for #923.","durationMs":1200},{"index":1,"id":"G923Arch","status":"finished","task":"Review the architecture for #923.","durationMs":1500}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"G923Code","label":"G923Code","status":"completed","resultText":"Reviewed the code for #923.\nNo blocking issues found.","durationMs":1200},{"id":"G923Arch","label":"G923Arch","status":"completed","resultText":"Reviewed the architecture for #923.\nAll boundaries look sound.","durationMs":1500}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"G923Code","label":"G923Code","status":"completed","resultText":"Reviewed the code for #923.\nNo blocking issues found.","durationMs":1200},{"id":"G923Arch","label":"G923Arch","status":"completed","resultText":"Reviewed the architecture for #923.\nAll boundaries look sound.","durationMs":1500}]},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage2-task","toolName":"task","args":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]},"intent":"Building the #559/#560 fixes"}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage2-task","name":"task","arguments":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage2-task","name":"task","arguments":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"stage2-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"Story559","status":"finished","task":"Implement the fix for #559.","durationMs":1800},{"index":1,"id":"Story560","status":"finished","task":"Implement the fix for #560.","durationMs":2000}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"Story559","label":"Story559","status":"completed","resultText":"Implemented the fix for #559.\nUnit tests added.","durationMs":1800},{"id":"Story560","label":"Story560","status":"completed","resultText":"Implemented the fix for #560.\nUnit tests added.","durationMs":2000}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"Story559","label":"Story559","status":"completed","resultText":"Implemented the fix for #559.\nUnit tests added.","durationMs":1800},{"id":"Story560","label":"Story560","status":"completed","resultText":"Implemented the fix for #560.\nUnit tests added.","durationMs":2000}]},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage3-task","toolName":"task","args":{"tasks":[{"name":"R8Alpha","task":"Run suite alpha for #8."},{"name":"R8Beta","task":"Run suite beta for #8."}]},"intent":"Running two R8 suites"}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage3-task","name":"task","arguments":{"tasks":[{"name":"R8Alpha","task":"Run suite alpha for #8."},{"name":"R8Beta","task":"Run suite beta for #8."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage3-task","name":"task","arguments":{"tasks":[{"name":"R8Alpha","task":"Run suite alpha for #8."},{"name":"R8Beta","task":"Run suite beta for #8."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"stage3-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"R8Alpha","status":"finished","task":"Run suite alpha for #8.","durationMs":900},{"index":1,"id":"R8Beta","status":"finished","task":"Run suite beta for #8.","durationMs":950}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"R8Alpha","label":"R8Alpha","status":"completed","resultText":"Suite alpha passed for #8.","durationMs":900},{"id":"R8Beta","label":"R8Beta","status":"completed","resultText":"Suite beta passed for #8.","durationMs":950}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"R8Alpha","label":"R8Alpha","status":"completed","resultText":"Suite alpha passed for #8.","durationMs":900},{"id":"R8Beta","label":"R8Beta","status":"completed","resultText":"Suite beta passed for #8.","durationMs":950}]},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage4-task","toolName":"task","args":{"context":"Final solo check for #8.","tasks":[{"name":"R8Solo","task":"Run the final solo check for #8."}]},"intent":"Running the final solo check"}
+{"type":"message_start","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage4-task","name":"task","arguments":{"context":"Final solo check for #8.","tasks":[{"name":"R8Solo","task":"Run the final solo check for #8."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage4-task","name":"task","arguments":{"context":"Final solo check for #8.","tasks":[{"name":"R8Solo","task":"Run the final solo check for #8."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"stage4-task","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"R8Solo","status":"finished","task":"Run the final solo check for #8.","durationMs":700}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar4","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"R8Solo","label":"R8Solo","status":"completed","resultText":"Final solo check passed for #8.","durationMs":700}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar4","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"R8Solo","label":"R8Solo","status":"completed","resultText":"Final solo check passed for #8.","durationMs":700}]},"timestamp":0}}
+{"type":"message_start","messageId":"msg-a5","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a5","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"All four stages completed successfully."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a5","message":{"role":"assistant","content":[{"type":"text","text":"All four stages completed successfully."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
