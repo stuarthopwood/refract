@@ -343,7 +343,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   // any member fails -- even mid-run, since colour here is reinforcement, not the only signal
   // (the word itself carries it) -- while "N interrupted" stays neutral (decision 5: interrupted
   // is never red). A solo call's own meta reuses the same per-call stat `ToolCallRow` shows (an
-  // `edit`'s own "+N −M", #632, alongside its duration) -- one function, so the two can never
+  // `edit`'s own "+N -M", #632, alongside its duration) -- one function, so the two can never
   // show a different stat for what is otherwise the identical row.
   const meta = solo
     ? callMeta(last)

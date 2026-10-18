@@ -61,7 +61,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
   const regionId = React.useId()
 
   // Gate round 1 (code-reviewer High, H2): shares `countChanges` with `lib/diff.ts`'s own
-  // `diffStat` (ToolRow.tsx's "+N −M" row stat) instead of a second hand-rolled loop, so the
+  // `diffStat` (ToolRow.tsx's "+N -M" row stat) instead of a second hand-rolled loop, so the
   // two can never disagree about the same diff.
   const stats = React.useMemo(() => (changedFile ? countChanges(changedFile) : { added: 0, removed: 0 }), [changedFile])
 

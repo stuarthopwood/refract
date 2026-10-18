@@ -51,7 +51,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep, resolveCssVarColor } from './verify-tauri-cdp.mjs';
 import {
   gitHead,
   buildLauncher,
@@ -303,6 +303,19 @@ async function main() {
       currentTokenColors = await resolveDiffTokenColors(cdp);
       const chip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
       assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures, { requireBothPositive: true, tokenColors: currentTokenColors });
+      // Gate round 3 (Low, Main): confirms live, not inferred -- the surface-list comments in
+      // globals.css/theme-contrast-pairs.mjs claim the Changes chip is never painted on
+      // `--composer-background`, not even in Dark (high contrast); logged into report.json so
+      // that claim stays auditable against a real measurement, not only this script's own prose.
+      if (theme.id === 'dark-high-contrast') {
+        const resolvedBackground = await resolveCssVarColor(cdp, '--background', 'background-color');
+        const resolvedComposerBackground = await resolveCssVarColor(cdp, '--composer-background', 'background-color');
+        if (chip && chip.background === resolvedBackground) {
+          findings.push(`Dark (high contrast): Changes chip's own measured backdrop (${chip.background}) matches --background's own resolved value, confirming it is painted on --background, NOT --composer-background (${resolvedComposerBackground}) -- the status line sits outside the composer's own fill in every theme.`);
+        } else {
+          failures.push(`Dark (high contrast): Changes chip's own measured backdrop (${chip?.background}) does NOT match --background's own resolved value (${resolvedBackground}) -- the "never painted on --composer-background" claim (globals.css, theme-contrast-pairs.mjs) needs re-checking.`);
+        }
+      }
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-01-changes-chip.png`));
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -328,6 +341,11 @@ async function main() {
     // on this section's own screenshots used to be false; this makes it true. ----
     await switchTheme(cdp, 'dark', 'Dark');
     await sleep(200);
+    // Gate round 3 (High, Main): tracks whether ANY requested level EVER settled to itself
+    // exactly across all 8 requests -- if none ever did, the picker drive mechanism itself may
+    // be broken (not merely OMP's own level resolution), which must hard-fail, not disappear
+    // into a pile of individually-reasonable-looking `notExercised` entries.
+    let anyLevelConfirmedAsRequested = false;
     for (const levelLabel of LEVEL_LABELS) {
       const settledLabel = await selectReasoningLevel(cdp, `(${REASONING_PICKER_FINDER})`, levelLabel);
       // Derive the expected level STRING from the settled label text (the trigger shows the
@@ -337,35 +355,50 @@ async function main() {
       const settledLevel = settledLabel && Object.prototype.hasOwnProperty.call(LABEL_TO_LEVEL, settledLabel) ? LABEL_TO_LEVEL[settledLabel] : null;
       const expectedAngle = needleAngleDeg(settledLevel === 'inherit' ? null : settledLevel);
       const actualAngle = await readGaugeNeedleAngle(cdp, PICKER_GAUGE_SVG);
+      const angleOk = actualAngle !== null && Math.abs(angleDiffDeg(actualAngle, expectedAngle)) <= 0.5;
       // Gate round 1 (L3): a 2x crop of just the needle icon -- visual evidence a reviewer can
       // actually judge the needle's own position from, rather than only the numeric angle
       // assertion below. Gate round 2 (Medium, Main): every one of the 7 NAMED levels now gets
       // its own crop (#924's own scope is "every selectable level"), not only three samples --
       // "Default" is skipped (it requests `inherit`, not a named step, so there is no distinct
       // needle position to show beyond whichever named level it settles on, already captured).
+      // Gate round 3 (Low, Main): named after the SETTLED level, not the requested one -- a
+      // mismatch (requested "Minimal", settled "Low") used to produce a file literally named
+      // "minimal" that was really a picture of "Low"'s own needle; checks `screenshotCrop`'s
+      // own return value too, a silent `false` (element not found/zero-sized) used to pass
+      // unnoticed.
       if (levelLabel !== 'Default') {
-        await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${levelLabel.toLowerCase().replace(/\s+/g, '-')}.png`));
+        const cropName = (settledLabel ?? levelLabel).toLowerCase().replace(/\s+/g, '-');
+        const cropped = await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${cropName}.png`));
+        if (!cropped) failures.push(`Requested "${levelLabel}" (settled "${settledLabel}"): could not capture a needle crop screenshot (element not found or zero-sized).`);
       }
       // Gate round 2 (Medium, Main): when OMP settles the request on a DIFFERENT named level
       // (seen live: requesting "Minimal" settled on "Low"), the REQUESTED level's own needle
       // position is never actually confirmed this run -- recording a PASS for "Minimal" here
-      // would really only be re-confirming "Low" a second time under the wrong name. Recorded
-      // honestly as `notExercised` (Refs #924: the requested level's own position stays
-      // unconfirmed until a run where OMP accepts it verbatim), separately from the genuine
-      // angle check on whatever level it DID settle on.
-      if (settledLabel !== levelLabel) {
-        const angleNote =
-          actualAngle === null
-            ? ''
-            : ` (the settled "${settledLabel}" needle itself reads ${actualAngle.toFixed(2)}deg, ${Math.abs(angleDiffDeg(actualAngle, expectedAngle)) <= 0.5 ? 'matching' : 'NOT matching'} the formula's own ${expectedAngle.toFixed(2)}deg for "${settledLabel}").`;
-        notExercised.push(`Requested "${levelLabel}" (Refs #924): OMP settled on "${settledLabel}" instead -- the "${levelLabel}" needle position is not genuinely confirmed this run${angleNote}`);
+      // would really only be re-confirming "Low" a second time under the wrong name.
+      //
+      // Gate round 3 fix (High, Main): the mismatch branch used to stop at that honest
+      // `notExercised` note WITHOUT ever validating the settled level's own angle -- a real
+      // rendering bug on whatever level OMP settled to would have been silently swallowed into
+      // a plausible-reading message instead of surfacing as a failure. Still records
+      // `notExercised` for the REQUESTED level, but a genuinely wrong or unreadable
+      // SETTLED-level angle is now its own hard failure, exactly as it would be had that same
+      // level been the one directly requested.
+      if (settledLevel === null) {
+        failures.push(`Requested "${levelLabel}": OMP settled on an unrecognised label "${settledLabel}" (not one of the 8 known trigger labels) -- cannot derive an expected angle for it.`);
       } else if (actualAngle === null) {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", but the gauge needle's own <path> could not be read.`);
-      } else if (Math.abs(angleDiffDeg(actualAngle, expectedAngle)) > 0.5) {
+      } else if (!angleOk) {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}" -- needle angle is ${actualAngle.toFixed(2)}deg, expected ${expectedAngle.toFixed(2)}deg (the 7-step formula's own angle for this settled level, mod 360).`);
+      } else if (settledLabel !== levelLabel) {
+        notExercised.push(`Requested "${levelLabel}" (Refs #924): OMP settled on "${settledLabel}" instead -- the "${levelLabel}" needle position is not genuinely confirmed this run (the settled "${settledLabel}" needle itself reads correctly: ${actualAngle.toFixed(2)}deg, matching the formula's own ${expectedAngle.toFixed(2)}deg).`);
       } else {
         findings.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", needle angle ${actualAngle.toFixed(2)}deg matches the formula's own ${expectedAngle.toFixed(2)}deg (mod 360).`);
+        anyLevelConfirmedAsRequested = true;
       }
+    }
+    if (!anyLevelConfirmedAsRequested) {
+      failures.push('Reasoning picker: no requested level EVER settled to itself exactly across all 8 requests this run -- every single one mismatched or failed outright; the picker drive mechanism itself may be broken, not only OMP\'s own level resolution.');
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-03-reasoning-picker-max.png'));
 
@@ -449,13 +482,16 @@ async function main() {
           // merely "a heading exists" -- `detail` is one atomic React state object, so once the
           // heading shows the right number every other field read from it (additions,
           // deletions, changedFilesCount, and so the aggregate line below) is from the SAME
-          // fetch, never a stale leftover from the row this replaced.
+          // fetch, never a stale leftover from the row this replaced. Gate round 3 fix (Low,
+          // Main): a plain substring match on `'#' + n` would let `#9` falsely match `#91` or
+          // `#910` -- matches only when the number is NOT followed by another digit (`[0-9]`,
+          // not `\d`, needs no backslash-escaping across the two template-literal layers here).
           const rowText = await cdp.evaluate(`document.querySelectorAll('.divide-y button')[${i}]?.textContent ?? ''`);
           const prNumberMatch = rowText.match(/#(\d+)/);
           const prNumber = prNumberMatch ? prNumberMatch[1] : null;
           await cdp.click(`document.querySelectorAll('.divide-y button')[${i}]`);
           await cdp.waitFor(
-            `(() => { const h = document.querySelector('h2.line-clamp-2'); return !!h && ${JSON.stringify(prNumber)} !== null && h.textContent.includes('#' + ${JSON.stringify(prNumber)}); })()`,
+            `(() => { const h = document.querySelector('h2.line-clamp-2'); const n = ${JSON.stringify(prNumber)}; return !!h && n !== null && new RegExp('#' + n + '(?![0-9])').test(h.textContent); })()`,
             { timeoutMs: 20_000, label: `PR row ${i} detail title rendered for #${prNumber}` }
           );
           await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
