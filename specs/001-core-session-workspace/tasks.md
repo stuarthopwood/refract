@@ -3673,7 +3673,24 @@ present before sending and waits for a NEW one, and resolves the `/advisor` desc
 way Rust does (prefer a builtin-sourced match, then name/alias) instead of a bare
 `.find(name)`.
 
-Opened as draft PR #996 (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
-here; item 1 and 4 already shipped via #954; item 6 was resolved by investigation, no code to
-ship) until the live check above confirms every item; the PR switches to **Closes #938** only
-once it does, per the working rule that every remaining item must land AND be live-proven first.
+Opened as draft PR #996 (branch `feat/938-slash-rest`), merged `origin/main` (v0.4.0, `47e4ad7`)
+before the build slot, no src/src-tauri conflicts. Build slot granted 2026-10-18: `cargo fmt
+--check` found two real formatting diffs in this phase's own new Rust (fixed with `cargo fmt`);
+the first two live runs each found and fixed one genuine SCRIPT-only bug, never product
+behaviour: `clearKnownOutputFiles`'s own safety guard expects `SHOTS_DIR`'s parent to resolve
+directly to the OS temp dir (one level, matching `verify-556-zero-box.mjs`'s own pattern), not
+the two-level container-then-timestamp folder this script first used; and `clearComposer` must
+click the message field before backspacing -- a prior `clickByLabel('Send message')` leaves real
+browser focus on the Send BUTTON (no `onMouseDown` guard prevents it), so raw Backspace events
+landed on the button instead of the textarea whenever a refusal left the draft text unCleared
+(FR-019). **Final clean run, head `4721e918` (clean tree, `dirty: false`)**: `ci-local.mjs` all
+16 steps PASS (Rust tests, Rust lint, and the Tauri debug build all genuinely ran this time, not
+skipped); `verify-938-slash-rest.mjs` against the real built exe and real omp: **0 failures, 0
+notExercised** -- FR-083's exact description text confirmed via DOM read; FR-081's two refusal
+wordings both confirmed verbatim ("/advisor takes one of: on, off, status." and "/advisor on
+doesn't take more text yet. Try /advisor on on its own."); FR-082's short notice was forced to a
+REAL second line at a narrowed 220px width (height 40px over the 20px one-line baseline, no
+horizontal overflow, text-overflow "clip") and screenshotted across Dark, Obsidian, and Dark
+(high contrast). **Refs #938** switches to **Closes #938**: every remaining item (2, 3, 5) is
+now live-proven on this exact head; item 1 and 4 already shipped via #954; item 6 was resolved
+by investigation (research.md decision 18), no code to ship for it.
