@@ -24,6 +24,7 @@ import { useSplitStore } from './split-store'
 import { useSessionListStore } from './session-list-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
+import { useChatWidthStore } from './chat-width-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
@@ -55,6 +56,7 @@ export { useSessionListStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState, PullRequestsActiveCount } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
+export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
@@ -81,6 +83,7 @@ export interface RefractDevStores {
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
+  chatWidth: typeof useChatWidthStore
   updates: typeof useUpdateStore
 }
 
@@ -117,6 +120,7 @@ if (import.meta.env.DEV) {
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
     theme: useThemeStore,
+    chatWidth: useChatWidthStore,
     updates: useUpdateStore
   }
 }

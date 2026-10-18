@@ -112,10 +112,27 @@ export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAtt
   throw new Error(`buildAndCopyExeFresh: source exe kept changing across ${maxAttempts} rebuild attempts.`);
 }
 
+/** Gate-fix (relaunch, caught live 2026-10-17): `webview2DataDir`/`pidFile` used to be fixed
+ *  names derived only from `exePath`'s directory. Any caller that relaunches the SAME exe twice
+ *  in one run (a remembered-settings-across-a-relaunch check) reused both paths: the stale
+ *  `target.pid` from the first launch was still on disk when the second `launchViaJobObject`
+ *  started polling, and its very first check (run essentially synchronously right after a
+ *  non-blocking `spawn()`, long before a brand-new launcher could have written anything) read
+ *  that leftover, now-dead pid and accepted it as the new launch's `targetPid` -- so
+ *  `isTargetOwningPort` correctly refused to drive the process that actually owned the new CDP
+ *  port. Matches the already-established fix in `verify-tauri-567.mjs`/`559.mjs`/
+ *  `560-helpers.mjs`/`735.mjs`/`ask.mjs`'s own `launchBuiltExe` copies: suffix both names with a
+ *  per-call timestamp so two launches against the same `exePath` never collide.
+ */
+function nowStamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
 export async function launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile }) {
-  const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
+  const stamp = nowStamp();
+  const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${stamp}`);
   mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(path.dirname(exePath), 'target.pid');
+  const pidFile = path.join(path.dirname(exePath), `target-${stamp}.pid`);
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,

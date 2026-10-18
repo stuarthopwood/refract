@@ -164,6 +164,10 @@ _Avoid_: Code view, raw view, code only
 One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
 
+**Chat width** (issue #554):
+The app-wide Settings, Appearance choice between Full (default, the transcript column fills the pane) and Reading column (caps it at 64rem, centred); applies to the chat transcript only, never the message box or the status line. Save/Cancel live preview, the same interaction model as **Theme**.
+_Avoid_: reading width, line width (ambiguous with a font/measure setting, which does not exist)
+
 ### UI vocabulary
 
 Decided by Stuart in the #474 grill, 2026-10-08. Glossary only -- implementation detail (icon, button, and tooltip rules) lives in `docs/design/`, not here.

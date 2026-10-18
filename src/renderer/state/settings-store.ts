@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   split: null,
   theme: 'dark',
   watermarkEnabled: true,
+  chatWidth: 'full',
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
   detectImagePathsOnPaste: true,
