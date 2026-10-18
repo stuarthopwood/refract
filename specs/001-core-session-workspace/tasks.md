@@ -4014,7 +4014,8 @@ turn's running agents were otherwise shown expanded twice over (ui-architect-v3 
   where a Stage genuinely, observably runs while the turn already has two or more Stages.
   Proves: Stage 2 stays closed while running at that point, with the chain row already open and
   showing "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close
-  itself once the turn grows past it; after the whole ten-Stage turn settles, Stage 2 stays
+  itself once the turn grows past it (amended: Stage 3, see gate round 1); after the whole
+  ten-Stage turn settles, Stage 2 stays
   closed (never auto-opened, so nothing to self-close) while Stage 5 (its own failed member) is
   open regardless of Stage count; a manual open plus keyboard focus placed inside Stage 2 while
   running survives both it settling and every later Stage streaming in behind it (WCAG 2.4.3).
