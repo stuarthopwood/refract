@@ -844,3 +844,22 @@ head (see the PR body's own Gates section for the exact run). `check:theme-contr
   covers files); FR-039 shared cap now also applied to path-paste and clipboard-file paste
   (`remainingAttachmentSlots`); DRY: `read_bounded`/`resolve_session_worktree` shared helpers in
   `attachments.rs`, reused by both readers instead of redeclared.
+
+- [X] T032 (#926) Gate round 2 fixes (Code2/Test2/Sec2/A11y2/UI2): fixed a Windows folder-open
+  bug (`read_file_attachment` now stats via path BEFORE ever calling `read_bounded`, since
+  `File::open` on a directory fails outright on Windows); path-sent attachments now report the
+  REAL on-disk `metadata.len()` for `byteLength`, never a buffer length capped at the inline
+  limit; `read_bounded` checks size against the cap BEFORE reading a single byte again (restoring
+  the pre-#926 guard) and the grow-mid-read check compares against the stat's own `metadata.len()`,
+  never the external cap constant; D1 corrected to the marker's FIRST line-start occurrence, not
+  last; D2 corrected wording (stops a confused renderer, not a defence against a compromised one)
+  plus Session-existence validation before recording, a surfaced error at the per-session cap, and
+  `forget_session` wired into `sessions_delete`; shared `FileAttachmentChip.tsx` gained an inline
+  Remove control (never absolutely positioned outside the Badge), corrected sr-only wording (no
+  longer duplicating the visible "sent as path" text), a `wrap` mode for the sent bubble (full
+  name visible to keyboard users, not title-only), and a `removeLabel` override for same-named
+  pending files ("N of M"); `attachResolvedPaths` now names every failed file with its own reason,
+  distinguishes picker vs drop wording, and counts folders separately from files; pasted-file
+  overflow now shows a visible toast, not only the sr-only region; a pasted image's own magic-byte
+  read failure no longer aborts the rest of a multi-file paste; a plain clipboard-image paste
+  respects the shared per-message cap too.

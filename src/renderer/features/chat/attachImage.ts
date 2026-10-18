@@ -33,6 +33,21 @@ export async function attachImageFile(sessionId: string, file: File): Promise<vo
   useDraftStore.getState().announceAttachment(sessionId, `Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
 }
 
+/** #926: the single clipboard-image-paste call site (`MessageInput.tsx`'s own `handlePaste`,
+ * when `data.files` carries nothing else) -- the ONLY `attachImageFile` caller not already
+ * pre-capped by its own caller (`attachPastedFiles` below slices to `remainingSlots` BEFORE its
+ * loop, so re-checking inside `attachImageFile` itself would wrongly reject a file that slice
+ * already counted as fitting). Gate round 2 (UI2 Low): still respects the FR-039 shared
+ * per-message cap (images+files together) -- FR-005's own "no cap" language predates that shared
+ * cap and only ever meant "no image-specific sub-limit of its own". */
+export async function attachPastedImage(sessionId: string, file: File): Promise<void> {
+  if (remainingAttachmentSlots(sessionId) === 0) {
+    notify({ code: 'invalid-argument', message: 'This message already has the maximum of 10 attachments; nothing more was attached.' })
+    return
+  }
+  await attachImageFile(sessionId, file)
+}
+
 /** #926: the validate-plus-commit sequence for a non-image clipboard-pasted `File` (Explorer
  * "Copy" a file, then Ctrl+V) -- mirrors `attachImageFile` above exactly, but for
  * `buildPastedFileAttachment` (renderer-only, no OS path: Tauri's `File` API exposes none for a
@@ -66,7 +81,7 @@ async function attachPastedFile(sessionId: string, file: File): Promise<void> {
  * file with no OS path. Gate round 1 (FR-039 Medium, Test1 Medium): shares the per-message cap
  * with pending images (`remainingAttachmentSlots`), and marks every read `pending` so Enter/Send
  * waits for it the same way a path-based read already does. */
-export async function attachPastedFiles(sessionId: string, files: readonly File[], announceAttachment: (message: string) => void): Promise<void> {
+export async function attachPastedFiles(sessionId: string, files: readonly File[]): Promise<void> {
   useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
   try {
     const remainingSlots = remainingAttachmentSlots(sessionId)
@@ -77,11 +92,16 @@ export async function attachPastedFiles(sessionId: string, files: readonly File[
     }
     const overflow = files.length - capped.length
     if (overflow > 0) {
-      announceAttachment(
-        remainingSlots === 0
-          ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
-          : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflow} ${overflow === 1 ? 'was' : 'were'} skipped.`
-      )
+      // Gate round 2 (Test2 HIGH): a VISIBLE toast, matching `attachDroppedPaths.ts`'s own
+      // overflow notice -- the sr-only live region alone left a sighted developer with no
+      // indication anything was skipped.
+      notify({
+        code: 'invalid-argument',
+        message:
+          remainingSlots === 0
+            ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
+            : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflow} ${overflow === 1 ? 'was' : 'were'} skipped.`
+      })
     }
   } finally {
     useDraftStore.getState().decrementPendingAttachmentReads(sessionId)

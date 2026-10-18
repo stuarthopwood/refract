@@ -449,16 +449,20 @@ pub(super) async fn resolve_session_worktree(state: &AppState, session_id: &str)
     }
 }
 
-/// Gate round 1 (Code1 Medium, DRY): the open-handle/stat/bounded-read sequence both
-/// `read_image_file` (below) and `file_attachments.rs`'s own `read_file_attachment` need. Opens
-/// the file FIRST and reads every subsequent fact (`is_file`/`is_dir`/`len`) from THAT SAME
-/// handle's own `metadata()` -- never a separate path-based `fs::metadata` call before the open,
-/// which would leave a TOCTOU gap between the stat and the open. Reads at most `cap + 1` bytes
-/// (the `+1` catches a file that grows past `cap` between the stat and this read, distinguishing
-/// it from one that was already at or under `cap`); the caller decides what "too large" means for
-/// its own error wording and its own cap value, and whether `metadata.is_file()`/`is_dir()`
-/// matters for its own read (a directory's `len()` is meaningless but harmless to have read).
-pub(super) async fn read_bounded(real_path: &Path, cap: u64) -> Result<(std::fs::Metadata, Vec<u8>), IpcError> {
+/// Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence both `read_image_file`
+/// (below) and `file_attachments.rs`'s own `read_file_attachment` need. Opens the file FIRST and
+/// reads every subsequent fact from THAT SAME handle's own `metadata()` -- a DIRECTORY is handled
+/// entirely by the CALLER via its own path-based stat BEFORE ever reaching here (`File::open` on
+/// a directory fails outright on Windows with no `FILE_FLAG_BACKUP_SEMANTICS`, so a folder could
+/// never reach this function's own `metadata()` call at all -- the round-1 version's `is_dir()`
+/// early return was unreachable dead code, removed here). Checks `metadata.len()` against `cap`
+/// BEFORE reading a single byte (restores the pre-#926 guard round 1's refactor dropped: an
+/// oversized file now costs one stat, never a wasted read); returns `None` for an
+/// already-oversized file (the caller uses `metadata.len()` for the real size) or
+/// `Some(buffer)` read up to `metadata.len() + 1` bytes, so the caller can detect the file
+/// growing mid-read by comparing `buffer.len()` against `metadata.len()` ITSELF -- never against
+/// the external `cap`, which a small file growing only slightly would never trip.
+pub(super) async fn read_bounded(real_path: &Path, cap: u64) -> Result<(std::fs::Metadata, Option<Vec<u8>>), IpcError> {
     let mut file = match fs::File::open(real_path).await {
         Ok(f) => f,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -470,10 +474,10 @@ pub(super) async fn read_bounded(real_path: &Path, cap: u64) -> Result<(std::fs:
         .metadata()
         .await
         .map_err(|_| invalid_argument("That file could not be read."))?;
-    if metadata.is_dir() {
-        return Ok((metadata, Vec::new()));
+    if metadata.len() > cap {
+        return Ok((metadata, None));
     }
-    let read_cap = (metadata.len().min(cap) + 1) as usize;
+    let read_cap = (metadata.len() + 1) as usize;
     let mut buffer = vec![0u8; read_cap];
     let mut bytes_read = 0usize;
     loop {
@@ -489,13 +493,14 @@ pub(super) async fn read_bounded(real_path: &Path, cap: u64) -> Result<(std::fs:
         }
     }
     buffer.truncate(bytes_read);
-    Ok((metadata, buffer))
+    Ok((metadata, Some(buffer)))
 }
 
 /// Port of `attachments.ts`'s own `readImageFile`, the reader both #514 and #432 share. Never
 /// returns the resolved path or any other file metadata beyond the validated image bytes
-/// themselves. Gate round 1 (Code1 Medium, DRY): the open-handle/stat/bounded-read sequence now
-/// lives in the shared `read_bounded` above, not duplicated here.
+/// themselves. Gate round 2 (Code2 HIGH): the open-handle/stat/bounded-read sequence now lives
+/// in the shared `read_bounded` above; the size cap is checked there BEFORE any read, restoring
+/// #514's own original guard.
 async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcError> {
     let Some(real_path) = resolve_attachment_path(worktree_root, token).await else {
         return Err(not_found("That file could not be found."));
@@ -505,10 +510,9 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
         return Err(not_found("That file could not be found."));
     }
     // Checked BEFORE ever decoding the bytes (#514's own requirement: "check the size before
-    // decoding") -- `read_bounded` only ever reads up to `MAX_IMAGE_INPUT_BYTES + 1` bytes
-    // regardless of the file's real on-disk size, so `buffer.len()` exceeding the cap here means
-    // the file is at least that large, never a truncated read of a larger file.
-    if buffer.len() as u64 > MAX_IMAGE_INPUT_BYTES {
+    // decoding") -- `read_bounded` returns `None` without ever reading a byte once the STAT
+    // alone already proves the file over cap.
+    let Some(buffer) = buffer else {
         return Err(IpcError::new(
             "image-too-large",
             format!(
@@ -516,6 +520,12 @@ async fn read_image_file(worktree_root: &str, token: &str) -> Result<Value, IpcE
                 MAX_IMAGE_INPUT_BYTES / (1024 * 1024)
             ),
         ));
+    };
+    // Grew past its own stat'd size mid-read (gate round 2 Code2 HIGH: compared against
+    // `metadata.len()` itself, never the external cap, which a slight growth would never trip) --
+    // a file swapped or grown between the stat and this read is refused rather than trusted.
+    if buffer.len() as u64 > metadata.len() {
+        return Err(not_found("That file could not be read."));
     }
 
     // Identified purely by content, never by filename extension.

@@ -27,7 +27,7 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { attachImageFile, attachPastedFiles } from './attachImage'
+import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
   buildImagePathAttachment,
@@ -152,7 +152,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     },
     [sessionId]
   )
-  // PR #723 gate round 2 fix (Code2/A11y2 Medium): announces "Attaching image…" once per
+  // PR #723 gate round 2 fix (Code2/A11y2 Medium): announces "Attaching…" once per
   // 0-to-positive transition of `pendingAttachmentReads` (never on every re-render while it
   // stays above 0, and never again on the already-covered 0-to-0/no-op case) -- the paired
   // visible text line above this component's own JSX is the courtesy UI; this is the
@@ -506,7 +506,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const message = substituteChips(draftText, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
-      toast.error('The message contains a reserved marker line used internally for file attachments. Remove it and try again.')
+      toast.error(`The message contains the reserved "${FILE_ATTACHMENTS_MARKER}" marker line used internally for file attachments. Remove it and try again.`)
       return
     }
     // FR-006: every pending image goes out as a real `images` entry on this same call, whether it
@@ -992,17 +992,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const data = event.clipboardData
     const imageFile = findClipboardImageItem(data)
     const pastedFiles = Array.from(data.files ?? [])
-    // #926: a plain clipboard-image paste is the single-image case with nothing else in `data.files` (FR-005, no cap); anything else uses `pastedFiles`.
+    // #926: a plain clipboard-image paste is the single-image case with nothing else in
+    // `data.files` (`attachPastedImage`'s own doc comment covers the shared FR-039 cap).
     if (imageFile != null && pastedFiles.length <= 1) {
-      // FR-001: never let any image data reach the textarea's own text value.
       event.preventDefault()
-      await attachImageFile(sessionId, imageFile)
+      await attachPastedImage(sessionId, imageFile)
       return
     }
 
     if (pastedFiles.length > 0) {
       event.preventDefault()
-      await attachPastedFiles(sessionId, pastedFiles, announceAttachment)
+      await attachPastedFiles(sessionId, pastedFiles)
       return
     }
 

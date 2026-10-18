@@ -112,11 +112,15 @@ async function main() {
   mkdirSync(SHOTS_DIR, { recursive: true });
 
   const report = [];
+  // Gate round 2 (Test2 HIGH): the native Open-File dialog and native OS drag-drop remain
+  // genuinely undrivable by CDP (no synthetic-OS-drop story for Tauri's own `onDragDropEvent`
+  // reaches this harness) -- a PENDING file chip's keyboard Remove IS now exercised below
+  // (the synthetic multi-file paste populates the composer strip first), corrected from the
+  // round-1 claim that it could not be.
   const notExercised = [
     'Native Win32 Open-File dialog (attachments.pickFiles): CDP cannot drive a native OS dialog.',
-    "Native OS drag-drop onto a chat pane: no synthetic-OS-drop story exists for Tauri's onDragDropEvent from this harness.",
-    "A PENDING (not-yet-sent) file chip's keyboard Remove: requires a real picker/drop to populate the composer strip first (see the two items above).',",
-    "The real anyFileAttachments.ts builder (buildFileAttachmentText/appendFileAttachmentText): renderer-module-private, not exposed on window; the marker text below is reconstructed per the documented format instead."
+    "Native OS drag-drop onto a chat pane (path-only \"sent as path\" chips via drop): no synthetic-OS-drop story exists for Tauri's onDragDropEvent from this harness; emitting the internal Tauri event JS-side was not attempted this round (uncertain whether it reaches the listener without Rust-side cooperation, and this script is never run to find out empirically).",
+    'The real anyFileAttachments.ts builder (buildFileAttachmentText/appendFileAttachmentText): renderer-module-private, not exposed on window; the marker text below is reconstructed per the documented format instead.'
   ];
 
   function assertEqual(actual, expected, label) {
@@ -127,14 +131,18 @@ async function main() {
   }
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-926-data-'));
+  // Gate round 2 (Code2 Low): an explicit, empty, per-run scratch folder -- never the caller's
+  // own ambient `%APPDATA%\pinion` -- so a real import attempt has nothing real to copy from.
+  const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-926-import-'));
   const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-926-repo-'));
   const repoDir = makeScratchRepo(repoDirBase, 'verify-926-attach-any-file');
   const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-926-exe-'));
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-926-launcher-'));
   const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-926-shim-'));
 
-  // Fixture files, written into the scratch repo's own worktree (a relative, worktree-contained
-  // token resolves the same way a real Attach-button pick would).
+  // Fixture files, written into the scratch repo's own worktree (a RELATIVE, worktree-contained
+  // token resolves the same way a real Attach-button pick would). The D2 allow-list test below
+  // uses a SEPARATE absolute path, outside the worktree, never recorded via pickFiles/drop.
   const smallTextPath = path.join(repoDir, 'small-note.txt');
   const smallContent = 'hello from a small text attachment\n';
   writeFileSync(smallTextPath, smallContent, 'utf8');
@@ -160,6 +168,7 @@ async function main() {
       pathPrepend: shimDir,
       logFile: path.join(exeDir, 'app.log'),
       extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log')
@@ -196,14 +205,20 @@ async function main() {
     );
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
-    const sessionId = await cdp.waitFor(
-      `document.querySelector('[data-slot="session-row"]')?.getAttribute('data-session-id')`,
-      { timeoutMs: 60_000, label: 'Session opened (fake omp attached)' }
-    );
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
       timeoutMs: 60_000,
       label: 'Composer enabled'
     });
+
+    // Gate round 2 (Test2 HIGH): the Session id read back through the real
+    // `window.refract.sessions.list()` IPC (not a DOM attribute read) -- asserted to be this
+    // run's ONE AND ONLY Session, never just "the first of however many".
+    const sessionsList = await cdp.evaluate(`window.refract.sessions.list()`);
+    assertEqual(sessionsList?.ok, true, 'sessions.list() ok');
+    assertEqual(sessionsList.value.length, 1, 'exactly one Session exists in this scratch data dir');
+    const sessionId = sessionsList.value[0].id;
+    const loggedDataDir = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok && r.value[0] ? r.value[0].worktreePath : null)`);
+    report.push({ step: 'Session worktreePath logged', ok: true, worktreePath: loggedDataDir, scratchDataDir: dataDir });
 
     // --- Rust IPC classification, called directly (the real round trip the picker/drop path
     // would otherwise make; see this script's own header for why the picker/drop UI itself is
@@ -230,6 +245,116 @@ async function main() {
     assertEqual(folderResult.value.kind, 'path', 'folder classified as path');
     assertEqual(folderResult.value.isDirectory, true, 'folder isDirectory true');
 
+    // --- D2: the absolute-path allow-list -- an ABSOLUTE token readFile was never told about
+    // (via pickFiles/recordDroppedPaths) is refused outright; recording it first then makes the
+    // identical call succeed. Every RELATIVE token used above (smallTextPath etc.) is unaffected
+    // by D2 at all, so this probes a fresh ABSOLUTE path instead, outside the worktree.
+    // -------------------------------------------------------------------------------------
+    const neverRecordedAbsolutePath = path.join(importSourceDir, 'never-recorded.txt');
+    writeFileSync(neverRecordedAbsolutePath, 'x', 'utf8');
+    const refusedResult = await cdp.evaluate(`window.refract.attachments.readFile(${JSON.stringify(sessionId)}, ${JSON.stringify(neverRecordedAbsolutePath)})`);
+    assertEqual(refusedResult?.ok, false, 'D2: readFile refuses an absolute path never recorded via pickFiles/recordDroppedPaths');
+    const recordResult = await cdp.evaluate(
+      `window.refract.attachments.recordDroppedPaths(${JSON.stringify(sessionId)}, [${JSON.stringify(neverRecordedAbsolutePath)}])`
+    );
+    assertEqual(recordResult?.ok, true, 'D2: recordDroppedPaths ok');
+    const nowAllowedResult = await cdp.evaluate(`window.refract.attachments.readFile(${JSON.stringify(sessionId)}, ${JSON.stringify(neverRecordedAbsolutePath)})`);
+    assertEqual(nowAllowedResult?.ok, true, 'D2: the SAME absolute path now succeeds once recorded');
+
+    // --- D1: the composer refuses to SEND typed text containing the literal marker ---------
+    await cdp.evaluate(
+      `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '[[refract-attachments]]'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+    );
+    await cdp.clickByLabel('Send message');
+    await sleep(500);
+    const d1ToastShown = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes('reserved') && el.textContent.includes('marker'))`);
+    assertEqual(d1ToastShown, true, 'D1: a named toast refuses a typed message containing the literal marker');
+    const d1NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
+    assertEqual(d1NothingSent, true, 'D1: nothing was sent (no message row exists yet)');
+    const d1DraftIntact = await cdp.evaluate(`document.querySelector('[aria-label="Message"]').value === '[[refract-attachments]]'`);
+    assertEqual(d1DraftIntact, true, 'D1: the refused draft text is left untouched, not cleared');
+    await cdp.evaluate(
+      `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ''); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+    );
+
+    // --- Synthetic clipboard paste carrying a real `File` (Test2 HIGH, item 5c): dispatched
+    // entirely in the PAGE's own context, no native OS interaction needed -- `handlePaste` reads
+    // `event.clipboardData.files` off whatever `ClipboardEvent` the page itself receives, so a
+    // page-constructed one is indistinguishable from a real OS paste to that code. Pastes 11
+    // small text files at once: proves both the inline-file paste path AND the shared 10-cap
+    // (FR-039) in one synthetic event, and leaves a REAL pending chip in the strip for the
+    // keyboard-Remove check below (round 1 wrongly claimed this could not be exercised). -----
+    const pasteFileNames = Array.from({ length: 11 }, (_, i) => `pasted-${i}.txt`);
+    await cdp.evaluate(
+      `(() => {
+        const files = ${JSON.stringify(pasteFileNames)}.map((name) => new File(['hello'], name, { type: 'text/plain' }));
+        const dt = new DataTransfer();
+        for (const f of files) dt.items.add(f);
+        const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+        document.querySelector('[aria-label="Message"]').dispatchEvent(ev);
+        return true;
+      })()`
+    );
+    await cdp.waitFor(
+      `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length >= 10`,
+      { timeoutMs: 15_000, label: 'synthetic 11-file paste populates the composer strip' }
+    );
+    const pendingChipCount = await cdp.evaluate(`document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length`);
+    assertEqual(pendingChipCount, 10, 'FR-039: the shared 10-attachment cap stopped the 11th pasted file');
+    const overflowToastShown = await cdp.evaluate(
+      `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes('could be attached to this message') && el.textContent.includes('skipped'))`
+    );
+    assertEqual(overflowToastShown, true, 'the cap overflow shows a VISIBLE toast, not only the sr-only region (gate round 2 Test2 HIGH)');
+
+    // --- A PENDING file chip's keyboard Remove (corrected notExercised claim, item 5e) ------
+    const removeButtonLabel = await cdp.evaluate(
+      `document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')?.getAttribute('aria-label')`
+    );
+    report.push({ step: 'pending chip Remove button has a real accessible name', ok: !!removeButtonLabel, removeButtonLabel });
+    await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
+    await cdp.waitFor(
+      `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length === 9`,
+      { timeoutMs: 10_000, label: 'keyboard-reachable Remove button removes exactly one pending chip' }
+    );
+    // Clears the remaining 9 pending files before D4/the real send below.
+    for (let i = 0; i < 9; i++) {
+      await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
+    }
+    await cdp.waitFor(`!document.querySelector('[role="group"][aria-label="Pending attachments"]')`, { timeoutMs: 10_000, label: 'strip empty again' });
+
+    // --- D4: a slash command refuses to send with a pending file attachment ----------------
+    await cdp.evaluate(
+      `(() => {
+        const file = new File(['hello'], 'd4-test.txt', { type: 'text/plain' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+        document.querySelector('[aria-label="Message"]').dispatchEvent(ev);
+        return true;
+      })()`
+    );
+    await cdp.waitFor(
+      `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length === 1`,
+      { timeoutMs: 10_000, label: 'D4 setup: one pending file attached via synthetic paste' }
+    );
+    await cdp.evaluate(
+      `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '/compact'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+    );
+    await cdp.clickByLabel('Send message');
+    await sleep(500);
+    const d4ToastShown = await cdp.evaluate(
+      `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes("Slash commands") && el.textContent.includes("attached files"))`
+    );
+    assertEqual(d4ToastShown, true, 'D4: a slash command with a pending file attachment is refused with a named toast');
+    const d4NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
+    assertEqual(d4NothingSent, true, 'D4: nothing was sent');
+    // Clears the draft and the one pending file before the real send below.
+    await cdp.evaluate(
+      `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ''); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
+    );
+    await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
+    await cdp.waitFor(`!document.querySelector('[role="group"][aria-label="Pending attachments"]')`, { timeoutMs: 10_000, label: 'strip empty again after D4' });
+
     // --- Full send -> transcript parse -> sent-bubble-chip pipeline, real `chat.send` IPC ----
     const markerText = [
       '[[refract-attachments]]',
@@ -249,14 +374,27 @@ async function main() {
       `(() => { const row = ${userRowFinder}; const group = row?.querySelector('[role="group"][aria-label="Attached files"]'); return !!group && group.children.length === 3; })()`,
       { label: 'sent bubble shows exactly 3 file chips, not raw inlined text', timeoutMs: 20_000 }
     );
-    const chipAccessibleNames = await cdp.evaluate(
+    // Gate round 2 (A11y2/Test2 Medium): asserts each chip's own VISIBLE text (name, size,
+    // "· sent as path" when applicable), not merely a chip count -- `FileAttachmentChip.tsx`'s
+    // whole gate round 2 fix was making this text visible at all, not screen-reader-only.
+    const chipTexts = await cdp.evaluate(
       `Array.from((${userRowFinder}).querySelector('[role="group"][aria-label="Attached files"]').children).map((chip) => chip.textContent.trim())`
     );
-    assertEqual(chipAccessibleNames.length, 3, 'exactly 3 chips rendered in the sent bubble');
+    assertEqual(chipTexts.length, 3, 'exactly 3 chips rendered in the sent bubble');
     assertEqual(
-      chipAccessibleNames.some((name) => name.includes('small-note.txt')),
+      chipTexts.some((t) => t.includes('small-note.txt')),
       true,
-      'small-note.txt chip present (visible name)'
+      'small-note.txt chip shows its visible name'
+    );
+    assertEqual(
+      chipTexts.some((t) => t.includes('over-boundary.txt') && t.includes('sent as path')),
+      true,
+      'over-boundary.txt chip visibly shows "sent as path"'
+    );
+    assertEqual(
+      chipTexts.some((t) => t.includes('binary.bin') && t.includes('sent as path')),
+      true,
+      'binary.bin chip visibly shows "sent as path"'
     );
     const bubbleText = await cdp.evaluate(`(${userRowFinder}).querySelector('[data-slot="message-content"]')?.textContent ?? ''`);
     assertEqual(bubbleText.includes('[[refract-attachments]]'), false, 'bubble never shows the raw marker');
@@ -273,6 +411,7 @@ async function main() {
     if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
     await safeRmSync(dataDir, LOG);
+    await safeRmSync(importSourceDir, LOG);
     await safeRmSync(repoDirBase, LOG);
     await safeRmSync(exeDir, LOG);
     await safeRmSync(launcherDir, LOG);

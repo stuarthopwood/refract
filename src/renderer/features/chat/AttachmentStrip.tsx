@@ -9,7 +9,6 @@
 import type { ReactNode, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { TextPreviewModal } from './TextPreviewModal'
 import { FileAttachmentChip } from './FileAttachmentChip'
@@ -35,7 +34,7 @@ export interface AttachmentStripProps {
 export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRemoveFile, containerRef }: AttachmentStripProps) {
   if (images.length === 0 && files.length === 0 && textChips.length === 0) return null
   return (
-    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
+    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal
@@ -64,25 +63,33 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
           </button>
         </div>
       ))}
-      {files.map((file) => (
-        <div key={file.id} className="group relative">
-          <FileAttachmentChip name={file.name} byteLength={file.byteLength} isDirectory={file.isDirectory} sentAs={file.sentAs} className="max-w-56 pr-5" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={`Remove ${file.name}`}
-                aria-describedby={undefined}
-                onClick={() => onRemoveFile(file.id)}
-                className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground after:absolute after:-inset-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <XIcon className="size-2.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Remove {file.name}</TooltipContent>
-          </Tooltip>
-        </div>
-      ))}
+      {(() => {
+        // Gate round 2 (A11y2 Medium): two pending files sharing the exact same name (one from
+        // each of two different picked/dropped folders, say) would otherwise both announce the
+        // identical "Remove a.txt" -- disambiguated with a stable "N of M" position among same-
+        // named files, computed once per render rather than per chip.
+        const nameCounts = new Map<string, number>()
+        for (const file of files) nameCounts.set(file.name, (nameCounts.get(file.name) ?? 0) + 1)
+        const seenSoFar = new Map<string, number>()
+        return files.map((file) => {
+          const total = nameCounts.get(file.name) ?? 1
+          const position = (seenSoFar.get(file.name) ?? 0) + 1
+          seenSoFar.set(file.name, position)
+          const removeLabel = total > 1 ? `${file.name}, ${position} of ${total}` : undefined
+          return (
+            <FileAttachmentChip
+              key={file.id}
+              name={file.name}
+              byteLength={file.byteLength}
+              isDirectory={file.isDirectory}
+              sentAs={file.sentAs}
+              onRemove={() => onRemoveFile(file.id)}
+              removeLabel={removeLabel}
+              className="min-w-0 max-w-full"
+            />
+          )
+        })
+      })()}
       {textChips.map((chip) => (
         <TextPreviewModal
           key={chip.id}

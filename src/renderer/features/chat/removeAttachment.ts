@@ -35,9 +35,11 @@ export function removeAttachment(
     useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
     announceAttachment('Image removed.')
   } else {
-    removedIndex = (draftAttachments?.files ?? []).findIndex((file) => file.id === id)
+    const files = draftAttachments?.files ?? []
+    removedIndex = files.findIndex((file) => file.id === id)
+    const removed = files[removedIndex]
     useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: prev.files.filter((file) => file.id !== id) }))
-    announceAttachment('File removed.')
+    announceAttachment(removed?.isDirectory ? 'Folder removed.' : 'File removed.')
   }
   if (!focusWasInStrip || removedIndex === -1) return
   const absoluteIndex = kind === 'image' ? removedIndex : imagesCount + removedIndex

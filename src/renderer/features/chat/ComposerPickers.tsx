@@ -142,7 +142,7 @@ export function AttachButton({ sessionId, disabled }: { sessionId: string; disab
     const remainingSlots = remainingAttachmentSlots(sessionId)
     const capped = paths.slice(0, remainingSlots)
     const resolved = capped.map((filePath) => ({ name: filePath.split(/[\\/]/).pop() ?? filePath, filePath }))
-    await attachResolvedPaths(sessionId, resolved, [], paths.length, remainingSlots, false)
+    await attachResolvedPaths(sessionId, resolved, [], paths.length, remainingSlots, false, 'picker')
   }
 
   // Gate round 5 fix (Flow LOW): named its own disabled reason -- previously stayed "Attach

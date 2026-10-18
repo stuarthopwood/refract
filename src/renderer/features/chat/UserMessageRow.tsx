@@ -100,7 +100,7 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
           {item.fileAttachments && item.fileAttachments.length > 0 && (
             <div role="group" aria-label="Attached files" className="mb-1.5 flex flex-wrap items-center gap-1.5">
               {item.fileAttachments.map((file) => (
-                <FileAttachmentChip key={file.id} name={file.name} byteLength={file.byteLength} isDirectory={file.isDirectory} sentAs={file.sentAs} className="max-w-56" />
+                <FileAttachmentChip key={file.id} name={file.name} byteLength={file.byteLength} isDirectory={file.isDirectory} sentAs={file.sentAs} wrap className="max-w-full" />
               ))}
             </div>
           )}

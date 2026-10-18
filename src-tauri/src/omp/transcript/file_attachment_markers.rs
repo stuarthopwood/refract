@@ -81,21 +81,25 @@ fn parse_file_header(line: &str) -> Option<ParsedFileHeader<'_>> {
     None
 }
 
-/// Finds the marker's LAST occurrence that starts a line (index 0, or immediately after a `\n`)
-/// -- never a bare substring match, which could misfire on a marker-shaped sequence a developer
-/// typed mid-sentence; the LAST occurrence (rather than the first) means a developer who somehow
-/// typed the literal marker text earlier in their own message still gets THIS run's own,
-/// most-recently-appended section extracted, never an earlier impostor (gate round 1, D1 HIGH:
-/// the renderer itself now also refuses to SEND a message whose typed text contains the marker at
-/// all, `MessageInput.tsx`'s own `handleSend`, so this is defence in depth, not the only guard).
+/// D1 (decided, gate round 2 correction): finds the marker's FIRST occurrence that starts a
+/// line (index 0, or immediately after a `\n`) -- never a bare substring match, which could
+/// misfire on a marker-shaped sequence a developer typed mid-sentence. FIRST, not last: the
+/// composer's own send path now refuses to send a message whose typed text contains the literal
+/// marker at all (`MessageInput.tsx`'s own `handleSend`), so the only way this string can ever
+/// legitimately appear is the ONE section Refract itself appends, always as the outermost
+/// wrapper before any inlined file content -- an inlined file whose own content happens to
+/// document this exact feature (and so contains the marker text itself, at a line start) would
+/// otherwise let a LAST-occurrence search find that coincidental occurrence instead of Refract's
+/// real one, corrupting the parse for a message that did nothing wrong.
 fn find_marker_at_line_start(text: &str) -> Option<usize> {
-    let mut search_end = text.len();
+    let mut search_start = 0usize;
     loop {
-        let at = text[..search_end].rfind(FILE_ATTACHMENTS_MARKER)?;
+        let found_at = text[search_start..].find(FILE_ATTACHMENTS_MARKER)?;
+        let at = search_start + found_at;
         if at == 0 || text.as_bytes().get(at - 1) == Some(&b'\n') {
             return Some(at);
         }
-        search_end = at;
+        search_start = at + 1;
     }
 }
 

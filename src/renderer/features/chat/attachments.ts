@@ -152,7 +152,15 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
   // decoded or byte-checked -- only its MIME string and size are. Check the real magic bytes here
   // too (the freshly re-encoded PNG branch above also passes through this harmlessly, since a
   // browser-generated PNG blob always has a real PNG signature).
-  const signaturePrefix = await readBytePrefix(blob, 16)
+  // Gate round 2 (Code2 HIGH): caught -- an uncaught rejection here (a detached/revoked blob,
+  // a rare browser I/O error) used to propagate past `attachImageFile`/`attachPastedFiles`'s own
+  // multi-file loop uncaught, aborting every file still queued after this one in the same paste.
+  let signaturePrefix: Uint8Array
+  try {
+    signaturePrefix = await readBytePrefix(blob, 16)
+  } catch {
+    return { ok: false, reason: 'decode-failed' }
+  }
   if (!matchesImageSignature(signaturePrefix, mimeType as SupportedImageMimeType)) {
     return { ok: false, reason: 'decode-failed' }
   }

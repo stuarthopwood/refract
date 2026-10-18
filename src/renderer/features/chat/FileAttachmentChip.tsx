@@ -5,10 +5,16 @@
 // but the bare file name behind `aria-hidden`/a Badge-level `aria-label`, so neither surface ever
 // showed the size or the "sent as path" state at all -- FR-034 ("name, byte size... and 'sent as
 // path'") and FR-035 (the sent bubble shows the SAME chip) both require visible text, not a
-// screen-reader-only summary with nothing rendered for a sighted developer to read.
-import { FileIcon, FileTextIcon, FolderIcon } from 'lucide-react'
+// screen-reader-only summary with nothing rendered for a sighted developer to read. Gate round 2
+// (UI2/A11y2/Code2 HIGH): the optional Remove control now renders INSIDE this same Badge (normal
+// flow, never absolutely positioned outside it), so its 24px hit area can never bleed into the
+// NEXT chip when the strip wraps several close together; the chip's own wrapper caps its width
+// with `min-w-0 max-w-full` (a flex child that actually shrinks/truncates inside a wrapping row),
+// never a fixed `max-w-56` that let a long name push the strip wider than its own container.
+import { FileIcon, FileTextIcon, FolderIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatByteSize } from './attachments'
 
 export interface FileAttachmentChipProps {
@@ -16,28 +22,74 @@ export interface FileAttachmentChipProps {
   byteLength: number
   isDirectory: boolean
   sentAs: 'inline' | 'path'
-  /** The composer strip needs room on the right for its own absolutely-positioned Remove
-   * button (`pr-5`); the sent bubble (no Remove control) does not. */
+  /** Present only in the composer strip (a pending attachment); absent in the sent bubble, which
+   * has no remove control at all. */
+  onRemove?: () => void
+  /** Gate round 2 (A11y2 Medium): overrides the bare `Remove <name>` wording with a
+   * disambiguated one (`"Remove a.txt, 2 of 3"`) when the strip holds more than one pending
+   * attachment sharing this exact name -- computed by `AttachmentStrip.tsx`, which is the only
+   * place that sees every pending file at once. */
+  removeLabel?: string
+  /** Gate round 2 (A11y2/UI2 Medium): the sent bubble passes this -- a truncated name's full
+   * text is only ever revealed by a mouse hover (`title`), which a keyboard-only user can never
+   * trigger; the bubble's own chip wraps the full name across lines instead of truncating it at
+   * all. The composer strip (with Remove, a fixed-height row) keeps the single-line truncate. */
+  wrap?: boolean
   className?: string
 }
 
 /** Gate round 1 (A11y1 HIGH): no `aria-label` on the chip and no `aria-hidden` on the name --
- * the chip's accessible name is now computed from its own visible text content (icon excluded via
- * `aria-hidden` on the icon only), the normal accessible-name-from-content rule, never a second,
- * easy-to-drift-from-the-visible-text summary string. The `sr-only` suffix adds the exact wording
- * a sighted developer already sees from the visible "· sent as path" text/icon shape, spelled out
- * for a screen reader that may not render the `·` separator as a pause. */
-export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, className }: FileAttachmentChipProps) {
+ * the chip's accessible name is computed from its own visible text content (icon excluded via
+ * `aria-hidden`). Gate round 2 (A11y2 Medium): the visible "· sent as path" text is never
+ * DUPLICATED by an `sr-only` suffix saying the same thing again -- the `·` glyph itself is the
+ * only part hidden from the accessible name (`aria-hidden`, a screen reader may not render it as
+ * a pause); a FOLDER shows no visible kind text at all (the icon alone), so its `sr-only` suffix
+ * carries the full ", folder, sent as path" a sighted developer already reads from the icon
+ * shape; an INLINE file's `sr-only` ", attached as text" is likewise the one case with nothing
+ * else visible to say it. */
+export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, onRemove, removeLabel, wrap, className }: FileAttachmentChipProps) {
   const Icon = isDirectory ? FolderIcon : sentAs === 'inline' ? FileTextIcon : FileIcon
-  const isPath = isDirectory || sentAs === 'path'
-  const srSuffix = isDirectory ? ' folder' : isPath ? ', sent as path' : ', attached as text'
+  const isPathFile = !isDirectory && sentAs === 'path'
+  const srSuffix = isDirectory ? ', folder, sent as path' : sentAs === 'inline' ? ', attached as text' : null
   return (
-    <Badge variant="secondary" className={cn('max-w-full gap-1.5 py-1 text-secondary-foreground', className)} title={name}>
-      <Icon aria-hidden className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{name}</span>
+    <Badge
+      variant="secondary"
+      className={cn(
+        'max-w-full gap-1.5 py-1 text-secondary-foreground',
+        onRemove && 'pr-0.5',
+        wrap && 'h-auto items-start overflow-visible whitespace-normal',
+        className
+      )}
+      title={wrap ? undefined : name}
+    >
+      {/* Gate round 2 (UI2 Low): no explicit size class here -- `Badge`'s own base style forces
+          `[&>svg]:size-3!` on any direct svg child regardless, so an explicit `size-3.5` was
+          dead, misleading code that never actually rendered. */}
+      <Icon aria-hidden className={cn('shrink-0', wrap && 'mt-0.5')} />
+      <span className={cn('min-w-0', wrap ? 'break-words' : 'truncate')}>{name}</span>
       {!isDirectory && <span className="shrink-0 text-xs text-secondary-foreground/80">{formatByteSize(byteLength)}</span>}
-      {isPath && <span className="shrink-0 text-xs text-secondary-foreground/80">&middot; sent as path</span>}
-      <span className="sr-only">{srSuffix}</span>
+      {isPathFile && (
+        <span className="shrink-0 text-xs text-secondary-foreground/80">
+          <span aria-hidden>&middot;</span> sent as path
+        </span>
+      )}
+      {srSuffix && <span className="sr-only">{srSuffix}</span>}
+      {onRemove && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Remove ${removeLabel ?? name}`}
+              aria-describedby={undefined}
+              onClick={onRemove}
+              className="flex size-4 shrink-0 items-center justify-center rounded-full text-secondary-foreground/70 hover:bg-secondary-foreground/15 hover:text-secondary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <XIcon className="size-2.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Remove {removeLabel ?? name}</TooltipContent>
+        </Tooltip>
+      )}
     </Badge>
   )
 }
