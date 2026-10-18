@@ -39,7 +39,7 @@ never read the shared target directory themselves, so this guard does not apply 
 There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
 binary directly: `src-tauri/target/release/refract-tauri.exe`.
 
-The taskbar, Alt+Tab and notifications show the Refract logo, not an Electron atom icon (issue #494, fixed on the since-deleted Electron build; not re-verified on the Tauri build, which never carried that icon to begin with); if an older taskbar entry is still pinned from before that fix, unpin and re-pin it once to clear Windows' icon cache.
+The taskbar, Alt+Tab and notifications show the Refract logo (issue #880, PR #987: `shell::app_identity` sets `WM_SETICON`/`WM_GETICON`'s `ICON_BIG`/`ICON_SMALL` from the exe's own embedded icon and an explicit `PKEY_AppUserModel_ID`, since Tauri's own cross-platform icon API never reaches the Windows taskbar's `ICON_BIG` lookup). A `--debug` build (`pnpm tauri dev`) gets its own `.dev`-suffixed AppUserModelID, so it never shares or disturbs the installed app's taskbar identity -- but an **unpackaged `--release` build** (`pnpm build` then launching the exe directly, as above) carries the SAME AppUserModelID as the real installed app (`cfg!(debug_assertions)` is false for both), so it groups into the same taskbar button as a real running install; this is expected, not a bug. If an older taskbar entry is still pinned from before #880's fix, unpin and re-pin it once to clear Windows' icon cache.
 
 ## Where state lives
 
