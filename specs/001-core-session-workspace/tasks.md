@@ -3232,8 +3232,11 @@ follow-ups above are the only remaining changes, none touching code or the live-
   `notExercised` list additionally discloses that it cannot itself prove the silent attach-
   probe's own transcript suppression without a second scratch run across an app restart.
 
-Not yet opened as a PR: this phase's three tasks were built by delegated sub-tasks with no
-build slot granted, so nothing above has been compiled, typechecked, or live-checked yet --
-every claim above is code-verified only (static read of the diff), per FR-076. The next build
-slot MUST run `cargo fmt --check`/`cargo test`/`cargo clippy`, `pnpm typecheck`, `pnpm
-vitest run`, and `node scripts/verify-937-advisor-chip.mjs` before a PR opens.
+Not yet opened as a PR at the time these three tasks were built (delegated sub-tasks, no build
+slot granted): `pnpm typecheck` and `pnpm vitest run` have since passed clean on the full
+worktree, and `pnpm check:indent`/`check:ui-text`'s source-only parts, `check:theme-contrast`,
+`check:file-size`, and `check:parity --gate` all pass too (`check:ui-text`'s bundle-scan half
+needs a built `out/` and is deferred with the rest). Still pending the build slot: `cargo
+fmt --check`/`cargo test`/`cargo clippy`, `pnpm build`, and `node scripts/verify-937-advisor-chip.mjs`
+live against a real app -- every claim about THOSE is code-verified only (static read of the
+diff), per FR-076.
