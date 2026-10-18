@@ -84,16 +84,40 @@ const QUESTION = 'Give me a long answer with a list, a table, and code.';
 const LAST_LINE_MARKER = 'ISSUE802-LAST-LINE-MARKER';
 const RIGHT_PANE_SELECTOR = '#right-pane-active-panel';
 
-/** Every element inside `RIGHT_PANE_SELECTOR` (the right pane's own active-panel root,
- * `RightPaneShell.tsx`), plus that root itself, whose computed `overflow-y` is `auto`/`scroll`
- * AND whose `scrollHeight` genuinely exceeds `clientHeight` right now -- a real, visible vertical
- * scroll container, not merely one styled `overflow-y-auto` with nothing to scroll. Returns a
- * small JSON-safe descriptor per match (tag, className, id) so a failure names exactly which
- * elements collided, not just a bare count. */
+/** Every element in TWO sets: (a) the right pane's own `react-resizable-panels` `Panel` wrapper
+ * (found by walking UP from `RIGHT_PANE_SELECTOR` via `.closest('[data-panel]')` -- the library's
+ * own un-overridable wrapper div, an ANCESTOR of `RIGHT_PANE_SELECTOR`, never a descendant, so a
+ * probe scoped to `RIGHT_PANE_SELECTOR` alone can never see it) and everything inside it
+ * (`panel.querySelectorAll('*')`, which includes the library's own inner `overflow:auto` div,
+ * `RIGHT_PANE_SELECTOR` itself, and the Side chat panel's own scroll container); (b) every
+ * ancestor of that `Panel` wrapper up to and including `document.body`. Filters both sets down
+ * to elements whose computed `overflow-y` is `auto`/`scroll` AND whose `scrollHeight` genuinely
+ * exceeds `clientHeight` right now -- a real, visible vertical scroll container, not merely one
+ * styled `overflow-y-auto` with nothing to scroll. Each match's own `data-*` attributes are
+ * included so a failure can show whether the one scroller found is actually the Side chat
+ * panel's own answer region (`data-side-chat-scroll-container`, `SideChatPanel.tsx`) or some
+ * other element entirely. */
 const SCROLL_PROBE_EXPR = `(() => {
-  const root = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
-  if (!root) return null;
-  const candidates = [root, ...root.querySelectorAll('*')];
+  const anchor = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
+  if (!anchor) return null;
+  const panel = anchor.closest('[data-panel]') ?? anchor;
+  const subtree = [panel, ...panel.querySelectorAll('*')];
+  const ancestors = [];
+  for (let el = panel.parentElement; el; el = el.parentElement) {
+    ancestors.push(el);
+    if (el === document.body) break;
+  }
+  const candidates = [...subtree, ...ancestors];
+  const describe = (el) => ({
+    tag: el.tagName,
+    className: el.className || null,
+    id: el.id || null,
+    dataAttrs: Object.fromEntries(Array.from(el.attributes).filter((a) => a.name.startsWith('data-')).map((a) => [a.name, a.value])),
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth
+  });
   const scrollers = candidates.filter((el) => {
     const style = getComputedStyle(el);
     return (style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
@@ -105,8 +129,8 @@ const SCROLL_PROBE_EXPR = `(() => {
   // inside one) so this assertion measures real, visible horizontal overflow only.
   const horizontalOverflow = candidates.filter((el) => el.scrollWidth > el.clientWidth && !el.closest('.sr-only'));
   return {
-    scrollers: scrollers.map((el) => ({ tag: el.tagName, className: el.className || null, id: el.id || null, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight })),
-    horizontalOverflow: horizontalOverflow.map((el) => ({ tag: el.tagName, className: el.className || null, id: el.id || null, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }))
+    scrollers: scrollers.map(describe),
+    horizontalOverflow: horizontalOverflow.map(describe)
   };
 })()`;
 
@@ -128,9 +152,10 @@ async function main() {
   const findings = [];
   const failures = [];
   const notExercised = [
-    'Whether `react-resizable-panels`\' own injected wrapper is the exact ONLY candidate a live DevTools probe would have named on origin/main: this script\'s own scroll-container count is the live proof for THIS build; the header comment\'s code-reading explanation is not a substitute for having run the probe against origin/main itself, which no build slot has been granted for.',
+    'Whether `react-resizable-panels`\' own injected Panel wrapper is the exact ONLY possible second scroller a live DevTools session could ever find (the issue itself says "no candidate is preferred until the probe runs") -- this script\'s own scroll-container count, taken over the Panel wrapper\'s subtree AND its ancestors up to document.body, is the live proof for THIS build and THIS fixture; it is not a guarantee that no OTHER content shape could surface a different second scroller elsewhere in the tree.',
     'The main transcript and the Agents panel staying at exactly one scroll container under the same stress (the issue\'s own acceptance list names both) -- out of scope for this script, which is scoped to the Side chat panel only; neither panel changed in this PR.',
     'A wide table or an unbroken long code line that genuinely needs its own horizontal scroll (the issue\'s own fix note explicitly allows the table/code to scroll sideways): this fixture\'s own table and code block are deliberately narrow, so the blanket "no horizontal overflow anywhere in the pane" assertion below is a different, narrower claim than a wide-table case would need.',
+    'A streaming answer (deltas arriving over several `btw_delta` push frames while the panel is open) is not exercised: the fixture\'s own `btw` response already carries the full, complete answer in one frame (side-chat-store.ts applies it verbatim regardless of status) -- a streaming answer that grows the scroll container\'s own height frame-by-frame while still mid-turn is a different code path (the same render tree, but reached incrementally) this run does not cover.',
     'The optional, separately-scoped polish items the issue itself calls out as "not the fix" (the themed `scrollbar-thin` treatment and `overscroll-contain` on the side-chat scroller): intentionally not built in this change (Decided, Skippy, delegated by Stuart 2026-10-18, issue #802: root-cause fix only, no scope creep).'
   ];
   let exeHash = null;
@@ -235,36 +260,59 @@ async function main() {
     );
     findings.push('Long side-chat answer (40-item list, a table, a 30-line code block) rendered in the panel.');
 
-    // ---- Core acceptance: exactly one vertical scroll container, zero horizontal overflow ----
+    // ---- Core acceptance: exactly one vertical scroll container, and it IS the Side chat
+    // answer region (data-side-chat-scroll-container), zero horizontal overflow ----
     async function assertOneScrollerNoHorizontalOverflow(themeName) {
       const measurement = await measureScrollContainers(cdp);
       if (measurement.scrollers.length !== 1) {
         failures.push(
-          `[${themeName}] Expected exactly 1 vertical scroll container inside ${RIGHT_PANE_SELECTOR}, found ${measurement.scrollers.length}: ${JSON.stringify(measurement.scrollers)}`
+          `[${themeName}] Expected exactly 1 vertical scroll container across the right pane's Panel wrapper (subtree + ancestors to document.body), found ${measurement.scrollers.length}: ${JSON.stringify(measurement.scrollers)}`
+        );
+      } else if (!('data-side-chat-scroll-container' in measurement.scrollers[0].dataAttrs)) {
+        failures.push(
+          `[${themeName}] The one scroll container found is NOT the Side chat answer region (missing data-side-chat-scroll-container): ${JSON.stringify(measurement.scrollers[0])}`
         );
       } else {
-        findings.push(`[${themeName}] Exactly 1 vertical scroll container inside the right pane (${JSON.stringify(measurement.scrollers[0])}).`);
+        findings.push(`[${themeName}] Exactly 1 vertical scroll container, confirmed to be the Side chat answer region (data-side-chat-scroll-container): ${JSON.stringify(measurement.scrollers[0])}.`);
       }
       if (measurement.horizontalOverflow.length !== 0) {
-        failures.push(`[${themeName}] ${measurement.horizontalOverflow.length} element(s) inside ${RIGHT_PANE_SELECTOR} have horizontal overflow: ${JSON.stringify(measurement.horizontalOverflow)}`);
+        failures.push(`[${themeName}] ${measurement.horizontalOverflow.length} element(s) across the right pane's Panel wrapper (subtree + ancestors) have horizontal overflow: ${JSON.stringify(measurement.horizontalOverflow)}`);
       } else {
-        findings.push(`[${themeName}] No element inside the right pane has horizontal overflow.`);
+        findings.push(`[${themeName}] No element across the right pane's Panel wrapper (subtree + ancestors) has horizontal overflow.`);
       }
       return measurement;
     }
 
     const firstMeasurement = await assertOneScrollerNoHorizontalOverflow('Dark (initial)');
 
+    // ---- Header title and composer stay pinned (not inside the scrollable region): captured
+    // at scroll-top and again at scroll-bottom, each time asserting both are fully within the
+    // window's own viewport AND that neither rect moved between the two captures. ----
+    async function capturePinnedRects() {
+      return cdp.evaluate(`(() => {
+        const title = document.querySelector('#right-pane-panel-title');
+        const composer = document.querySelector('[aria-label="Side chat question"]');
+        if (!title || !composer) return { ok: false, reason: 'title (#right-pane-panel-title) or composer (Side chat question textarea) not found' };
+        const rect = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+        const inViewport = (r) => r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth && r.bottom > r.top && r.right > r.left;
+        const titleRect = rect(title);
+        const composerRect = rect(composer);
+        return { ok: inViewport(titleRect) && inViewport(composerRect), titleRect, composerRect };
+      })()`);
+    }
+    const pinnedAtTop = await capturePinnedRects();
+    if (!pinnedAtTop.ok) {
+      failures.push(`Header title and/or composer are not fully within the viewport before scrolling: ${JSON.stringify(pinnedAtTop)}`);
+    } else {
+      findings.push('Header title (#right-pane-panel-title) and composer (Side chat question textarea) both within the viewport before scrolling.');
+    }
+
     // ---- Scroll the one container to the bottom; the answer's own last line must be visible ----
     if (firstMeasurement.scrollers.length === 1) {
       const scrolledToBottomAndVisible = await cdp.evaluate(`(() => {
         const root = document.querySelector(${JSON.stringify(RIGHT_PANE_SELECTOR)});
-        const candidates = [root, ...root.querySelectorAll('*')];
-        const scroller = candidates.find((el) => {
-          const style = getComputedStyle(el);
-          return (style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
-        });
-        if (!scroller) return { ok: false, reason: 'scroller not found on second lookup' };
+        const scroller = document.querySelector('[data-side-chat-scroll-container]');
+        if (!scroller) return { ok: false, reason: 'data-side-chat-scroll-container not found' };
         scroller.scrollTop = scroller.scrollHeight;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         let markerNode = null;
@@ -286,6 +334,21 @@ async function main() {
         failures.push(`Scrolling the one container to the bottom did not reveal the answer's own last line: ${JSON.stringify(scrolledToBottomAndVisible)}`);
       } else {
         findings.push(`Scrolled the one container to the bottom; the answer's own last line (${LAST_LINE_MARKER}) is visible inside it.`);
+      }
+
+      const pinnedAtBottom = await capturePinnedRects();
+      if (!pinnedAtBottom.ok) {
+        failures.push(`Header title and/or composer are not fully within the viewport after scrolling to the bottom: ${JSON.stringify(pinnedAtBottom)}`);
+      } else {
+        findings.push('Header title and composer both still within the viewport after scrolling to the bottom.');
+      }
+      if (pinnedAtTop.ok && pinnedAtBottom.ok) {
+        const unmoved = JSON.stringify(pinnedAtTop.titleRect) === JSON.stringify(pinnedAtBottom.titleRect) && JSON.stringify(pinnedAtTop.composerRect) === JSON.stringify(pinnedAtBottom.composerRect);
+        if (!unmoved) {
+          failures.push(`Header title and/or composer moved between scroll-top and scroll-bottom (not genuinely pinned outside the scroll region): before=${JSON.stringify(pinnedAtTop)} after=${JSON.stringify(pinnedAtBottom)}`);
+        } else {
+          findings.push('Header title and composer positions are identical before and after scrolling the answer region -- genuinely pinned outside the scrollable area, not merely coincidentally in view.');
+        }
       }
     } else {
       notExercised.push(`Scroll-to-bottom/last-line-visible check skipped: the scroller count above was not exactly 1 (${firstMeasurement.scrollers.length}), so there is no single container to scroll.`);

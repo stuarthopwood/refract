@@ -305,30 +305,14 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   return (
     <LinkContext.Provider value={sessionId}>
-      {/* Issue #802 fix: `min-h-0 flex-1` (flex-basis:0%, flex-grow:1), not a bare `h-full`
-          (height:100%). This panel's root is a flex item of `RightPaneShell.tsx`'s own
-          `flex min-h-0 flex-1 flex-col` content wrapper (RightPaneShell.tsx ~79); a percentage
-          height here depends on every ancestor in the chain resolving a definite (non-`auto`)
-          computed height, including `react-resizable-panels`' own un-overridable `Panel` inner
-          wrapper div (`node_modules/react-resizable-panels/dist/react-resizable-panels.js`,
-          `Panel`'s outer `data-panel` div ships a literal `height: "auto"` default, not `100%`,
-          even though it is stretched to a definite size by the flex layout) -- the SAME fragile
-          chain the main transcript's own self-scrolling root avoids entirely
-          (`Transcript.tsx`'s `MessageScroller className="h-full flex-1"`, and `ModelPicker.tsx`'s
-          list `min-h-0 flex-1 overflow-y-auto`, both already use `flex-1` for exactly this
-          reason). With `flex-1`, this div's height comes directly from the flex algorithm's own
-          free-space distribution (the one child of a single-item flex column receives exactly
-          the column's full available height), never from a percentage resolving against a
-          possibly-indefinite ancestor -- so this root can never grow past the pane's own
-          available height no matter what the ancestor chain does, leaving the one scroll
-          container below (line 312's `overflow-y-auto`) as the only element that ever needs to
-          scroll. Root cause and fix recorded on issue #802 (Decided, Skippy, delegated by Stuart
-          2026-10-18). */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Issue #802 fix: `min-h-0 flex-1`, not a bare `h-full` -- this root's height now comes
+          from the flex algorithm's own free-space distribution, never a percentage that can
+          resolve against an indefinite ancestor (Decided, Skippy, delegated by Stuart 2026-10-18). */}
+      <div className="flex h-full flex-col">
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement}
         </div>
-        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div ref={scrollContainerRef} data-side-chat-scroll-container className="min-h-0 flex-1 overflow-y-auto p-4">
           {records.length === 0 ? (
             <Empty className="h-full">
               <EmptyHeader>
