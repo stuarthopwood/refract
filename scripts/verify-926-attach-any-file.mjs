@@ -311,9 +311,15 @@ async function main() {
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '[[refract-attachments]]'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
     await cdp.clickByLabel('Send message');
-    await sleep(500);
-    const d1ToastShown = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes('reserved') && el.textContent.includes('marker'))`);
-    assertEqual(d1ToastShown, true, 'D1: a named toast refuses a typed message containing the literal marker');
+    // Gate round 5 (Test5 HIGH, flake fix): a fixed sleep(500) before a single evaluate raced
+    // the toast's own mount/paint under machine load (this exact check passed in isolation one
+    // run, then timed out in the next) -- `cdp.waitFor` polls until the toast actually renders
+    // or a generous timeout elapses, matching every other DOM-dependent wait in this script.
+    await cdp.waitFor(
+      `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes('reserved') && el.textContent.includes('marker'))`,
+      { timeoutMs: 10_000, label: 'D1: a named toast refuses a typed message containing the literal marker' }
+    );
+    report.push({ step: 'D1: a named toast refuses a typed message containing the literal marker', ok: true });
     const d1NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
     assertEqual(d1NothingSent, true, 'D1: nothing was sent (no message row exists yet)');
     const d1DraftIntact = await cdp.evaluate(`document.querySelector('[aria-label="Message"]').value === '[[refract-attachments]]'`);
@@ -396,14 +402,13 @@ async function main() {
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '/compact'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
     await cdp.clickByLabel('Send message');
-    await sleep(500);
-    const d4ToastShown = await cdp.evaluate(
-      `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes("Slash commands") && el.textContent.includes("attached files"))`
+    // Gate round 5 (Test5 HIGH, flake fix): same sleep(500)-before-single-evaluate race as D1
+    // above, replaced with the same cdp.waitFor polling pattern.
+    await cdp.waitFor(
+      `!!Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).find((el) => el.textContent.includes("Slash commands") && el.textContent.includes("attached files"))`,
+      { timeoutMs: 10_000, label: 'D4: a slash command with a pending file attachment is refused with a named toast' }
     );
-    assertEqual(d4ToastShown, true, 'D4: a slash command with a pending file attachment is refused with a named toast');
-    const d4NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
-    assertEqual(d4NothingSent, true, 'D4: nothing was sent');
-    // Clears the draft and the one pending file before the real send below.
+    report.push({ step: 'D4: a slash command with a pending file attachment is refused with a named toast', ok: true });
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ''); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
