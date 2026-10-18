@@ -66,9 +66,13 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
             type="button"
             aria-label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
             onClick={() => onRemoveImage(image.id)}
-            className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            // Gate round 4 (UI4 Low): matches `FileAttachmentChip.tsx`'s own Remove button -- a
+            // real 24px target (`size-6`, was `size-4`/16px) and the same INSET focus ring
+            // (`outline-offset-[-2px]`), so it never extends further outside the strip's own
+            // `p-1` buffer than the file chip's already-fixed Remove button does.
+            className="absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
           >
-            <XIcon className="size-2.5" />
+            <XIcon className="size-3" />
           </button>
         </div>
       ))}

@@ -42,7 +42,9 @@ export async function attachImageFile(sessionId: string, file: File): Promise<vo
  * cap and only ever meant "no image-specific sub-limit of its own". */
 export async function attachPastedImage(sessionId: string, file: File): Promise<void> {
   if (remainingAttachmentSlots(sessionId) === 0) {
-    notify({ code: 'invalid-argument', message: 'This message already has the maximum of 10 attachments; nothing more was attached.' })
+    // Gate round 4 (Code4 Low): shares `buildOverflowCapMessage`'s own wording instead of a
+    // third independent literal copy of the same "maximum of 10" string.
+    notify({ code: 'invalid-argument', message: buildOverflowCapMessage(0, 1) })
     return
   }
   await attachImageFile(sessionId, file)

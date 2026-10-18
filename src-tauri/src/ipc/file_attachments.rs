@@ -85,10 +85,13 @@ fn record_allowed_paths(session_id: &str, paths: impl IntoIterator<Item = String
         .lock()
         .expect("allowed_paths_store poisoned");
     let set = store.entry(session_id.to_string()).or_default();
-    let mut new_paths = Vec::new();
+    // Gate round 4 (Code4 Low): a `HashSet` for the in-batch dedupe, not a `Vec` -- `contains` on
+    // a growing `Vec` made this whole loop O(n^2) for a large batch; a `HashSet`'s own `insert`
+    // both dedupes and reports "was this new" in one O(1) call.
+    let mut new_paths: HashSet<String> = HashSet::new();
     for path in paths {
-        if !set.contains(&path) && !new_paths.contains(&path) {
-            new_paths.push(path);
+        if !set.contains(&path) {
+            new_paths.insert(path);
         }
     }
     if set.len() + new_paths.len() > MAX_ALLOWED_PATHS_PER_SESSION {
@@ -264,9 +267,10 @@ pub fn attachments_read_file(state: AppState, args: Vec<Value>) -> HandlerFuture
 /// real, and surfaces a named error if the per-session cap was hit instead of silently dropping
 /// the overflow. Gate round 3 (Sec3 HIGH): the native dialog is modal and can sit open for an
 /// arbitrarily long time while the user decides -- re-checked AFTER it returns, right before
-/// recording, so a Session archived/deleted during that wait can no longer have paths recorded
-/// against it (the FIRST check above only ever proved the Session was real before the dialog
-/// opened, not that it still is once it closes).
+/// recording, so a Session DELETED during that wait can no longer have paths recorded against
+/// it -- `resolve_session_worktree` only checks the registry still has an entry for this id at
+/// all, which an ARCHIVED (but not deleted) Session still does, so archiving alone does not
+/// trip this check.
 pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -306,7 +310,7 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
         resolve_session_worktree(&state, &session_id).await?;
         if !record_allowed_paths(&session_id, path_strings.iter().cloned()) {
             return Err(invalid_argument(
-                "Too many files picked in this Session already; some of this pick could not be recorded. Try fewer at once.",
+                "Too many files picked in this Session already; nothing from this pick was recorded. Try fewer at once.",
             ));
         }
         Ok(Value::Array(path_strings.into_iter().map(Value::String).collect()))
@@ -348,7 +352,7 @@ pub fn attachments_record_dropped_paths(state: AppState, args: Vec<Value>) -> Ha
             .collect();
         if !record_allowed_paths(session_id, path_strings) {
             return Err(invalid_argument(
-                "Too many files dropped in this Session already; some of this drop could not be recorded. Try fewer at once.",
+                "Too many files dropped in this Session already; nothing from this drop was recorded. Try fewer at once.",
             ));
         }
         Ok(Value::Bool(true))
