@@ -12,8 +12,8 @@ use crate::omp::images::{
     validate_image_attachment_decoded, validate_image_attachment_shape, ImageValidationError,
 };
 use crate::session::agent::{
-    classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
-    NATIVE_RESERVED_COMMANDS,
+    classify_slash_invocation, is_chat_answer, parse_slash_command, verified_subcommand_names,
+    SlashInvocationClassification, NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::{model, SessionManager};
 
@@ -244,10 +244,13 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
-                    return Err(IpcError::new(
-                        "unsupported-arguments",
-                        format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own."),
-                    ));
+                    let subcommand_names = verified_subcommand_names(&name, &commands);
+                    let message = if subcommand_names.is_empty() {
+                        format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own.")
+                    } else {
+                        format!("/{original_name} takes one of: {}.", subcommand_names.join(", "))
+                    };
+                    return Err(IpcError::new("unsupported-arguments", message));
                 }
                 SlashInvocationClassification::Supported => {
                     if name == "switch" {

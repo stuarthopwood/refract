@@ -3555,3 +3555,43 @@ this phase moved to Phase 58/T285-T287, and the spec's own new line moved to FR-
 Opened as draft PR #978 (`feat/672-start-message`). **Refs #672** until the live check above
 confirms every acceptance item; switches to **Closes #672** once it does (follow-up to #618,
 already closed).
+
+## Phase 59: Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) [US1]
+
+- [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains
+  `verified_subcommand_names(name, commands)`, resolving the same descriptor
+  `classify_against_builtin` refused against (the anti-shadow fix's own `shadowed_builtin`
+  first, the plain match otherwise) and returning its verified subcommand names (`[]` for a
+  command with none, including `/switch`, whose own table is always pruned empty).
+  `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch now lists them
+  (`/{name} takes one of: {sub1}, {sub2}, ...}.`) when non-empty, keeping the existing generic
+  wording otherwise. Exported via `session::agent::mod.rs`.
+- [X] T289 [US1] #938 items 3 and 5/FR-082/FR-083: `NoticeRow.tsx`'s short-notice branch passes
+  `summaryWrap` to `CollapsedLine` (ui-architect-v3 roundtable ruling: wrap in place, never an
+  expand control with nothing behind it). `ModelRolesSection.tsx`'s Advisor role description
+  becomes "Reviews turns when the advisor is enabled (/advisor on in a Session); falls back to
+  Slow."
+- [X] T290 [US1] #938 item 6 investigated (research.md decision 17, spec.md Clarifications):
+  not a bug, no code change -- see those entries for the full root cause. New
+  `scripts/verify-938-slash-rest.mjs` (modelled on `verify-917-advisor-command.mjs`'s own real-
+  ambient-omp structure, since no existing fake-omp fixture lists a builtin command with
+  verified subcommands and AGENTS.md forbids adding one): asserts the Settings > Model roles
+  Advisor description's exact new text, the refusal toast's exact text computed from this
+  install's own real `/advisor` subcommand list (never hardcoded), and the short-notice
+  summary span's `whitespace-normal` className (never `truncate`) across Dark, Obsidian, and
+  Dark (high contrast), with screenshots and `report.json` (`gitHead`, `dirty`, `exeSha256`,
+  `scriptSha256`, `findings`, `failures`, `notExercised`).
+
+`pnpm typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs` all clean
+on this phase's own head. `node --check` on the new script, plus a real import of it, confirmed
+it refuses at its own module-scope `requireSharedCargoTarget` guard (issue #946) before touching
+the filesystem or build -- the intended non-build-check behaviour when no build slot is granted
+yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot granted yet):
+`cargo fmt --check`/`cargo test`/`cargo clippy`, the Tauri debug build, and
+`verify-938-slash-rest.mjs` run live against a real app are each pending the build slot grant
+from Main.
+
+Opened as draft PR #TBD (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
+here; item 1 and 4 already shipped via #954; item 6 was resolved by investigation, no code to
+ship) until the live check above confirms every item; the PR switches to **Closes #938** only
+once it does, per the working rule that every remaining item must land AND be live-proven first.

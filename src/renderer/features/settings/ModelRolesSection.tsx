@@ -70,7 +70,7 @@ const CHAT_ROLE_DESCRIPTORS: RoleDescriptor[] = [
   { role: 'tiny', label: 'Tiny', description: 'Lightweight background work such as session titles; falls back to Smol.' },
   { role: 'memory', label: 'Memory', description: 'Recall and memory work; falls back to Tiny.' },
   { role: 'task', label: 'Task', description: 'Subagents started by the task tool.' },
-  { role: 'advisor', label: 'Advisor', description: 'Reviews turns when the advisor is enabled; falls back to Slow.' }
+  { role: 'advisor', label: 'Advisor', description: "Reviews turns when the advisor is enabled (/advisor on in a Session); falls back to Slow." }
 ]
 
 const KIND_ROLE_DESCRIPTORS: RoleDescriptor[] = [

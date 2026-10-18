@@ -315,6 +315,35 @@ pub fn classify_slash_invocation(
     classify_against_builtin(descriptor, rest)
 }
 
+/// The verified subcommand names `ipc::chat`'s own refusal text can list for `name` once
+/// `classify_slash_invocation` has already refused it as `UnsupportedArguments` (issue #938 item
+/// 2): resolves the SAME descriptor `classify_against_builtin` was refused against (the
+/// anti-shadow fix's own `shadowed_builtin` first, the plain match otherwise), so the refusal
+/// always lists exactly the set a second attempt would accept. `[]` for a command with no
+/// verified subcommands at all (an unrecognised name, or `/switch`, whose own `subcommands`
+/// table is pruned to empty by `filter_supported_commands` -- its one argument is a free-form
+/// token, not a fixed list, see `classify_against_builtin`'s own name-aware branch above).
+pub fn verified_subcommand_names(name: &str, commands: &[Value]) -> Vec<String> {
+    let descriptor = commands
+        .iter()
+        .find(|c| {
+            matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str))
+        })
+        .or_else(|| commands.iter().find(|c| matches_name(c, name)));
+    let Some(descriptor) = descriptor else {
+        return Vec::new();
+    };
+    descriptor
+        .get("subcommands")
+        .and_then(Value::as_array)
+        .map(|subs| {
+            subs.iter()
+                .filter_map(|s| s.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 #[path = "commands.test.rs"]
 mod tests;

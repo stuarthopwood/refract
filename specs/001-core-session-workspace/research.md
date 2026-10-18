@@ -156,3 +156,33 @@ from live frames/`SessionAgent.reconcileSubagentsOnAttach` the same direct way `
 **Rationale**: a worktree-root scratch file (`research.md`, written during this story's own
 investigation) made this same claim inaccurately before being deleted; recorded correctly here,
 the one place this repository's own Spec Kit convention keeps durable research notes.
+
+## 17. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
+
+**Decision**: `ipc::chat`'s generic "doesn't support arguments yet" refusal lists a command's
+own verified subcommands by name whenever it has any (`verified_subcommand_names`,
+`src-tauri/src/session/agent/commands.rs`), resolving the exact same descriptor
+`classify_against_builtin` was refused against so the list can never drift from what a second
+attempt would actually accept. `NoticeRow.tsx`'s short-notice branch gets `summaryWrap` rather
+than becoming expandable (`ui-architect-v3` roundtable ruling).
+
+**Alternatives (notice wrap)**: making every short notice expandable (matching the long-notice
+branch's own chevron) was rejected -- the common case has nothing behind the chevron (no second
+paragraph, just the same one clause re-wrapped), so the control would be a dead end most of the
+time; `summaryWrap` is the system's existing no-children escape hatch for exactly this shape of
+problem (already used by the Subagents panel for a long path/paragraph).
+
+**Investigation (issue #938 item 6, not a bug)**: the #917/#954 live-check screenshots showing
+the assistant's own sentinel reply ("t917turn"/"t947turn") twice in one turn is not a duplicate
+render. `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+(`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot
+(`message_start`/`message_update`/`message_end`) as a full replace keyed by
+`message_id`/`message_id:index`, stripping every existing item under that key before inserting
+the fresh set -- there is no code path that can render one content index twice for one message.
+The real explanation: `verify-917-advisor-command.mjs` and `verify-947-938-slash-menu.mjs` both
+wait for `(t.textContent.match(/t9\d\dturn/g) ?? []).length >= 2` as their own "turn finished"
+signal, and the typed PROMPT itself reads `"Reply with exactly the single word 't917turn' and
+nothing else."` -- one occurrence is the user's own prompt bubble (the instruction, which
+deliberately contains the sentinel word), the other is the assistant's one-time echoed reply.
+Two distinct, single-occurrence rows; `role="log"` announces each exactly once, as it should.
+No code change.
