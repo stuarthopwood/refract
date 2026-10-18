@@ -357,12 +357,28 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-04-details-card-gauge-max.png'));
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
 
-    // ---- Real GitHub PR data (#925 Changes tab + #919 per-file header): the clone was already
-    // added as Project 1, so it is `repositories[0]` and the Pull Requests view's own default
-    // scope (`PullRequestsView.tsx:16`) with no repository explicitly selected here. ----
+    // ---- Real GitHub PR data (#925 Changes tab + #919 per-file header). `viewStore.repositoryId`
+    // (`view-store.ts`'s `openChat`) was already pinned to the LOCAL scratch repo the moment its
+    // Session was created/opened above (research.md decision 7: the Pull Requests repository
+    // choice persists across view switches, by design) -- it does NOT reset to `repositories[0]`
+    // just because the GitHub clone was added as Project 1. Confirmed live, not guessed: a prior
+    // run read the real `[role="alert"]` text "This repository has no GitHub remote." even with
+    // the clone added first. So this explicitly selects the clone's own repository via the real
+    // `aria-label="Repository"` Select control, the same way a developer would, rather than
+    // relying on the view's own default-scope resolution. ----
     if (githubClone) {
+      const githubRepoName = path.basename(githubClone);
       await cdp.clickByLabel('Pull requests', { prefix: true });
       await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
+      await cdp.click(`document.querySelector('[aria-label="Repository"]')`);
+      await cdp.waitFor(`!!document.querySelector('[role="listbox"], [role="option"]')`, { timeoutMs: 10_000, label: 'Repository select menu open' });
+      await cdp.click(
+        `Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === ${JSON.stringify(githubRepoName)})`
+      );
+      await cdp.waitFor(
+        `document.querySelector('[aria-label="Repository"]')?.getAttribute('title') === ${JSON.stringify(githubRepoName)}`,
+        { timeoutMs: 10_000, label: `Repository select shows "${githubRepoName}"` }
+      );
       const loaded = await cdp.waitFor(
         `(() => { const err = document.querySelector('[role="alert"]'); const rows = document.querySelectorAll('.divide-y button'); return rows.length > 0 ? 'rows' : (err ? 'error' : null); })()`,
         { timeoutMs: 30_000, label: 'pull request list settles' }
