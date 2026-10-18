@@ -113,31 +113,63 @@ export async function focusLastTabbableOrSelf(cdp, regionExpr) {
   })()`);
 }
 
-/** Real production path (gate-fix, 2026-10-18 build-slot run: `window.__refractStores` is
- *  DEV-only, per `verify-tauri-scratch-helpers.mjs`'s own documented gotcha -- a `tauri build
- *  --debug` still runs `vite build` in PRODUCTION mode, so that global never exists against the
- *  exe this script actually launches; every store-injection call here failed with "Cannot read
- *  properties of undefined (reading 'sessions')" on the very first use). `window.refract.
- *  sessions.list()` is the same real, production IPC bridge `verify-557`/`verify-564`/
- *  `verify-tauri-560`/`verify-rm-live-check` etc. already use to read live Session state. */
-export async function readSessionSummary(cdp, sessionId) {
-  return cdp.evaluate(
-    `window.refract.sessions.list().then((r) => r.ok ? (r.value.find((s) => s.id === ${JSON.stringify(sessionId)}) ?? null) : null)`
-  );
+/** Classifies the CURRENTLY MOUNTED notice (if any) into a `startProgress.kind` purely from the
+ *  DOM. Gate-fix (confirmed live, bg_791/bg_794/bg_801 runs, then confirmed in code):
+ *  `window.refract.sessions.list()` deliberately NEVER includes `startProgress` at all --
+ *  `session/agent/mod.rs`'s own `insert_termination_and_progress_fields` doc comment says so in
+ *  plain words: "`summary_fields` (registry-only `sessions.list` rows) deliberately does not
+ *  call this: no live agent computes a crash's tail detection for a Session nobody has opened
+ *  this run." `startProgress` is ONLY ever pushed via the live `session:status` event, which
+ *  only updates the renderer's own in-memory store -- never fetched back out through this IPC
+ *  method. Reading `sessions.list()` for it (the previous version of this file) could never
+ *  succeed, regardless of how long it polled. The component renders faithfully from that same
+ *  live store, so the DOM is the one reliable place this script can read it from without the
+ *  dev-only `window.__refractStores` seam (the ORIGINAL bug this whole rewrite exists to avoid).
+ *  Callers must ensure only ONE Session's own notice can be mounted at a time when calling this
+ *  -- true for every caller here (split mode is never active while any of them run). */
+export async function readVisibleStartKind(cdp) {
+  return cdp.evaluate(`(() => {
+    const group = ${GROUP};
+    if (!group) return { kind: undefined };
+    const buttons = Array.from(group.querySelectorAll('button')).map((b) => b.textContent.trim());
+    const counterEl = group.querySelector('[data-start-counter]');
+    const counterMatch = counterEl ? counterEl.textContent.match(/\\d+/) : null;
+    const elapsedMs = counterMatch ? Number(counterMatch[0]) * 1000 : null;
+    if (group.querySelector('[data-start-message]')) {
+      if (buttons.includes('Keep waiting')) return { kind: 'prompt', elapsedMs };
+      if (buttons.includes('Cancel')) return { kind: 'extended', elapsedMs };
+      return { kind: 'waiting', elapsedMs };
+    }
+    const plainEl = group.querySelector('[data-start-plain-text]');
+    if (plainEl) {
+      const text = plainEl.textContent;
+      if (text === 'Waiting to start…') return { kind: 'queued' };
+      if (text === 'Starting agent… waiting for memory to free up') return { kind: 'memory-deferred' };
+      return { kind: 'unknown-plain', text };
+    }
+    return { kind: 'mounting' }; // group exists but neither path has rendered its own content yet (one frame, at most)
+  })()`);
 }
 
 /** Polls the REAL `startProgress.kind` (set by the Rust start-queue's own timers/IPC handlers,
- *  never written by this script) until it matches `kind`, or throws with the last-seen value. */
+ *  never written by this script), reading it via `readVisibleStartKind` (the DOM), until it
+ *  matches `kind`, or throws with the last-seen value. Also confirms `sessionId`'s own row
+ *  reports `aria-current` before trusting a read -- a mounted notice this script is not yet
+ *  looking at the right pane for is treated as "not yet", not a false positive/negative. */
 export async function waitForStartProgressKind(cdp, sessionId, kind, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   let last;
   while (Date.now() < deadline) {
-    const session = await readSessionSummary(cdp, sessionId);
-    last = session?.startProgress ?? null;
-    if (last?.kind === kind) return last;
+    const focused = await cdp.evaluate(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')?.getAttribute('aria-current') === 'true'`);
+    if (focused) {
+      last = await readVisibleStartKind(cdp);
+      if (last?.kind === kind) return last;
+    } else {
+      last = { kind: undefined, note: 'Session row is not yet the focused pane (aria-current)' };
+    }
     await sleep(150);
   }
-  throw new Error(`waitForStartProgressKind(${sessionId}, ${kind}): timed out after ${timeoutMs}ms, last startProgress was ${JSON.stringify(last)}`);
+  throw new Error(`waitForStartProgressKind(${sessionId}, ${kind}): timed out after ${timeoutMs}ms, last read was ${JSON.stringify(last)}`);
 }
 
 /** Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2) on a Session row's

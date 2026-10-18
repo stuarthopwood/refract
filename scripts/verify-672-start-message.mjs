@@ -58,7 +58,7 @@ import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
-  readSessionSummary, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
+  readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionAndWaitReady, quickCreateSessionId
 } from './verify-672-start-message-helpers.mjs';
 
@@ -180,8 +180,8 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
-    const beforeTick = await readSessionSummary(cdp1, sessionA.id);
-    const elapsedBefore = beforeTick?.startProgress?.kind === 'waiting' ? beforeTick.startProgress.elapsedMs : null;
+    const beforeTick = await readVisibleStartKind(cdp1);
+    const elapsedBefore = beforeTick?.kind === 'waiting' ? beforeTick.elapsedMs : null;
     await cdp1.evaluate(`(() => {
       window.__672Mutations = 0;
       window.__672Observer = new MutationObserver(() => { window.__672Mutations++; });
@@ -190,14 +190,14 @@ async function main() {
     })()`);
     await sleep(2_500); // real elapsed-ms ticks happen on the Rust side's own ~1s cadence while waiting
     const mutationCount = await cdp1.evaluate(`(() => { window.__672Observer.disconnect(); return window.__672Mutations; })()`);
-    const afterTick = await readSessionSummary(cdp1, sessionA.id);
-    const elapsedAfter = afterTick?.startProgress?.kind === 'waiting' ? afterTick.startProgress.elapsedMs : null;
-    if (afterTick?.startProgress?.kind !== 'waiting') {
-      failures.push(`Announcement mutation window: Session A's own startProgress.kind was "${afterTick?.startProgress?.kind}" after the 2.5s window, expected still "waiting" -- the zero-mutation claim below would be vacuous if the kind itself changed.`);
+    const afterTick = await readVisibleStartKind(cdp1);
+    const elapsedAfter = afterTick?.kind === 'waiting' ? afterTick.elapsedMs : null;
+    if (afterTick?.kind !== 'waiting') {
+      failures.push(`Announcement mutation window: the visible notice's own kind was "${afterTick?.kind}" after the 2.5s window, expected still "waiting" -- the zero-mutation claim below would be vacuous if the kind itself changed.`);
     } else if (elapsedBefore === null || elapsedAfter === null || !(elapsedAfter > elapsedBefore)) {
-      failures.push(`Announcement mutation window: real startProgress.elapsedMs did not advance (${elapsedBefore} -> ${elapsedAfter}) across the 2.5s window -- this check would not be exercising a real same-kind re-tick at all.`);
+      failures.push(`Announcement mutation window: the visible elapsed-seconds counter did not advance (${elapsedBefore} -> ${elapsedAfter}) across the 2.5s window -- this check would not be exercising a real same-kind re-tick at all.`);
     } else {
-      findings.push(`Announcement mutation window: real startProgress.elapsedMs advanced (${elapsedBefore}ms -> ${elapsedAfter}ms) while kind stayed "waiting", confirming a genuine same-kind re-render was exercised.`);
+      findings.push(`Announcement mutation window: the visible elapsed-seconds counter advanced (${elapsedBefore}ms -> ${elapsedAfter}ms) while kind stayed "waiting", confirming a genuine same-kind re-render was exercised.`);
     }
     if (mutationCount !== 0) failures.push(`Announcement region mutated ${mutationCount} time(s) (MutationObserver) across real same-kind (waiting) elapsed-ms ticks -- it must not re-announce (the #618 round-2 fix regressed).`);
     else findings.push('Announcement region recorded zero DOM mutations (MutationObserver) across real same-kind elapsed-ms ticks -- no re-announcement.');
