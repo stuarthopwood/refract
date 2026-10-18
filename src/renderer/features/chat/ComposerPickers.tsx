@@ -33,8 +33,9 @@ import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { GaugeIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
+import { Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
 import { attachImageFile } from './attachImage'
 import { notify, useSessionsStore } from '@/state'
@@ -97,7 +98,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               {pendingLabel !== null ? (
                 <Loader2Icon aria-hidden className="size-3 animate-spin" />
               ) : (
-                <GaugeIcon aria-hidden className="size-3" />
+                <ReasoningGaugeIcon level={session?.lastThinkingLevel} className="size-3" />
               )}
               <span>{triggerLabel}</span>
             </button>

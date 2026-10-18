@@ -227,15 +227,48 @@ export function StateIcon({ status }: { status: SessionDisplayStatus }) {
   }
 }
 
+/** Issue #925: the coloured "+A -D" portion of a diff stat -- shared by the status line's
+ * `ChangesChip`, the Session details card's diff line, the Pull requests Changes tab's own
+ * aggregate line, and its own per-file diff header (`DiffViewFromPatch`, issue #919), so none of
+ * them can colour (or leave uncoloured) the same figure a different way. `added`/`removed` each
+ * take `text-diff-added`/`text-diff-removed` (`globals.css`, aliasing the same `--state-working`/
+ * `--destructive` hues `DiffView.tsx`'s own insert/delete tint already uses) only when strictly
+ * positive; a zero count stays `text-muted-foreground` in either direction, so a `-0` never
+ * reads as an error. The leading +/- glyph is the non-colour cue (WCAG 1.4.1) in every case.
+ * `compact` abbreviates past 1,000 via the shared `compactNumber` formatter (issue #437) for the
+ * two surfaces that already did so (the status line and the Session details card); the Changes
+ * tab and the per-file header never abbreviated before this issue, so they leave it off. */
+export function DiffStatCounts({ added, removed, compact = false }: { added: number; removed: number; compact?: boolean }) {
+  const addedText = compact ? compactNumber(added) : String(added)
+  const removedText = compact ? compactNumber(removed) : String(removed)
+  return (
+    <span className="tabular-nums">
+      <span className={added > 0 ? 'text-diff-added' : 'text-muted-foreground'}>+{addedText}</span>{' '}
+      <span className={removed > 0 ? 'text-diff-removed' : 'text-muted-foreground'}>-{removedText}</span>
+    </span>
+  )
+}
+
 /** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past
  * 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared
  * lower-case k/m/b formatter for this, the Changes Readout and the Context usage Readout, so the
  * Session details card and the status line never show the same figure two ways), with a
- * trailing " (partial)" when the diff stat's caps stopped counting before the real total. */
-export function formatDiffStat(stat: DiffStat): string {
+ * trailing " (partial)" when the diff stat's caps stopped counting before the real total. Issue
+ * #925: replaces the old plain-string `formatDiffStat` (removed) -- the status line's
+ * `ChangesChip` and the Session details card's identical diff line both render through this one
+ * component now, pairing the aria-hidden coloured visual text with the existing
+ * `formatDiffStatAccessible` sr-only span below. */
+export function DiffStatLine({ stat }: { stat: DiffStat }) {
   const noun = stat.files === 1 ? 'file' : 'files'
-  const suffix = stat.partial ? ' (partial)' : ''
-  return `${compactNumber(stat.files)} ${noun} changed +${compactNumber(stat.additions)} -${compactNumber(stat.deletions)}${suffix}`
+  return (
+    <>
+      <span className="sr-only">{formatDiffStatAccessible(stat)}</span>
+      <span aria-hidden>
+        {compactNumber(stat.files)} {noun} changed <DiffStatCounts added={stat.additions} removed={stat.deletions} compact />
+        {stat.partial ? ' (partial)' : ''}
+      </span>
+    </>
+  )
 }
 
 // Full, un-abbreviated figures for assistive technology (gate round 4, #437 LOW), shared between

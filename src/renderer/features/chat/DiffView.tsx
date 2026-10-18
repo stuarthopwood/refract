@@ -5,6 +5,7 @@ import 'react-diff-view/style/index.css'
 import './diff-view.css'
 import { cn } from '@/lib/utils'
 import { buildUnifiedDiff, countChanges } from '@/lib/diff'
+import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { FileLinkButton } from './Markdown'
@@ -197,11 +198,20 @@ interface DiffViewFromPatchProps {
    * it is wrapped with the same `diff --git a/<path> b/<path>` header `parseDiff` needs and
    * rendered through the identical `Diff`/`Hunk`/`renderGutter` pipeline. */
   patch: string
+  /** Issue #919: the pull request's own per-file additions/deletions (`ChangedFile.additions`/
+   * `.deletions`), rendered next to the Copy button -- the mock's own per-file +/- acceptance
+   * criterion from #568, never delivered until now. Real, visible text (not `aria-hidden`,
+   * matching the header's own plain-text path next to it); issue #925 colours it the same way
+   * `DiffStatCounts` colours every other change count in the app. `ChangesTab.tsx` is this
+   * component's only caller and always has both figures on hand, so they are required, not
+   * optional. */
+  additions: number
+  deletions: number
 }
 
 /** GitHub's pull request diffs arrive as a ready-made patch body, not an old/new text pair --
  * this is `DiffView`'s sibling for that shape, sharing its rendering but not its diff-building. */
-export function DiffViewFromPatch({ path, patch }: DiffViewFromPatchProps) {
+export function DiffViewFromPatch({ path, patch, additions, deletions }: DiffViewFromPatchProps) {
   // Security remediation (Low): a GitHub file path can contain embedded CR/LF (git itself
   // allows it); interpolated raw into the diff header below, a crafted path could inject extra
   // header or hunk lines into both the parsed diff AND the exact text the Copy button puts on
@@ -218,17 +228,20 @@ ${patch}`
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
-        <span className="truncate" title={path}>
+        <span className="min-w-0 truncate" title={path}>
           {path}
         </span>
-        {changedFile && (
-          <CopyButton
-            getText={() => wrapped}
-            label="Copy diff"
-            announcement="Diff copied"
-            className="-my-1 text-muted-foreground focus-visible:ring-inset"
-          />
-        )}
+        <span className="flex shrink-0 items-center gap-2">
+          <DiffStatCounts added={additions} removed={deletions} />
+          {changedFile && (
+            <CopyButton
+              getText={() => wrapped}
+              label="Copy diff"
+              announcement="Diff copied"
+              className="-my-1 text-muted-foreground focus-visible:ring-inset"
+            />
+          )}
+        </span>
       </div>
       {!changedFile ? (
         <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>

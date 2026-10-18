@@ -3007,3 +3007,40 @@ plus count plus failed plus total-time grammar, the failed call's own visible Er
 wrap-on-expand fix, the ~4-line expanded height, hostile-output rendering inert and bounded both
 collapsed and expanded, keyboard/accessible-name form, and a live Subagents-panel check) was
 confirmed live on a real scratch instance across gate rounds 1 and 2.
+
+## Phase 53: Change-count colour and reasoning gauge (#925, #924, #919) [US1]
+
+- [X] T267 [US1] #925 diff-stat colour tokens: `--diff-added`/`--diff-removed` component tokens
+  (`globals.css`, Dark/Obsidian/Dark high contrast), aliasing `--state-working`/`--destructive`
+  so the coloured figures match `DiffView.tsx`'s own insert/delete hue; `--color-diff-added`/
+  `--color-diff-removed` Tailwind mapping generating `text-diff-added`/`text-diff-removed`; 20
+  new `scripts/theme-contrast-pairs.mjs` PAIRS entries at the 4.5:1 text floor (the composer
+  status line's `--background`/`--composer-background`, the Session details card's `--popover`,
+  and the Changes tab's per-file header `--muted`), all PASS (`node
+  scripts/check-theme-contrast.mjs`: 457/457 pairs).
+- [X] T268 [US1] #925 shared `DiffStatCounts`/`DiffStatLine` components (`sessionDisplay.tsx`,
+  replacing the old plain-string `formatDiffStat`): a zero count (`+0`/`-0`) stays muted, a
+  positive count takes the new tokens, the leading +/- glyph stays the non-colour cue. Wired
+  into the composer status line's `ChangesChip` (`ReadoutChips.tsx`), the Session details card's
+  diff line, and the Pull requests Changes tab's aggregate line (`ChangesTab.tsx`). #919 (folded
+  into #925's own scope, closing alongside it): `DiffViewFromPatch` (`DiffView.tsx`) gains
+  required `additions`/`deletions` props, rendering the same coloured stat next to its Copy
+  button -- the per-file `+/-` header `ChangesTab.tsx`'s own `patch === null` fallback already
+  showed in plain text now colours the same way.
+- [X] T269 [US1] #924 `ReasoningGaugeIcon` (`src/renderer/components/ReasoningGaugeIcon.tsx`,
+  new): a custom inline SVG reusing lucide's own `gauge` arc geometry, needle drawn at one of 7
+  even steps (`off` far left, `medium` upright, `max` far right); `inherit` and an unreported
+  level both draw centred. Replaces the fixed `GaugeIcon` in the composer's `ReasoningPicker`
+  (`ComposerPickers.tsx`, `size-3`) and the Session details card's thinking-level row
+  (`SessionDetailsCard.tsx`, `size-3.5`); decorative (`aria-hidden`), no colour change, the
+  status line's context-usage gauge untouched.
+- [X] T270 [US1] `scripts/verify-925-924-polish.mjs` (new): measures computed colour and
+  contrast ratio of `+N`/`-N`/zero on each of the four #925 surfaces in every theme, and the
+  gauge needle's rendered angle at every reasoning level in both the composer picker and the
+  Session details card, changing the level through the real UI.
+
+`pnpm typecheck`, `pnpm test` (148/148), `check:indent`, `check:theme-contrast` (457/457),
+`check:file-size` all clean on this phase's own final head.
+
+Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Closes #919**
+(folded into #925's own scope, implemented alongside it).

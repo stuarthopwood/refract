@@ -300,6 +300,57 @@
   No. Stuart declined merging them; Approval mode, Model, Reasoning and Attach stay four separate
   triggers, ghost style only (decision from the issue's own grill, item 5).
 
+### Session 2026-10-18 (change-count colour and reasoning gauge)
+
+- Q: Issue #925 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body,
+  no open questions left): wherever a change-count stat ("N files changed +A -D") shows,
+  additions should read green and deletions red, with a zero count staying muted. Which
+  surfaces, and new tokens or reused ones? → A: Three surfaces (the composer status line's
+  Changes readout, the Session details card's identical diff line, and the Pull requests
+  Changes tab, including a per-file header issue #919 was meant to add but never shipped) get
+  dedicated `--diff-added`/`--diff-removed` tokens, reusing `DiffView.tsx`'s own insert/delete
+  hue so the counts match the diff view exactly; a zero count (either `+0` or `-0`) stays muted
+  in every case.
+- Q: Does this reopen issue #570's "done is neutral on tool rows" rule -- `toolRowLabels.tsx`'s
+  own `callMeta` deliberately dropped colour from an `edit` call's own "+N −M" row stat for
+  exactly that reason (PR #950 gate round 1, ui-architect-v3 finding H5) -- and is a Pull
+  requests list ROW (as opposed to the Changes TAB) in scope? → A: Decided (Skippy, delegated by
+  Stuart 2026-10-18, ui-architect-v3 roundtable): no to both. #925's own grill never reopened
+  #570's tool-row rule, and colouring a tool call's own edit stat would re-litigate a closed,
+  previously-gated decision; there is no Pull requests list row showing a change count today,
+  only the Changes tab, which is in scope.
+- Q: `--diff-added`/`--diff-removed` -- a new, independently-tunable hue, or an alias? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 roundtable): a layer-3
+  component-token alias of the SAME `--state-working`/`--destructive` values
+  `DiffView.tsx`/`diff-view.css` already colour the diff gutter and its own expanded-body stat
+  with (issue #630) -- never a second hue, matching the #550 "do not create a second set" rule
+  the existing `--severity-success`/`--severity-error` roles already follow the same way.
+- Q: Issue #919 (open, never implemented: `ChangesTab.tsx`'s own per-file diff header has no
+  +/- counts at all, a #568 acceptance-criterion gap) -- #925's own grill already folds "the
+  per-file header #919 adds" into its own scope. Build it now, or defer #925's own colouring of
+  that surface until #919 ships separately? → A: Decided (Skippy, delegated by Stuart
+  2026-10-18): build it now, as part of this same change -- `DiffViewFromPatch`'s header gains
+  the `additions`/`deletions` props the issue's own "Suggested fix" names, coloured the same way
+  as every other surface; #919 closes alongside #925 rather than staying open with nothing left
+  to do.
+- Q: Issue #924 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body):
+  the Reasoning picker's and the Session details card's gauge icon is a fixed glyph regardless
+  of the Session's actual reasoning level. What should move, and how is `inherit` (or no reported
+  level at all) drawn? → A: A custom inline SVG needle sweeping across 7 even steps (`off` far
+  left, `medium` upright, `max` far right) reusing lucide's own `gauge` arc in its stroke style;
+  `inherit` draws at "the resolved level omp reports", which in practice is always `medium`'s own
+  centred angle -- `Session.lastThinkingLevel` (the only field either caller reads) is already
+  the model's resolved value by the time `get_state` echoes it back (`ipc-model.ts`'s own
+  comment: OMP resolves `inherit` before it is ever reported), so no second "resolved level"
+  field exists to read separately; a Session with no level reported at all falls back to the
+  identical centred angle.
+- Q: Is a single shared angle-mapping function and one SVG viewBox, reused at both the picker's
+  `size-3` and the card's `size-3.5`, sharp enough at 12px to tell `low` from `minimal` or `high`
+  from `medium`? → A: Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3
+  roundtable): yes -- one function, one viewBox; the icon is decorative (`aria-hidden`) in both
+  places, and the level itself is already in the trigger's own visible and accessible text, so
+  the icon is never the sole way to read the level.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -564,6 +615,36 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-070** (new, 2026-10-15, issue #567, ui-architect-v3 roundtable decision record, renumbered from a provisional FR-075 once #570 confirmed FR-069 as the ceiling on origin/main): A Session row MUST be a two-line, 44px square-cornered choice item: line 1 MUST show the shared status icon, the session's display name (truncating; its weight MUST NOT change when the row is selected), and the row's own time at the row's right edge; line 2 MUST show exactly one of, in this order, start-progress text, "Terminated unexpectedly", an archived row's own Project name, or otherwise the session's branch. On hover, on focus inside the row, or while the row's own action menu is open, the time MUST hide and the row's own "..." menu button MUST take its place; under a pointer that cannot hover, both MUST show together. A Session shown in a pane MUST keep the existing 2px active-indicator bar plus its selected fill at all times a pane shows it; hover alone MUST add the fill only, never the bar. A Group header (a Project's own header and the cross-project Archived header) MUST use sentence case, never uppercase or letter-spaced text; the Archived header's own count MUST render as a separate `tabular-nums` figure after the word "Archived", never inside brackets. A Group header's own New-session, branch-picker, and actions buttons MUST be 24px ghost icon buttons, hidden at rest and shown by opacity on hover or focus anywhere in the header, while any of the three is open, while a session is being created in that group, whenever the group has no active Sessions, and always under a pointer that cannot hover. The session list's footer MUST read as one block -- the Add repository entry, then the profile item, then any future alert rows -- separated from the scrollable groups above it by exactly one soft divider.
 - **FR-071** (new, 2026-10-16, issue #559, ui-architect-v3 roundtable decision record): The session list MUST offer a search field, between Pull requests and the Collapse all/Expand all toolbar (FR-069), filtering live and case-insensitively against a Session's own name, branch, or its Project's name; a Project group MUST render only once at least one of its own non-archived Sessions matches, showing only the matching rows, and the Archived group MUST be searched the same way (name, branch, or Project name). While the field holds a non-empty query, every Project group with a match and the Archived group (while shown) MUST start open regardless of the user's own saved collapsed/expanded state (FR-069), through state that is never written to `Settings.sessionListCollapse`; the saved layout MUST return exactly unchanged once the query is cleared. Zero matches MUST show a compact empty state naming that nothing matches, with an action that clears the field; the shown-versus-total result count MUST be announced to assistive technology, debounced while the query is being typed. The field MUST be keyboard reachable (Tab reaches it after Pull requests and before the toolbar, per FR-069), clearable by an in-field button and by Esc, and MUST NOT persist its text to disk -- only within the running app, across a Session switch and a Settings/Manage-sessions round trip.
 - **FR-072** (new, 2026-10-16, issue #560): Refract MUST show a second quiet alert row, in the same place and shape as FR-037's low-memory row, whenever the running OMP is outside Refract's supported version range: the text "omp {version}: unverified version", one text action "Check", and the same per-row dismiss-for-the-run control FR-037 describes. Check MUST open the existing Health check dialog (spec 008 FR-022), whose own result text states which versions are verified; this row MUST stay visible across the whole session, not only on first run, since the OMP version can change after Refract's own first-run readiness screen has already passed.
+- **FR-073** (new, 2026-10-18, issue #925, ui-architect-v3 roundtable decision record; amends
+  spec 003-pull-request-management FR-009/FR-011 and spec 004-session-readout FR-002's own two
+  surfaces, folding in issue #919): Wherever a change-count stat ("N files changed +A -D")
+  renders -- the composer status line's Changes readout (spec 004 FR-002), the Session details
+  card's identical diff line, the Pull requests Changes tab's own aggregate line (spec 003
+  FR-009), and its own per-file diff header (`DiffViewFromPatch`, issue #919: never shipped
+  until this issue folded it in) -- the `+N` MUST take the diff view's own green hue once N is
+  strictly positive, the `-M` MUST take its own red hue once M is strictly positive, and either
+  figure MUST stay muted at exactly zero (a `-0` MUST NOT read as an error). Both hues are
+  dedicated `--diff-added`/`--diff-removed` component tokens (`globals.css`) that alias the SAME
+  `--state-working`/`--destructive` values `DiffView.tsx`'s own insert/delete gutter and stat
+  already colour with (issue #630), never a second, independently-tunable hue. The leading +/-
+  glyph remains the non-colour cue in every case (WCAG 1.4.1). A tool call's own edit stat
+  (`ToolRow.tsx`/`toolRowLabels.tsx`'s `callMeta`) and any Pull requests list row are explicitly
+  OUT of this requirement's scope: colouring the former would reopen issue #570 decision 1/3
+  ("done is neutral on tool rows"), confirmed by a ui-architect-v3 ruling not to apply here, and
+  no list row shows a change count today.
+- **FR-074** (new, 2026-10-18, issue #924; amends FR-064's Reasoning picker trigger icon and
+  this card's own identical thinking-level icon): The Reasoning picker's trigger icon (FR-064)
+  and the Session details card's own thinking-level icon MUST reflect the Session's current
+  reasoning level as a gauge needle rather than a fixed glyph: a custom inline SVG reusing
+  lucide's own `gauge` arc and stroke style, with the needle drawn at one of 7 even steps across
+  that arc -- `off` at its own left tip, `medium` upright (straight up), `max` at its own right
+  tip, `minimal`/`low`/`high`/`xhigh` falling evenly between. `inherit`, and a Session with no
+  reasoning level reported yet, both draw the same centred, upright needle as `medium` -- no
+  field exists, separate from the last-known value FR-064 already reads, to show "the resolved
+  level omp reports" for `inherit` specifically. The icon stays decorative (`aria-hidden`) and
+  uncoloured in both places, unchanged from FR-064's own rule; the status line's context-usage
+  readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
+  reasoning.
 
 ### Key Entities
 

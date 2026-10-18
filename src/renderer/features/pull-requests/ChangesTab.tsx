@@ -6,6 +6,7 @@
 import { ExternalLinkIcon } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/github'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
+import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 
 interface ChangesTabProps {
   additions: number
@@ -29,8 +30,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
   return (
     <div className="flex flex-col gap-3 p-3">
       <p className="text-sm text-muted-foreground">
-        {files.length} file{files.length === 1 ? '' : 's'} changed, <span className="text-green-600">+{additions}</span>{' '}
-        <span className="text-destructive">-{deletions}</span>
+        {files.length} file{files.length === 1 ? '' : 's'} changed, <DiffStatCounts added={additions} removed={deletions} />
       </p>
       {files.length < changedFilesCount && (
         <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
@@ -60,14 +60,14 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
             </div>
           )}
           {file.patch !== null ? (
-            <DiffViewFromPatch path={file.path} patch={file.patch} />
+            <DiffViewFromPatch path={file.path} patch={file.patch} additions={file.additions} deletions={file.deletions} />
           ) : (
             <div className="overflow-hidden rounded-md border border-border">
               <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground" title={file.path}>
                 {file.path}
               </div>
               <div className="px-2.5 py-1.5 text-xs text-muted-foreground">
-                +{file.additions} -{file.deletions} (diff not shown)
+                <DiffStatCounts added={file.additions} removed={file.deletions} /> (diff not shown)
               </div>
             </div>
           )}

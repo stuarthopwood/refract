@@ -272,6 +272,26 @@ export const PAIRS = [
   { fg: 'pr-draft-foreground', bg: 'pr-draft', min: 4.5 },
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
+  // Issue #925: the diff-stat "+A -D" colouring -- real BODY TEXT (never icon-only), so the
+  // 4.5:1 floor, not the 3:1 non-text floor `state-working`/`destructive` already clear
+  // elsewhere above. `diff-added`/`diff-removed` are new token NAMES (aliasing
+  // `state-working`/`destructive`, `globals.css`), so #570's own "check the token actually
+  // rendered, not an alias" rule means these need their own rows even though the underlying
+  // value is already gated. Four real surfaces: the composer status line's Changes chip
+  // (`--background` in Dark/Obsidian, where #927 made `--composer-background` transparent;
+  // `--composer-background` itself in Dark high contrast, the one preset #927 kept opaque --
+  // same `onlyThemes` split the existing `muted-foreground`/`composer-background` pair above
+  // uses), the Session details card's `HoverCardContent` (`--popover`), the Changes tab's own
+  // aggregate line (`--background`, the right-pane panel surface), and the Changes tab's
+  // per-file diff header (`--muted`, `DiffViewFromPatch`'s own `bg-muted` header row, #919).
+  { fg: 'diff-added', bg: 'background', min: 4.5 },
+  { fg: 'diff-removed', bg: 'background', min: 4.5 },
+  { fg: 'diff-added', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'diff-removed', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'diff-added', bg: 'popover', min: 4.5 },
+  { fg: 'diff-removed', bg: 'popover', min: 4.5 },
+  { fg: 'diff-added', bg: 'muted', min: 4.5 },
+  { fg: 'diff-removed', bg: 'muted', min: 4.5 },
 ]
 
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its
