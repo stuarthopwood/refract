@@ -461,6 +461,57 @@
   still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
   of its status.
 
+### Session 2026-10-18 (slash refusal text, notice wrap, advisor settings mention, duplicate-render investigation)
+
+- Q: Issue #938 item 2 (gate follow-up from PR #923/#917, still open after #954): the generic
+  unsupported-arguments refusal ("/{name} doesn't support arguments yet. Try /{name} on its
+  own.") shows for `/advisor dump`, `/advisor configure`, and any typo, even when the command
+  has verified subcommands. What should it say instead? → A: Decided (Skippy, delegated by
+  Stuart, 2026-10-18): when the matched builtin command has one or more verified subcommands
+  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...." (e.g.
+  "/advisor takes one of: on, off, status."). A command with no verified subcommands at all
+  (`/dump`, `/switch`'s free-form argument, an unknown name) keeps the existing generic
+  wording -- there is nothing to usefully list.
+- Q: Gate round 1 (UI/Code/A11y, decided by ui-architect-v3): when the first word after the
+  command IS a valid subcommand but extra text follows (`/advisor on now`), does the "takes one
+  of" listing still make sense, since `on` is already correct? → A: No -- that wording would
+  wrongly suggest the typed subcommand itself is unrecognised. The refusal instead reads
+  "/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own." (e.g.
+  "/advisor on doesn't take more text yet. Try /advisor on on its own."); "takes one of: ..." is
+  reserved for when the first word itself is not a recognised subcommand (FR-081).
+- Q: Issue #938 item 3 (still open after #954): a short notice (`NoticeRow.tsx`) can still lose
+  text to its own one-line ellipsis close to the 160-char threshold (`/advisor status`'s spend
+  clause). Wrap it in place (`summaryWrap`), or make every short notice expandable? → A:
+  `ui-architect-v3` roundtable ruling, 2026-10-18: `summaryWrap` -- the existing no-children
+  "wrap instead of truncate" escape hatch (`CollapsedLine.tsx`, already used by the Subagents
+  panel for the identical failure mode). Making every short notice expandable would add a
+  chevron/trigger that leads nowhere on the common case (nothing is actually hidden beyond the
+  same clause re-wrapped), misrepresenting the row's own structure.
+- Q: Issue #938 item 5 (still open after #954): should `ModelRolesSection.tsx`'s Advisor role
+  description mention how to turn the advisor on? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): yes. Gate round 1 wording decided by ui-architect-v3: "Reviews a Session's turns
+  while the Advisor is on (/advisor on); falls back to Slow." The description renders as plain
+  text (no markdown), so the slash command shows as literal text, consistent with how a
+  refusal message or a notice already shows a literal command name elsewhere in the app.
+- Q: Issue #938 item 6 (possible duplicate render, not yet investigated as of #954): the
+  #917/#954 live-check screenshots show the assistant's own sentinel answer
+  ("t917turn"/"t947turn") appearing more than once in one turn. A duplicate render, or two real
+  text blocks from the model? → A: Investigated, not a bug (Skippy, delegated by Stuart,
+  2026-10-18; corrected, gate round 1 -- a first draft of this answer wrongly blamed the
+  live-check scripts' own wait condition alone): read against the real OMP session log, the
+  #917 screenshot's three occurrences are the user's own prompt (which deliberately contains
+  the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
+  its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
+  stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
+  made it continue, mark the todo done, and reply "t917turn" again. A second, independent
+  #954/#947 verify run's own session log shows the identical shape against "t947turn",
+  confirming this is the general mechanism, not a one-off.
+  `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+  (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
+  keyed by `message_id`/`message_id:index`, so no code path can render one message's own
+  content index twice -- each of the three rows is real, distinct, and announced once; not a
+  duplicate render. No change made.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -834,6 +885,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
+- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): When a slash command is refused as `UnsupportedArguments` (FR-032): if the first word after the command IS one of that command's own verified subcommands but further text follows it (for example `/advisor on now`), the refusal MUST read `/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own.`; otherwise, when the matched builtin command carries one or more verified subcommands at all, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ....` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
+- **FR-082** (new, 2026-10-18, issue #938 item 3, gate follow-up from PR #923/#917, still open after #954/#947; ui-architect-v3 roundtable decision record): A short notice (`NoticeRow.tsx`, under the long-notice threshold and carrying no embedded line break) MUST let its one-line summary wrap across lines instead of truncating with an ellipsis, so a notice whose text happens to sit close to that threshold is never cut off; it MUST NOT gain a chevron/expand control (there is nothing behind one once the whole text is already visible wrapped).
+- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow."
 
 ### Key Entities
 
