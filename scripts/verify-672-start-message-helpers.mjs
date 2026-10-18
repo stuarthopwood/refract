@@ -212,6 +212,15 @@ export async function ctrlClickSessionRow(cdp, sessionId) {
 export async function restartAgent(cdp, sessionId) {
   const stopped = await cdp.evaluate(`window.refract.sessions.stopAgent(${JSON.stringify(sessionId)})`);
   if (!stopped?.ok) throw new Error(`restartAgent(${sessionId}): stopAgent failed: ${JSON.stringify(stopped)}`);
+  // Gate-fix (confirmed live, bg_831): `stopAgent()`'s own client-visible resolution can arrive
+  // a tick before the registry's `status` field actually reads 'stopped' -- firing `recover()`
+  // immediately after risked it rejecting a precondition check silently (never awaited), with
+  // no visible startProgress ever appearing at all. Polls `sessions.list()`'s own real `status`
+  // field (unlike startProgress, always included) until it reads 'stopped' first.
+  await cdp.waitFor(
+    `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.status === 'stopped')`,
+    { timeoutMs: 10_000, label: `restartAgent(${sessionId}): status reads 'stopped' before recover()` }
+  );
   await cdp.evaluate(`(() => {
     window.__672RecoverResult = window.refract.sessions.recover(${JSON.stringify(sessionId)});
     return true;
