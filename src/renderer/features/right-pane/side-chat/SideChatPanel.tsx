@@ -305,10 +305,12 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   return (
     <LinkContext.Provider value={sessionId}>
-      {/* Issue #802 fix: `min-h-0 flex-1`, not a bare `h-full` -- this root's height now comes
-          from the flex algorithm's own free-space distribution, never a percentage that can
-          resolve against an indefinite ancestor (Decided, Skippy, delegated by Stuart 2026-10-18). */}
-      <div className="flex h-full flex-col">
+      {/* Issue #802: `min-h-0 flex-1`, not a bare `h-full` -- a defensive match for the
+          proven-working `MessageScroller`/`ModelPicker` pattern (flex-basis:0% derives height
+          from the flex algorithm directly, not a percentage). A live falsification probe found
+          reverting this alone does NOT reproduce a second scroll container in the tested
+          scenario; the real cause of the reported bug is still open (see the issue). */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement}
         </div>

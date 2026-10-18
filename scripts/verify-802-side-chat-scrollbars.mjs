@@ -6,37 +6,42 @@
 // Enter), never `window.refract.*` directly, so the measurement below sees the exact DOM a real
 // developer would.
 //
-// MUST fail on `origin/main` for this exact reason, read from the code (not reproduced by
-// actually running this script against `origin/main`; no build slot has been granted for that
-// comparison run): `SideChatPanel.tsx`'s own root div was `flex h-full flex-col` -- a bare
-// percentage height, which depends on EVERY ancestor in the chain resolving a definite (non-
-// `auto`) computed height to actually bound this panel to the pane's own available space.
-// `react-resizable-panels`' own `Panel` component (`node_modules/react-resizable-panels/dist/
-// react-resizable-panels.js`, confirmed by reading the installed package, not merely its types)
-// renders an outer wrapper div whose un-overridable default inline style is `height: "auto"`
-// (not `100%` -- its own `.d.ts` comment even warns "the default inline styles cannot be
-// overridden, except for overflow"), and wraps RightPaneShell's content in an INNER div with
-// its own un-overridable `overflow: "auto"` default. Every OTHER self-scrolling root in this
-// codebase that fills a flex column already avoids depending on that percentage chain at all --
-// `Transcript.tsx`'s `MessageScroller className="h-full flex-1"` and `ModelPicker.tsx`'s list
-// `min-h-0 flex-1 overflow-y-auto` both use `flex-1` (flex-basis:0%, flex-grow:1), which derives
-// its size directly from the flex algorithm's own free-space distribution, never from a
-// percentage that can resolve against an indefinite ancestor. `SideChatPanel.tsx` was the one
-// outlier using a bare `h-full`, which let its own root grow taller than the pane whenever an
-// answer exceeded it, in turn letting the `react-resizable-panels` wrapper's own `overflow: auto`
-// box (an ancestor entirely invisible to a source-level grep of `RightPaneShell.tsx`/`App.tsx`/
-// `resizable.tsx`, since it is injected by the library at runtime, not authored in this repo)
-// become a second, genuine scroll container beside the panel's own intended one. The fix
-// (`min-h-0 flex-1` in place of `h-full`, `SideChatPanel.tsx`) matches the issue's own prescribed
-// "robust way to fill a flex column" and the proven-working `MessageScroller`/`ModelPicker`
-// pattern exactly.
+// Live-run result (build slot granted by Main, 2026-10-18): GREEN at commit `20cce39` (fixed
+// code, `SideChatPanel.tsx` root `min-h-0 flex-1`) -- `report.json` records `failures: []`,
+// exactly 1 scroll container (confirmed to be the Side chat answer region via
+// `data-side-chat-scroll-container`, not a bare count), 0 elements with horizontal overflow, the
+// header title and composer both confirmed pinned (same rect before and after scrolling the
+// answer region to its bottom), across Dark/Obsidian/Dark (high contrast).
+//
+// RED PROBE RESULT (important, read before trusting the fix claim): on a throwaway branch,
+// reverting ONLY `SideChatPanel.tsx`'s root `className` back to the pre-fix `flex h-full
+// flex-col`, then rebuilding and re-running this SAME script (with its scroll probe corrected
+// to measure the right pane's own `react-resizable-panels` `Panel` wrapper's subtree AND every
+// ancestor up to `document.body` -- an earlier probe draft scoped to `#right-pane-active-panel`
+// alone, which is a DESCENDANT of that wrapper, could never have seen it) -- the result was
+// STILL exactly 1 scroll container, confirmed to be the Side chat answer region, 0 horizontal
+// overflow, header/composer pinned, screenshot visually identical (one scrollbar thumb) to the
+// fixed build. **Reverting the className alone does NOT reproduce a second scroll container in
+// this fixture/harness.** This falsifies the hypothesis that `SideChatPanel.tsx`'s own
+// `h-full`-vs-`flex-1` choice is, by itself, the cause of the double-scrollbar bug Stuart
+// reported. The `min-h-0 flex-1` change is kept as a genuine, harmless improvement (it matches
+// the proven-working `Transcript.tsx` `MessageScroller`/`ModelPicker.tsx` pattern and removes a
+// real fragility -- a percentage height depending on every ancestor resolving a definite,
+// non-`auto` computed height, including `react-resizable-panels`' own un-overridable `Panel`
+// wrapper, whose default inline style is the literal `height: "auto"`, confirmed by reading the
+// installed package at `node_modules/react-resizable-panels/dist/react-resizable-panels.js`),
+// but its causal link to issue #802's own reported symptom is UNCONFIRMED, not proven, by this
+// probe. The real cause (a different content shape, a different window/pane size, a streaming
+// answer rather than one delivered complete in a single frame, or something this fixture does
+// not reproduce at all) is still open; a live DevTools session against the exact reported
+// scenario, per the issue's own "Probe first" instruction, has still not been run.
 //
 // What this script does NOT prove (recorded in its own `notExercised`):
-//   - That `react-resizable-panels`' own injected wrapper is the exact ONLY candidate a live
-//     DevTools probe would have named (the issue itself says "no candidate is preferred until
-//     the probe runs") -- this script's own scroll-container count is the actual live proof for
-//     THIS build; the header comment above is the code-reading explanation for why the count
-//     was 2 before the fix, not a substitute for having run the probe against `origin/main`.
+//   - That no OTHER content shape, window size, or interaction sequence could surface a second
+//     scroll container somewhere in the right pane's own tree -- this script's own count, taken
+//     over the Panel wrapper's subtree and ancestors, is the live proof for THIS build and THIS
+//     fixture only, both before and after the className change, and found no difference either
+//     way.
 //   - The main transcript and the Agents panel staying at exactly one scroll container under the
 //     same stress (the issue's own acceptance list includes them) -- out of scope for this
 //     script, which is scoped to the Side chat panel only; neither panel changed in this PR.
@@ -45,10 +50,6 @@
 //     forbidden) -- this fixture's own table and code block are deliberately narrow so the
 //     blanket "no horizontal overflow anywhere in the pane" assertion below holds; a wide-table
 //     case is a different, narrower claim this run does not make either way.
-//
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task (lane brief: "NO BUILD" --
-// the build slot is granted by Main explicitly later). `node --check` is the only command that
-// has been run against it.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -152,7 +153,8 @@ async function main() {
   const findings = [];
   const failures = [];
   const notExercised = [
-    'Whether `react-resizable-panels`\' own injected Panel wrapper is the exact ONLY possible second scroller a live DevTools session could ever find (the issue itself says "no candidate is preferred until the probe runs") -- this script\'s own scroll-container count, taken over the Panel wrapper\'s subtree AND its ancestors up to document.body, is the live proof for THIS build and THIS fixture; it is not a guarantee that no OTHER content shape could surface a different second scroller elsewhere in the tree.',
+    'Whether `react-resizable-panels`\' own injected Panel wrapper, or any other element, is the exact second scroller a live DevTools session against the REAL reported scenario would find: this script\'s own scroll-container count, taken over the Panel wrapper\'s subtree AND its ancestors up to document.body, found exactly 1 scroller both WITH and WITHOUT the SideChatPanel.tsx className fix in this fixture/harness (a RED probe reverting the fix alone did not reproduce a second scroller) -- the real cause of the originally reported bug remains unconfirmed by this script.',
+    'Whether the `min-h-0 flex-1` className change on SideChatPanel.tsx\'s root genuinely fixes issue #802\'s own reported symptom: NOT confirmed. The change is a harmless, defensive improvement (matches the proven-working MessageScroller/ModelPicker pattern), but reverting it alone did not reproduce a second scroll container in this fixture, so its causal link to the real bug is open, not proven; a live DevTools probe against the exact reported window/pane size, per the issue\'s own "Probe first" instruction, has still not been run.',
     'The main transcript and the Agents panel staying at exactly one scroll container under the same stress (the issue\'s own acceptance list names both) -- out of scope for this script, which is scoped to the Side chat panel only; neither panel changed in this PR.',
     'A wide table or an unbroken long code line that genuinely needs its own horizontal scroll (the issue\'s own fix note explicitly allows the table/code to scroll sideways): this fixture\'s own table and code block are deliberately narrow, so the blanket "no horizontal overflow anywhere in the pane" assertion below is a different, narrower claim than a wide-table case would need.',
     'A streaming answer (deltas arriving over several `btw_delta` push frames while the panel is open) is not exercised: the fixture\'s own `btw` response already carries the full, complete answer in one frame (side-chat-store.ts applies it verbatim regardless of status) -- a streaming answer that grows the scroll container\'s own height frame-by-frame while still mid-turn is a different code path (the same render tree, but reached incrementally) this run does not cover.',
