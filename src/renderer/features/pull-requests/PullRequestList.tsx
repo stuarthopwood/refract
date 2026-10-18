@@ -88,6 +88,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const tabsWrapRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Issue #499 decision 2: the active tab scrolls into view on every tab/repository change,
   // scrolling only this row's own wrapper (`PanelTabBar.tsx`'s established pattern for the same
@@ -120,8 +121,22 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
     wrap.addEventListener('scroll', updateFade, { passive: true })
     const observer = new ResizeObserver(updateFade)
     observer.observe(wrap)
+    // Gate-fix (M4, caught live round 2 2026-10-18, test-reviewer Medium): a mouse with no
+    // horizontal wheel/tilt-scroll could not reach the tabs past the fade at all -- maps a
+    // vertical wheel delta onto `scrollLeft` while the row can still scroll further in that
+    // direction, `passive: false` only because this conditionally calls `preventDefault` (never
+    // unconditionally, so an already-at-the-end wheel still scrolls the page normally).
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return
+      const canScrollMore = e.deltaY > 0 ? wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth : wrap.scrollLeft > 0
+      if (!canScrollMore) return
+      e.preventDefault()
+      wrap.scrollLeft += e.deltaY
+    }
+    wrap.addEventListener('wheel', handleWheel, { passive: false })
     return () => {
       wrap.removeEventListener('scroll', updateFade)
+      wrap.removeEventListener('wheel', handleWheel)
       observer.disconnect()
     }
   }, [state.tab, repositoryId])
@@ -149,10 +164,14 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
               a static gradient on both edges regardless of whether either is actually clipped.
               `[scrollbar-width:none]`/`[&::-webkit-scrollbar]:hidden` hide the native scrollbar
               this row never needed visible -- its own fade already signals more content, and the
-              bare scrollbar track pushed the tab row's own vertical centring off by its height. */}
+              bare scrollbar track pushed the tab row's own vertical centring off by its height.
+              Gate-fix (M5, caught live round 2 2026-10-18): `scroll-px-6` (24px, matching
+              `TABS_FADE_PX`) sets `scroll-padding-inline` so the BROWSER's own native scroll-
+              into-view-on-focus (roving tabindex arrow-key moves, Radix Tabs) keeps a newly-
+              focused tab clear of the fade too, not just the active-tab effect above. */}
           <div
             ref={tabsWrapRef}
-            className="relative min-w-0 flex-1 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="relative min-w-0 flex-1 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <TabsList className="h-8 w-max shrink-0 justify-start gap-0.5 rounded-none bg-transparent p-0">
               {TABS.map((tab) => (
@@ -219,8 +238,11 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
           // design: a caller never gets to fight its own Esc contract) -- Enter-to-refresh is
           // wired one level up instead, scoped to the input itself so a State-select Enter (which
           // commits the highlighted option, not a search) is never also treated as a refresh.
+          // Gate-fix (L4, caught live round 2 2026-10-18): `!isComposing` -- an IME composition's
+          // own Enter (confirming a candidate, e.g. Japanese/Chinese input) must never also
+          // trigger a refresh; the composition's own Enter is not a real submit.
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && e.target instanceof HTMLInputElement) void refresh(repositoryId)
+            if (e.key === 'Enter' && e.target instanceof HTMLInputElement && !e.nativeEvent.isComposing) void refresh(repositoryId)
           }}
         >
           <SearchField
@@ -229,6 +251,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
             label="Filter pull requests by title or label"
             placeholder="Filter by title or label"
             className="h-8 flex-1"
+            inputRef={searchInputRef}
           />
           <Select value={state.state} onValueChange={(value) => setStateFilter(repositoryId, value as PullRequestStateFilter)}>
             <SelectTrigger size="sm" aria-label="State" className="h-8 w-28 shrink-0">
@@ -266,7 +289,20 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
                 <EmptyTitle>No pull requests match these filters.</EmptyTitle>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" onClick={() => clearFilters(repositoryId)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    clearFilters(repositoryId)
+                    // Gate-fix (M2, caught live round 2 2026-10-18, test-reviewer Medium): this
+                    // button unmounts the instant real (unfiltered) rows repopulate, stranding
+                    // focus on <body> -- moves it to the search field instead (only reachable
+                    // while the Filters section is open, same as this button's own visibility
+                    // requires `activeFilterCount > 0`, which the search field's non-empty
+                    // query or non-default State can independently satisfy). One frame via
+                    // `requestAnimationFrame` lets the unmount/re-render settle first.
+                    if (filtersOpen) requestAnimationFrame(() => searchInputRef.current?.focus())
+                  }}
+                >
                   Clear filters
                 </Button>
               </EmptyContent>

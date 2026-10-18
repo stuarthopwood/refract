@@ -124,7 +124,10 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // Gate-fix (H3, caught live 2026-10-18): clearing the box to empty refetches immediately
     // rather than leaving the (still-filtered) rows showing until an Enter that will never
     // come -- Enter still drives every OTHER narrowing edit, this is the one exception.
-    if (query === '') void get().refresh(repositoryId)
+    // Gate-fix (L5, caught live round 2 2026-10-18): only when the FETCHED query
+    // (`appliedQuery`) was actually non-empty -- typing then backspacing to empty without ever
+    // pressing Enter has nothing applied to undo, so it must not force a redundant refetch.
+    if (query === '' && get().stateFor(repositoryId).appliedQuery !== '') void get().refresh(repositoryId)
   },
   clearFilters: (repositoryId) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { query: '', state: 'open', selectedNumber: null }) })

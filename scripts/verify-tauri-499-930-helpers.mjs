@@ -96,3 +96,42 @@ export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
   }
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x + deltaX, y: rect.y, button: 'left', clickCount: 1 });
 }
+
+/** Clicks tab `tabLabel`, optionally opens the State select and picks `optionLabel`, then waits
+ * until loading has finished AND the rendered rows genuinely reflect it -- no stale Open/Draft
+ * row survives, at least one Closed/Merged row does, and the Filters label counts it. Gate-fix
+ * (C1, test-reviewer Critical, round 2): `setStateFilter` updates the label SYNCHRONOUSLY while
+ * `refresh()` keeps the OLD (stale, still-Open) rows mounted until the fetch resolves -- waiting
+ * on `rows.length > 0` alone (the previous version of this check) passed on those stale rows
+ * every time. Each row's own state span is its FIRST `span.flex.items-center.gap-1`
+ * (`PullRequestRow.tsx`) -- never the row's title text, which could coincidentally contain these
+ * words. Returns the settled `{ rows, label, stateTexts }` or `null` on timeout. */
+export async function driveStateFilter(cdp, tabLabel, optionLabel) {
+  await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(tabLabel)})`);
+  if (optionLabel) {
+    await cdp.click(`document.querySelector('[aria-label="State"]')`);
+    await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === ${JSON.stringify(optionLabel)})`);
+  }
+  return cdp.waitFor(`(() => {
+    const loadingNow = document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled') === 'true';
+    if (loadingNow) return false;
+    const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
+    if (rows.length === 0) return false;
+    const stateTexts = rows.map((r) => r.querySelectorAll('span.flex.items-center.gap-1')[0]?.textContent?.trim());
+    const hasOpenOrDraft = stateTexts.some((t) => t === 'Open' || t === 'Draft');
+    const hasClosedOrMerged = stateTexts.some((t) => t === 'Closed' || t === 'Merged');
+    const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
+    if (hasOpenOrDraft || !hasClosedOrMerged || btn?.getAttribute('aria-label') !== 'Filters, 1 active') return false;
+    return { rows: rows.length, label: btn.getAttribute('aria-label'), stateTexts };
+  })()`, { timeoutMs: 15_000, label: `State on ${tabLabel} tab settles to real, non-stale rows` }).catch(() => null);
+}
+
+/** Diagnostic snapshot for a `driveStateFilter` timeout -- a never-settling wait (no Closed/
+ * Merged row ever appears) is a real product/data gap, not a script bug, surfaced here rather
+ * than silently passed on stale rows. */
+export async function stateFilterDiagnostic(cdp) {
+  return cdp.evaluate(`(() => {
+    const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
+    return { loading: document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled'), rowCount: rows.length, stateTexts: rows.map((r) => r.querySelectorAll('span.flex.items-center.gap-1')[0]?.textContent?.trim()) };
+  })()`);
+}

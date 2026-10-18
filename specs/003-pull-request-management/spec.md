@@ -447,7 +447,7 @@ creation rules from spec 001.
   app start, a default-repository change, window focus (throttled), an active-account change, and
   the view's own explicit refresh -- and MUST NOT be refreshed on a timer.
 - **FR-033**: The Filters disclosure's accessible indicator MUST name the number of active
-  filters (for example "Filters, 1 active") whenever the search text is non-empty or the State
+  filters (for example "Filters, 1 active") whenever the applied query is non-empty or the State
   control is not at its default (Open), and MUST never rely on colour alone (issue #499).
 - **FR-034**: The list column MUST be resizable by a drag handle (280px to half the view, default
   320px), remembered across restarts as one width for every Project; the handle MUST be

@@ -149,22 +149,22 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             own focus ring on its right edge, where the wrapper's width is now pinned flush
             against the panel's real edge with no slack to spare. */}
         <div ref={headerWrapperRef} className="flex min-w-0 shrink-0 items-center gap-2" style={{ width: repositoryId ? listColumnWidthPx : undefined }}>
-          {/* Gate-fix (M6, caught live 2026-10-18): `min-w-0 shrink truncate`, not `shrink-0` --
-              at the narrowest emulated widths (280px list column, 50%-vs-280px-min conflict
-              resolved in the library's own favour of the min) this heading used to claim its
-              full intrinsic width unconditionally, forcing the Project selector to absorb the
-              ENTIRE shortfall alone; both now share the squeeze and this truncates instead of
-              overflowing. */}
-          <h2 ref={headingRef} tabIndex={-1} className="min-w-0 shrink truncate text-sm font-semibold outline-none">
+          {/* Gate-fix (M1, caught live round 2 2026-10-18, test-reviewer Medium): the heading
+              used to shrink/truncate ("Pull reque…" at the default 320px column) while the
+              Project selector's own `w-56` held its full width unconditionally -- reversed:
+              the heading never truncates (`shrink-0`), the selector gets `min-w-0 flex-1` (no
+              fixed width) so IT absorbs the squeeze and truncates instead, matching its own
+              `line-clamp-1` `SelectValue` and Radix `Tooltip` (gate-fix M3) for the full name. */}
+          <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
             Pull requests
           </h2>
           {repositoryId && (
             <Select value={repositoryId} onValueChange={(value) => openPullRequests(value)}>
               {/* Quality-gate remediation (code-reviewer, Medium): the chat panel can shrink to
-               * 360px (`App.tsx`'s `minSize={360}`); without `min-w-0`/`shrink` this `w-56` trigger
+               * 360px (`App.tsx`'s `minSize={360}`); without `min-w-0`/`shrink` this trigger
                * held its full width and pushed the trailing corner spacer past the window's right
                * edge, where it was clipped -- the Select's own right end then sat back under the
-               * window buttons, the exact dead-click conflict #500 removed. `min-w-0`/`shrink` let
+               * window buttons, the exact dead-click conflict #500 removed. `min-w-0 flex-1` lets
                * it shrink and truncate instead (the trigger's inner `SelectValue` already
                * `line-clamp-1`s, per `select.tsx`).
                * Gate-fix (M3, caught live 2026-10-18): the Project name used to be a bare
@@ -173,18 +173,20 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
                * button's own established pattern (`aria-describedby={undefined}` stops Radix
                * doubling the announcement against the trigger's own `aria-label`, which now
                * reads "Project: <name>" -- "Repository" was never the UI's own word for this,
-               * `CONTEXT.md`'s own Project entry is). */}
+               * `CONTEXT.md`'s own Project entry is).
+               * Gate-fix (L2, caught live round 2 2026-10-18): `side="right"` -- the default
+               * `top` placement overlapped the Filter tabs row directly below this header. */}
               <Tooltip>
                 <TooltipTrigger asChild aria-describedby={undefined}>
                   <SelectTrigger
                     size="sm"
                     aria-label={selectedRepositoryName ? `Project: ${selectedRepositoryName}` : 'Project'}
-                    className="no-drag-region w-56 min-w-0 shrink"
+                    className="no-drag-region min-w-0 flex-1"
                   >
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                 </TooltipTrigger>
-                <TooltipContent>{selectedRepositoryName ?? 'Project'}</TooltipContent>
+                <TooltipContent side="right">{selectedRepositoryName ?? 'Project'}</TooltipContent>
               </Tooltip>
             {/* Quality-gate remediation (accessibility-auditor, Medium): the default
              * `position="item-aligned"` lays the selected item over the trigger, so any item
@@ -220,6 +222,17 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           orientation="horizontal"
           className="min-h-0 flex-1"
           onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
+          // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
+          // own double-click-to-reset is detected via a native `dblclick` listener on the
+          // GROUP's root element (a wider hit region than the handle's own 1px visible box, per
+          // its built dist), and it calls `event.preventDefault()` ONLY on an actual reset (same
+          // dist). A double-click landing in that wider region but outside the narrow
+          // `ResizableHandle` element itself used to reset visually without persisting, since the
+          // persist-on-reset handler below lived on that narrow element and never fired. Listening
+          // here instead catches every real reset, wherever within the hit region it landed.
+          onDoubleClick={(e) => {
+            if (e.defaultPrevented) usePullRequestsLayoutStore.getState().resetToDefault()
+          }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
               320px, one width for every Project. Native to `react-resizable-panels` 4.14.1:
@@ -247,18 +260,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>
-          {/* Gate-fix (H1, caught live 2026-10-18): the library's own double-click reset calls
-              `panel.resize(defaultSize)` directly, never through `onLayoutChanged`'s own
-              `isUserInteraction` meta, so `commit(false)` (or no commit call at all) never
-              persisted it -- the UI showed 320px but `settings.json` still held whatever was
-              dragged before, silently un-resetting on the next relaunch. `onDoubleClick` here
-              runs independently of (and alongside) the library's own internal reset, persisting
-              the same default the library just applied visually. */}
-          <ResizableHandle
-            withHandle
-            aria-label="Resize pull request list"
-            onDoubleClick={() => usePullRequestsLayoutStore.getState().resetToDefault()}
-          />
+          <ResizableHandle withHandle aria-label="Resize pull request list" />
           <ResizablePanel id="pull-requests-detail">
             <div className="h-full min-w-0 overflow-hidden">
               {selectedNumber !== null ? (

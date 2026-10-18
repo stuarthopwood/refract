@@ -72,7 +72,9 @@ import {
   assertBundleContainsStory499930Marker,
   connectCdp,
   dragHandleBy,
-  makeGithubScratchClone
+  driveStateFilter,
+  makeGithubScratchClone,
+  stateFilterDiagnostic
 } from './verify-tauri-499-930-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -367,30 +369,17 @@ async function main() {
         checkFail('"Clear filters" empties the query, resets State, and refetches the unfiltered list', JSON.stringify({ clearedQueryValue, rowsAfterClear, labelAfterClear }));
       }
 
-      // ---- #499 gate-fix (H4, caught live 2026-10-18): the State control itself was never
-      // actually driven by this script -- only claimed in this file's own header comment. Picks
-      // Closed on the All tab (the real GitHub scratch clone has closed/merged history), then on
-      // one relation tab too, asserting real rows render each time and the label still counts
-      // the non-default State as one active filter. ----
-      await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'All')`);
-      await cdp.click(`document.querySelector('[aria-label="State"]')`);
-      await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === 'Closed')`);
-      const closedOnAll = await cdp.waitFor(`(() => {
-        const rows = document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button');
-        const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
-        return rows.length > 0 && btn?.getAttribute('aria-label') === 'Filters, 1 active' ? { rows: rows.length, label: btn.getAttribute('aria-label') } : null;
-      })()`, { timeoutMs: 15_000, label: 'State=Closed on All tab settles to real rows' }).catch(() => null);
+      // ---- #499 gate-fix (H4): drives the State control, asserting real rows + Filters label
+      // (via `driveStateFilter`, `verify-tauri-499-930-helpers.mjs` -- gate-fix C1, test-
+      // reviewer Critical round 2: waits for loading to finish and the rows to genuinely
+      // reflect the new filter, not just `rows.length > 0` on stale ones). ----
+      const closedOnAll = await driveStateFilter(cdp, 'All', 'Closed');
       if (closedOnAll) checkPass('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(closedOnAll));
-      else checkFail('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(closedOnAll));
+      else checkFail('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(await stateFilterDiagnostic(cdp)));
 
-      await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'Authored by me')`);
-      const closedOnRelationTab = await cdp.waitFor(`(() => {
-        const rows = document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button');
-        const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
-        return rows.length > 0 && btn?.getAttribute('aria-label') === 'Filters, 1 active' ? { rows: rows.length, label: btn.getAttribute('aria-label') } : null;
-      })()`, { timeoutMs: 15_000, label: 'State=Closed on Authored by me tab settles to real rows' }).catch(() => null);
+      const closedOnRelationTab = await driveStateFilter(cdp, 'Authored by me');
       if (closedOnRelationTab) checkPass('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(closedOnRelationTab));
-      else checkFail('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(closedOnRelationTab));
+      else checkFail('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(await stateFilterDiagnostic(cdp)));
 
       // Resets State back to Open and the tab back to All before everything downstream (tab
       // geometry, resize, relaunch) runs against the same baseline every prior round used.
@@ -508,6 +497,12 @@ async function main() {
       }
       await cdp.screenshot(path.join(SHOTS_DIR, '04-project-selector-focus.png'));
 
+      // Gate-fix (L1, caught live round 2 2026-10-18): 01 used to be taken right after 04 with
+      // the Project selector still focused -- its tooltip (focus opens it, same as hover) was
+      // still visible, overlapping the tabs row in the "clean" baseline shot.
+      await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10, button: 'none' });
+      await sleep(200);
       await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-pull-requests.png'));
     } else {
       notExercised('Every live PR-data check (Filter tabs, Filters disclosure, tab geometry, resizable column, Project selector fit)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
