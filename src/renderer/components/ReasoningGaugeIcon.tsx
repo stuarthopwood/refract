@@ -19,7 +19,10 @@
 //
 // Decorative in every case (`aria-hidden`, `docs/design/foundations-icons.md` "Metadata
 // iconography" -- the level itself is already in the trigger's visible/accessible text in both
-// callers): no colour change, matching the issue's own Accessibility section.
+// callers): no colour change, matching the issue's own Accessibility section. `data-slot=
+// "reasoning-gauge"` is a stable structural hook (`ReadoutChip.tsx`'s own established pattern)
+// for `scripts/verify-925-924-polish.mjs` to find this icon by, in both callers, never by the
+// shared `viewBox="0 0 24 24"` alone (ambiguous against any other SVG the same size).
 import type { ThinkingLevel } from '../../shared/ipc-model'
 
 const LEVELS: readonly ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -51,6 +54,7 @@ export function ReasoningGaugeIcon({ level, className }: { level?: string | null
   return (
     <svg
       aria-hidden
+      data-slot="reasoning-gauge"
       viewBox="0 0 24 24"
       className={className}
       fill="none"

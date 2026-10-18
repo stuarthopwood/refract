@@ -88,8 +88,8 @@ const REASONING_PICKER_FINDER =
 const CHANGES_CHIP_CONTAINER = `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => /changed/.test(el.textContent))`;
 const DETAILS_CARD_FINDER = `document.querySelector('[data-slot="hover-card-content"]')`;
 const DETAILS_CARD_DIFF_CONTAINER = `${DETAILS_CARD_FINDER}?.querySelector('.text-xs.text-muted-foreground:has(svg)')`;
-const DETAILS_CARD_GAUGE_SVG = `${DETAILS_CARD_FINDER}?.querySelector('svg[viewBox="0 0 24 24"]')`;
-const PICKER_GAUGE_SVG = `(${REASONING_PICKER_FINDER})?.querySelector('svg[viewBox="0 0 24 24"]')`;
+const DETAILS_CARD_GAUGE_SVG = `${DETAILS_CARD_FINDER}?.querySelector('svg[data-slot="reasoning-gauge"]')`;
+const PICKER_GAUGE_SVG = `(${REASONING_PICKER_FINDER})?.querySelector('svg[data-slot="reasoning-gauge"]')`;
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -107,9 +107,11 @@ function makeGithubScratchClone(dir) {
 
 // Ties the exe under test to the actual commit: `diff-added`/`diff-removed` (globals.css's new
 // #925 tokens, consumed via the `text-diff-added`/`text-diff-removed` Tailwind utilities,
-// literally present in `sessionDisplay.tsx`'s `DiffStatCounts`) and `M12 14L` (the absolute-move
-// prefix `ReasoningGaugeIcon.tsx`'s own needle path always starts with -- distinct from lucide's
-// own relative `m12 14 4-4` needle, so this can never match lucide's bundled icon by accident).
+// literally present in `sessionDisplay.tsx`'s `DiffStatCounts`) and `reasoning-gauge`
+// (`ReasoningGaugeIcon.tsx`'s own `data-slot` -- a genuine static string literal, unlike the
+// needle path itself, which is built from a template literal at RUNTIME and so never appears as
+// a literal string in the bundled source; the arc path string is lucide's own `gauge` icon data
+// verbatim, matched there too whenever `GaugeIcon` ships, so it cannot distinguish this story).
 function assertBundleContainsStory925924Markers() {
   const bundleRoot = path.join(REPO_ROOT, 'out', 'tauri-web');
   if (!existsSync(bundleRoot)) {
@@ -123,15 +125,15 @@ function assertBundleContainsStory925924Markers() {
     }
   }
   let foundDiffTokens = false;
-  let foundGaugeNeedle = false;
+  let foundGaugeSlot = false;
   for (const file of walk(bundleRoot)) {
     const text = readFileSync(file, 'utf8');
     if (!foundDiffTokens && text.includes('text-diff-added') && text.includes('text-diff-removed')) foundDiffTokens = true;
-    if (!foundGaugeNeedle && text.includes('M12 14L')) foundGaugeNeedle = true;
-    if (foundDiffTokens && foundGaugeNeedle) break;
+    if (!foundGaugeSlot && text.includes('reasoning-gauge')) foundGaugeSlot = true;
+    if (foundDiffTokens && foundGaugeSlot) break;
   }
   if (!foundDiffTokens) throw new Error('verify-925-924: #925-only marker ("text-diff-added"/"text-diff-removed") not found in the built renderer bundle.');
-  if (!foundGaugeNeedle) throw new Error('verify-925-924: #924-only marker ("M12 14L", the needle path\'s own absolute-move prefix) not found in the built renderer bundle.');
+  if (!foundGaugeSlot) throw new Error('verify-925-924: #924-only marker ("reasoning-gauge", the icon\'s own data-slot) not found in the built renderer bundle.');
 }
 
 async function connectCdp(port, targetPid) {
