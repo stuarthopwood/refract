@@ -30,7 +30,9 @@ pub(super) fn read_task_specs(args: &Value) -> Vec<Value> {
 /// first line names the Stage (issue #941). `None` for a flat (non-batch) call or a malformed/
 /// missing string.
 pub(super) fn read_batch_context(args: &Value) -> Option<String> {
-    args.get("context").and_then(Value::as_str).map(str::to_string)
+    args.get("context")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 pub(super) fn task_text(spec: &Value) -> String {
@@ -78,7 +80,11 @@ pub(super) fn upsert_subagent_items(
         // only, so it is never duplicated N times across a Stage's own items. The renderer
         // (`groupSubagentStages.ts`) already reads every item's `context` and dedupes/joins,
         // so a `None` here for index > 0 changes nothing it sees.
-        let item_context = if index == 0 { context.map(str::to_string) } else { None };
+        let item_context = if index == 0 {
+            context.map(str::to_string)
+        } else {
+            None
+        };
         let existing_pos = items.iter().position(|item| item.id() == id);
         match existing_pos {
             Some(pos) => {
@@ -356,7 +362,11 @@ pub(super) fn build_message_subagent_items(
         let task = task_text(spec);
         // Gate round 1 fix (issue #941): see `upsert_subagent_items`'s own identical comment --
         // `context` is stored once, on spec index 0 only.
-        let item_context = if spec_index == 0 { context.map(str::to_string) } else { None };
+        let item_context = if spec_index == 0 {
+            context.map(str::to_string)
+        } else {
+            None
+        };
         let existing = existing_items
             .iter()
             .map(|item| item.as_ref())

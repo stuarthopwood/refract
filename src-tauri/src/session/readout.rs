@@ -79,7 +79,6 @@ struct ContextUsageState {
     percent: f64,
 }
 
-
 #[derive(Debug, Clone)]
 struct PullRequestState {
     number: u64,
