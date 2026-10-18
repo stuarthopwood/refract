@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.4.0 (2026-10-18)
+
+### Features
+
+- feat(chat): #917 allow /advisor (on, off, status) per Session (https://github.com/stuarthopwood/refract/pull/923)
+- feat(r559): session list search field (#559) (https://github.com/stuarthopwood/refract/pull/939)
+- feat(r560): quiet alert rows -- low memory opens a triage list, unverified omp version opens Health check (https://github.com/stuarthopwood/refract/pull/945)
+- feat(554): Settings chat reading width (Full default, Reading column 64rem) (https://github.com/stuarthopwood/refract/pull/966)
+- Feat: fuzzy slash-command search, subcommand step, command-reply turn time (#947, #938) (https://github.com/stuarthopwood/refract/pull/954)
+- feat(925,924): diff-stat colour and reasoning gauge needle (https://github.com/stuarthopwood/refract/pull/967)
+- Feat(#551): Nordic Frost and Cyber Amber dark presets; #552 HC decision + partial fix (red at 7:1) (https://github.com/stuarthopwood/refract/pull/973)
+- feat(937): advisor chip in the composer status line (https://github.com/stuarthopwood/refract/pull/972)
+- Feat: attach any file type, inlining text up to 256 KB (#926) (https://github.com/stuarthopwood/refract/pull/976)
+- feat(941): Stage naming, green finished state, real dependencies (part 1 of 2) (https://github.com/stuarthopwood/refract/pull/979)
+- feat(chat): centre and enlarge the Session start notice for every Session (https://github.com/stuarthopwood/refract/pull/978)
+- feat(941): Subagent panel Stage grouping, green state, Up next (part 2 of 2) (https://github.com/stuarthopwood/refract/pull/993)
+
+### Fixes
+
+- fix(#556): zero-box sweep for NoticeRow and ChatPane detail disclosures (https://github.com/stuarthopwood/refract/pull/944)
+- fix(renderer): annotate cn's type so typecheck passes on main (https://github.com/stuarthopwood/refract/pull/961)
+- fix(chat): collapsed tool group Error line prefix runs into the message (https://github.com/stuarthopwood/refract/pull/963)
+- fix(chat): toasts no longer cover the Send button (#980) (https://github.com/stuarthopwood/refract/pull/982)
+- fix(shell): set the window icon and AppUserModelID so the taskbar shows the Refract logo (#880) (https://github.com/stuarthopwood/refract/pull/987)
+- fix(session): include startProgress in sessions.list() summary rows (https://github.com/stuarthopwood/refract/pull/988)
+
+### Other
+
+- docs(plan): v0.3.0 feedback #924-#928, Composer tone rule replaced (#927) (https://github.com/stuarthopwood/refract/pull/929)
+- docs(plan): Pull requests list feedback, #499 amended and #930 filed (https://github.com/stuarthopwood/refract/pull/931)
+- docs(plan): place #932 Ask card notes (https://github.com/stuarthopwood/refract/pull/933)
+- docs: reusable UI components rule, ADR 0003; place #934 and #935 (https://github.com/stuarthopwood/refract/pull/936)
+- Profile menu update entry + sidebar Pull requests active count (#569) (https://github.com/stuarthopwood/refract/pull/920)
+- docs: place #941 Stage polish; glossary and status-colour amendment (https://github.com/stuarthopwood/refract/pull/942)
+- Chat: show the time above the user message, mark turn boundaries clearly (#555) (https://github.com/stuarthopwood/refract/pull/940)
+- docs(plan): place late 2026-10-16 issues (#937, #938, #943, #946, #947) (https://github.com/stuarthopwood/refract/pull/948)
+- Chore: require shared CARGO_TARGET_DIR in live-check scripts and ci-local (https://github.com/stuarthopwood/refract/pull/949)
+- docs(plan): place #952 zero-box gate follow-ups (https://github.com/stuarthopwood/refract/pull/955)
+- docs(plan): place #956 alert rows follow-ups (https://github.com/stuarthopwood/refract/pull/957)
+- Quiet composer (#927) and status line type (#928) (https://github.com/stuarthopwood/refract/pull/951)
+- docs(plan): place #959 quiet composer follow-ups (https://github.com/stuarthopwood/refract/pull/960)
+- Chat: borderless thread for grouped tool calls and command-style rows (#632) (https://github.com/stuarthopwood/refract/pull/950)
+- docs(plan): add #964 error-prefix follow-ups row (https://github.com/stuarthopwood/refract/pull/965)
+- Pull requests: filter redesign (#499) and resizable list column (#930) (https://github.com/stuarthopwood/refract/pull/953)
+- docs: file #980 toast-covers-Send bug in PLAN.md (https://github.com/stuarthopwood/refract/pull/981)
+- docs(plan): place #983 toast and quick-create follow-ups (https://github.com/stuarthopwood/refract/pull/984)
+- docs(plan): place #985 start prompt investigation (https://github.com/stuarthopwood/refract/pull/986)
+- docs(plan): place #989 async-result Stage row (https://github.com/stuarthopwood/refract/pull/990)
+- docs(plan): place #991 Stage row focus and toggle follow-ups (https://github.com/stuarthopwood/refract/pull/992)
+- docs(plan): file #994 verify-672 script follow-ups (https://github.com/stuarthopwood/refract/pull/995)
+- docs: add #997 notices/refusal toasts follow-ups to PLAN.md (https://github.com/stuarthopwood/refract/pull/998)
+
 ## v0.3.0 (2026-10-16)
 
 ### Features

@@ -132,19 +132,17 @@ export async function focusLastTabbableOrSelf(cdp, regionExpr) {
 }
 
 /** Classifies the CURRENTLY MOUNTED notice (if any) into a `startProgress.kind` purely from the
- *  DOM. Gate-fix (confirmed live, bg_791/bg_794/bg_801 runs, then confirmed in code):
- *  `window.refract.sessions.list()` deliberately NEVER includes `startProgress` at all --
- *  `session/agent/mod.rs`'s own `insert_termination_and_progress_fields` doc comment says so in
- *  plain words: "`summary_fields` (registry-only `sessions.list` rows) deliberately does not
- *  call this: no live agent computes a crash's tail detection for a Session nobody has opened
- *  this run." `startProgress` is ONLY ever pushed via the live `session:status` event, which
- *  only updates the renderer's own in-memory store -- never fetched back out through this IPC
- *  method. Reading `sessions.list()` for it (the previous version of this file) could never
- *  succeed, regardless of how long it polled. The component renders faithfully from that same
- *  live store, so the DOM is the one reliable place this script can read it from without the
- *  dev-only `window.__refractStores` seam (the ORIGINAL bug this whole rewrite exists to avoid).
- *  Callers must ensure only ONE Session's own notice can be mounted at a time when calling this
- *  -- true for every caller here (split mode is never active while any of them run). */
+ *  DOM. Historical note (gate-fix, confirmed live, bg_791/bg_794/bg_801 runs, then confirmed in
+ *  code): `window.refract.sessions.list()` used to NEVER include `startProgress` at all --
+ *  `summary_fields` (registry-only `sessions.list` rows) deliberately omitted it. **Corrected by
+ *  issue #988/PR #988**: `summary_fields` now reads `state.start_queue.to_wire()` under its own
+ *  lock and includes `startProgress` whenever a live agent has one, so `sessions.list()` DOES
+ *  carry it today. This function still reads the DOM, not the IPC response, because it is what
+ *  this whole rewrite exists to assert in the first place -- the real, user-visible render path
+ *  (`SessionStartNotice.tsx`, driven by the renderer's own live store), never the dev-only
+ *  `window.__refractStores` seam. Callers must ensure only ONE Session's own notice can be
+ *  mounted at a time when calling this -- true for every caller here (split mode is never active
+ *  while any of them run). */
 export async function readVisibleStartKind(cdp) {
   return cdp.evaluate(`(() => {
     const group = ${GROUP};
