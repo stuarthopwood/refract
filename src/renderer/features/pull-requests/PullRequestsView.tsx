@@ -73,7 +73,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const panelElementRef = useRef<HTMLDivElement | null>(null)
   const headerWrapperRef = useRef<HTMLDivElement | null>(null)
   const groupElementRef = useRef<HTMLDivElement | null>(null)
-  const handleElementRef = useRef<HTMLDivElement | null>(null)
+  const widthBeforeDblClickRef = useRef<number | null>(null)
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
@@ -222,34 +222,35 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           elementRef={groupElementRef}
           orientation="horizontal"
           className="min-h-0 flex-1"
-          // Gate-fix (round 4, caught live): reads the panel's own real DOM width, not the
-          // layout store's `widthPx` -- see `commit`'s own docstring
-          // (`pull-requests-layout-store.ts`) for the stale-state race this closes.
-          onLayoutChanged={(_layout, meta) => {
-            if (!meta.isUserInteraction) return
-            const width = panelElementRef.current?.getBoundingClientRect().width
-            if (width != null) usePullRequestsLayoutStore.getState().commit(width)
-          }}
+          onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
           // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
           // own double-click-to-reset is detected via a native `dblclick` listener shared across
-          // every Group on the page (hit-tested by coordinate proximity against ALL registered
-          // separators, not scoped to one Group's own DOM subtree), and it calls
-          // `event.preventDefault()` on the bubbling event whenever ANY separator resets
-          // (confirmed in its built dist). Gate-fix (round 3, Code Medium): `defaultPrevented`
-          // alone over-fired -- the session-list handle's own ~10px hit area reaches ~5px into
-          // this column, so a double-click there reset the SESSION-LIST panel (its own
-          // `defaultPrevented`), yet this handler still persisted 320 for the PR list, which
-          // never moved. Requires the pointer within 5px of THIS group's own handle centre too.
+          // every Group on the page, and it calls `event.preventDefault()` on the bubbling event
+          // whenever ANY separator resets (confirmed in its built dist) -- `defaultPrevented`
+          // alone over-fired for an UNRELATED Group's own reset (e.g. the session-list's sibling
+          // handle). Gate-fix (round 4, caught live -- a coordinate-proximity check, round 3's
+          // own attempt, is broken BY CONSTRUCTION for the exact case it must allow): by the
+          // time this bubble-phase handler runs, the library's OWN capture-phase reset has
+          // ALREADY moved the handle to its post-reset position, so comparing the click's
+          // `clientX` (the handle's PRE-reset position) against the handle's CURRENT (now-moved)
+          // rect always fails for a genuine reset of real width. Captures THIS panel's own real
+          // width in the CAPTURE phase (before any reset can apply) via `onDoubleClickCapture`,
+          // then in the bubble-phase handler checks whether THIS panel's width is now at the
+          // default AND clearly was not a moment ago -- the exact, position-independent
+          // signature of "this panel genuinely just reset", immune to a sibling's own reset
+          // (which never snaps this panel to exactly the default) or to small passive reflow
+          // drift (which never lands exactly on the default either).
+          onDoubleClickCapture={() => {
+            widthBeforeDblClickRef.current = panelElementRef.current?.getBoundingClientRect().width ?? null
+          }}
           onDoubleClick={(e) => {
             if (!e.defaultPrevented) return
-            const handleRect = handleElementRef.current?.getBoundingClientRect()
-            const distance = handleRect ? Math.abs(e.clientX - (handleRect.left + handleRect.width / 2)) : null
-            const withinProximity = handleRect != null && distance != null && distance <= 5
-            // TEMPORARY diagnostic instrumentation (caught live round 4) -- see
-            // `pull-requests-layout-store.ts`'s own TEMPORARY `window.__pullRequestsPersistLog`
-            // comment. Remove alongside it once the root cause is found and fixed.
-            ;(window.__pullRequestsClickLog ??= []).push({ clientX: e.clientX, handleRect: handleRect ? { left: handleRect.left, width: handleRect.width } : null, distance, withinProximity, at: performance.now() })
-            if (withinProximity) usePullRequestsLayoutStore.getState().resetToDefault()
+            const before = widthBeforeDblClickRef.current
+            const after = panelElementRef.current?.getBoundingClientRect().width ?? null
+            const thisPanelJustReset = before != null && after != null
+              && Math.abs(after - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) <= 2
+              && Math.abs(before - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) > 2
+            if (thisPanelJustReset) usePullRequestsLayoutStore.getState().resetToDefault()
           }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
@@ -278,7 +279,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>
-          <ResizableHandle withHandle aria-label="Resize pull request list" elementRef={handleElementRef} />
+          <ResizableHandle withHandle aria-label="Resize pull request list" />
           <ResizablePanel id="pull-requests-detail">
             <div className="h-full min-w-0 overflow-hidden">
               {selectedNumber !== null ? (

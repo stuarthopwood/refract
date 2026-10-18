@@ -260,7 +260,10 @@ async function main() {
             // (No surrounding backticks here on purpose: this whole block is itself the body of
             // an outer template literal -- a literal backtick in this comment would terminate it.)
             effectRan: wrapScrollLeft !== null && wrapScrollLeft !== ${JSON.stringify(wrapScrollLeftBeforeEnter)},
-            expectedScrollLeft: wrapClientWidth !== null ? tabOffsetLeft + tabOffsetWidth - wrapClientWidth : null
+            expectedScrollLeft: wrapClientWidth !== null ? tabOffsetLeft + tabOffsetWidth - wrapClientWidth : null,
+            // TEMPORARY diagnostic (caught live, Enter-activates-last-tab scroll bug): see
+            // PullRequestList.tsx's own window.__prTabScrollLog comment (no backticks here either).
+            prTabScrollLog: window.__prTabScrollLog ?? null
           };
         })()`).catch((err) => ({ evaluateFailed: err.message }));
         return false;
@@ -529,9 +532,6 @@ async function main() {
       const widthAfterReset = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
       await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
       const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
-      // TEMPORARY diagnostic capture (round 4) -- read before cdp.close() loses this page's state.
-      const relaunchPersistLog = await cdp.evaluate(`window.__pullRequestsPersistLog ?? null`);
-      const relaunchClickLog = await cdp.evaluate(`window.__pullRequestsClickLog ?? null`);
       cdp.close();
       await stopLauncher(child);
       ({ child, cdp } = await launch());
@@ -548,7 +548,7 @@ async function main() {
         && persistedWidthPx != null && Math.abs(persistedWidthPx - DEFAULT_WIDTH_PX) <= 3
         && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - DEFAULT_WIDTH_PX) <= 3;
       if (remembered) checkPass('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
-      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch, relaunchPersistLog, relaunchClickLog }));
+      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
     } else {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }
