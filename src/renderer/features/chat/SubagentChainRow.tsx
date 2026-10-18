@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
-import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { ChainStageLine } from './ChainStageLine'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
@@ -36,28 +35,8 @@ import {
   type SubagentRowStatus
 } from '../subagents/subagentStatus'
 
-export type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
-
-// Gate round 3 fix (architect M1): `endedAt` used to be the max over only whichever items
-// happened to report BOTH `startedAt` and `durationMs`, silently skipping any settled member
-// missing one -- a cancelled/exited member with no recorded duration made the Stage/chain total
-// understated instead of absent. Now `endedAt` is `undefined` unless EVERY item has both fields;
-// `startedAt` is unaffected (still needed by the live running tick, which only ever needs it).
-export function stageTimeRange(items: readonly SubagentItem[]): { startedAt?: number; endedAt?: number } {
-  let startedAt: number | undefined
-  let maxEnd: number | undefined
-  let everyItemSettled = true
-  for (const item of items) {
-    if (item.startedAt != null && (startedAt === undefined || item.startedAt < startedAt)) startedAt = item.startedAt
-    if (item.startedAt == null || item.durationMs == null) {
-      everyItemSettled = false
-      continue
-    }
-    const end = item.startedAt + item.durationMs
-    if (maxEnd === undefined || end > maxEnd) maxEnd = end
-  }
-  return { startedAt, endedAt: everyItemSettled ? maxEnd : undefined }
-}
+import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
+export { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
 
 // "N running", "N failed", "N cancelled", "N exited" joined by commas, each only when non-zero
 // (decisions 5/15): cancelled is always its own word, never folded into "failed". Used by
@@ -70,38 +49,6 @@ function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
   return parts.join(', ')
-}
-
-// Exported: the Transcript.tsx settle announcer (a sibling slice, #563 remediation H3) needs the
-// same overall-status classification a Stage/chain header already uses, so its one centralised
-// announcement is keyed off the exact same "has this settled" logic as the visible icon.
-export function overallStatus(counts: Record<SubagentRowStatus, number>): SubagentRowStatus {
-  if (counts.running > 0) return 'running'
-  if (counts.failed > 0) return 'failed'
-  if (counts.cancelled > 0) return 'cancelled'
-  if (counts.exited > 0) return 'exited'
-  return 'finished'
-}
-
-// Stage header roll-up wording (issue #941 grill item 3, gate round 1 fix: "N done"/"N done, M
-// failed", not "N of M finished" -- while running, the live form states how many have settled
-// so far against the total ("N of M done"), with any non-zero failed/cancelled/exited appended
-// (comma-joined, same shape as `rollupPhrase`). Gate round 1 fix (issue #941 part 2, item 6):
-// both delegate to the shared `stageRollupText` (`stageMeta.ts`), reused verbatim by the
-// Subagents panel's own Stage header so the two surfaces can never read this wording
-// differently.
-export function stageRunningSummary(counts: Record<SubagentRowStatus, number>, total: number): string {
-  return stageRollupText(counts, total, true)
-}
-
-/** The settled-form roll-up text (issue #941 grill item 3, gate round 1 fix): always leads with
- * "N done" (never a bare agent count), appending any non-zero failed/cancelled/exited --
- * "5 done" when every agent finished, "4 done, 1 failed" for a mixed outcome. Exported: the
- * Transcript.tsx settle announcer (a sibling slice) reads this exact text, so its live-region
- * announcement can never drift from what the Stage's own header already shows. */
-export function stageSettleSummary(group: StageGroup): string {
-  const counts = summarizeSubagentStatuses(group.items.map((item) => chatRowStatus(item.status)))
-  return stageRollupText(counts, group.items.length, false)
 }
 
 /** One Stage, rendered in place (decision 4): ALWAYS the same `CollapsedLine` (mirrors

@@ -4,9 +4,9 @@
 // Subagent panel when the tracker still knows it) -- the two pieces of `SubagentChainRow`'s own
 // per-turn summary that never need its own top-level state (`useStickyDisclosure`, the fade-in
 // seen-set, the duration tick), unlike `SubagentChainRow`/`StageGroupRow` themselves. Imports the
-// shared stage-summary helpers back from `SubagentChainRow.tsx` (a circular import between the
-// two files, safe here: every imported binding is a hoisted `function`/`type` declaration, never
-// evaluated at module-top-level on either side).
+// shared stage-summary helpers from `subagentChainStatus.ts` (gate round 1, issue #1008, Main
+// 2026-10-18: a pure, component-free leaf module -- moved out of `SubagentChainRow.tsx` so this
+// file and that one no longer import each other at all).
 import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
@@ -16,7 +16,7 @@ import { jumpToStage } from './stageJump'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
-import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './SubagentChainRow'
+import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
 import {
   chatRowStatus,
   isSubagentSuccessStatus,
