@@ -3,14 +3,17 @@
 // #806 file-size discipline) -- no `StageGroup` import here, only the primitives
 // `groupSubagentStages.ts` already has in hand (names, the shared batch `context`, task text),
 // so there is no import-cycle risk either direction.
+import type { SubagentRowStatus } from '../subagents/subagentStatus'
 
 /** A real reference this Stage's own batch context or a task makes to an agent STARTED BY an
  * earlier Stage in the same turn (issue #941 grill item 5): "Uses: G923Code, G923Arch (Stage
- * 1)". `agentId` is the referenced agent's own `name` (OMP agent ids are name-based, confirmed
- * by `SubagentSummary.id`'s own doc comment in `shared/model.ts`: "the subagent's own `name`").
- * `toolCallId`/`specIndex` (gate round 1 fix) are the matched item's own pair -- the same
- * correlation key `ChainAgentEntry`/`SubagentSummary` already use -- so a name repeated across
- * two Stages resolves to the exact matched agent, not an ambiguous name-only lookup. */
+ * 1)". `agentId` is the referenced agent's own `name` (OMP agent ids are name-based; each
+ * caller's own `nameOf` passed to `resolveStageDependencies` below supplies the real one --
+ * `SubagentSummary.id` is `${toolCallId}:${nameOrTask}`, plus a `:N` suffix when two members of
+ * one call share an identical name, gate-fix, NEVER the bare name alone). `toolCallId`/
+ * `specIndex` (gate round 1 fix) are the matched item's own pair -- the same correlation key
+ * `ChainAgentEntry`/`SubagentSummary` already use -- so a name repeated across two Stages
+ * resolves to the exact matched agent, not an ambiguous name-only lookup. */
 export interface StageDependency {
   agentId: string
   stageIndex: number
@@ -131,4 +134,63 @@ export function extractResultSummary(result: string): string | undefined {
     return stripped.length <= RESULT_SUMMARY_MAX_CHARS ? stripped : `${stripped.slice(0, RESULT_SUMMARY_MAX_CHARS).trimEnd()}\u2026`
   }
   return undefined
+}
+
+/** Gate round 1 fix (issue #941 part 2, item 2, HIGH): the "latest earlier occurrence wins"
+ * dependency algorithm, extracted so `groupSubagentStages.ts` (the chat's own `StageGroup[]`)
+ * and `groupSubagentPanelStages.ts` (the panel's own `PanelStageGroup[]`) call ONE shared
+ * implementation instead of two independent copies. `nameOf` resolves an item's own real agent
+ * identity (the chat passes `item => item.name`; the panel passes `item => item.nameOrTask` --
+ * NEVER `item => item.id`, which is `${toolCallId}:${nameOrTask}` plus a `:N` suffix when two
+ * members of one call share an identical name, gate-fix, not a bare name). `textOf` receives
+ * the WHOLE stage (not a per-item string) so each caller's own closure reads whatever text
+ * source it has -- the chat's own batch `context` plus every item's `task`; the panel's own
+ * items' `nameOrTask` alone (it has no `context`). Mutates `stage.dependencies` in place once
+ * every Stage's final `stageIndex` is known, matching the pre-extraction behaviour exactly. */
+export function resolveStageDependencies<
+  Item extends { toolCallId: string; specIndex: number },
+  Stage extends { stageIndex: number; items: Item[]; dependencies: StageDependency[] }
+>(stages: Stage[], nameOf: (item: Item) => string, textOf: (stage: Stage) => string): void {
+  const occurrencesByAgentId = new Map<string, Array<{ stageIndex: number; toolCallId: string; specIndex: number }>>()
+  for (const stage of stages) {
+    for (const item of stage.items) {
+      const agentId = nameOf(item)
+      const occurrences = occurrencesByAgentId.get(agentId) ?? []
+      occurrences.push({ stageIndex: stage.stageIndex, toolCallId: item.toolCallId, specIndex: item.specIndex })
+      occurrencesByAgentId.set(agentId, occurrences)
+    }
+  }
+  for (const stage of stages) {
+    const text = textOf(stage)
+    const seenAgentIds = new Set<string>()
+    const dependencies: StageDependency[] = []
+    for (const agentId of extractAgentRefs(text)) {
+      const occurrences = occurrencesByAgentId.get(agentId)
+      if (!occurrences || seenAgentIds.has(agentId)) continue
+      let latest: { stageIndex: number; toolCallId: string; specIndex: number } | undefined
+      for (const occurrence of occurrences) {
+        if (occurrence.stageIndex >= stage.stageIndex) continue
+        if (!latest || occurrence.stageIndex > latest.stageIndex) latest = occurrence
+      }
+      if (!latest) continue
+      seenAgentIds.add(agentId)
+      dependencies.push({ agentId, stageIndex: latest.stageIndex, toolCallId: latest.toolCallId, specIndex: latest.specIndex })
+    }
+    stage.dependencies = dependencies
+  }
+}
+
+/** Gate round 1 fix (issue #941 part 2, item 6, MEDIUM): the "N done"/"N of M done, M failed"
+ * roll-up wording (issue #941 grill item 3), extracted from `SubagentChainRow.tsx`'s own
+ * `stageRunningSummary`/`stageSettleSummary` so the Subagents panel's own Stage header states
+ * the identical text, never a second hand-written copy that could drift -- `counts.failed`/
+ * `cancelled`/`exited` are ALWAYS stated regardless of `isRunning`, so a Stage with one member
+ * still running and another already failed never reads as a bare "running" with the failure
+ * hidden underneath it. */
+export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
+  const parts = [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`]
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
+  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  return parts.join(', ')
 }

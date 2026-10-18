@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Live CDP check for issue #938's remaining items (2, 3, 5) after PR #954 shipped items 1 and 4;
-// item 6 was resolved by static code audit (research.md decision 17, spec.md Clarifications), not
-// a live probe, and is only recorded here, never asserted.
+// item 6 was resolved by static code audit (research.md decision 18, spec.md Clarifications) --
+// re-read against the real OMP session log after gate round 1 corrected the first draft's cause
+// -- not a live probe, and is only recorded here, never asserted.
 //
 // Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
 // override -- only Refract's OWN data, `REFRACT_DATA_DIR`, is scratch), the same isolation
@@ -18,13 +19,21 @@
 //   FR-083 (item 5): Settings > Model roles' Advisor row description mentions `/advisor on`.
 //   FR-081 (item 2): typing an unverified `/advisor` subcommand and sending it produces a
 //     refusal toast listing the REAL verified subcommands this ambient install reports (read via
-//     `window.refract.chat.commands`, never hardcoded), in that install's own order -- not the
-//     old generic "doesn't support arguments yet" wording.
+//     `window.refract.chat.commands`, resolved the same way Rust's own `resolve_matched_descriptor`
+//     does -- a builtin-sourced match first, else the first match at all -- never a bare
+//     `.find(name)`), in that install's own order -- not the old generic "doesn't support
+//     arguments yet" wording. `/advisor` missing entirely from this install is a hard FAILURE for
+//     this check and FR-082 below (both depend on a real `/advisor off` round trip), not a quiet
+//     skip -- gate round 1 decision.
 //   FR-082 (item 3): `/advisor off`'s own short, deterministic "Advisor disabled." reply renders
-//     as a `NoticeRow` whose summary span carries `whitespace-normal` (wraps in place), never
-//     `truncate` -- across Dark, Obsidian, and Dark (high contrast), screenshotted each time.
+//     as a `NoticeRow` whose summary span REALLY wraps once the window is narrow enough to force
+//     it (`textOverflow !== 'ellipsis'`, `scrollWidth <= clientWidth`, height over one 20px line)
+//     -- gate round 1 fix: a bare className check alone was not proof it visibly wraps. Falls
+//     back to a className-only check (`whitespace-normal`, never `truncate`) plus a disclosed
+//     `notExercised` only if no width in the probed range actually forces more than one line.
+//     Screenshotted across Dark, Obsidian, and Dark (high contrast) either way.
 //   Item 6: not reasserted live (resolved by static audit); recorded in `findings` only, citing
-//     `research.md` decision 17.
+//     `research.md` decision 18.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -66,6 +75,15 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
+// One real text line's own height (CollapsedLine's row, `text-xs`/13px line-height-ish content at
+// a 20px row box, per the shared baseline T080 establishes) -- a measured height over this means
+// the summary span genuinely grew a second line, not just a generous single-line box.
+const ONE_LINE_HEIGHT_PX = 20;
+// Narrowing attempts for forcing the short "Advisor disabled." notice to wrap (gate round 1,
+// Test MEDIUM): widest first, so the evidence screenshot is still a realistic window size if a
+// narrower one is never actually needed.
+const NARROW_WIDTHS = [480, 360, 300, 260, 220, 190, 160, 140, 120];
+
 // Same two-parent-climb pattern `verify-917-advisor-command.mjs`/`verify-947-938-helpers.mjs`
 // use: `CollapsedLine` renders the icon-slot span and the summary span as direct siblings of
 // either a plain `<div>` (a short notice) or a `<CollapsibleTrigger>` button (a long one); the
@@ -82,13 +100,27 @@ async function countNotices(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).length`);
 }
 
-/** The summary span's own `className` for the LAST mounted notice row -- used to confirm FR-082
- * (`whitespace-normal`, never `truncate`) without needing the real reply text to sit near the
- * 160-char threshold: any genuinely short, single-line notice exercises the same branch. */
-async function lastNoticeSummaryClassName(cdp) {
-  return cdp.evaluate(
-    `(() => { const rows = (${NOTICE_FINDER}); const row = rows[rows.length - 1]; return row?.querySelector(':scope > span.min-w-0.flex-1')?.className ?? null; })()`
-  );
+/** Finds the notice row whose own summary matches `/Advisor disabled\./` specifically (gate
+ * round 1, Test MEDIUM: the LAST Info notice is not necessarily this one -- an unrelated system
+ * notice can mount after it), and measures the geometry/style FR-082 cares about in one shot (an
+ * element handle cannot cross a `returnByValue` CDP call, so find-and-measure happens together). */
+async function measureAdvisorOffNotice(cdp) {
+  return cdp.evaluate(`(() => {
+    const rows = (${NOTICE_FINDER});
+    const row = rows.find((r) => /Advisor disabled\\./.test((r.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim()));
+    const span = row?.querySelector(':scope > span.min-w-0.flex-1');
+    if (!span) return null;
+    const style = getComputedStyle(span);
+    const rect = span.getBoundingClientRect();
+    return {
+      className: span.className,
+      textOverflow: style.textOverflow,
+      whiteSpace: style.whiteSpace,
+      scrollWidth: span.scrollWidth,
+      clientWidth: span.clientWidth,
+      height: rect.height
+    };
+  })()`);
 }
 
 /** Real Backspace keydown/keyup pairs, one per character currently in the composer -- clears a
@@ -133,10 +165,27 @@ async function closeSettings(cdp) {
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
 }
 
+/** Resolves the `/advisor` descriptor the same way Rust's own `resolve_matched_descriptor`
+ * does (`commands.rs`, issue #938 gate round 1, item 7): a builtin-sourced match (by name or
+ * alias) first regardless of list order, else the first match at all. `null` when nothing in
+ * `commands` matches `advisor` at all. Previously a bare `.find((c) => c.name === 'advisor')`,
+ * which could pick a shadowing non-builtin entry Rust itself would never classify against. */
+function resolveAdvisorDescriptor(commands) {
+  const isBuiltinSource = (source) => source !== 'file' && source !== 'skill';
+  const matchesAdvisor = (c) => c.name === 'advisor' || (c.aliases ?? []).includes('advisor');
+  return commands.find((c) => matchesAdvisor(c) && isBuiltinSource(c.source)) ?? commands.find((c) => matchesAdvisor(c)) ?? null;
+}
+
 // The refusal toast (`notify.ts` -> `toast.error`, Sonner): newest toast PREPENDS in DOM order
 // (`verify-980-toast-send.mjs`'s own header comment records this), so the first match is the
-// most recent.
-async function readLatestToastText(cdp) {
+// most recent. `before` (gate round 1, item 7) is the toast count sampled BEFORE sending, so the
+// wait below can never read a STALE toast left over from an earlier step as this command's own.
+async function sendAndReadToast(cdp, command) {
+  const before = await cdp.evaluate(`document.querySelectorAll('[data-sonner-toast]').length`);
+  await clearComposer(cdp);
+  await cdp.typeIntoByLabel('Message', command);
+  await cdp.clickByLabel('Send message');
+  await cdp.waitFor(`document.querySelectorAll('[data-sonner-toast]').length > ${before}`, { timeoutMs: 15_000, label: 'A NEW refusal toast mounted' });
   return cdp.evaluate(`document.querySelector('[data-sonner-toast]')?.textContent ?? null`);
 }
 
@@ -153,7 +202,8 @@ async function main() {
     clearKnownOutputFiles(SHOTS_DIR, 'refract-938-slash-rest-shots', SHOT_NAMES);
     gitHeadSha = gitHead(REPO_ROOT);
     const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
-    const dirty = gitStatusResult.status === 0 ? (gitStatusResult.stdout.split('\n').filter(Boolean).length ? gitStatusResult.stdout.split('\n').filter(Boolean) : false) : 'unknown';
+    const dirtyLines = gitStatusResult.status === 0 ? gitStatusResult.stdout.split('\n').filter(Boolean) : null;
+    const dirty = dirtyLines === null ? 'unknown' : dirtyLines.length ? dirtyLines : false;
 
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-938-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-938-import-'));
@@ -218,73 +268,108 @@ async function main() {
     // ==== FR-083 (item 5): Settings > Model roles' Advisor description mentions `/advisor on` ====
     await openSettingsModelRoles(cdp);
     const advisorDescription = await cdp.evaluate(`document.getElementById('model-role-advisor-description')?.textContent ?? null`);
-    if (advisorDescription !== 'Reviews turns when the advisor is enabled (/advisor on in a Session); falls back to Slow.') {
-      failures.push(`FR-083: Advisor role description reads ${JSON.stringify(advisorDescription)}, expected the exact FR-083 wording mentioning "/advisor on".`);
+    const expectedDescription = "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow.";
+    if (advisorDescription !== expectedDescription) {
+      failures.push(`FR-083: Advisor role description reads ${JSON.stringify(advisorDescription)}, expected ${JSON.stringify(expectedDescription)}.`);
     } else {
       findings.push(`FR-083: Advisor role description reads exactly as specified: ${JSON.stringify(advisorDescription)}.`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-settings-advisor-description.png'));
     await closeSettings(cdp);
 
-    // ==== FR-081 (item 2): refusal lists the REAL verified subcommands, in this install's own order ====
+    // ==== FR-081/FR-082 prerequisite: does this ambient install even offer `/advisor`? ====
+    // Gate round 1 decision: a missing `/advisor` is a hard FAILURE for both checks below (not a
+    // quiet skip) -- both depend on a real `/advisor off` round trip, and #917's own live check
+    // already established this ambient install is expected to offer it.
     const commandsResult = await cdp.evaluate(`window.refract.chat.commands(${JSON.stringify(sessionId)})`);
-    const advisorCommand = commandsResult?.ok ? commandsResult.value.find((c) => c.name === 'advisor') : null;
+    const commands = commandsResult?.ok ? commandsResult.value : [];
+    const advisorCommand = resolveAdvisorDescriptor(commands);
     if (!advisorCommand) {
-      notExercised.push(
-        'FR-081: this ambient omp install does not list "/advisor" at all (issue #917\'s own evidence already records this as install-dependent) -- the refusal-lists-subcommands check could not be exercised; FR-032/FR-081\'s existing unit coverage (commands.test.rs) already proves the Rust logic directly.'
+      failures.push(
+        'FR-081/FR-082 unproven in this run: this ambient omp install does not list "/advisor" at all, so neither the refusal-wording check nor the short-notice-wrap check (both depend on a real "/advisor off" round trip) could run.'
       );
-    } else if (!advisorCommand.subcommands || advisorCommand.subcommands.length === 0) {
-      notExercised.push(`FR-081: this install's own "/advisor" descriptor carries no verified subcommands (${JSON.stringify(advisorCommand)}) -- cannot exercise the "lists them" branch against it this run.`);
     } else {
-      const subNames = advisorCommand.subcommands.map((s) => s.name);
-      const expectedToast = `/advisor takes one of: ${subNames.join(', ')}.`;
-      await clearComposer(cdp);
-      await cdp.typeIntoByLabel('Message', '/advisor 000bogus000');
-      await cdp.clickByLabel('Send message');
-      const toastText = await cdp.waitFor(`document.querySelector('[data-sonner-toast]')?.textContent ?? null`, {
-        timeoutMs: 15_000,
-        label: 'Refusal toast mounted'
-      });
-      if (toastText !== expectedToast) {
-        failures.push(`FR-081: refusal toast read ${JSON.stringify(toastText)}, expected ${JSON.stringify(expectedToast)} (computed from this install's own real "/advisor" subcommand list).`);
+      // ==== FR-081 (item 2): refusal wording ====
+      const subNames = advisorCommand.subcommands?.map((s) => s.name) ?? [];
+      if (subNames.length === 0) {
+        notExercised.push(
+          `FR-081 unproven in this run: this install's own "/advisor" descriptor carries no verified subcommands (${JSON.stringify(advisorCommand)}) -- cannot exercise the "takes one of" listing branch against it.`
+        );
       } else {
-        findings.push(`FR-081: "/advisor 000bogus000" refused with the real subcommand list: ${JSON.stringify(toastText)}.`);
+        const expectedToast = `/advisor takes one of: ${subNames.join(', ')}.`;
+        const toastText = await sendAndReadToast(cdp, '/advisor 000bogus000');
+        if (toastText !== expectedToast) {
+          failures.push(`FR-081: refusal toast read ${JSON.stringify(toastText)}, expected ${JSON.stringify(expectedToast)} (computed from this install's own real "/advisor" subcommand list).`);
+        } else {
+          findings.push(`FR-081: "/advisor 000bogus000" refused with the real subcommand list: ${JSON.stringify(toastText)}.`);
+        }
+        await cdp.screenshot(path.join(SHOTS_DIR, '01-refusal-toast.png'));
+        // ---- The extra-text-after-a-valid-subcommand wording (gate round 1 decision) ----
+        if (subNames.includes('on')) {
+          const extraTextToast = await sendAndReadToast(cdp, '/advisor on now');
+          const expectedExtraText = '/advisor on doesn\'t take more text yet. Try /advisor on on its own.';
+          if (extraTextToast !== expectedExtraText) {
+            failures.push(`FR-081 (extra text after a valid subcommand): refusal toast read ${JSON.stringify(extraTextToast)}, expected ${JSON.stringify(expectedExtraText)}.`);
+          } else {
+            findings.push(`FR-081 (extra text after a valid subcommand): "/advisor on now" refused as ${JSON.stringify(extraTextToast)}.`);
+          }
+        } else {
+          notExercised.push('FR-081 (extra text after a valid subcommand) unproven in this run: this install\'s own "/advisor" subcommand list does not include "on".');
+        }
+        await clearComposer(cdp);
       }
-      await cdp.screenshot(path.join(SHOTS_DIR, '01-refusal-toast.png'));
-      await clearComposer(cdp);
-    }
 
-    // ==== FR-082 (item 3): a short notice's summary wraps (`whitespace-normal`), never truncates ====
-    await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
-    for (const theme of THEMES) {
-      await switchTheme(cdp, theme.id, theme.name);
-      const className = await lastNoticeSummaryClassName(cdp);
-      if (className === null) {
-        failures.push(`FR-082 (${theme.name}): no notice row found after "/advisor off".`);
-        continue;
+      // ==== FR-082 (item 3): the short "/advisor off" notice really wraps ====
+      await sendSlashCommand(cdp, '/advisor off', /Advisor disabled\./);
+      let forcedWrapWidth = null;
+      let forcedMeasurement = null;
+      for (const width of NARROW_WIDTHS) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
+        const measured = await measureAdvisorOffNotice(cdp);
+        if (measured && measured.height > ONE_LINE_HEIGHT_PX) {
+          forcedWrapWidth = width;
+          forcedMeasurement = measured;
+          break;
+        }
       }
-      if (className.includes('truncate')) {
-        failures.push(`FR-082 (${theme.name}): the short notice's summary span still carries "truncate" (className: ${JSON.stringify(className)}) -- summaryWrap did not land.`);
-      } else if (!className.includes('whitespace-normal')) {
-        failures.push(`FR-082 (${theme.name}): the short notice's summary span carries neither "truncate" nor "whitespace-normal" (className: ${JSON.stringify(className)}) -- unexpected class shape.`);
+      if (forcedMeasurement) {
+        if (forcedMeasurement.textOverflow === 'ellipsis') {
+          failures.push(`FR-082: at ${forcedWrapWidth}px the notice's own computed text-overflow is still "ellipsis" (truncating), not wrapping.`);
+        } else if (forcedMeasurement.scrollWidth > forcedMeasurement.clientWidth) {
+          failures.push(`FR-082: at ${forcedWrapWidth}px the notice overflows horizontally (scrollWidth ${forcedMeasurement.scrollWidth} > clientWidth ${forcedMeasurement.clientWidth}) instead of wrapping in place.`);
+        } else {
+          findings.push(`FR-082: at ${forcedWrapWidth}px the short notice genuinely wraps to a second line (height ${forcedMeasurement.height.toFixed(1)}px over the ${ONE_LINE_HEIGHT_PX}px one-line baseline), text-overflow "${forcedMeasurement.textOverflow}", no horizontal overflow.`);
+        }
       } else {
-        findings.push(`FR-082 (${theme.name}): the short notice's summary span wraps (className: ${JSON.stringify(className)}), never truncates.`);
+        await cdp.send('Emulation.clearDeviceMetricsOverride', {});
+        const classOnly = await measureAdvisorOffNotice(cdp);
+        if (!classOnly) {
+          failures.push('FR-082: no notice row matching "Advisor disabled." was found at all.');
+        } else if (classOnly.className.includes('truncate')) {
+          failures.push(`FR-082: the short notice's summary span still carries "truncate" (className: ${JSON.stringify(classOnly.className)}) -- summaryWrap did not land.`);
+        } else if (!classOnly.className.includes('whitespace-normal')) {
+          failures.push(`FR-082: the short notice's summary span carries neither "truncate" nor "whitespace-normal" (className: ${JSON.stringify(classOnly.className)}).`);
+        } else {
+          findings.push(`FR-082: className confirms summaryWrap landed (${JSON.stringify(classOnly.className)}), but no probed width (${NARROW_WIDTHS.join(', ')}px) actually forced this short reply onto a second line.`);
+        }
+        notExercised.push('FR-082: real multi-line wrapping could not be forced in this run at any probed window width -- className-only evidence recorded above instead.');
       }
-      const shotName = theme.id === 'dark' ? '02-notice-wrap-dark.png' : theme.id === 'obsidian' ? '03-notice-wrap-obsidian.png' : '04-notice-wrap-dark-high-contrast.png';
-      await cdp.screenshot(path.join(SHOTS_DIR, shotName));
+      for (const theme of THEMES) {
+        await switchTheme(cdp, theme.id, theme.name);
+        const shotName = theme.id === 'dark' ? '02-notice-wrap-dark.png' : theme.id === 'obsidian' ? '03-notice-wrap-obsidian.png' : '04-notice-wrap-dark-high-contrast.png';
+        await cdp.screenshot(path.join(SHOTS_DIR, shotName));
+      }
+      await cdp.send('Emulation.clearDeviceMetricsOverride', {});
     }
 
     // ==== Item 6 (possible duplicate render): resolved by static code audit, not a live probe ====
     findings.push(
-      'Item 6 (possible duplicate render) was investigated by static code audit, not a live probe: ' +
-      '`build_assistant_items`/`apply_message_snapshot`/`replace_message_items` (src-tauri/src/omp/transcript.rs) ' +
-      'apply every assistant message snapshot as a full replace keyed by message_id/message_id:index, so no code ' +
-      'path can render one content index twice for one message. The real cause of the #917/#954 screenshots\' ' +
-      'doubled sentinel text: both live-check scripts wait for the sentinel word twice as their own "turn ' +
-      'finished" signal, and the typed PROMPT itself contains the sentinel word once as an instruction -- the ' +
-      'second occurrence is the assistant\'s own one-time echoed reply, not a duplicate render. Recorded in ' +
-      'research.md decision 17 and spec.md\'s 2026-10-18 Clarifications session; no code change, nothing to ' +
-      'assert live.'
+      'Item 6 (possible duplicate render) was investigated by static code audit, not a live probe -- corrected gate round 1 after re-reading the real OMP session log. ' +
+      '`build_assistant_items`/`apply_message_snapshot`/`replace_message_items` (src-tauri/src/omp/transcript.rs) apply every assistant message snapshot as a full ' +
+      'replace keyed by message_id/message_id:index, so no code path can render one message\'s own content index twice. The #917 screenshot\'s three "t917turn" ' +
+      'occurrences are the user\'s own prompt (containing the sentinel word once, as an instruction) plus TWO genuinely distinct assistant messages: the model ' +
+      'called the hidden `todo` tool, replied once, and stopped; OMP\'s own incomplete-todo reminder made it continue, mark the todo done, and reply a second ' +
+      'time. Recorded in research.md decision 18 and spec.md\'s Clarifications session; no code change, nothing to assert live.'
     );
 
     const report = {

@@ -157,7 +157,66 @@ from live frames/`SessionAgent.reconcileSubagentsOnAttach` the same direct way `
 investigation) made this same claim inaccurately before being deleted; recorded correctly here,
 the one place this repository's own Spec Kit convention keeps durable research notes.
 
-## 17. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
+## 17. Subagent panel Stage grouping and "Up next" gating (issue #941 part 2, 2026-10-18)
+
+**Decision (Skippy, delegated by Stuart 2026-10-18)**: the Subagents panel groups its own flat
+`SubagentSummary[]` by `toolCallId` alone (the only correlation key that interface carries --
+no `messageId`/`context`, confirmed against `src/shared/model.ts`), never merging several calls
+that share one assistant message the way the chat pane's own `messageId`-keyed
+`groupSubagentStages.ts` can. A call with exactly one member stays a single flat row (nothing to
+group, unchanged from before part 2); 2+ members get a Stage header row with its real members
+nested one level deeper. The header's own label always uses `computeStageLabel`'s "no context"
+fallback tier (shared name prefix, else `null`) -- the panel has no per-call `context` to read
+the first tier from. The "latest earlier occurrence wins" dependency algorithm is a single
+shared `resolveStageDependencies` (`stageMeta.ts`), called by both `groupSubagentStages.ts` and
+this panel grouper, keyed on each item's own real agent name -- gate-fix: `SubagentSummary.id`
+is `${toolCallId}:${nameOrTask}` (`subagents.rs::handle_task_start`'s own `base_id`), never the
+bare name alone, so the correct key is `nameOrTask`, not `id` (the `model.ts` doc comment this
+was first built against claimed otherwise; corrected there too).
+
+**Decision (Skippy, delegated by Stuart 2026-10-18; ui-architect-v3 ruling, gate round 1): a
+Stage header's own label in the panel never shows "Stage N"**. The panel numbers its own Stages
+session-wide by `toolCallId` (in the order calls were made across the whole Session); the chat
+numbers Stages per TURN (`groupSubagentStages.ts`'s own `stageIndex`, reset to 1 at the start of
+every turn). The SAME underlying `task()` call therefore carries two DIFFERENT "Stage N" numbers
+across the two surfaces whenever a Session has run more than one turn with Stages -- showing a
+number in the panel would read as contradicting the chat's own number for what is visibly the
+same work. Fixed by never stating a number in the panel: the header shows the shared name prefix
+when one exists, else a bare "N agents"; a header's own real "Uses:" dependency renders as plain
+NAMES ONLY ("Uses: G923Code"), never "(Stage N)", scoped to agents an EARLIER call in the
+session actually started (the same resolution the chat performs, just never surfacing the
+number it resolves to). A solo call's own dependency is intentionally not shown in the panel (no
+header row exists there to attach one to); it stays visible in the chat.
+
+**Decision (Skippy, delegated by Stuart 2026-10-18)**: the "Up next" Todo-phase list renders
+once per TURN (not once per Stage), gated on `isLastTurn` (the same boolean `Transcript.tsx`
+already computes for `TurnTotalLine`) -- `ReadoutState.todoPhases` is the agent's own CURRENT
+session-scoped state, not a per-turn snapshot, so showing it after every past turn with a Stage
+would repeat the identical list. Also gated on that turn having at least one Stage
+(`stages.length > 0`): "below the Subagent chain" has no anchor point in a turn that never ran a
+`task()` call at all.
+
+**Correction (gate round 1, item 8)**: an earlier draft of this note claimed `compute_up_next`
+(`src-tauri/src/session/readout_todo.rs`) is gated by `state_synced` "the same way `contextUsage`
+is" -- re-read, this is NOT true: `compute_up_next` takes only `Option<&Vec<TodoPhaseState>>` and
+never reads `state_synced` at all; `context_usage`'s OWN build function (`build_readout_value`)
+is the one with a THREE-state branch (`Some(data)` / `state_synced`-gated `"not-available"` /
+`null`), a distinction `todoPhases`'s own UI never needed (it only ever shows-or-hides, no
+"not available yet" text). No stale-data bug exists regardless: `on_conversation_reset` already
+explicitly nulls `s.todo_phases` (and sets `state_synced = false`) BEFORE the new Conversation's
+own first `get_state` response can repopulate it, so the renderer can never observe a previous
+Conversation's own stale phases through this field -- an extra `state_synced` check on
+`compute_up_next` itself would be redundant, not a fix. Left uncommented in Rust; this note is
+the correction.
+
+**Note (gate round 3)**: a panel Stage header never collapses -- `SubagentPanel.tsx`'s own
+`aria-expanded={row.node.isStage ? true : undefined}` is always the literal `true`, with no
+toggle control and no `aria-selected` either (a header has no single subagent id to select or
+collapse); its real members are always rendered nested beneath it. `ArrowRight` on a header row
+moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
+"collapse" action anywhere in this tree.
+
+## 18. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
 
 **Decision**: `ipc::chat`'s generic "doesn't support arguments yet" refusal lists a command's
 own verified subcommands by name whenever it has any (`verified_subcommand_names`,
@@ -172,17 +231,21 @@ paragraph, just the same one clause re-wrapped), so the control would be a dead 
 time; `summaryWrap` is the system's existing no-children escape hatch for exactly this shape of
 problem (already used by the Subagents panel for a long path/paragraph).
 
-**Investigation (issue #938 item 6, not a bug)**: the #917/#954 live-check screenshots showing
-the assistant's own sentinel reply ("t917turn"/"t947turn") twice in one turn is not a duplicate
-render. `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+**Investigation (issue #938 item 6, not a bug -- corrected, gate round 1)**: a first draft of
+this note wrongly attributed the #917/#954 screenshots' doubled sentinel text to the live-check
+scripts' own wait condition (prompt plus one reply = 2). Re-read against the actual OMP session
+log (`~/.omp/agent/sessions/.../2026-10-16T11-14-21-749Z_....jsonl`): the model called the
+hidden `todo` tool (`HIDDEN_TOOLS`, never rendered as its own row) then replied `"t917turn"`
+(message `62b79278`) and stopped; OMP's own incomplete-todo nudge (`"You stopped with 1
+incomplete todo item(s)"`, a `developer`-role reminder, line 15) made it continue, mark the todo
+done, and reply `"t917turn"` a SECOND time (message `bc1f768c`) -- two genuinely distinct
+assistant messages, each with its own `message_id`, each correctly rendered once. `
+build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
 (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot
 (`message_start`/`message_update`/`message_end`) as a full replace keyed by
 `message_id`/`message_id:index`, stripping every existing item under that key before inserting
-the fresh set -- there is no code path that can render one content index twice for one message.
-The real explanation: `verify-917-advisor-command.mjs` and `verify-947-938-slash-menu.mjs` both
-wait for `(t.textContent.match(/t9\d\dturn/g) ?? []).length >= 2` as their own "turn finished"
-signal, and the typed PROMPT itself reads `"Reply with exactly the single word 't917turn' and
-nothing else."` -- one occurrence is the user's own prompt bubble (the instruction, which
-deliberately contains the sentinel word), the other is the assistant's one-time echoed reply.
-Two distinct, single-occurrence rows; `role="log"` announces each exactly once, as it should.
-No code change.
+the fresh set -- there is no code path that can render one message's own content index twice.
+The screenshot's THREE occurrences (not two) are: the user's own prompt bubble (the instruction
+text itself contains the sentinel word once), plus these two real, separate assistant replies.
+Not a duplicate render; `role="log"` announces each of the three rows exactly once, as it
+should. No code change.

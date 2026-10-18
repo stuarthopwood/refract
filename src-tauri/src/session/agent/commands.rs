@@ -287,27 +287,30 @@ fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationCl
     }
 }
 
+/// Resolves which descriptor `name` classifies against: a builtin-sourced entry matching
+/// `name` or an alias, checked first regardless of list order (the gate-fix anti-shadow scan),
+/// else the first descriptor that matches at all. `None` when nothing in `commands` matches
+/// `name` (an unknown command). Shared by `classify_slash_invocation` and
+/// `classify_unsupported_arguments` below so a refusal's own presentation can never resolve a
+/// DIFFERENT descriptor than the one that actually produced the refusal (gate round 1, code
+/// review: the two used to duplicate this lookup).
+fn resolve_matched_descriptor<'a>(name: &str, commands: &'a [Value]) -> Option<&'a Value> {
+    commands
+        .iter()
+        .find(|c| matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str)))
+        .or_else(|| commands.iter().find(|c| matches_name(c, name)))
+}
+
 pub fn classify_slash_invocation(
     name: &str,
     rest: &str,
     commands: &[Value],
 ) -> SlashInvocationClassification {
-    let Some(descriptor) = commands.iter().find(|c| matches_name(c, name)) else {
+    let Some(descriptor) = resolve_matched_descriptor(name, commands) else {
         return SlashInvocationClassification::UnknownCommand;
     };
     if rest.is_empty() {
         return SlashInvocationClassification::Supported;
-    }
-    // Gate-fix (High/Medium, security): a file/skill command sharing a NAME OR ALIAS with a
-    // builtin must never inherit the free-form policy -- scan the WHOLE list for any
-    // builtin-sourced entry matching `name` first, rather than trusting whichever single
-    // descriptor `.find()` above happened to pick (OMP's own command-list ordering, not this
-    // policy, would otherwise decide whether a shadowing custom command bypasses the denylist).
-    let shadowed_builtin = commands.iter().find(|c| {
-        matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str))
-    });
-    if let Some(builtin_descriptor) = shadowed_builtin {
-        return classify_against_builtin(builtin_descriptor, rest);
     }
     if !is_builtin_source(descriptor.get("source").and_then(Value::as_str)) {
         return SlashInvocationClassification::Supported;
@@ -315,33 +318,41 @@ pub fn classify_slash_invocation(
     classify_against_builtin(descriptor, rest)
 }
 
-/// The verified subcommand names `ipc::chat`'s own refusal text can list for `name` once
-/// `classify_slash_invocation` has already refused it as `UnsupportedArguments` (issue #938 item
-/// 2): resolves the SAME descriptor `classify_against_builtin` was refused against (the
-/// anti-shadow fix's own `shadowed_builtin` first, the plain match otherwise), so the refusal
-/// always lists exactly the set a second attempt would accept. `[]` for a command with no
-/// verified subcommands at all (an unrecognised name, or `/switch`, whose own `subcommands`
-/// table is pruned to empty by `filter_supported_commands` -- its one argument is a free-form
-/// token, not a fixed list, see `classify_against_builtin`'s own name-aware branch above).
-pub fn verified_subcommand_names(name: &str, commands: &[Value]) -> Vec<String> {
-    let descriptor = commands
-        .iter()
-        .find(|c| {
-            matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str))
-        })
-        .or_else(|| commands.iter().find(|c| matches_name(c, name)));
-    let Some(descriptor) = descriptor else {
-        return Vec::new();
-    };
-    descriptor
-        .get("subcommands")
+/// Which of the two refusal wordings `ipc::chat` should show once `classify_slash_invocation`
+/// has already refused `rest` as `UnsupportedArguments` (issue #938 items 2 and 3; gate round 1,
+/// ui-architect-v3 decided): the first word of `rest` was itself one of the command's own
+/// verified subcommands, but more text followed it ("/advisor on now"); or the first word is
+/// not a recognised subcommand at all (including a command with no verified subcommands, e.g.
+/// `/switch`'s free-form argument, whose own table is always pruned empty).
+pub enum SubcommandRefusal {
+    ExtraTextAfterSubcommand { subcommand: String },
+    UnrecognisedSubcommand { verified: Vec<String> },
+}
+
+/// Resolves the SAME descriptor `classify_against_builtin` was refused against (via
+/// `resolve_matched_descriptor`), so the refusal always distinguishes/lists exactly what a
+/// second attempt would accept.
+pub fn classify_unsupported_arguments(name: &str, rest: &str, commands: &[Value]) -> SubcommandRefusal {
+    let verified: Vec<String> = resolve_matched_descriptor(name, commands)
+        .and_then(|descriptor| descriptor.get("subcommands"))
         .and_then(Value::as_array)
         .map(|subs| {
             subs.iter()
                 .filter_map(|s| s.get("name").and_then(Value::as_str).map(str::to_string))
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let sub_name = match rest.find(' ') {
+        Some(idx) => &rest[..idx],
+        None => rest,
+    };
+    if verified.iter().any(|v| v == sub_name) {
+        SubcommandRefusal::ExtraTextAfterSubcommand {
+            subcommand: sub_name.to_string(),
+        }
+    } else {
+        SubcommandRefusal::UnrecognisedSubcommand { verified }
+    }
 }
 
 #[cfg(test)]

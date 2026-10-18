@@ -3459,11 +3459,10 @@ PR #972 body and this plan row updated with the final-run evidence; still `Refs 
   own result, visible the moment its owning Stage is expanded, with no need to expand the row
   itself too. A multi-agent Stage's own expansion also shows its full batch context as rendered
   Markdown, visually capped to about 6 lines, above its member rows.
-- [ ] T284 [US1] NOT YET BUILT (second PR, reported to Main before starting it): the Subagent
-  panel's own Stage-level tree node (grouping `SubagentSummary[]` by `toolCallId` the same way,
-  through the same `stageMeta.ts`/`StageDependencies.tsx` helpers) and the "Up next" list (from
-  the new `todoPhases` readout field T282 already wired) in the Subagent chain's own expanded
-  body.
+- [X] T284 [US1] The Subagent panel's own Stage-level tree node (grouping `SubagentSummary[]` by
+  `toolCallId` the same way, through the same `stageMeta.ts`/`StageDependencies.tsx` helpers)
+  and the "Up next" list (from the `todoPhases` readout field T282 already wired) below the
+  Subagent chain. Built in Phase 58 below (second PR, as planned here).
 
 This phase covers issue #941's 2026-10-15 grill items 2 to 5 and the Subagent chain/Stage-row
 half of item 7 (terms, item 1, already landed via PR #942's docs-only change); items 6 (Up next)
@@ -3555,8 +3554,70 @@ this phase moved to Phase 58/T285-T287, and the spec's own new line moved to FR-
 Opened as draft PR #978 (`feat/672-start-message`). **Refs #672** until the live check above
 confirms every acceptance item; switches to **Closes #672** once it does (follow-up to #618,
 already closed).
+## Phase 59: Subagent panel Stage grouping, green state, Up next (#941, part 2 of 2) [US1]
 
-## Phase 59: Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) [US1]
+Renumbered against `origin/main` just before merging (this file's own convention, per the
+`refract-ui-lane-gate-checklist` skill): #672 (follow-up to #618) merged first as Phase 58
+(`origin/main`, PR #978); this phase moved to Phase 59.
+
+- [X] T284 (see Phase 57 above, checked off there): `SubagentPanel.tsx`'s `buildSubagentTree`
+  rewritten against a new sibling `groupSubagentPanelStages.ts` (groups `SubagentSummary[]` by
+  `toolCallId` -- the only correlation key that interface carries, confirmed against
+  `src/shared/model.ts`; research.md decision 17), reusing `stageMeta.ts`'s `computeStageLabel`/
+  `extractAgentRefs` directly. Gate round 1 fix (item 1, CRITICAL): keyed on `item.nameOrTask`,
+  not `item.id` (`${toolCallId}:${nameOrTask}`, `subagents.rs::handle_task_start`'s own
+  `base_id`, never the bare name -- the `model.ts` doc comment this first assumed otherwise
+  from is itself corrected). Gate round 1 fix (item 2, HIGH): the "latest earlier occurrence
+  wins" dependency algorithm is a single shared `resolveStageDependencies` (`stageMeta.ts`), both
+  `groupSubagentStages.ts` and `groupSubagentPanelStages.ts` call it, not two independent
+  copies. A call with exactly one member stays a single flat row; 2+ members get a Stage header
+  treeitem with its real members nested one `aria-level` deeper. Green state
+  (`isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`, confirmed absent from the panel
+  before this) applies uniformly to every row, its own roll-up ("N done, M failed",
+  `stageRollupText`, also shared with the chat pane) in a trailing muted slot folded into the
+  header's own accessible name too. Gate round 1 decision (item 3, ui-architect-v3 ruling): a
+  Stage header's own label never shows "Stage N" -- the panel numbers Stages session-wide by
+  `toolCallId` while the chat numbers per turn, so the SAME Stage would disagree between the two
+  surfaces; the shared name prefix (else "N agents") is shown instead, and a real "Uses:" line
+  renders plain NAMES ONLY (no "(Stage N)" suffix), scoped to earlier calls in the session; a
+  solo call's own dependency stays chat-pane-only (documented scope boundary, no header row in
+  the panel to attach one to).
+- [X] New `UpNextList.tsx`, mounted in `Transcript.tsx` right after `SubagentChainRow` for every
+  turn -- a sibling, outside the chain's own collapsible content, `mt-6 px-2` matching the
+  chain's own turn-rhythm spacing: reads `ReadoutState.todoPhases` (already wired by T282),
+  rendering nothing when null/empty (the backend's own `compute_up_next` already filters to
+  non-empty, live-only state, research.md decision 17) -- gated additionally on `isLastTurn`
+  (`Transcript.tsx` already computes this for `TurnTotalLine`) and `stages.length > 0`, so the
+  CURRENT, session-scoped Todo list is shown once per conversation, not repeated after every
+  past qualifying turn. Gate round 1 fix (item 4, HIGH): a labelled list (`useId`, `aria-
+  labelledby` on the `<ul>`), not a bare unlabelled one. Gate round 1 fix (item 8, LOW): "1
+  task" singular, "N tasks" otherwise; each entry keyed by name plus index (two phases sharing
+  one name would otherwise collide).
+
+This phase covers issue #941's 2026-10-15 grill item 6 (Up next) and the Subagent panel half of
+item 7, completing the story (items 1-7 all built across the two PRs).
+
+`pnpm typecheck`, `pnpm vitest run` (148/148), `node scripts/check-indent.mjs`, `node
+scripts/check-file-size.mjs`, `node scripts/check-parity.mjs --gate`, `node
+scripts/check-drag-regions.mjs`, `node scripts/check-theme-contrast.mjs` all clean on this
+phase's own head. Live-checked via a new `scripts/verify-941-part2.mjs` (reuses part 1's own
+`stages-941.jsonl` fixture, additively extended with a `todoPhases` field on its one `get_state`
+response) across all 3 themes: Stage grouping (header + nested members at the right
+`aria-level`, solo calls stay flat), green state (including Stage 5's own mixed finished/failed
+negative case), the "Up next" list's own exact wording, and a negative check that no panel
+Stage shows a stray "Uses:" line (the fixture's own task names carry no `agent://` reference,
+`SubagentSummary` has no `context` for one to come from otherwise -- the panel's positive
+"Uses:" case is recorded honestly as not exercised, not worth risking part 1's own fixture for).
+
+Opened as draft PR #993 on branch `feat/941-stages-part2`, stacked on part 1's now-merged
+`feat/941-stages` (PR #979, merged as `d9c88f2`). **Refs #941** until the live check above
+confirms every acceptance item; switches to **Closes #941** once it does.
+
+## Phase 60: Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) [US1]
+
+Renumbered against `origin/main` just before merging (this file's own convention): #941 part 2
+merged first and kept Phase 59 (research.md decision 17); this phase moved to Phase 60 and its
+own research.md note to decision 18.
 
 - [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains
   `verified_subcommand_names(name, commands)`, resolving the same descriptor
@@ -3564,23 +3625,25 @@ already closed).
   first, the plain match otherwise) and returning its verified subcommand names (`[]` for a
   command with none, including `/switch`, whose own table is always pruned empty).
   `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch now lists them
-  (`/{name} takes one of: {sub1}, {sub2}, ...}.`) when non-empty, keeping the existing generic
+  (`/{name} takes one of: {sub1}, {sub2}, ....`) when non-empty, keeping the existing generic
   wording otherwise. Exported via `session::agent::mod.rs`.
 - [X] T289 [US1] #938 items 3 and 5/FR-082/FR-083: `NoticeRow.tsx`'s short-notice branch passes
   `summaryWrap` to `CollapsedLine` (ui-architect-v3 roundtable ruling: wrap in place, never an
   expand control with nothing behind it). `ModelRolesSection.tsx`'s Advisor role description
-  becomes "Reviews turns when the advisor is enabled (/advisor on in a Session); falls back to
+  becomes "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to
   Slow."
-- [X] T290 [US1] #938 item 6 investigated (research.md decision 17, spec.md Clarifications):
-  not a bug, no code change -- see those entries for the full root cause. New
+- [X] T290 [US1] #938 item 6 investigated (research.md decision 18, spec.md Clarifications):
+  not a bug, no code change -- see those entries for the full root cause (OMP's own
+  incomplete-todo nudge made the model reply twice, two real distinct messages). New
   `scripts/verify-938-slash-rest.mjs` (modelled on `verify-917-advisor-command.mjs`'s own real-
   ambient-omp structure, since no existing fake-omp fixture lists a builtin command with
   verified subcommands and AGENTS.md forbids adding one): asserts the Settings > Model roles
   Advisor description's exact new text, the refusal toast's exact text computed from this
   install's own real `/advisor` subcommand list (never hardcoded), and the short-notice
-  summary span's `whitespace-normal` className (never `truncate`) across Dark, Obsidian, and
-  Dark (high contrast), with screenshots and `report.json` (`gitHead`, `dirty`, `exeSha256`,
-  `scriptSha256`, `findings`, `failures`, `notExercised`).
+  summary span's real wrapping behaviour (narrowed viewport, `textOverflow`/`scrollWidth`/
+  height measured, never a className check alone unless wrapping cannot be forced) across
+  Dark, Obsidian, and Dark (high contrast), with screenshots and `report.json` (`gitHead`,
+  `dirty`, `exeSha256`, `scriptSha256`, `findings`, `failures`, `notExercised`).
 
 `pnpm typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs` all clean
 on this phase's own head. `node --check` on the new script, plus a real import of it, confirmed
@@ -3590,6 +3653,21 @@ yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot grante
 `cargo fmt --check`/`cargo test`/`cargo clippy`, the Tauri debug build, and
 `verify-938-slash-rest.mjs` run live against a real app are each pending the build slot grant
 from Main.
+
+**Gate round 1 fixes** (code-reviewer HIGH/MEDIUM, ui-architect-v3 decided, test-reviewer
+MEDIUM): item 6's cause corrected (above, research.md decision 18); `verified_subcommand_names`
+shares one resolve helper with `classify_slash_invocation` rather than duplicating the
+descriptor lookup, and drops its unreachable any-match fallback; a first-word-is-a-valid-
+subcommand-but-extra-text-follows refusal now reads "/{name} {sub} doesn't take more text yet.
+Try /{name} {sub} on its own." (never the "takes one of" listing, which is reserved for an
+unrecognised first word); `docs/design/product-chat.md` documents both the short-notice wrap
+rule and the two refusal wordings; the item-3 live check now forces real wrapping (narrowed
+viewport) and measures it directly, falling back to a disclosed `notExercised` only if it
+genuinely cannot be forced to wrap; the item-2 skip text now reads "unproven in this run"
+rather than claiming unit coverage, and a missing `/advisor` is a hard failure for both checks
+it would otherwise skip; the script's own toast wait counts toasts present before sending and
+waits for a NEW one, and resolves the `/advisor` descriptor the same way Rust does (prefer a
+builtin-sourced match, then name/alias) instead of a bare `.find(name)`.
 
 Opened as draft PR #996 (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
 here; item 1 and 4 already shipped via #954; item 6 was resolved by investigation, no code to

@@ -442,10 +442,10 @@
   rendered Markdown (capped to about 6 lines) and each member's own one-line result; a Stage's
   own "Uses:" names only real `agent://<id>` references its context or tasks make to an agent an
   EARLIER Stage in the same turn actually started (dropped when unmatched or pointing forward).
-  Below the last Stage, a muted "Up next" list shows the agent's own pending Todo phases (OMP
-  `get_state().todoPhases`, name and outstanding task count), live state only -- never shown for
-  a reopened Conversation. Applies to the Subagent chain, each Stage row, and the Subagent panel
-  tree.
+  Below the Subagent chain, a muted "Up next" list shows the agent's own pending Todo phases
+  (OMP `get_state().todoPhases`, name and outstanding task count), live state only -- never shown
+  for a reopened Conversation. Renders once per turn in the chat transcript only (a sibling of
+  the Subagent chain row); never inside the Subagent panel tree.
 - Q: Is the "Up next" list itself a new kind of Stage, or something else entirely? → A: Neither
   a Stage nor a tool: a **Todo phase** is the agent's own planned work (its todo list), distinct
   from a **Stage** (one `task()` batch); the glossary gained both terms (`CONTEXT.md`, PR #942).
@@ -468,10 +468,17 @@
   own.") shows for `/advisor dump`, `/advisor configure`, and any typo, even when the command
   has verified subcommands. What should it say instead? → A: Decided (Skippy, delegated by
   Stuart, 2026-10-18): when the matched builtin command has one or more verified subcommands
-  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...}." (e.g.
+  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...." (e.g.
   "/advisor takes one of: on, off, status."). A command with no verified subcommands at all
   (`/dump`, `/switch`'s free-form argument, an unknown name) keeps the existing generic
   wording -- there is nothing to usefully list.
+- Q: Gate round 1 (UI/Code/A11y, decided by ui-architect-v3): when the first word after the
+  command IS a valid subcommand but extra text follows (`/advisor on now`), does the "takes one
+  of" listing still make sense, since `on` is already correct? → A: No -- that wording would
+  wrongly suggest the typed subcommand itself is unrecognised. The refusal instead reads
+  "/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own." (e.g.
+  "/advisor on doesn't take more text yet. Try /advisor on on its own."); "takes one of: ..." is
+  reserved for when the first word itself is not a recognised subcommand (FR-081).
 - Q: Issue #938 item 3 (still open after #954): a short notice (`NoticeRow.tsx`) can still lose
   text to its own one-line ellipsis close to the 160-char threshold (`/advisor status`'s spend
   clause). Wrap it in place (`summaryWrap`), or make every short notice expandable? → A:
@@ -482,22 +489,26 @@
   same clause re-wrapped), misrepresenting the row's own structure.
 - Q: Issue #938 item 5 (still open after #954): should `ModelRolesSection.tsx`'s Advisor role
   description mention how to turn the advisor on? → A: Decided (Skippy, delegated by Stuart,
-  2026-10-18): yes -- "Reviews turns when the advisor is enabled (`/advisor on` in a Session);
-  falls back to Slow." The description renders as plain text (no markdown), so the slash
-  command shows as literal text, consistent with how a refusal message or a notice already
-  shows a literal command name elsewhere in the app.
+  2026-10-18): yes. Gate round 1 wording decided by ui-architect-v3: "Reviews a Session's turns
+  while the Advisor is on (/advisor on); falls back to Slow." The description renders as plain
+  text (no markdown), so the slash command shows as literal text, consistent with how a
+  refusal message or a notice already shows a literal command name elsewhere in the app.
 - Q: Issue #938 item 6 (possible duplicate render, not yet investigated as of #954): the
   #917/#954 live-check screenshots show the assistant's own sentinel answer
-  ("t917turn"/"t947turn") twice in one turn. A duplicate render, or two real text blocks from
-  the model? → A: Investigated, not a bug (Skippy, delegated by Stuart, 2026-10-18):
+  ("t917turn"/"t947turn") appearing more than once in one turn. A duplicate render, or two real
+  text blocks from the model? → A: Investigated, not a bug (Skippy, delegated by Stuart,
+  2026-10-18; corrected, gate round 1 -- a first draft of this answer wrongly blamed the
+  live-check scripts' own wait condition alone): read against the real OMP session log, the
+  #917 screenshot's three occurrences are the user's own prompt (which deliberately contains
+  the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
+  its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
+  stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
+  made it continue, mark the todo done, and reply "t917turn" again.
   `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
   (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
-  keyed by `message_id`/`message_id:index`, so no code path can render one content index twice.
-  The real cause: both live-check scripts wait for the sentinel word to appear twice as their
-  own "turn finished" signal, and the typed PROMPT itself is `"Reply with exactly the single
-  word 't917turn' and nothing else."` -- one occurrence is the user's own prompt bubble, the
-  other the assistant's one-time echoed reply. Two distinct rows, each announced once; no
-  change made.
+  keyed by `message_id`/`message_id:index`, so no code path can render one message's own
+  content index twice -- each of the three rows is real, distinct, and announced once; not a
+  duplicate render. No change made.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -827,14 +838,22 @@ The developer types a slash command and finds the ones the agent offers. If a se
   a Stage's own "Uses:" line MUST name only real `agent://<id>` references its own context or
   tasks make to an agent an EARLIER Stage in the same turn actually started, grouped by that
   Stage, dropping any reference that matches nothing or points at the Stage's own agents or a
-  later Stage. Below the last Stage, Refract MUST show a muted "Up next" list of the agent's own
-  pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count) whenever
-  at least one phase has outstanding work; hidden entirely when there is no todo list, every
-  phase is finished, or the Conversation is reopened history (live state only).
+  later Stage. Below the Subagent chain, Refract MUST show a muted "Up next" list of the agent's
+  own pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count)
+  whenever at least one phase has outstanding work, rendered once per turn in the chat
+  transcript only (never inside the Subagent panel tree); hidden entirely when there is no todo
+  list, every phase is finished, or the Conversation is reopened history (live state only).
 
   > Deferred to part 2 (issue #941): the Subagent panel's own green state and Stage grouping,
   > and the Up next list's own UI, are not yet built here -- only the Rust/TS wire data
   > (`context`, `todoPhases`) is in place, unconsumed.
+
+  > Part 2 (issue #941, 2026-10-18): now built -- the Subagent panel groups its own
+  > `SubagentSummary[]` by `toolCallId` (its own only correlation key, research.md decision 17),
+  > shows green state uniformly (header and member rows alike), and the "Up next" list renders
+  > below the Subagent chain (a sibling, not nested inside its own expanded body), gated on
+  > `isLastTurn` and at least one Stage.
+
 - **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
 - **FR-080** (new, 2026-10-18, issue #672, follow-up to #618: "I like the *Summoning your agent*
   message, but can it be placed centrally in the chat window, and made larger"; renumbered from a
@@ -864,9 +883,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
-- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18): When a slash command is refused as `UnsupportedArguments` (FR-032) AND the matched builtin command carries one or more verified subcommands, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ...}.` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
+- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): When a slash command is refused as `UnsupportedArguments` (FR-032): if the first word after the command IS one of that command's own verified subcommands but further text follows it (for example `/advisor on now`), the refusal MUST read `/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own.`; otherwise, when the matched builtin command carries one or more verified subcommands at all, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ....` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
 - **FR-082** (new, 2026-10-18, issue #938 item 3, gate follow-up from PR #923/#917, still open after #954/#947; ui-architect-v3 roundtable decision record): A short notice (`NoticeRow.tsx`, under the long-notice threshold and carrying no embedded line break) MUST let its one-line summary wrap across lines instead of truncating with an ellipsis, so a notice whose text happens to sit close to that threshold is never cut off; it MUST NOT gain a chevron/expand control (there is nothing behind one once the whole text is already visible wrapped).
-- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording.
+- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow."
 
 ### Key Entities
 

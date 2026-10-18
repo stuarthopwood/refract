@@ -5,6 +5,21 @@
 // (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text). Spec 013: its own title
 // row and Close button moved to the shared shell (`PanelTabBar.tsx`) -- this component renders
 // only the tree and stream content.
+//
+// Issue #941 part 2: every distinct `task()` call (`toolCallId`) with 2+ members now gets its
+// own Stage HEADER treeitem (grouping, FR-079's deferred note), its real member rows nested at
+// `aria-level + 1` beneath it -- a call with exactly ONE member stays a single flat row exactly
+// as before (nothing to group). Green state (FR-079) applies uniformly to every row (header or
+// member) via the same `isSubagentSuccessStatus` check the chat pane's `StageGroupRow` already
+// uses. Gate round 1 decision (item 3, ui-architect-v3 ruling): a Stage header's own label
+// NEVER shows "Stage N" -- the panel numbers Stages session-wide by `toolCallId`, the chat
+// numbers per turn, so the SAME underlying Stage would show two disagreeing numbers across the
+// two surfaces; the shared name prefix (else a bare "N agents") is shown instead, and a real
+// "Uses:" dependency renders as plain NAMES ONLY (no "(Stage N)" suffix), via
+// `groupSubagentPanelStages.ts`'s own `resolveStageDependencies` (shared with the chat pane).
+// Scope boundary (documented, not an oversight): a SOLO call's own real dependency (if any) is
+// not shown here -- there is no Stage header row for a single member to attach one to; it
+// remains visible in the chat pane.
 import { useEffect, useMemo, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -17,36 +32,119 @@ import { ToolGroupRow } from '../chat/ToolRow'
 import { formatElapsed } from '../chat/formatElapsed'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
-import { SubagentStatusIcon } from './subagentStatus'
+import { stageRollupText } from '../chat/stageMeta'
+import { overallStatus } from '../chat/SubagentChainRow'
+import { groupSubagentsIntoPanelStages } from './groupSubagentPanelStages'
+import {
+  isSubagentSuccessStatus,
+  SUBAGENT_STATUS_LABEL,
+  SUBAGENT_SUCCESS_TEXT_CLASS,
+  SubagentStatusGlyph,
+  SubagentStatusIcon,
+  summarizeSubagentStatuses
+} from './subagentStatus'
 
 interface SubagentTreeNode {
   id: string
   /** Gate round 3 fix (issue #941, HIGH): a composite `toolCallId:specIndex` key, unique per
-   * subagent INSTANCE even when two share the same `id` (`SubagentSummary.id` is name-based,
-   * so two agents given the same name by two different `task()` calls collide on `id` alone).
-   * Used for React's own list `key`, the row-ref map, and which row shows selected/receives
-   * focus -- everywhere a specific RENDERED ROW, not merely "a row with this name", matters. */
+   * subagent INSTANCE even when two share the same `id` (`SubagentSummary.id` is itself
+   * `${toolCallId}:${nameOrTask}`, gate-fix -- NOT name-based alone, so two SEPARATE calls can
+   * still collide on it when their own `nameOrTask` text happens to match too). Used for
+   * React's own list `key`, the row-ref map, and which row shows selected/receives focus --
+   * everywhere a specific RENDERED ROW, not merely "a row with this name", matters. A Stage
+   * header row (issue #941 part 2) instead carries `stage:<toolCallId>` -- a format that can
+   * never collide, since no real member key contains a colon-free `toolCallId` segment
+   * (`specIndex` is always a plain integer). */
   key: string
   nameOrTask: string
   status: SubagentSummary['status']
   durationMs?: number
   children: SubagentTreeNode[]
+  /** Issue #941 part 2: true only for a Stage HEADER row (2+ members) -- never selectable (no
+   * single subagent id to show a stream for), its own `id` stays `''`. */
+  isStage: boolean
+  /** Present only on a Stage header row: the "N done"/"N done, M failed" roll-up
+   * (`stageRollupText`, shared with the chat pane), shown in a trailing muted slot. */
+  rollupText?: string
+  /** Present only on a Stage header row, already formatted as plain text ("Uses: A, B") with
+   * NO Stage-number suffix -- gate round 1 decision (issue #941 part 2, item 3, ui-architect-v3
+   * ruling): the panel numbers Stages session-wide by `toolCallId` while the chat numbers
+   * per-turn, so the same underlying Stage would show two DIFFERENT numbers across the two
+   * surfaces; names only, scoped to earlier calls in the session, avoids the conflict instead
+   * of trying to reconcile two genuinely different numbering schemes. `undefined` when the
+   * Stage has no real dependency (the common case). */
+  usesText?: string
+  /** Present only on a Stage header row: the full accessible name (label/fallback PLUS the
+   * roll-up, gate round 1 item 6) -- the visible text alone (`nameOrTask`) does not restate the
+   * roll-up, which otherwise renders in a separate trailing `aria-hidden` slot. */
+  ariaLabel?: string
 }
 
 /** FR-024 (issue #563): the Session is the implicit root (never rendered itself); these are its
- * first level, in start order. A node's own `children` would hold the agents IT started, once
- * the tracker can tell which agent started which -- no `parentId` exists on `SubagentSummary`
- * today, so every node's `children` is honestly empty until #712 supplies that data; nothing
- * here needs to change when it does, only this one function. */
+ * first level, in start order -- each one either a single member row (a call with exactly one
+ * subagent, unchanged from before #941 part 2) or a Stage header row with its real members
+ * nested beneath (`groupSubagentsIntoPanelStages`, keyed on `toolCallId`, the only correlation
+ * key `SubagentSummary` carries -- no `messageId`/`parentId` exists on it, so this is strictly
+ * per-call, never merging several calls sharing one assistant message the way the chat pane's
+ * own `messageId`-keyed grouping can). */
 export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNode[] {
-  return subagents.map((subagent) => ({
-    id: subagent.id,
-    key: `${subagent.toolCallId}:${subagent.specIndex}`,
-    nameOrTask: subagent.nameOrTask,
-    status: subagent.status,
-    durationMs: subagent.durationMs,
-    children: []
-  }))
+  return groupSubagentsIntoPanelStages(subagents).map((stage) => {
+    if (stage.items.length === 1) {
+      const item = stage.items[0]!
+      return {
+        id: item.id,
+        key: `${item.toolCallId}:${item.specIndex}`,
+        nameOrTask: item.nameOrTask,
+        status: item.status,
+        durationMs: item.durationMs,
+        children: [],
+        isStage: false
+      }
+    }
+    const counts = summarizeSubagentStatuses(stage.items.map((item) => item.status))
+    const aggregateStatus = overallStatus(counts)
+    // Gate round 1 decision (item 3): no "Stage N" prefix here (see `usesText`'s own comment) --
+    // the shared name prefix when one exists, else a bare count ("N agents"), never a number
+    // that would disagree with the chat pane's own per-turn Stage numbering for this same call.
+    const label = stage.label ?? `${stage.items.length} agents`
+    const rollupText = stageRollupText(counts, stage.items.length, aggregateStatus === 'running')
+    const usesText = stage.dependencies.length > 0 ? `Uses: ${stage.dependencies.map((d) => d.agentId).join(', ')}` : undefined
+    return {
+      id: '',
+      key: stage.key,
+      nameOrTask: label,
+      status: aggregateStatus,
+      children: stage.items.map((item) => ({
+        id: item.id,
+        key: `${item.toolCallId}:${item.specIndex}`,
+        nameOrTask: item.nameOrTask,
+        status: item.status,
+        durationMs: item.durationMs,
+        children: [],
+        isStage: false
+      })),
+      isStage: true,
+      rollupText,
+      usesText,
+      // Gate round 3 fix (issue #941 part 2, item 2/3, MEDIUM): the accessible name states the
+      // status word whenever `status !== 'finished'` -- the SAME rule `SubagentChainRow`'s own
+      // `triggerAriaLabel` uses for the whole chain (`SubagentChainRow.tsx`, exported function,
+      // its own local `triggerAriaLabel` const), covering running AND failed/cancelled/exited,
+      // not only running (`StageGroupRow`'s own per-Stage `triggerAriaLabel` is narrower:
+      // `isRunning` only -- the chain's own rule is the one asked for here). Also states the
+      // Uses text when present, so a screen reader hears the real dependency without a second
+      // `aria-describedby` reference.
+      ariaLabel: `${label}, ${rollupText}${aggregateStatus !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[aggregateStatus]}` : ''}${usesText ? `, ${usesText}` : ''}`
+    }
+  })
+}
+
+/** Gate round 4 fix (issue #941 part 2, item 2, LOW): the Stage header's own trailing roll-up
+ * text, kept in ONE place and called for both the visible (truncatable) span and its own
+ * `title=` tooltip below -- so a truncated roll-up is still recoverable by hovering it with a
+ * mouse, same as the label span (`CollapsedLine.tsx`'s own base label slot) already offers. */
+function stageRollupDisplayText(node: SubagentTreeNode): string {
+  return `${node.rollupText ?? ''}${node.status === 'running' ? ` \u00b7 ${SUBAGENT_STATUS_LABEL.running}` : ''}`
 }
 
 interface SubagentTreeRow {
@@ -197,9 +295,10 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         break
       case 'ArrowRight': {
         event.preventDefault()
-        // FR-025/#712: a deliberate no-op today -- no row's own depth is ever one more than
-        // this one's, since `buildSubagentTree` gives every node an empty `children` until a
-        // later story supplies parent ids. Moves to the first child the instant one exists.
+        // Gate round 1 fix (issue #941 part 2, item 5): no longer a no-op -- a Stage header row
+        // (2+ members) genuinely has real children one level deeper now (`buildSubagentTree`),
+        // so this moves into the first one; an ordinary member/solo row (still no `children`
+        // today, #712) keeps doing nothing, same as before.
         const next = rows[index + 1]
         if (next && next.depth === row.depth + 1) moveToRow(index + 1)
         break
@@ -247,17 +346,39 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   aria-level={row.depth + 1}
                   aria-setsize={row.setsize}
                   aria-posinset={row.posinset}
-                  aria-selected={row.node.key === effectiveSelectedKey}
+                  // Gate round 1 fix (issue #941 part 2, item 5, MEDIUM): `aria-selected` is a
+                  // SELECTION state -- a Stage header has no single subagent id to select, so it
+                  // carries no `aria-selected` attribute at all (not `aria-selected="false"`,
+                  // which would still claim "this is selectable, just not right now"). Always
+                  // `true` on a Stage header's own `aria-expanded` (never collapsible, its real
+                  // members are always shown nested beneath it) -- `undefined` (omitted) for an
+                  // ordinary row, which has no children to expand at all.
+                  aria-selected={row.node.isStage ? undefined : row.node.key === effectiveSelectedKey}
+                  aria-expanded={row.node.isStage ? true : undefined}
+                  aria-label={row.node.isStage ? row.node.ariaLabel : undefined}
                   tabIndex={index === tabbableIndex ? 0 : -1}
                   // Gate remediation (Medium, visual): the 2px `--active-indicator` bar below is
                   // `left-0`, so depth 0's prior 0px inset sat it directly on top of the status
                   // icon -- the 8px base inset (kept per-level/3-level cap below unchanged)
                   // gives the bar its own clear lane.
                   style={{ paddingLeft: `${8 + Math.min(row.depth, 2) * 16}px` }}
-                  onFocus={() => void selectSubagent(row.node.id, row.node.key)}
+                  // Issue #941 part 2: a Stage header row has no single subagent id to show a
+                  // stream for -- never calls `selectSubagent`, so focusing it neither selects
+                  // nor fetches anything (it stays a pure roving-tabindex stop).
+                  onFocus={() => {
+                    if (!row.node.isStage) void selectSubagent(row.node.id, row.node.key)
+                  }}
                   onKeyDown={(event) => handleRowKeyDown(event, index)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm',
+                    // Issue #941 part 2: `flex-col` unconditionally (was `items-center` on this
+                    // same element) -- an ordinary row's single inner `flex items-center` span
+                    // below renders identically either way; a Stage header row with a real
+                    // "Uses:" line gets a genuine second line underneath it.
+                    'relative flex w-full flex-col gap-0.5 rounded-md py-1.5 pr-2 text-left text-sm',
+                    // Gate round 1 fix (issue #941 part 2, item 5, MEDIUM): a Stage header is not
+                    // itself selectable/hoverable-as-a-target (it carries no `aria-selected`,
+                    // see above) -- the hover affordance stays scoped to real, selectable rows.
+                    !row.node.isStage && 'hover:bg-muted/50',
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own forced-colours selected fallback, reused verbatim
                     // so both trees are visually consistent and the selected row survives Windows
@@ -288,7 +409,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // matching every OTHER verified-working `focus-visible:outline-*` row in this
                     // codebase (`CollapsedLine.tsx`, `ManageSessionRow.tsx`, `ProfileItem.tsx`,
                     // `PullRequestRow.tsx`), none of which carry a base `outline-hidden` either.
-                    'hover:bg-muted/50 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+                    'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >
                   {/* Decision 13 (issue #563): the selected node gets the shared 2px
@@ -297,14 +418,78 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   {row.node.key === effectiveSelectedKey && (
                     <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
                   )}
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <SubagentStatusIcon status={row.node.status} />
+                  <span className="flex w-full items-center gap-2">
+                    {/* Gate round 3 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's own
+                        icon slot is now a FIXED `w-4` box with NO visible status word
+                        (`SubagentStatusGlyph`, matching `CollapsedLine`'s own `size-4` icon slot,
+                        #565 decision 7) -- the previous `SubagentStatusIcon` here showed the
+                        status word inline for a running/failed/etc. row, so the slot's own width
+                        (and therefore where the label column starts) varied by status-text
+                        length, throwing the Uses line's own fixed `pl-6` indent below out of
+                        alignment. A member/solo row keeps `SubagentStatusIcon` (visible word)
+                        unchanged -- nothing renders beneath it needing a stable column to align
+                        against. */}
+                    <span className={row.node.isStage ? 'flex h-5 w-4 shrink-0 items-center justify-center' : 'flex shrink-0 items-center gap-1.5'}>
+                      {row.node.isStage ? <SubagentStatusGlyph status={row.node.status} /> : <SubagentStatusIcon status={row.node.status} />}
+                    </span>
+                    {/* Issue #941: a finished agent/Stage row (never a tool row) gets green
+                        name/label text alongside its icon's own `STATUS_GLYPH` colour -- applies
+                        uniformly to a Stage header row (aggregate status) and an ordinary
+                        member/solo row (its own status) alike. Gate round 1 fix (item 6,
+                        MEDIUM): a Stage header's own label is `font-medium` (matching the chat
+                        pane's own `CollapsedLine` label slot); an ordinary member/solo row stays
+                        unstyled text, unchanged from before #941 part 2. */}
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate',
+                        row.node.isStage && 'font-medium',
+                        // Gate round 4 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's
+                        // own label gets the same `min-w-16` floor `StageGroupRow`'s own
+                        // `successLabelClass` call site already gives the chat pane's equivalent
+                        // row (`SubagentChainRow.tsx`, `labelClassName={cn('min-w-16', ...)}`).
+                        // Without a floor, the zero-basis label's own `min-w-0` had already
+                        // disabled its min-content floor too -- so narrowing the row took this
+                        // label all the way down to 0px before the roll-up gave up anything,
+                        // truncating the agent's own name in a narrow pane while the muted
+                        // roll-up slot beside it stayed full width.
+                        row.node.isStage && 'min-w-16',
+                        isSubagentSuccessStatus(row.node.status) && SUBAGENT_SUCCESS_TEXT_CLASS
+                      )}
+                      title={row.node.nameOrTask}
+                    >
+                      {row.node.nameOrTask}
+                    </span>
+                    {/* Gate round 1 fix (issue #941 part 2, item 6, MEDIUM): a Stage header's own
+                        "N done"/"N done, M failed" roll-up, `aria-hidden` since it is ALSO
+                        folded into the row's own `aria-label` above (never announced twice).
+                        Gate round 3 fix (item 1, MEDIUM): the status word the icon slot no
+                        longer shows visibly moves in HERE instead, appended only while running --
+                        a settled Stage's own "N done"/"N done, M failed" wording already states
+                        failed/cancelled/exited, the same rule `StageGroupRow`'s own `meta` slot
+                        uses (`SubagentChainRow.tsx`). Gate round 4 fix (item 1, MEDIUM, wrong
+                        comment): the label gives up its own extra width first now, down to its
+                        new `min-w-16` floor above; only once that floor is hit does this slot
+                        start truncating itself. Gate round 4 fix (item 2, LOW): `title=` recovers
+                        a truncated roll-up by mouse, same as the label span above already offers. */}
+                    {row.node.isStage && row.node.rollupText && (
+                      <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground" title={stageRollupDisplayText(row.node)}>
+                        {stageRollupDisplayText(row.node)}
+                      </span>
+                    )}
+                    {!row.node.isStage && row.node.status !== 'running' && row.node.durationMs != null && (
+                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>
+                    )}
                   </span>
-                  <span className="min-w-0 flex-1 truncate" title={row.node.nameOrTask}>
-                    {row.node.nameOrTask}
-                  </span>
-                  {row.node.status !== 'running' && row.node.durationMs != null && (
-                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatElapsed(row.node.durationMs)}</span>
+                  {/* Gate round 1 fix (issue #941 part 2, item 3 decision): plain text, names
+                      only, no "(Stage N)" suffix (see file header). Gate round 3 fix (item 1,
+                      MEDIUM, wrong comment): indented to the label column, which is the Stage
+                      header's own FIXED icon slot width (`w-4`, 16px) plus this row's own
+                      `gap-2` (8px) = 24px, `pl-6` -- not the "icon slot's own `gap-1.5` width"
+                      this comment previously (and wrongly) claimed; that gap only ever applies
+                      BETWEEN two children of the icon wrapper, and the wrapper has always held
+                      exactly one. */}
+                  {row.node.isStage && row.node.usesText && (
+                    <span className="pl-6 text-xs text-muted-foreground">{row.node.usesText}</span>
                   )}
                 </div>
               ))}
