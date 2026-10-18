@@ -19,21 +19,6 @@ import {
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 
-// TEMPORARY diagnostic instrumentation (caught live: the two #930 persistence checks reproduced
-// byte-identical across two different `commit()` implementations, ruling out a stale-read race
-// as the sole cause -- Main's own lead: the OUTER session-list handle's own double-click resizes
-// the whole "chat" panel; THIS (inner, nested) group then re-lays out and its own
-// onLayoutChanged/onResize fires with no user action on THIS group's own separator at all).
-// Tags every write into `pull-requests-layout-store` with its call site, input value, this
-// group's own container width, and a timestamp, so a live run can see exactly which call
-// path persists the wrong value instead of guessing a fourth time. Remove once the actual root
-// cause is found and fixed.
-declare global {
-  interface Window {
-    __prLayoutDiagLog?: Array<Record<string, unknown>>
-  }
-}
-
 export function PullRequestsView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
   const repositories = useRepositoriesStore((s) => s.repositories)
   const viewRepositoryId = useViewStore((s) => s.repositoryId)
@@ -88,21 +73,6 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const panelElementRef = useRef<HTMLDivElement | null>(null)
   const headerWrapperRef = useRef<HTMLDivElement | null>(null)
   const groupElementRef = useRef<HTMLDivElement | null>(null)
-  const widthBeforeDblClickRef = useRef<number | null>(null)
-  // TEMPORARY diagnostic instrumentation (see the `declare global` comment above): every write
-  // into the layout store goes through here first, tagging the call site, the input value, THIS
-  // group's own container width (Main's own lead: does a cascading reflow from the OUTER
-  // session-list handle's own resize re-lay THIS group out with no action on its own separator
-  // at all?), and a timestamp.
-  const logLayoutDiag = (source: string, extra: Record<string, unknown>) => {
-    ;(window.__prLayoutDiagLog ??= []).push({
-      source,
-      groupWidthPx: groupElementRef.current?.getBoundingClientRect().width ?? null,
-      panelWidthPx: panelElementRef.current?.getBoundingClientRect().width ?? null,
-      at: performance.now(),
-      ...extra
-    })
-  }
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
@@ -251,69 +221,6 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           elementRef={groupElementRef}
           orientation="horizontal"
           className="min-h-0 flex-1"
-          // Gate-fix (round 4, re-confirmed live after a false-negative revert): reads the
-          // panel's own real DOM width, not the layout store's `widthPx` -- the library calls
-          // `onResize` (wires `widthPx`) and `onLayoutChanged` with no guaranteed relative
-          // order, and the session-list's own dblclick/resize fires THIS (unrelated) group's
-          // own `onLayoutChanged(isUserInteraction=true)` too (M3's own shared-dblclick-
-          // detection note below) -- reading `get().widthPx` here at that moment could read a
-          // stale pre-interaction value (even the untouched mount default, 320) instead of this
-          // panel's REAL current width, persisting the wrong one. A live full run reproduced
-          // exactly this after a previous round's revert of this same fix, on an unsubstantiated
-          // "no bug" read of a partial diagnostic log -- restoring it fixes both the sidebar-
-          // dblclick-persists-320 and the reset-persisted-a-later-drag's-stale-width failures.
-          onLayoutChanged={(_layout, meta) => {
-            logLayoutDiag('onLayoutChanged', { isUserInteraction: meta.isUserInteraction })
-            if (!meta.isUserInteraction) return
-            const width = panelElementRef.current?.getBoundingClientRect().width
-            if (width != null) {
-              logLayoutDiag('commit', { inputWidthPx: width })
-              usePullRequestsLayoutStore.getState().commit(width)
-            }
-          }}
-          // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
-          // own double-click-to-reset is detected via a native `dblclick` listener shared across
-          // every Group on the page, and it calls `event.preventDefault()` on the bubbling event
-          // whenever ANY separator resets (confirmed in its built dist) -- `defaultPrevented`
-          // alone over-fired for an UNRELATED Group's own reset (e.g. the session-list's sibling
-          // handle). Gate-fix (round 4, caught live -- a coordinate-proximity check, round 3's
-          // own attempt, is broken BY CONSTRUCTION for the exact case it must allow): by the
-          // time this bubble-phase handler runs, the library's OWN capture-phase reset has
-          // ALREADY moved the handle to its post-reset position, so comparing the click's
-          // `clientX` (the handle's PRE-reset position) against the handle's CURRENT (now-moved)
-          // rect always fails for a genuine reset of real width. Captures THIS panel's own real
-          // width in the CAPTURE phase (before any reset can apply) via `onDoubleClickCapture`,
-          // then in the bubble-phase handler checks whether THIS panel's width is now at the
-          // default AND clearly was not a moment ago -- the exact, position-independent
-          // signature of "this panel genuinely just reset", immune to a sibling's own reset
-          // (which never snaps this panel to exactly the default) or to small passive reflow
-          // drift (which never lands exactly on the default either).
-          onDoubleClickCapture={(e) => {
-            widthBeforeDblClickRef.current = panelElementRef.current?.getBoundingClientRect().width ?? null
-            logLayoutDiag('onDoubleClickCapture', {
-              widthBefore: widthBeforeDblClickRef.current,
-              targetAriaLabel: (e.target as HTMLElement)?.closest?.('[aria-label]')?.getAttribute('aria-label') ?? null
-            })
-          }}
-          onDoubleClick={(e) => {
-            const before = widthBeforeDblClickRef.current
-            const after = panelElementRef.current?.getBoundingClientRect().width ?? null
-            const thisPanelJustReset = before != null && after != null
-              && Math.abs(after - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) <= 2
-              && Math.abs(before - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) > 2
-            logLayoutDiag('onDoubleClick', {
-              defaultPrevented: e.defaultPrevented,
-              targetAriaLabel: (e.target as HTMLElement)?.closest?.('[aria-label]')?.getAttribute('aria-label') ?? null,
-              before,
-              after,
-              thisPanelJustReset
-            })
-            if (!e.defaultPrevented) return
-            if (thisPanelJustReset) {
-              logLayoutDiag('resetToDefault', { before, after })
-              usePullRequestsLayoutStore.getState().resetToDefault()
-            }
-          }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
               320px, one width for every Project. Native to `react-resizable-panels` 4.14.1:
@@ -329,6 +236,27 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
               `maxSize` is `listMaxSizePercent`, not a static "50%" -- see the M6 gate-fix
               comment above the measuring effect for why a static percentage genuinely
               conflicts with the 280px floor below a 560px Group width. */}
+          {/* Gate-fix (final root cause, caught live via tagged call-site instrumentation):
+              three prior rounds (M3's coordinate-proximity check, round 4's capture-phase
+              before/after width snap, `onLayoutChanged`'s own `isUserInteraction` gate) all
+              tried to detect "was this interaction ours" from DOM/event signals that turned out
+              unreliable -- `onDoubleClickCapture` always observed the library's OWN capture-
+              phase reset having ALREADY applied (it runs on `document`, ahead of any React
+              component handler, so `before` and `after` were both already ~the default,
+              permanently defeating the snap-to-default gate: confirmed live, zero
+              `resetToDefault` calls fired in an entire run) and `onLayoutChanged`'s own
+              `isUserInteraction` flag was confirmed live to fire true for some genuine resets
+              on THIS group and not others, for the identical interaction. `onResize`
+              (`PanelSize.inPixels`), by contrast, fired RELIABLY and ACCURATELY for every single
+              case observed live -- a drag, an arrow-key resize, the library's own internal
+              double-click reset, AND a passive reflow cascading down from the OUTER session-
+              list handle's own resize (confirmed: that cascade's real pixel width showed up
+              here, correctly, on every occurrence) -- it is the one source of truth for "what is
+              this panel's real width right now", for ANY reason it changed. `setWidth` itself
+              now owns persisting it (debounced ~300ms, `pull-requests-layout-store.ts`), so the
+              persisted value can never go stale behind a sibling's own resize again; a drag's
+              many intermediate `onResize` ticks still coalesce to one write via that same
+              debounce, exactly as the removed `onLayoutChanged`-gated `commit()` did. */}
           <ResizablePanel
             id="pull-requests-list"
             panelRef={panelRef}
@@ -337,10 +265,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
             maxSize={`${listMaxSizePercent}%`}
             className="overflow-hidden"
-            onResize={(size) => {
-              logLayoutDiag('onResize->setWidth', { inputWidthPx: size.inPixels })
-              usePullRequestsLayoutStore.getState().setWidth(size.inPixels)
-            }}
+            onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>
