@@ -3008,9 +3008,9 @@ wrap-on-expand fix, the ~4-line expanded height, hostile-output rendering inert 
 collapsed and expanded, keyboard/accessible-name form, and a live Subagents-panel check) was
 confirmed live on a real scratch instance across gate rounds 1 and 2.
 
-## Phase 53: Convergence
+## Phase 54: Convergence
 
-- [X] T267 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
+- [X] T272 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
   slash-command search. Added `src/shared/slashCommandSearch.ts` (`rankSlashCommands`, pure, no
   DOM): every listed command -- built-ins, project/user `file` commands, and `skill:<name>`
   entries alike -- is ranked exact/prefix/word-start (after `-`, `_`, `:` or a space)/substring/
@@ -3024,40 +3024,58 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   debounced (500ms), `useClearedAnnouncement`-backed result-count announcement mirroring
   `SessionList.tsx`'s own search announcement (re-reading live draft text and commands at fire
   time, never the render-time closure, so the debounce timer does not depend on a fresh array
-  identity every keystroke). Per FR-073.
-- [X] T268 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
+  identity every keystroke). Per FR-074.
+- [X] T273 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
   step, and a command reply no longer stretching the previous turn's own time. `SlashMenu.tsx`
   gained `parseSlashMenuState` (replacing the old bare `parseSlashQuery`): one space after a
   RECOGNISED command with verified subcommands (`command.subcommands`, already pruned to the
   verified set) parses as that command's own subcommand step instead of closing the menu, its
   own query being whatever follows the space; a second space closes it, same as any other
   command. `orderSubcommandsForEmptyQuery` puts `status` first with nothing typed yet (every
-  other subcommand keeps its existing order); a typed query ranks via the same T267 scorer.
-  `MessageInput.tsx`'s `completeSlashCommand` (choosing a top-level command) now only ever
-  leaves the box reading `/name ` -- the composer text re-parsing as the subcommand step is
-  what advances the menu, with no separate step state; a new `completeSubcommand` completes the
-  full `/name subcommand ` invocation, and `handleSlashMenuSelect` routes Enter/Tab/mousedown to
-  whichever one the current parsed step calls for. Separately, `command_output` frames now get
-  a distinct `command-output:` id prefix (`COMMAND_OUTPUT_NOTICE_PREFIX`, added to
-  `src/shared/commandOutputNotice.ts` and `src-tauri/src/omp/transcript/notice_prefixes.rs`,
-  consumed by `apply_frame_items`, replacing the generic `notice-N` id that frame type used to
-  share with a plain `notice` frame) instead of the generic `notice-N` id; `turnTiming.ts`'s
-  `computeTurnEnd` skips any notice carrying
-  that prefix entirely (neither its `receivedAt` arrival time nor any `itemEndTime` counts), so
-  a reply that arrives after its turn has already settled no longer stretches that turn's own
-  shown elapsed time. The reply itself still renders normally; only the turn-time MATH excludes
-  it. The other #938 items (refusal-text wording naming the allowed subcommands, short-notice
-  wrapping, a Settings mention, and the suspected duplicate render) are out of scope for this
-  story and remain open on the issue. Per FR-074 and the FR-046 amendment.
-- [X] T269 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
-  FR-073 and FR-074, an amendment to FR-046, and two dated `### Session 2026-10-17` Clarifications
-  entries recording both decision records; `docs/design/product-chat.md`'s "Slash commands"
-  bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
+  other subcommand keeps its existing order); a typed query ranks via the same T272 scorer, and
+  the synthetic "Run /<cmd>" row shows only on an empty query (gate round 2 finding H) so a
+  partial match never blind-fires the bare command. `MessageInput.tsx`'s `completeSlashCommand`
+  (choosing a top-level command) now only ever leaves the box reading `/name ` -- the composer
+  text re-parsing as the subcommand step is what advances the menu, with no separate step state;
+  a new `completeSubcommand` completes the full `/name subcommand ` invocation, and
+  `handleSlashMenuSelect` routes Enter/Tab/mousedown to whichever one the current parsed step
+  calls for. Separately, `command_output` frames now get a distinct `command-output:` id prefix
+  (`COMMAND_OUTPUT_NOTICE_PREFIX`, added to `src/shared/commandOutputNotice.ts` and
+  `src-tauri/src/omp/transcript/notice_prefixes.rs`, consumed by `apply_frame_items`, replacing
+  the generic `notice-N` id that frame type used to share with a plain `notice` frame); `turnTiming.ts`'s
+  `computeTurnEnd` skips any notice carrying that prefix entirely (neither its `receivedAt`
+  arrival time nor any `itemEndTime` counts), so a reply that arrives after its turn has already
+  settled no longer stretches that turn's own shown elapsed time -- and (gate round 3 Medium fix)
+  `TurnTotalLine`'s own remembered settle state distinguishes "never settled" from "settled, no
+  usable timing" (a lazy `useState` initialiser, not a ref written during render), so a genuine
+  resumption of the same turn (an async subagent result, an advisor follow-up, a retry after
+  compaction) resumes live-ticking instead of staying stuck at a stale value forever, and a
+  component remount (virtualised windowing, a session switch) can no longer make a settled,
+  untimed turn tick through an unrelated running command. The reply itself still renders
+  normally; only the turn-time MATH excludes it. The other #938 items (refusal-text wording
+  naming the allowed subcommands, short-notice wrapping, a Settings mention, and the suspected
+  duplicate render) are out of scope for this story and remain open on the issue. Per FR-075
+  and the FR-046 amendment.
+- [X] T274 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+  FR-074 and FR-075 (renumbered from a provisional FR-073/FR-074 once #966/#554 landed the real
+  FR-073 on `origin/main` first), an amendment to FR-046, and two dated `### Session 2026-10-17`
+  Clarifications entries recording both decision records; `docs/design/product-chat.md`'s "Slash
+  commands" bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
   2026-10-16 additions" row records both issues as built, with #938 noting only items 1 and 4 are
   covered (the rest stay open on the issue).
 
 This phase was written retroactively after the implementation above, the same reasoning Phase 48
-(#917) used: no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue. `pnpm typecheck`
-and `pnpm vitest run` were run after the build; see the PR body for the exact result and the
-live-check evidence (an unrun `scripts/verify-947-fuzzy-slash-search.mjs`, prep-lane: code-
-verified only, no live run this pass).
+(#917) used: no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue. Opened as draft
+PR #954 (`feat/947-slash-search`), **Closes #947, Refs #938** (items 1 and 4 only -- #938's other
+items stay open on the issue): `pnpm typecheck`/`pnpm vitest run` (148/148)/`node
+scripts/check-indent.mjs`/`node scripts/check-file-size.mjs` all green on the final pushed head.
+Live-checked under Main's own build slot across several gate rounds (`ci-local.mjs`'s `cargo
+fmt --check`/`cargo test`/`cargo clippy`/Tauri debug build, chained into
+`scripts/verify-947-938-slash-menu.mjs`): three earlier runs each found and fixed one genuine
+test-script bug (an unscoped `aria-hidden` empty-state selector; a turn-time baseline sampling
+race; an announcement live-region selector colliding with `Transcript.tsx`'s own always-mounted
+regions, closed off for good with a `data-slot="slash-menu-announcement"` target), never a
+product regression. Final run at commit `ee64bf0`: **31 findings, 0 failures, 0 notExercised**,
+`report.json`'s `gitHead` matches the pushed head, `dirty: false`, `exeSha256` confirmed
+unchanged through the copy; all 11 screenshots viewed. `git diff --numstat origin/main --
+specs/001-core-session-workspace/tasks.md` confirmed 0 deletions before this phase was appended.
