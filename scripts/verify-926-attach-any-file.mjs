@@ -458,25 +458,40 @@ async function main() {
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, 'Here are five files.'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
-    // Gate round 5 (Test5 HIGH, real bug this live check caught): `cdp.click`/`clickByLabel`
-    // dispatch a TRUSTED `Input.dispatchMouseEvent` at the Send button's own screen coordinates
-    // (`verify-tauri-cdp.mjs`'s own doc comment) -- a fixed-position sonner toast stack still on
-    // screen from D1/D4/FR-039 earlier in this run (toasts fade on their own timer, not on the
-    // next assertion, exactly like the earlier toast-baseline bug this script already fixed) sat
-    // directly on top of those exact coordinates and intercepted the click before it ever reached
-    // the button underneath -- confirmed via `elementFromPoint` ("INTERCEPTING TOAST" below) --
-    // and a follow-up "wait for every toast to clear" fix still timed out at 20s (these
-    // particular toasts do not auto-dismiss quickly). Sends with keyboard Enter instead
-    // (`handleKeyDown`'s own `event.key === 'Enter' && !event.shiftKey`, MessageInput.tsx):
-    // `Input.dispatchKeyEvent` routes to whatever has DOM focus, with no notion of "topmost
-    // element at a screen point" to intercept -- the same mechanism this script's own keyboard
-    // Remove-button step above already uses.
-    const preSendButtonState = await cdp.evaluate(
-      `(() => { const b = document.querySelector('[aria-label^="Send"]'); if (!b) return { notFound: true }; const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { ariaDisabled: b.getAttribute('aria-disabled'), ariaLabel: b.getAttribute('aria-label'), topElementAtClickPoint: top ? (top.getAttribute('data-sonner-toast') !== null || top.closest('[data-sonner-toast]') ? 'INTERCEPTING TOAST' : top.tagName + (top.getAttribute('aria-label') ? \`[aria-label="\${top.getAttribute('aria-label')}"]\` : '')) : 'none' }; })()`
+    // Gate round 5 (Test5 HIGH, real bug this live check caught, NOT caused by #926): `cdp.click`/
+    // `clickByLabel` dispatch a TRUSTED `Input.dispatchMouseEvent` at the Send button's own
+    // screen coordinates (`verify-tauri-cdp.mjs`'s own doc comment). Sonner's `<Toaster />`
+    // (`main.tsx`, `components/ui/sonner.tsx`) sets no `position` prop, so it defaults to
+    // `bottom-right` -- the SAME corner the Send button occupies -- and neither file differs
+    // from `origin/main` (`git diff origin/main -- src/renderer/main.tsx
+    // src/renderer/components/ui/sonner.tsx` is empty): this positioning, and therefore the
+    // overlap itself, predates #926 entirely. Any `toast.error()` anywhere in the app (dozens of
+    // call sites already on main, e.g. `RemoveRepositoryDialog.tsx`/`useSessionRowActions.ts`)
+    // can cover Send for its ~4s default lifetime -- confirmed here via `elementFromPoint`
+    // reporting "INTERCEPTING TOAST" when a toast from an earlier step (D1/D4/FR-039, all new
+    // in #926 but reusing the SAME pre-existing Toaster) is still on screen. This is a real,
+    // pre-existing, reachable product issue (a user cannot click Send while any toast is up) --
+    // flagged to Main to file, not fixed here (fixing toast placement app-wide is out of scope
+    // for this feature PR). The PROOF this script owes is a REAL click succeeding once nothing
+    // covers the button: waits for every `[data-sonner-toast]` (the precise selector; a prior
+    // version of this wait also matched permanently-mounted sr-only `role="status"` announcer
+    // regions -- e.g. `attachmentsStatusId` just above -- which never go away and made the wait
+    // time out even after the real toast had long since faded) to clear, confirms via
+    // `elementFromPoint` that Send itself is now on top, then clicks for real.
+    const preClickToastCheck = await cdp.evaluate(
+      `(() => { const b = document.querySelector('[aria-label^="Send"]'); if (!b) return { notFound: true }; const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { ariaDisabled: b.getAttribute('aria-disabled'), topElementAtClickPoint: top ? (top.closest('[data-sonner-toast]') ? 'INTERCEPTING TOAST' : (top === b || b.contains(top) ? 'Send button itself' : top.tagName)) : 'none' }; })()`
     );
-    console.log(`${LOG}: DIAG Send button state right before Enter: ${JSON.stringify(preSendButtonState)}`);
-    await cdp.evaluate(`document.querySelector('[aria-label="Message"]').focus()`);
-    await cdp.pressEnter();
+    console.log(`${LOG}: DIAG Send button state while a toast is still up: ${JSON.stringify(preClickToastCheck)}`);
+    await cdp.waitFor(`document.querySelectorAll('[data-sonner-toast]').length === 0`, {
+      timeoutMs: 15_000,
+      label: 'every real sonner toast (precise selector) faded before the real Send click'
+    });
+    const postClearToastCheck = await cdp.evaluate(
+      `(() => { const b = document.querySelector('[aria-label^="Send"]'); const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { topElementAtClickPoint: top === b || b.contains(top) ? 'Send button itself' : top.tagName }; })()`
+    );
+    console.log(`${LOG}: DIAG Send button state once toasts cleared: ${JSON.stringify(postClearToastCheck)}`);
+    assertEqual(postClearToastCheck.topElementAtClickPoint, 'Send button itself', 'nothing covers Send once every toast has faded -- the real click below lands on the real button');
+    await cdp.clickByLabel('Send message');
 
     // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
     // trip succeeded) OR a genuinely NEW toast (an unexpected send-side refusal, e.g. a guard
