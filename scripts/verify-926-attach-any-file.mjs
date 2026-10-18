@@ -446,14 +446,24 @@ async function main() {
     );
     await cdp.clickByLabel('Send message');
 
-    // Gate round 5 (Test5 HIGH, diagnostic): waits for ANY message row first (proves chat.send
-    // itself succeeded against the fake omp), then logs exactly what rendered -- a prior run
-    // timed out on the strict 5-chip wait below with no way to tell whether nothing was sent at
-    // all, or a different chip count rendered.
-    await cdp.waitFor(`document.querySelectorAll('[data-slot="message"]').length > 0`, {
-      label: 'at least one message row appears after Send (chat.send round trip succeeded)',
-      timeoutMs: 30_000
-    });
+    // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
+    // trip succeeded) OR a toast (an unexpected send-side refusal, e.g. a guard mis-firing on
+    // one of these 5 real attached files) -- a prior run timed out on a message-row-only wait
+    // with no way to tell whether nothing was sent at all, a toast silently blocked it, or a
+    // different chip count rendered. Whichever fires first is logged before the real assertion.
+    await cdp.waitFor(
+      `document.querySelectorAll('[data-slot="message"]').length > 0 || !!document.querySelector('[role="status"],[data-sonner-toast]')`,
+      { label: 'either a message row appears or a toast fires after Send', timeoutMs: 30_000 }
+    );
+    const sendOutcome = await cdp.evaluate(
+      `({
+        messageRows: document.querySelectorAll('[data-slot="message"]').length,
+        toastTexts: Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).map((el) => el.textContent.trim()),
+        textareaValue: document.querySelector('[aria-label="Message"]')?.value
+      })`
+    );
+    console.log(`${LOG}: DIAG send outcome: ${JSON.stringify(sendOutcome)}`);
+    assertEqual(sendOutcome.messageRows > 0, true, 'chat.send produced a message row, not a silent refusal toast, for 5 real attachments + typed text');
     const sendDiagnostic = await cdp.evaluate(
       `Array.from(document.querySelectorAll('[data-slot="message"]')).map((row) => ({
         hasAttachedGroup: !!row.querySelector('[role="group"][aria-label="Attached files"]'),
