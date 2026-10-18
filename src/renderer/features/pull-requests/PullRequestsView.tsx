@@ -19,6 +19,21 @@ import {
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 
+// TEMPORARY diagnostic instrumentation (caught live: the two #930 persistence checks reproduced
+// byte-identical across two different `commit()` implementations, ruling out a stale-read race
+// as the sole cause -- Main's own lead: the OUTER session-list handle's own double-click resizes
+// the whole "chat" panel; THIS (inner, nested) group then re-lays out and its own
+// onLayoutChanged/onResize fires with no user action on THIS group's own separator at all).
+// Tags every write into `pull-requests-layout-store` with its call site, input value, this
+// group's own container width, and a timestamp, so a live run can see exactly which call
+// path persists the wrong value instead of guessing a fourth time. Remove once the actual root
+// cause is found and fixed.
+declare global {
+  interface Window {
+    __prLayoutDiagLog?: Array<Record<string, unknown>>
+  }
+}
+
 export function PullRequestsView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
   const repositories = useRepositoriesStore((s) => s.repositories)
   const viewRepositoryId = useViewStore((s) => s.repositoryId)
@@ -74,6 +89,20 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const headerWrapperRef = useRef<HTMLDivElement | null>(null)
   const groupElementRef = useRef<HTMLDivElement | null>(null)
   const widthBeforeDblClickRef = useRef<number | null>(null)
+  // TEMPORARY diagnostic instrumentation (see the `declare global` comment above): every write
+  // into the layout store goes through here first, tagging the call site, the input value, THIS
+  // group's own container width (Main's own lead: does a cascading reflow from the OUTER
+  // session-list handle's own resize re-lay THIS group out with no action on its own separator
+  // at all?), and a timestamp.
+  const logLayoutDiag = (source: string, extra: Record<string, unknown>) => {
+    ;(window.__prLayoutDiagLog ??= []).push({
+      source,
+      groupWidthPx: groupElementRef.current?.getBoundingClientRect().width ?? null,
+      panelWidthPx: panelElementRef.current?.getBoundingClientRect().width ?? null,
+      at: performance.now(),
+      ...extra
+    })
+  }
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
@@ -234,9 +263,13 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           // "no bug" read of a partial diagnostic log -- restoring it fixes both the sidebar-
           // dblclick-persists-320 and the reset-persisted-a-later-drag's-stale-width failures.
           onLayoutChanged={(_layout, meta) => {
+            logLayoutDiag('onLayoutChanged', { isUserInteraction: meta.isUserInteraction })
             if (!meta.isUserInteraction) return
             const width = panelElementRef.current?.getBoundingClientRect().width
-            if (width != null) usePullRequestsLayoutStore.getState().commit(width)
+            if (width != null) {
+              logLayoutDiag('commit', { inputWidthPx: width })
+              usePullRequestsLayoutStore.getState().commit(width)
+            }
           }}
           // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
           // own double-click-to-reset is detected via a native `dblclick` listener shared across
@@ -255,17 +288,31 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           // signature of "this panel genuinely just reset", immune to a sibling's own reset
           // (which never snaps this panel to exactly the default) or to small passive reflow
           // drift (which never lands exactly on the default either).
-          onDoubleClickCapture={() => {
+          onDoubleClickCapture={(e) => {
             widthBeforeDblClickRef.current = panelElementRef.current?.getBoundingClientRect().width ?? null
+            logLayoutDiag('onDoubleClickCapture', {
+              widthBefore: widthBeforeDblClickRef.current,
+              targetAriaLabel: (e.target as HTMLElement)?.closest?.('[aria-label]')?.getAttribute('aria-label') ?? null
+            })
           }}
           onDoubleClick={(e) => {
-            if (!e.defaultPrevented) return
             const before = widthBeforeDblClickRef.current
             const after = panelElementRef.current?.getBoundingClientRect().width ?? null
             const thisPanelJustReset = before != null && after != null
               && Math.abs(after - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) <= 2
               && Math.abs(before - PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) > 2
-            if (thisPanelJustReset) usePullRequestsLayoutStore.getState().resetToDefault()
+            logLayoutDiag('onDoubleClick', {
+              defaultPrevented: e.defaultPrevented,
+              targetAriaLabel: (e.target as HTMLElement)?.closest?.('[aria-label]')?.getAttribute('aria-label') ?? null,
+              before,
+              after,
+              thisPanelJustReset
+            })
+            if (!e.defaultPrevented) return
+            if (thisPanelJustReset) {
+              logLayoutDiag('resetToDefault', { before, after })
+              usePullRequestsLayoutStore.getState().resetToDefault()
+            }
           }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
@@ -290,7 +337,10 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
             minSize={PULL_REQUESTS_LIST_MIN_WIDTH_PX}
             maxSize={`${listMaxSizePercent}%`}
             className="overflow-hidden"
-            onResize={(size) => usePullRequestsLayoutStore.getState().setWidth(size.inPixels)}
+            onResize={(size) => {
+              logLayoutDiag('onResize->setWidth', { inputWidthPx: size.inPixels })
+              usePullRequestsLayoutStore.getState().setWidth(size.inPixels)
+            }}
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>

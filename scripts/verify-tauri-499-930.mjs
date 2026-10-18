@@ -529,6 +529,9 @@ async function main() {
       const widthAfterReset = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
       await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
       const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
+      // TEMPORARY diagnostic capture (targeted #930 investigation) -- read before cdp.close()
+      // loses this page's state; see PullRequestsView.tsx's own __prLayoutDiagLog comment.
+      const relaunchDiagLog = await cdp.evaluate(`window.__prLayoutDiagLog ?? null`);
       cdp.close();
       await stopLauncher(child);
       ({ child, cdp } = await launch());
@@ -545,7 +548,7 @@ async function main() {
         && persistedWidthPx != null && Math.abs(persistedWidthPx - DEFAULT_WIDTH_PX) <= 3
         && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - DEFAULT_WIDTH_PX) <= 3;
       if (remembered) checkPass('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
-      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
+      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch, relaunchDiagLog }));
     } else {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }

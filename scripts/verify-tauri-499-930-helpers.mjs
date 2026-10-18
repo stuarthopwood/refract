@@ -181,7 +181,8 @@ export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFi
   await sleep(700);
   const after = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   const persisted = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
-  const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted };
+  const diagLog = await cdp.evaluate(`window.__prLayoutDiagLog ?? null`);
+  const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted, diagLog };
   const persistedMatchesRealWidth = after != null && persisted != null && Math.abs(persisted - after) <= 1;
   const suspiciousDefaultReset = persisted != null && Math.abs(persisted - defaultWidthPx) <= 1 && before != null && Math.abs(before - defaultWidthPx) > 1;
   const pass = persistedMatchesRealWidth && !suspiciousDefaultReset;
