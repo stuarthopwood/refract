@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Live CDP check for issues #947 (fuzzy slash-command search) and #938 items 1 and 4 (slash
+// Live CDP check for issues #947 (fuzzy slash-command search, FR-073) and #938 items 1 and 4 (slash
 // subcommand step; a command reply no longer stretching the previous turn's own shown time),
 // required before the draft PR. Modelled on `verify-917-advisor-command.mjs`'s own structure and
 // isolation posture.
 //
 // Drives a REAL `omp` (ambient already-signed-in default profile; no scratch OMP_PROFILE
 // override -- only Refract's OWN data, `REFRACT_DATA_DIR`, is scratch). Checks, in order:
-// (0) typing a bare `/` lists every command Refract offers (FR-032, FR-072's own "An empty query
+// (0) typing a bare `/` lists every command Refract offers (FR-032, FR-073's own "An empty query
 // matches every command" rule) -- asserted against the two commands Refract ALWAYS lists itself
 // (`new`, `btw`), not a hardcoded total, since the real ambient install's own command set is not
-// under this script's control; (1) fuzzy ranking order (FR-072): queries are built
+// under this script's control; (1) fuzzy ranking order (FR-073): queries are built
 // ALGORITHMICALLY from whatever commands this real install actually offers (never hardcoded
 // names), one per tier this scorer recognises (prefix, word-start, substring, subsequence), and
 // the full rendered order is asserted against an independent JS port of
@@ -33,7 +33,19 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
-import { pressKey } from './verify-tauri-session-list-helpers.mjs';
+import {
+  rankCommandsJs,
+  buildTierQueries,
+  findDescriptionOnlyProbe,
+  findNoMatchNeedle,
+  readSlashMenu,
+  clearComposer,
+  pressEnter,
+  allNoticeTexts,
+  countNotices,
+  readLatestTurnTotalText,
+  TURN_TOTAL_FINDER
+} from './verify-947-938-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -45,214 +57,6 @@ const SHOTS_DIR =
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
 
-// --- Pure JS port of src/shared/slashCommandSearch.ts, for an INDEPENDENT cross-check of the
-// real app's rendered order -- not imported directly (that file is TypeScript; this script runs
-// under plain Node), kept in lockstep with the source's own tier order and matching rules.
-const TIER_EXACT = 0;
-const TIER_PREFIX = 1;
-const TIER_WORD_START = 2;
-const TIER_SUBSTRING = 3;
-const TIER_SUBSEQUENCE = 4;
-const TIER_DESCRIPTION = 5;
-const WORD_BOUNDARY_CHARS = { '-': true, '_': true, ':': true, ' ': true };
-
-function scoreAgainstTarget(needle, target) {
-  const lower = target.toLowerCase();
-  if (lower === needle) return TIER_EXACT;
-  if (lower.startsWith(needle)) return TIER_PREFIX;
-  for (let i = 1; i + needle.length <= lower.length; i++) {
-    if (!WORD_BOUNDARY_CHARS[lower[i - 1]]) continue;
-    if (lower.slice(i, i + needle.length) === needle) return TIER_WORD_START;
-  }
-  if (lower.includes(needle)) return TIER_SUBSTRING;
-  let targetIndex = 0;
-  for (let i = 0; i < needle.length; i++) {
-    const found = lower.indexOf(needle[i], targetIndex);
-    if (found === -1) return null;
-    targetIndex = found + 1;
-  }
-  return TIER_SUBSEQUENCE;
-}
-
-/** `commands`: `[{name, description}]` in Refract's own listed (input) order. Returns the same
- * shape ranked by `needle`, ties keeping input order -- matches `rankSlashCommands`'s own
- * contract exactly (description-only matches excluded here: this script only ever builds queries
- * that hit a NAME tier, so a real description-only hit would be a genuine, reportable surprise). */
-function rankCommandsJs(needle, commands) {
-  const lowerNeedle = needle.toLowerCase();
-  const scored = [];
-  commands.forEach((command, index) => {
-    const candidates = [command.name];
-    if (command.name.toLowerCase().startsWith('skill:')) candidates.push(command.name.slice('skill:'.length));
-    let best = null;
-    for (const candidate of candidates) {
-      const tier = scoreAgainstTarget(lowerNeedle, candidate);
-      if (tier !== null && (best === null || tier < best)) best = tier;
-    }
-    if (best !== null) {
-      scored.push({ command, tier: best, index });
-      return;
-    }
-    // Decision 4: no name/alias match at all -- fall back to a flat description-only tier
-    // (ranked below every name tier regardless of which sub-tier the description text itself
-    // would have scored), matching `matchCommand`'s own `descriptionMatch` fallback exactly.
-    if (command.description && scoreAgainstTarget(lowerNeedle, command.description) !== null) {
-      scored.push({ command, tier: TIER_DESCRIPTION, index });
-    }
-  });
-  scored.sort((a, b) => a.tier - b.tier || a.index - b.index);
-  return scored.map((s) => s.command);
-}
-
-/** Finds one real command (and a needle) per requested tier, built algorithmically from
- * `commands` (never a hardcoded name) so this check works against whatever a real ambient OMP
- * install actually offers. Returns `{ prefix, wordStart, substring, subsequence }`, each either
- * `{ needle, name }` or `null` if this install's own command set has nothing suitable (a real,
- * reportable gap, not a script bug). */
-/** The single best (lowest) NAME tier any command in `commands` achieves for `needle` (never
- * the description fallback, which is always worse than every name tier and so can never be the
- * tier that "beats" a candidate here) -- `null` when nothing matches by name at all. Used as a
- * guard: a tier's own test query is only valid once this confirms NO command scores a BETTER
- * tier than the one the query is meant to demonstrate, so the winner is provably on tier merit,
- * never by coincidence of which command this script happened to pick first. */
-function bestNameTier(needle, commands) {
-  let best = null;
-  for (const command of commands) {
-    const candidates = [command.name];
-    if (command.name.toLowerCase().startsWith('skill:')) candidates.push(command.name.slice('skill:'.length));
-    for (const candidate of candidates) {
-      const tier = scoreAgainstTarget(needle, candidate);
-      if (tier !== null && (best === null || tier < best)) best = tier;
-    }
-  }
-  return best;
-}
-
-/** Finds one real command (and a needle) per requested tier, built algorithmically from
- * `commands` (never a hardcoded name) so this check works against whatever a real ambient OMP
- * install actually offers -- and GUARDED by `bestNameTier` so each returned query is only kept
- * once confirmed that no OTHER real command in this same install scores a BETTER tier for that
- * needle (otherwise the "tier X wins" proof would be trivially defeated the moment some unrelated
- * command happens to prefix-match the same two letters). Returns `{ prefix, wordStart, substring,
- * subsequence }`, each either `{ needle, name }` or `null` if this install's own command set has
- * nothing that can demonstrate that tier cleanly (a real, reportable gap, not a script bug). */
-function buildTierQueries(commands) {
-  const names = commands.map((c) => c.name);
-  const result = { prefix: null, wordStart: null, substring: null, subsequence: null };
-
-  for (const name of names) {
-    if (result.prefix !== null || name.length < 2) continue;
-    const needle = name.slice(0, 2).toLowerCase();
-    if (bestNameTier(needle, commands) === TIER_PREFIX) result.prefix = { needle, name };
-  }
-
-  for (const name of names) {
-    if (result.wordStart !== null) break;
-    for (let i = 1; i + 2 <= name.length; i++) {
-      if (!WORD_BOUNDARY_CHARS[name[i - 1]] || WORD_BOUNDARY_CHARS[name[i]]) continue;
-      const needle = name.slice(i, i + 2).toLowerCase();
-      if (bestNameTier(needle, commands) === TIER_WORD_START) {
-        result.wordStart = { needle, name };
-        break;
-      }
-    }
-  }
-
-  for (const name of names) {
-    if (result.substring !== null || name.length < 4) continue;
-    for (let mid = 1; mid + 2 <= name.length; mid++) {
-      const needle = name.slice(mid, mid + 2).toLowerCase();
-      if (bestNameTier(needle, commands) === TIER_SUBSTRING) {
-        result.substring = { needle, name };
-        break;
-      }
-    }
-  }
-
-  for (const name of names) {
-    if (result.subsequence !== null || name.length < 5) continue;
-    for (let dropAt = 1; dropAt < name.length - 1; dropAt++) {
-      const needle = (name.slice(0, dropAt) + name.slice(dropAt + 1)).toLowerCase();
-      if (bestNameTier(needle, commands) === TIER_SUBSEQUENCE) {
-        result.subsequence = { needle, name };
-        break;
-      }
-    }
-  }
-
-  return result;
-}
-
-// Same `NoticeRow` sr-only "Info:" icon-slot finder `verify-917-advisor-command.mjs` uses, for
-// the same reasons (survives `react-virtuoso` windowing; two-parent climb reaches either the
-// plain-div short-notice or the `CollapsibleTrigger`-button long-notice container).
-const NOTICE_FINDER =
-  `Array.from(document.querySelectorAll('span.sr-only')).filter((el) => (el.textContent ?? '').trim() === 'Info:').map((el) => el.parentElement?.parentElement).filter(Boolean)`;
-
-async function allNoticeTexts(cdp) {
-  return cdp.evaluate(`(${NOTICE_FINDER}).map((row) => (row.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim())`);
-}
-
-async function countNotices(cdp) {
-  return cdp.evaluate(`(${NOTICE_FINDER}).length`);
-}
-
-// The turn-total-time line (`Transcript.tsx`'s `TurnTotalLine`, FR-046): found by its own
-// sr-only "Turn took <N>" text, never by the bare visible "<N>" span alone (which this script
-// would otherwise confuse with any other short muted text on the page). The LAST one in document
-// order is the most recent turn's own line.
-const TURN_TOTAL_FINDER =
-  `Array.from(document.querySelectorAll('[aria-label="Transcript"] div')).filter((el) => (el.querySelector(':scope > span.sr-only')?.textContent ?? '').startsWith('Turn took'))`;
-
-async function readLatestTurnTotalText(cdp) {
-  return cdp.evaluate(
-    `(() => { const rows = (${TURN_TOTAL_FINDER}); const row = rows[rows.length - 1]; return row ? (row.querySelector(':scope > span[aria-hidden="true"]')?.textContent ?? null) : null; })()`
-  );
-}
-
-/** Real Backspace keydown/keyup pairs, one per character currently in the composer (same
- * reasoning `verify-917-advisor-command.mjs`'s own `clearComposer` records). */
-async function clearComposer(cdp) {
-  const current = await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.value ?? ''`);
-  for (let i = 0; i < current.length; i++) {
-    await pressKey(cdp, 8, 'Backspace', 'Backspace');
-  }
-  await cdp.waitFor(`(document.querySelector('[aria-label="Message"]')?.value ?? '') === ''`, { timeoutMs: 5_000, label: 'Composer cleared' });
-}
-
-async function pressEnter(cdp) {
-  await pressKey(cdp, 13, 'Enter', 'Enter');
-}
-
-/** Reads whichever slash-menu listbox is mounted (top-level or a subcommand step share the same
- * markup): its own accessible name and each option row's name text, description, and whether (and
- * how heavily, via COMPUTED style -- not mere tag presence) its name is rendered bold. `null`
- * when no slash menu is mounted. */
-async function readSlashMenu(cdp) {
-  return cdp.evaluate(
-    `(() => {
-      const list = document.querySelector('ul[aria-label="Slash commands"], ul[aria-label$=" subcommands"]');
-      if (!list) return null;
-      return {
-        ariaLabel: list.getAttribute('aria-label'),
-        options: Array.from(list.querySelectorAll('li[role="option"]')).map((li) => {
-          const nameEl = li.querySelector('span.font-medium');
-          const boldEl = nameEl?.querySelector('b') ?? null;
-          const normalWeight = nameEl ? Number(getComputedStyle(nameEl).fontWeight) : null;
-          const boldWeight = boldEl ? Number(getComputedStyle(boldEl).fontWeight) : null;
-          return {
-            name: (nameEl?.textContent ?? '').trim(),
-            hasBold: !!boldEl,
-            boldText: boldEl?.textContent ?? null,
-            normalWeight,
-            boldWeight,
-            description: (li.querySelector('span.text-muted-foreground')?.textContent ?? '').trim()
-          };
-        })
-      };
-    })()`
-  );
-}
 
 async function main() {
   let dataDir, importSourceDir, repoDir, exeDir, launcherDir;
@@ -327,7 +131,7 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // ---- (0) Bare "/" lists every command (FR-032, FR-072 "empty query matches every command")
+    // ---- (0) Bare "/" lists every command (FR-032, FR-073 "empty query matches every command")
     // ---- also the one place this script reads the REAL command list, which every later section
     // reuses to build its own queries, rather than a hardcoded name.
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
@@ -349,7 +153,7 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '00-bare-slash-lists-every-command.png'));
 
-    // ---- (1) Fuzzy ranking order (#947, FR-072): queries built algorithmically from the REAL
+    // ---- (1) Fuzzy ranking order (#947, FR-073): queries built algorithmically from the REAL
     // command list above, one per tier (prefix, word-start, substring, subsequence), each
     // asserted against an independent JS port of the real scorer, not a hardcoded expectation ----
     const tierQueries = buildTierQueries(realCommands);
@@ -387,23 +191,23 @@ async function main() {
           `"${tierName}" tier query "/${query.needle}" (built around "${query.name}" at the "${tierName}" tier): top-ranked option "${renderedOrder[0]}" matches the independently computed top exactly.`
         );
       }
-      // Best-effort full-order cross-check against an independent JS port of the real scorer
-      // (`rankSlashCommands`): informational only, never a failure -- this install's 225 real
-      // skill descriptions are natural-language prose this script cannot fully re-score with
-      // the same fidelity as the top-match proof above, so a mismatch deep in a long tied list
-      // is reported for visibility, not treated as a regression.
+      // Gate round 1 (H3): restored as a HARD failure, not informational -- H1/H2 fixed the two
+      // real bugs (the wrong re-scored tier, and subsequence descriptions matching almost
+      // everything) that were the actual cause of every full-list mismatch seen before those
+      // fixes landed; a real discrepancy now is a real regression, not an unavoidable gap in this
+      // script's own independent port.
       if (JSON.stringify(renderedOrder) === JSON.stringify(expectedOrder)) {
         findings.push(`"${tierName}" tier query "/${query.needle}": full rendered order also exactly matches the independently computed ranking (${renderedOrder.length} entries).`);
       } else {
-        findings.push(
-          `"${tierName}" tier query "/${query.needle}": full-order cross-check (informational only) found a difference beyond the top match -- rendered ${JSON.stringify(renderedOrder.slice(0, 5))}... vs computed ${JSON.stringify(expectedOrder.slice(0, 5))}... (${renderedOrder.length} vs ${expectedOrder.length} entries); not treated as a failure.`
+        failures.push(
+          `"${tierName}" tier query "/${query.needle}": full rendered order ${JSON.stringify(renderedOrder)} does not match the independently computed order ${JSON.stringify(expectedOrder)} (${renderedOrder.length} vs ${expectedOrder.length} entries).`
         );
       }
       // Computed-font-weight bold check on the TOP (best-ranked) option's own name span, for the
       // tier whose match is a genuine NAME hit (every tier query here is, by construction).
       const top = rendered?.options?.[0];
       if (!top || !top.hasBold || top.boldWeight == null || top.normalWeight == null) {
-        failures.push(`"${tierName}" tier query "/${query.needle}": top option "${top?.name}" has no bolded match span (or its computed weight could not be read) -- FR-072 decision 5.`);
+        failures.push(`"${tierName}" tier query "/${query.needle}": top option "${top?.name}" has no bolded match span (or its computed weight could not be read) -- FR-073 decision 5.`);
       } else if (!(top.boldWeight > top.normalWeight)) {
         failures.push(
           `"${tierName}" tier query "/${query.needle}": top option "${top.name}"'s matched span computed font-weight (${top.boldWeight}) is not heavier than the surrounding plain text (${top.normalWeight}) -- bold is not actually rendered bold.`
@@ -417,12 +221,116 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-fuzzy-tier-ordering.png'));
     await clearComposer(cdp);
 
-    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix (FR-072 decision
+    // ---- (1a) Fixed hard probes (gate round 1, H3): specific, hand-picked queries proving the
+    // exact H1/H2 regressions directly, not only the algorithmically-discovered tier queries
+    // above -- "/co" (a skill matched by its bare-name PREFIX must rank above "extended-context",
+    // a mere word-start match: H1's re-scoring bug ranked both as word-start instead), "/model"
+    // (an EXACT alias match, issue #762's "switch") must rank top instead of falling to
+    // TIER_DESCRIPTION whenever the command has a description: H1's other half), a description-
+    // only needle (must rank below every genuine name match: decision 4), a needle guaranteed to
+    // match nothing at all ("No matching commands"), and "/ana"'s own RENDERED RANK (not merely
+    // that it is listed, which proves nothing about ordering) ----
+    await cdp.send('Input.insertText', { text: '/co' });
+    await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"] li[role="option"]')`, { timeoutMs: 15_000, label: 'Slash menu mounted for "/co"' });
+    const renderedCo = ((await readSlashMenu(cdp))?.options ?? []).map((o) => o.name.replace(/^\//, ''));
+    const extendedContextIndex = renderedCo.indexOf('extended-context');
+    const bareSkillPrefixIndex = renderedCo.findIndex((name) => name.startsWith('skill:') && name.slice('skill:'.length).toLowerCase().startsWith('co'));
+    if (extendedContextIndex === -1 || bareSkillPrefixIndex === -1) {
+      notExercised.push('"/co" probe: "extended-context" or a skill whose bare name starts with "co" was not found in this install\'s rendered list -- the H1 regression check could not run.');
+    } else if (!(bareSkillPrefixIndex < extendedContextIndex)) {
+      failures.push(
+        `"/co": a skill matched by its bare-name PREFIX ("${renderedCo[bareSkillPrefixIndex]}", index ${bareSkillPrefixIndex}) does not rank above "extended-context" (word-start, index ${extendedContextIndex}) -- H1 regression (the stripped-name match is being re-scored against the full "skill:" name).`
+      );
+    } else {
+      findings.push(`"/co": bare-name-prefix skill "${renderedCo[bareSkillPrefixIndex]}" (index ${bareSkillPrefixIndex}) correctly ranks above word-start "extended-context" (index ${extendedContextIndex}) -- H1 fix confirmed.`);
+    }
+
+    await clearComposer(cdp);
+    await cdp.send('Input.insertText', { text: '/model' });
+    try {
+      await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"] li[role="option"]')`, { timeoutMs: 15_000, label: 'Slash menu mounted for "/model"' });
+      const renderedModel = ((await readSlashMenu(cdp))?.options ?? []).map((o) => o.name.replace(/^\//, ''));
+      if (renderedModel[0] !== 'switch') {
+        failures.push(`"/model": top-ranked option is "${renderedModel[0]}", not "switch" -- H1 regression (an exact alias match should rank at the EXACT tier, not fall to TIER_DESCRIPTION whenever the command also has a description).`);
+      } else {
+        findings.push('"/model": "switch" is top-ranked via its own "model" alias (issue #762) -- H1 fix confirmed.');
+      }
+    } catch {
+      notExercised.push('"/model" probe: the slash menu never listed anything -- this install may not offer "switch" with a "model" alias, so the H1 alias-tier regression check could not run.');
+    }
+
+    const descProbe = findDescriptionOnlyProbe(realCommands);
+    if (!descProbe) {
+      notExercised.push('No needle could be constructed where some command matches by name AND a different command matches only by its description -- the "description ranks below every name match" check was not exercised.');
+    } else {
+      await clearComposer(cdp);
+      await cdp.send('Input.insertText', { text: `/${descProbe.needle}` });
+      await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"] li[role="option"]')`, {
+        timeoutMs: 15_000,
+        label: `Slash menu mounted for description-only probe "/${descProbe.needle}"`
+      });
+      const renderedDescList = ((await readSlashMenu(cdp))?.options ?? []).map((o) => o.name.replace(/^\//, ''));
+      const expectedDescOrder = rankCommandsJs(descProbe.needle, realCommands).map((c) => c.name);
+      const renderedRank = renderedDescList.indexOf(descProbe.descriptionOnlyName);
+      const expectedRank = expectedDescOrder.indexOf(descProbe.descriptionOnlyName);
+      if (renderedRank === -1) {
+        failures.push(`"/${descProbe.needle}": description-only match "${descProbe.descriptionOnlyName}" was expected (matches only via its description) but is not listed at all.`);
+      } else if (renderedRank === 0) {
+        failures.push(`"/${descProbe.needle}": description-only match "${descProbe.descriptionOnlyName}" ranked FIRST -- a description-only hit must rank below every command with a name match (decision 4).`);
+      } else if (renderedRank !== expectedRank) {
+        failures.push(`"/${descProbe.needle}": description-only match "${descProbe.descriptionOnlyName}" rendered at rank ${renderedRank}, independently computed rank ${expectedRank}.`);
+      } else {
+        findings.push(
+          `"/${descProbe.needle}": description-only match "${descProbe.descriptionOnlyName}" correctly ranks at position ${renderedRank} (below every name-tier match), matching the independent computation exactly.`
+        );
+      }
+    }
+
+    const noMatchNeedle = findNoMatchNeedle(realCommands);
+    if (!noMatchNeedle) {
+      notExercised.push('Could not construct a needle guaranteed to match nothing at all (name, alias, or description) in this install -- the empty-state check was not exercised.');
+    } else {
+      await clearComposer(cdp);
+      await cdp.send('Input.insertText', { text: `/${noMatchNeedle}` });
+      try {
+        await cdp.waitFor(`document.querySelector('[aria-hidden="true"]')?.textContent?.trim() === 'No matching commands'`, {
+          timeoutMs: 10_000,
+          label: `"No matching commands" shown for "/${noMatchNeedle}"`
+        });
+        findings.push(`"/${noMatchNeedle}" (constructed to match nothing in this install's real command list) correctly shows "No matching commands".`);
+      } catch {
+        failures.push(`"/${noMatchNeedle}" (constructed to match nothing) did not show "No matching commands".`);
+      }
+    }
+
+    await clearComposer(cdp);
+    await cdp.send('Input.insertText', { text: '/ana' });
+    try {
+      await cdp.waitFor(`!!document.querySelector('ul[aria-label="Slash commands"] li[role="option"]')`, { timeoutMs: 15_000, label: 'Slash menu mounted for "/ana"' });
+      const renderedAna = ((await readSlashMenu(cdp))?.options ?? []).map((o) => o.name.replace(/^\//, ''));
+      const expectedAna = rankCommandsJs('ana', realCommands).map((c) => c.name);
+      const anaTarget = 'skill:analyse-crashed-omp-session';
+      const anaRenderedRank = renderedAna.indexOf(anaTarget);
+      const anaExpectedRank = expectedAna.indexOf(anaTarget);
+      if (anaRenderedRank === -1) {
+        notExercised.push(`"/ana" probe: "${anaTarget}" is not offered by this install -- the rank assertion could not run.`);
+      } else if (anaRenderedRank !== anaExpectedRank) {
+        failures.push(`"/ana": "${anaTarget}" rendered at rank ${anaRenderedRank}, independently computed rank ${anaExpectedRank}.`);
+      } else {
+        findings.push(`"/ana": "${anaTarget}" rendered at rank ${anaRenderedRank}, matching the independently computed rank exactly (not merely "listed").`);
+      }
+    } catch {
+      notExercised.push('"/ana" probe: the slash menu never mounted.');
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '01a-fixed-hard-probes.png'));
+    await clearComposer(cdp);
+
+    // ---- (1b) A skill:<name> entry matches with or without the "skill:" prefix (FR-073 decision
     // 2) -- only if this real ambient install actually offers one; a genuine environment gap is
     // reported as notExercised, never faked ----
     const skillCommands = realCommands.filter((c) => c.name.toLowerCase().startsWith('skill:'));
     if (skillCommands.length === 0) {
-      notExercised.push('This real ambient omp install offers no skill:<name> commands -- the skill-prefix-optional match (FR-072 decision 2) was not exercised.');
+      notExercised.push('This real ambient omp install offers no skill:<name> commands -- the skill-prefix-optional match (FR-073 decision 2) was not exercised.');
     } else {
       const skill = skillCommands[0];
       const bareName = skill.name.slice('skill:'.length);
