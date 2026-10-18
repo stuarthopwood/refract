@@ -3985,3 +3985,99 @@ round 3's HIGH): all 3 items addressed.
 Opened as draft PR (branch `fix/989-async-stage`); `Closes #989` once the live check above is
 confirmed against a real build. No cargo build run in this lane (no-build prep lane, blocked on
 the build slot).
+
+## Phase 63: Bounded Conversation preview/title scan (#862) [US1]
+
+Renumbered against `origin/main` just before merging (this file's own convention): #1003
+merged first and claimed Phase 62, FR-085, and research.md decision 20 -- this phase moved to
+Phase 63, its own tasks renumbered T293/T294 to T312/T313, its FR renumbered FR-087 to FR-086,
+and its own research.md note to decision 21.
+
+**Goal**: fix the bug where the Conversation history list silently hid any Conversation whose
+first user message landed past the Rust build's old fixed 8 KB preview-scan window (OMP's own
+`memory_recall`/eager-prelude entries now routinely push it there) -- see research.md decision 21
+for the full root cause and the bounded-line-streaming design that replaces the old fixed window.
+
+- [X] T312 `src-tauri/src/ipc/conversations.rs`: `read_conversation_file` redesigned to read
+  through an `AsyncReadExt::take(PREVIEW_SCAN_HARD_CAP_BYTES)`-limited handle (64 KiB hard cap on
+  bytes actually read from disk) and stream complete JSONL lines (`read_until(b'\n', ...)` into
+  one reused buffer), never a fixed-size byte buffer that can cut a record off mid-way, replacing
+  the old fixed `PREVIEW_SCAN_BYTES` (8 KiB) window and its `read_preview_window` helper
+  entirely. Reading stops the instant the first `role: 'user'` message is found; a file whose cap
+  is hit first still returns its title with `preview: None` (turned into an empty string by
+  `list_conversations`, FR-086) instead of being skipped -- `None` is now returned only when real
+  end-of-file is reached within the cap with no user message anywhere, unchanged from the
+  existing rule. `src/shared/model.ts`'s `ConversationInfo.preview` doc comment,
+  `specs/001-core-session-workspace/data-model.md`'s own `preview` row, and
+  `docs/spike/FINDINGS.md` item 11's stale "within the first 8 KB" assumption are all updated to
+  match (FR-086, research.md decision 21).
+- [X] T313 New `scripts/verify-862-conversation-history.mjs`, reusing the existing fake-omp
+  harness and `user-message-time.jsonl` fixture verbatim (no new fixture, AGENTS.md) plus
+  `verify-941-stage-naming-helpers.mjs`'s `buildOmpShim`/`launchBuiltExeWithEnv` and
+  `verify-tauri-session-list-helpers.mjs`'s `addRepository`/`createSessionViaQuickCreate`: seeds
+  two real, hand-built Conversation `.jsonl` files in the Session's own `session_dir` before
+  launch (a normal one, and a long-prelude one whose own prefix bytes are measured at runtime and
+  asserted to sit strictly between the old 8 KiB window and the new 64 KiB cap -- about 9.6 KB,
+  matching issue #862's own observed shape), then opens the Conversation-history dialog and
+  asserts both rows render with the correct title and preview text. Shim-confirmed guard
+  (fake-omp debug log's own startup pid line) and a fresh-log guard (the debug log lives inside a
+  freshly `mkdtemp`'d directory every run, never a reused path). MUST fail on `origin/main`:
+  there, `list_conversations` silently `continue`s past the long-prelude file, so the row-count
+  assertion reads 1, not 2 -- explained from the code in the script's own header comment, not run
+  against `origin/main` (no build slot granted for this sub-task). **Not exercised by this
+  script**: a Conversation whose cap is hit with no user message found (asserting it is still
+  listed, title only); a Conversation reaching real end-of-file within the cap with genuinely no
+  user message (asserting it is skipped); and that a genuinely multi-megabyte Conversation file
+  stays cheap to list -- all three are proven by reading `read_conversation_file`'s own
+  `take()`-enforced hard cap, its early break on match, and its unchanged real-EOF skip path, not
+  by constructing the corresponding fixture files on disk (recorded honestly in the script's own
+  `notExercised`). Checks run before the live check itself: `node --check` plus a real
+  `import()` load-check on every helper module it imports, `node scripts/check-indent.mjs` and
+  `node scripts/check-file-size.mjs` clean, `cargo fmt --manifest-path src-tauri/Cargo.toml --
+  --check` clean, `pnpm typecheck` clean, `pnpm vitest run` (148/148) clean,
+  `node scripts/check-parity.mjs --gate` clean (103/103, 24/24). Run end-to-end once the build
+  slot was granted (below): green.
+- [X] Gate round 1 remediation (code-reviewer FAIL, test-reviewer FAIL, security-auditor PASS,
+  PR #1006): the cap was not actually hard -- a plain `BufReader::read_line` over the raw file
+  handle only checked an own-tracked byte counter AFTER each complete line, so one sufficiently
+  long single line could still be read past the cap; fixed by wrapping the handle in
+  `AsyncReadExt::take(PREVIEW_SCAN_HARD_CAP_BYTES)` before the `BufReader` (research.md decision
+  22's own gate round 1 correction). Lines (including the title line) now parse from raw bytes
+  (`serde_json::from_slice`) rather than a `String` conversion first, confirming invalid UTF-8 in
+  one line fails to parse and is skipped rather than aborting the whole scan. A `role: 'user'`
+  message with empty/missing `content` (image-only) now counts as found immediately (`preview:
+  Some(String::new())`) instead of leaving the scan to keep looking for a later, text-bearing
+  message and hiding the row if none existed (Decided, Skippy, delegated by Stuart 2026-10-18,
+  gate round 1; FR-086 and its Clarifications entry updated). Script fixes: an explicit
+  `mkdirSync(SHOTS_DIR, { recursive: true })` added as belt-and-braces alongside
+  `clearKnownOutputFiles`'s own internal one; `notExercised` reworded into the three specific
+  entries above; header comment's approximate prefix size corrected to the measured ~9.6 KB.
+- [X] Gate round 2 remediation (code-reviewer PASS, test-reviewer PASS, security-auditor PASS,
+  PR #1006): round 1's cap still had two edge-case gaps, both fixed. (1) Any missing trailing
+  newline unconditionally set `cap_hit`, even genuinely below the cap (a valid final line with
+  no trailing newline lost its own preview; a truncated last line with no user message got
+  listed anyway) -- fixed by checking `bytes_read_total > PREVIEW_SCAN_HARD_CAP_BYTES` first;
+  only that counts as a cap hit, and a within-budget piece missing its newline is now parsed as
+  the file's own genuine last line. (2) `take(cap)` plus a `>= cap` comparison could misreport a
+  real, exactly-cap-sized file with no user message as a cap hit -- fixed by `take(cap + 1)` (one
+  sentinel byte past the cap) and testing `bytes_read_total > cap` (strictly past), so only a
+  file that genuinely holds more than the cap is ever reported as a cap hit. `BufReader::new`
+  replaces `with_capacity(cap, ...)`: `take` already bounds every read, so the extra 64 KiB
+  upfront buffer was wasted I/O/memory. Script: the long-prelude fixture's own upper-bound guard
+  now adds the final user-message line's own bytes to the prelude's, not just the prelude alone;
+  a 4th `notExercised` entry (image-only/empty-content first message) added, cited to the exact
+  lines.
+
+**Live-verified (2026-10-18, build slot granted by Main, PR #1006 at `7b0c936`)**:
+`node scripts/ci-local.mjs` ran all 16 `ci.yml` steps clean -- typecheck; vitest 148/148;
+indent; theme-contrast; drag-regions; IPC parity 103/103 requests, 24/24 events; file-size;
+version consistency; OMP schema drift plus its self-test; `cargo fmt --check`; `cargo test`
+738/738 (0 failed, 1 ignored); `cargo clippy --all-targets -- -D warnings`; `tauri build
+--debug --no-bundle`; UI text. `node scripts/verify-862-conversation-history.mjs` then ran
+green against that build: `report.json` records `failures: []`, `exitCode: 0`; the saved
+screenshot shows the Conversation-history dialog with both rows rendered, the long-prelude
+Conversation's own title and its real preview text ("ISSUE862-LONG-PREVIEW-CHECK: real first
+user message, found past the old 8...") in full, 9,901 bytes into the file -- past the old
+8,192-byte window, under the new 65,536-byte cap. PR #1006 switched from `Refs #862` to
+`Closes #862`.
+
