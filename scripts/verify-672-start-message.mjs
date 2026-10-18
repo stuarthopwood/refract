@@ -118,7 +118,14 @@ async function main() {
     const fg = await resolveCssVarColor(cdp1, '--foreground', 'color');
     const muted = await resolveCssVarColor(cdp1, '--muted-foreground', 'color');
 
-    const sessionA = await quickCreateSessionAndWaitReady(cdp1, 'brief/A (1st start)');
+    // Gate-fix (confirmed live, bg_791/bg_794 runs): `quickCreateSessionAndWaitReady` blocks
+    // until the composer is enabled -- by the time it returned, Session A had ALREADY reached
+    // `ready` and `startProgress` had already cleared to `null`, so the very next
+    // `waitForStartProgressKind(..., 'waiting', ...)` below timed out waiting for a state that
+    // had already come and gone. `quickCreateSessionId` (non-blocking, same as Launch 2's own
+    // C/D/E) lets this section observe 'waiting' WHILE it is still happening; the explicit
+    // "notice unmounts, ready" wait further down is still the real ready-wait for this Session.
+    const sessionA = await quickCreateSessionId(cdp1, 'brief/A (1st start)');
     findings.push(`Session A created (id ${sessionA.id}, name "${sessionA.name}"), brand-new (no history yet).`);
 
     // ---- (1) Brand-new Session, real 'waiting' kind: centred, not dimmed, large sizing ----
