@@ -399,7 +399,7 @@ pub fn run() {
             #[cfg(windows)]
             match window.hwnd() {
                 Ok(hwnd) => shell::app_identity::apply_to_window(hwnd),
-                Err(err) => log::warn!("refract-tauri: window hwnd unavailable, skipping #880 icon/AUMID: {err}"),
+                Err(err) => log::warn!("refract-tauri: #880 icon/AUMID skipped, no hwnd: {err}"),
             }
 
             // Issue #623: reads and applies the saved position/size/maximised state (a

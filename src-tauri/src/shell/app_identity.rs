@@ -84,8 +84,8 @@ pub fn current_app_user_model_id() -> &'static str {
 /// first paint.
 #[cfg(target_os = "windows")]
 pub fn set_process_app_user_model_id() {
-    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
     use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
     let aumid = HSTRING::from(current_app_user_model_id());
     // Safety: a single documented Win32 API call with no raw pointers beyond what `windows-rs`'s
@@ -157,13 +157,13 @@ pub fn apply_to_window(hwnd: windows::Win32::Foundation::HWND) {
 /// asserted on, for that reason.
 #[cfg(target_os = "windows")]
 fn set_window_icons(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetSystemMetrics, HICON, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW,
-        SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SendMessageW, WM_SETICON,
+        GetSystemMetrics, LoadImageW, SendMessageW, HICON, ICON_BIG, ICON_SMALL, IMAGE_ICON,
+        LR_DEFAULTSIZE, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, WM_SETICON,
     };
-    use windows::core::PCWSTR;
 
     // `tauri_utils::platform::WINDOWS_APP_ICON_RESOURCE_ID` (re-exported as `tauri::utils::
     // platform::...`) -- a plain `u16`, inlined as a literal here rather than adding a direct
@@ -185,24 +185,45 @@ fn set_window_icons(hwnd: windows::Win32::Foundation::HWND) {
     let resource = PCWSTR::from_raw(WINDOWS_APP_ICON_RESOURCE_ID as usize as *const u16);
     let metric = |index| {
         let n = unsafe { GetSystemMetrics(index) };
-        if n > 0 { n } else { 32 }
+        if n > 0 {
+            n
+        } else {
+            32
+        }
     };
-    let load = |cx, cy| unsafe { LoadImageW(hinstance, resource, IMAGE_ICON, cx, cy, LR_DEFAULTSIZE) };
+    let load =
+        |cx, cy| unsafe { LoadImageW(hinstance, resource, IMAGE_ICON, cx, cy, LR_DEFAULTSIZE) };
 
     let big = load(metric(SM_CXICON), metric(SM_CYICON))
         .inspect_err(|err| log::warn!("refract-tauri: failed to load the big taskbar icon: {err}"))
         .ok()
         .map(|h| HICON(h.0));
     let small = load(metric(SM_CXSMICON), metric(SM_CYSMICON))
-        .inspect_err(|err| log::warn!("refract-tauri: failed to load the small taskbar icon: {err}"))
+        .inspect_err(|err| {
+            log::warn!("refract-tauri: failed to load the small taskbar icon: {err}")
+        })
         .ok()
         .map(|h| HICON(h.0));
 
     if let Some(icon) = big {
-        let _ = unsafe { SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(icon.0 as isize))) };
+        let _ = unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(ICON_BIG as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            )
+        };
     }
     if let Some(icon) = small {
-        let _ = unsafe { SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(icon.0 as isize))) };
+        let _ = unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(ICON_SMALL as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            )
+        };
     }
 
     // Kept alive for the process's lifetime (never `DestroyIcon`d): the window keeps reading
@@ -210,7 +231,10 @@ fn set_window_icons(hwnd: windows::Win32::Foundation::HWND) {
     // startup -- same "leak it on purpose, document why" posture as `process::job_object`'s own
     // `JOB_HANDLE`.
     static WINDOW_ICONS: std::sync::OnceLock<WindowIcons> = std::sync::OnceLock::new();
-    struct WindowIcons(#[allow(dead_code)] Option<HICON>, #[allow(dead_code)] Option<HICON>);
+    struct WindowIcons(
+        #[allow(dead_code)] Option<HICON>,
+        #[allow(dead_code)] Option<HICON>,
+    );
     // Safety: `HICON` wraps a plain `Copy` GDI handle; this module never dereferences the
     // pointer it wraps, only passes it back to Win32 APIs, which is sound to do from any thread.
     unsafe impl Send for WindowIcons {}
@@ -230,7 +254,9 @@ fn set_window_icons(hwnd: windows::Win32::Foundation::HWND) {
 fn set_window_app_user_model_id(hwnd: windows::Win32::Foundation::HWND) {
     use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
+    use windows::Win32::UI::Shell::PropertiesSystem::{
+        IPropertyStore, SHGetPropertyStoreForWindow,
+    };
 
     let store: windows::core::Result<IPropertyStore> = unsafe { SHGetPropertyStoreForWindow(hwnd) };
     let store = match store {
