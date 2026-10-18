@@ -178,13 +178,22 @@ export async function waitForStartProgressKind(cdp, sessionId, kind, timeoutMs =
  *  `openInSplit(session.id)` -- not a direct store call (same production path a user's own
  *  Ctrl+click takes). */
 export async function ctrlClickSessionRow(cdp, sessionId) {
+  // Gate-fix (confirmed live, bg_832): a bare `getBoundingClientRect()` here can be stale if
+  // the Session list scrolled since the row was last visible (e.g. creating Session B, or the
+  // list re-ordering after a restart) -- the dispatched click then lands wherever that point
+  // now is, not the intended row, and the split silently never opens. Scrolls the row into view
+  // first and confirms (`elementFromPoint`) the click point genuinely hits it before dispatching.
   const rect = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
     if (!el) return null;
+    el.scrollIntoView({ block: 'center' });
     const r = el.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return { x, y, hitsSelf: hit === el || (!!hit && el.contains(hit)) };
   })()`);
   if (!rect) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  if (!rect.hitsSelf) throw new Error(`ctrlClickSessionRow(${sessionId}): elementFromPoint at (${rect.x}, ${rect.y}) after scrollIntoView did not hit the row -- something else is covering it.`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
 }
