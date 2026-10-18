@@ -12,7 +12,6 @@
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
   "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 1159,
-  "src-tauri/src/session/agent/mod.rs": 602,
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 715,
   "src/shared/ipc.ts": 898,
