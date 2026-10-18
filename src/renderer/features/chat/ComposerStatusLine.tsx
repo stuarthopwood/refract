@@ -40,11 +40,13 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
       {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
       {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
       {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
-      {/* Gate round 1 decision (D, Skippy, delegated by Stuart 2026-10-18): last in this
-          group, right before the `ml-auto` Current time chip -- its own appearing/
-          disappearing (unlike every settings-gated chip above, which only ever changes with a
-          Settings round-trip) must never shift the position of a chip someone might already be
-          mid-click on. */}
+      {/* Gate round 1 decision (D, Skippy, delegated by Stuart 2026-10-18), corrected gate
+          round 3 (D): last in this group, right before the `ml-auto` Current time chip -- a
+          fixed ORDER relative to its siblings, not a fixed POSITION. This row already has no
+          fixed slots: `TurnTimeChip`/`SubagentsChip`/etc. above it already appear and
+          disappear live with real turn/subagent data, shifting every chip after them sideways
+          regardless of where Advisor itself sits -- this placement only fixes where Advisor
+          falls in that same already-shifting row, not a guarantee against the shift itself. */}
       <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
       {sessionReadout['current-time'] && <CurrentTimeChip className="ml-auto" />}
     </div>

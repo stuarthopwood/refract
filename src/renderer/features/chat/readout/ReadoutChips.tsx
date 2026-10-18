@@ -18,8 +18,7 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { toast } from 'sonner'
-import { EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
@@ -295,6 +294,12 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
   const [turningOff, setTurningOff] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const timeoutRef = useRef<number | undefined>(undefined)
+  // Gate round 3 fix (Medium): mirrors `turningOff` for the unmount cleanup below, which runs
+  // inside a closure captured once at mount (an empty-deps `useLayoutEffect`) -- reading the
+  // state variable there would see its STALE, always-`false` mount-time value, never the
+  // current one at the moment this instance actually unmounts.
+  const turningOffRef = useRef(false)
+  turningOffRef.current = turningOff
 
   // A REAL unmount now (see `AdvisorChip`'s own comment above): an empty dependency array is
   // correct here, matching `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx`'s own
@@ -304,18 +309,43 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
   useLayoutEffect(() => {
     return () => {
       window.clearTimeout(timeoutRef.current)
-      if (!buttonRef.current?.contains(document.activeElement)) return
-      // Gate round 2 fix (Low): this cleanup fires on ANY unmount of this instance -- a Session
-      // switch, the whole composer unmounting, not only a genuine toggle-off -- so the store's
-      // OWN current reading for this session is the real check, never just "the button is
-      // gone": a focus/announcement pair belongs only to an actual turn-off, never a reason
-      // this chip merely stopped being rendered.
-      if (useAdvisorStore.getState().bySession[sessionId]) return
-      textareaRef.current?.focus()
-      useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
+      // Gate round 3 fix (Medium): announces whenever THIS chip was the one mid-toggle-off
+      // (`turningOff`, "the user asked for it" by clicking/activating it) -- no longer gated on
+      // focus still being on it, since the user may already have tabbed elsewhere while the
+      // request was in flight and still wants the completion announced. Moving focus is a
+      // DIFFERENT, narrower question (never steal it from wherever the user has since gone),
+      // so that part keeps its own, separate focus-presence check below.
+      if (turningOffRef.current) {
+        useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
+      }
+      if (buttonRef.current?.contains(document.activeElement)) {
+        textareaRef.current?.focus()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Gate round 3 fix (High, "keep it simple"): watches THIS session's own queue for the exact
+  // moment the queued `/advisor off` text leaves it -- delivered (the normal path, settled by
+  // `advisor:update` already), removed (the user's own "Remove" on the chip), or dropped by an
+  // abort (Stop) -- restarting the bounded timeout fallback if `advisor:update` still hasn't
+  // arrived by then, so a queued send whose OWN turn never finishes (removed, aborted) cannot
+  // leave the chip busy forever with no reset in flight at all.
+  const queue = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  const wasQueuedRef = useRef(false)
+  useEffect(() => {
+    const stillQueued = queue.followUp.includes('/advisor off') || queue.steering.includes('/advisor off')
+    if (stillQueued) {
+      wasQueuedRef.current = true
+      return
+    }
+    if (!wasQueuedRef.current) return
+    wasQueuedRef.current = false
+    if (turningOffRef.current) {
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = window.setTimeout(() => setTurningOff(false), ADVISOR_TURN_OFF_TIMEOUT_MS)
+    }
+  }, [queue])
 
   function handleActivate() {
     if (turningOff) return
@@ -324,7 +354,9 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
     // `advisor:update`, an unexpected process exit) cannot leave the chip stuck "Turning
     // off..." and unclickable forever -- it simply becomes retryable again. Gate round 2 fix
     // (Medium): cleared below instead, without ever firing, when the send turns out to have
-    // been `queued` (a turn is already running) -- that case has no fixed bound of its own.
+    // been `queued` (a turn is already running) -- that case has no fixed bound of its own
+    // (gate round 3 fix: restarted instead once the queue effect above sees it leave the
+    // queue with no `advisor:update` having arrived yet).
     timeoutRef.current = window.setTimeout(() => setTurningOff(false), ADVISOR_TURN_OFF_TIMEOUT_MS)
     window.refract.chat
       .send(sessionId, '/advisor off')
@@ -347,10 +379,12 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
       .catch((err: unknown) => {
         // Gate round 2 fix (Medium): the one path the `Result` handling above cannot cover -- a
         // genuine IPC-layer throw (the channel itself failing), not an ordinary `{ ok: false }`
-        // refusal; left unhandled before, an unresolved rejection with no reset at all.
+        // refusal; left unhandled before, an unresolved rejection with no reset at all. Gate
+        // round 3 fix (Low): routed through the same `notify` as the `ok: false` path above,
+        // not a separate bare `toast.error` call.
         window.clearTimeout(timeoutRef.current)
         setTurningOff(false)
-        toast.error(err instanceof Error ? err.message : String(err))
+        notify({ code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) })
       })
   }
 
@@ -369,14 +403,24 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
             READOUT_CHIP_BASE_CLASS,
             READOUT_CHIP_INTERACTIVE_ADDITIONS,
             turningOff && COMPOSER_DISABLED_OPACITY_CLASS,
-            turningOff && COMPOSER_DISABLED_HOVER_RESET_CLASS
+            turningOff && COMPOSER_DISABLED_HOVER_RESET_CLASS,
+            // Gate round 3 fix (Medium): `COMPOSER_DISABLED_HOVER_RESET_CLASS`'s own
+            // `aria-disabled:hover:text-current` resolves to the INHERITED colour (this status
+            // line's own ambient text colour), not this chip's own resting `muted-foreground`
+            // -- the exact bug `SessionList.tsx`'s own toolbar buttons already found and fixed
+            // (its own doc comment, lines ~34-39) the same way: an explicit, chip-specific
+            // override naming the real resting token, not relying on `currentColor`.
+            turningOff && 'aria-disabled:hover:text-muted-foreground'
           )}
         >
           {/* Gate round 2 fix (Medium, decided): a keyboard user gets no OTHER pending cue once
               focused (`:focus-visible` already overrides the dimmed opacity, and the tooltip
               closes the moment focus leaves it on activation) -- a spinning icon is the one cue
-              that still shows either way, matching `ComposerPickers.tsx`'s own pending-icon
-              swap exactly (`motion-reduce:animate-none` for vestibular-motion sensitivity). */}
+              that still shows either way. Gate round 3 fix: the comment here used to claim this
+              "matches ComposerPickers.tsx exactly" -- it does not: that trigger spins at
+              `size-3` with no `motion-reduce` variant; this one is `size-3.5` (this chip's own
+              icon size, #928) plus `motion-reduce:animate-none` (vestibular-motion sensitivity,
+              not present on that other trigger). Same SPIN APPROACH, deliberately adapted. */}
           {turningOff ? (
             <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
           ) : (

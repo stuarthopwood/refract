@@ -206,22 +206,33 @@ async function main() {
     } else {
       findings.push(`Advisor chip geometry matches a neighbouring status-line chip's own measured geometry: ${JSON.stringify(otherGeometry)}`);
     }
-    // Gate round 2 fix (High, item 11): structural order, not just reachability -- asserts the
-    // Advisor chip is the LAST `[data-slot="readout-chip"]` within the status line (the issue's
-    // own gate round 1 decision D: right before the `ml-auto` Current time chip, which is OFF
-    // by default in a fresh scratch profile -- `DEFAULT_SESSION_READOUT`, `shared/model.ts` --
-    // so "last of all readout chips" is the exact, literal assertion in this scratch run).
+    // Gate round 2 fix (High, item 11), tightened gate round 3 (Medium, item 12): a fresh
+    // scratch profile leaves `current-time` off by default (`DEFAULT_SESSION_READOUT`,
+    // `shared/model.ts`), so the ORIGINAL "Advisor is last of all readout chips" assertion here
+    // was vacuously true of an EMPTY set of later siblings -- it could never catch Advisor
+    // actually landing after the `ml-auto` Current time chip, the one sibling the decision
+    // text (`ComposerStatusLine.tsx`'s own gate round 1 comment) specifically orders against.
+    // Turns `current-time` on for this scratch profile first, so a REAL later sibling exists.
+    const readoutResult = await cdp.evaluate(`window.refract.settings.setReadoutVisibility('current-time', true).then((r) => r.ok)`);
+    if (!readoutResult) failures.push('Could not enable the Current time readout chip via settings.setReadoutVisibility for the order check.');
+    await cdp.waitFor(
+      `!!Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"] .sr-only')).some((el) => el.textContent?.startsWith('Current time:'))`,
+      { timeoutMs: 5_000, label: 'Current time chip appeared after enabling it for the order check' }
+    ).catch((err) => failures.push(err.message));
     const order = await cdp.evaluate(`(() => {
       const chips = Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]'));
       const index = chips.findIndex((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor');
-      return { total: chips.length, index };
+      const lastIsCurrentTime = (chips.at(-1)?.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time:');
+      return { total: chips.length, index, lastIsCurrentTime };
     })()`);
     if (order.index === -1) {
       failures.push('Could not find the Advisor chip among the status line\'s own readout chips for the order check.');
-    } else if (order.index !== order.total - 1) {
-      failures.push(`Advisor chip is not the LAST readout chip in the status line (index ${order.index} of ${order.total} total) -- expected last, right before the ml-auto Current time chip.`);
+    } else if (!order.lastIsCurrentTime) {
+      failures.push(`Expected the Current time chip last (total ${order.total}) to confirm the order check's own setup -- found something else last.`);
+    } else if (order.index !== order.total - 2) {
+      failures.push(`Advisor chip is not second-to-last, right before the Current time chip (index ${order.index} of ${order.total} total) -- expected ${order.total - 2}.`);
     } else {
-      findings.push(`Advisor chip is the LAST readout chip in the status line (index ${order.index} of ${order.total} total), as decided.`);
+      findings.push(`Advisor chip sits right before the Current time chip (index ${order.index} of ${order.total} total, Current time chip last), as decided.`);
     }
 
 

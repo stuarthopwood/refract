@@ -266,17 +266,11 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
     failures.push(`${tag} ${err.message}`);
   }
 
-  // Gate round 1 fix (High, item 13): sliced from `noticeCountBeforeActivate`, so a REAL leftover
-  // "Advisor disabled." from an earlier cycle can never count toward THIS cycle's own result,
-  // and exactly one (not merely "at least one") is required -- more than one would mean either a
-  // duplicate send or an unexpected extra reply, neither of which is the expected shape.
-  const noticesSinceActivate = (await allNoticeTexts(cdp)).slice(noticeCountBeforeActivate);
-  const newDisabledNotices = noticesSinceActivate.filter((t) => /Advisor disabled\./.test(t));
-  if (newDisabledNotices.length === 1) {
-    findings.push(`${tag} exactly one NEW authoritative "Advisor disabled." reply confirmed (not a leftover from an earlier cycle).`);
-  } else {
-    failures.push(`${tag} expected exactly one NEW "Advisor disabled." notice since this cycle's own activation, found ${newDisabledNotices.length}.`);
-  }
+  // Gate round 3 fix (Medium, item 11): re-counted at the very END of the cycle instead of
+  // right here -- a QUEUED duplicate `/advisor off` (the chip's own bug class this exact count
+  // exists to catch) could settle its own "Advisor disabled." reply anywhere up to and even
+  // after the supplementary `/advisor status` call below; counting too early could miss one
+  // that simply had not arrived yet. See the end of this function for the actual assertion.
 
   // Gate round 1 fix (Critical, item 12): BOTH checked here, straight after the chip leaves the
   // AX tree -- BEFORE the supplementary `/advisor status` probe below, which itself clicks the
@@ -296,6 +290,21 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnt
   // itself, so it must never run before the focus/live-region checks above.
   const statusReply = await sendSlashCommand(cdp, '/advisor status', /advisor/i).catch((err) => `<no reply: ${err.message}>`);
   findings.push(`${tag} supplementary "/advisor status" reply (wording not asserted, see this file's own header): ${JSON.stringify(statusReply)}`);
+
+  // Gate round 1 fix (High, item 13), moved gate round 3 (Medium, item 11): sliced from
+  // `noticeCountBeforeActivate`, counted HERE (after the supplementary status reply above, not
+  // right after the chip left the AX tree) so a queued duplicate's own, later-settling
+  // "Advisor disabled." has had every chance this cycle gives it to show up. A REAL leftover
+  // from an earlier cycle can never count (the slice starts after this cycle's own
+  // activation); exactly one (not merely "at least one") is required -- more than one means a
+  // duplicate send or an unexpected extra reply, neither the expected shape.
+  const noticesSinceActivate = (await allNoticeTexts(cdp)).slice(noticeCountBeforeActivate);
+  const newDisabledNotices = noticesSinceActivate.filter((t) => /Advisor disabled\./.test(t));
+  if (newDisabledNotices.length === 1) {
+    findings.push(`${tag} exactly one NEW authoritative "Advisor disabled." reply confirmed (not a leftover from an earlier cycle, no later duplicate).`);
+  } else {
+    failures.push(`${tag} expected exactly one NEW "Advisor disabled." notice since this cycle's own activation, found ${newDisabledNotices.length}.`);
+  }
 
   await cdp.screenshot(path.join(shotsDir, `${mode}-cycle-after-toggle-off.png`));
 }

@@ -91,16 +91,26 @@ pub(super) struct State {
     /// `PROBE_TIMEOUT_MS` regardless, so a later real command_output (the user's own
     /// `/advisor on`, for example) is never mistaken for this probe's own reply forever.
     awaiting_silent_probe: bool,
-    /// Gate round 2 fix (High, decided): armed by `on_launch`, consumed by whichever of the two
-    /// trigger points (`on_launch`'s own bounded poll, or `on_turn_settled`, retried on every
-    /// settle) actually sends the probe first; cleared early by `cancel_pending_probe` the
-    /// moment the user drives `/advisor` themselves.
+    /// Armed by `on_launch`, consumed by whichever of the two trigger points (`on_launch`'s own
+    /// bounded poll, or `on_turn_settled`, retried on every settle) actually CLAIMS the probe
+    /// first; cleared early by `cancel_pending_probe` the moment the user drives `/advisor`
+    /// themselves.
     probe_armed: bool,
-    /// Gate round 2 fix (Medium, decided): bumped by `on_launch` and `on_exit`. A probe attempt
-    /// captures the generation it was armed under; if that no longer matches by the time it is
-    /// about to act, a stale task from a superseded life is abandoned -- it can never send,
-    /// swallow, or clear anything belonging to the CURRENT life.
+    /// Bumped by `on_launch` and `on_exit`. A probe attempt captures the generation it was
+    /// armed under; if that no longer matches by the time it is about to act, a stale task from
+    /// a superseded life is abandoned -- it can never send, swallow, or clear anything
+    /// belonging to the CURRENT life.
     generation: u64,
+    /// Gate round 3 fix (High, decided): bumped by `maybe_send_probe`'s own ATOMIC claim step
+    /// (the single `with_advisor_state` call that flips `probe_armed` false and
+    /// `awaiting_silent_probe` true together, before any await) and by `cancel_pending_probe`.
+    /// A claim's own later rollback-on-failure (not idle, refused, `advisor` not listed) only
+    /// restores the flags when BOTH the generation AND this epoch still match what it claimed
+    /// under -- so a rollback from an attempt that lost a race (the resume path's own
+    /// `session_settled` and a settled `prompt_result` can both fire for the SAME turn) can
+    /// never re-arm a probe a DIFFERENT, already-progressed attempt (or a user's own
+    /// `/advisor`) has since moved past.
+    probe_epoch: u64,
 }
 
 /// `/advisor on|off`'s own reply text (typed or chip-sent): the two strings #917's own live
@@ -131,14 +141,17 @@ fn parse_status_reply(trimmed: &str) -> Option<bool> {
     }
 }
 
-/// Gate round 2 fix (Medium, decided): the one OTHER wording this module has actually seen a
-/// `/advisor status` reply use (#917's own live evidence, `Advisor "default" is running.`) --
-/// recognised so it is still consumed (never left to render as a stray notice) without ever
-/// being trusted for an on/off reading (see `parse_status_reply`'s own doc comment). Anything
-/// starting "Advisor " that matches NEITHER this nor `parse_status_reply` is wording this module
-/// has never seen; it renders normally rather than being guessed at.
+/// The one OTHER wording this module has actually seen a `/advisor status` reply use (#917's
+/// own live evidence, `Advisor "default" is running.`) -- recognised so it is still consumed
+/// (never left to render as a stray notice) without ever being trusted for an on/off reading
+/// (see `parse_status_reply`'s own doc comment). Gate round 3 fix (Low, decided): also requires
+/// a single line (no embedded `\n`) -- a longer, multi-line reply that merely starts and ends
+/// with these same fragments is not this known, short shape and must not be swallowed on that
+/// resemblance alone. Anything starting "Advisor " that matches NEITHER this nor
+/// `parse_status_reply` is wording this module has never seen; it renders normally rather than
+/// being guessed at.
 fn is_known_ambiguous_status_shape(trimmed: &str) -> bool {
-    trimmed.starts_with("Advisor \"") && trimmed.ends_with("is running.")
+    trimmed.starts_with("Advisor \"") && trimmed.ends_with("is running.") && !trimmed.contains('\n')
 }
 
 async fn apply_and_emit(agent: &SessionAgent, advisor_on: bool) {
@@ -205,29 +218,59 @@ pub(super) async fn handle_command_output(agent: &SessionAgent, frame: &Value) -
     true
 }
 
-/// Gate round 2 fix (High, decided): the one place that actually sends the probe, shared by
-/// both trigger points below. Re-checks EVERYTHING at the moment of sending, never trusting a
-/// stale read from when it was first scheduled: the generation (abandons a superseded life),
-/// `probe_armed` (already sent, or cancelled by a real user `/advisor`), and `available_commands`
-/// (the list can populate or reset between attempts). `request_rpc_if_idle` closes the gap
-/// between ITS OWN idle check and the send atomically (the same primitive `session::model`
-/// already relies on for an equivalent race) -- see this file's own header for why this is the
-/// bound this fix targets, not a stronger, not-actually-available guarantee. Returns `true` once
-/// the probe has been sent (whether or not it later finds a reply) so a caller retry-loop can
-/// stop.
+/// Gate round 3 fix (High, decided): the one place that actually sends the probe, shared by
+/// both trigger points below. The FIRST step is an ATOMIC claim -- one `with_advisor_state`
+/// call that requires `probe_armed` and the matching `generation`, then immediately flips
+/// `probe_armed` false and `awaiting_silent_probe` true and records a fresh `probe_epoch` --
+/// all BEFORE any `await`. This fixes two races a post-send flip could not: a reply arriving
+/// before the RPC call's own acknowledgement would otherwise find `awaiting_silent_probe` still
+/// false and render unswallowed, and the resume path's own `session_settled` plus a settled
+/// `prompt_result` firing for the SAME turn would otherwise both pass a read-only "is it still
+/// armed" check and both try to send. Only ONE caller can ever win the claim (the next one to
+/// read the lock sees `probe_armed` already false and backs off immediately, below). Everything
+/// after the claim re-checks it needed: `available_commands` (the list can populate between
+/// attempts) and `request_rpc_if_idle` (the same atomic check-and-send primitive
+/// `session::model`'s own `set_model`/`cycle_model` rely on for an equivalent race). On a
+/// refusal or failure, the claim is rolled back -- but ONLY if the generation AND epoch this
+/// attempt claimed under still match, so a rollback from an attempt that lost its own race can
+/// never re-arm a probe a different, already-progressed attempt (or a user's own `/advisor`,
+/// `cancel_pending_probe`) has since moved past. Returns `true` once settled one way or another
+/// under this generation (claimed-and-sent, or nothing left to claim) so a caller retry-loop
+/// can stop; `false` only when a later retry under the SAME generation might still succeed.
 async fn maybe_send_probe(agent: &SessionAgent, expected_generation: u64) -> bool {
-    let (armed, generation) = agent
-        .with_advisor_state(|s| (s.probe_armed, s.generation))
+    let claimed_epoch = agent
+        .with_advisor_state(|s| {
+            if !s.probe_armed || s.generation != expected_generation {
+                return None;
+            }
+            s.probe_armed = false;
+            s.awaiting_silent_probe = true;
+            s.probe_epoch = s.probe_epoch.wrapping_add(1);
+            Some(s.probe_epoch)
+        })
         .await;
-    if !armed || generation != expected_generation {
-        return true; // nothing left to do under this generation; stop retrying.
+    let Some(epoch) = claimed_epoch else {
+        return true; // already claimed by a concurrent attempt, or nothing left under this generation.
+    };
+
+    async fn rollback(agent: &SessionAgent, expected_generation: u64, epoch: u64) {
+        agent
+            .with_advisor_state(|s| {
+                if s.generation == expected_generation && s.probe_epoch == epoch {
+                    s.probe_armed = true;
+                    s.awaiting_silent_probe = false;
+                }
+            })
+            .await;
     }
+
     let has_advisor_command = agent
         .available_commands()
         .await
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("advisor"));
     if !has_advisor_command {
+        rollback(agent, expected_generation, epoch).await;
         return false; // the list may still populate later; keep retrying under this generation.
     }
     let result = agent
@@ -237,40 +280,28 @@ async fn maybe_send_probe(agent: &SessionAgent, expected_generation: u64) -> boo
             "Advisor state probe refused",
         )
         .await;
-    let still_current = agent
-        .with_advisor_state(|s| s.generation == expected_generation)
-        .await;
-    if !still_current {
-        return true; // a newer life started while this call was in flight; abandon it quietly.
-    }
     let succeeded = matches!(
         &result,
         Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true)
     );
     if !succeeded {
-        return false; // refused (not idle) or failed -- still armed, a later trigger may retry.
+        rollback(agent, expected_generation, epoch).await;
+        return false; // refused (not idle) or failed -- a later trigger may retry.
     }
-    agent
-        .with_advisor_state(|s| {
-            s.probe_armed = false;
-            s.awaiting_silent_probe = true;
-        })
-        .await;
     let agent_clone = agent.arc();
     tokio::spawn(async move {
         // Gate round 1 fix (High): the RPC response only confirms the prompt was ACCEPTED --
         // the async `command_output` FRAME is a separate thing that might still never arrive (a
         // stale process exit, an odd build). Clear the flag after this timeout regardless,
-        // UNLESS a newer life has already moved past this one.
+        // UNLESS a newer life or a later claim has already moved past this one.
         tokio::time::sleep(Duration::from_millis(PROBE_TIMEOUT_MS)).await;
-        let still_current = agent_clone
-            .with_advisor_state(|s| s.generation == expected_generation)
+        agent_clone
+            .with_advisor_state(|s| {
+                if s.generation == expected_generation && s.probe_epoch == epoch {
+                    s.awaiting_silent_probe = false;
+                }
+            })
             .await;
-        if still_current {
-            agent_clone
-                .with_advisor_state(|s| s.awaiting_silent_probe = false)
-                .await;
-        }
     });
     true
 }
@@ -280,8 +311,8 @@ async fn maybe_send_probe(agent: &SessionAgent, expected_generation: u64) -> boo
 /// a brand-new Session, a crash-restart, and a resume alike. Arms the probe and makes a bounded
 /// number of attempts (the "plain attach, nothing else sending" case); `on_turn_settled` below
 /// is the OTHER trigger (the resume path's own turn settling, or any later turn) -- whichever
-/// condition becomes true first sends the probe exactly once. Fire-and-forget: never blocks
-/// `launch()`'s own attach sequence.
+/// condition becomes true first claims and sends the probe exactly once. Fire-and-forget: never
+/// blocks `launch()`'s own attach sequence.
 pub(super) async fn on_launch(agent: &SessionAgent) {
     // Fail-to-unknown BEFORE anything else -- a restart or resume must never keep showing a
     // stale "on" reading left over from the previous process life while the probe (which may be
@@ -291,6 +322,14 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
         .with_advisor_state(|s| {
             s.generation = s.generation.wrapping_add(1);
             s.probe_armed = true;
+            // Gate round 3 fix (Medium, decided): a superseded PREVIOUS life's own `on_exit`
+            // can be skipped entirely (`agent/launch.rs`'s exit fan-out only runs the
+            // `is_current`-gated lanes, which this one is, for a life that is still current at
+            // exit time -- a life superseded by THIS new one before its own exit is handled
+            // never gets that call) -- cleared here too so a stale `true` left over from that
+            // skipped `on_exit` can never make a later real reply look like it was already
+            // consumed by a probe this life never actually armed yet.
+            s.awaiting_silent_probe = false;
             s.generation
         })
         .await;
@@ -332,12 +371,18 @@ pub(super) async fn on_turn_settled(agent: &SessionAgent) {
 /// themselves -- retires the whole background mechanism early so a real user-authored reply can
 /// never be swallowed or raced by a still-pending probe. Never resets `advisor_on` itself: the
 /// user's own command reply updates that through the normal `handle_command_output` toggle path
-/// a moment later, exactly as if the user had typed it with no probe ever having run.
+/// a moment later, exactly as if the user had typed it with no probe ever having run. Gate
+/// round 3 fix (High, decided): also bumps `probe_epoch` -- an in-flight claim's own
+/// rollback-on-failure checks this, so it can never re-arm `probe_armed` after a cancel landed
+/// first. If the probe's own reply still arrives after this (the request was already accepted
+/// before the cancel), it renders as a plain notice instead of being swallowed -- acceptable,
+/// and rare, since `awaiting_silent_probe` is already false by then.
 pub async fn cancel_pending_probe(agent: &SessionAgent) {
     agent
         .with_advisor_state(|s| {
             s.probe_armed = false;
             s.awaiting_silent_probe = false;
+            s.probe_epoch = s.probe_epoch.wrapping_add(1);
         })
         .await;
 }

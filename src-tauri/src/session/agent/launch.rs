@@ -179,6 +179,17 @@ impl SessionAgent {
         if let Some(pid) = proc.pid() {
             crate::process::pid_records::record_process(pid, &self.session_id).await;
         }
+        // Issue #937, gate round 3 fix (Critical): moved here, BEFORE the frame listener
+        // subscribes below -- `available_commands_update` arrives once near startup, and the
+        // OLD location (the per-life reset block further down, after `attach_and_verify`/
+        // `fetch_all_messages`) ran AFTER the listener had already started, so it could (and,
+        // live, likely would) silently wipe a list that frame had ALREADY populated for THIS
+        // life, leaving every OMP slash command (`/advisor` included) permanently
+        // `UnknownCommand` for the rest of the life. Clears a PREVIOUS life's stale list before
+        // anything can observe it, never a list this life's own frame just wrote.
+        {
+            self.state.lock().await.commands = Vec::new();
+        }
         // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
         // listener before any frame -- including ones the ready-wait itself observes -- can
         // possibly be produced, the same guarantee `OmpProcess.ts` gets from attaching
@@ -300,12 +311,6 @@ impl SessionAgent {
             state.stop_reason = None;
             state.stop_detail = None;
             state.launched_mode = approval_mode;
-            // Issue #937, gate round 2 fix (decided): a NEW life's own `available_commands_update`
-            // frame can arrive any time after this point -- stale commands from a PREVIOUS life
-            // (never re-initialised here before) must not keep answering `available_commands()`
-            // as if they were this life's own confirmed list in the meantime (`session::advisor`'s
-            // own `on_launch` reads this to decide whether to probe at all).
-            state.commands = Vec::new();
             state.pending_mode = if current_mode == approval_mode {
                 None
             } else {
