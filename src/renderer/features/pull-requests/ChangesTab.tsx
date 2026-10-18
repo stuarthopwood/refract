@@ -67,6 +67,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
             // path left, the per-file stat and Open in browser right -- instead of the path
             // alone with the stat relegated to a second plain-text line below.
             <div className="overflow-hidden rounded-md border border-border">
+              {/* drag-regions-allow: renders inside PullRequestDetail's Changes tab, well below PullRequestsView's own h-10 drag-region strip, so it never touches App.tsx's strip despite the coincidental border-b shape -- same pattern as DiffView.tsx's identical bg-muted header above. */}
               <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
                 <span className="min-w-0 truncate" title={file.path}>
                   {file.path}
