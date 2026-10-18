@@ -438,6 +438,20 @@ async function main() {
     );
     report.push({ step: 'native OS drag-drop (simulated via the captured real onFileDrop callback) attached 5 real files/folders', ok: true });
 
+    // Gate round 5 (Test5 HIGH, real bug this live check caught): the 5 badges above can render
+    // as soon as `recordDroppedPaths` queues them, WHILE each file's own `attachments.readFile`
+    // IPC round trip is still in flight -- `MessageInput.tsx`'s own `handleSend` SILENTLY refuses
+    // (no toast at all, draft left untouched) while `pendingAttachmentReads > 0` (its own doc
+    // comment: "otherwise Enter mid-read sent the message WITHOUT the image"). Clicking Send
+    // right after the 5-badge wait above hit exactly that guard for 5 REAL files crossing into
+    // Rust, reproducing a genuine silent-no-op this script's own earlier diagnostics (toast-
+    // baseline fix) finally made visible instead of a bare 30s timeout. Waits for the visible
+    // "Attaching…" line (`pendingAttachmentReads > 0`'s own JSX) to clear before proceeding.
+    await cdp.waitFor(
+      `!Array.from(document.querySelectorAll('p')).some((p) => p.textContent.trim() === 'Attaching…')`,
+      { timeoutMs: 15_000, label: 'all 5 background attachment reads settled (pendingAttachmentReads back to 0)' }
+    );
+
     // Gate round 3 (Test3 HIGH): #744 blocks an attachment-only send (no typed text) -- Send was
     // a silent no-op here with nothing in the draft, so this never actually proved the full
     // send -> transcript-parse -> bubble pipeline at all. Real text first.
