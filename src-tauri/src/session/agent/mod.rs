@@ -408,10 +408,7 @@ impl SessionAgent {
         }
     }
 
-    /// `sessions.list()`'s live-runtime fields (completes the registry-only placeholder Phase
-    /// 2(b) left, tasks.md T019's own "absent until the first `get_state`" default is simply
-    /// this method never having run for a Session with no agent this run -- `SessionManager`
-    /// only calls this for a Session that already has one).
+    /// `sessions.list()`'s live-runtime fields. Gate-fix (issue #985): `startProgress` now included -- omitted, a DIFFERENT Session's `notify_list_changed()` made `refresh()` wipe this one's live notice until its next tick.
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
         let state = self.state.lock().await;
@@ -422,11 +419,14 @@ impl SessionAgent {
             "pendingMode": state.pending_mode,
             "currentRole": current_role, "pinned": pinned,
         });
+        let object = payload
+            .as_object_mut()
+            .expect("summary_fields payload is always a JSON object");
         if let Some(reason) = state.stop_reason {
-            payload
-                .as_object_mut()
-                .expect("summary_fields payload is always a JSON object")
-                .insert("stopReason".to_string(), Value::String(reason.to_string()));
+            object.insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        if let Some(progress) = state.start_queue.to_wire() {
+            object.insert("startProgress".to_string(), progress);
         }
         payload
     }
