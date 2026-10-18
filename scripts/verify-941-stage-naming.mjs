@@ -77,7 +77,8 @@ import {
   STAGE8_PREFIX_TITLE,
   STAGE9_SOLO_NOCTX_TITLE,
   STAGE10_BORDERLINE_TITLE,
-  PLAIN_TOOL_TITLE
+  PLAIN_TOOL_TITLE,
+  titleSelector
 } from './verify-941-stage-naming-helpers.mjs';
 import { assertDependencies } from './verify-941-stage-naming-panel-helpers.mjs';
 import { assertContextBriefOverflow, assertNarrowViewportOverflow } from './verify-941-stage-naming-overflow-helpers.mjs';
@@ -92,10 +93,6 @@ const THEMES = [
   { id: 'obsidian', name: 'Obsidian' },
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
-
-function titleSelector(titleText) {
-  return `document.querySelector('[title=${JSON.stringify(titleText)}]')`;
-}
 
 async function main() {
   let shimDir, dataDir, importSourceDir, repoDir, exeDir, launcherDir;
