@@ -320,9 +320,9 @@ async function assertAsyncResultStageScoping(cdp, findings, failures, notExercis
     // content check below first polls. Retried up to 3 times: each attempt re-calls `expandRow`
     // (a safe no-op once already open) before its own wait, so a transient virtualization miss
     // on attempt 1 is recovered by attempt 2/3 without ever silently passing on a genuine
-    // content regression -- the real #989 claim-vs-text checks below still run against
-    // whatever the last attempt actually read, and a failure is still recorded if content
-    // never renders after all 3 honest attempts.
+    // content regression -- once `rowFound`, the real #989 claim-vs-text checks below run
+    // against that exact row; if the row never renders after all 3 honest attempts, a failure
+    // is recorded and the text checks are skipped (there is no row left to read).
     let rowFound = false;
     for (let attempt = 1; attempt <= 3 && !rowFound; attempt++) {
       await expandRow(cdp, exp.stage);
@@ -336,6 +336,30 @@ async function assertAsyncResultStageScoping(cdp, findings, failures, notExercis
     }
     if (!rowFound) {
       failures.push(`${exp.label}'s own Story559 member row never rendered after 3 attempts (10s each) -- expand click may have raced the Transcript's own virtualized scroll window, or a genuine regression.`);
+      continue;
+    }
+    const rowText = await cdp.evaluate(`(${rowSelector})?.textContent ?? ''`);
+    if (!rowText.includes(exp.ownResult)) {
+      failures.push(
+        `[issue #989] ${exp.label}'s own Story559 member row does not show its OWN result summary (${JSON.stringify(exp.ownResult)}): ${JSON.stringify(rowText)}`
+      );
+    } else {
+      findings.push(`[issue #989] ${exp.label}'s own Story559 member row correctly shows its own result summary (${JSON.stringify(exp.ownResult)}).`);
+    }
+    if (rowText.includes(exp.otherResult)) {
+      failures.push(
+        `[issue #989] REGRESSION -- ${exp.label}'s own Story559 member row shows the OTHER Stage's result summary (${JSON.stringify(exp.otherResult)}): a same-named Stage's later async-result clobbered this row.`
+      );
+    }
+    if (!rowText.includes(exp.ownDuration)) {
+      failures.push(`[issue #989] ${exp.label}'s own Story559 member row does not show its OWN duration (${JSON.stringify(exp.ownDuration)}): ${JSON.stringify(rowText)}`);
+    } else {
+      findings.push(`[issue #989] ${exp.label}'s own Story559 member row correctly shows its own duration (${JSON.stringify(exp.ownDuration)}).`);
+    }
+    if (rowText.includes(exp.otherDuration)) {
+      failures.push(
+        `[issue #989] REGRESSION -- ${exp.label}'s own Story559 member row shows the OTHER Stage's duration (${JSON.stringify(exp.otherDuration)}), which it never legitimately renders on its own: ${JSON.stringify(rowText)}`
+      );
     }
   }
   if (failures.length === failuresAtStart) {
