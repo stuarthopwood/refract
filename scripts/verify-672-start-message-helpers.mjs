@@ -1,11 +1,6 @@
-// Shared constants and pure/CDP helpers for `verify-672-start-message.mjs` (issue #672, #806
-// file-size split: extracted once the gate-round-2 contrast/wheel/short-window rewrites pushed
-// the main script past the 600-line soft cap, the same reason `verify-947-938-helpers.mjs` and
-// `verify-560-helpers.mjs` exist for their own scripts). `setupLaunch`/`teardownLaunch`/
-// `quickCreateSessionId` (added in the item-6 gate-fix round)
-// are the one exception to "nothing here owns process lifecycle" -- moved here from the main
-// script purely to clear the 600-line cap a second time; they still own launch/cleanup exactly
-// as before.
+// Shared constants and pure/CDP helpers for `verify-672-start-message.mjs` (issue #672, #806 file-size
+// split: extracted once the gate-round-2 rewrites pushed the main script past the 600-line soft cap).
+// `setupLaunch`/`teardownLaunch`/`quickCreateSessionId` are the one exception to "nothing here owns process lifecycle" -- moved here for the same reason; they still own launch/cleanup exactly as before.
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -70,22 +65,38 @@ function srgbToLinear(c) {
 function relativeLuminance([r, g, b]) {
   return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
 }
-export function parseRgb(rgbString) {
-  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(rgbString ?? '');
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+// Gate-fix: this WebView2's Chromium serialises oklch()-sourced computed colours as oklab(...), never rgb() -- same OKLab matrices as check-theme-contrast.mjs (Bjorn Ottosson).
+function oklabToLinearSrgb(L, a, b) {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b, m_ = L - 0.1055613458 * a - 0.0638541728 * b, s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+}
+function linearToSrgb255(c) {
+  const clamped = Math.min(1, Math.max(0, c));
+  return Math.round((clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * clamped ** (1 / 2.4) - 0.055) * 255);
+}
+const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)(%)?)?\s*\)$/i;
+const OKLAB_RE = /^oklab\(\s*([\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s*\/\s*([\d.]+)(%)?)?\s*\)$/i;
+function parseOklabLike(str) {
+  const s = (str ?? '').trim(), lch = OKLCH_RE.exec(s), lab = lch ? null : OKLAB_RE.exec(s);
+  if (!lch && !lab) return null;
+  const [, lStr, p2, p3, al, pct] = lch ?? lab, hRad = lch ? (Number(p3) * Math.PI) / 180 : 0;
+  const a = lch ? Number(p2) * Math.cos(hRad) : Number(p2), b = lch ? Number(p2) * Math.sin(hRad) : Number(p3);
+  const [r, g, bl] = oklabToLinearSrgb(Number(lStr), a, b).map(linearToSrgb255);
+  return { r, g, b: bl, a: al === undefined ? 1 : pct ? Number(al) / 100 : Number(al) };
+}
+// Parses alpha too (plain `rgb()` has none); falls back to `parseOklabLike` (gate-fix above) -- this WebView2 never returns `--background`/`--foreground` as `rgb()`.
+export function parseRgba(colorString) {
+  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(colorString ?? '');
+  if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] !== undefined ? Number(m[4]) : 1 };
+  return parseOklabLike(colorString);
 }
 export function contrastRatio(fg, bg) {
-  const rgbFg = parseRgb(fg), rgbBg = parseRgb(bg);
+  const rgbFg = parseRgba(fg), rgbBg = parseRgba(bg);
   if (!rgbFg || !rgbBg) return null;
-  const lFg = relativeLuminance(rgbFg), lBg = relativeLuminance(rgbBg);
+  const lFg = relativeLuminance([rgbFg.r, rgbFg.g, rgbFg.b]), lBg = relativeLuminance([rgbBg.r, rgbBg.g, rgbBg.b]);
   const lighter = Math.max(lFg, lBg), darker = Math.min(lFg, lBg);
   return (lighter + 0.05) / (darker + 0.05);
-}
-/** Gate round 2 item 7: parses alpha too (`parseRgb` above only reads r/g/b), so the panel's own
- *  `bg-background/90` can be composited rather than approximated as opaque. */
-export function parseRgba(rgbaString) {
-  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(rgbaString ?? '');
-  return m ? { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] !== undefined ? Number(m[4]) : 1 } : null;
 }
 /** Plain "source over" alpha compositing (straight sRGB component blend, the same model CSS
  *  itself uses for a translucent layer over an opaque one): `fg` carries its own alpha, `bg` is
@@ -343,17 +354,17 @@ export async function withDeviceMetrics(cdp, width, height, fn) {
 }
 
 /** Reads the notice's own geometry/styles plus whichever Transcript region actually contains it,
- *  found by bounding-box containment of the notice's own centre point (correct regardless of
- *  pane index, not an assumed array position). */
+ *  found by rect OVERLAP with the notice's own bounding box (correct regardless of pane index,
+ *  not an assumed array position). */
 export async function readNoticeState(cdp) {
   return cdp.evaluate(`(() => {
     const group = ${GROUP};
     if (!group) return { present: false };
     const groupRect = group.getBoundingClientRect();
-    const cx = groupRect.x + groupRect.width / 2, cy = groupRect.y + groupRect.height / 2;
+    // Gate-fix: overlap, not centre-containment -- an overflowing notice (\`items-center-safe\` pins it to the region's own top) can have its centre fall outside the region even though it's genuinely that region's own notice.
     const region = Array.from(${REGIONS}).find((r) => {
       const rr = r.getBoundingClientRect();
-      return cx >= rr.x && cx <= rr.x + rr.width && cy >= rr.y && cy <= rr.y + rr.height;
+      return rr.x < groupRect.x + groupRect.width && rr.x + rr.width > groupRect.x && rr.y < groupRect.y + groupRect.height && rr.y + rr.height > groupRect.y;
     });
     const styleOf = (el) => {
       if (!el) return null;

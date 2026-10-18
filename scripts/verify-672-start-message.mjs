@@ -168,8 +168,7 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
-    // Defensive margin check (cheap, harmless if it never fires): a same-kind re-tick needs
-    // SOME slack against `ready` legitimately arriving mid-check (15s) -- skip to notExercised rather than assert a false failure on an unruled-out race.
+    // Defensive margin check (cheap, harmless if it never fires): needs SOME slack against `ready` legitimately arriving mid-check (15s) -- skip to notExercised rather than assert a false failure on an unruled-out race.
     const marginMsBeforeReady = READY_DELAY_BRIEF_MS - (Date.now() - restartDispatchedAt) - 2_500;
     if (marginMsBeforeReady < 3_000) {
       notExercised.push(`Announcement mutation window: skipped -- only ${marginMsBeforeReady}ms of margin remained before this launch's own real ${READY_DELAY_BRIEF_MS}ms ready delay (restart-to-announcement polling above took longer than usual, likely real resource pressure), too tight to run a genuine same-kind re-tick window without racing a legitimate 'ready' transition.`);
@@ -216,8 +215,7 @@ async function main() {
     const sessionB = await quickCreateSessionId(cdp1, 'brief/B (split partner)');
     findings.push(`Session B created (id ${sessionB.id}) as the split-pane partner.`);
 
-    // Re-focus Session A (a real plain click, not Ctrl): creating B above focused B instead,
-    // and every check below needs A's own notice mounted again.
+    // Re-focus Session A (a real plain click, not Ctrl): creating B left B focused instead, and every check below needs A's own notice mounted again.
     await clickSessionRow(cdp1, sessionA.id);
     await cdp1.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session A refocused after creating Session B' });
 
@@ -461,8 +459,7 @@ async function main() {
       await cdp2.evaluate(`document.activeElement?.blur()`);
     });
 
-    // ---- Themes: a failed theme.set is a FAILURE. Driven at the real `prompt` stage; contrast measured
-    // against the panel's own WORST-CASE effective background for message/counter/guidance/button label (a self-check confirms this catches a regression). ----
+    // ---- Themes: a failed theme.set is a FAILURE. Driven at the real `prompt` stage; contrast measured against the panel's own WORST-CASE effective background (a self-check confirms this catches a regression). ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         const result = await cdp2.evaluate(`window.refract.theme.set(${JSON.stringify(theme.id)}).then((r) => r.ok)`);
@@ -511,12 +508,15 @@ async function main() {
     }
     await cdp2.evaluate(`window.refract.theme.set('dark')`);
 
-    // ---- A genuinely short (600px) window: Keep waiting/Cancel reachable via a real wheel scroll + elementFromPoint, forced via setDeviceMetricsOverride. ----
-    await withDeviceMetrics(cdp2, 900, 600, async () => {
-      await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted in the 600px-tall window' });
+    // ---- A genuinely short window, height sized off this run's own overlay measurements (not a fixed guess -- the notice's natural height can change release to release), guaranteeing it overflows: Keep waiting/Cancel reachable via a real wheel scroll + elementFromPoint. ----
+    const preSize = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, winHeight: document.documentElement.clientHeight } : null; })()`);
+    if (!preSize) failures.push('short-window: no overlay element found to measure for dynamic sizing.');
+    const forcedWindowHeight = preSize ? Math.max(300, preSize.winHeight - preSize.clientHeight + Math.round(preSize.scrollHeight * 0.7)) : 600;
+    await withDeviceMetrics(cdp2, 900, forcedWindowHeight, async () => {
+      await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted in the short window' });
       const overflowCheck = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight } : null; })()`);
       if (!overflowCheck || !(overflowCheck.scrollHeight > overflowCheck.clientHeight)) {
-        failures.push(`short-window: overlay scrollHeight (${overflowCheck?.scrollHeight}) is not greater than clientHeight (${overflowCheck?.clientHeight}) -- it did not genuinely overflow this 600px-tall window.`);
+        failures.push(`short-window: overlay scrollHeight (${overflowCheck?.scrollHeight}) is not greater than clientHeight (${overflowCheck?.clientHeight}) -- it did not genuinely overflow this ${forcedWindowHeight}px-tall window.`);
         return;
       }
       findings.push(`short-window: overlay genuinely overflows (scrollHeight ${overflowCheck.scrollHeight} > clientHeight ${overflowCheck.clientHeight}).`);
