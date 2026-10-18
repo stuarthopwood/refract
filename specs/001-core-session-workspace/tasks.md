@@ -3781,6 +3781,36 @@ installed omp, not the fixture; all 5 items addressed.
   duplicated here, per instruction (it merges first, ahead of this lane's own eventual
   pre-slot `origin/main` merge).
 
+Gate round 4 (`agent://Main`, Code/Test/Sec all PASS, one follow-up to make the live run prove
+round 3's HIGH): all 3 items addressed.
+
+- [X] T304 [US1] `scripts/fixtures/omp-frames/stages-941.jsonl`: `"display":true` added to
+  every async-result message (`msg-ar1`..`msg-ar10`, both `message_start` and `message_end`
+  frames), matching real omp. Checked origin/main's full set of this fixture's consumers
+  (`git grep -l "stages-941" origin/main -- 'scripts/*.mjs'`: only `verify-941-part2.mjs` and
+  `verify-941-stage-naming.mjs`) -- neither references `display`/`Notice`/`async-result` text
+  anywhere, so none is affected (an async-result message never renders a transcript row of its
+  own regardless). Fixture header comment updated to record the change and that check.
+- [X] T305 [US1] `scripts/verify-941-part2.mjs`: new check after all ten Stages settle --
+  scans the whole Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:") and fails if
+  any exist (every async-result message's own `content` is `""` in this fixture, so a bare
+  substring match on "async-result" or the content text would never fire regardless of the bug;
+  the row's own EXISTENCE, not its text, is the only reliable signal). Confirmed by reading
+  `transcript.rs` at `53882ee` (gate round 2 head): `message_start` (`streaming: true`) still
+  falls through past the skipped job-application to the `display == true` Notice branch with no
+  short-circuit, and `message_end`'s own async-result application never removes the item it
+  left behind -- ten stray notices would survive to the end of the turn. At HEAD the gate-round-
+  3 short-circuit returns `items` unchanged on `message_start`, so none is ever built.
+- [X] T306 [US1] Narrowed the doc comment at `transcript.rs`'s `"custom"` arm: the "never builds
+  a Notice/advisory/agent-message item at ANY frame" claim applies to the LIVE path only --
+  `items_from_history`'s own separate `"custom"` arm keeps its unchanged fallthrough, so a
+  stored async-result message with no `details.jobs` at all still falls through to the same
+  checks. Added the tier-1 swap clause to `subagent_items.rs`'s known-limit sentence: row A
+  already ended its own batch call but is still unsettled (genuinely owed its own real
+  async-result), row B is a later same-named Stage still Running -- a job meant for A can still
+  land on B instead, since tier 1 always prefers the Running row regardless of which row the
+  job actually belongs to; A then never settles. Tracked on #712 alongside the existing limit.
+
 Opened as draft PR (branch `fix/989-async-stage`); `Closes #989` once the live check above is
 confirmed against a real build. No cargo build run in this lane (no-build prep lane, blocked on
 the build slot).
