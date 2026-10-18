@@ -4,49 +4,35 @@
 // remembered across restarts; the header Project selector tracking the column's own width).
 // Modelled directly on `verify-tauri-568.mjs`'s own shape and lessons (never claim PASS on "no
 // repo"/"no rows"; assert a story-only marker before trusting anything else; rebuild the exe
-// fresh via `buildAndCopyExeFresh`, never trust a possibly sibling-lane-clobbered shared-target
-// binary; drive the real rendered DOM, never `window.refract.*` as a UI shortcut except the one
-// documented theme-switch exception).
+// fresh via `buildAndCopyExeFresh`; drive the real rendered DOM, never `window.refract.*` as a
+// UI shortcut except the one documented theme-switch exception).
 //
 // NOT RUN by this prep-lane pass (no cargo build here) -- written for the build lane to execute.
 //
 // Pull requests needs real GitHub data: the scratch Project added here is a shallow, read-only
-// clone of `stuarthopwood/refract` itself (this script never calls `pullRequests.comment`/
-// `submitReview`/`merge`/`newSessionFromPullRequest` -- read-only against GitHub throughout). A
-// failed clone, or a settled list with zero rows and no error banner, is a hard FAILURE
-// (`checkFail` + non-zero exit), never a silent "not exercised" pass.
+// clone of `stuarthopwood/refract` itself (read-only against GitHub throughout -- never
+// `comment`/`submitReview`/`merge`/`newSessionFromPullRequest`). A failed clone, or a settled
+// list with zero rows and no error banner, is a hard FAILURE, never a silent "not exercised".
 //
 // Checks made, against the real rendered DOM:
 //   - #499-only / #930-only bundle marker present before anything else is trusted.
-//   - Filter tabs: exactly 5, labelled All/Authored by me/Assigned to me/Involves me/Review
-//     requested, "All" active by default; the tab row never wraps (every tab shares one
-//     `offsetTop`) and its wrapper is horizontally scrollable once the row doesn't fit.
-//   - Clicking a later tab (Review requested) makes it `data-state="active"` and scrolls it
-//     fully into the wrapper's own visible bounds (not merely clipped at an edge).
-//   - Filters button: `aria-expanded` toggles, the disclosure (search input + State select)
-//     mounts/unmounts with it; the label/dot name the APPLIED filter (set by `refresh()` itself),
-//     never a still-typed keystroke -- typing alone leaves "Filters" unchanged, Enter updates it
-//     to "Filters, N active"; the narrowed list and query text both keep applying/surviving while
-//     the section is closed and reopened. The State control is actually driven, not just claimed:
-//     Closed on the All tab AND on one relation tab (Authored by me) each render real rows and
-//     update the label. "Clear filters" (the filtered-to-nothing empty state's own recovery
-//     button) empties the query, resets State, and refetches the unfiltered list.
-//   - Tab-row geometry measured at 4 real window widths (240, 320, 380, 520), not estimated: the
-//     row still never wraps, the wrapper's `scrollWidth`/`clientWidth` relationship is recorded
-//     at each, and the list column itself never shrinks below its own 280px minimum even at
-//     widths where that minimum exceeds 50% of the window.
-//   - Resizable list column: the handle (`aria-label="Resize pull request list"`) exists; a real
-//     pointer drag changes the rendered list-column width by roughly the dragged distance;
-//     double-clicking the handle resets it to 320px; arrow-key resize while the handle is
-//     focused changes the width without any pointer event.
-//   - The header's Project selector sits inside the list column's own current width at a resized
-//     size, never overflowing it, and shows a real, unclipped focus indicator when focused.
-//   - Remembered width: a double-click RESET to the default (not just a plain drag) is still
-//     applied after a full relaunch against the same scratch data dir (a genuine `settings.json`
-//     round trip, not a store-only check) -- the specific case the library's own double-click
-//     handler never routed through the persist path on its own.
-//   - Dark, Dark (high contrast) and Obsidian screenshots, taken once the list has real,
-//     populated rows and the Filters section is open (never mid-"Loading…").
+//   - Filter tabs: exactly 5, "All" active by default, never wraps, scrollable once it overflows;
+//     a wheel maps to horizontal scroll; roving keyboard focus (manual activation) and Enter-
+//     activation scrolling fully into view both directions.
+//   - Filters disclosure (search + State): applied-filter label/dot (never a bare keystroke),
+//     narrowed list/query surviving close+reopen, State genuinely driven on the All tab AND a
+//     relation tab (asserting a real, single-author row set via `data-pr-author`, not just a
+//     shape stale rows could coincidentally match), Clear filters (open and closed) moving focus
+//     to the search field or the Filters button respectively.
+//   - Tab-row geometry at 4 real Group widths (360/380/440/520, all >= `App.tsx`'s own 360px
+//     floor on the chat panel hosting this view): never wraps, list column holds its 280px
+//     minimum even where that exceeds 50% of the Group's own width.
+//   - Resizable list column: drag, double-click reset (and that a double-click on the SIBLING
+//     session-list handle does NOT reset or persist this column), arrow-key resize, the Project
+//     selector staying inside the column with a real unclipped focus ring, and a double-click
+//     reset surviving a full relaunch (`settings.json` round trip).
+//   - Dark, Dark (high contrast) and Obsidian screenshots with real populated rows, no stray
+//     focus/tooltip on the Project selector in the baseline shot.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -70,6 +56,7 @@ import {
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
 import {
   assertBundleContainsStory499930Marker,
+  checkSidebarDblClickDoesNotAffectPrColumn,
   connectCdp,
   dragHandleBy,
   driveStateFilter,
@@ -180,21 +167,18 @@ async function main() {
       await addRepository(cdp, repoClone);
       checkPass('Added scratch stuarthopwood/refract clone as a Project');
 
-      // Gate-fix (relaunch, caught live 2026-10-17/18): `clickByText('Pull requests')` matches a
-      // button's EXACT trimmed text content. `SessionList.tsx`'s own nav button's text (and its
-      // `aria-label`) grows a trailing ", N active" badge once `refreshActiveCount` resolves --
-      // reliably not yet on this FIRST navigation (moments after readiness), but reliably
-      // already loaded by the time of the relaunch below, where the exact-text match silently
-      // failed (`.catch(() => {})` swallowed it) and left the app on its default view, reading
-      // `widthAfterRelaunch` as null. `clickByLabel(..., { prefix: true })` (the same pattern
-      // this script already uses for the Filters button two sections down) matches either form.
+      // Gate-fix (relaunch, caught live 2026-10-17/18): an exact-text match on the nav button
+      // used to fail once `refreshActiveCount` grew a trailing ", N active" badge onto its
+      // label (not yet loaded on first nav, reliably loaded by relaunch time), silently
+      // stranding the app on its default view (`widthAfterRelaunch` read as null). `clickByLabel
+      // ..., { prefix: true }` (same pattern as the Filters button) matches either form.
       await cdp.clickByLabel('Pull requests', { prefix: true });
       await cdp.waitFor(`document.querySelector('h2') && document.querySelector('h2').textContent.trim() === 'Pull requests'`, { timeoutMs: 15_000, label: 'Pull requests view mounted' });
       checkPass('Navigated to Pull requests view');
 
       const loaded = await cdp.waitFor(`(() => {
         const err = document.querySelector('[role="alert"]');
-        const rows = document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button');
+        const rows = document.querySelectorAll('[data-pr-row]');
         return rows.length > 0 ? 'rows' : (err ? 'error' : null);
       })()`, { timeoutMs: 30_000, label: 'pull request list settles' });
 
@@ -361,13 +345,29 @@ async function main() {
       // reads the real value separately.
       await cdp.waitFor(`(document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null) === ''`, { timeoutMs: 5_000, label: 'search field cleared by Clear filters' }).catch(() => false);
       const clearedQueryValue = await cdp.evaluate(`document.querySelector('[aria-label="Filter pull requests by title or label"]')?.value ?? null`);
-      const rowsAfterClear = await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after Clear filters' }).catch(() => false);
+      const rowsAfterClear = await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after Clear filters' }).catch(() => false);
       const labelAfterClear = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
       if (clearedQueryValue === '' && rowsAfterClear && labelAfterClear === 'Filters') {
         checkPass('"Clear filters" empties the query, resets State, and refetches the unfiltered list', JSON.stringify({ clearedQueryValue, rowsAfterClear, labelAfterClear }));
       } else {
         checkFail('"Clear filters" empties the query, resets State, and refetches the unfiltered list', JSON.stringify({ clearedQueryValue, rowsAfterClear, labelAfterClear }));
       }
+
+      // ---- Gate-fix (round 3, item 8): same Clear-filters action with Filters CLOSED -- no
+      // search field to focus then (M2's fallback, PullRequestList.tsx). Re-narrows to zero
+      // matches, closes, clears, asserts the real DOM activeElement. ----
+      await cdp.typeIntoByLabel('Filter pull requests by title or label', 'zzz-verify-499');
+      await pressKey(cdp, 13, 'Enter', 'Enter');
+      await cdp.waitFor(`(() => { const empty = Array.from(document.querySelectorAll('div')).find((el) => el.textContent.trim() === 'No pull requests match these filters.'); return !!empty; })()`, { timeoutMs: 15_000, label: 'list narrows to no matches before the closed-Filters Clear check' }).catch(() => false);
+      await cdp.clickByLabel('Filters, 1 active');
+      await cdp.clickByText('Clear filters');
+      await sleep(200);
+      const activeElementAfterClearClosed = await cdp.evaluate(`(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
+        return document.activeElement === btn;
+      })()`);
+      if (activeElementAfterClearClosed) checkPass('Clear filters with the Filters section closed moves focus to the Filters button');
+      else checkFail('Clear filters with the Filters section closed moves focus to the Filters button', String(activeElementAfterClearClosed));
 
       // ---- #499 gate-fix (H4): drives the State control, asserting real rows + Filters label
       // (via `driveStateFilter`, `verify-tauri-499-930-helpers.mjs` -- gate-fix C1, test-
@@ -377,20 +377,24 @@ async function main() {
       if (closedOnAll) checkPass('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(closedOnAll));
       else checkFail('State=Closed on the All tab renders real rows and updates the Filters label', JSON.stringify(await stateFilterDiagnostic(cdp)));
 
-      const closedOnRelationTab = await driveStateFilter(cdp, 'Authored by me');
+      const closedOnRelationTab = await driveStateFilter(cdp, 'Authored by me', undefined, { requireSingleAuthor: true });
       if (closedOnRelationTab) checkPass('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(closedOnRelationTab));
       else checkFail('State=Closed on a relation tab (Authored by me) renders real rows and updates the Filters label', JSON.stringify(await stateFilterDiagnostic(cdp)));
 
       // Resets State back to Open and the tab back to All before everything downstream (tab
       // geometry, resize, relaunch) runs against the same baseline every prior round used.
+      // Gate-fix (round 3, script): the "All" tab click used to race the State popover's own
+      // close animation and land on the still-present overlay instead (caught live: 01 showed
+      // "Authored by me"). Waits for the popover to close, then for the All tab's own state.
       await cdp.click(`document.querySelector('[aria-label="State"]')`);
       await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === 'Open')`);
+      await cdp.waitFor(`document.querySelector('[role="listbox"]') === null`, { timeoutMs: 5_000, label: 'State popover closes before switching tabs' }).catch(() => false);
       await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'All')`);
-      await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after resetting State to Open' }).catch(() => false);
+      await cdp.waitFor(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === 'All')?.getAttribute('data-state') === 'active'`, { timeoutMs: 5_000, label: 'All tab genuinely becomes active' }).catch(() => false);
+      await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, { timeoutMs: 15_000, label: 'list repopulates after resetting State to Open' }).catch(() => false);
 
       // Gate-fix (L5, caught live 2026-10-18): closes by whatever the Filters button's CURRENT
-      // aria-label actually is, never a hardcoded guess swallowed into a silent `.catch(() => {})`
-      // -- a real mismatch (this flow leaving the label somewhere unexpected) used to be invisible.
+      // aria-label actually is, never a hardcoded guess swallowed into a silent catch.
       const filtersLabelBeforeClose = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
       if (filtersLabelBeforeClose) await cdp.clickByLabel(filtersLabelBeforeClose);
 
@@ -450,6 +454,12 @@ async function main() {
         checkFail('Arrow-key resize on the focused handle changes the column width', JSON.stringify({ widthAfterDoubleClick, widthAfterArrowKey }));
       }
 
+      // Gate-fix (round 3, item 8): see `checkSidebarDblClickDoesNotAffectPrColumn`'s own
+      // docstring (`verify-tauri-499-930-helpers.mjs`) for the full root cause. ----
+      const sidebarDblClickResult = await checkSidebarDblClickDoesNotAffectPrColumn(cdp, LIST_PANEL_FINDER);
+      if (sidebarDblClickResult.pass) checkPass('Double-clicking the session-list handle does not reset or persist the PR column width', JSON.stringify(sidebarDblClickResult.detail));
+      else checkFail('Double-clicking the session-list handle does not reset or persist the PR column width', JSON.stringify(sidebarDblClickResult.detail));
+
       // ---- Project selector truncates to the resized column's own width, never overflows it.
       // Gate-fix (M3, caught live 2026-10-18): the trigger's own accessible name is now
       // "Project: <name>" (an `aria-label` that grows with the Project name), never the bare,
@@ -497,9 +507,8 @@ async function main() {
       }
       await cdp.screenshot(path.join(SHOTS_DIR, '04-project-selector-focus.png'));
 
-      // Gate-fix (L1, caught live round 2 2026-10-18): 01 used to be taken right after 04 with
-      // the Project selector still focused -- its tooltip (focus opens it, same as hover) was
-      // still visible, overlapping the tabs row in the "clean" baseline shot.
+      // Gate-fix (L1, caught live round 2 2026-10-18): 01 used to be taken right after 04,
+      // still focused -- its tooltip (focus opens it, same as hover) overlapped the tabs row.
       await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10, button: 'none' });
       await sleep(200);
@@ -508,12 +517,10 @@ async function main() {
       notExercised('Every live PR-data check (Filter tabs, Filters disclosure, tab geometry, resizable column, Project selector fit)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
     }
 
-    // ---- Gate-fix (H1, caught live 2026-10-18): drags away from the default, double-clicks to
-    // reset (the library's own internal reset fires alongside our `onDoubleClick` persist), then
-    // relaunches the SAME scratch data dir and confirms the column renders at the DEFAULT width
-    // again -- a genuine `settings.json` round trip proving the reset itself persisted, not just
-    // a plain drag (`commit(true)` already covered that path; the reset's own `commit(false)` /
-    // no-commit-at-all path was the one silently dropping it). ----
+    // Gate-fix (H1, caught live 2026-10-18): drags away from the default, double-clicks to
+    // reset, then relaunches the SAME scratch data dir and confirms the column renders at the
+    // DEFAULT width again -- a genuine `settings.json` round trip (the reset's own path used to
+    // silently drop the persist, unlike a plain drag). ----
     if (reachedPrData) {
       await dragHandleBy(cdp, HANDLE_FINDER, 120);
       await sleep(400);
@@ -545,12 +552,9 @@ async function main() {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }
 
-    // Gate-fix (M9, caught live 2026-10-18): both theme screenshots used to be taken while the
-    // freshly-relaunched app's Pull requests list was still mid-fetch ("Loading…"), proving
-    // nothing about either theme's own rendering of the real rows or the Filters disclosure.
-    // Waits for real rows to settle and opens Filters once (stays open across the theme switch
-    // below -- a class toggle, not a remount) so both screenshots show the full, populated view.
-    await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'rows settled before theme screenshots' }).catch(() => false);
+    // Gate-fix (M9, caught live 2026-10-18): screenshots used to be taken mid-fetch. Waits for
+    // real rows and opens Filters once (stays open across the theme switch, a class toggle).
+    await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, { timeoutMs: 15_000, label: 'rows settled before theme screenshots' }).catch(() => false);
     await cdp.clickByLabel('Filters', { prefix: true });
     await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'Filters open before theme screenshots' }).catch(() => false);
 
@@ -561,7 +565,7 @@ async function main() {
 
     await cdp.evaluate(`window.refract.theme.set('obsidian')`);
     await cdp.waitFor(`document.documentElement.className.includes('obsidian')`, { timeoutMs: 10_000, label: 'obsidian theme applied' });
-    await cdp.waitFor(`document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button').length > 0`, { timeoutMs: 15_000, label: 'rows still settled before obsidian screenshot' }).catch(() => false);
+    await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, { timeoutMs: 15_000, label: 'rows still settled before obsidian screenshot' }).catch(() => false);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-theme-obsidian.png'));
     checkPass('Obsidian theme screenshot captured');
 

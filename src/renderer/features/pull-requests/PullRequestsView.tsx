@@ -73,6 +73,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   const panelElementRef = useRef<HTMLDivElement | null>(null)
   const headerWrapperRef = useRef<HTMLDivElement | null>(null)
   const groupElementRef = useRef<HTMLDivElement | null>(null)
+  const handleElementRef = useRef<HTMLDivElement | null>(null)
   const [listColumnWidthPx, setListColumnWidthPx] = useState(
     () => usePullRequestsLayoutStore.getState().widthPx
   )
@@ -223,15 +224,21 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           className="min-h-0 flex-1"
           onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
           // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
-          // own double-click-to-reset is detected via a native `dblclick` listener on the
-          // GROUP's root element (a wider hit region than the handle's own 1px visible box, per
-          // its built dist), and it calls `event.preventDefault()` ONLY on an actual reset (same
-          // dist). A double-click landing in that wider region but outside the narrow
-          // `ResizableHandle` element itself used to reset visually without persisting, since the
-          // persist-on-reset handler below lived on that narrow element and never fired. Listening
-          // here instead catches every real reset, wherever within the hit region it landed.
+          // own double-click-to-reset is detected via a native `dblclick` listener shared across
+          // every Group on the page (hit-tested by coordinate proximity against ALL registered
+          // separators, not scoped to one Group's own DOM subtree), and it calls
+          // `event.preventDefault()` on the bubbling event whenever ANY separator resets
+          // (confirmed in its built dist). Gate-fix (round 3, Code Medium): `defaultPrevented`
+          // alone over-fired -- the session-list handle's own ~10px hit area reaches ~5px into
+          // this column, so a double-click there reset the SESSION-LIST panel (its own
+          // `defaultPrevented`), yet this handler still persisted 320 for the PR list, which
+          // never moved. Requires the pointer within 5px of THIS group's own handle centre too.
           onDoubleClick={(e) => {
-            if (e.defaultPrevented) usePullRequestsLayoutStore.getState().resetToDefault()
+            if (!e.defaultPrevented) return
+            const handleRect = handleElementRef.current?.getBoundingClientRect()
+            if (handleRect && Math.abs(e.clientX - (handleRect.left + handleRect.width / 2)) <= 5) {
+              usePullRequestsLayoutStore.getState().resetToDefault()
+            }
           }}
         >
           {/* Issue #930 (2026-10-16 decision): 280px up to half the view, default/remembered
@@ -260,7 +267,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           >
             <PullRequestList repositoryId={repositoryId} />
           </ResizablePanel>
-          <ResizableHandle withHandle aria-label="Resize pull request list" />
+          <ResizableHandle withHandle aria-label="Resize pull request list" elementRef={handleElementRef} />
           <ResizablePanel id="pull-requests-detail">
             <div className="h-full min-w-0 overflow-hidden">
               {selectedNumber !== null ? (

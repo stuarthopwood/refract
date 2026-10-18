@@ -150,12 +150,19 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       set({ byRepository: patch(get().byRepository, repositoryId, { loading: false, error: result.error }) })
       return
     }
+    // Gate-fix (round 3, Low): a selected PR that fell out of the newly-fetched items (a filter
+    // change, or the PR itself closing/merging away from the active tab) used to stay "selected"
+    // forever, with `PullRequestDetail` fetching a PR no longer even listed. Reads the CURRENT
+    // `selectedNumber` at apply time (not the pre-fetch `before` snapshot), since a separate
+    // `selectPullRequest` call could have changed it while this fetch was in flight.
+    const currentSelected = get().stateFor(repositoryId).selectedNumber
     set({
       byRepository: patch(get().byRepository, repositoryId, {
         loading: false,
         error: null,
         items: result.value.items,
-        fetchedAt: result.value.fetchedAt
+        fetchedAt: result.value.fetchedAt,
+        selectedNumber: currentSelected !== null && result.value.items.some((pr) => pr.number === currentSelected) ? currentSelected : null
       })
     })
   },

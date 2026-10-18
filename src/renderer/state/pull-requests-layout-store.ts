@@ -39,7 +39,11 @@ function persist(widthPx: number): void {
   }
   persistTimer = setTimeout(() => {
     persistTimer = undefined
-    window.refract.settings.setPullRequestsListWidth(widthPx).then(
+    // Gate-fix (round 3, Sec, caught across 3 rounds): `widthPx` off `PanelSize.inPixels` is
+    // frequently a fraction (e.g. `319.984375`) -- the Rust side's own `as_i64` cast on the IPC
+    // argument rejects a non-integer JSON number outright, so a fractional width never persisted
+    // at all until the next integer-valued resize happened to land.
+    window.refract.settings.setPullRequestsListWidth(Math.round(widthPx)).then(
       (result) => {
         if (!result.ok) console.error('settings.setPullRequestsListWidth failed', result.error)
       },

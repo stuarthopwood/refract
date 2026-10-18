@@ -89,6 +89,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
 
   const tabsWrapRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
   // Issue #499 decision 2: the active tab scrolls into view on every tab/repository change,
   // scrolling only this row's own wrapper (`PanelTabBar.tsx`'s established pattern for the same
@@ -110,16 +111,25 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
       wrap.toggleAttribute('data-fade-left', wrap.scrollLeft > 0)
       wrap.toggleAttribute('data-fade-right', wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1)
     }
-    const tab = wrap.querySelector<HTMLElement>('[data-state="active"]')
-    if (tab) {
+    // Gate-fix (round 3, UI Medium): factored out of this effect's own one-time run so the
+    // ResizeObserver below can re-reveal the active tab too -- resizing the list column used to
+    // only refresh the fade flags, leaving the active tab stranded under the fade if the column
+    // narrowed enough to clip it with no tab/repository change to re-trigger this effect.
+    const revealActiveTab = () => {
+      const tab = wrap.querySelector<HTMLElement>('[data-state="active"]')
+      if (!tab) return
       const tabLeft = tab.offsetLeft
       const tabRight = tab.offsetLeft + tab.offsetWidth
       if (tabLeft < wrap.scrollLeft + TABS_FADE_PX) wrap.scrollLeft = Math.max(0, tabLeft - TABS_FADE_PX)
       else if (tabRight > wrap.scrollLeft + wrap.clientWidth - TABS_FADE_PX) wrap.scrollLeft = tabRight - wrap.clientWidth + TABS_FADE_PX
     }
+    revealActiveTab()
     updateFade()
     wrap.addEventListener('scroll', updateFade, { passive: true })
-    const observer = new ResizeObserver(updateFade)
+    const observer = new ResizeObserver(() => {
+      revealActiveTab()
+      updateFade()
+    })
     observer.observe(wrap)
     // Gate-fix (M4, caught live round 2 2026-10-18, test-reviewer Medium): a mouse with no
     // horizontal wheel/tilt-scroll could not reach the tabs past the fade at all -- maps a
@@ -128,7 +138,10 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
     // unconditionally, so an already-at-the-end wheel still scrolls the page normally).
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY === 0) return
-      const canScrollMore = e.deltaY > 0 ? wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth : wrap.scrollLeft > 0
+      // Gate-fix (round 3, Low): the same 1px tolerance as the fade check above (subpixel
+      // scroll rounding could otherwise leave this perpetually "true" right at the true end,
+      // trapping every further wheel tick instead of letting it scroll the page).
+      const canScrollMore = e.deltaY > 0 ? wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1 : wrap.scrollLeft > 0
       if (!canScrollMore) return
       e.preventDefault()
       wrap.scrollLeft += e.deltaY
@@ -187,6 +200,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
                   so `aria-describedby={undefined}` stops Radix doubling the announcement. */}
               <TooltipTrigger asChild aria-describedby={undefined}>
                 <Button
+                  ref={filtersButtonRef}
                   type="button"
                   variant="ghost"
                   size="icon-sm"
@@ -295,12 +309,11 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
                     clearFilters(repositoryId)
                     // Gate-fix (M2, caught live round 2 2026-10-18, test-reviewer Medium): this
                     // button unmounts the instant real (unfiltered) rows repopulate, stranding
-                    // focus on <body> -- moves it to the search field instead (only reachable
-                    // while the Filters section is open, same as this button's own visibility
-                    // requires `activeFilterCount > 0`, which the search field's non-empty
-                    // query or non-default State can independently satisfy). One frame via
+                    // focus on <body>. Gate-fix (round 3, Medium, 4 reviewers): with the Filters
+                    // section CLOSED there is no search field to receive it either -- falls back
+                    // to the Filters button itself in that case. One frame via
                     // `requestAnimationFrame` lets the unmount/re-render settle first.
-                    if (filtersOpen) requestAnimationFrame(() => searchInputRef.current?.focus())
+                    requestAnimationFrame(() => (filtersOpen ? searchInputRef : filtersButtonRef).current?.focus())
                   }}
                 >
                   Clear filters

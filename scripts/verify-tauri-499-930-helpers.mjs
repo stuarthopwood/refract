@@ -103,15 +103,16 @@ export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
  * (C1, test-reviewer Critical, round 2): `setStateFilter` updates the label SYNCHRONOUSLY while
  * `refresh()` keeps the OLD (stale, still-Open) rows mounted until the fetch resolves -- waiting
  * on `rows.length > 0` alone (the previous version of this check) passed on those stale rows
- * every time. Each row's own state span is the FIRST DIRECT CHILD of its metadata container
- * (`.flex.flex-wrap.items-center.gap-1`, `PullRequestRow.tsx` -- uniquely identified by its own
- * `flex-wrap` class, which the state/check spans inside it do NOT carry; a plain
- * `span.flex.items-center.gap-1` selector matches that OUTER container too, since CSS class
- * selectors only require the listed classes to be a SUBSET, and being the parent it then sorts
- * FIRST in `querySelectorAll`'s document order -- caught live round 3, rows genuinely showed
- * Merged but `[0]` was the whole concatenated metadata text, not the state label alone).
- * Returns the settled `{ rows, label, stateTexts }` or `null` on timeout. */
-export async function driveStateFilter(cdp, tabLabel, optionLabel) {
+ * every time. Reads each row's exact state via `data-pr-state` (`PullRequestRow.tsx`, round 3
+ * gate-fix -- a class-based inner-span text scrape matched the row's own PARENT container too,
+ * since CSS class selectors only require the listed classes to be a SUBSET, and being the parent
+ * it then sorted FIRST in `querySelectorAll`'s document order; a real data attribute removes the
+ * ambiguity entirely). `requireSingleAuthor` (round 3, Code Medium): a relation tab (Authored by
+ * me) settling to the SAME shape (no Open/Draft, some Closed/Merged) the previous `All` tab call
+ * already satisfied is not proof the tab switch itself took effect -- also requires every row's
+ * `data-pr-author` to be the one, same login, which `All` (typically multi-author) would not be.
+ * Returns the settled `{ rows, label, authors }` or `null` on timeout. */
+export async function driveStateFilter(cdp, tabLabel, optionLabel, { requireSingleAuthor = false } = {}) {
   await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(tabLabel)})`);
   if (optionLabel) {
     await cdp.click(`document.querySelector('[aria-label="State"]')`);
@@ -120,14 +121,16 @@ export async function driveStateFilter(cdp, tabLabel, optionLabel) {
   return cdp.waitFor(`(() => {
     const loadingNow = document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled') === 'true';
     if (loadingNow) return false;
-    const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
+    const rows = Array.from(document.querySelectorAll('[data-pr-row]'));
     if (rows.length === 0) return false;
-    const stateTexts = rows.map((r) => r.querySelectorAll('.flex.flex-wrap.items-center.gap-1 > span')[0]?.textContent?.trim());
-    const hasOpenOrDraft = stateTexts.some((t) => t === 'Open' || t === 'Draft');
-    const hasClosedOrMerged = stateTexts.some((t) => t === 'Closed' || t === 'Merged');
+    const states = rows.map((r) => r.getAttribute('data-pr-state'));
+    const hasOpenOrDraft = states.some((s) => s === 'open' || s === 'draft');
+    const hasClosedOrMerged = states.some((s) => s === 'closed' || s === 'merged');
+    const authors = [...new Set(rows.map((r) => r.getAttribute('data-pr-author')))];
+    if (${requireSingleAuthor} && authors.length !== 1) return false;
     const btn = Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'));
     if (hasOpenOrDraft || !hasClosedOrMerged || btn?.getAttribute('aria-label') !== 'Filters, 1 active') return false;
-    return { rows: rows.length, label: btn.getAttribute('aria-label'), stateTexts };
+    return { rows: rows.length, label: btn.getAttribute('aria-label'), authors };
   })()`, { timeoutMs: 15_000, label: `State on ${tabLabel} tab settles to real, non-stale rows` }).catch(() => null);
 }
 
@@ -136,7 +139,28 @@ export async function driveStateFilter(cdp, tabLabel, optionLabel) {
  * than silently passed on stale rows. */
 export async function stateFilterDiagnostic(cdp) {
   return cdp.evaluate(`(() => {
-    const rows = Array.from(document.querySelectorAll('.divide-y.divide-divider > button, .divide-y > button'));
-    return { loading: document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled'), rowCount: rows.length, stateTexts: rows.map((r) => r.querySelectorAll('.flex.flex-wrap.items-center.gap-1 > span')[0]?.textContent?.trim()) };
+    const rows = Array.from(document.querySelectorAll('[data-pr-row]'));
+    return { loading: document.querySelector('[aria-label="Refresh pull requests"]')?.getAttribute('aria-disabled'), rowCount: rows.length, states: rows.map((r) => r.getAttribute('data-pr-state')), authors: [...new Set(rows.map((r) => r.getAttribute('data-pr-author')))] };
   })()`);
+}
+
+/** Gate-fix (round 3, item 8, Code Medium -- see `PullRequestsView.tsx`'s own M3/item-2 fix): a
+ * double-click on the SESSION-LIST's own handle (a sibling Group entirely, not a descendant of
+ * the Pull Requests view) used to persist 320px for the PR column too -- the library's dblclick
+ * hit-testing is shared across every Group on the page (its own ~10px hit region reaches ~5px
+ * into this column), so it can set `defaultPrevented` on the bubbling event for an UNRELATED
+ * Group's own reset. Confirms neither the PR column's own rendered width nor its persisted
+ * `settings.json` value changed. Returns `{ pass, detail }`. */
+export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFinder) {
+  const before = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
+  const rect = await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Resize session list"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!rect) return { pass: false, detail: 'session-list handle not found' };
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 2 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 2 });
+  await sleep(700);
+  const after = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
+  const persisted = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
+  const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted };
+  const pass = before != null && after != null && Math.abs(after - before) <= 1 && persisted != null && Math.abs(persisted - before) <= 1;
+  return { pass, detail };
 }
