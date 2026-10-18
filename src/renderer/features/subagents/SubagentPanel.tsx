@@ -139,6 +139,14 @@ export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNod
   })
 }
 
+/** Gate round 4 fix (issue #941 part 2, item 2, LOW): the Stage header's own trailing roll-up
+ * text, computed ONCE and shared between the visible (truncatable) span and its own `title=`
+ * tooltip below -- so a truncated roll-up is still recoverable by hovering it with a mouse,
+ * same as the label span (`CollapsedLine.tsx`'s own base label slot) already offers. */
+function stageRollupDisplayText(node: SubagentTreeNode): string {
+  return `${node.rollupText ?? ''}${node.status === 'running' ? ` \u00b7 ${SUBAGENT_STATUS_LABEL.running}` : ''}`
+}
+
 interface SubagentTreeRow {
   node: SubagentTreeNode
   depth: number
@@ -435,6 +443,16 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                       className={cn(
                         'min-w-0 flex-1 truncate',
                         row.node.isStage && 'font-medium',
+                        // Gate round 4 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's
+                        // own label gets the same `min-w-16` floor `StageGroupRow`'s own
+                        // `successLabelClass` call site already gives the chat pane's equivalent
+                        // row (`SubagentChainRow.tsx`, `labelClassName={cn('min-w-16', ...)}`).
+                        // Without it, `flex-1`'s own `flex-basis: 0%` meant this label carried NO
+                        // weight in the browser's overflow-shrink distribution at all -- every
+                        // byte of squeeze landed on it anyway (CSS resolves a zero-basis flex
+                        // item's min-content floor first), truncating the agent's own name in a
+                        // narrow pane while the muted roll-up slot beside it stayed full width.
+                        row.node.isStage && 'min-w-16',
                         isSubagentSuccessStatus(row.node.status) && SUBAGENT_SUCCESS_TEXT_CLASS
                       )}
                       title={row.node.nameOrTask}
@@ -448,13 +466,17 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                         longer shows visibly moves in HERE instead, appended only while running --
                         a settled Stage's own "N done"/"N done, M failed" wording already states
                         failed/cancelled/exited, the same rule `StageGroupRow`'s own `meta` slot
-                        uses (`SubagentChainRow.tsx`). Gate round 3 fix (item 6, LOW): `min-w-0
-                        shrink truncate`, not `shrink-0` -- this optional trailing slot must give
-                        up width before the label does, matching every other one in this tree. */}
+                        uses (`SubagentChainRow.tsx`). Gate round 4 fix (item 1, MEDIUM, wrong
+                        comment): `min-w-0 shrink truncate` lets this slot give up width too, but
+                        the label's own NEW `min-w-16` floor above is what actually decides the
+                        real order now -- this slot absorbs squeeze FIRST only down to the
+                        label's 64px floor; past that point further squeeze has nowhere left to
+                        go but this slot's own further truncation, same as before. Gate round 4
+                        fix (item 2, LOW): `title=` recovers a truncated roll-up by mouse, same as
+                        the label span above already offers. */}
                     {row.node.isStage && row.node.rollupText && (
-                      <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground">
-                        {row.node.rollupText}
-                        {row.node.status === 'running' ? ` \u00b7 ${SUBAGENT_STATUS_LABEL.running}` : ''}
+                      <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground" title={stageRollupDisplayText(row.node)}>
+                        {stageRollupDisplayText(row.node)}
                       </span>
                     )}
                     {!row.node.isStage && row.node.status !== 'running' && row.node.durationMs != null && (

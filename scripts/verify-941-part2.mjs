@@ -84,7 +84,14 @@ const EXPECTED_PANEL_ROWS = [
   { level: '1', isStage: true, label: 'Label', green: true }, // Stage 4 header
   { level: '2', isStage: false, label: 'LabelA', green: true },
   { level: '2', isStage: false, label: 'LabelB', green: true },
-  { level: '1', isStage: true, label: '2 agents', green: false }, // Stage 5 header (mixed finished/failed)
+  // Gate round 4 fix (issue #941 part 2, item 3, LOW): `exactAriaLabel` -- the ONE row whose own
+  // accessible name is asserted character-for-character, not just substring/regex-matched like
+  // every other row below: label "2 agents" (no shared prefix, same as Stage 3's), rollup "1
+  // done, 1 failed" (`stageRollupText`, not running), aggregateStatus "failed" (`overallStatus`:
+  // `counts.failed > 0` wins over `finished`) so the chain-matching ", Failed" suffix applies
+  // (`SubagentChainRow.tsx`'s own `status !== 'finished'` rule) -- proves item 2's status-word
+  // append on the one row in this fixture where it is NOT a no-op.
+  { level: '1', isStage: true, label: '2 agents', green: false, exactAriaLabel: '2 agents, 1 done, 1 failed, Failed' }, // Stage 5 header (mixed finished/failed)
   { level: '2', isStage: false, label: 'Story559', green: true },
   { level: '2', isStage: false, label: 'FailAgent', green: false },
   { level: '1', isStage: false, label: 'R8Solo', green: true }, // Stage 6, solo, stays flat
@@ -139,7 +146,11 @@ async function assertPanelStructure(cdp, findings, failures, themeName) {
     if (expected.isStage) {
       if (row.ariaExpanded !== 'true') failures.push(`${where}: aria-expanded is ${JSON.stringify(row.ariaExpanded)}, expected the string "true".`);
       if (row.hasAriaSelected) failures.push(`${where}: carries an aria-selected attribute (${JSON.stringify(row.ariaLabel)}) -- a Stage header has no single subagent id to select and must not carry this attribute at all.`);
-      if (!row.ariaLabel || !row.ariaLabel.includes(expected.label) || !/\d+ (done|of)/.test(row.ariaLabel)) {
+      if (expected.exactAriaLabel !== undefined) {
+        if (row.ariaLabel !== expected.exactAriaLabel) {
+          failures.push(`${where}: own accessible name is ${JSON.stringify(row.ariaLabel)}, expected EXACTLY ${JSON.stringify(expected.exactAriaLabel)} (including the ", Failed" status-word suffix).`);
+        }
+      } else if (!row.ariaLabel || !row.ariaLabel.includes(expected.label) || !/\d+ (done|of)/.test(row.ariaLabel)) {
         failures.push(`${where}: own accessible name is ${JSON.stringify(row.ariaLabel)}, expected it to contain both the label and the roll-up count.`);
       }
     } else {
@@ -187,7 +198,12 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
       const heading = Array.from(transcript.querySelectorAll('span[id]')).find((el) => el.textContent.trim() === 'Up next');
       if (!heading) return { transcriptFound: true, headingFound: false };
       const wrapper = heading.parentElement;
-      const ul = wrapper ? wrapper.querySelector('ul[aria-labelledby="' + heading.id + '"]') : null;
+      // Gate round 4 fix (issue #941 part 2, item 4, LOW, sec): compares the real attribute
+      // value in JS instead of interpolating the heading's own id into a CSS selector string --
+      // useId() ids are safe today, but a selector built by string concatenation is the wrong
+      // habit regardless, and getAttribute plus === proves the exact same relationship with no
+      // injection surface at all.
+      const ul = wrapper ? Array.from(wrapper.children).find((el) => el.tagName === 'UL' && el.getAttribute('aria-labelledby') === heading.id) : null;
       if (!ul || ul.parentElement !== wrapper) return { transcriptFound: true, headingFound: true, ulFound: false };
       const items = Array.from(ul.children).filter((el) => el.tagName === 'LI').map((li) => li.textContent);
       const chainButton = Array.from(transcript.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Show subagents panel');
@@ -382,7 +398,8 @@ async function main() {
     }
 
     notExercised.push(
-      'The panel\u2019s own positive "Uses:" rendering (a Stage header actually naming a resolved dependency) is not reachable from this fixture: SubagentSummary carries no context field, and every task() call here names its own agent (nameOrTask is always the short name, never task text) -- extending the fixture to cover this would need a NEW, unnamed task whose own task text carries an agent:// reference, judged not worth the risk of perturbing part 1\u2019s own already-passing assertions for a part-2-only code path that is otherwise provably correct (same algorithm as groupSubagentStages.ts\u2019s own applyDependencies, reused verbatim against the panel\u2019s own field names).'
+      'The panel\u2019s own positive "Uses:" rendering (a Stage header actually naming a resolved dependency) is not reachable from this fixture: SubagentSummary carries no context field, and every task() call here names its own agent (nameOrTask is always the short name, never task text) -- extending the fixture to cover this would need a NEW, unnamed task whose own task text carries an agent:// reference, judged not worth the risk of perturbing part 1\u2019s own already-passing assertions for a part-2-only code path that is otherwise provably correct (same algorithm as groupSubagentStages.ts\u2019s own applyDependencies, reused verbatim against the panel\u2019s own field names).',
+      'A running Stage header\u2019s own "\u00b7 Running" roll-up slot and the matching ", Running" suffix on its accessible name (both gate round 3, item 1/2) are not reachable from this fixture: every assertion runs AFTER the fixed-up "All ten Stages settled" wait, by which point every Stage in this tape has already finished or failed -- no Stage is ever caught mid-run at assertion time. Covering it would need a second CDP snapshot taken before that settle wait, judged not worth the risk of perturbing this fixture\u2019s own already-passing timing-sensitive waits for a one-line visual/text append that is otherwise provably correct (identical ternary to `StageGroupRow`\u2019s own `isRunning` branch, `SubagentChainRow.tsx`).'
     );
 
     const report = {
