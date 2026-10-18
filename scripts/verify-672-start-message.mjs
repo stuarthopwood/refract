@@ -320,15 +320,15 @@ async function main() {
     const cdp2 = launch2.cdp;
 
     // ---- Real `queued` and `memory-deferred`: Session C grabs the Rust start-queue's 1st real
-    // slot and actually spawns (MAX_CONCURRENT_STARTS, start_queue.rs:36); Session D grabs the
-    // 2nd slot but, with REFRACT_FORCE_LOW_MEMORY=1 AND C still spawned, defers
-    // (start_queue.rs:387); Session E then has no slot free at all and queues. Each becomes the
-    // focused pane on its own creation (confirmed via aria-current below). D and E are cancelled
-    // once their states are captured -- left running, D's own eventual real spawn would compete
-    // with Session C's own later with-history restart for the same 2 slots, a long, flaky,
-    // unrelated real-time dependency for checks that are really about these kinds' rendering. ----
+    // slot and spawns (MAX_CONCURRENT_STARTS, start_queue.rs:36); Session D grabs the 2nd slot
+    // but, with REFRACT_FORCE_LOW_MEMORY=1 AND C still spawned, defers (start_queue.rs:387);
+    // Session E then has no slot free and queues. Each becomes the focused pane on creation (via
+    // aria-current). D and E are cancelled once captured -- left running, D's eventual real
+    // spawn would compete with C's own later restart for the same 2 slots. ----
     const sessionC = await quickCreateSessionId(cdp2, 'long/C (1st start, 1st of 2 real slots)');
-    findings.push(`Session C created (id ${sessionC.id}), brand-new, holding one of the 2 real start-queue slots.`);
+    // Diagnostic (bg_835): confirms C's own real start genuinely began before creating D.
+    const cProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 10_000);
+    findings.push(`Session C created (id ${sessionC.id}), brand-new, real startProgress ${JSON.stringify(cProgress)}, holding one of the 2 real start-queue slots.`);
     const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
     const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 10_000);
     findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C is still spawned (start_queue.rs:387).`);
