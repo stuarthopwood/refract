@@ -18,6 +18,7 @@ import {
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph
 } from '../subagents/subagentStatus'
+import { extractResultSummary } from './stageMeta'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -540,9 +541,10 @@ export function SubagentRow({ item }: SubagentRowProps) {
     </span>
   )
   // Issue #941 grill item 4: a Stage expanding reveals each member's own one-line result right
-  // here, with no need to ALSO expand this row individually -- the first line only (a full
-  // multi-line result still needs this row's own expansion, `SubagentBody` below, for the rest).
-  const resultSummary = item.result != null ? (item.result.split('\n')[0] ?? '').trim() || undefined : undefined
+  // here, with no need to ALSO expand this row individually -- `extractResultSummary` (gate
+  // round 1 fix): first line, Markdown markers stripped, capped ~120 chars (a full multi-line
+  // result still needs this row's own expansion, `SubagentBody` below, for the rest).
+  const resultSummary = item.result != null ? extractResultSummary(item.result) : undefined
   return (
     // #565 decision 10: this row is always a `SpineList` member (its only caller,
     // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same

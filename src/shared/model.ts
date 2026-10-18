@@ -374,16 +374,14 @@ export interface SubagentSummary {
    * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
    * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
    * have failed, only its process disappeared.
-   *
-   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, never
-   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` genuinely
-   * CAN outlive it on Windows for a window, so "its process disappeared" is not simply assumed:
+   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, not
+   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` CAN outlive
+   * it on Windows for a window, so "its process disappeared" is not simply assumed:
    * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
-   * process dies (primary defence), and `src/main/process/pidRecords.ts`'s `reapStale()` is the
-   * fallback for the rarer case Refract itself was killed too abruptly even for that -- run from
-   * `src/main/index.ts` at startup, awaited before any Session/`SessionAgent` ever attaches, so by
-   * the time `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for
-   * real, not merely assumed. */
+   * process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * fallback for the rarer case Refract itself was killed too abruptly -- run from
+   * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
+   * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
   status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)

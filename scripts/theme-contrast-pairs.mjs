@@ -160,6 +160,14 @@ export const PAIRS = [
   // rely on an alias that could be split apart later without this file noticing.
   { fg: 'severity-error', bg: 'background', min: 4.5 },
   { fg: 'severity-error', bg: 'muted', min: 4.5 },
+  // Issue #941, gate round 1: a finished agent or Stage's own name/label now renders
+  // `text-severity-success` directly (icon AND text, the one exception to "done is neutral"),
+  // on both the row background and the `hover:bg-muted` tint `CollapsedLine`'s own trigger
+  // uses -- same precedent as `severity-error` immediately above. `severity-success` was
+  // previously gated only at the 3:1 icon floor (`bg: 'background'`/`bg: 'card'`/`bg: 'popover'`
+  // pairs earlier in this file).
+  { fg: 'severity-success', bg: 'background', min: 4.5 },
+  { fg: 'severity-success', bg: 'muted', min: 4.5 },
   // #552 fix (Skippy, delegated by Stuart 2026-10-18): Dark (high contrast)'s own declared
   // design target is 7:1 text, not the ordinary 4.5:1 AA floor every preset above is held to
   // (`docs/design/accessibility.md`/`foundations-tokens-theming.md` "High contrast preset").

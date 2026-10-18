@@ -73,6 +73,12 @@ pub(super) fn upsert_subagent_items(
         let id = format!("subagent:{tool_call_id}:{index}");
         let name = subagent_name(spec);
         let task = task_text(spec);
+        // Gate round 1 fix (issue #941): `context` is the whole batch call's own shared
+        // argument, identical for every spec in `specs[]` -- stored once, on spec index 0
+        // only, so it is never duplicated N times across a Stage's own items. The renderer
+        // (`groupSubagentStages.ts`) already reads every item's `context` and dedupes/joins,
+        // so a `None` here for index > 0 changes nothing it sees.
+        let item_context = if index == 0 { context.map(str::to_string) } else { None };
         let existing_pos = items.iter().position(|item| item.id() == id);
         match existing_pos {
             Some(pos) => {
@@ -85,7 +91,7 @@ pub(super) fn upsert_subagent_items(
                 {
                     *n = name;
                     *t = task;
-                    *c = context.map(str::to_string);
+                    *c = item_context;
                 }
             }
             None => items.push(Arc::new(TranscriptItem::Subagent {
@@ -94,7 +100,7 @@ pub(super) fn upsert_subagent_items(
                 spec_index: index as u32,
                 name,
                 task,
-                context: context.map(str::to_string),
+                context: item_context,
                 status: SubagentStatus::Running,
                 started_at: Some(now_ms()),
                 duration_ms: None,
@@ -348,6 +354,9 @@ pub(super) fn build_message_subagent_items(
         let sub_id = format!("subagent:{part_id}:{spec_index}");
         let sub_name = subagent_name(spec);
         let task = task_text(spec);
+        // Gate round 1 fix (issue #941): see `upsert_subagent_items`'s own identical comment --
+        // `context` is stored once, on spec index 0 only.
+        let item_context = if spec_index == 0 { context.map(str::to_string) } else { None };
         let existing = existing_items
             .iter()
             .map(|item| item.as_ref())
@@ -369,7 +378,7 @@ pub(super) fn build_message_subagent_items(
                 spec_index: *spec_index,
                 name: sub_name,
                 task,
-                context: context.map(str::to_string),
+                context: item_context,
                 status: *status,
                 started_at: *started_at,
                 duration_ms: *duration_ms,
@@ -383,7 +392,7 @@ pub(super) fn build_message_subagent_items(
                 spec_index: spec_index as u32,
                 name: sub_name,
                 task,
-                context: context.map(str::to_string),
+                context: item_context,
                 status: SubagentStatus::Running,
                 started_at: if capture_timing { Some(now_ms()) } else { None },
                 duration_ms: None,

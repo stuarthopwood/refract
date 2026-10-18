@@ -13,11 +13,10 @@ export interface StageGroup {
   items: SubagentItem[]
   /** 1-based position among this turn's own Stages, in start order. */
   stageIndex: number
-  /** How many Stages this turn has in total. Gate round 3 fix (architect Low): a Stage group
-   * row's own "Stage N" header is decided by agent count ALONE (`items.length === 1`, gate
-   * round 2 architect addendum B) with no exception for how many Stages the turn has -- this
-   * field exists for the header's OWN text ("Stage N of M") and the chain's "N stages" summary,
-   * never as a second condition gating whether the header renders at all. */
+  /** How many Stages this turn has in total, for the header's own "Stage N of M" accessible
+   * name and the chain's "N stages" summary. Gate round 1 fix (issue #941): every Stage, solo
+   * or not, now gets the same header/brief/Uses -- FR-079 does not narrow to multi-agent
+   * Stages (the earlier #563 "a one-agent Stage has no header at all" rule is superseded). */
   totalStages: number
   /** Issue #941 grill item 3: the batch context's own first line (cleaned, truncated), else
    * the agents' shared name prefix, else `null` -- the renderer then shows a bare "Stage N". */
@@ -71,7 +70,12 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
 
   const flush = () => {
     if (run.length === 0) return
-    const context = run[0]!.context
+    // Gate round 1 fix: a Stage formed from several `task()` calls issued together in one
+    // message (issue #941 technical note) can carry several DISTINCT `context` strings, one
+    // per call (Rust now stamps `context` only on each call's own spec-index-0 item) -- every
+    // one is kept, deduped and joined, not just the first item's.
+    const contexts = [...new Set(run.map((item) => item.context).filter((c): c is string => Boolean(c)))]
+    const context = contexts.length > 0 ? contexts.join('\n\n') : undefined
     const label = computeStageLabel(
       context,
       run.map((item) => item.name)
@@ -121,17 +125,24 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
 }
 
 /** Issue #941 grill item 5: a Stage's own "Uses:" is real, never a guess -- resolves every
- * `agent://<id>` reference this Stage's own batch context or tasks make against the agent ids
- * (OMP agent ids are name-based: `shared/model.ts`'s own `SubagentSummary.id` doc comment)
+ * `agent://<id>` reference this Stage's own context or tasks make against the agent ids (OMP
+ * agent ids are name-based: `shared/model.ts`'s own `SubagentSummary.id` doc comment)
  * STARTED BY AN EARLIER Stage in the same turn, and drops any reference that matches nothing
  * or points at the Stage's own agents or a LATER Stage (not yet started, so never a real
- * dependency). Mutates `stage.dependencies` in place once every Stage's final `stageIndex` is
- * known. */
+ * dependency). Gate round 1 fix: a name repeated across several earlier Stages (the same agent
+ * name reused) now resolves to the LATEST one before the referencing Stage, not the first ever
+ * seen -- the most recent prior Stage is the one a later brief is realistically pointing at.
+ * Each dependency also carries the matched item's own `toolCallId`/`specIndex` (the same pair
+ * `SubagentSummary` correlation already uses elsewhere) so a repeated name across Stages opens
+ * the correct one, not whichever the live tracker happens to match by name alone. Mutates
+ * `stage.dependencies` in place once every Stage's final `stageIndex` is known. */
 function applyDependencies(stages: StageGroup[]): void {
-  const stageIndexByAgentId = new Map<string, number>()
+  const occurrencesByAgentId = new Map<string, Array<{ stageIndex: number; toolCallId: string; specIndex: number }>>()
   for (const stage of stages) {
     for (const item of stage.items) {
-      if (!stageIndexByAgentId.has(item.name)) stageIndexByAgentId.set(item.name, stage.stageIndex)
+      const occurrences = occurrencesByAgentId.get(item.name) ?? []
+      occurrences.push({ stageIndex: stage.stageIndex, toolCallId: item.toolCallId, specIndex: item.specIndex })
+      occurrencesByAgentId.set(item.name, occurrences)
     }
   }
   for (const stage of stages) {
@@ -139,11 +150,16 @@ function applyDependencies(stages: StageGroup[]): void {
     const seenAgentIds = new Set<string>()
     const dependencies: StageDependency[] = []
     for (const agentId of extractAgentRefs(text)) {
-      const refStageIndex = stageIndexByAgentId.get(agentId)
-      if (refStageIndex === undefined || refStageIndex >= stage.stageIndex) continue
-      if (seenAgentIds.has(agentId)) continue
+      const occurrences = occurrencesByAgentId.get(agentId)
+      if (!occurrences || seenAgentIds.has(agentId)) continue
+      let latest: { stageIndex: number; toolCallId: string; specIndex: number } | undefined
+      for (const occurrence of occurrences) {
+        if (occurrence.stageIndex >= stage.stageIndex) continue
+        if (!latest || occurrence.stageIndex > latest.stageIndex) latest = occurrence
+      }
+      if (!latest) continue
       seenAgentIds.add(agentId)
-      dependencies.push({ agentId, stageIndex: refStageIndex })
+      dependencies.push({ agentId, stageIndex: latest.stageIndex, toolCallId: latest.toolCallId, specIndex: latest.specIndex })
     }
     stage.dependencies = dependencies
   }

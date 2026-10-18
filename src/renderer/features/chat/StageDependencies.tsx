@@ -1,60 +1,67 @@
 // "Uses:" -- issue #941 grill item 5: a Stage's real `agent://<id>` dependencies on an earlier
 // Stage's agent, never a guess (`groupSubagentStages.ts`'s own `applyDependencies` already
 // dropped every reference that matched nothing or pointed at the Stage's own agents or a later
-// one). Shared by the Subagent chain's Stage rows (`SubagentChainRow.tsx`) and, in a later PR,
-// the Subagent panel's own Stage node (ADR 0003: one component, not two copies).
+// one, and resolves a repeated name to the LATEST earlier Stage that started it). Shared by the
+// Subagent chain's Stage rows (`SubagentChainRow.tsx`) and, in a later PR, the Subagent panel's
+// own Stage node (ADR 0003: one component, not two copies).
 import * as React from 'react'
+import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
+import { LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import type { StageDependency } from './groupSubagentStages'
+import { mutedLinkClassName } from './Markdown'
 
 /** Groups `dependencies` by the earlier Stage they belong to, preserving first-seen Stage
  * order, so "Uses: G923Code, G923Arch (Stage 1), Story559 (Stage 2)" never interleaves two
  * Stages' own agent ids inside one parenthesis. */
-function groupByStage(dependencies: StageDependency[]): Array<{ stageIndex: number; agentIds: string[] }> {
-  const groups: Array<{ stageIndex: number; agentIds: string[] }> = []
+function groupByStage(dependencies: StageDependency[]): Array<{ stageIndex: number; deps: StageDependency[] }> {
+  const groups: Array<{ stageIndex: number; deps: StageDependency[] }> = []
   for (const dep of dependencies) {
     const group = groups.find((g) => g.stageIndex === dep.stageIndex)
-    if (group) group.agentIds.push(dep.agentId)
-    else groups.push({ stageIndex: dep.stageIndex, agentIds: [dep.agentId] })
+    if (group) group.deps.push(dep)
+    else groups.push({ stageIndex: dep.stageIndex, deps: [dep] })
   }
   return groups
 }
 
-/** One Stage's own "Uses:" line (issue #941 grill item 5): each referenced agent is a real link
- * when the live Subagent list still knows it (correlated by `SubagentSummary.id`, the same
- * name-based id `ChainAgentEntry` already keys on), else plain text (decision 7's own "unbuilt
- * actions are hidden, not disabled" pattern, reused verbatim) -- never a dead button. Renders
- * nothing when `dependencies` is empty (the common case: most Stages have none). */
+/** One Stage's own "Uses:" line (issue #941 grill item 5): each referenced agent is a real,
+ * link-styled button (`mutedLinkClassName`, `Markdown.tsx`'s own muted-surface link treatment,
+ * so it reads as a link at rest, not only on hover) when the live Subagent list still knows the
+ * EXACT matched agent (correlated by `toolCallId`+`specIndex`, not name alone -- gate round 1
+ * fix: a repeated agent name across Stages must open the one `applyDependencies` actually
+ * resolved to, never whichever same-named row the tracker happens to match first), else plain
+ * text (decision 7's own "unbuilt actions are hidden, not disabled" pattern). Renders nothing
+ * when `dependencies` is empty (the common case: most Stages have none). */
 export function StageUsesLine({ dependencies, sessionId }: { dependencies: StageDependency[]; sessionId: string | null }) {
   // Rules of Hooks: the store read runs unconditionally, before the empty-list early return.
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : []))
   if (dependencies.length === 0) return null
   const groups = groupByStage(dependencies)
   return (
-    <div className="flex flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground">
+    <div className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 flex flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground')}>
       <span className="shrink-0">Uses:</span>
       {groups.map((group, groupIndex) => (
         <span key={group.stageIndex}>
-          {group.agentIds.map((agentId, agentIndex) => {
-            const match = subagents.find((s) => s.id === agentId)
+          {group.deps.map((dep, depIndex) => {
+            const match = subagents.find((s) => s.toolCallId === dep.toolCallId && s.specIndex === dep.specIndex)
             return (
-              <React.Fragment key={agentId}>
+              <React.Fragment key={dep.agentId}>
                 {match && sessionId ? (
                   <button
                     type="button"
-                    className="underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-                    aria-label={`Go to ${agentId}, Stage ${group.stageIndex}`}
+                    className={mutedLinkClassName}
+                    aria-label={`Open ${dep.agentId} in Subagents panel`}
                     onClick={(event) =>
                       openHostedPanel('subagents', sessionId, { selectSubagentId: match.id, opener: event.currentTarget })
                     }
                   >
-                    {agentId}
+                    {dep.agentId}
                   </button>
                 ) : (
-                  agentId
+                  dep.agentId
                 )}
-                {agentIndex < group.agentIds.length - 1 ? ', ' : ''}
+                {depIndex < group.deps.length - 1 ? ', ' : ''}
               </React.Fragment>
             )
           })}
