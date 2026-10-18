@@ -3620,18 +3620,40 @@ Filed 2026-10-18 by the #941 lane from PR #979: `apply_async_result_jobs`
 turn by bare `job_id`/`label`, with no `tool_call_id` scoping, so a repeated subagent name
 across Stages (fixture `stages-941.jsonl`'s own "Story559", Stage 2 then Stage 5) let Stage 5's
 later async-result clobber Stage 2's already-settled `result`/`duration_ms` (research.md
-decision 19, FR-084).
+decision 19, FR-084). Gate round 1 (`agent://Main`, Code/Test FAIL) found the first fix under-
+protected two ways and found a real clippy violation; all addressed below.
 
-- [X] T288 [US1] `apply_async_result_jobs` (`subagent_items.rs`) rewritten as a two-pass match:
-  pass 1 decides, for every job in the frame, which item (if any) it resolves -- scoped to
-  items whose `result` is still `None` (a `Some` result means an earlier async-result already
-  settled that row; it is never touched again), job_id match tried before label match, each
-  item claimed by at most one job this call, ties among several still-unresolved same-label
-  items broken by the latest `started_at` (the issue's own documented fallback) -- without
-  mutating anything; pass 2 applies each job's status/result/duration/job_id update only to its
-  resolved target. No `tool_call_id` scoping was possible: the async-result frame itself carries
+- [X] T288 [US1] `apply_async_result_jobs` (`subagent_items.rs`) rewritten as a single pass per
+  job: an idempotency no-op check first (a job whose `job_id` an already-settled item holds,
+  with that item's current status/result/duration already matching exactly what re-applying it
+  would write, is skipped outright -- the live pipeline applies the SAME async-result message
+  twice, `transcript.rs`'s `message_start`/`message_end` call sites both carrying the identical
+  `details.jobs[]`); then candidate selection among still-UNSETTLED items, pooling a `job_id`
+  match and a label match (the latter only when the item's own `job_id` is unset) into ONE set
+  with no match-type priority, the latest `started_at` winning ties; each job claims at most one
+  item per call. No `tool_call_id` scoping was possible: the async-result frame itself carries
   none (confirmed against every `async-result` message in `subagents.jsonl`,
   `subagents-background-turn.jsonl` and `stages-941.jsonl`).
+- [X] T291 [US1] Gate round 1 remediation (`agent://Main`, 3 findings, all addressed):
+  **(1, HIGH, Code)** settlement is no longer `result.is_none()` -- a new Rust-only
+  `async_settled` flag (`TranscriptItem::Subagent`, `#[serde(skip)]`, no wire/TS change) is set
+  `true` only when a job's REAL data (`resultText`/`errorText`/`schema.data`) resolves a row,
+  fixing the double-application-and-idempotency gap above. **(2, MEDIUM, Code+Test)** a
+  label-only fallback result (no `resultText`/`schema`/`errorText` at all, e.g. the `wait` job
+  for "gamma" in `subagents-background-turn.jsonl`) never sets `async_settled`, so a later real
+  result for that same `job_id` still applies. **(3, MEDIUM, Code)** `job_id` matches no longer
+  out-rank label matches by priority alone -- traced live repro: Stage 2's Story559 errors at
+  the batch level with no result (`job_id` already `"Story559"` from its own
+  `apply_batch_task_result`-read `progress[].id`, status Error, still unsettled); Stage 5's
+  LATER async-result for ITS OWN Story559 then arrives -- pooling both match types and picking
+  the latest `started_at` now correctly selects Stage 5 (started after Stage 2) instead of
+  reusing the earlier bug's own failure mode through a different combination of unsettled rows.
+  Doc comment and research.md decision 19/FR-084 amended to record all three rules.
+- [X] T292 [US1] **(HIGH, Test, clippy)** `map_or(true, ...)` replaced with `.is_none_or(...)`
+  throughout (clippy `unnecessary_map_or`, `-D warnings` in CI, matches the repo's own
+  `ipc/sessions_agent.rs:284` precedent); the `else if { if ... }` nesting this rewrite
+  introduced for the match-type-priority logic is gone entirely now that job_id/label matches
+  are pooled (no `collapsible_if` surface left).
 - [X] T289 [US1] Live-check coverage added additively to `scripts/verify-941-part2.mjs`
   (reusing the `stages-941.jsonl` fixture already recorded there -- no new fixture): a new
   `assertAsyncResultStageScoping` expands Stage 2 and Stage 5 (both default-collapsed) and
@@ -3641,6 +3663,20 @@ decision 19, FR-084).
   "Implemented the fix for #559.", 1800ms -> "2s"; Stage 5: "Polished Story559 follow-up
   items.", 4300ms -> "4s"). `node --check`ed; not run (no-build prep lane, blocked on the build
   slot).
+- [X] T293 [US1] Gate round 1 (MEDIUM, Test): duration assertions narrowed to the Story559
+  member row's own rendered duration text specifically, not the whole Stage's `textContent`
+  (which also happens to contain Story560's own "2s" in Stage 2); `notExercised` entries added
+  naming what this fixture does NOT prove -- a `job_id` match beating a label match when BOTH
+  are still unsettled, the latest-`started_at` tie-break among two still-unsettled candidates
+  (this fixture's two Story559 rows are never BOTH unsettled at once -- Stage 2 settles via its
+  own `msg-ar2` well before Stage 5 starts), one job resolving at most one row when two jobs in
+  the same frame could otherwise compete, the `from_history` replay path (applies each stored
+  message once, no double-invocation to prove idempotency against), and the `wait`-tool
+  `tool_execution_end` path (`transcript.rs:1293`/`:1529`) -- this fixture drives every job
+  through the `custom`/`async-result` message path only. The double-application-is-a-no-op case
+  itself IS exercised by this fixture's own `message_start`/`message_end` pair for every
+  `async-result` message (both carry identical `details.jobs[]`), so it is a finding, not a
+  `notExercised` entry.
 - [X] T290 [US1] Docs: FR-084 added to this spec (`### Session 2026-10-18 (async-result Stage
   scoping, issue #989)` Clarifications entry plus the FR itself), research.md decision 19, and
   this Phase 61.

@@ -139,6 +139,15 @@ pub enum TranscriptItem {
         /// back (`upsert_subagent_items`'s own doc comment), self-correcting once that lands.
         #[serde(default)]
         message_id: String,
+        /// Never serialized (Rust-only bookkeeping, no TS/wire counterpart): set once a REAL
+        /// async-result job (one carrying `resultText`/`errorText`/`schema.data`, never the
+        /// bare label-echo fallback, gate round 1 item 2, issue #989) has resolved this row.
+        /// `apply_async_result_jobs` never re-matches a settled row to a later job sharing its
+        /// `job_id`/label, no matter which Stage that later job belongs to; an UNsettled row
+        /// (fresh, or only ever given the label-echo fallback) stays open to a later real
+        /// match. Defaults `false` on every construction/deserialize path.
+        #[serde(skip)]
+        async_settled: bool,
     },
     #[serde(rename = "agent-message")]
     AgentMessage {

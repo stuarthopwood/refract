@@ -271,8 +271,15 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
  * for #559." clobbered to 4300ms/"Polished Story559 follow-up items."). Both Stage rows start
  * collapsed; expanding each reveals its own Story559 member's one-line result summary
  * (`extractResultSummary`) and rendered duration (`formatElapsed`) with no need to expand the
- * member row itself (same mechanism `assertDetailsOnExpand` already uses for Stage 1). */
-async function assertAsyncResultStageScoping(cdp, findings, failures) {
+ * member row itself (same mechanism `assertDetailsOnExpand` already uses for Stage 1).
+ *
+ * Gate round 1 fix (item 7, LOW): reads the Story559 MEMBER ROW's own `textContent` directly
+ * (`[title="Story559"]` inside the Stage's content, `.closest('[data-slot="collapsible-
+ * trigger"]')` to the row's whole trigger button -- the same `data-slot` `stageTriggerSelector`
+ * already keys on, just scoped one level deeper), not the whole Stage's `textContent` -- Stage
+ * 2's sibling member (Story560, 2000ms, also renders "2s") made the old whole-Stage duration
+ * check weaker than it looked; row-scoping removes that collision entirely. */
+async function assertAsyncResultStageScoping(cdp, findings, failures, notExercised) {
   const failuresAtStart = failures.length;
   const expectations = [
     {
@@ -294,42 +301,48 @@ async function assertAsyncResultStageScoping(cdp, findings, failures) {
   ];
   for (const exp of expectations) {
     await expandRow(cdp, exp.stage);
+    const rowSelector = `${stageContentSelector(exp.stage)}?.querySelector('[title="Story559"]')?.closest('[data-slot="collapsible-trigger"]')`;
     await cdp
-      .waitFor(`${stageContentSelector(exp.stage)}?.textContent.includes('Story559') ?? false`, {
+      .waitFor(`!!(${rowSelector})`, {
         timeoutMs: 10_000,
-        label: `${exp.label} expanded content shows its own Story559 row`
+        label: `${exp.label}'s own Story559 member row rendered`
       })
       .catch((err) => failures.push(err.message));
-    const contentText = await cdp.evaluate(`${stageContentSelector(exp.stage)}?.textContent ?? ''`);
-    if (!contentText.includes(exp.ownResult)) {
+    const rowText = await cdp.evaluate(`(${rowSelector})?.textContent ?? ''`);
+    if (!rowText.includes(exp.ownResult)) {
       failures.push(
-        `[issue #989] ${exp.label}'s own Story559 member row does not show its OWN result summary (${JSON.stringify(exp.ownResult)}): ${JSON.stringify(contentText)}`
+        `[issue #989] ${exp.label}'s own Story559 member row does not show its OWN result summary (${JSON.stringify(exp.ownResult)}): ${JSON.stringify(rowText)}`
       );
     } else {
       findings.push(`[issue #989] ${exp.label}'s own Story559 member row correctly shows its own result summary (${JSON.stringify(exp.ownResult)}).`);
     }
-    if (contentText.includes(exp.otherResult)) {
+    if (rowText.includes(exp.otherResult)) {
       failures.push(
         `[issue #989] REGRESSION -- ${exp.label}'s own Story559 member row shows the OTHER Stage's result summary (${JSON.stringify(exp.otherResult)}): a same-named Stage's later async-result clobbered this row.`
       );
     }
-    // Gate note: Stage 2's sibling member (Story560, 2000ms) also renders "2s", so a bare
-    // substring match on `ownDuration` alone is not Stage-2-conclusive by itself -- the
-    // `otherDuration` absence check below is what actually exposes the clobber (Stage 2 never
-    // legitimately renders "4s" anywhere in its own content; Stage 5 never legitimately renders
-    // "2s" anywhere in its own content), the result-summary check above is the primary signal.
-    if (!contentText.includes(exp.ownDuration)) {
-      failures.push(`[issue #989] ${exp.label}'s own Story559 member row does not show its OWN duration (${JSON.stringify(exp.ownDuration)}): ${JSON.stringify(contentText)}`);
+    if (!rowText.includes(exp.ownDuration)) {
+      failures.push(`[issue #989] ${exp.label}'s own Story559 member row does not show its OWN duration (${JSON.stringify(exp.ownDuration)}): ${JSON.stringify(rowText)}`);
+    } else {
+      findings.push(`[issue #989] ${exp.label}'s own Story559 member row correctly shows its own duration (${JSON.stringify(exp.ownDuration)}).`);
     }
-    if (contentText.includes(exp.otherDuration)) {
+    if (rowText.includes(exp.otherDuration)) {
       failures.push(
-        `[issue #989] REGRESSION -- ${exp.label}'s own expanded content shows the OTHER Stage's duration (${JSON.stringify(exp.otherDuration)}), which it never legitimately renders on its own: ${JSON.stringify(contentText)}`
+        `[issue #989] REGRESSION -- ${exp.label}'s own Story559 member row shows the OTHER Stage's duration (${JSON.stringify(exp.otherDuration)}), which it never legitimately renders on its own: ${JSON.stringify(rowText)}`
       );
     }
   }
   if (failures.length === failuresAtStart) {
-    findings.push('[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration -- no cross-Stage async-result clobbering.');
+    findings.push(
+      '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering. The double-application-is-a-no-op case IS exercised here: the live pipeline applies every one of this fixture\u2019s `async-result` messages twice (`message_start` then `message_end`, both carrying identical `details.jobs[]`), and this assertion runs after both have landed.'
+    );
   }
+  notExercised.push(
+    '[issue #989] This fixture\u2019s two Story559 rows are never BOTH still unsettled at once (Stage 2 settles via its own real `msg-ar2` well before Stage 5 even starts), so it cannot prove the pooled job_id/label priority removal or the latest-`started_at` tie-break when TWO candidates are genuinely unsettled at the same moment -- both are proven instead by the gate-round-1 repro trace recorded in `subagent_items.rs`\u2019s own doc comment and research.md decision 19 (a hypothetical Stage 2 batch-failure with no result, never part of this committed fixture), not by a live run of this script; adding that second variant here was judged not worth perturbing this fixture\u2019s own already-passing Stage/chain/panel assertions.',
+    '[issue #989] No job in this fixture ever has TWO still-unsettled same-label candidates competing for it in one async-result frame (so "a single job entry resolves at most one item" is exercised only in the sense that nothing here could violate it, not as a positive two-candidate race).',
+    '[issue #989] The `from_history` replay path (`transcript.rs`\u2019s `items_from_history`) is not driven by this live-CDP fixture at all (it loads a resumed Session\u2019s own stored messages, never live frames) -- it applies each stored `async-result` message exactly once, so it cannot exercise the idempotency no-op path either way.',
+    '[issue #989] The `wait` tool\u2019s own `tool_execution_end` carrier (`transcript.rs:1293`/`:1529`, `jobs_from_details` -> `apply_async_result_jobs`) is not reached by this fixture: every job here arrives only through the `custom`/`async-result` message path, never through an explicit `wait()` tool call.'
+  );
 }
 
 async function main() {
@@ -464,7 +477,7 @@ async function main() {
     );
     findings.push('All ten Stages settled (part 1 scaffold, reused unchanged).');
 
-    await assertAsyncResultStageScoping(cdp, findings, failures);
+    await assertAsyncResultStageScoping(cdp, findings, failures, notExercised);
     await clickByLabelScrolled(cdp, 'Show subagents panel');
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel opened' });
     findings.push('Subagents panel opened from the chain row\u2019s own "Show subagents panel" button.');

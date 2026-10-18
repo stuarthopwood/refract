@@ -236,16 +236,42 @@ errorText, durationMs }] }`), so the issue's own suggested "scope to the frame's
 `tool_call_id`" cannot be built literally.
 
 **Decision (Skippy, delegated by Stuart 2026-10-18)**: scope matching to the item's own
-resolution state instead of a wire field that does not exist. An item whose `result` is already
-`Some` was resolved by an earlier async-result and MUST NOT be matched again by a later job
-sharing its `job_id`/label, no matter which Stage that later job belongs to -- this is what
-actually stops the clobber, since Stage 2's row has already had its `result` filled in by its own
-`msg-ar2` well before `msg-ar5` arrives. Among still-unresolved (`result.is_none()`) items, a
-`job_id` match is tried first, falling back to a label match only when the item's own `job_id` is
-still unset; if several unresolved items genuinely race for the same label/job_id (two Stages
-truly running concurrently, not merely sequential in this fixture), the item with the latest
-`started_at` wins -- the issue's own documented fallback ("prefer the latest unfinished entry
-with that label"). Each job in one async-result frame claims at most one item, so two jobs in the
-same frame can never resolve onto the same row. No omp/wire-format change requested: there is no
-`tool_call_id` on this frame to ask omp to add scoping against, and the resolution-state scoping
-above is sufficient and Rust-side only.
+resolution state instead of a wire field that does not exist. Each job in one async-result frame
+claims at most one item, so two jobs in the same frame can never resolve onto the same row. No
+omp/wire-format change requested: there is no `tool_call_id` on this frame to ask omp to add
+scoping against, and this Rust-side scoping is sufficient. `job id == label` is a FIXTURE-
+OBSERVED assumption, not a documented wire guarantee -- the real `parentToolCallId` field (the
+subagent_lifecycle/progress/snapshot RPC payloads, `rpc-wire.schema.json`) is the eventual true
+scoping key once #712's not-yet-wired-up subscription path (section 16-17 above) is built.
+
+**Gate round 1 correction (`agent://Main`, 2026-10-18)**: the first version of this decision
+scoped eligibility to `result.is_none()` alone, which under-protects two ways. (1) **Settlement
+requires a REAL result**: a job carrying no `resultText`/`errorText`/`schema.data` at all (the
+`wait` tool's bare completion shape, e.g. `subagents-background-turn.jsonl`'s "gamma" job, line
+35) only ever gets the label-echo fallback -- treating that as "resolved" would wrongly lock the
+row against a later, genuinely-real job for the same `job_id`. Fixed by tracking settlement with
+a dedicated Rust-only `async_settled` flag (`TranscriptItem::Subagent`, `#[serde(skip)]`, no
+wire/TS counterpart), set `true` only when a job's real data resolves the row. (2) **`job_id`
+must not out-rank a label match on priority alone**: the first version tried every unsettled
+item's `job_id` match before ANY label match, globally -- but `apply_batch_task_result` (the
+SAME Stage's own `tool_execution_end`) sets an item's `job_id` from `progress[].id` well before
+its own async-result ever arrives, including on a batch-level failure with no result at all. Live
+repro (gate round 1): Stage 2's Story559 errors at the batch level with no result (status Error,
+`job_id` already `"Story559"` from its own progress, still unsettled); Stage 5's LATER
+async-result for its own, different Story559 job then arrived, and because `job_id` matches were
+tried first regardless of recency, Stage 2's row (an unsettled `job_id` match) was wrongly chosen
+over Stage 5's own fresh item (only a label match) -- the exact #989 clobber this decision was
+meant to prevent, just reintroduced through a different combination of unsettled rows. Fixed by
+pooling `job_id` and label matches into ONE candidate set with no match-type priority at all; the
+candidate with the latest `started_at` wins (Stage 5 started after Stage 2, so it correctly wins
+once pooled). (3) **Idempotency**: the live pipeline runs the identical async-result message
+through `apply_message_snapshot` TWICE (`transcript.rs`'s `message_start` then `message_end` call
+sites both carry the same already-complete `details.jobs[]`) -- with settlement now gated on a
+REAL result, the first application settles the correct row; before hunting for a target, a job
+whose `job_id` an already-settled row holds, with that row's current status/result/duration
+already matching what re-applying it would write, is now recognised as a pure duplicate and
+short-circuits to a no-op rather than going looking for a second row to land on. All three fixes
+verified together against the Stage 2/Stage 5 repro above: first application (message_start)
+settles Stage 5 correctly (pooled selection, latest `started_at`); second application
+(message_end) recognises the now-settled Stage 5 row already matches and no-ops; Stage 2 is never
+touched by either application.

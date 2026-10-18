@@ -859,16 +859,23 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
-- **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979): A subagent's
-  async-result frame (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that
-  issued the matching tool call, never an unrelated item from a different Stage that happens to
-  share the same subagent `name`/job `label`/`id` string. Concretely: once an item's own
-  `result` has been set by an earlier async-result, it MUST be treated as settled and MUST NOT
-  be matched or overwritten by any later job sharing its `job_id` or label; matching against a
-  job_id takes priority over a label match, both scoped to items not yet resolved this way; if
-  more than one still-unresolved item shares the same label/job_id (two Stages racing
-  concurrently), the one with the latest `started_at` MUST be chosen; a single job entry MUST
-  resolve at most one item per async-result frame.
+- **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
+  round 1, `agent://Main`, 2026-10-18): A subagent's async-result frame (`details.jobs[]`) MUST
+  only ever resolve the specific `subagent` item that issued the matching tool call, never an
+  unrelated item from a different Stage that happens to share the same subagent `name`/job
+  `label`/`id` string. Concretely: a row only becomes **settled** (permanently ineligible for
+  any further match) once a job carrying a REAL result (`resultText`, `errorText`, or
+  `schema.data`) resolves it -- a job with none of those (the `wait` tool's bare completion
+  shape) MUST NOT settle the row, so a later, genuinely-real job for the same `job_id` can still
+  apply. Among still-unsettled items, a `job_id` match and a label match (the latter only when
+  the item's own `job_id` is still unset) are pooled into ONE candidate set, with NO priority
+  for a `job_id` match over a label match; the candidate with the latest `started_at` MUST be
+  chosen whenever more than one still-unsettled item matches. A single job entry MUST resolve at
+  most one item per async-result frame. Because the live pipeline applies the identical
+  async-result message twice (once per `message_start`/`message_end` pair), matching MUST also
+  be idempotent: before choosing a target, if an already-settled item sharing the job's own
+  `job_id` already holds exactly the status/result/duration this job would write, the job is a
+  pure no-op and MUST NOT be redirected onto a second, different row.
 
 ### Key Entities
 
