@@ -339,6 +339,13 @@ fn scrub_known_divergences(value: &mut Value) {
             if map.contains_key("changes") && map.contains_key("contextUsage") {
                 map.remove("branch");
             }
+            // Issue #937: `sessions.open`'s own response value gained a brand-new, Rust-only
+            // `advisorOn` field (Electron never shipped omp's advisor subsystem at all, epic
+            // #797 rule 5 again) -- same pattern as `readout.branch` above, discriminated by
+            // its two sibling keys unique to this one object shape.
+            if map.contains_key("conversations") && map.contains_key("subagents") {
+                map.remove("advisorOn");
+            }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {
                 map.remove("value");

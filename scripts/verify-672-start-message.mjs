@@ -38,7 +38,7 @@ import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSy
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, JOKE_STAGES, PLAIN_STAGES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
-  setStartProgress, waitForRegionOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf
+  setStartProgress, waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf
 } from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -270,7 +270,7 @@ async function main() {
       await setStartProgress(cdp, sessionAId, { kind: 'prompt', elapsedMs: 20_000 });
       await cdp.waitFor(`!!${OVERLAY}`, { timeoutMs: 10_000, label: 'overlay mounted (prompt stage) for the focus-hide check' });
       await focusLastTabbableOrSelf(cdp, REGION0);
-      await sleep(150);
+      const hiddenOpacityPoll = await waitForComputedOpacity(cdp, OVERLAY, (v) => v <= 0.05, 2_000);
       const hidden = await cdp.evaluate(`(() => {
         const overlay = ${OVERLAY};
         const wrapper = document.querySelector('[data-start-notice-wrapper]');
@@ -278,34 +278,33 @@ async function main() {
         const r = ${REGION0}.getBoundingClientRect();
         const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
         return {
-          overlayOpacity: Number(getComputedStyle(overlay).opacity),
           wrapperPointerEvents: getComputedStyle(wrapper).pointerEvents,
           hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy))
         };
       })()`);
-      if (!hidden || hidden.overlayOpacity > 0.05 || hidden.wrapperPointerEvents !== 'none') {
-        failures.push(`focus-hide: with focus inside the history, the overlay read opacity ${hidden?.overlayOpacity} and the wrapper read pointer-events ${hidden?.wrapperPointerEvents}, expected overlay opacity ~0 and wrapper pointer-events none (WCAG 2.4.11). Deliberately measuring opacity, not CSS \`visibility\` -- see Transcript.tsx's own comment for why \`visibility:hidden\` would break Tab reachability instead.`);
+      if (!hiddenOpacityPoll.ok || !hidden || hidden.wrapperPointerEvents !== 'none') {
+        failures.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} (expected <=0.05) and the wrapper read pointer-events ${hidden?.wrapperPointerEvents} (expected none) -- WCAG 2.4.11. Deliberately measuring opacity, not CSS \`visibility\` -- see Transcript.tsx's own comment for why \`visibility:hidden\` would break Tab reachability instead.`);
       } else if (!hidden.hitIsTranscript) {
         failures.push('focus-hide: the overlay is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
       } else {
-        findings.push(`focus-hide: with focus inside the history, the overlay reads opacity ${hidden.overlayOpacity} and the wrapper reads pointer-events ${hidden.wrapperPointerEvents} (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
+        findings.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} and the wrapper reads pointer-events none (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
       }
       await dispatchTab(cdp);
-      await sleep(150);
+      const afterTabOpacityPoll = await waitForComputedOpacity(cdp, OVERLAY, (v) => v >= 0.95, 2_000);
       const afterTab = await cdp.evaluate(`(() => {
         const overlay = ${OVERLAY};
         const active = document.activeElement;
         const btn = overlay ? Array.from(overlay.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Keep waiting') : null;
         let hitIsButton = false;
         if (btn) { const br = btn.getBoundingClientRect(); hitIsButton = document.elementFromPoint(br.x + br.width / 2, br.y + br.height / 2) === btn; }
-        return { overlayOpacity: overlay ? Number(getComputedStyle(overlay).opacity) : null, activeIsKeepWaiting: active === btn, hitIsButton };
+        return { activeIsKeepWaiting: active === btn, hitIsButton };
       })()`);
       if (!afterTab || !afterTab.activeIsKeepWaiting) {
         failures.push(`focus-hide: one real Tab press from the history did not land on "Keep waiting" (${JSON.stringify(afterTab)}).`);
-      } else if (afterTab.overlayOpacity === null || afterTab.overlayOpacity < 0.95 || !afterTab.hitIsButton) {
-        failures.push(`focus-hide: Tab reached "Keep waiting" but the overlay did not fully reappear (opacity ${afterTab.overlayOpacity}, elementFromPoint at its own centre hits the button: ${afterTab.hitIsButton}).`);
+      } else if (!afterTabOpacityPoll.ok || !afterTab.hitIsButton) {
+        failures.push(`focus-hide: Tab reached "Keep waiting" but the overlay opacity settled at ${afterTabOpacityPoll.value} (expected >=0.95) or elementFromPoint at its own centre did not hit the button (${afterTab.hitIsButton}).`);
       } else {
-        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the overlay reappeared (opacity ${afterTab.overlayOpacity}), reachable at its own screen position.`);
+        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the overlay opacity settled at ${afterTabOpacityPoll.value}, reachable at its own screen position.`);
       }
       await cdp.evaluate(`document.activeElement?.blur()`);
     });

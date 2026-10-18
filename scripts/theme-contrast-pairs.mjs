@@ -42,7 +42,9 @@ export const PAIRS = [
   // preset #927 leaves on a real, opaque `--composer-background`. The pair just below measures
   // Send against `--background` instead, the real backdrop in the other two themes.
   { fg: 'send', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian'] },
+  // #551: Nordic Frost and Cyber Amber both follow the same quiet-composer (#927) pattern as
+  // Dark/Obsidian -- a transparent `--composer-background` -- so they join this scope too.
+  { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
@@ -158,6 +160,13 @@ export const PAIRS = [
   // rely on an alias that could be split apart later without this file noticing.
   { fg: 'severity-error', bg: 'background', min: 4.5 },
   { fg: 'severity-error', bg: 'muted', min: 4.5 },
+  // #552 fix (Skippy, delegated by Stuart 2026-10-18): Dark (high contrast)'s own declared
+  // design target is 7:1 text, not the ordinary 4.5:1 AA floor every preset above is held to
+  // (`docs/design/accessibility.md`/`foundations-tokens-theming.md` "High contrast preset").
+  // `--muted` is the lightest of this theme's background/card/popover/muted surfaces, so it is
+  // the binding case; scoped to this theme only -- the other presets are not held to a 7:1
+  // floor by their own design.
+  { fg: 'severity-error', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   // #558 gate round 1 (Low): `severity-warning` label/summary text now renders in this role
   // (decision 11) and was previously gated only at the 3:1 non-text floor, passing today purely
   // because it aliases `state-needs-you` (already gated at 4.5) -- the same "check the token
@@ -205,8 +214,10 @@ export const PAIRS = [
   // fill is transparent).
   { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'composer-border', bg: 'background', min: 3, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
-  { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian'] },
+  // #551: Nordic Frost and Cyber Amber accept the same WCAG 1.4.11 departure for this pair
+  // (docs/design/accessibility.md "Accepted departures"), so they join the informational scope.
+  { fg: 'composer-border', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  { fg: 'composer-focus', bg: 'background', min: 3, informationalThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   // U1 (gate951UI/A11y High): Dark high contrast's Approval/Model/Reasoning triggers keep a
   // real, enforced resting border (`--composer-control-border`, `var(--border)` there) -- the
   // reinstated equivalent of the stale `border-strong`/`background` comment just above, scoped
@@ -240,6 +251,11 @@ export const PAIRS = [
   { fg: 'state-needs-you', bg: 'sidebar-accent', min: 3 },
   { fg: 'state-stopped', bg: 'sidebar', min: 3 },
   { fg: 'state-stopped', bg: 'sidebar-accent', min: 3 },
+  // #552 gate round 1 fix (Skippy, delegated by Stuart 2026-10-18): `state-stopped` is a
+  // literal copy of `--destructive`/`--severity-error` in this theme (same reasoning, same
+  // under-floor value before the fix) -- `--sidebar-accent` is this theme's selected/hovered
+  // session row, the real surface a stopped Session's status icon renders on.
+  { fg: 'state-stopped', bg: 'sidebar-accent', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'active-indicator', bg: 'sidebar', min: 3 },
   { fg: 'active-indicator', bg: 'sidebar-accent', min: 3 },
   { fg: 'ring', bg: 'sidebar', min: 3 },
@@ -271,6 +287,11 @@ export const PAIRS = [
   { fg: 'pr-open-foreground', bg: 'pr-open', min: 4.5 },
   { fg: 'pr-draft-foreground', bg: 'pr-draft', min: 4.5 },
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
+  // #552 gate round 1 fix (Skippy, delegated by Stuart 2026-10-18): `pr-closed` is a literal
+  // copy of `--destructive`/`--severity-error` in this theme -- same under-floor value before
+  // the fix, checked against `--muted` (the PR list/detail's own hover tint, same binding
+  // surface as `severity-error`/`muted` above).
+  { fg: 'pr-closed', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
   // Issue #925: the diff-stat "+A -D" colouring -- real BODY TEXT (never icon-only), so the
   // 4.5:1 floor, not the 3:1 non-text floor `state-working`/`destructive` already clear
@@ -360,6 +381,48 @@ export function userBubbleLinkContrastRows(themes) {
       pass: ratio >= 4.5,
       fgHex: linearToHex(accentText.linear),
       bgHex: linearToHex(bubbleLinear),
+    })
+  }
+  return rows
+}
+
+// #551 gate round 1, item 9 (Skippy, delegated by Stuart 2026-10-18): `--sidebar-border` is a
+// REAL rendered hover/expanded fill, not merely decorative, in EVERY theme -- `sidebar.tsx`'s
+// separator, `SessionList.tsx`'s toolbar buttons, `SessionRow.tsx`'s trailing menu button and
+// `RepositoryGroup.tsx`'s row actions all apply `hover:bg-sidebar-border`/`aria-expanded:bg-
+// sidebar-border` with `muted-foreground` (or `foreground`, on `:hover`) text/icon on top -- a
+// surface the existing `sidebarBorderAliasesDivider` check in check-theme-contrast.mjs only
+// ever measures for a preset whose `--sidebar-border` literally aliases `--divider` (Obsidian).
+// Dark, Dark high contrast, Nordic Frost and Cyber Amber all have an INDEPENDENT `--sidebar-
+// border` value and were never checked against this real fill at all before now.
+//
+// Informational only (never fails the run): adding this as a genuine PAIRS entry would newly
+// fail Dark (high contrast) (`muted-foreground` on its own `--sidebar-border`/`--sidebar`
+// composite measures only ~2.50:1, a real, pre-existing gap unrelated to this story's own
+// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1
+// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.39:1).
+export function sidebarBorderContrastRows(themes) {
+  const rows = []
+  for (const [themeId, props] of Object.entries(themes)) {
+    const sidebarBorder = props['sidebar-border']
+    const sidebar = props['sidebar']
+    const mutedForeground = props['muted-foreground']
+    if (!sidebarBorder || !sidebar || !mutedForeground) {
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'sidebar-border-hover (sidebar-border on sidebar)', min: 4.5, ratio: null, pass: true, note: 'token missing, informational only -- not enforced (#551)' })
+      continue
+    }
+    const fillLinear = resolvedLinear(sidebarBorder, sidebar)
+    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fillLinear))
+    rows.push({
+      themeId,
+      fg: 'muted-foreground',
+      bg: 'sidebar-border-hover (sidebar-border on sidebar)',
+      min: 4.5,
+      ratio,
+      pass: true,
+      fgHex: linearToHex(mutedForeground.linear),
+      bgHex: linearToHex(fillLinear),
+      note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })
   }
   return rows

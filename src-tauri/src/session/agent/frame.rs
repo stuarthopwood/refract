@@ -39,11 +39,19 @@ impl SessionAgent {
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
-            "session_settled" => self.handle_turn_settled().await,
+            "session_settled" => {
+                self.handle_turn_settled().await;
+                // Issue #937, gate round 2 fix (decided): a settled turn is the one signal
+                // that is genuinely safe to retry the silent attach/resume probe on -- see
+                // `session::advisor`'s own header for why `on_launch` alone cannot tell "a
+                // prompt is in flight" from "truly idle".
+                crate::session::advisor::on_turn_settled(self).await;
+            }
             "prompt_result" => {
                 self.apply_transcript_frame(&frame).await;
                 if frame.get("sessionSettled").and_then(Value::as_bool) == Some(true) {
                     self.handle_turn_settled().await;
+                    crate::session::advisor::on_turn_settled(self).await;
                 }
             }
             "queue_update" => {
@@ -67,8 +75,18 @@ impl SessionAgent {
                     .emit_commands_update(&self.session_id, &commands_value);
             }
             "extension_ui_request" => self.handle_extension_ui_request(&frame).await,
-            "message_start" | "message_update" | "message_end" | "command_output" => {
+            "message_start" | "message_update" | "message_end" => {
                 self.apply_transcript_frame(&frame).await;
+            }
+            // Issue #937, gate round 1 fix: `session::advisor`'s own `handle_command_output`
+            // decides in one pass whether this frame is a silent probe reply to swallow (never
+            // reaching the transcript) or an authoritative `/advisor on|off` toggle to track on
+            // the way to rendering normally -- every OTHER `command_output` (`/usage show`,
+            // `/session info`, ...) renders exactly as before #937.
+            "command_output" => {
+                if !crate::session::advisor::handle_command_output(self, &frame).await {
+                    self.apply_transcript_frame(&frame).await;
+                }
             }
             "notice" => {
                 // Side-chat (`btw-history`) notices are out of scope (see this file's header);

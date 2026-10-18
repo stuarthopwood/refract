@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
+import { useAdvisorStore } from './advisor-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
@@ -112,6 +113,9 @@ export function initStores(): void {
   })
   window.refract.onSubagentsUpdate(({ sessionId, subagents }) => {
     useReadoutStore.getState().applySubagents(sessionId, subagents)
+  })
+  window.refract.onAdvisorUpdate(({ sessionId, advisorOn }) => {
+    useAdvisorStore.getState().applyAdvisorOn(sessionId, advisorOn)
   })
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)

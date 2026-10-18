@@ -121,6 +121,20 @@ export async function setStartProgress(cdp, sessionId, startProgress) {
   if (!ok) throw new Error(`setStartProgress(${sessionId}): store update did not return true`);
 }
 
+/** Generic version of `waitForRegionOpacity` for an arbitrary selector expression (the overlay's
+ *  own `transition-opacity duration-150` means a single read right after dispatching focus/Tab
+ *  can land mid-fade; polls instead). */
+export async function waitForComputedOpacity(cdp, selectorExpr, predicate, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await cdp.evaluate(`(() => { const el = ${selectorExpr}; return el ? Number(getComputedStyle(el).opacity) : null; })()`);
+    if (last !== null && predicate(last)) return { value: last, ok: true };
+    await sleep(50);
+  }
+  return { value: last, ok: false };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

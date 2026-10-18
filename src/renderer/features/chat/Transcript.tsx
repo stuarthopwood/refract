@@ -296,16 +296,12 @@ export function Transcript({
 }: {
   sessionId: string
   // Issue #618: whether this Session has any real history for its CURRENT Conversation thread
-  // (ChatPane.tsx's own `hasHistory`, `session.currentConversation !== null`) -- a real signal,
-  // unlike this component's own items-based `hasConversationStarted` below, which can read empty
-  // for a Session that has real history but is still mid-snapshot-load. Gates whether "Ready…"
-  // can ever show at all: a Session with history never shows it, including while it loads or
-  // while its agent is starting.
+  // (`session.currentConversation !== null`) -- unlike items-based `hasConversationStarted`
+  // below, which can read empty while mid-snapshot-load. Gates whether "Ready…" can ever show.
   hasHistory: boolean
-  // Issue #618 gate-fix (round 3), amended #672: ChatPane.tsx's own SessionStartNotice, rendered
-  // centred, replacing "Ready…" for a brand-new Session, or overlaid on existing history for
-  // one that has any. This component decides whether to dim the transcript behind it
-  // (`dimTranscript` below) and calls `startNotice(dimTranscript)` (a render function).
+  // Amended #672: ChatPane.tsx's own SessionStartNotice, rendered centred over the empty area
+  // or existing history. This component decides whether to dim the transcript behind it
+  // (`dimTranscript` below) via `startNotice(dimmed)` (a render function).
   startNotice?: (dimmed: boolean) => React.ReactElement
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
@@ -318,8 +314,7 @@ export function Transcript({
   const chatWidth = useActiveChatWidth()
   const items = transcript.items
   const receivedAt = transcript.receivedAt
-  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
-  // level) for the full "what counts as started" rule and why it was narrowed this way.
+  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment (module level) for the full rule.
   const hasConversationStarted = isConversationStarted(items)
   // Issue #672: the history (if any) behind the notice dims to ~40% opacity while a start runs; a genuinely empty Session has nothing to dim.
   const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
@@ -704,14 +699,10 @@ export function Transcript({
     }
 
     // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear the in-progress flag (so the normal scroll
-    // handler resumes recording immediately), and record wherever they are now. `autoScroll`
-    // only resumes if that position is actually at the end -- a live check (quality-gate cycle
-    // 2, finding 1 re-verification) found that unconditionally clearing it here let the vendored
-    // scroller's own `autoScroll` re-engage while a still-unsettled `content-visibility:auto`
-    // row above was mid-collapse, overwriting a genuine upward wheel scroll caught very early in
-    // the settle window; the same "only unsuppress once actually at the end" rule the normal
-    // completion branch below already follows avoids that regression here too.
+    // over mid-settle: stop re-asserting, clear the in-progress flag, and record wherever they
+    // are now. `autoScroll` only resumes if that position is actually at the end (quality-gate
+    // cycle 2, finding 1): unconditionally clearing it let the vendored scroller's own
+    // `autoScroll` re-engage mid-collapse, overwriting a genuine upward wheel scroll.
     function handleUserInput() {
       if (cancelled || !viewport) return
       cancelled = true
@@ -845,15 +836,10 @@ export function Transcript({
           role="region"
           tabIndex={0}
           aria-label="Transcript"
-          // Quality-gate finding (code review, Low): an inset ring (`ring-inset`, `outline-none`
-          // on the base `focus-visible` ring instead) so the focus indicator this component's own
-          // `role="region" tabIndex={0}` relies on (the focus hand-off above, and plain Tab/click
-          // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
-          // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
-          // bounds would be cut off entirely rather than just visually tight. Issue #672:
-          // `dimTranscript` fades this to ~40% opacity (round 1: stays interactive,
-          // `focus-within:opacity-100` restores it). `peer` (round 2) lets the sibling overlay
-          // hide itself on focus (WCAG 2.4.11).
+          // Quality-gate finding (code review, Low): `ring-inset` so the focus ring this
+          // `role="region" tabIndex={0}` relies on is never clipped by `overflow-y-auto` +
+          // the root's `overflow-hidden`. `dimTranscript` fades this ~40% (round 1, stays
+          // interactive); `peer` (round 2) lets the sibling overlay hide on focus (WCAG 2.4.11).
           className={cn(
             'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
             dimTranscript && 'opacity-40 focus-within:opacity-100'
@@ -1013,14 +999,12 @@ export function Transcript({
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        {/* Issue #618 gate-fix: a sibling of the viewport, OUTSIDE `MessageScrollerContent`'s
-            own `role="log"`. Overlays centred over the empty area for a brand-new Session, or
-            the dimmed history (`dimTranscript`). Gate-fix (UI round 1):
-            `items-center-safe`+`overflow-y-auto` keep Keep waiting/Cancel reachable on a short
-            pane. Gate-fix (A11y round 2, WCAG 2.4.11; corrected round 3, Main:
-            `peer-focus-within:*` only matches a SIBLING of `.peer` -- belongs here, not the
-            inner wrapper): fades on focus inside the viewport; the wrapper's own
-            arbitrary-variant selector stops it taking clicks while faded. */}
+        {/* Issue #618 gate-fix: sibling of the viewport, OUTSIDE `MessageScrollerContent`'s own
+            `role="log"`; centred over the empty area or the dimmed history (`dimTranscript`).
+            `items-center-safe`+`overflow-y-auto` (round 1) keep Keep waiting/Cancel reachable on
+            a short pane. `peer-focus-within:*` (round 2, corrected round 3: a SIBLING selector,
+            so it belongs here, not the inner wrapper) fades this on focus inside the viewport;
+            the wrapper's own arbitrary-variant selector stops it taking clicks while faded. */}
         {startNotice && (
           <div
             data-start-overlay
