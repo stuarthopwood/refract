@@ -3300,3 +3300,33 @@ root-caused via the real on-screen error text, fixed (drives the repository Sele
 Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
 (folded into #925's own scope; closes once every surface above is confirmed live with the
 gate-round-1 fixes in place).
+
+## Phase 56: Session start notice, one centred presentation (#672, follow-up to #618) [US1]
+
+- [X] T279 [US1] #672 `SessionStartNotice.tsx`: drop the `variant` prop and the `inline` layout
+  entirely -- one centred presentation for every Session. The joke-stage emoji renders on its own
+  line at `text-[40px]` (`@min-[40rem]:text-5xl`) with a `session-start-emoji-bob` 2.4s loop
+  (new `@keyframes`, `globals.css`, neutralised by the existing global
+  `prefers-reduced-motion` rule); the message renders at `text-xl text-balance text-foreground`
+  (`@min-[40rem]:text-2xl`), no longer muted; the elapsed-seconds counter stays explicit
+  `text-xs text-muted-foreground`. queued/memory-deferred (and the brief pre-pick gap) keep the
+  small `text-base` spinner-plus-text look. `ChatPane.tsx` drops `showInline`, its
+  `isConversationStarted`/`useTranscriptStore` probe, and the second (`inline`) render site, and
+  always passes the one `SessionStartNotice` to `Transcript.tsx`. `Transcript.tsx` dims the
+  transcript behind the notice to `opacity-40 pointer-events-none` (`dimTranscript`, true
+  whenever a notice is showing over a Session that has history or a conversation already under
+  way), restoring full opacity the instant the start ends.
+- [X] T280 [US1] `scripts/verify-672-start-message.mjs` (new): live-checks a brand-new Session's
+  start notice (centred, large, no dimming) and a Session-with-history's start notice (centred,
+  large, transcript dimmed behind it, non-interactive), the computed emoji/message/counter font
+  sizes and colours in a normal-width pane and a split pane, the queued/memory-deferred plain
+  `text-base` state, the message clearing once the agent is ready, one screen-reader
+  announcement, and `prefers-reduced-motion` leaving the emoji static, across Dark, Obsidian, and
+  Dark (high contrast).
+
+`pnpm typecheck`, `pnpm test`, `check:indent`, `check:file-size` clean on every commit in this
+phase; `check:theme-contrast` unaffected (no new colour pair, FR-078).
+
+Opened as draft PR (`feat/672-start-message`). **Refs #672** until the live check above confirms
+every acceptance item; switches to **Closes #672** once it does (follow-up to #618, already
+closed).

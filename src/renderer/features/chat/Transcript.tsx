@@ -304,13 +304,13 @@ export function Transcript({
   // can ever show at all: a Session with history never shows it, including while it loads or
   // while its agent is starting.
   hasHistory: boolean
-  // Issue #618 gate-fix (round 3): ChatPane.tsx's own SessionStartNotice, pre-built with this
-  // pane's startProgress and picked random message, rendered here (centred, replacing "Ready…")
-  // for a brand-new Session while its agent is starting. ChatPane now decides WHETHER to pass
-  // this at all (its own `showInline`, reading the identical `isConversationStarted` predicate
-  // against the same store) -- Transcript no longer re-derives that decision, it just renders
-  // whatever it is given. Undefined whenever nothing is starting right now, or whenever ChatPane
-  // chose the inline placement instead.
+  // Issue #618 gate-fix (round 3), amended #672: ChatPane.tsx's own SessionStartNotice,
+  // pre-built with this pane's startProgress and picked random message, rendered here --
+  // centred, replacing "Ready…" for a brand-new Session, or overlaid (dimmed) on top of
+  // existing history for a Session that has any -- while its agent is starting. ChatPane
+  // decides WHETHER to pass this at all; this component only decides whether to dim the
+  // transcript behind it (`dimTranscript` below), using its own `hasHistory` prop and
+  // `hasConversationStarted`. Undefined whenever nothing is starting right now.
   startNotice?: React.ReactNode
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
@@ -326,6 +326,10 @@ export function Transcript({
   // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
   // level) for the full "what counts as started" rule and why it was narrowed this way.
   const hasConversationStarted = isConversationStarted(items)
+  // Issue #672: the history (if any) behind the centred start notice dims to about 40% opacity
+  // and goes non-interactive while a start is in progress, so it reads clearly as "not the live
+  // conversation" without hiding it outright; a genuinely empty Session has nothing to dim.
+  const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = pendingBySession[sessionId] ?? []
 
@@ -847,8 +851,14 @@ export function Transcript({
           // `role="region" tabIndex={0}` relies on (the focus hand-off above, and plain Tab/click
           // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
           // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
-          // bounds would be cut off entirely rather than just visually tight.
-          className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          // bounds would be cut off entirely rather than just visually tight. Issue #672:
+          // `dimTranscript` fades this to about 40% opacity and turns off pointer interaction
+          // while the centred start notice overlays it, so the history underneath reads clearly
+          // as not the live conversation without disappearing outright.
+          className={cn(
+            'outline-none transition-opacity duration-300 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            dimTranscript && 'pointer-events-none opacity-40'
+          )}
         >
           <MessageScrollerContent
             ref={contentRef}
@@ -1004,19 +1014,20 @@ export function Transcript({
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        {/* Issue #618 gate-fix (code/verif/a11y High): a sibling of the viewport, OUTSIDE
-            `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
+        {/* Issue #618 gate-fix (code/verif/a11y High), amended #672: a sibling of the viewport,
+            OUTSIDE `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
             `revealedAnnouncement` status span just below already relies on. Nested inside the
             log, this notice's own sr-only label was being read as a second announcement on top
             of `announceStart`, each `startProgress.kind` change re-announced it again, and its
             Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
             file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
-            this overlays centred over the empty transcript area exactly where "Ready..." would
-            otherwise sit. Gate-fix (round 3): no `hasHistory`/`hasConversationStarted` check
-            here any more -- `ChatPane.tsx` already decided whether this placement applies before
-            ever passing `startNotice` (its own `showInline`), so rendering it whenever given is
-            both simpler and correct; re-adding a second, narrower guard here is exactly what let
-            a Retry-after-failure start render NEITHER notice in round 2. */}
+            this overlays centred over the transcript area -- the empty area where "Ready..."
+            would otherwise sit for a brand-new Session, or the dimmed history above
+            (`dimTranscript`) for a Session that has one. No `hasHistory`/`hasConversationStarted`
+            check here any more -- `ChatPane.tsx` already decided whether this placement applies
+            before ever passing `startNotice`, so rendering it whenever given is both simpler and
+            correct; re-adding a second, narrower guard here is exactly what let a
+            Retry-after-failure start render NEITHER notice in a round-3 regression. */}
         {startNotice && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
             <div className="pointer-events-auto">{startNotice}</div>

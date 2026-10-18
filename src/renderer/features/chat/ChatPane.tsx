@@ -13,7 +13,6 @@ import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav, isFocusStranded } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import {
-  EMPTY_TRANSCRIPT,
   notify,
   useChatScrollStore,
   useCommandsStore,
@@ -23,8 +22,7 @@ import {
   useReadoutStore,
   useSessionsStore,
   useSplitStore,
-  useSubagentPanelStore,
-  useTranscriptStore
+  useSubagentPanelStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
@@ -39,7 +37,7 @@ import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
-import { isConversationStarted, Transcript } from './Transcript'
+import { Transcript } from './Transcript'
 import { useTauriFileDrop } from './useTauriFileDrop'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -137,26 +135,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const startProgress = session?.startProgress
   // Issue #618: `currentConversation` is null until `get_state` first reports `messageCount > 0`
   // at a settle (SessionAgent.ts `syncFromState`), and is cleared back to null by "New
-  // conversation" -- exactly the "no history yet for the CURRENT Conversation thread" signal,
-  // unlike `Transcript.tsx`'s own `hasConversationStarted` (loaded-items-based, so it can read
-  // empty for a Session that has real history but is still mid-snapshot-load -- the bug this
-  // issue reports). A Session with no `session` yet (row 629 below) never reaches the render
-  // that reads this, so the `true` fallback never actually shows.
+  // conversation" -- exactly the "no history yet for the CURRENT Conversation thread" signal. A
+  // Session with no `session` yet (row 629 below) never reaches the render that reads this, so
+  // the `true` fallback never actually shows. Issue #672: `Transcript.tsx` reads this (alongside
+  // its own items-based `hasConversationStarted`, which can read empty for a Session that has
+  // real history but is still mid-snapshot-load) to decide whether to dim the transcript behind
+  // the Session start notice -- a Session with real history or a conversation already under way
+  // gets the dim; a genuinely empty Session does not.
   const hasHistory = session ? session.currentConversation !== null : true
-  // Gate-fix (code/a11y/verif High, round 3, Issue #618): the SAME items-based predicate
-  // `Transcript.tsx` uses for its own `hasConversationStarted` (now exported as
-  // `isConversationStarted`), read here against the identical transcript-store items, so
-  // ChatPane can decide centred-vs-inline placement with BOTH signals instead of `hasHistory`
-  // alone. Round 2's bug: a brand-new Session whose first turn fails or crashes already has
-  // real items (the user's own message, or `recordStartFailure`'s error notice) before
-  // `currentConversation` ever settles -- `hasHistory` stays false, but `!hasConversationStarted`
-  // (the centred overlay's own guard) is ALSO false, so a Retry/Recover rendered NEITHER
-  // placement and silently dropped Keep waiting/Cancel. `showInline` covers both "has history"
-  // and "has items already, even without a settled history" -- the centred placement is only
-  // for the genuinely empty case Transcript's own Ready text would otherwise occupy.
-  const transcript = useTranscriptStore((s) => s.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
-  const conversationStarted = isConversationStarted(transcript.items)
-  const showInline = hasHistory || conversationStarted
   // Gate-fixes a11y High finding (cycle 3): hoisted above the announcement effect below, which
   // needs `showBanner` to gate its prompt-stage announcement. A Recover/Retry start reuses the
   // OLD stopReason (SessionAgent only clears it on success), so `showBanner` used to stay true
@@ -1235,7 +1221,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           </>
         )}
       </div>
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
+      <div data-start-announcement aria-live="polite" aria-atomic="true" className="sr-only">
         {startAnnouncement}
       </div>
       {showBanner && (
@@ -1396,9 +1382,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           sessionId={sessionId}
           hasHistory={hasHistory}
           startNotice={
-            !showInline && !showBanner && effectiveStartProgress ? (
+            // Issue #672: one centred presentation for every Session, not only the genuinely
+            // empty case (the old `showInline` branch below `MessageInput` is gone) --
+            // `Transcript.tsx` itself decides whether to dim the history behind this notice
+            // (`hasHistory` above, plus its own items-based `hasConversationStarted`).
+            !showBanner && effectiveStartProgress ? (
               <SessionStartNotice
-                variant="centered"
                 startProgress={effectiveStartProgress}
                 message={startingMessageText}
                 emoji={startingMessageEmoji}
@@ -1410,29 +1399,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           }
         />
       </div>
-      {/* Issue #618: "a single quiet unboxed line at the bottom of the transcript above the
-          composer, so history does not move" -- placed here, directly above MessageInput, not
-          at the top of the pane (that was the OLD Alert's position, right under the header;
-          moving it down here is deliberate, not a leftover). Gate-fix (code/a11y/verif High,
-          round 3): gated on `showInline` (`hasHistory || conversationStarted`), not `hasHistory`
-          alone -- a brand-new Session whose first turn already has real items (its own first
-          message, or a start-failure notice) but no settled `currentConversation` yet now gets
-          THIS placement on its next Retry/Recover, instead of silently getting neither notice
-          (round 2's regression: `!hasHistory` for inline and `!hasConversationStarted` for the
-          centred overlay were both false at once, in exactly that state). The centred overlay
-          (`startNotice` above) is the ONLY other placement, for the genuinely empty case; the
-          two conditions are complements of each other, so never both, never neither. */}
-      {showInline && !showBanner && effectiveStartProgress && (
-        <SessionStartNotice
-          variant="inline"
-          startProgress={effectiveStartProgress}
-          message={startingMessageText}
-          emoji={startingMessageEmoji}
-          cancelButtonRef={cancelButtonRef}
-          onKeepWaiting={() => void handleKeepWaitingForStart()}
-          onCancel={() => void handleCancelStart()}
-        />
-      )}
       <MessageInput
         key={sessionId}
         sessionId={sessionId}

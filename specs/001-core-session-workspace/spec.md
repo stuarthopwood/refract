@@ -732,6 +732,25 @@ The developer types a slash command and finds the ones the agent offers. If a se
   uncoloured in both places, unchanged from FR-064's own rule; the status line's context-usage
   readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
   reasoning.
+- **FR-078** (new, 2026-10-18, issue #672, follow-up to #618: "I like the *Summoning your agent*
+  message, but can it be placed centrally in the chat window, and made larger"): The Session
+  start notice MUST use one centred presentation for every Session, not only a brand-new one --
+  centred horizontally and vertically in the transcript viewport. For a Session that already has
+  history, the transcript behind the notice MUST dim to about 40% opacity and become
+  non-interactive while the notice shows, returning to full opacity and interactive the instant
+  the start ends; a brand-new Session's placement is unchanged (centred over the otherwise-empty
+  area). The randomly-picked joke message and its leading emoji (unchanged pool and once-per-start
+  pick) MUST render at about `text-2xl` (24px) and `text-5xl` (48px) respectively, in the normal
+  foreground colour, the emoji on its own line above the text, with the elapsed-seconds counter
+  small and quiet after the text; on a narrow pane the sizes drop to about `text-xl` (20px) and
+  40px so a long message wraps to two lines without clipping instead of overflowing. The queued
+  and memory-deferred stages keep their plain truthful text and small spinner, shown at the same
+  centred position but at normal size (`text-base`). Keep waiting and Cancel (#512) stay
+  reachable, centred under the message with the existing guidance sentence, never pushed off
+  screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on)
+  MUST be disabled under `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
+  static label and the two existing start/stop announcements are ever announced to screen
+  readers.
 
 ### Key Entities
 
