@@ -441,6 +441,24 @@ async function main() {
     );
     await cdp.clickByLabel('Send message');
 
+    // Gate round 5 (Test5 HIGH, diagnostic): waits for ANY message row first (proves chat.send
+    // itself succeeded against the fake omp), then logs exactly what rendered -- a prior run
+    // timed out on the strict 5-chip wait below with no way to tell whether nothing was sent at
+    // all, or a different chip count rendered.
+    await cdp.waitFor(`document.querySelectorAll('[data-slot="message"]').length > 0`, {
+      label: 'at least one message row appears after Send (chat.send round trip succeeded)',
+      timeoutMs: 30_000
+    });
+    const sendDiagnostic = await cdp.evaluate(
+      `Array.from(document.querySelectorAll('[data-slot="message"]')).map((row) => ({
+        hasAttachedGroup: !!row.querySelector('[role="group"][aria-label="Attached files"]'),
+        attachedChildCount: row.querySelector('[role="group"][aria-label="Attached files"]')?.children.length ?? null,
+        textPreview: (row.querySelector('[data-slot="message-content"]')?.textContent ?? '').slice(0, 300)
+      }))`
+    );
+    report.push({ step: 'diagnostic: message rows after Send', ok: true, sendDiagnostic });
+    console.log(`${LOG}: DIAG message rows after Send: ${JSON.stringify(sendDiagnostic)}`);
+
     const userRowFinder = `Array.from(document.querySelectorAll('[data-slot="message"]')).find((row) => row.querySelector('[role="group"][aria-label="Attached files"]'))`;
     await cdp.waitFor(
       `(() => { const row = ${userRowFinder}; const group = row?.querySelector('[role="group"][aria-label="Attached files"]'); return !!group && group.children.length === 5; })()`,
