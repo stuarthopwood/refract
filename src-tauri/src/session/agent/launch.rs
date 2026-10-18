@@ -319,6 +319,7 @@ impl SessionAgent {
         }
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
+        crate::session::advisor::on_launch(self).await;
         self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 

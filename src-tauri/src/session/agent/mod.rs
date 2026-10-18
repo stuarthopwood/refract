@@ -111,6 +111,8 @@ struct AgentState {
     shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
     #[allow(dead_code)]
+    advisor: crate::session::advisor::State,
+    #[allow(dead_code)]
     model: crate::session::model::State,
     #[allow(dead_code)]
     readout: crate::session::readout::State,
@@ -203,6 +205,7 @@ impl SessionAgent {
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
+                advisor: Default::default(),
                 model: Default::default(),
                 readout: Default::default(),
                 subagents: Default::default(),
@@ -574,6 +577,7 @@ impl SessionAgent {
     // named `async fn`, callable exactly as before; `with_termination_state` is already in real
     // use by `session::termination`, the rest stay `#[allow(dead_code)]` until their own lane
     // lands, same as before this macro existed).
+    with_lane_state!(with_advisor_state, advisor, crate::session::advisor::State);
     with_lane_state!(with_model_state, model, crate::session::model::State);
     with_lane_state!(with_readout_state, readout, crate::session::readout::State);
     with_lane_state!(
