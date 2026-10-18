@@ -185,48 +185,69 @@ fn extract_user_text(content: &Value) -> String {
 
 /// Reads the file's first line for `title` (OMP writes a fixed-width, 256-byte `type: "title"`
 /// slot there -- `omp://session.md` "File Format" -- so it is always complete well inside any
-/// cap below) and streams complete lines, up to `PREVIEW_SCAN_HARD_CAP_BYTES`, looking for the
-/// first `role: 'user'` message for `preview`.
+/// cap below) and scans for the first `role: 'user'` message for `preview`, using a hard byte
+/// cap on the file read itself (`AsyncReadExt::take`), not merely a byte count checked between
+/// complete lines -- a single oversized line can never read past the cap either.
 ///
 /// Issue #862: OMP's own prelude between the header and the first user message --
 /// `model_change`, `thinking_level_change`, `service_tier_change`, and now a `memory_recall`
 /// `custom` entry (about 8.6 KB) plus `eager-todo-prelude`/`eager-task-prelude` `custom_message`
 /// entries -- pushed that first user message to about 11 KB in the wild, past the old fixed
-/// 8 KB window (`PREVIEW_SCAN_BYTES`), so the Conversation was silently skipped. Streaming
-/// complete lines means a line is never parsed from a buffer that cut it off mid-record; the
-/// hard cap bounds the read for a multi-megabyte Conversation file instead of a fixed window
-/// size, and reading stops the instant a user message is found, however far in it was (cheap
-/// for the common case, not just the worst case).
+/// 8 KB window (`PREVIEW_SCAN_BYTES`), so the Conversation was silently skipped. Reading through
+/// a `take(PREVIEW_SCAN_HARD_CAP_BYTES)`-limited handle means not one byte past the cap is ever
+/// read from disk, not just that parsing stops there; a line (including the title line) is only
+/// ever parsed once its own trailing `\n` has actually been read within the cap, so a record cut
+/// short by the cap (or by a genuinely truncated file) is never fed to the JSON parser.
 ///
 /// Returns `None` only when real end-of-file is reached within the cap without ever finding a
 /// user message (data-model.md: "files with zero user messages are not listed"). Returns
 /// `Some((title, None))` when the cap is hit first: the Conversation still has a title (or an
 /// empty one) and is still listed, just without a preview, rather than hidden -- reaching the
-/// cap proves nothing about whether a user message exists further in the file.
+/// cap proves nothing about whether a user message exists further in the file. A `role: 'user'`
+/// message with no text content (an image-only message, or one with an empty/missing `content`)
+/// still counts as "found" -- `preview` becomes `Some(String::new())` rather than leaving the
+/// scan to continue past it looking for a later, text-bearing message; FR-087's rule is "never
+/// hide a row", not "find the first message with non-empty text".
 async fn read_conversation_file(
     file: &std::path::Path,
 ) -> std::io::Result<Option<(String, Option<String>)>> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
     let handle = tokio::fs::File::open(file).await?;
-    let mut reader = BufReader::new(handle);
+    let limited = handle.take(PREVIEW_SCAN_HARD_CAP_BYTES as u64);
+    let mut reader = BufReader::with_capacity(PREVIEW_SCAN_HARD_CAP_BYTES, limited);
     let mut title = String::new();
     let mut preview: Option<String> = None;
-    let mut bytes_read_total = 0usize;
+    let mut bytes_read_total: u64 = 0;
     let mut line_index = 0usize;
     let mut cap_hit = false;
+    let mut buf: Vec<u8> = Vec::new();
     loop {
-        let mut line = String::new();
-        let bytes_read = reader.read_line(&mut line).await?;
+        buf.clear();
+        let bytes_read = reader.read_until(b'\n', &mut buf).await? as u64;
         if bytes_read == 0 {
-            // Real end of file: every line has been scanned.
+            // Either the real file genuinely ends here, or `take`'s own limit ran out exactly at
+            // the previous line's boundary (indistinguishable from this side of the handle) --
+            // only the latter counts as "the cap was hit", decided by whether the cap's own full
+            // byte budget was actually consumed.
+            cap_hit = bytes_read_total >= PREVIEW_SCAN_HARD_CAP_BYTES as u64;
             break;
         }
         bytes_read_total += bytes_read;
+        if buf.last() != Some(&b'\n') {
+            // No trailing newline: either the `take` limit cut this line short, or the real file
+            // itself ends mid-line (no closing newline at all). Either way this piece is
+            // incomplete and must never be parsed as a whole record.
+            cap_hit = true;
+            break;
+        }
+        let trimmed = buf.trim_ascii();
         let current_index = line_index;
         line_index += 1;
-        let trimmed = line.trim();
         if !trimmed.is_empty() {
-            if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+            // `from_slice` never panics or needs a prior UTF-8 check of its own: invalid UTF-8
+            // (or any other malformed JSON) simply fails to parse here, same as any other
+            // unparseable line -- it is skipped, never an `Err` that could drop the whole file.
+            if let Ok(parsed) = serde_json::from_slice::<Value>(trimmed) {
                 if let Some(object) = parsed.as_object() {
                     if current_index == 0 {
                         if object.get("type").and_then(Value::as_str) == Some("title") {
@@ -241,13 +262,11 @@ async fn read_conversation_file(
                     {
                         if let Some(message) = object.get("message").and_then(Value::as_object) {
                             if message.get("role").and_then(Value::as_str) == Some("user") {
-                                if let Some(content) = message.get("content") {
-                                    let text = extract_user_text(content);
-                                    if !text.is_empty() {
-                                        preview =
-                                            Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
-                                    }
-                                }
+                                let text = message
+                                    .get("content")
+                                    .map(extract_user_text)
+                                    .unwrap_or_default();
+                                preview = Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
                             }
                         }
                     }
@@ -255,10 +274,6 @@ async fn read_conversation_file(
             }
         }
         if preview.is_some() {
-            break;
-        }
-        if bytes_read_total >= PREVIEW_SCAN_HARD_CAP_BYTES {
-            cap_hit = true;
             break;
         }
     }

@@ -3791,16 +3791,17 @@ first user message landed past the Rust build's old fixed 8 KB preview-scan wind
 `memory_recall`/eager-prelude entries now routinely push it there) -- see research.md decision 22
 for the full root cause and the bounded-line-streaming design that replaces the old fixed window.
 
-- [X] T293 `src-tauri/src/ipc/conversations.rs`: `read_conversation_file` redesigned to stream
-  complete JSONL lines (`tokio::io::BufReader::read_line`, never a fixed-size byte buffer that
-  can cut a record off mid-way) up to a new `PREVIEW_SCAN_HARD_CAP_BYTES` (64 KiB) hard cap on
-  total bytes read per file, replacing the old fixed `PREVIEW_SCAN_BYTES` (8 KiB) window and its
-  `read_preview_window` helper entirely. Reading stops the instant the first `role: 'user'`
-  message is found; a file whose cap is hit first still returns its title with `preview: None`
-  (turned into an empty string by `list_conversations`, FR-087) instead of being skipped --
-  `None` is now returned only when real end-of-file is reached within the cap with no user
-  message anywhere, unchanged from the existing rule. `src/shared/model.ts`'s `ConversationInfo.
-  preview` doc comment, `specs/001-core-session-workspace/data-model.md`'s own `preview` row, and
+- [X] T293 `src-tauri/src/ipc/conversations.rs`: `read_conversation_file` redesigned to read
+  through an `AsyncReadExt::take(PREVIEW_SCAN_HARD_CAP_BYTES)`-limited handle (64 KiB hard cap on
+  bytes actually read from disk) and stream complete JSONL lines (`read_until(b'\n', ...)` into
+  one reused buffer), never a fixed-size byte buffer that can cut a record off mid-way, replacing
+  the old fixed `PREVIEW_SCAN_BYTES` (8 KiB) window and its `read_preview_window` helper
+  entirely. Reading stops the instant the first `role: 'user'` message is found; a file whose cap
+  is hit first still returns its title with `preview: None` (turned into an empty string by
+  `list_conversations`, FR-087) instead of being skipped -- `None` is now returned only when real
+  end-of-file is reached within the cap with no user message anywhere, unchanged from the
+  existing rule. `src/shared/model.ts`'s `ConversationInfo.preview` doc comment,
+  `specs/001-core-session-workspace/data-model.md`'s own `preview` row, and
   `docs/spike/FINDINGS.md` item 11's stale "within the first 8 KB" assumption are all updated to
   match (FR-087, research.md decision 22).
 - [X] T294 New `scripts/verify-862-conversation-history.mjs`, reusing the existing fake-omp
@@ -3808,19 +3809,41 @@ for the full root cause and the bounded-line-streaming design that replaces the 
   `verify-941-stage-naming-helpers.mjs`'s `buildOmpShim`/`launchBuiltExeWithEnv` and
   `verify-tauri-session-list-helpers.mjs`'s `addRepository`/`createSessionViaQuickCreate`: seeds
   two real, hand-built Conversation `.jsonl` files in the Session's own `session_dir` before
-  launch (a normal one, and a long-prelude one whose own prefix bytes are measured and asserted
-  to sit strictly between the old 8 KiB window and the new 64 KiB cap, matching issue #862's own
-  observed shape), then opens the Conversation-history dialog and asserts both rows render with
-  the correct title and preview text. Shim-confirmed guard (fake-omp debug log's own startup pid
-  line) and a fresh-log guard (the debug log lives inside a freshly `mkdtemp`'d directory every
-  run, never a reused path). MUST fail on `origin/main`: there, `list_conversations` silently
-  `continue`s past the long-prelude file, so the row-count assertion reads 1, not 2 -- explained
-  from the code in the script's own header comment, not run against `origin/main` (no build slot
-  granted for this sub-task). **Not exercised by this script**: that a genuinely multi-megabyte
-  Conversation file stays cheap to list -- proven by reading `read_conversation_file`'s own
-  early-break-on-match and hard cap, not by constructing a multi-MB fixture file on disk (recorded
-  honestly in the script's own `notExercised`). Written, not run end-to-end (no build slot
-  granted for this sub-task): `node --check` plus a real `import()` load-check on every helper
-  module it imports, `node scripts/check-indent.mjs` and `node scripts/check-file-size.mjs`
-  clean, `rustfmt --edition 2021 --check src-tauri/src/ipc/conversations.rs` clean.
+  launch (a normal one, and a long-prelude one whose own prefix bytes are measured at runtime and
+  asserted to sit strictly between the old 8 KiB window and the new 64 KiB cap -- about 9.6 KB,
+  matching issue #862's own observed shape), then opens the Conversation-history dialog and
+  asserts both rows render with the correct title and preview text. Shim-confirmed guard
+  (fake-omp debug log's own startup pid line) and a fresh-log guard (the debug log lives inside a
+  freshly `mkdtemp`'d directory every run, never a reused path). MUST fail on `origin/main`:
+  there, `list_conversations` silently `continue`s past the long-prelude file, so the row-count
+  assertion reads 1, not 2 -- explained from the code in the script's own header comment, not run
+  against `origin/main` (no build slot granted for this sub-task). **Not exercised by this
+  script**: a Conversation whose cap is hit with no user message found (asserting it is still
+  listed, title only); a Conversation reaching real end-of-file within the cap with genuinely no
+  user message (asserting it is skipped); and that a genuinely multi-megabyte Conversation file
+  stays cheap to list -- all three are proven by reading `read_conversation_file`'s own
+  `take()`-enforced hard cap, its early break on match, and its unchanged real-EOF skip path, not
+  by constructing the corresponding fixture files on disk (recorded honestly in the script's own
+  `notExercised`). Written, not run end-to-end (no build slot granted for this sub-task):
+  `node --check` plus a real `import()` load-check on every helper module it imports,
+  `node scripts/check-indent.mjs` and `node scripts/check-file-size.mjs` clean,
+  `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` clean, `pnpm typecheck` clean,
+  `pnpm vitest run` (148/148) clean, `node scripts/check-parity.mjs --gate` clean (103/103,
+  24/24).
+- [X] Gate round 1 remediation (code-reviewer FAIL, test-reviewer FAIL, security-auditor PASS,
+  PR #1006): the cap was not actually hard -- a plain `BufReader::read_line` over the raw file
+  handle only checked an own-tracked byte counter AFTER each complete line, so one sufficiently
+  long single line could still be read past the cap; fixed by wrapping the handle in
+  `AsyncReadExt::take(PREVIEW_SCAN_HARD_CAP_BYTES)` before the `BufReader` (research.md decision
+  22's own gate round 1 correction). Lines (including the title line) now parse from raw bytes
+  (`serde_json::from_slice`) rather than a `String` conversion first, confirming invalid UTF-8 in
+  one line fails to parse and is skipped rather than aborting the whole scan. A `role: 'user'`
+  message with empty/missing `content` (image-only) now counts as found immediately (`preview:
+  Some(String::new())`) instead of leaving the scan to keep looking for a later, text-bearing
+  message and hiding the row if none existed (Decided, Skippy, delegated by Stuart 2026-10-18,
+  gate round 1; FR-087 and its Clarifications entry updated). Script fixes: an explicit
+  `mkdirSync(SHOTS_DIR, { recursive: true })` added as belt-and-braces alongside
+  `clearKnownOutputFiles`'s own internal one; `notExercised` reworded into the three specific
+  entries above; header comment's approximate prefix size corrected to the measured ~9.6 KB.
+
 

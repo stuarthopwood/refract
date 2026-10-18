@@ -19,8 +19,9 @@
 //     past 8 KB (matching issue #862's own observed ~8.6 KB `memory_recall` entry), then two
 //     `custom_message` prelude entries (`eager-todo-prelude`/`eager-task-prelude`, matching the
 //     issue's own finding), and only THEN its real `role: 'user'` message -- the same shape issue
-//     #862 reports from a live OMP session, scaled down from ~11 KB to a few bytes more than 8 KB
-//     so the assertion below is exact rather than approximate.
+//     #862 reports from a live OMP session, scaled down from ~11 KB to about 9-10 KB (measured at
+//     runtime; asserted to sit strictly between the old 8 KiB window and the new 64 KiB cap) so
+//     the assertion below is exact rather than approximate.
 //
 // MUST fail on `origin/main` for this exact reason: `conversations.rs`'s `read_preview_window`
 // there reads a single fixed `PREVIEW_SCAN_BYTES = 8 * 1024` byte buffer and never looks past it;
@@ -31,18 +32,25 @@
 // is the one that catches it; explained from the code above, not reproduced by actually running
 // this script against `origin/main` (no build slot granted for this check yet).
 //
-// What this script does NOT prove: that a genuinely multi-megabyte Conversation file stays cheap
-// to list. `read_conversation_file`'s own hard cap (`PREVIEW_SCAN_HARD_CAP_BYTES`, 64 KiB) and its
-// early `break` the instant `preview.is_some()` are read, not independently measured here -- a
-// live CDP check driving a real multi-MB fixture file would need to actually create one on disk
-// for every run, which is disproportionate to what this assertion needs to prove (that the
-// Conversation is listed at all, whatever the first message's offset). The two files here are
-// a few KB each, deliberately matching the issue's own real-world byte offsets rather than its
-// real-world total file size.
+// What this script does NOT prove (recorded in its own `notExercised`, gate round 1 reword):
+//   - A Conversation whose 64 KiB cap (`PREVIEW_SCAN_HARD_CAP_BYTES`, enforced by reading through
+//     an `AsyncReadExt::take(...)`-limited handle, not merely a byte count checked between lines)
+//     is hit before a user message is found is still listed, with its title and an empty preview.
+//   - A Conversation that reaches real end-of-file within the cap with genuinely no user message
+//     anywhere is skipped, unchanged from the existing rule.
+//   - That a genuinely multi-megabyte Conversation file stays cheap to list: the early `break`
+//     the instant a user message is found, and the hard `take()` cap itself, are read, not
+//     independently measured here -- a live CDP check driving a real multi-MB fixture file would
+//     need to actually create one on disk for every run, which is disproportionate to what this
+//     assertion needs to prove (that the Conversation is listed at all, whatever the first
+//     message's offset). The two files here are a few KB each, deliberately matching the issue's
+//     own real-world byte offsets rather than its real-world total file size.
 //
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
-// plus a real `import()` load-check are the only commands that have actually been run against
-// this file.
+// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`,
+// a real `import()` load-check on every helper module it imports, `pnpm typecheck`,
+// `pnpm vitest run`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs`,
+// `node scripts/check-parity.mjs --gate`, and `cargo fmt --manifest-path src-tauri/Cargo.toml --
+// --check` are the only commands that have actually been run against this change.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -101,9 +109,16 @@ async function main() {
   const findings = [];
   const failures = [];
   const notExercised = [
+    'A Conversation whose 64 KiB hard cap (PREVIEW_SCAN_HARD_CAP_BYTES, enforced via ' +
+      'AsyncReadExt::take, conversations.rs) is hit before a user message is found is still ' +
+      'listed (title, empty preview) rather than hidden -- proven by reading the take()-limited ' +
+      'handle and the cap_hit fallback, not by seeding a third fixture file past the cap here.',
+    'A Conversation that reaches real end-of-file within the cap with genuinely no user message ' +
+      'anywhere is skipped, unchanged from the existing rule -- proven by reading that unchanged ' +
+      'code path, not by seeding a fixture file with zero user messages here.',
     'A genuinely multi-megabyte Conversation file staying cheap to list is proven by reading ' +
-      'read_conversation_file\'s own early-break-on-match and PREVIEW_SCAN_HARD_CAP_BYTES, not by ' +
-      'this script constructing a multi-MB fixture on disk.'
+      'read_conversation_file\'s own early-break-on-match and its take()-enforced hard cap, not ' +
+      'by this script constructing a multi-MB fixture on disk.'
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -111,6 +126,11 @@ async function main() {
   let BUILD_OUTPUT_DIR = null;
   try {
     clearKnownOutputFiles(SHOTS_DIR, 'refract-862-conversation-history-shots', SHOT_NAMES);
+    // Belt-and-braces (gate round 1, test-reviewer): `clearKnownOutputFiles` already creates
+    // `SHOTS_DIR` itself (its own trailing `mkdirSync`), but every other verify-*.mjs script in
+    // this repo also calls `mkdirSync` explicitly at this point, so this does too -- a no-op
+    // (`recursive: true` on an already-existing directory) rather than a second source of truth.
+    mkdirSync(SHOTS_DIR, { recursive: true });
     BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
     gitHeadSha = gitHead(REPO_ROOT);
     const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });

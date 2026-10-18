@@ -606,6 +606,15 @@
 - Q: Does Electron's own identical `PREVIEW_SCAN_BYTES` bug (`src/main/conversations.ts`) need
   the same fix? → A: No (per the issue's own acceptance criteria): Electron is being retired
   (epic #797, R13) and gets no further fixes; only the Rust build (`src-tauri`) is fixed here.
+- Q: Gate round 1 (code-reviewer/test-reviewer, PR #1006): a Conversation whose first user
+  message is image-only (or otherwise has empty/missing `content`) currently returns `None` once
+  the scan reaches real end-of-file with no non-empty-text message ever found, hiding the row --
+  the same bug FR-087 exists to fix, under a different trigger. Does "found" require non-empty
+  text? → A: No (Decided, Skippy, delegated by Stuart 2026-10-18): any `role: 'user'` message
+  counts as found, whatever its content; `preview` is its first text part, or an empty string
+  when it has none. The scan stops there -- it never continues past the first user message
+  looking for a later one with non-empty text -- matching FR-087's "never hide a row" rule
+  exactly, not a narrower "find the first message with visible text" one.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -1014,17 +1023,21 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-087** (new, 2026-10-18, issue #862, bug: the Rust Conversation history list hid any
   Conversation whose first user message started past the build's old fixed 8 KB preview-scan
   window): Listing a Session's Conversations MUST show every Conversation file that has at least
-  one `role: 'user'` message, whatever byte offset that message starts at. Finding it MUST stream
-  complete JSONL lines (never parse a line out of a fixed-size byte buffer that can cut it off
-  mid-record) up to a bounded hard cap on total bytes read per file (64 KiB, Decided, Skippy,
-  delegated by Stuart 2026-10-18; research.md decision 22), so a multi-megabyte Conversation file
-  stays cheap to list; reading MUST stop the instant the first user message is found rather than
-  continuing on to the cap, so the common case is cheaper still. A Conversation whose cap is
-  reached before a user message is found MUST still be listed -- its title (OMP's own
-  fixed-width, always-first-line `type: "title"` slot, well inside the cap) with an empty
-  preview -- rather than being hidden; only a Conversation that reaches real end-of-file within
-  the cap with no user message anywhere is skipped, unchanged from the existing "no user message"
-  rule (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
+  one `role: 'user'` message, whatever byte offset that message starts at and whatever its
+  content -- an image-only message, or one with an empty or missing `content`, still counts as
+  "found" (Decided, Skippy, delegated by Stuart 2026-10-18, gate round 1): the row MUST still be
+  listed, with an empty `preview`, never with the scan instead continuing past it looking for a
+  later, text-bearing message. Finding it MUST stream complete JSONL lines (never parse a line
+  out of a fixed-size byte buffer that can cut it off mid-record) up to a bounded hard cap on
+  total bytes actually read from the file itself (64 KiB, Decided, Skippy, delegated by Stuart
+  2026-10-18; research.md decision 22), so a multi-megabyte Conversation file stays cheap to
+  list; reading MUST stop the instant the first user message is found rather than continuing on
+  to the cap, so the common case is cheaper still. A Conversation whose cap is reached before a
+  user message is found MUST still be listed -- its title (OMP's own fixed-width,
+  always-first-line `type: "title"` slot, well inside the cap) with an empty preview -- rather
+  than being hidden; only a Conversation that reaches real end-of-file within the cap with no
+  user message anywhere is skipped, unchanged from the existing "no user message" rule
+  (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
   is being retired (R13) and keeps its existing fixed-window behaviour.
 
 ### Key Entities
