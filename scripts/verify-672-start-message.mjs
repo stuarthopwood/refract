@@ -179,6 +179,7 @@ async function main() {
     await sleep(6_500);
     const staleAnnouncement = await cdp1.evaluate(`${ANNOUNCE}?.textContent || ''`);
     if (staleAnnouncement !== '') notExercised.push(`Announcement region still read "${staleAnnouncement}" after waiting 6.5s to auto-clear -- the fresh-start text assertion below may not be measuring a clean first announcement.`);
+    const restartDispatchedAt = Date.now();
     await restartAgent(cdp1, sessionA.id);
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 15_000); // confirms 'waiting' before polling the announcement (bg_820 diagnostic narrowing)
     const freshText = await cdp1.waitFor(`${ANNOUNCE}?.textContent || null`, { timeoutMs: 10_000, label: 'fresh restart announcement text set' });
@@ -188,27 +189,41 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
-    const beforeTick = await readVisibleStartKind(cdp1);
-    const elapsedBefore = beforeTick?.kind === 'waiting' ? beforeTick.elapsedMs : null;
-    await cdp1.evaluate(`(() => {
-      window.__672Mutations = 0;
-      window.__672Observer = new MutationObserver(() => { window.__672Mutations++; });
-      window.__672Observer.observe(${ANNOUNCE}, { childList: true, characterData: true, subtree: true });
-      return true;
-    })()`);
-    await sleep(2_500); // real elapsed-ms ticks happen on the Rust side's own ~1s cadence while waiting
-    const mutationCount = await cdp1.evaluate(`(() => { window.__672Observer.disconnect(); return window.__672Mutations; })()`);
-    const afterTick = await readVisibleStartKind(cdp1);
-    const elapsedAfter = afterTick?.kind === 'waiting' ? afterTick.elapsedMs : null;
-    if (afterTick?.kind !== 'waiting') {
-      failures.push(`Announcement mutation window: the visible notice's own kind was "${afterTick?.kind}" after the 2.5s window, expected still "waiting" -- the zero-mutation claim below would be vacuous if the kind itself changed.`);
-    } else if (elapsedBefore === null || elapsedAfter === null || !(elapsedAfter > elapsedBefore)) {
-      failures.push(`Announcement mutation window: the visible elapsed-seconds counter did not advance (${elapsedBefore} -> ${elapsedAfter}) across the 2.5s window -- this check would not be exercising a real same-kind re-tick at all.`);
+    // Gate-fix (2026-10-18, found live): this launch's own fake-omp reaches real `ready`
+    // READY_DELAY_BRIEF_MS (15s) after the restart dispatched above, same real timer as every
+    // other check on this launch -- not a synthetic one this script controls. Under a slow run
+    // (confirmed live: real memory pressure from concurrent sibling lanes) the restart/waiting/
+    // announcement polling above can itself eat several of those 15s, leaving too little margin
+    // for the mutation window below to observe a genuine same-kind re-tick before `ready`
+    // legitimately arrives and unmounts the notice out from under it -- that is an honest race
+    // in THIS check's own fixed margin, not a product bug, and asserting a failure on it would
+    // be noise. Skip to notExercised instead of guessing when under 3s of margin remains.
+    const marginMsBeforeReady = READY_DELAY_BRIEF_MS - (Date.now() - restartDispatchedAt) - 2_500;
+    if (marginMsBeforeReady < 3_000) {
+      notExercised.push(`Announcement mutation window: skipped -- only ${marginMsBeforeReady}ms of margin remained before this launch's own real ${READY_DELAY_BRIEF_MS}ms ready delay (restart-to-announcement polling above took longer than usual, likely real resource pressure), too tight to run a genuine same-kind re-tick window without racing a legitimate 'ready' transition.`);
     } else {
-      findings.push(`Announcement mutation window: the visible elapsed-seconds counter advanced (${elapsedBefore}ms -> ${elapsedAfter}ms) while kind stayed "waiting", confirming a genuine same-kind re-render was exercised.`);
+      const beforeTick = await readVisibleStartKind(cdp1);
+      const elapsedBefore = beforeTick?.kind === 'waiting' ? beforeTick.elapsedMs : null;
+      await cdp1.evaluate(`(() => {
+        window.__672Mutations = 0;
+        window.__672Observer = new MutationObserver(() => { window.__672Mutations++; });
+        window.__672Observer.observe(${ANNOUNCE}, { childList: true, characterData: true, subtree: true });
+        return true;
+      })()`);
+      await sleep(2_500); // real elapsed-ms ticks happen on the Rust side's own ~1s cadence while waiting
+      const mutationCount = await cdp1.evaluate(`(() => { window.__672Observer.disconnect(); return window.__672Mutations; })()`);
+      const afterTick = await readVisibleStartKind(cdp1);
+      const elapsedAfter = afterTick?.kind === 'waiting' ? afterTick.elapsedMs : null;
+      if (afterTick?.kind !== 'waiting') {
+        failures.push(`Announcement mutation window: the visible notice's own kind was "${afterTick?.kind}" after the 2.5s window, expected still "waiting" -- the zero-mutation claim below would be vacuous if the kind itself changed.`);
+      } else if (elapsedBefore === null || elapsedAfter === null || !(elapsedAfter > elapsedBefore)) {
+        failures.push(`Announcement mutation window: the visible elapsed-seconds counter did not advance (${elapsedBefore} -> ${elapsedAfter}) across the 2.5s window -- this check would not be exercising a real same-kind re-tick at all.`);
+      } else {
+        findings.push(`Announcement mutation window: the visible elapsed-seconds counter advanced (${elapsedBefore}ms -> ${elapsedAfter}ms) while kind stayed "waiting", confirming a genuine same-kind re-render was exercised.`);
+      }
+      if (mutationCount !== 0) failures.push(`Announcement region mutated ${mutationCount} time(s) (MutationObserver) across real same-kind (waiting) elapsed-ms ticks -- it must not re-announce (the #618 round-2 fix regressed).`);
+      else findings.push('Announcement region recorded zero DOM mutations (MutationObserver) across real same-kind elapsed-ms ticks -- no re-announcement.');
     }
-    if (mutationCount !== 0) failures.push(`Announcement region mutated ${mutationCount} time(s) (MutationObserver) across real same-kind (waiting) elapsed-ms ticks -- it must not re-announce (the #618 round-2 fix regressed).`);
-    else findings.push('Announcement region recorded zero DOM mutations (MutationObserver) across real same-kind elapsed-ms ticks -- no re-announcement.');
 
     // ---- Build real history on Session A (a real send through the fake-omp session tape) ----
     await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 30_000, label: 'Session A ready again after the announcement restart' });

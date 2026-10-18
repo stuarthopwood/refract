@@ -49,8 +49,15 @@ export function fontSizePx(cssFontSize) {
   return match ? Number(match[1]) : null;
 }
 
+/** Accepts CSS `animation-duration` in either plain decimal form ("2.4s") or the exponential
+ *  notation a browser can report for a very small value ("1e-05s") -- WebView2/Chromium's own
+ *  `getComputedStyle().animationDuration` serialisation is not guaranteed to avoid exponential
+ *  form once a collapsed reduced-motion duration lands near zero, and the previous
+ *  `[\d.]+`-only character class could not match the `e-05` part at all, so it returned `null`
+ *  for a value that WAS correctly collapsed (a harness parsing gap, found live 2026-10-18:
+ *  reported "1e-05s", 0.01ms, well under the <=1ms bar, but read as `null` and failed). */
 export function animationDurationMs(cssDuration) {
-  const match = /^([\d.]+)(m?s)$/.exec(cssDuration ?? '');
+  const match = /^(-?\d*\.?\d+(?:[eE][+-]?\d+)?)(m?s)$/.exec(cssDuration ?? '');
   if (!match) return null;
   return match[2] === 'ms' ? Number(match[1]) : Number(match[1]) * 1000;
 }
@@ -284,6 +291,20 @@ export async function waitForRegionOpacity(cdp, predicate, timeoutMs = 3_000) {
  *  the other regime. Always clears the override afterward, even if `fn` throws. */
 export async function withDeviceMetrics(cdp, width, height, fn) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false });
+  // Gate-fix (2026-10-18, found live under real memory pressure): the override itself is
+  // applied by CDP immediately, but the renderer's own reflow (container queries, flex wrap)
+  // can lag it -- the previous fixed `sleep(300)` alone let at least one geometry read
+  // (`elementFromPoint` probe) land mid-reflow, hitting neither the expected region nor the
+  // notice. Poll `clientWidth`/`clientHeight` against the requested size first (same
+  // poll-with-a-timeout convention as `waitForRegionOpacity`/`waitForComputedOpacity` below,
+  // not a fixed sleep), THEN keep the original settle sleep for layout that depends on the
+  // viewport but is not the viewport itself.
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    const settled = await cdp.evaluate(`document.documentElement.clientWidth === ${width} && document.documentElement.clientHeight === ${height}`);
+    if (settled) break;
+    await sleep(50);
+  }
   await sleep(300);
   try {
     return await fn();
