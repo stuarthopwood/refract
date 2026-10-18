@@ -302,10 +302,9 @@ impl SessionAgent {
         payload
     }
 
-    /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
-    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step --
-    /// `summary_fields` (registry-only `sessions.list` rows) deliberately does not call this: no
-    /// live agent computes a crash's tail detection for a Session nobody has opened this run.
+    /// Lane R3 (#786): shared by `status_event_locked` (session:status event) and `runtime_view`
+    /// (`SessionSnapshot.runtime`) so both stay in lock-step. `summary_fields` skips it: progress
+    /// yes (#985, cheap, already in memory), termination no (needs a fresh file re-read per row).
     fn insert_termination_and_progress_fields(
         obj: &mut serde_json::Map<String, Value>,
         state: &AgentState,
@@ -408,10 +407,8 @@ impl SessionAgent {
         }
     }
 
-    /// `sessions.list()`'s live-runtime fields (completes the registry-only placeholder Phase
-    /// 2(b) left, tasks.md T019's own "absent until the first `get_state`" default is simply
-    /// this method never having run for a Session with no agent this run -- `SessionManager`
-    /// only calls this for a Session that already has one).
+    /// `sessions.list()`'s live-runtime fields (#985): `startProgress` now included -- omitted,
+    /// an unrelated Session's refresh wiped this one's notice until its next status emit (no tick).
     pub async fn summary_fields(&self) -> Value {
         let (current_role, pinned) = self.role_summary_fields().await;
         let state = self.state.lock().await;
@@ -422,11 +419,14 @@ impl SessionAgent {
             "pendingMode": state.pending_mode,
             "currentRole": current_role, "pinned": pinned,
         });
+        let object = payload
+            .as_object_mut()
+            .expect("summary_fields payload is always a JSON object");
         if let Some(reason) = state.stop_reason {
-            payload
-                .as_object_mut()
-                .expect("summary_fields payload is always a JSON object")
-                .insert("stopReason".to_string(), Value::String(reason.to_string()));
+            object.insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        if let Some(progress) = state.start_queue.to_wire() {
+            object.insert("startProgress".to_string(), progress);
         }
         payload
     }
