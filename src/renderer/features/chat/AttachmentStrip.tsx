@@ -7,10 +7,12 @@
 // see `ChipOverlaySegments` below), but has no remove control of its own: FR-014 removes a chip
 // only by editing or deleting its label the same way any other draft text is edited.
 import type { ReactNode, RefObject } from 'react'
-import { FileIcon, FileTextIcon, FolderIcon, XIcon } from 'lucide-react'
+import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { TextPreviewModal } from './TextPreviewModal'
+import { FileAttachmentChip } from './FileAttachmentChip'
 import type { ChipOccurrence, PendingFileAttachment, PendingImageAttachment, PendingTextChip } from './attachments'
 import { formatByteSize } from './attachments'
 
@@ -62,28 +64,25 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
           </button>
         </div>
       ))}
-      {files.map((file) => {
-        const sizeLabel = file.isDirectory ? 'folder' : formatByteSize(file.byteLength)
-        const kindLabel = file.isDirectory || file.sentAs === 'path' ? ', sent as path' : ', attached as text'
-        const accessibleName = `${file.name}, ${sizeLabel}${kindLabel}`
-        const Icon = file.isDirectory ? FolderIcon : file.sentAs === 'inline' ? FileTextIcon : FileIcon
-        return (
-          <div key={file.id} role="group" aria-label={accessibleName} className="group relative">
-            <Badge aria-hidden variant="secondary" className="max-w-56 gap-1.5 py-1 pr-5">
-              <Icon aria-hidden className="size-3.5 shrink-0" />
-              <span className="truncate">{file.name}</span>
-            </Badge>
-            <button
-              type="button"
-              aria-label={`Remove ${accessibleName}`}
-              onClick={() => onRemoveFile(file.id)}
-              className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              <XIcon className="size-2.5" />
-            </button>
-          </div>
-        )
-      })}
+      {files.map((file) => (
+        <div key={file.id} className="group relative">
+          <FileAttachmentChip name={file.name} byteLength={file.byteLength} isDirectory={file.isDirectory} sentAs={file.sentAs} className="max-w-56 pr-5" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Remove ${file.name}`}
+                aria-describedby={undefined}
+                onClick={() => onRemoveFile(file.id)}
+                className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground after:absolute after:-inset-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <XIcon className="size-2.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Remove {file.name}</TooltipContent>
+          </Tooltip>
+        </div>
+      ))}
       {textChips.map((chip) => (
         <TextPreviewModal
           key={chip.id}

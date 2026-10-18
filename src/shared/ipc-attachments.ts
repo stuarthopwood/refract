@@ -52,8 +52,16 @@ export interface AttachmentsApi {
    * type" is the point of this feature), the same `tauri-plugin-dialog` pattern
    * `repositories.pickFolder` already uses. Real absolute OS paths, routed through
    * `readImageFile`/`readFile` by the renderer exactly like a dropped or typed path. An empty
-   * array means the dialog was cancelled, never an error. */
-  pickFiles(): Promise<Result<string[]>>;
+   * array means the dialog was cancelled, never an error. Gate round 1 (D2 Medium): `sessionId`
+   * records every returned path against this Session's own allow-list in Rust -- `readFile`
+   * refuses any OTHER absolute path, so a confused/compromised renderer can no longer read an
+   * arbitrary absolute file merely by asking for it. */
+  pickFiles(sessionId: string): Promise<Result<string[]>>;
+  /** Gate round 1 (D2 Medium): the native-OS-drag-drop half of `readFile`'s own absolute-path
+   * allow-list above -- `useTauriFileDrop.ts` calls this with every path `onFileDrop` just
+   * reported, BEFORE attaching any of them, so `readFile` will accept them the same way it
+   * already accepts a `pickFiles` result. */
+  recordDroppedPaths(sessionId: string, paths: string[]): Promise<Result<void>>;
   /** #432: the renderer-safe replacement for Electron's own `webUtils.getPathForFile`
    * (bridged here, not imported from `electron` in a renderer file, to avoid pulling its
    * ambient Node `setTimeout` override into the whole web program). Optional (issue #793):

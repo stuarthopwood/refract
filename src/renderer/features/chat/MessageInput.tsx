@@ -39,12 +39,12 @@ import {
   formatByteSize,
   isImagePathOnlyText,
   isLargePaste,
-  MAX_PATH_ATTACHMENTS_PER_MESSAGE,
   pruneDanglingChips,
   substituteChips,
   toImageContent
 } from './attachments'
-import { appendFileAttachmentText } from './anyFileAttachments'
+import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER, stripFileAttachmentsMarkerForDisplay } from './anyFileAttachments'
+import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
@@ -160,7 +160,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const prevPendingAttachmentReadsRef = useRef(pendingAttachmentReads)
   useEffect(() => {
     if (pendingAttachmentReads > 0 && prevPendingAttachmentReadsRef.current === 0) {
-      announceAttachment('Attaching image…')
+      announceAttachment('Attaching…')
     }
     prevPendingAttachmentReadsRef.current = pendingAttachmentReads
   }, [pendingAttachmentReads, announceAttachment])
@@ -504,6 +504,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
     // sees is exactly what the developer would have gotten pasting the whole block directly.
     const message = substituteChips(draftText, attachments.textChips)
+    // #926 gate round 1 (D1 HIGH): typed text carrying the literal marker could masquerade as a
+    // real attachment once `transcript.rs` parses it back out -- refused, draft stays intact.
+    if (message.includes(FILE_ATTACHMENTS_MARKER)) {
+      toast.error('The message contains a reserved marker line used internally for file attachments. Remove it and try again.')
+      return
+    }
     // FR-006: every pending image goes out as a real `images` entry on this same call, whether it
     // sends immediately or queues as a followUp (FR-017) -- `SessionAgent.send` decides which
     // based on the Session's live status, not this call site.
@@ -537,8 +543,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
       // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
       // developer discovering, after the fact, that a pasted screenshot never reached the model.
-      // #926: a pending file attachment is refused the same way -- side questions have no
-      // attachment concept of their own either.
+      // #926: a pending file attachment is refused the same way -- no attachment concept here.
       if (attachments.images.length > 0 || attachments.files.length > 0) {
         toast.error("Side questions don't support attachments. Remove them and try again.")
         return
@@ -624,9 +629,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // image-related or not) leaves the draft and every pending attachment untouched -- nothing
     // below this `if` runs until `chat.send` actually succeeds.
     let result
-    // #926: every pending file/folder attachment is appended to the OUTGOING message text only
-    // here -- never into `message` above, so `parseSlashCommand`/the `/new` check above keep
-    // reading just the developer's own typed (and chip-substituted) text.
+    // #926: appended to the OUTGOING text only, never into `message` above, so `parseSlashCommand` keeps reading the developer's own typed text.
     const outgoingMessage = appendFileAttachmentText(message, attachments.files)
     try {
       result = await window.refract.chat.send(sessionId, outgoingMessage, images)
@@ -985,20 +988,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   async function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
     const data = event.clipboardData
     const imageFile = findClipboardImageItem(data)
-    if (imageFile) {
+    const pastedFiles = Array.from(data.files ?? [])
+    // #926 gate round 1 (Code1/Test1 HIGH): a plain clipboard-image paste is the single-image
+    // case with nothing else in `data.files` (FR-005, no cap); any other paste goes through
+    // `pastedFiles` as a whole, so a file alongside an image is never dropped.
+    if (imageFile != null && pastedFiles.length <= 1) {
       // FR-001: never let any image data reach the textarea's own text value.
       event.preventDefault()
       await attachImageFile(sessionId, imageFile)
       return
     }
 
-    // #926: a non-image FILE paste (Explorer "Copy" a file, then Ctrl+V) -- `data.files` carries
-    // real `File` objects here, never text, so this never races the image-path detection below.
-    // `attachPastedFiles` handles a file with no OS path (Tauri's `File` API exposes none).
-    const pastedFiles = Array.from(data.files ?? [])
+    // #926: `attachPastedFiles` owns the cap (FR-039) and the pending-read counter.
     if (pastedFiles.length > 0) {
       event.preventDefault()
-      await attachPastedFiles(sessionId, pastedFiles)
+      await attachPastedFiles(sessionId, pastedFiles, announceAttachment)
       return
     }
 
@@ -1038,11 +1042,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           const before = target.value
           const start = target.selectionStart
           const end = target.selectionEnd
-          // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per paste --
-          // computed from this session's CURRENT pending image count, not a static slice of this
-          // one paste's own candidate list.
-          const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
-          const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+          // PR #723 gate round 1 fix (Code1 LOW) / gate round 1 (FR-039 Medium): the cap applies
+          // PER MESSAGE, shared with pending files too, not a static slice of this one paste.
+          const remainingSlots = remainingAttachmentSlots(sessionId)
           const capped = pathCandidates.slice(0, remainingSlots)
           const overflow = pathCandidates.slice(remainingSlots)
           const loopFailures: { candidate: ImagePathCandidate; reason: ImagePathAttachFailureReason }[] = []
@@ -1112,9 +1114,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         }
         // Mixed paste (#514 point 3): the path stays exactly where it was pasted below (never
         // prevented) -- each candidate is resolved in the background and attached silently if it
-        // turns out to be a real image, with no interruption to typing or the normal paste.
-        const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
-        const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+        // turns out to be a real image, with no interruption to typing or the normal paste (FR-039: shares the cap with pending files too).
+        const remainingSlots = remainingAttachmentSlots(sessionId)
         const capped = pathCandidates.slice(0, remainingSlots)
         const overflow = pathCandidates.slice(remainingSlots)
         useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
@@ -1190,10 +1191,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
   }
 
-  // PR #723 gate round 2 fix (A11y2 Medium) / #926: Remove restores focus to the next chip (or
-  // the textarea) and always announces -- the shared `removeAttachment` core (`removeAttachment.ts`)
-  // owns both the image and the file/folder case, differing only in which draft-store array
-  // each writes and the strip-index math for a file (`imagesCount + itsIndex`).
+  // PR #723 gate round 2 fix (A11y2 Medium) / #926: Remove restores focus and announces -- the
+  // shared `removeAttachment` core owns both the image and file/folder case (`removeAttachment.ts`).
   const handleRemoveImage = (id: string) => removeAttachment(sessionId, 'image', id, attachmentStripRef, textareaRef, announceAttachment)
   const handleRemoveFile = (id: string) => removeAttachment(sessionId, 'file', id, attachmentStripRef, textareaRef, announceAttachment)
 
@@ -1224,15 +1223,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             const sendBusy = busyAction === 'send'
             const removeBusy = busyAction === 'remove'
             const anyBusy = busyAction != null
-            const removeLabel = removeBusy ? `Removing queued message: ${chip.text}` : `Remove queued message: ${chip.text}`
+            const displayText = stripFileAttachmentsMarkerForDisplay(chip.text)
+            const removeLabel = removeBusy ? `Removing queued message: ${displayText}` : `Remove queued message: ${displayText}`
             return (
               <li key={chip.key} data-chip-key={chip.key}>
                 <Badge
                   variant="secondary"
                   className="h-auto max-w-full gap-1.5 overflow-visible py-0.5 pr-0.5"
                 >
-                  <span className="max-w-64 truncate" title={chip.text}>
-                    {chip.text}
+                  <span className="max-w-64 truncate" title={displayText}>
+                    {displayText}
                   </span>
                   {/* Issue #540 (#591 cycle 3): Send now is offered only for a real follow-up
                    * chip -- OMP's `promote_queued_message` only ever matches a queued
@@ -1247,7 +1247,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                       variant="outline"
                       size="xs"
                       data-chip-action="send"
-                      aria-label={sendBusy ? `Sending now: ${chip.text}` : `Send now: ${chip.text}`}
+                      aria-label={sendBusy ? `Sending now: ${displayText}` : `Send now: ${displayText}`}
                       aria-busy={sendBusy}
                       aria-disabled={anyBusy}
                       className="rounded-full px-2 text-[0.7rem] font-medium aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
@@ -1337,7 +1337,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           a cursor/disabled-state change) is the actual notice, not just a courtesy. The
           announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
           every re-render while the count stays above 0. */}
-      {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching image…</p>}
+      {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching…</p>}
       {/* T063/quality-gate fix, Composer tone remediation (2026-10-04), SUPERSEDED 2026-10-16
           (#927 grill, "Composer tone" in product-chat.md): the composer's fill, border and
           focus outline are per-theme custom properties (globals.css) -- in Dark and Obsidian

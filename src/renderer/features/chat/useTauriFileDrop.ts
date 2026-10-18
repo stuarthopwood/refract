@@ -62,6 +62,11 @@ function ensureSubscribed(): void {
 }
 
 async function handleDrop(pane: PaneDescriptor, paths: string[]): Promise<void> {
+  // Gate round 1 (D2 Medium): records the native drop's own paths against this Session's
+  // allow-list BEFORE attaching any of them -- `readFile` refuses an absolute path that was
+  // never recorded this way (or via `pickFiles`), so a confused/compromised renderer can no
+  // longer read an arbitrary absolute file merely by asking for it.
+  await window.refract.attachments.recordDroppedPaths(pane.sessionId, paths)
   const remainingSlots = remainingAttachmentSlots(pane.sessionId)
   const capped = paths.slice(0, remainingSlots)
   const resolved = capped.map((filePath) => ({ name: filePath.split(/[\\/]/).pop() ?? filePath, filePath }))

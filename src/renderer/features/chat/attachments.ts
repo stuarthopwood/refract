@@ -189,7 +189,12 @@ export function toImageContent(attachment: PendingImageAttachment): ImageContent
 // every downstream piece (strip, remove, preview, announce) is shared, not duplicated.
 // ---------------------------------------------------------------------------
 
-const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
+// #926 gate round 1 (Code1 HIGH): exported so a clipboard-pasted `File` (no OS path at all, only
+// a bare `file.name`) can be routed to the image reader purely by its own extension --
+// `looksLikeImagePathToken` below REQUIRES a path separator/drive prefix/`file://` scheme before
+// it even looks at the extension, so a bare name like `photo.png` (no separator) always failed
+// it, silently routing every pasted image-named file to the general file reader instead.
+export const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
 
 /** Cheap, pre-IPC heuristic only -- the real decision is always `attachments.readImageFile`'s own
  * stat + magic-byte check. This only decides which pasted/typed tokens are even worth a round

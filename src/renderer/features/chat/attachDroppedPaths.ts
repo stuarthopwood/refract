@@ -48,7 +48,7 @@ export async function attachResolvedPaths(
   useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
   try {
     for (const { name, filePath } of resolved) {
-      const result = await buildAnyPathAttachment(sessionId, filePath, name)
+      const result = await buildAnyPathAttachment(sessionId, filePath)
       if (!result.ok) {
         failedFiles.push({ name, reason: result.reason })
       } else if (result.kind === 'image') {

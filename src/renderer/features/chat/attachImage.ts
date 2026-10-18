@@ -5,8 +5,9 @@
 // to load first; any entry point loading `attachments.ts` first (a future unit test, say) would
 // hit a load-time ReferenceError. This file only imports FROM `attachments.ts` and `@/state`,
 // never the other way, so it adds no cycle.
-import { buildImageAttachment, formatByteSize, looksLikeImagePathToken } from './attachments'
+import { buildImageAttachment, formatByteSize, IMAGE_PATH_EXTENSION_RE } from './attachments'
 import { buildPastedFileAttachment, MAX_INLINE_FILE_BYTES } from './anyFileAttachments'
+import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useDraftStore } from '@/state'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
@@ -45,21 +46,44 @@ async function attachPastedFile(sessionId: string, file: File): Promise<void> {
       message:
         result.reason === 'too-large'
           ? `"${file.name}" is too large to inline (over ${formatByteSize(MAX_INLINE_FILE_BYTES)}) and was pasted with no file path, so it can't be sent as a path reference either; use the Attach button or drag it in instead. Nothing was attached.`
-          : `"${file.name}" is a binary file pasted with no file path, so it can't be sent as a path reference; use the Attach button or drag it in instead. Nothing was attached.`
+          : result.reason === 'binary'
+            ? `"${file.name}" is a binary file pasted with no file path, so it can't be sent as a path reference; use the Attach button or drag it in instead. Nothing was attached.`
+            : `"${file.name}" could not be read; nothing was attached.`
     })
     return
   }
   useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
-  useDraftStore.getState().announceAttachment(sessionId, `File attached, ${formatByteSize(result.attachment.byteLength)}.`)
+  useDraftStore.getState().announceAttachment(sessionId, `"${file.name}" attached as text, ${formatByteSize(result.attachment.byteLength)}.`)
 }
 
 /** #926: attaches every non-image FILE from a clipboard paste (Explorer "Copy" a file, then
- * Ctrl+V) in order -- an image-shaped name still goes through `attachImageFile` unchanged
- * (#926's own "images still go to omp as images" decision); everything else goes through
- * `attachPastedFile` above, the only possible outcome for a pasted file with no OS path. */
-export async function attachPastedFiles(sessionId: string, files: readonly File[]): Promise<void> {
-  for (const file of files) {
-    if (looksLikeImagePathToken(file.name)) await attachImageFile(sessionId, file)
-    else await attachPastedFile(sessionId, file)
+ * Ctrl+V) in order -- an image-shaped NAME still goes through `attachImageFile` unchanged
+ * (#926's own "images still go to omp as images" decision), checked by extension ALONE
+ * (`IMAGE_PATH_EXTENSION_RE`, not `looksLikeImagePathToken`, gate round 1 Code1 HIGH: a pasted
+ * `File`'s bare `file.name` carries no path separator/drive prefix at all, so the path-SHAPED
+ * check always failed it and silently misrouted every pasted image to the general file reader);
+ * everything else goes through `attachPastedFile` above, the only possible outcome for a pasted
+ * file with no OS path. Gate round 1 (FR-039 Medium, Test1 Medium): shares the per-message cap
+ * with pending images (`remainingAttachmentSlots`), and marks every read `pending` so Enter/Send
+ * waits for it the same way a path-based read already does. */
+export async function attachPastedFiles(sessionId: string, files: readonly File[], announceAttachment: (message: string) => void): Promise<void> {
+  useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
+  try {
+    const remainingSlots = remainingAttachmentSlots(sessionId)
+    const capped = files.slice(0, remainingSlots)
+    for (const file of capped) {
+      if (IMAGE_PATH_EXTENSION_RE.test(file.name)) await attachImageFile(sessionId, file)
+      else await attachPastedFile(sessionId, file)
+    }
+    const overflow = files.length - capped.length
+    if (overflow > 0) {
+      announceAttachment(
+        remainingSlots === 0
+          ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
+          : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflow} ${overflow === 1 ? 'was' : 'were'} skipped.`
+      )
+    }
+  } finally {
+    useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
   }
 }

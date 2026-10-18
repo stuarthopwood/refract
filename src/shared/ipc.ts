@@ -314,6 +314,7 @@ export const IPC_REQUESTS = {
   ATTACHMENTS_READ_IMAGE_FILE: 'attachments.readImageFile',
   ATTACHMENTS_READ_FILE: 'attachments.readFile',
   ATTACHMENTS_PICK_FILES: 'attachments.pickFiles',
+  ATTACHMENTS_RECORD_DROPPED_PATHS: 'attachments.recordDroppedPaths',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',

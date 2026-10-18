@@ -831,3 +831,16 @@ machinery end to end rather than a second pipeline.
 `check:indent`, `check:file-size`, `check:parity --gate`, `check:drag-regions` all green on this
 head (see the PR body's own Gates section for the exact run). `check:theme-contrast` also green.
 `check:ui-text`, a cargo build, and T030's live check are still pending the lane's build slot.
+
+- [X] T031 (#926) Gate round 1 fixes (Code1/Test1/Sec1/A11y1/UI1): moved `file_attachment_markers.rs`
+  into `omp/transcript/` (E0583 fix); fixed image routing (`looksLikeImagePathToken` now tested
+  against the full resolved path, not a bare basename); new shared `FileAttachmentChip.tsx` (both
+  surfaces render icon/name/size/"sent as path" visibly, accessible name from content, sr-only
+  kind suffix); Remove control gained a Tooltip, 24px hit area, and stays visible at rest; D1
+  marker hardening (line-start, last-occurrence, >=1 parsed entry, renderer send-time refusal,
+  queue-chip display stripping); D2 per-session absolute-path allow-list (`attachments.pickFiles`/
+  new `attachments.recordDroppedPaths`) `readFile` now enforces; D3 untrusted-data lead-in wording
+  (TS builder and Rust parser updated together); D4 confirmed (`/btw`'s existing refusal already
+  covers files); FR-039 shared cap now also applied to path-paste and clipboard-file paste
+  (`remainingAttachmentSlots`); DRY: `read_bounded`/`resolve_session_worktree` shared helpers in
+  `attachments.rs`, reused by both readers instead of redeclared.

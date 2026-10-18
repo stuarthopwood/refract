@@ -132,7 +132,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
 export function AttachButton({ sessionId, disabled }: { sessionId: string; disabled: boolean }) {
   async function handlePickFiles() {
     if (disabled) return
-    const result = await window.refract.attachments.pickFiles()
+    const result = await window.refract.attachments.pickFiles(sessionId)
     if (!result.ok) {
       notify(result.error)
       return

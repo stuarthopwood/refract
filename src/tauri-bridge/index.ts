@@ -154,7 +154,8 @@ const refract: RefractApi = {
   attachments: {
     readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
     readFile: (sessionId, path) => request<AttachmentFileRead>(IPC_REQUESTS.ATTACHMENTS_READ_FILE, sessionId, path),
-    pickFiles: () => request<string[]>(IPC_REQUESTS.ATTACHMENTS_PICK_FILES),
+    pickFiles: (sessionId) => request<string[]>(IPC_REQUESTS.ATTACHMENTS_PICK_FILES, sessionId),
+    recordDroppedPaths: (sessionId, paths) => request<void>(IPC_REQUESTS.ATTACHMENTS_RECORD_DROPPED_PATHS, sessionId, paths),
     // #432/#793: Tauri's own native drag-drop handler owns the drop (`dragDropEnabled` defaults
     // to `true`, left unset in `tauri.conf.json`'s window config -- spike section 2), so the
     // page's own HTML5 `drop` event never fires; `getPathForFile` has no Tauri equivalent either
