@@ -36,6 +36,19 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
   // honours a remembered non-default width via one imperative `resize()` call instead (same
   // `panelRef`/`useLayoutEffect` pattern `App.tsx`'s own `rightPaneRef` uses for its collapse/
   // expand), applied once per mount via `hasAppliedInitialWidth`, never on every Project switch.
+  // Gate-fix (relaunch-restore race, caught via code review of the #930 onResize-persists
+  // redesign): `useRef`'s own initial-value argument is evaluated on every render but only ever
+  // KEPT from this component's FIRST render -- which happens strictly BEFORE any layout effect
+  // (child or parent) can fire. Reading the store FRESH, inside the effect below, would race the
+  // `ResizablePanel`'s own child layout effect, which reports its very first `onResize` using
+  // its hardcoded `defaultSize` (320) before this parent effect ever runs (children's layout
+  // effects run before their parent's) -- now that `setWidth` persists unconditionally, that
+  // premature `onResize(320)` would both clobber the live `widthPx` back to the default AND
+  // schedule a write of 320, so this effect's own `!== DEFAULT` check would then (wrongly) see
+  // the already-clobbered 320 and skip calling `resize()` at all, permanently erasing whatever
+  // non-default width the user actually had saved, on every single relaunch. Capturing the
+  // value here instead reads it before that race can ever begin.
+  const initialWidthPxRef = useRef(usePullRequestsLayoutStore.getState().widthPx)
   const panelRef = useRef<PanelImperativeHandle>(null)
   const hasAppliedInitialWidth = useRef(false)
   useLayoutEffect(() => {
@@ -49,7 +62,7 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
     }
     if (hasAppliedInitialWidth.current) return
     hasAppliedInitialWidth.current = true
-    const persistedWidthPx = usePullRequestsLayoutStore.getState().widthPx
+    const persistedWidthPx = initialWidthPxRef.current
     if (persistedWidthPx !== PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX) {
       panelRef.current?.resize(persistedWidthPx)
     }

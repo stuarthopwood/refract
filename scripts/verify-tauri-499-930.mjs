@@ -56,6 +56,8 @@ import {
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
 import {
   assertBundleContainsStory499930Marker,
+  checkDraggedWidthSurvivesRelaunch,
+  checkResetToDefaultSurvivesRelaunch,
   checkSidebarDblClickDoesNotAffectPrColumn,
   connectCdp,
   dragHandleBy,
@@ -517,35 +519,20 @@ async function main() {
       notExercised('Every live PR-data check (Filter tabs, Filters disclosure, tab geometry, resizable column, Project selector fit)', 'real GitHub PR data was not reachable this run (see the hard failure above) -- code-verified only');
     }
 
-    // Gate-fix (H1, caught live 2026-10-18): drags away, double-clicks to reset, relaunches the
-    // SAME scratch data dir, confirms the column renders at the DEFAULT width again. ----
     if (reachedPrData) {
-      await dragHandleBy(cdp, HANDLE_FINDER, 120);
-      await sleep(400);
-      const handleRectForReset = await cdp.evaluate(`(() => { const el = ${HANDLE_FINDER}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: handleRectForReset.x, y: handleRectForReset.y, button: 'left', clickCount: 2 });
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: handleRectForReset.x, y: handleRectForReset.y, button: 'left', clickCount: 2 });
-      await sleep(400);
-      const widthAfterReset = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
-      await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
-      const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
-      cdp.close();
-      await stopLauncher(child);
-      ({ child, cdp } = await launch());
-      await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!document.querySelector('.drag-region')`, { timeoutMs: 45_000, label: 'app ready after relaunch' });
-      // Same gate-fix as the first navigation above: prefix-matched aria-label, not exact text
-      // (the active-count badge has reliably already loaded by relaunch time). No `.catch(()
-      // => {})` either -- swallowing this let the step below silently read a `null` width off
-      // whatever view the app happened to default to, instead of surfacing the real navigation
-      // failure.
-      await cdp.clickByLabel('Pull requests', { prefix: true });
-      await sleep(500);
-      const widthAfterRelaunch = await cdp.evaluate(`${LIST_PANEL_FINDER}?.getBoundingClientRect().width ?? null`);
-      const remembered = widthAfterReset != null && Math.abs(widthAfterReset - DEFAULT_WIDTH_PX) <= 3
-        && persistedWidthPx != null && Math.abs(persistedWidthPx - DEFAULT_WIDTH_PX) <= 3
-        && widthAfterRelaunch != null && Math.abs(widthAfterRelaunch - DEFAULT_WIDTH_PX) <= 3;
-      if (remembered) checkPass('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
-      else checkFail('A double-click reset to the default width is remembered across a relaunch', JSON.stringify({ widthAfterReset, persistedWidthPx, widthAfterRelaunch }));
+      const draggedResult = await checkDraggedWidthSurvivesRelaunch(cdp, child, launch, stopLauncher, HANDLE_FINDER, LIST_PANEL_FINDER, DEFAULT_WIDTH_PX);
+      ({ child, cdp } = draggedResult);
+      (draggedResult.pass ? checkPass : checkFail)('A dragged (non-default) width survives a relaunch, not clobbered by the mount-restore race', JSON.stringify(draggedResult.detail));
+    } else {
+      notExercised('Dragged width survives a relaunch', 'no Pull requests data reached this run; code-verified only');
+    }
+
+    // Gate-fix (H1, caught live 2026-10-18): see checkResetToDefaultSurvivesRelaunch's own
+    // docstring (verify-tauri-499-930-helpers.mjs). ----
+    if (reachedPrData) {
+      const resetResult = await checkResetToDefaultSurvivesRelaunch(cdp, child, launch, stopLauncher, HANDLE_FINDER, LIST_PANEL_FINDER, DEFAULT_WIDTH_PX);
+      ({ child, cdp } = resetResult);
+      (resetResult.pass ? checkPass : checkFail)('A double-click reset to the default width is remembered across a relaunch', JSON.stringify(resetResult.detail));
     } else {
       notExercised('Remembered width across a relaunch', 'no Pull requests data reached this run; code-verified only');
     }

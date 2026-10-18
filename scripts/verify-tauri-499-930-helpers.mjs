@@ -187,3 +187,64 @@ export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFi
   const pass = persistedMatchesRealWidth && !suspiciousDefaultReset;
   return { pass, detail };
 }
+
+/** Shared by both relaunch checks (reset-to-default and dragged-non-default,
+ * verify-tauri-499-930.mjs): closes `cdp`, stops `child`, relaunches (same scratch data dir),
+ * navigates back to Pull requests, and reads the list column's own real DOM width. Returns the
+ * caller's new `{ child, cdp, widthAfterRelaunch }` -- the old `cdp`/`child` are no longer valid
+ * once this relaunches. */
+async function relaunchAndReadListWidth(cdp, child, launch, stopLauncherFn, listPanelFinder) {
+  cdp.close();
+  await stopLauncherFn(child);
+  const relaunched = await launch();
+  await relaunched.cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!document.querySelector('.drag-region')`, { timeoutMs: 45_000, label: 'app ready after relaunch' });
+  // Same gate-fix as the first navigation: prefix-matched aria-label, not exact text (the
+  // active-count badge has reliably already loaded by relaunch time).
+  await relaunched.cdp.clickByLabel('Pull requests', { prefix: true });
+  await sleep(500);
+  const widthAfterRelaunch = await relaunched.cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
+  return { child: relaunched.child, cdp: relaunched.cdp, widthAfterRelaunch };
+}
+
+/** Gate-fix (mount-restore race, caught via code review of the #930 onResize-persists
+ * redesign): the main script's OWN double-click-reset relaunch check could never have caught a
+ * bug where the Panel's own initial `onResize(defaultSize)` clobbers the live `widthPx` (and,
+ * now that every `onResize` persists, schedules a write of the default) BEFORE
+ * `PullRequestsView.tsx`'s own mount-restore effect gets a chance to read + re-apply the real
+ * persisted value -- that check resets to the DEFAULT width first, which happens to equal
+ * whatever a fresh settings.json already holds, so the bug's own symptom (silently clobbered
+ * back to the default) is indistinguishable from the correct answer in that specific scenario.
+ * Drags to a width distinctly away from the default FIRST, relaunches, and confirms it survives
+ * un-clobbered. Returns the caller's new `{ child, cdp }` alongside `{ pass, detail }`. */
+export async function checkDraggedWidthSurvivesRelaunch(cdp, child, launch, stopLauncherFn, handleFinder, listPanelFinder, defaultWidthPx) {
+  await dragHandleBy(cdp, handleFinder, 80);
+  await sleep(400);
+  const widthAfterDrag = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
+  await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
+  const persistedAfterDrag = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
+  const r = await relaunchAndReadListWidth(cdp, child, launch, stopLauncherFn, listPanelFinder);
+  const pass = widthAfterDrag != null && Math.abs(widthAfterDrag - defaultWidthPx) > 20
+    && persistedAfterDrag != null && Math.abs(persistedAfterDrag - widthAfterDrag) <= 2
+    && r.widthAfterRelaunch != null && Math.abs(r.widthAfterRelaunch - widthAfterDrag) <= 2;
+  return { pass, detail: { widthAfterDrag, persistedAfterDrag, widthAfterRelaunch: r.widthAfterRelaunch }, child: r.child, cdp: r.cdp };
+}
+
+/** Gate-fix (H1, caught live 2026-10-18): drags away, double-clicks to reset, relaunches the SAME
+ * scratch data dir, confirms the column renders at the DEFAULT width again. Returns the caller's
+ * new `{ child, cdp }` alongside `{ pass, detail }`. */
+export async function checkResetToDefaultSurvivesRelaunch(cdp, child, launch, stopLauncherFn, handleFinder, listPanelFinder, defaultWidthPx) {
+  await dragHandleBy(cdp, handleFinder, 120);
+  await sleep(400);
+  const handleRect = await cdp.evaluate(`(() => { const el = ${handleFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: handleRect.x, y: handleRect.y, button: 'left', clickCount: 2 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: handleRect.x, y: handleRect.y, button: 'left', clickCount: 2 });
+  await sleep(400);
+  const widthAfterReset = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
+  await sleep(600); // clears the ~300ms persist debounce before the relaunch below.
+  const persistedWidthPx = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
+  const r = await relaunchAndReadListWidth(cdp, child, launch, stopLauncherFn, listPanelFinder);
+  const pass = widthAfterReset != null && Math.abs(widthAfterReset - defaultWidthPx) <= 3
+    && persistedWidthPx != null && Math.abs(persistedWidthPx - defaultWidthPx) <= 3
+    && r.widthAfterRelaunch != null && Math.abs(r.widthAfterRelaunch - defaultWidthPx) <= 3;
+  return { pass, detail: { widthAfterReset, persistedWidthPx, widthAfterRelaunch: r.widthAfterRelaunch }, child: r.child, cdp: r.cdp };
+}
