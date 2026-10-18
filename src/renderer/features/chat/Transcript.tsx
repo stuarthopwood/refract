@@ -1032,7 +1032,7 @@ export function Transcript({
             `:focus-within` back off and restoring this wrapper in the same frame. */}
         {startNotice && (
           <div data-start-overlay className="pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2">
-            <div className={cn('pointer-events-auto', dimTranscript && 'peer-focus-within:pointer-events-none peer-focus-within:opacity-0')}>
+            <div data-start-notice-wrapper className={cn('pointer-events-auto', dimTranscript && 'peer-focus-within:pointer-events-none peer-focus-within:opacity-0')}>
               {startNotice(dimTranscript)}
             </div>
           </div>

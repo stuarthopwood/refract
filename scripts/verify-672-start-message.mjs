@@ -35,200 +35,17 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject, resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import {
+  GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, JOKE_STAGES, PLAIN_STAGES, NARROW_BREAKPOINT_PX,
+  expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
+  setStartProgress, waitForRegionOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours
+} from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-672';
 const SHOTS_DIR =
   process.env.REFRACT_672_SHOTS_DIR || path.join(tmpdir(), 'refract-672-start-message-shots', new Date().toISOString().replace(/[:.]/g, '-'));
-
-const GROUP = `document.querySelector('[aria-label="Agent start"]')`;
-const REGIONS = `document.querySelectorAll('[aria-label="Transcript"]')`;
-const REGION0 = `${REGIONS}[0]`;
-const ANNOUNCE = `document.querySelector('[data-start-announcement]')`;
-const OVERLAY = `document.querySelector('[data-start-overlay]')`;
-
-// `dark` is the app's own default (asserted implicitly by every earlier screenshot); the other
-// two are driven explicitly.
-const THEMES = [
-  { id: 'dark', name: 'Dark' },
-  { id: 'obsidian', name: 'Obsidian' },
-  { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
-];
-
-// The joke-stage kinds (SessionStartNotice.tsx's own `isJokeStage`) and the plain-text kinds,
-// each with a `showControls` kind mixed in so Keep waiting/Cancel reachability gets checked too.
-const JOKE_STAGES = [
-  { kind: 'waiting', elapsedMs: 0 },
-  { kind: 'prompt', elapsedMs: 15_000 },
-  { kind: 'extended', elapsedMs: 45_000 }
-];
-const PLAIN_STAGES = [
-  { kind: 'queued', elapsedMs: 0 },
-  { kind: 'memory-deferred', elapsedMs: 0 }
-];
-
-// The sizing rule under test (SessionStartNotice.tsx's own `@min-[40rem]`): below 40rem (640px)
-// of container width the compact sizes apply (`text-xl`/`text-[40px]`); at or above it the large
-// sizes apply (`text-2xl`/`text-5xl`). Mirrors the component's own Tailwind classes so a drift in
-// either place shows up as a mismatch here, not two independent hardcoded numbers.
-const NARROW_BREAKPOINT_PX = 640;
-function expectedSizesForWidth(widthPx) {
-  return widthPx >= NARROW_BREAKPOINT_PX
-    ? { messagePx: 24, emojiPx: 48, label: 'wide (text-2xl/text-5xl)' }
-    : { messagePx: 20, emojiPx: 40, label: 'narrow (text-xl/text-[40px])' };
-}
-
-function fontSizePx(cssFontSize) {
-  const match = /^([\d.]+)px$/.exec(cssFontSize ?? '');
-  return match ? Number(match[1]) : null;
-}
-
-function animationDurationMs(cssDuration) {
-  const match = /^([\d.]+)(m?s)$/.exec(cssDuration ?? '');
-  if (!match) return null;
-  return match[2] === 'ms' ? Number(match[1]) : Number(match[1]) * 1000;
-}
-
-// WCAG relative-luminance/contrast-ratio math (same formula `theme-contrast-pairs.mjs` uses),
-// applied here to the gate-round-1 panel: `bg-background/90` composited over whatever sits
-// behind it reads very close to solid `--background` (blending X at 90% over anything pulls the
-// result strongly toward X), so resolving `--background` itself is a defensible, conservative
-// stand-in for "the panel's own effective background colour" without a pixel-level compositing
-// read this harness cannot do.
-function srgbToLinear(c) {
-  const cs = c / 255;
-  return cs <= 0.04045 ? cs / 12.92 : Math.pow((cs + 0.055) / 1.055, 2.4);
-}
-function relativeLuminance([r, g, b]) {
-  return 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
-}
-function parseRgb(rgbString) {
-  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(rgbString ?? '');
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
-}
-function contrastRatio(fg, bg) {
-  const rgbFg = parseRgb(fg), rgbBg = parseRgb(bg);
-  if (!rgbFg || !rgbBg) return null;
-  const lFg = relativeLuminance(rgbFg), lBg = relativeLuminance(rgbBg);
-  const lighter = Math.max(lFg, lBg), darker = Math.min(lFg, lBg);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-async function setStartProgress(cdp, sessionId, startProgress) {
-  const value = startProgress === undefined ? 'undefined' : JSON.stringify(startProgress);
-  const ok = await cdp.evaluate(`(() => {
-    const store = window.__refractStores.sessions;
-    const sessions = store.getState().sessions.map((s) => s.id === ${JSON.stringify(sessionId)} ? { ...s, startProgress: ${value} } : s);
-    store.setState({ sessions });
-    return true;
-  })()`);
-  if (!ok) throw new Error(`setStartProgress(${sessionId}): store update did not return true`);
-}
-
-/** Gate-fix (UI round 1): polls the computed opacity of `${REGION0}` until `predicate` is true or
- *  `timeoutMs` elapses, rather than a single read right after the mount `waitFor` -- a real
- *  settle may lag the mount by a frame even with the transition removed. */
-async function waitForRegionOpacity(cdp, predicate, timeoutMs = 3_000) {
-  const deadline = Date.now() + timeoutMs;
-  let last = null;
-  while (Date.now() < deadline) {
-    last = await cdp.evaluate(`(() => { const r = ${REGION0}; return r ? Number(getComputedStyle(r).opacity) : null; })()`);
-    if (last !== null && predicate(last)) return { value: last, ok: true };
-    await sleep(100);
-  }
-  return { value: last, ok: false };
-}
-
-/** Gate-fix (UI round 1, items 9/12): forces a real layout change via CDP's `Emulation` domain
- *  (confirmed usable over this WebView2 CDP endpoint by several earlier verify-5xx scripts) so a
- *  size-dependent check is never skipped just because this run's own window happened to land in
- *  the other regime. Always clears the override afterward, even if `fn` throws. */
-async function withDeviceMetrics(cdp, width, height, fn) {
-  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false });
-  await sleep(300);
-  try {
-    return await fn();
-  } finally {
-    await cdp.send('Emulation.clearDeviceMetricsOverride');
-    await sleep(300);
-  }
-}
-
-/** Reads the notice's own geometry/styles plus whichever Transcript region actually contains it,
- *  found by bounding-box containment of the notice's own centre point (correct regardless of
- *  pane index, not an assumed array position). */
-async function readNoticeState(cdp) {
-  return cdp.evaluate(`(() => {
-    const group = ${GROUP};
-    if (!group) return { present: false };
-    const groupRect = group.getBoundingClientRect();
-    const cx = groupRect.x + groupRect.width / 2, cy = groupRect.y + groupRect.height / 2;
-    const region = Array.from(${REGIONS}).find((r) => {
-      const rr = r.getBoundingClientRect();
-      return cx >= rr.x && cx <= rr.x + rr.width && cy >= rr.y && cy <= rr.y + rr.height;
-    });
-    const styleOf = (el) => {
-      if (!el) return null;
-      const cs = getComputedStyle(el);
-      return { fontSize: cs.fontSize, color: cs.color, animationDuration: cs.animationDuration };
-    };
-    const buttonTexts = Array.from(group.querySelectorAll('button')).map((b) => b.textContent.trim());
-    if (!region) return { present: true, regionFound: false, buttonTexts };
-    const regionRect = region.getBoundingClientRect();
-    return {
-      present: true,
-      regionFound: true,
-      groupRect: { x: groupRect.x, y: groupRect.y, width: groupRect.width, height: groupRect.height },
-      regionRect: { x: regionRect.x, y: regionRect.y, width: regionRect.width, height: regionRect.height },
-      buttonTexts,
-      emoji: styleOf(group.querySelector('[data-start-emoji]')),
-      message: styleOf(group.querySelector('[data-start-message]')),
-      counter: styleOf(group.querySelector('[data-start-counter]')),
-      guidance: styleOf(group.querySelector('[data-start-guidance]')),
-      plain: styleOf(group.querySelector('[data-start-plain-text]'))
-    };
-  })()`);
-}
-
-function assertCentred(state, label, failures) {
-  if (!state.regionFound) {
-    failures.push(`${label}: notice rendered but no owning Transcript region was found (geometry check skipped).`);
-    return;
-  }
-  const g = state.groupRect, r = state.regionRect;
-  const gcx = g.x + g.width / 2, gcy = g.y + g.height / 2;
-  const rcx = r.x + r.width / 2, rcy = r.y + r.height / 2;
-  const tolX = Math.max(24, r.width * 0.08);
-  const tolY = Math.max(24, r.height * 0.08);
-  if (Math.abs(gcx - rcx) > tolX || Math.abs(gcy - rcy) > tolY) {
-    failures.push(
-      `${label}: notice centre (${gcx.toFixed(1)}, ${gcy.toFixed(1)}) is not centred in its transcript region (${rcx.toFixed(1)}, ${rcy.toFixed(1)}), region ${r.width.toFixed(0)}x${r.height.toFixed(0)} (tolerance ${tolX.toFixed(0)}x${tolY.toFixed(0)}).`
-    );
-  }
-}
-
-/** Asserts `message`/`counter` sizing and colour against `expectedSizesForWidth(widthPx)` --
- *  shared by the brand-new, history and split checks so the three read identically. */
-function assertSizesAndColours(state, widthPx, label, resolvedForeground, resolvedMuted, failures, findings) {
-  const expected = expectedSizesForWidth(widthPx);
-  const emojiPx = fontSizePx(state.emoji?.fontSize);
-  const messagePx = fontSizePx(state.message?.fontSize);
-  if (emojiPx !== expected.emojiPx) failures.push(`${label}: emoji font-size is ${state.emoji?.fontSize}, expected ${expected.emojiPx}px (${expected.label}, measured width ${widthPx}px).`);
-  else findings.push(`${label}: emoji font-size ${emojiPx}px matches ${expected.label}.`);
-  if (messagePx !== expected.messagePx) failures.push(`${label}: message font-size is ${state.message?.fontSize}, expected ${expected.messagePx}px (${expected.label}, measured width ${widthPx}px).`);
-  else findings.push(`${label}: message font-size ${messagePx}px matches ${expected.label}.`);
-  if (state.message?.color !== resolvedForeground) failures.push(`${label}: message colour is ${state.message?.color}, expected --foreground ${resolvedForeground} (not muted).`);
-  else findings.push(`${label}: message colour matches --foreground exactly (not muted).`);
-  if (!state.counter) failures.push(`${label}: [data-start-counter] is missing (expected the elapsed-seconds counter).`);
-  else {
-    const counterPx = fontSizePx(state.counter.fontSize);
-    if (counterPx !== 12) failures.push(`${label}: seconds counter font-size is ${state.counter.fontSize}, expected 12px (text-xs).`);
-    else findings.push(`${label}: seconds counter font-size 12px (text-xs), as specified.`);
-    if (state.counter.color !== resolvedMuted) failures.push(`${label}: seconds counter colour is ${state.counter.color}, expected --muted-foreground ${resolvedMuted}.`);
-    else findings.push(`${label}: seconds counter colour matches --muted-foreground.`);
-  }
-}
 
 async function main() {
   let dataDir, importSourceDir, repoDir, exeDir, launcherDir;
@@ -407,30 +224,87 @@ async function main() {
     if (historyState.regionFound) assertSizesAndColours(historyState, historyState.regionRect.width, 'history/waiting', resolvedForeground, resolvedMuted, failures, findings);
     await cdp.screenshot(path.join(SHOTS_DIR, '03-history-dimmed.png'));
 
-    // Gate-fix (UI round 1, item 7): the dimmed history must stay genuinely scrollable (a real
-    // wheel event) and restore full opacity on focus -- forced scrollable via a short viewport
-    // override so this is never a silent no-op against a transcript too short to scroll anyway.
+    // Gate-fix (UI round 1, item 7; corrected round 2, item 6): the dimmed history must stay
+    // genuinely scrollable -- forced scrollable via a short viewport override so this is never a
+    // silent no-op against a transcript too short to scroll anyway. The wheel point is proven
+    // (via `elementFromPoint`) to land inside the transcript and OUTSIDE the notice's own box
+    // before dispatching; `defaultScrollPosition="end"` means scrollTop already sits near its
+    // max, so an upward wheel (`deltaY:-150`) is the direction guaranteed to show a clear,
+    // unclamped decrease.
     await withDeviceMetrics(cdp, 900, 260, async () => {
       await cdp.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted after short-viewport override' });
-      const rect = await cdp.evaluate(`(() => { const r = ${REGION0}; if (!r) return null; const rr = r.getBoundingClientRect(); return { x: rr.x + rr.width / 2, y: rr.y + rr.height / 2 }; })()`);
-      if (!rect) {
-        failures.push('history/wheel: no Transcript region found to dispatch a wheel event at.');
+      const probe = await cdp.evaluate(`(() => {
+        const region = ${REGION0}, group = ${GROUP};
+        if (!region) return null;
+        const rr = region.getBoundingClientRect();
+        const x = rr.x + 16, y = rr.y + 16;
+        const hit = document.elementFromPoint(x, y);
+        return { x, y, landsInTranscript: !!hit && region.contains(hit), landsInNotice: !!hit && !!group && group.contains(hit) };
+      })()`);
+      if (!probe || !probe.landsInTranscript || probe.landsInNotice) {
+        failures.push(`history/wheel: could not find a point confirmed (elementFromPoint) inside the transcript and outside the notice (${JSON.stringify(probe)}).`);
         return;
       }
       const before = await cdp.evaluate(`${REGION0}?.scrollTop ?? null`);
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: rect.x, y: rect.y, deltaX: 0, deltaY: 150 });
+      if (before === null || !(before > 0)) {
+        failures.push(`history/wheel: transcript scrollTop is ${before} before the wheel, expected >0 (defaultScrollPosition="end" in a forced-short viewport) so an upward wheel has somewhere to decrease from.`);
+        return;
+      }
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: probe.x, y: probe.y, deltaX: 0, deltaY: -150 });
       await sleep(200);
       const after = await cdp.evaluate(`${REGION0}?.scrollTop ?? null`);
-      if (before === null || after === null || before === after) {
-        failures.push(`history/wheel: a wheel over the dimmed history did not change scrollTop (${before} -> ${after}) -- it must stay scrollable while dimmed (gate-fix UI round 1).`);
+      if (after === null || !(after < before)) {
+        failures.push(`history/wheel: a wheel (deltaY:-150) at a point confirmed inside the transcript and outside the notice did not decrease scrollTop (${before} -> ${after}) -- it must stay scrollable while dimmed.`);
       } else {
-        findings.push(`history/wheel: a wheel over the dimmed history scrolled it (scrollTop ${before} -> ${after}), confirming it stays interactive while dimmed.`);
+        findings.push(`history/wheel: a wheel at a point confirmed (elementFromPoint) inside the transcript and outside the notice decreased scrollTop (${before} -> ${after}), confirming it stays interactive while dimmed.`);
       }
       await cdp.evaluate(`${REGION0}?.focus()`);
       const focusedOpacity = await waitForRegionOpacity(cdp, (v) => v > 0.95, 2_000);
       if (!focusedOpacity.ok) failures.push(`history/focus: focusing the dimmed transcript region did not restore full opacity (settled at ${focusedOpacity.value}) -- focus-within:opacity-100 regressed.`);
       else findings.push(`history/focus: focusing the dimmed transcript region restored full opacity (${focusedOpacity.value}), as specified.`);
-      await cdp.evaluate(`${REGION0}?.blur()`);
+
+      // ---- Gate round 2 item 9: the NOTICE itself hides while focus sits in the history, and
+      // Tab from there reaches Keep waiting and reveals it again. `prompt` stage so the button
+      // exists; focus is already on the region from the check just above. ----
+      await setStartProgress(cdp, sessionAId, { kind: 'prompt', elapsedMs: 20_000 });
+      await cdp.waitFor(`!!document.querySelector('[data-start-notice-wrapper]')`, { timeoutMs: 10_000, label: 'notice wrapper mounted (prompt stage) for the focus-hide check' });
+      await cdp.evaluate(`${REGION0}?.focus()`);
+      await sleep(150);
+      const hidden = await cdp.evaluate(`(() => {
+        const w = document.querySelector('[data-start-notice-wrapper]');
+        if (!w) return null;
+        const cs = getComputedStyle(w);
+        const r = ${REGION0}.getBoundingClientRect();
+        const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+        return { opacity: Number(cs.opacity), pointerEvents: cs.pointerEvents, hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy)) };
+      })()`);
+      if (!hidden || hidden.opacity > 0.05 || hidden.pointerEvents !== 'none') {
+        failures.push(`focus-hide: with focus inside the history, the notice wrapper read opacity ${hidden?.opacity}/pointer-events ${hidden?.pointerEvents}, expected opacity ~0 and pointer-events none (gate round 2, WCAG 2.4.11). Deliberately measuring opacity, not CSS \`visibility\` -- see Transcript.tsx's own comment for why \`visibility:hidden\` would break Tab reachability instead.`);
+      } else if (!hidden.hitIsTranscript) {
+        failures.push('focus-hide: the notice is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
+      } else {
+        findings.push(`focus-hide: with focus inside the history, the notice wrapper reads opacity ${hidden.opacity}, pointer-events ${hidden.pointerEvents} (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
+      }
+      await dispatchTab(cdp);
+      await sleep(150);
+      const afterTab = await cdp.evaluate(`(() => {
+        const w = document.querySelector('[data-start-notice-wrapper]');
+        const active = document.activeElement;
+        if (!w) return null;
+        const cs = getComputedStyle(w);
+        const btn = Array.from(w.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Keep waiting');
+        let hitIsButton = false;
+        if (btn) { const br = btn.getBoundingClientRect(); hitIsButton = document.elementFromPoint(br.x + br.width / 2, br.y + br.height / 2) === btn; }
+        return { opacity: Number(cs.opacity), activeIsKeepWaiting: active === btn, hitIsButton };
+      })()`);
+      if (!afterTab || !afterTab.activeIsKeepWaiting) {
+        failures.push(`focus-hide: one real Tab press from the history did not land on "Keep waiting" (${JSON.stringify(afterTab)}).`);
+      } else if (afterTab.opacity < 0.95 || !afterTab.hitIsButton) {
+        failures.push(`focus-hide: Tab reached "Keep waiting" but the notice did not fully reappear (wrapper opacity ${afterTab.opacity}, elementFromPoint at its own centre hits the button: ${afterTab.hitIsButton}).`);
+      } else {
+        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the notice reappeared (wrapper opacity ${afterTab.opacity}), reachable at its own screen position.`);
+      }
+      await cdp.evaluate(`document.activeElement?.blur()`);
     });
 
     await setStartProgress(cdp, sessionAId, undefined);
@@ -487,11 +361,20 @@ async function main() {
     await cdp.send('Emulation.setEmulatedMedia', { features: [] });
 
     // ---- (6) Themes: a failed theme.set is a FAILURE now, not notExercised. Driven at the
-    // `prompt` stage (not `waiting`) so the guidance text and buttons exist alongside the joke,
-    // and the panel-backed contrast (message/counter/guidance over the `bg-background/90` panel,
-    // gate round 1 item 2) is asserted in every theme, not only screenshotted ----
+    // `prompt` stage (not `waiting`) so the guidance text and buttons exist alongside the joke.
+    // Gate round 2 item 7: contrast is measured against the panel's own WORST-CASE effective
+    // background -- `--foreground` at 40% opacity (the brightest plausible thing visible
+    // through the dimmed history) composited UNDER the panel's own real `bg-background/90` (its
+    // genuine alpha, read from the live element, not assumed) -- in every theme, for the
+    // message, counter, guidance text AND every button label. A regression-proof self-check
+    // (forcing the panel transparent and re-measuring) confirms this would actually catch
+    // `bg-background/90` being removed. ----
     await setStartProgress(cdp, sessionAId, { kind: 'prompt', elapsedMs: 20_000 });
     await cdp.waitFor(`!!document.querySelector('[data-start-guidance]')`, { timeoutMs: 10_000, label: 'prompt-stage notice (guidance text) mounted for the theme loop' });
+    const dimBeforeThemes = await readNoticeState(cdp);
+    if (!dimBeforeThemes.regionFound || !(dimBeforeThemes.regionOpacity <= 0.45)) {
+      failures.push(`theme-contrast: transcript region opacity is ${dimBeforeThemes.regionFound ? dimBeforeThemes.regionOpacity : 'unknown (region not found)'}, expected <=0.45 -- the panel should be backing a dimmed history here, not measuring against an undimmed/missing one.`);
+    }
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         const result = await cdp.evaluate(`window.refract.theme.set(${JSON.stringify(theme.id)}).then((r) => r.ok)`);
@@ -503,39 +386,90 @@ async function main() {
       }
       await cdp.screenshot(path.join(SHOTS_DIR, `07-theme-${theme.id}.png`));
       const themeState = await readNoticeState(cdp);
-      const panelBg = await resolveCssVarColor(cdp, '--background', 'background-color');
+      const panelRaw = await cdp.evaluate(`(() => { const el = ${GROUP}; return el ? getComputedStyle(el).backgroundColor : null; })()`);
+      const panel = parseRgba(panelRaw);
+      const backgroundRgb = parseRgba(await resolveCssVarColor(cdp, '--background', 'background-color'));
+      const foregroundRgb = parseRgba(await resolveCssVarColor(cdp, '--foreground', 'background-color'));
+      const buttonColours = await cdp.evaluate(`${GROUP} ? Array.from(${GROUP}.querySelectorAll('button')).map((b) => ({ text: b.textContent.trim(), color: getComputedStyle(b).color })) : []`);
+      if (!panel || !backgroundRgb || !foregroundRgb) {
+        failures.push(`${theme.name}: could not resolve panel (${panelRaw})/--background/--foreground colours for contrast math.`);
+        continue;
+      }
+      if (!(panel.a < 0.99)) failures.push(`${theme.name}: panel background-color ${panelRaw} reads fully opaque (alpha ${panel.a}) -- expected ~0.9 (bg-background/90); the panel class may not be applied.`);
+      const worstCaseBackdrop = blendOver({ ...foregroundRgb, a: 0.4 }, backgroundRgb);
+      const panelEffectiveCss = rgbToCss(blendOver(panel, worstCaseBackdrop));
       const pairs = [
         ['message', themeState.message?.color],
         ['counter', themeState.counter?.color],
-        ['guidance', themeState.guidance?.color]
+        ['guidance', themeState.guidance?.color],
+        ...buttonColours.map((b) => [`button "${b.text}"`, b.color])
       ];
       for (const [name, colour] of pairs) {
-        const ratio = contrastRatio(colour, panelBg);
-        if (ratio === null) failures.push(`${theme.name}: could not compute a contrast ratio for ${name} (${colour}) over the panel background (${panelBg}).`);
-        else if (ratio < 4.5) failures.push(`${theme.name}: ${name} colour ${colour} over the panel background ${panelBg} contrasts ${ratio.toFixed(2)}:1, expected >=4.5:1.`);
-        else findings.push(`${theme.name}: ${name} colour contrasts ${ratio.toFixed(2)}:1 over the panel background, >=4.5:1.`);
+        const ratio = contrastRatio(colour, panelEffectiveCss);
+        if (ratio === null) failures.push(`${theme.name}: could not compute a contrast ratio for ${name} (${colour}) over the panel's worst-case effective background (${panelEffectiveCss}).`);
+        else if (ratio < 4.5) failures.push(`${theme.name}: ${name} colour ${colour} over the panel's worst-case effective background ${panelEffectiveCss} (foreground@40% under the real panel alpha) contrasts ${ratio.toFixed(2)}:1, expected >=4.5:1.`);
+        else findings.push(`${theme.name}: ${name} colour contrasts ${ratio.toFixed(2)}:1 over the panel's worst-case effective background, >=4.5:1.`);
       }
+      // Self-validation (item 7: "removing bg-background/90 must make it fail"): force the
+      // panel transparent, remeasure against the bare worst-case backdrop, and confirm at least
+      // one colour reads worse or failing -- proving the panel is genuinely improving contrast.
+      await cdp.evaluate(`(() => { const el = ${GROUP}; if (el) el.style.backgroundColor = 'transparent'; return true; })()`);
+      const bareCss = rgbToCss(worstCaseBackdrop);
+      const hadWorseOrFailing = pairs.some(([, colour]) => {
+        const withPanel = contrastRatio(colour, panelEffectiveCss);
+        const withoutPanel = contrastRatio(colour, bareCss);
+        return withPanel !== null && withoutPanel !== null && (withoutPanel < withPanel - 0.05 || withoutPanel < 4.5);
+      });
+      await cdp.evaluate(`(() => { const el = ${GROUP}; if (el) el.style.removeProperty('background-color'); return true; })()`);
+      if (!hadWorseOrFailing) notExercised.push(`${theme.name}: removing bg-background/90 did not read worse/failing for any measured colour -- could not confirm this contrast check has teeth.`);
+      else findings.push(`${theme.name}: removing bg-background/90 (temporary fault injection) reads a worse or failing contrast for at least one colour, confirming this check would catch a regression.`);
     }
     await cdp.evaluate(`window.refract.theme.set('dark')`);
 
-    // ---- A genuinely short (600px tall) window: Keep waiting/Cancel reachable, forced via
-    // Emulation.setDeviceMetricsOverride (gate-fix UI round 1, item 12: never silently skip) ----
+    // ---- A genuinely short (600px tall) window: Keep waiting/Cancel reachable the user's way
+    // (a real wheel scroll, elementFromPoint hit-testing, not just rect-in-bounds math), forced
+    // via Emulation.setDeviceMetricsOverride (gate round 1 item 12 / round 2 item 8: never
+    // silently skip, and prove the check has teeth) ----
     await withDeviceMetrics(cdp, 900, 600, async () => {
       await cdp.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted in the 600px-tall window' });
-      await cdp.evaluate(`(() => { const el = ${OVERLAY}; if (el) el.scrollTop = el.scrollHeight; return true; })()`);
-      await sleep(150);
-      const buttonRects = await cdp.evaluate(`(() => {
-        const group = ${GROUP};
-        if (!group) return [];
-        return Array.from(group.querySelectorAll('button')).map((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent.trim(), x: r.x, y: r.y, width: r.width, height: r.height }; });
-      })()`);
-      if (buttonRects.length === 0) failures.push('short-window: no buttons found in the Agent start group at the prompt stage (expected Keep waiting and Cancel).');
-      for (const b of buttonRects) {
-        const within = b.y >= 0 && b.y + b.height <= 600 && b.x >= 0 && b.x + b.width <= 900;
-        if (within) findings.push(`short-window: "${b.text}" button reaches inside the 600px-tall viewport (y ${b.y.toFixed(0)}..${(b.y + b.height).toFixed(0)}) after scrolling the overlay to its end.`);
-        else failures.push(`short-window: "${b.text}" button is not reachable inside the 600px-tall viewport even after scrolling the overlay to its end (rect y ${b.y.toFixed(0)}..${(b.y + b.height).toFixed(0)}, x ${b.x.toFixed(0)}..${(b.x + b.width).toFixed(0)}).`);
+      const overflowCheck = await cdp.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight } : null; })()`);
+      if (!overflowCheck || !(overflowCheck.scrollHeight > overflowCheck.clientHeight)) {
+        failures.push(`short-window: overlay scrollHeight (${overflowCheck?.scrollHeight}) is not greater than clientHeight (${overflowCheck?.clientHeight}) -- it did not genuinely overflow this 600px-tall window.`);
+        return;
+      }
+      findings.push(`short-window: overlay genuinely overflows (scrollHeight ${overflowCheck.scrollHeight} > clientHeight ${overflowCheck.clientHeight}).`);
+      async function scrollOverlayToEndViaWheel() {
+        const centre = await cdp.evaluate(`(() => { const el = ${OVERLAY}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+        if (!centre) return false;
+        for (let i = 0; i < 20; i++) {
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: centre.x, y: centre.y, deltaX: 0, deltaY: 200 });
+          await sleep(80);
+        }
+        return true;
+      }
+      const buttonHitExpr = `Array.from(${GROUP}.querySelectorAll('button')).map((b) => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { text: b.textContent.trim(), hitsSelf: hit === b || (!!hit && b.contains(hit)) }; })`;
+      if (!(await scrollOverlayToEndViaWheel())) failures.push('short-window: no overlay element found to dispatch wheel events at.');
+      const buttonHits = await cdp.evaluate(`${GROUP} ? (${buttonHitExpr}) : []`);
+      if (buttonHits.length === 0) failures.push('short-window: no buttons found in the Agent start group at the prompt stage (expected Keep waiting and Cancel).');
+      for (const b of buttonHits) {
+        if (b.hitsSelf) findings.push(`short-window: "${b.text}" button is the real elementFromPoint hit at its own centre after a real wheel scroll, confirming it is genuinely reachable.`);
+        else failures.push(`short-window: "${b.text}" button is NOT the elementFromPoint hit at its own centre after a real wheel scroll to the overlay's end -- not genuinely reachable.`);
       }
       await cdp.screenshot(path.join(SHOTS_DIR, '08-short-window-prompt.png'));
+
+      // Self-validation (item 8: "removing overflow-y-auto must make it fail"): force the
+      // overlay non-scrollable, repeat the same procedure, and confirm at least one button
+      // becomes unreachable -- proving this check has teeth, not just measuring rect math.
+      await cdp.evaluate(`(() => { const el = ${OVERLAY}; if (el) { el.dataset.verify672OldOverflow = el.style.overflowY || ''; el.style.overflowY = 'hidden'; el.scrollTop = 0; } return true; })()`);
+      await sleep(150);
+      await scrollOverlayToEndViaWheel();
+      const noScrollHits = await cdp.evaluate(`${GROUP} ? (${buttonHitExpr}).map((h) => h.hitsSelf) : []`);
+      await cdp.evaluate(`(() => { const el = ${OVERLAY}; if (el) { el.style.overflowY = el.dataset.verify672OldOverflow; delete el.dataset.verify672OldOverflow; } return true; })()`);
+      if (noScrollHits.length > 0 && noScrollHits.every(Boolean)) {
+        notExercised.push('short-window: forcing overflow-y:hidden still reached every button -- could not confirm this check has teeth in this run.');
+      } else {
+        findings.push('short-window: forcing overflow-y:hidden (temporary fault injection) made at least one button unreachable, confirming this check would catch a regression.');
+      }
     });
     await setStartProgress(cdp, sessionAId, undefined);
 
