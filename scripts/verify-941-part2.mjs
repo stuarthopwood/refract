@@ -24,7 +24,7 @@
 // proves the GROUPING/GREEN-STATE half of FR-079's deferred note; the panel's own "Uses:"
 // rendering path is exercised only as a NEGATIVE (no stray/wrong text), its positive case
 // recorded honestly in `report.json`'s own `notExercised`.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -257,6 +257,23 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
     findings.push('Readiness screen green (fake omp, stages-941 scenario).');
+
+    // Gate round 1 fix (issue #941 part 2, item 11, HIGH): `REFRACT_FAKE_OMP_DEBUG_LOG` above was
+    // only ever WRITTEN by the fake shim and COPIED at teardown (`finally`, below) -- nothing
+    // upstream actually read it, so a silently-wrong fake-omp shim (a stale PATH entry shadowing
+    // it, or the shim crashing before its first `debugLog` call) still let the whole run "pass"
+    // on UI state alone. Same shim-confirmed check as verify-672: the log must exist, and its
+    // FIRST line must be the fake's own startup pid line (`verify-tauri-fake-omp.mjs`'s
+    // `pid=<pid> argv=[...] cwd=...`, written before anything else runs).
+    const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
+    if (!existsSync(debugLogPath)) {
+      throw new Error(`verify-941-part2: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check, item 11).`);
+    }
+    const debugLogFirstLine = readFileSync(debugLogPath, 'utf8').split('\n')[0] ?? '';
+    if (!/^pid=\d+ argv=/.test(debugLogFirstLine)) {
+      throw new Error(`verify-941-part2: fake-omp debug log's first line does not match the expected "pid=<pid> argv=..." startup line (shim confirmed check, item 11); got: ${JSON.stringify(debugLogFirstLine)}`);
+    }
+    findings.push(`Fake omp shim confirmed: debug log's first line is its own startup pid line (${debugLogPath}).`);
 
     await clickScrolled(cdp, `document.querySelector('[data-readiness-primary]')`);
     await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
