@@ -59,10 +59,11 @@ import {
   buildOmpShim,
   launchBuiltExeWithEnv,
   assertStageNaming,
+  assertSoloAgentName,
+  assertStageMetaRollup,
   assertGreenFinished,
   assertDetailsOnExpand,
   assertDependencies,
-  assertContextBriefOverflow,
   assertChainRow,
   STAGE1_TITLE,
   STAGE2_TITLE,
@@ -71,13 +72,17 @@ import {
   STAGE5_TITLE,
   STAGE6_SOLO_TITLE,
   STAGE7_TITLE,
+  STAGE8_PREFIX_TITLE,
+  STAGE9_SOLO_NOCTX_TITLE,
+  STAGE10_BORDERLINE_TITLE,
   PLAIN_TOOL_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
+import { assertContextBriefOverflow, assertNarrowViewportOverflow } from './verify-941-stage-naming-overflow-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROMPT_MESSAGE =
-  'Run the #923 quality gate, then the #559/#560 fixes, then read the README, then the zeta/omega probes, the label check, the Story559 polish and fail probe, the final solo check, and the long-context investigation.';
+  'Run the #923 quality gate, then the #559/#560 fixes, then read the README, then the zeta/omega probes, the label check, the Story559 polish and fail probe, the final solo check, the long-context investigation, the shared-prefix probes, the solo bare-label check, and the borderline-length context check.';
 
 const THEMES = [
   { id: 'dark', name: 'Dark' },
@@ -198,9 +203,21 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // Wait for all seven Stage rows, the solo Stage, and the plain non-Stage tool row to settle:
+    // Wait for all ten Stage rows, the solo Stages, and the plain non-Stage tool row to settle:
     // every one of their own `title`-bearing label spans present in the transcript.
-    for (const titleText of [STAGE1_TITLE, STAGE2_TITLE, STAGE3_TITLE, STAGE4_TITLE, STAGE5_TITLE, STAGE6_SOLO_TITLE, STAGE7_TITLE, PLAIN_TOOL_TITLE]) {
+    for (const titleText of [
+      STAGE1_TITLE,
+      STAGE2_TITLE,
+      STAGE3_TITLE,
+      STAGE4_TITLE,
+      STAGE5_TITLE,
+      STAGE6_SOLO_TITLE,
+      STAGE7_TITLE,
+      STAGE8_PREFIX_TITLE,
+      STAGE9_SOLO_NOCTX_TITLE,
+      STAGE10_BORDERLINE_TITLE,
+      PLAIN_TOOL_TITLE
+    ]) {
       await cdp
         .waitFor(`!!${titleSelector(titleText)}`, { timeoutMs: 30_000, label: `"${titleText}" row rendered` })
         .catch((err) => {
@@ -213,19 +230,23 @@ async function main() {
     // failure present.
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
-      { timeoutMs: 30_000, label: 'All seven Stages and the plain tool row settled' }
+      { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
     );
     await cdp.screenshot(path.join(SHOTS_DIR, '00-all-stages-settled.png'));
-    findings.push('All seven Stages, the solo Stage, and the plain non-Stage tool row rendered and settled.');
+    findings.push('All ten Stages, the solo Stages, and the plain non-Stage tool row rendered and settled.');
 
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       await assertStageNaming(cdp, findings, failures, theme.name);
+      await assertSoloAgentName(cdp, findings, failures, theme.name);
+      await assertStageMetaRollup(cdp, findings, failures, theme.name);
       await assertGreenFinished(cdp, findings, failures, theme.name);
       await assertDetailsOnExpand(cdp, findings, failures, theme.name);
       await assertDependencies(cdp, findings, failures, theme.name);
       await assertContextBriefOverflow(cdp, findings, failures, theme.name);
+      await assertNarrowViewportOverflow(cdp, findings, failures, theme.name);
       await assertChainRow(cdp, findings, failures, theme.name);
+
       const shotName = `stages-941-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured: Stages under the ${theme.name} theme (${shotName}).`);
