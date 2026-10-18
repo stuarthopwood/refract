@@ -24,9 +24,7 @@ pub enum ApprovalMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeId {
-    Dark,
-    DarkHighContrast,
-    Obsidian,
+    Dark, DarkHighContrast, Obsidian, NordicFrost, CyberAmber, // #551: both additive, matching src/shared/themes.ts's `ThemeId` union.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -335,12 +335,15 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     gitBranchLabel7: '#000000'
   },
   // #551 (Nordic Frost / Cyber Amber dark presets): same pattern #550 used for Obsidian --
-  // DARK_FAMILY's bright, hue-separated qualitative palettes spread unchanged (each already
-  // clears its floor against every built-in theme's own card/background, per that const's own
-  // comment); only the surface-tied fields are overridden with this preset's own real
-  // globals.css tokens. Live Mermaid-render verification (`check:mermaid-contrast`, a
-  // real-Chromium check) is deferred to this lane's build slot, same as every other check
-  // requiring a live renderer.
+  // DARK_FAMILY's bright, hue-separated qualitative palettes spread unchanged. Verified for
+  // this story (gate round 1, not merely assumed from DARK_FAMILY's own Dark/Obsidian-specific
+  // comment): the two narrowest-margin values, `critBkgColor`/`cScale11`, clear 3:1 against both
+  // new presets' own `--card` (critBkgColor 3.31/3.37, cScale11 3.24/3.31 for Nordic
+  // Frost/Cyber Amber respectively), with `textColor`-on-`critBkgColor` and
+  // `cScaleLabel11`-on-`cScale11` both clearing 4.5:1+; only the surface-tied fields are
+  // overridden with each preset's own real globals.css tokens. Live Mermaid-render verification
+  // (`check:mermaid-contrast`, a real-Chromium check) is deferred to this lane's build slot,
+  // same as every other check requiring a live renderer.
   'nordic-frost': {
     ...DARK_FAMILY,
     background: '#060f1e', // `--background`
@@ -377,33 +380,33 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   'cyber-amber': {
     ...DARK_FAMILY,
     background: '#0f0703', // `--background`
-    primaryColor: '#1b110b', // `--card`
+    primaryColor: '#22160e', // `--card`
     primaryTextColor: '#faf4ef', // `--card-foreground`/`--foreground`
     primaryBorderColor: '#887e78', // `--border`
-    lineColor: '#a0968f', // `--muted-foreground`
-    secondaryColor: '#332923', // `--muted`/`--accent`/`--secondary` (`--surface-hover`)
-    tertiaryColor: '#3E3129', // one step lighter, same reasoning as DARK_FAMILY's own comment
+    lineColor: '#bb9679', // `--muted-foreground` (retuned, gate round 1)
+    secondaryColor: '#382e28', // `--muted`/`--accent`/`--secondary` (`--surface-hover`, retuned)
+    tertiaryColor: '#453b34', // one step lighter, same reasoning as DARK_FAMILY's own comment
     textColor: '#faf4ef',
-    altSectionBkgColor: '#332923',
-    sectionBkgColor: '#332923',
-    sectionBkgColor2: '#332923',
-    noteBkgColor: '#271d16', // `--popover`
+    altSectionBkgColor: '#382e28',
+    sectionBkgColor: '#382e28',
+    sectionBkgColor2: '#382e28',
+    noteBkgColor: '#2c221b', // `--popover` (retuned)
     noteTextColor: '#faf4ef',
     taskTextOutsideColor: '#faf4ef',
     taskTextClickableColor: '#faf4ef',
     taskTextColor: '#faf4ef',
-    pieOuterStrokeColor: '#a0968f',
-    cScaleInv0: '#a0968f',
-    cScaleInv1: '#a0968f',
-    cScaleInv2: '#a0968f',
-    cScaleInv3: '#a0968f',
-    cScaleInv4: '#a0968f',
-    cScaleInv5: '#a0968f',
-    cScaleInv6: '#a0968f',
-    cScaleInv7: '#a0968f',
-    cScaleInv8: '#a0968f',
-    cScaleInv9: '#a0968f',
-    cScaleInv10: '#a0968f',
-    cScaleInv11: '#a0968f'
+    pieOuterStrokeColor: '#bb9679',
+    cScaleInv0: '#bb9679',
+    cScaleInv1: '#bb9679',
+    cScaleInv2: '#bb9679',
+    cScaleInv3: '#bb9679',
+    cScaleInv4: '#bb9679',
+    cScaleInv5: '#bb9679',
+    cScaleInv6: '#bb9679',
+    cScaleInv7: '#bb9679',
+    cScaleInv8: '#bb9679',
+    cScaleInv9: '#bb9679',
+    cScaleInv10: '#bb9679',
+    cScaleInv11: '#bb9679'
   }
 }

@@ -251,6 +251,11 @@ export const PAIRS = [
   { fg: 'state-needs-you', bg: 'sidebar-accent', min: 3 },
   { fg: 'state-stopped', bg: 'sidebar', min: 3 },
   { fg: 'state-stopped', bg: 'sidebar-accent', min: 3 },
+  // #552 gate round 1 fix (Skippy, delegated by Stuart 2026-10-18): `state-stopped` is a
+  // literal copy of `--destructive`/`--severity-error` in this theme (same reasoning, same
+  // under-floor value before the fix) -- `--sidebar-accent` is this theme's selected/hovered
+  // session row, the real surface a stopped Session's status icon renders on.
+  { fg: 'state-stopped', bg: 'sidebar-accent', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'active-indicator', bg: 'sidebar', min: 3 },
   { fg: 'active-indicator', bg: 'sidebar-accent', min: 3 },
   { fg: 'ring', bg: 'sidebar', min: 3 },
@@ -282,6 +287,11 @@ export const PAIRS = [
   { fg: 'pr-open-foreground', bg: 'pr-open', min: 4.5 },
   { fg: 'pr-draft-foreground', bg: 'pr-draft', min: 4.5 },
   { fg: 'pr-closed-foreground', bg: 'pr-closed', min: 4.5 },
+  // #552 gate round 1 fix (Skippy, delegated by Stuart 2026-10-18): `pr-closed` is a literal
+  // copy of `--destructive`/`--severity-error` in this theme -- same under-floor value before
+  // the fix, checked against `--muted` (the PR list/detail's own hover tint, same binding
+  // surface as `severity-error`/`muted` above).
+  { fg: 'pr-closed', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
 ]
 
@@ -350,6 +360,48 @@ export function userBubbleLinkContrastRows(themes) {
       pass: ratio >= 4.5,
       fgHex: linearToHex(accentText.linear),
       bgHex: linearToHex(bubbleLinear),
+    })
+  }
+  return rows
+}
+
+// #551 gate round 1, item 9 (Skippy, delegated by Stuart 2026-10-18): `--sidebar-border` is a
+// REAL rendered hover/expanded fill, not merely decorative, in EVERY theme -- `sidebar.tsx`'s
+// separator, `SessionList.tsx`'s toolbar buttons, `SessionRow.tsx`'s trailing menu button and
+// `RepositoryGroup.tsx`'s row actions all apply `hover:bg-sidebar-border`/`aria-expanded:bg-
+// sidebar-border` with `muted-foreground` (or `foreground`, on `:hover`) text/icon on top -- a
+// surface the existing `sidebarBorderAliasesDivider` check in check-theme-contrast.mjs only
+// ever measures for a preset whose `--sidebar-border` literally aliases `--divider` (Obsidian).
+// Dark, Dark high contrast, Nordic Frost and Cyber Amber all have an INDEPENDENT `--sidebar-
+// border` value and were never checked against this real fill at all before now.
+//
+// Informational only (never fails the run): adding this as a genuine PAIRS entry would newly
+// fail Dark (high contrast) (`muted-foreground` on its own `--sidebar-border`/`--sidebar`
+// composite measures only ~2.50:1, a real, pre-existing gap unrelated to this story's own
+// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1
+// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.39:1).
+export function sidebarBorderContrastRows(themes) {
+  const rows = []
+  for (const [themeId, props] of Object.entries(themes)) {
+    const sidebarBorder = props['sidebar-border']
+    const sidebar = props['sidebar']
+    const mutedForeground = props['muted-foreground']
+    if (!sidebarBorder || !sidebar || !mutedForeground) {
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'sidebar-border-hover (sidebar-border on sidebar)', min: 4.5, ratio: null, pass: true, note: 'token missing, informational only -- not enforced (#551)' })
+      continue
+    }
+    const fillLinear = resolvedLinear(sidebarBorder, sidebar)
+    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fillLinear))
+    rows.push({
+      themeId,
+      fg: 'muted-foreground',
+      bg: 'sidebar-border-hover (sidebar-border on sidebar)',
+      min: 4.5,
+      ratio,
+      pass: true,
+      fgHex: linearToHex(mutedForeground.linear),
+      bgHex: linearToHex(fillLinear),
+      note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })
   }
   return rows

@@ -645,7 +645,11 @@
   --state-unread-response: var(--severity-info);
   --state-needs-you: oklch(0.85 0.17 70);
   --state-needs-you-foreground: oklch(0 0 0);
-  --state-stopped: oklch(0.78 0.17 22);
+  /* #552 gate round 1 fix: same retune as `--destructive`/`--severity-error` above -- this
+   * literal copy was still at the pre-fix 0.78 lightness, measuring the same under-floor
+   * 6.65:1 against `--sidebar-accent`/`--muted` (both `oklch(0.26 0 0)`). Raised to 0.82 (same
+   * hue/chroma): 7.26:1 on both. */
+  --state-stopped: oklch(0.82 0.17 22);
   --state-stopped-foreground: oklch(0 0 0);
   /* Issue #568/#529: PR StatePill tokens, same reasoning as `.theme-dark`'s own comment (gate
    * round 1 fix: literal values, not `var()` aliases), tuned brighter to match this preset's own
@@ -657,7 +661,9 @@
   --pr-open-foreground: oklch(0 0 0);
   --pr-draft: oklch(0.85 0 0);
   --pr-draft-foreground: oklch(0 0 0);
-  --pr-closed: oklch(0.78 0.17 22);
+  /* #552 gate round 1 fix: same retune as `--destructive`/`--severity-error`/`--state-stopped`
+   * above -- raised 0.78 -> 0.82 (same hue/chroma): 7.26:1 against `--muted`. */
+  --pr-closed: oklch(0.82 0.17 22);
   --pr-closed-foreground: oklch(0 0 0);
   --pr-merged: oklch(0.8 0.17 300);
   --pr-merged-foreground: oklch(0 0 0);
@@ -868,15 +874,29 @@
  * **Decided (Skippy, delegated by Stuart 2026-10-18), answering #551's open question "may Cyber
  * Amber merge accent, warning and info hues?": partially.** `--accent-text` (orange-amber, hue
  * 45) and `--severity-warning` (golden-amber, hue 75) both stay in the theme's own warm "phosphor
- * amber" family -- a 30-degree hue split plus a lightness/chroma difference keeps them
- * tellable apart (`#ff8244` vs `#f5a400`) while preserving the single warm identity the mock's
- * own "Cyber Amber" name describes, and both are real, different UI roles (an interactive
- * accent/link versus a genuine warning) that this codebase's icon-plus-word redundancy
- * (`docs/DESIGN.md` "State colour roles") already covers for 1.4.1. `--severity-info` moves OFF
- * amber entirely onto a cool teal (hue 200) -- merging a genuinely different severity (info) into
- * the same hue as warning was the real defect the mock's own audit found (three state roles
- * literally indistinguishable), not a stylistic choice worth keeping. `--severity-success`/
- * `--severity-error` keep the same green/red hue family every other built-in theme uses. */
+ * amber" family, and both are real, different UI roles (an interactive accent/link versus a
+ * genuine warning) that this codebase's icon-plus-word redundancy (`docs/DESIGN.md` "State
+ * colour roles") already covers for 1.4.1. `--severity-info` moves OFF amber entirely onto a
+ * cool teal (hue 200) -- merging a genuinely different severity (info) into the same hue as
+ * warning was the real defect the mock's own audit found (three state roles literally
+ * indistinguishable), not a stylistic choice worth keeping. `--severity-success`/
+ * `--severity-error` keep the same green/red hue family every other built-in theme uses.
+ *
+ * **Gate round 1 fix (Skippy, delegated by Stuart 2026-10-18): accent and error were still too
+ * close** (`#ff8244` vs `#ff696c`, a 1.14:1 swatch-to-swatch ratio and only a 23-degree hue
+ * split -- distinguishable in isolation but not by a margin this app holds any other
+ * state/accent pair to). Retuned apart on both axes: `--severity-error`/`--state-stopped`/
+ * `--pr-closed` move from hue 22.216 to hue 12 (a more magenta-red, further from the warning's
+ * 75 and the accent's 45); `--accent-text`/`--active-indicator` raise from L0.74 to L0.88. The
+ * two swatches now measure 1.55:1 apart (`#ffb073` vs `#ff6784`), with every existing pair
+ * still clearing its own floor (error: 4.74:1 on `--muted`, the narrowest case; accent: 8.69:1
+ * on `--popover`, the narrowest case).
+ *
+ * **Gate round 1 fix: surface ladder retuned** (card/sidebar closer to Obsidian's own L* step
+ * sizes; `--background` unchanged). `--muted-foreground` moves to a warmer, more saturated step
+ * (hue 60, chroma 0.06, up from chroma 0.015) per the gate's own finding, still clearing 4.5:1
+ * against the new, lighter `--muted` (4.88:1, the narrowest surface) with margin everywhere
+ * else (6.52-7.37:1). */
 .theme-cyber-amber {
   color-scheme: dark;
   --scrollbar-thumb: var(--muted-foreground);
@@ -885,22 +905,22 @@
 
   --background: #0f0703;
   --foreground: #faf4ef;
-  --muted-foreground: #a0968f;
-  --sidebar: #160d07;
-  --surface-1: #1b110b;
-  --surface-2: #271d16;
-  --surface-3: #332923;
-  /* Retuned from the mock's own under-floor 2.93:1: clears 3:1 against `--background` (5.03:1),
-   * `--surface-1`/card (4.67:1), `--surface-2`/popover (4.17:1) AND `--surface-3`/muted (3.58:1,
-   * the binding case). */
+  --muted-foreground: #bb9679;
+  --sidebar: #190f09;
+  --surface-1: #22160e;
+  --surface-2: #2c221b;
+  --surface-3: #382e28;
+  /* Clears 3:1 against `--background` (5.04:1), `--surface-1`/card (4.46:1), `--surface-2`/
+   * popover (3.94:1) AND `--surface-3`/muted (3.34:1, the binding case against the retuned,
+   * lighter muted surface). */
   --border: #887e78;
   --border-strong: var(--border);
   --divider: oklch(1 0 0 / 14%);
   /* Accent: orange-amber (hue 45), distinct from `--severity-warning`'s golden-amber (hue 75) --
-   * see this block's own header comment for the open-question decision. `--primary` (filled
-   * button) is a deeper, saturated step so white text clears 4.5:1 (5.21:1); `--accent-text`
-   * clears 4.5:1 against `--background` (8.12:1), `--surface-1`/card (7.54:1) AND
-   * `--surface-2`/popover (6.73:1, the binding case). */
+   * see this block's own header comment for the open-question decision and the gate round 1
+   * retune. `--primary` (filled button) is a deeper, saturated step so white text clears 4.5:1
+   * (5.21:1); `--accent-text` clears 4.5:1 against `--background` (11.12:1), `--surface-1`/card
+   * (9.84:1) AND `--surface-2`/popover (8.69:1, the binding case). */
   --primary: #c14100;
   --primary-foreground: #ffffff;
   --send: #c14100;
@@ -942,22 +962,25 @@
   --pr-open-foreground: oklch(0.145 0 0);
   --pr-draft: oklch(0.708 0 0);
   --pr-draft-foreground: oklch(0.145 0 0);
-  --pr-closed: oklch(0.72 0.191 22.216);
+  --pr-closed: oklch(0.72 0.191 12);
   --pr-closed-foreground: oklch(0.145 0 0);
   --pr-merged: oklch(0.70 0.18 300);
   --pr-merged-foreground: oklch(0.145 0 0);
 
   --surface-hover: var(--surface-3);
-  --accent-text: #ff8244;
+  --accent-text: #ffb073;
   /* Severity roles: success/error keep the same green/red hue family every other built-in theme
    * uses. `--severity-warning` is the theme's own golden-amber (hue 75, distinct from
    * `--accent-text`'s orange-amber, hue 45 -- see this block's header comment). `--severity-info`
-   * is a cool teal (hue 200), deliberately the furthest hue from the theme's warm amber family,
+   * is a cool teal (hue 200), well clear of the theme's warm amber family (155 degrees from
+   * `--accent-text`'s 45, 125 from `--severity-warning`'s 75) -- not claimed as the single
+   * furthest possible hue, just distinctly cool against an otherwise all-warm palette,
    * fixing the mock's "accent, warning and info are the same amber" finding for the one role
-   * that is a genuinely different kind of state, not a stylistic variant of warm. */
+   * that is a genuinely different kind of state, not a stylistic variant of warm.
+   * `--severity-error` moved to hue 12 at gate round 1 (see this block's own header comment). */
   --severity-success: oklch(0.70 0.17 162.48);
   --severity-warning: oklch(0.78 0.17 75);
-  --severity-error: oklch(0.72 0.191 22.216);
+  --severity-error: oklch(0.72 0.191 12);
   --severity-info: oklch(0.70 0.12 200);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);

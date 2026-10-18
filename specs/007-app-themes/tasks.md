@@ -661,11 +661,12 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
 
 - [X] T025 Register `nordic-frost` and `cyber-amber` in `src/shared/themes.ts`'s `ThemeId` union
   and `THEMES` table (`name`, `swatch` matching each preset's own `--background`,
-  `syntaxTheme`, `titleBarOverlay`); **Decided (Skippy, delegated by Stuart 2026-10-18,
-  answering #551's own open question): `nordic-frost` uses Shiki's bundled `nord` theme** (an
-  exact, unambiguous match by name and palette), **`cyber-amber` reuses `github-dark`** (no
-  comparably-matching bundled Shiki theme exists; same "Mermaid/Shiki colours out of this
-  story's scope" precedent #550 set for Obsidian) (depends on T002).
+  `syntaxTheme`, `titleBarOverlay`); **Decided (Skippy, delegated by Stuart 2026-10-18, revised
+  at gate round 1): both reuse `github-dark`** (no comparably-matching bundled Shiki theme
+  exists for either; `nord` was tried first for Nordic Frost but its own comment colour
+  measured only 2.43:1 against this preset's `--card`, under the 3:1 non-text floor -- same
+  "Mermaid/Shiki colours out of this story's scope" precedent #550 set for Obsidian) (depends
+  on T002).
   **Done**: `src/shared/themes.ts` updated; both ids' `swatch`/`titleBarOverlay.color` verified
   byte-identical to their own `.theme-*` block's `--background` by `check-theme-contrast.mjs`'s
   own metadata cross-check.
@@ -723,3 +724,68 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
 T025–T028 keep `dark`/`dark-high-contrast`/`obsidian` byte-identical to `origin/main` except
 T031's own `dark-high-contrast` `--destructive` retune above; confirmed by `check-theme-
 contrast.mjs` re-running their other pairs unchanged inside the new 726-pair total.
+
+- [X] T032 Gate round 1 remediation (`agent://Main`, 14 findings: Sec PASS; Code/Test/A11y/UI
+  FAIL) (depends on T025–T031).
+  **Done** (14/14 addressed, 0 skipped):
+  1. [Critical] `src-tauri/src/store/settings.rs:27` Rust `ThemeId` enum had no
+     `NordicFrost`/`CyberAmber` variants (`theme.set` would have returned `invalid-theme` for
+     both in the shipping app) -- added (kebab-case serde matches `src/shared/themes.ts`'s union
+     exactly); no other Rust `match` on `ThemeId` exists (grepped). Code-only, no cargo run.
+  2. [High] HC `--state-stopped`/`--pr-closed` were separate literals still at the pre-fix 0.78
+     lightness -- raised to `oklch(0.82 0.17 22)` alongside T031's `--destructive` fix; two new
+     HC-only `min: 7` pairs added (`state-stopped`/`sidebar-accent`, `pr-closed`/`muted`).
+  3. [High] D: **#552 stays OPEN** (only the red is delivered, not the full edge/divider/ring
+     redesign) -- `accessibility.md`/`foundations-tokens-theming.md` reworded to say so
+     explicitly; PR switched from `Closes #552` to `Refs #552`.
+  4. [High] D: **Nordic Frost's Shiki theme reverted `nord` -> `github-dark`** (`nord`'s own
+     comment colour measured 2.43:1 against this preset's `--card`, under 3:1) -- `themes.ts`
+     updated; a p3 follow-up filed (issue #975) for giving each preset's code blocks their own
+     `--card`-matched background instead of a bundled Shiki theme's fixed one.
+  5. [High] D: the #927 quiet-composer departure note in `accessibility.md` now explicitly
+     covers Nordic Frost/Cyber Amber (same transparent-`--composer-background` family).
+  6. [Medium] D: Cyber Amber's accent (`#ff8244`) and error (`#ff696c`) measured only 1.14:1
+     apart (23 degrees) -- `--severity-error`/`--state-stopped`/`--pr-closed` moved to hue 12,
+     `--accent-text`/`--active-indicator` raised to L0.88; now 1.55:1 apart, every existing pair
+     still passing (error 4.74:1 on its own `--muted`, the narrowest case; accent 8.69:1 on
+     `--popover`, the narrowest case).
+  7. [Medium] D: Cyber Amber's surface ladder retuned (card/sidebar closer to Obsidian's own L*
+     step sizes: card +6.18 L*, sidebar +2.78 L*); `--muted-foreground` moved to a warmer,
+     more-saturated step (hue 60, chroma 0.06); `mermaidThemeData.ts`'s cyber-amber entry
+     updated to match.
+  8. [Medium] Both new presets added to the surface-ladder/edge-class tables in
+     `foundations-tokens-theming.md` and the theme-coverage note in `accessibility.md` (both had
+     stale pre-#550 wording not mentioning Obsidian either).
+  9. [Low] Comment accuracy: the Cyber Amber "furthest hue" overclaim corrected to the real
+     degree distances; `AgentSpinner.tsx`/`globals.css` comments list all five theme classes;
+     `mermaidThemeData.ts`'s unverified "clears its floor" claim replaced with real numbers
+     computed against the two new presets' own retuned cards; a new informational-only
+     `sidebarBorderContrastRows` pair added (`theme-contrast-pairs.mjs`) -- which surfaced a
+     real, pre-existing gap: Dark (high contrast)'s own `muted-foreground` on its real
+     `sidebar-border` hover fill measures only ~2.50:1, well under 4.5:1. Flagged to Main, NOT
+     fixed (unrelated component styling, out of this story's scope).
+  10. [High] `scripts/verify-551-presets.mjs`: a missing CSS custom property used to pass
+      silently (`var(--missing)` falls back to an inherited/initial colour, never throws) --
+      `cssVarRawValue`/`requireResolvedCssVarColor` now read the property's own raw cascaded
+      value first and fail loudly if empty.
+  11. [Medium] Same script: added `readRealSurfaceColours`/`readRealDialogBorder` (Send
+      button, session-row title on the real sidebar, a real dialog's border on its real
+      popover background), measured via `contrast-math.mjs`'s `measuredContrastRatio`, not
+      hidden probe elements.
+  12. [Medium] Same script: added `linearSrgbToOklab`/`oklabHueDegrees`/`hueDistanceDegrees` (the
+      published inverse of `contrast-math.mjs`'s own matrices) -- accent-vs-info (every new
+      preset) and accent-vs-error (Cyber Amber) are now a real OKLab hue/lightness-distance
+      assertion, not a `colorA === colorB` string check.
+  13. [Medium] Same script: both new presets now get their OWN full relaunch-persistence cycle
+      (not only the last one); Nordic Frost switches via the real Settings > Appearance radio
+      (preview then Save, `switchThemeViaSettings`), Cyber Amber via the real Profile-menu Theme
+      submenu (`switchTheme`) -- two genuinely different real switch paths.
+  14. [Medium] Same script: a Dark (high contrast) pass added -- a real `mouseMoved` hover on a
+      session row then reads `--severity-error` against the real hovered background for the
+      7:1 target; sends one real prompt asking for a fenced code block plus a small Mermaid
+      diagram and screenshots the rendered result; screenshots the OPEN Profile-menu Theme
+      submenu; ends by switching back to Dark and confirming the `<html>` class.
+  **NOT run** (no-build prep lane, held for the build slot): items 10-14 are code-verified only
+  (`node --check` clean, 599 lines); `check:theme-contrast` 733/733 pairs across 5 themes PASS;
+  `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity --gate`/`vitest run` (148/148)
+  all green.
