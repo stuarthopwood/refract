@@ -63,6 +63,11 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
         icon={icon}
         summary={text}
         summaryClassName={NOTICE_CLASS[level]}
+        // Issue #938 item 3/FR-082: lets a short notice sitting close to the length threshold
+        // wrap in place instead of losing text to the ellipsis -- no chevron, nothing to expand
+        // (ui-architect-v3 roundtable ruling, 2026-10-18: an expand control that reveals nothing
+        // beyond the same clause re-wrapped would misrepresent the row's own structure).
+        summaryWrap
       />
     )
   }

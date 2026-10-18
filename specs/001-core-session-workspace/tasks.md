@@ -3613,19 +3613,106 @@ Opened as draft PR #993 on branch `feat/941-stages-part2`, stacked on part 1's n
 `feat/941-stages` (PR #979, merged as `d9c88f2`). **Refs #941** until the live check above
 confirms every acceptance item; switches to **Closes #941** once it does.
 
-## Phase 60: Stage row focus and toggle follow-ups (#991, gate follow-ups from #941 part 1, PR #979) [US1]
+## Phase 60: Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) [US1]
+
+Renumbered against `origin/main` just before merging (this file's own convention): #941 part 2
+merged first and kept Phase 59 (research.md decision 17); this phase moved to Phase 60 and its
+own research.md note to decision 18.
+
+- [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains a shared
+  `resolve_matched_descriptor(name, commands)` helper (also used by `classify_slash_invocation`
+  itself) and `classify_unsupported_arguments(name, rest, commands) -> SubcommandRefusal`,
+  distinguishing an unrecognised first word (lists the verified subcommand names, `[]` for a
+  command with none, including `/switch`, whose own table is always pruned empty) from a
+  recognised first word with extra text following it (names that one subcommand instead).
+  `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch matches on `SubcommandRefusal` to
+  pick the right wording. Exported via `session::agent::mod.rs`.
+- [X] T289 [US1] #938 items 3 and 5/FR-082/FR-083: `NoticeRow.tsx`'s short-notice branch passes
+  `summaryWrap` to `CollapsedLine` (ui-architect-v3 roundtable ruling: wrap in place, never an
+  expand control with nothing behind it). `ModelRolesSection.tsx`'s Advisor role description
+  becomes "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to
+  Slow."
+- [X] T290 [US1] #938 item 6 investigated (research.md decision 18, spec.md Clarifications):
+  not a bug, no code change -- see those entries for the full root cause (OMP's own
+  incomplete-todo nudge made the model reply twice, two real distinct messages). New
+  `scripts/verify-938-slash-rest.mjs` (modelled on `verify-917-advisor-command.mjs`'s own real-
+  ambient-omp structure, since no existing fake-omp fixture lists a builtin command with
+  verified subcommands and AGENTS.md forbids adding one): asserts the Settings > Model roles
+  Advisor description's exact new text, the refusal toast's exact text computed from this
+  install's own real `/advisor` subcommand list (never hardcoded), and the short-notice
+  summary span's real wrapping behaviour (narrowed viewport, `textOverflow`/`scrollWidth`/
+  height measured, never a className check alone unless wrapping cannot be forced) across
+  Dark, Obsidian, and Dark (high contrast), with screenshots and `report.json` (`gitHead`,
+  `dirty`, `exeSha256`, `scriptSha256`, `findings`, `failures`, `notExercised`).
+
+`pnpm typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs` all clean
+on this phase's own head. `node --check` on the new script, plus a real import of it, confirmed
+it refuses at its own module-scope `requireSharedCargoTarget` guard (issue #946) before touching
+the filesystem or build -- the intended non-build-check behaviour when no build slot is granted
+yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot granted yet):
+`cargo fmt --check`/`cargo test`/`cargo clippy`, the Tauri debug build, and
+`verify-938-slash-rest.mjs` run live against a real app are each pending the build slot grant
+from Main.
+
+**Gate round 1 fixes** (code-reviewer HIGH/MEDIUM, ui-architect-v3 decided, test-reviewer
+MEDIUM): item 6's cause corrected (above, research.md decision 18); the old
+`verified_subcommand_names` helper (with its own separate, unreachable-in-context any-match
+fallback) is replaced by `classify_unsupported_arguments` sharing `resolve_matched_descriptor`
+with `classify_slash_invocation` -- that shared resolver still has an any-match fallback, but
+it is genuinely reachable there (`classify_slash_invocation`'s own file/skill command path
+calls it for every command, not only a builtin already known to be `UnsupportedArguments`); a
+first-word-is-a-valid-subcommand-but-extra-text-follows refusal now reads "/{name} {sub}
+doesn't take more text yet. Try /{name} {sub} on its own." (never the "takes one of" listing,
+which is reserved for an unrecognised first word); `docs/design/product-chat.md` documents both
+the short-notice wrap rule and the two refusal wordings; the item-3 live check now forces real
+wrapping (narrowed viewport) and measures it directly, falling back to a disclosed
+`notExercised` only if it genuinely cannot be forced to wrap; the item-2 skip text now reads
+"unproven in this run" rather than claiming unit coverage, and a missing `/advisor` is a hard
+failure for both checks it would otherwise skip; the script's own toast wait counts toasts
+present before sending and waits for a NEW one, and resolves the `/advisor` descriptor the same
+way Rust does (prefer a builtin-sourced match, then name/alias) instead of a bare
+`.find(name)`.
+
+Opened as draft PR #996 (branch `feat/938-slash-rest`), merged `origin/main` (v0.4.0, `47e4ad7`)
+before the build slot, no src/src-tauri conflicts. Build slot granted 2026-10-18: `cargo fmt
+--check` found two real formatting diffs in this phase's own new Rust (fixed with `cargo fmt`);
+the first two live runs each found and fixed one genuine SCRIPT-only bug, never product
+behaviour: `clearKnownOutputFiles`'s own safety guard expects `SHOTS_DIR`'s parent to resolve
+directly to the OS temp dir (one level, matching `verify-556-zero-box.mjs`'s own pattern), not
+the two-level container-then-timestamp folder this script first used; and `clearComposer` must
+click the message field before backspacing -- a prior `clickByLabel('Send message')` leaves real
+browser focus on the Send BUTTON (no `onMouseDown` guard prevents it), so raw Backspace events
+landed on the button instead of the textarea whenever a refusal left the draft text unCleared
+(FR-019). **Final clean run, head `4721e918` (clean tree, `dirty: false`)**: `ci-local.mjs` all
+16 steps PASS (Rust tests, Rust lint, and the Tauri debug build all genuinely ran this time, not
+skipped); `verify-938-slash-rest.mjs` against the real built exe and real omp: **0 failures, 0
+notExercised** -- FR-083's exact description text confirmed via DOM read; FR-081's two refusal
+wordings both confirmed verbatim ("/advisor takes one of: on, off, status." and "/advisor on
+doesn't take more text yet. Try /advisor on on its own."); FR-082's short notice was forced to a
+REAL second line at a narrowed 220px width (height 40px over the 20px one-line baseline, no
+horizontal overflow, text-overflow "clip") and screenshotted across Dark, Obsidian, and Dark
+(high contrast). **Refs #938** switches to **Closes #938**: every remaining item (2, 3, 5) is
+now live-proven on this exact head; item 1 and 4 already shipped via #954; item 6 was resolved
+by investigation (research.md decision 18), no code to ship for it.
+
+## Phase 61: Stage row focus and toggle follow-ups (#991, gate follow-ups from #941 part 1, PR #979) [US1]
+
+Renumbered against `origin/main` just before merging (this branch's own convention, matching
+Phase 60's own note above): #938/PR #996 merged first and claimed Phase 60, FR-081 to FR-083,
+and research.md decision 18 -- this phase moved to Phase 61, its own tasks renumbered T288/T289
+to T291/T292, its FR renumbered FR-081 to FR-084, and its own research.md note to decision 19.
 
 **Goal**: fix the three code-level follow-ups the #941 lane's final gate deferred (four-round
 rule, 2026-10-18): a running Stage auto-closing can drop a keyboard user's focus (a11y, WCAG
 2.4.3), a manual Stage/chain-row toggle forgotten on remount, and a selector-scoping gap in
 `scripts/verify-941-stage-naming-helpers.mjs`. The fourth item (a mouse user reading a Stage row
-while it auto-closes) is a reconsideration, not a bug; see research.md decision 18 for the
+while it auto-closes) is a reconsideration, not a bug; see research.md decision 19 for the
 ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
 
-- [X] T288 `SubagentChainRow.tsx`'s `StageGroupRow`: the sync effect changes from bidirectional
+- [X] T291 `SubagentChainRow.tsx`'s `StageGroupRow`: the sync effect changes from bidirectional
   ("sync `open` to `isOpenByDefault` whichever way it moves") to upward-only -- a Stage still
   auto-opens while running/failed/cancelled/exited, but never auto-closes once open, matching
-  FR-068's existing rule for the per-turn Subagent chain row (research.md decision 18).
+  FR-068's existing rule for the per-turn Subagent chain row (research.md decision 19).
 - [X] New `src/renderer/features/chat/useStickyDisclosure.ts` (shared by both rows, gate round 1
   fix, code-reviewer DRY) plus `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`,
   non-persisted, `bySession: Record<string, Record<string, boolean>>`, keyed by session id plus
@@ -3634,19 +3721,19 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or
   `Transcript.tsx`'s sr-only-stub/full-row swap -- gate round 2 correction: the chain row's own
   `stages.length < 2` early return does NOT unmount it; `null` keeps the instance and its hooks)
-  (FR-081).
+  (FR-084).
 - [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
   `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
   Subagent chain row's own duplicate title text (`ChainStageLine`); `stageContentSelector`/
   `stageTriggerSelector` gate round 1 fix: `?.closest(...)` (not a bare `.closest(...)`) so a
   not-yet-rendered row evaluates to `undefined` throughout instead of throwing mid-`waitFor`.
-- [X] T289 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
+- [X] T292 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
   fixture with one additive `{"__delay__": 1500}` (no new fixture, AGENTS.md): proves keyboard
   focus placed inside a genuinely running Stage 1 survives it settling all-success with the row
   itself staying open; proves `titleSelector`'s scoping (recorded honestly as order-independent
   hardening, not a red/green regression in this fixture's own DOM order); proves a manual toggle
   on a solo Stage row and on the chain row both survive a real session-switch remount, while an
-  UNTOUCHED settled Stage (Stage 2) closes instead (proving the store holds only the manual
+  UNTOUCHED settled Stage (Stage 1) closes instead (proving the store holds only the manual
   choice). Gate round 1 fixes: a shim-confirmed check (fake-omp debug log's startup line); a
   real `waitFor` replacing a fixed sleep after the session switch; `clearKnownOutputFiles` plus
   a post-`stopLauncher` exit confirmation. Written, not run end-to-end (no build slot granted for
@@ -3685,7 +3772,14 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   `localManualOpen`, so local-only state genuinely lasts only while an id stays `null`.
   `clearKnownOutputFiles` refuses any `fileNames` entry that is not a bare filename
   (`path.basename(name) !== name`), closing a path-traversal gap.
+- [X] All five reviewers PASS (gate round 4). Follow-ups filed, not built here: issue #1000
+  (Stage rows auto-opening AND the chain row both showing every agent once a turn has 2+
+  Stages; narrows the auto-open condition in that case) and issue #1001 (the pre-existing
+  solo-body/SpineList focus-loss path, #941).
 
-Draft PR, branch `feat/991-stage-focus`. **Refs #991** until the live check above is actually run
-against a real built exe and confirms every acceptance item; switches to **Closes #991** once it
-does.
+Draft PR #999, branch `feat/991-stage-focus`, merged `origin/main` (#938/PR #996, `73c2c87`)
+after the gate, before the build slot: renumbered FR-081 to FR-084, decision 18 to decision 19,
+Phase 60 to Phase 61, T288/T289 to T291/T292 (all above) -- no src/src-tauri conflicts, only the
+four doc files (this one, spec.md, research.md, docs/PLAN.md), all additive. **Refs #991** until
+the live check above is actually run against a real built exe and confirms every acceptance
+item; switches to **Closes #991** once it does.

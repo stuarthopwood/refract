@@ -533,6 +533,56 @@
   while `stages.length < 2` -- the chain row renders nothing at all for that whole range
   (FR-068's own gate, which also covers a turn with exactly one Stage, where the row id IS
   already defined), so there is never a visible trigger to have toggled either way.
+### Session 2026-10-18 (slash refusal text, notice wrap, advisor settings mention, duplicate-render investigation)
+
+- Q: Issue #938 item 2 (gate follow-up from PR #923/#917, still open after #954): the generic
+  unsupported-arguments refusal ("/{name} doesn't support arguments yet. Try /{name} on its
+  own.") shows for `/advisor dump`, `/advisor configure`, and any typo, even when the command
+  has verified subcommands. What should it say instead? → A: Decided (Skippy, delegated by
+  Stuart, 2026-10-18): when the matched builtin command has one or more verified subcommands
+  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...." (e.g.
+  "/advisor takes one of: on, off, status."). A command with no verified subcommands at all
+  (`/dump`, `/switch`'s free-form argument, an unknown name) keeps the existing generic
+  wording -- there is nothing to usefully list.
+- Q: Gate round 1 (UI/Code/A11y, decided by ui-architect-v3): when the first word after the
+  command IS a valid subcommand but extra text follows (`/advisor on now`), does the "takes one
+  of" listing still make sense, since `on` is already correct? → A: No -- that wording would
+  wrongly suggest the typed subcommand itself is unrecognised. The refusal instead reads
+  "/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own." (e.g.
+  "/advisor on doesn't take more text yet. Try /advisor on on its own."); "takes one of: ..." is
+  reserved for when the first word itself is not a recognised subcommand (FR-081).
+- Q: Issue #938 item 3 (still open after #954): a short notice (`NoticeRow.tsx`) can still lose
+  text to its own one-line ellipsis close to the 160-char threshold (`/advisor status`'s spend
+  clause). Wrap it in place (`summaryWrap`), or make every short notice expandable? → A:
+  `ui-architect-v3` roundtable ruling, 2026-10-18: `summaryWrap` -- the existing no-children
+  "wrap instead of truncate" escape hatch (`CollapsedLine.tsx`, already used by the Subagents
+  panel for the identical failure mode). Making every short notice expandable would add a
+  chevron/trigger that leads nowhere on the common case (nothing is actually hidden beyond the
+  same clause re-wrapped), misrepresenting the row's own structure.
+- Q: Issue #938 item 5 (still open after #954): should `ModelRolesSection.tsx`'s Advisor role
+  description mention how to turn the advisor on? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): yes. Gate round 1 wording decided by ui-architect-v3: "Reviews a Session's turns
+  while the Advisor is on (/advisor on); falls back to Slow." The description renders as plain
+  text (no markdown), so the slash command shows as literal text, consistent with how a
+  refusal message or a notice already shows a literal command name elsewhere in the app.
+- Q: Issue #938 item 6 (possible duplicate render, not yet investigated as of #954): the
+  #917/#954 live-check screenshots show the assistant's own sentinel answer
+  ("t917turn"/"t947turn") appearing more than once in one turn. A duplicate render, or two real
+  text blocks from the model? → A: Investigated, not a bug (Skippy, delegated by Stuart,
+  2026-10-18; corrected, gate round 1 -- a first draft of this answer wrongly blamed the
+  live-check scripts' own wait condition alone): read against the real OMP session log, the
+  #917 screenshot's three occurrences are the user's own prompt (which deliberately contains
+  the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
+  its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
+  stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
+  made it continue, mark the todo done, and reply "t917turn" again. A second, independent
+  #954/#947 verify run's own session log shows the identical shape against "t947turn",
+  confirming this is the general mechanism, not a one-off.
+  `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+  (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
+  keyed by `message_id`/`message_id:index`, so no code path can render one message's own
+  content index twice -- each of the three rows is real, distinct, and announced once; not a
+  duplicate render. No change made.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -907,27 +957,31 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
-- **FR-081** (new, 2026-10-18, issue #991, gate follow-ups from #941 part 1/PR #979; amends
-  FR-067's Stage row): A multi-agent Stage row (FR-067) MUST sync its disclosure open **upward
-  only** -- it MUST still auto-open while any of its own agents is running, failed, cancelled,
-  or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close itself
-  again on settling all-success; only the user's own toggle may close it, matching the existing
-  per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's focus
-  already inside an open Stage's content is never silently dropped to `<body>` by this
+- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): When a slash command is refused as `UnsupportedArguments` (FR-032): if the first word after the command IS one of that command's own verified subcommands but further text follows it (for example `/advisor on now`), the refusal MUST read `/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own.`; otherwise, when the matched builtin command carries one or more verified subcommands at all, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ....` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
+- **FR-082** (new, 2026-10-18, issue #938 item 3, gate follow-up from PR #923/#917, still open after #954/#947; ui-architect-v3 roundtable decision record): A short notice (`NoticeRow.tsx`, under the long-notice threshold and carrying no embedded line break) MUST let its one-line summary wrap across lines instead of truncating with an ellipsis, so a notice whose text happens to sit close to that threshold is never cut off; it MUST NOT gain a chevron/expand control (there is nothing behind one once the whole text is already visible wrapped).
+- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow."
+- **FR-084** (new, 2026-10-18, issue #991, gate follow-ups from #941 part 1/PR #979; amends
+  FR-067's Stage row; renumbered from a provisional FR-081 once #938/PR #996 claimed FR-081 to
+  FR-083 on `origin/main` first): A multi-agent Stage row (FR-067) MUST sync its disclosure open
+  **upward only** -- it MUST still auto-open while any of its own agents is running, failed,
+  cancelled, or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close
+  itself again on settling all-success; only the user's own toggle may close it, matching the
+  existing per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's
+  focus already inside an open Stage's content is never silently dropped to `<body>` by this
   specific automatic collapse (WCAG 2.4.3): the only way the row closes is the user's own
   activation of its own trigger, which already holds focus at that moment. A SEPARATE,
   pre-existing focus-loss path is explicitly OUT OF SCOPE here (gate round 1, 2026-10-18): a
   solo Stage's own body swaps for a member list the instant a second agent streams into the
-  same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up,
-  not fixed by this requirement. A Stage row's and the Subagent chain row's own manual-toggle
-  state MUST survive a remount of the row (a session switch, where a different Session's own
-  row set replaces this one through ordinary keyed-list reconciliation), keyed per session and
-  per row -- scoped to Stage and chain rows only; a tool-call group row and a thought-run row
-  still reset their own disclosure on remount, unchanged by this requirement. A user's own
-  manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice wins
-  permanently over any later auto-open condition; the failure still surfaces through the closed
-  Stage's own header -- its red icon and "N done, M failed" roll-up show regardless of expand
-  state -- the chain row's own roll-up when the turn has 2 or more Stages, and the
+  same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up
+  (issue #1001), not fixed by this requirement. A Stage row's and the Subagent chain row's own
+  manual-toggle state MUST survive a remount of the row (a session switch, where a different
+  Session's own row set replaces this one through ordinary keyed-list reconciliation), keyed
+  per session and per row -- scoped to Stage and chain rows only; a tool-call group row and a
+  thought-run row still reset their own disclosure on remount, unchanged by this requirement. A
+  user's own manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice
+  wins permanently over any later auto-open condition; the failure still surfaces through the
+  closed Stage's own header -- its red icon and "N done, M failed" roll-up show regardless of
+  expand state -- the chain row's own roll-up when the turn has 2 or more Stages, and the
   screen-reader-only settle announcement; there is no toast, decided gate round 2). A toggle
   attempted on the chain row before it has mounted with a real row id (the row id is missing
   only while the turn has no Stage at all yet) is dropped by design -- this only ever happens

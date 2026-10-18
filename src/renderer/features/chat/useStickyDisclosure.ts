@@ -3,7 +3,7 @@ import { useStageToggleStore } from '@/state'
 
 /** Shared upward-only disclosure for a Stage row and the per-turn Subagent chain row (issue
  * #991 gate round 1: ui-architect-v3 + code-reviewer + test-reviewer, unanimous -- fold the
- * duplicated toggle logic into one hook; research.md decision 18 covers the full rationale for
+ * duplicated toggle logic into one hook; research.md decision 19 covers the full rationale for
  * the upward-only rule itself). `autoOpen` is the caller's own computed "should this be open
  * automatically right now" (`isOpenByDefault`/`isUnsettled`): the returned `open` only ever
  * rises on its own, never falls back closed by itself -- only the user's own `onOpenChange` can

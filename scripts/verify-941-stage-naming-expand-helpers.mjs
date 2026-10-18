@@ -33,7 +33,7 @@ export async function expandRow(cdp, titleText) {
  * the theme pass currently running is the FIRST one for this scenario run (nothing has expanded
  * or collapsed any row yet) and the fixture's own data makes that starting value unambiguous.
  * Issue #991 final-delta fix (test-reviewer): `'false'` no longer applies to any Stage -- the
- * disclosure is upward-only (research.md decision 18), so an observed-running Stage STAYS open
+ * disclosure is upward-only (research.md decision 19), so an observed-running Stage STAYS open
  * forever after. Stage 1's own additive `{"__delay__": 1500}` makes it deterministically
  * observed running, so `'true'`; Stage 2/7 carry no delay (unpaced, inside the renderer's own
  * 50ms patch-batching window) so whether either was ever observably open first is not reliably

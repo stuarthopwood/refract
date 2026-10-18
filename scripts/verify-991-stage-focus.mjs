@@ -15,7 +15,7 @@
 // `'true'`, and Stage 2/7 (no fixture delay of their own, so whether either was ever observably
 // open before settling is not reliably reproducible) now accept either known boolean.
 //
-// ui-architect-v3 ruling (posted on #991, recorded in research.md decision 18): item 4 (a mouse
+// ui-architect-v3 ruling (posted on #991, recorded in research.md decision 19): item 4 (a mouse
 // user reading a Stage row while it auto-closes on an all-success finish) is fixed by making
 // `StageGroupRow` sync its own disclosure upward only (never auto-close), matching the per-turn
 // Subagent chain row's existing rule -- this also resolves the AUTO-CLOSE-driven slice of item 1

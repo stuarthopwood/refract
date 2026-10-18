@@ -216,7 +216,49 @@ collapse); its real members are always rendered nested beneath it. `ArrowRight` 
 moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
 "collapse" action anywhere in this tree.
 
-## 18. Stage row focus and toggle follow-ups (issue #991, 2026-10-18)
+## 18. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
+
+**Decision**: `ipc::chat`'s refusal for an `UnsupportedArguments` command distinguishes two
+cases via `classify_unsupported_arguments` (`src-tauri/src/session/agent/commands.rs`): when the
+typed first word is not one of the command's own verified subcommands, it lists them by name
+("/advisor takes one of: on, off, status."); when that first word IS a verified subcommand but
+more text follows it, it instead says so directly ("/advisor on doesn't take more text yet. Try
+/advisor on on its own.", `ui-architect-v3` roundtable ruling). Both branches resolve the
+descriptor through one shared `resolve_matched_descriptor` helper -- also used by
+`classify_slash_invocation` itself -- so a refusal's own presentation can never resolve a
+DIFFERENT descriptor than the one that actually produced it. `NoticeRow.tsx`'s short-notice
+branch gets `summaryWrap` rather than becoming expandable (same roundtable ruling).
+
+**Alternatives (notice wrap)**: making every short notice expandable (matching the long-notice
+branch's own chevron) was rejected -- the common case has nothing behind the chevron (no second
+paragraph, just the same one clause re-wrapped), so the control would be a dead end most of the
+time; `summaryWrap` is the system's existing no-children escape hatch for exactly this shape of
+problem (already used by the Subagents panel for a long path/paragraph).
+
+**Investigation (issue #938 item 6, not a bug -- corrected, gate round 1)**: a first draft of
+this note wrongly attributed the #917/#954 screenshots' doubled sentinel text to the live-check
+scripts' own wait condition (prompt plus one reply = 2). Re-read against the actual OMP session
+log (`~/.omp/agent/sessions/.../2026-10-16T11-14-21-749Z_....jsonl`): the model called the
+hidden `todo` tool (`HIDDEN_TOOLS`, never rendered as its own row) then replied `"t917turn"`
+(message `62b79278`) and stopped; OMP's own incomplete-todo nudge (`"You stopped with 1
+incomplete todo item(s)"`, a `developer`-role reminder, line 15) made it continue, mark the todo
+done, and reply `"t917turn"` a SECOND time (message `bc1f768c`) -- two genuinely distinct
+assistant messages, each with its own `message_id`, each correctly rendered once. A second,
+independent #954/#947 verify run's own session log
+(`~/.omp/agent/sessions/.../2026-10-18T03-23-16-685Z_....jsonl`, messages `6e0a81f1`/`00f9bf00`)
+shows the IDENTICAL shape against `"t947turn"`, confirming this is the general mechanism (the
+incomplete-todo nudge), not a one-off. `build_assistant_items`/`apply_message_snapshot`/
+`replace_message_items` (`src-tauri/src/omp/transcript.rs`) apply every assistant message
+snapshot (`message_start`/`message_update`/`message_end`) as a full replace keyed by
+`message_id`/`message_id:index`, stripping every existing item under that key before inserting
+the fresh set -- there is no code path that can render one message's own content index twice.
+The #917 screenshot's THREE occurrences (not two) are: the user's own prompt bubble (the
+instruction text itself contains the sentinel word once), plus these two real, separate
+assistant replies. Not a duplicate render; `role="log"` announces each of the three rows exactly
+once, as it should. No code change.
+
+## 19. Stage row focus and toggle follow-ups (issue #991, 2026-10-18; renumbered from a
+provisional decision 18 once #938/PR #996 claimed it on `origin/main` first)
 
 **Decision (ui-architect-v3 ruling, posted on issue #991)**: `StageGroupRow`'s own open/close
 sync effect (`SubagentChainRow.tsx`) changes from bidirectional ("sync `open` to
@@ -236,7 +278,10 @@ the a11y defect (a keyboard user's focus inside the content can no longer be dro
 automatic Radix unmount, since the only remaining way to close the row is the user's own
 activation of its own trigger, which already holds focus at that moment) and the "mouse user
 reading it when it closes" annoyance (there is no longer an automatic close to interrupt either
-kind of user).
+kind of user). Follow-up filed, not built here: issue #1000 (Stage rows auto-opening AND the
+chain row both showing every agent once a turn has 2+ Stages; narrows the auto-open condition to
+failed/cancelled/exited only in that case) and issue #1001 (a solo Stage's own body swapping for
+a `SpineList` can still drop focus, pre-existing from #941).
 
 **Decision**: `userToggledRef`/`open`, for both the Stage row and the Subagent chain row, move
 out of a plain `useRef`/`useState` pair into a new `useStageToggleStore`
@@ -282,7 +327,7 @@ disambiguation), not a demonstrable fix of an actual failure in this fixture.
 earlier draft's wording) overclaimed -- corrected to "no more AUTO-CLOSE path": a solo Stage's
 own body (`SubagentBody`) still swaps for a `SpineList` the instant a second agent streams into
 the same Stage, which can still unmount whatever was focused inside it (a separate, pre-existing
-defect from #941, filed as its own follow-up by Main, not fixed by this change).
+defect from #941, filed as its own follow-up by Main as issue #1001, not fixed by this change).
 
 **Gate round 2 correction (code-reviewer)**: an earlier draft of the decision above claimed the
 chain row "fully unmounts whenever a turn's Stage count drops back below 2 (`if (stages.length <

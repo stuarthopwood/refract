@@ -122,7 +122,7 @@ export const PLAIN_TOOL_TITLE = 'read';
 /** Live-build fix (first real build-slot run, never exercised before): the old version wrapped
  * the JSON-stringified attribute value inside an OUTER single-quoted JS string -- an apostrophe
  * anywhere in `titleText` closed that string early, a syntax error the instant this title was
- * ever actually waited on. Fixed by building the CSS value first, then `JSON.stringify`-ing the WHOLE `querySelector` argument once. Issue #991 follow-up 3: scoped to `[data-slot="message-scroller-item"]` (research.md decision 18) so this never matches the open chain row's own duplicate title (`ChainStageLine`). */
+ * ever actually waited on. Fixed by building the CSS value first, then `JSON.stringify`-ing the WHOLE `querySelector` argument once. Issue #991 follow-up 3: scoped to `[data-slot="message-scroller-item"]` (research.md decision 19) so this never matches the open chain row's own duplicate title (`ChainStageLine`). */
 export function titleSelector(titleText) {
   const cssValue = titleText.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `Array.from(document.querySelectorAll(${JSON.stringify(`[title="${cssValue}"]`)})).find(el => el.closest('[data-slot="message-scroller-item"]'))`;

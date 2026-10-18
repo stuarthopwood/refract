@@ -143,7 +143,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   }, [group.items, seenIds])
   const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
   // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
-  // unanimous): shared `useStickyDisclosure` (research.md decision 18 has the full rationale).
+  // unanimous): shared `useStickyDisclosure` (research.md decision 19 has the full rationale).
   // Upward-only: a Stage still auto-opens while running/failed/cancelled/exited, but once open
   // (by auto-open or the user), it never auto-closes again -- only the user's own toggle can
   // close it. This fixes item 4 and, as a side effect, the AUTO-CLOSE-driven slice of item 1's
