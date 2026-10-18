@@ -6,7 +6,7 @@
   "src/renderer/App.tsx": 727,
   "src/renderer/features/chat/ChatPane.tsx": 1445,
   "src/renderer/features/chat/Markdown.tsx": 997,
-  "src/renderer/features/chat/MessageInput.tsx": 1631,
+  "src/renderer/features/chat/MessageInput.tsx": 1632,
   "src/renderer/features/chat/Transcript.tsx": 1059,
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
@@ -14,5 +14,5 @@
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 715,
   "src/shared/ipc.ts": 898,
-  "src/shared/model.ts": 643
+  "src/shared/model.ts": 656
 }
