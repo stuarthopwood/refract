@@ -445,19 +445,17 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // and never re-reads a LATER `defaultOpen` recompute, so a Stage that fails well after this
   // row's first mount could never auto-open it (confirmed live: this fixture's own Stage 5
   // failure left the chain row closed on first render instead of Decision 6's "expanded while
-  // anything is unsettled"). Fixed by going fully controlled here and re-syncing `open` to the
-  // live unsettled condition whenever it changes, UNTIL the user explicitly toggles it
-  // (`userToggledRef`) -- an explicit collapse/expand always wins from that point on, matching
-  // ordinary disclosure-widget expectations, while an untouched row keeps tracking "anything
-  // unsettled" dynamically instead of freezing at whatever was true the first time this
-  // component happened to mount. Hooks run unconditionally, ahead of the `stages.length < 2`
-  // early return below.
+  // anything is unsettled"). Fixed by going fully controlled here, auto-opening once `isUnsettled`
+  // turns true, UNTIL the user explicitly toggles it (`userToggledRef`). Decision (Skippy,
+  // delegated by Stuart 2026-10-18, posted on issue #941): sync UPWARD only, never auto-close --
+  // an untouched row closing itself the instant everything finishes would collapse Stage rows
+  // the user expanded mid-read and drop their focus, so settling back to all-green never
+  // auto-collapses a row the user never touched either.
   const isUnsettled = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
   const userToggledRef = React.useRef(false)
   const [open, setOpen] = React.useState(isUnsettled)
   React.useEffect(() => {
-    if (userToggledRef.current) return
-    setOpen(isUnsettled)
+    if (!userToggledRef.current && isUnsettled) setOpen(true)
   }, [isUnsettled])
 
   if (stages.length < 2) return null

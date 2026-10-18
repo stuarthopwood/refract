@@ -405,9 +405,9 @@ export async function assertStageMetaRollup(cdp, findings, failures, themeName) 
 export async function assertGreenFinished(cdp, findings, failures, themeName) {
   const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
   // Gate-fix (first real build-slot run): Stage 5's own HEADER was wrongly listed here as
-  // expected-green -- `summarizeSubagentStatuses` prioritises `failed` over `finished`, so a
-  // Stage with one FAILED agent is STAGE-LEVEL status `'failed'` and is correctly NOT green
-  // (confirmed live). Moved to a real negative check next to the FailAgent one below instead.
+  // expected-green -- `overallStatus` prioritises `failed` over `finished`, so a Stage with one
+  // FAILED agent is STAGE-LEVEL status `'failed'` and is correctly NOT green (confirmed live).
+  // Moved to a real negative check next to the FailAgent one below instead.
   const finishedRows = [
     ['Stage 1 header', STAGE1_TITLE],
     ['Stage 2 header', STAGE2_TITLE],

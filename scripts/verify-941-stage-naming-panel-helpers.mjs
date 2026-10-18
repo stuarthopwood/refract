@@ -108,18 +108,6 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     findings.push(`[${themeName}] Stage 6 (solo)'s own "Uses:" line resolves Story559 to (Stage 5), the LATEST earlier occurrence, proving the solo path is no longer special-cased.`);
   }
   // Gate round 4 fix (issue #941, item 8, HIGH): same real-label fix as G923Code above.
-  // TEMP DIAGNOSTIC (Main's falsify-first request, remove before merge): checks whether the
-  // real "Story559, open in Subagents panel" button exists in the DOM BEFORE the click is even
-  // attempted (does `match` render a button at all, or did Stage 6's own dependency resolve to
-  // plain, unclickable text?), plus the raw Stage 6 Uses: line markup for comparison.
-  const preClickDiag = await cdp.evaluate(`(() => {
-    const hasButton = !!document.querySelector('[aria-label="Story559, open in Subagents panel"]');
-    const anyStory559Button = Array.from(document.querySelectorAll('button[aria-label*="Story559"]')).map((el) => el.getAttribute('aria-label'));
-    const content = ${stageContentSelector(STAGE6_SOLO_TITLE)};
-    const usesLineHtml = content ? Array.from(content.querySelectorAll('div')).find((el) => el.textContent.includes('Uses:'))?.innerHTML ?? null : null;
-    return { hasButton, anyStory559Button, usesLineHtml };
-  })()`);
-  console.error(`[${themeName}] verify-941 DIAGNOSTIC (before Story559 click):`, JSON.stringify(preClickDiag));
   await clickByLabelScrolled(cdp, 'Story559, open in Subagents panel');
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 6's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   // Gate round 4 fix (issue #941, item 9, HIGH): checks exactly ONE row in the whole panel is
@@ -154,16 +142,6 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   // (`subagent-store.ts`), not a component-local `useState` that a remount would have reset.
   await clickByLabelScrolled(cdp, 'File explorer panel');
   await cdp.waitFor(`!!document.querySelector('[aria-label="File explorer"]')`, { timeoutMs: 10_000, label: `[${themeName}] File explorer panel opened (tab switch away)` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  // TEMP DIAGNOSTIC (Main's falsify-first request, remove before commit):
-  const diag = await cdp.evaluate(`(() => {
-    const rail = Array.from(document.querySelectorAll('[data-rail-button]')).map((el) => ({ id: el.getAttribute('data-rail-button'), pressed: el.getAttribute('aria-pressed') }));
-    const tabs = Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.id);
-    const hasSubagentsTree = !!document.querySelector('[role="tree"][aria-label="Subagents"]');
-    const hasPanelTabSubagents = !!document.querySelector('#panel-tab-subagents');
-    const titleRow = document.querySelector('#right-pane-active-panel h2, #right-pane-active-panel [role="heading"]')?.textContent ?? null;
-    return { rail, tabs, hasSubagentsTree, hasPanelTabSubagents, titleRow };
-  })()`);
-  console.error(`[${themeName}] verify-941 DIAGNOSTIC (before panel-tab-subagents click):`, JSON.stringify(diag));
   await clickScrolled(cdp, `document.querySelector('#panel-tab-subagents')`);
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagents tab reactivated, panel remounted` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   await assertStory559PanelSelection('After tab-switch-away-and-back remount');
