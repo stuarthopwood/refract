@@ -22,7 +22,7 @@ import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
-import { stageHeading, extractContextLabel } from './stageMeta'
+import { stageHeading, extractContextLabel, stageRollupText } from './stageMeta'
 import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
 import {
@@ -86,13 +86,12 @@ export function overallStatus(counts: Record<SubagentRowStatus, number>): Subage
 // Stage header roll-up wording (issue #941 grill item 3, gate round 1 fix: "N done"/"N done, M
 // failed", not "N of M finished" -- while running, the live form states how many have settled
 // so far against the total ("N of M done"), with any non-zero failed/cancelled/exited appended
-// (comma-joined, same shape as `rollupPhrase`).
+// (comma-joined, same shape as `rollupPhrase`). Gate round 1 fix (issue #941 part 2, item 6):
+// both delegate to the shared `stageRollupText` (`stageMeta.ts`), reused verbatim by the
+// Subagents panel's own Stage header so the two surfaces can never read this wording
+// differently.
 function stageRunningSummary(counts: Record<SubagentRowStatus, number>, total: number): string {
-  const parts = [`${counts.finished} of ${total} done`]
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
-  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
-  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
-  return parts.join(', ')
+  return stageRollupText(counts, total, true)
 }
 
 /** The settled-form roll-up text (issue #941 grill item 3, gate round 1 fix): always leads with
@@ -102,11 +101,7 @@ function stageRunningSummary(counts: Record<SubagentRowStatus, number>, total: n
  * announcement can never drift from what the Stage's own header already shows. */
 export function stageSettleSummary(group: StageGroup): string {
   const counts = summarizeSubagentStatuses(group.items.map((item) => chatRowStatus(item.status)))
-  const parts: string[] = [`${counts.finished} done`]
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
-  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
-  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
-  return parts.join(', ')
+  return stageRollupText(counts, group.items.length, false)
 }
 
 /** One Stage, rendered in place (decision 4): ALWAYS the same `CollapsedLine` (mirrors

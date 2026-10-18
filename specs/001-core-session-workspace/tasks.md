@@ -3461,8 +3461,8 @@ PR #972 body and this plan row updated with the final-run evidence; still `Refs 
   Markdown, visually capped to about 6 lines, above its member rows.
 - [X] T284 [US1] The Subagent panel's own Stage-level tree node (grouping `SubagentSummary[]` by
   `toolCallId` the same way, through the same `stageMeta.ts`/`StageDependencies.tsx` helpers)
-  and the "Up next" list (from the `todoPhases` readout field T282 already wired) in the
-  Subagent chain's own expanded body. Built in Phase 58 below (second PR, as planned here).
+  and the "Up next" list (from the `todoPhases` readout field T282 already wired) below the
+  Subagent chain. Built in Phase 58 below (second PR, as planned here).
 
 This phase covers issue #941's 2026-10-15 grill items 2 to 5 and the Subagent chain/Stage-row
 half of item 7 (terms, item 1, already landed via PR #942's docs-only change); items 6 (Up next)
@@ -3487,24 +3487,36 @@ live-proven against a real build yet).
 - [X] T284 (see Phase 57 above, checked off there): `SubagentPanel.tsx`'s `buildSubagentTree`
   rewritten against a new sibling `groupSubagentPanelStages.ts` (groups `SubagentSummary[]` by
   `toolCallId` -- the only correlation key that interface carries, confirmed against
-  `src/shared/model.ts`; research.md decision 17), reusing `stageMeta.ts`'s
-  `computeStageLabel`/`stageHeading`/`extractAgentRefs` directly and mirroring
-  `groupSubagentStages.ts`'s own "latest earlier occurrence wins" dependency algorithm against
-  the panel's own field names. A call with exactly one member stays a single flat row; 2+
-  members get a Stage header treeitem with its real members nested one `aria-level` deeper.
-  Green state (`isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`, confirmed absent from
-  the panel before this) applies uniformly to every row. A Stage header's own real "Uses:" line
-  reuses `StageDependencies.tsx`'s `StageUsesLine`, forced into its existing plain-text fallback
-  (`sessionId={null}`) rather than nesting a second interactive control inside a
-  `role="treeitem"`; a solo call's own dependency stays chat-pane-only (documented scope
-  boundary, no header row in the panel to attach one to).
+  `src/shared/model.ts`; research.md decision 17), reusing `stageMeta.ts`'s `computeStageLabel`/
+  `extractAgentRefs` directly. Gate round 1 fix (item 1, CRITICAL): keyed on `item.nameOrTask`,
+  not `item.id` (`${toolCallId}:${nameOrTask}`, `subagents.rs::handle_task_start`'s own
+  `base_id`, never the bare name -- the `model.ts` doc comment this first assumed otherwise
+  from is itself corrected). Gate round 1 fix (item 2, HIGH): the "latest earlier occurrence
+  wins" dependency algorithm is a single shared `resolveStageDependencies` (`stageMeta.ts`), both
+  `groupSubagentStages.ts` and `groupSubagentPanelStages.ts` call it, not two independent
+  copies. A call with exactly one member stays a single flat row; 2+ members get a Stage header
+  treeitem with its real members nested one `aria-level` deeper. Green state
+  (`isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`, confirmed absent from the panel
+  before this) applies uniformly to every row, its own roll-up ("N done, M failed",
+  `stageRollupText`, also shared with the chat pane) in a trailing muted slot folded into the
+  header's own accessible name too. Gate round 1 decision (item 3, ui-architect-v3 ruling): a
+  Stage header's own label never shows "Stage N" -- the panel numbers Stages session-wide by
+  `toolCallId` while the chat numbers per turn, so the SAME Stage would disagree between the two
+  surfaces; the shared name prefix (else "N agents") is shown instead, and a real "Uses:" line
+  renders plain NAMES ONLY (no "(Stage N)" suffix), scoped to earlier calls in the session; a
+  solo call's own dependency stays chat-pane-only (documented scope boundary, no header row in
+  the panel to attach one to).
 - [X] New `UpNextList.tsx`, mounted in `Transcript.tsx` right after `SubagentChainRow` for every
-  turn: reads `ReadoutState.todoPhases` (already wired by T282), rendering nothing when
-  null/empty (the backend's own `compute_up_next` already filters to non-empty, live-only
-  state, research.md decision 17) -- gated additionally on `isLastTurn` (`Transcript.tsx`
-  already computes this for `TurnTotalLine`) and `stages.length > 0`, so the CURRENT, session-
-  scoped Todo list is shown once per conversation, not repeated after every past qualifying
-  turn.
+  turn -- a sibling, outside the chain's own collapsible content, `mt-6 px-2` matching the
+  chain's own turn-rhythm spacing: reads `ReadoutState.todoPhases` (already wired by T282),
+  rendering nothing when null/empty (the backend's own `compute_up_next` already filters to
+  non-empty, live-only state, research.md decision 17) -- gated additionally on `isLastTurn`
+  (`Transcript.tsx` already computes this for `TurnTotalLine`) and `stages.length > 0`, so the
+  CURRENT, session-scoped Todo list is shown once per conversation, not repeated after every
+  past qualifying turn. Gate round 1 fix (item 4, HIGH): a labelled list (`useId`, `aria-
+  labelledby` on the `<ul>`), not a bare unlabelled one. Gate round 1 fix (item 8, LOW): "1
+  task" singular, "N tasks" otherwise; each entry keyed by name plus index (two phases sharing
+  one name would otherwise collide).
 
 This phase covers issue #941's 2026-10-15 grill item 6 (Up next) and the Subagent panel half of
 item 7, completing the story (items 1-7 all built across the two PRs).

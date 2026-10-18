@@ -166,23 +166,45 @@ that share one assistant message the way the chat pane's own `messageId`-keyed
 `groupSubagentStages.ts` can. A call with exactly one member stays a single flat row (nothing to
 group, unchanged from before part 2); 2+ members get a Stage header row with its real members
 nested one level deeper. The header's own label always uses `computeStageLabel`'s "no context"
-fallback tier (shared name prefix, else a bare "Stage N") -- the panel has no per-call `context`
-to read the first tier from. A Stage header's own real "Uses:" dependencies (resolved the same
-"latest earlier occurrence wins" way `groupSubagentStages.ts`'s `applyDependencies` already
-does, against `id`/`toolCallId`/`specIndex` instead of `name`/`toolCallId`/`specIndex`) render
-via the chat pane's own `StageUsesLine`, forced into its existing plain-text fallback
-(`sessionId={null}`) rather than adding a second, nested interactive control inside a
-`role="treeitem"` the user is already inside. A solo call's own dependency is intentionally not
-shown in the panel (no header row exists there to attach one to); it stays visible in the chat.
+fallback tier (shared name prefix, else `null`) -- the panel has no per-call `context` to read
+the first tier from. The "latest earlier occurrence wins" dependency algorithm is a single
+shared `resolveStageDependencies` (`stageMeta.ts`), called by both `groupSubagentStages.ts` and
+this panel grouper, keyed on each item's own real agent name -- gate-fix: `SubagentSummary.id`
+is `${toolCallId}:${nameOrTask}` (`subagents.rs::handle_task_start`'s own `base_id`), never the
+bare name alone, so the correct key is `nameOrTask`, not `id` (the `model.ts` doc comment this
+was first built against claimed otherwise; corrected there too).
+
+**Decision (Skippy, delegated by Stuart 2026-10-18; ui-architect-v3 ruling, gate round 1): a
+Stage header's own label in the panel never shows "Stage N"**. The panel numbers its own Stages
+session-wide by `toolCallId` (in the order calls were made across the whole Session); the chat
+numbers Stages per TURN (`groupSubagentStages.ts`'s own `stageIndex`, reset to 1 at the start of
+every turn). The SAME underlying `task()` call therefore carries two DIFFERENT "Stage N" numbers
+across the two surfaces whenever a Session has run more than one turn with Stages -- showing a
+number in the panel would read as contradicting the chat's own number for what is visibly the
+same work. Fixed by never stating a number in the panel: the header shows the shared name prefix
+when one exists, else a bare "N agents"; a header's own real "Uses:" dependency renders as plain
+NAMES ONLY ("Uses: G923Code"), never "(Stage N)", scoped to agents an EARLIER call in the
+session actually started (the same resolution the chat performs, just never surfacing the
+number it resolves to). A solo call's own dependency is intentionally not shown in the panel (no
+header row exists there to attach one to); it stays visible in the chat.
 
 **Decision (Skippy, delegated by Stuart 2026-10-18)**: the "Up next" Todo-phase list renders
 once per TURN (not once per Stage), gated on `isLastTurn` (the same boolean `Transcript.tsx`
 already computes for `TurnTotalLine`) -- `ReadoutState.todoPhases` is the agent's own CURRENT
 session-scoped state, not a per-turn snapshot, so showing it after every past turn with a Stage
 would repeat the identical list. Also gated on that turn having at least one Stage
-(`stages.length > 0`): "below the last Stage" has no anchor point in a turn that never ran a
-`task()` call at all. No separate live-vs-reopened-history check is needed in the renderer:
-`compute_up_next` (`src-tauri/src/session/readout_todo.rs`) already filters to only phases with
-at least one non-`completed`/`abandoned` task and returns `null` outright for a reopened
-Conversation (`state_synced` gates it the same way `contextUsage` is gated) -- `todoPhases`
-being non-null on the wire already means "live, and something is still pending."
+(`stages.length > 0`): "below the Subagent chain" has no anchor point in a turn that never ran a
+`task()` call at all.
+
+**Correction (gate round 1, item 8)**: an earlier draft of this note claimed `compute_up_next`
+(`src-tauri/src/session/readout_todo.rs`) is gated by `state_synced` "the same way `contextUsage`
+is" -- re-read, this is NOT true: `compute_up_next` takes only `Option<&Vec<TodoPhaseState>>` and
+never reads `state_synced` at all; `context_usage`'s OWN build function (`build_readout_value`)
+is the one with a THREE-state branch (`Some(data)` / `state_synced`-gated `"not-available"` /
+`null`), a distinction `todoPhases`'s own UI never needed (it only ever shows-or-hides, no
+"not available yet" text). No stale-data bug exists regardless: `on_conversation_reset` already
+explicitly nulls `s.todo_phases` (and sets `state_synced = false`) BEFORE the new Conversation's
+own first `get_state` response can repopulate it, so the renderer can never observe a previous
+Conversation's own stale phases through this field -- an extra `state_synced` check on
+`compute_up_next` itself would be redundant, not a fix. Left uncommented in Rust; this note is
+the correction.

@@ -63,142 +63,128 @@ const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// The panel's own Stage header label (no `context` tier, see file header): `computeStageLabel`'s
-// "shared name prefix" fallback over the SAME fixture `task()` names part 1's own
-// STAGE*_TITLE constants name, hand-verified against `stageMeta.ts`'s own `sharedNamePrefix`.
-const PANEL_STAGE1_TITLE = 'Stage 1 \u00b7 G923'; // G923Code / G923Arch
-const PANEL_STAGE2_TITLE = 'Stage 2 \u00b7 Story5'; // Story559 / Story560
-const PANEL_STAGE3_TITLE = 'Stage 3'; // Zeta / Omega -- no shared prefix
-const PANEL_STAGE4_TITLE = 'Stage 4 \u00b7 Label'; // LabelA / LabelB
-const PANEL_STAGE5_TITLE = 'Stage 5'; // Story559 / FailAgent -- no shared prefix
-const PANEL_STAGE7_TITLE = 'Stage 7 \u00b7 LongCtx'; // LongCtxA / LongCtxB
-const PANEL_STAGE8_TITLE = 'Stage 8 \u00b7 Pfx'; // PfxOne / PfxTwo
-const PANEL_STAGE10_TITLE = 'Stage 10 \u00b7 Borderline'; // BorderlineA / BorderlineB
+// Gate round 1 fix (issue #941 part 2, item 3 decision, item 10, HIGH): the panel's own Stage
+// header never shows "Stage N" (ui-architect-v3 ruling, research.md decision 17) -- the shared
+// name prefix when one exists, else a bare "N agents" -- so "Stage 3" and "Stage 5" both become
+// the ambiguous "2 agents" (no shared prefix either way), and "Story559" appears under BOTH
+// Stage 2 and Stage 5. Title-text lookups can no longer disambiguate rows at all; the panel's
+// own tree is instead walked IN ORDER (scoped to `[role="tree"][aria-label="Subagents"]`) and
+// compared against this exact expected shape -- the only thing that still tells two same-label
+// rows apart is their real POSITION in the fixture's own task() call order.
+const EXPECTED_PANEL_ROWS = [
+  { level: '1', isStage: true, label: 'G923', green: true }, // Stage 1 header
+  { level: '2', isStage: false, label: 'G923Code', green: true },
+  { level: '2', isStage: false, label: 'G923Arch', green: true },
+  { level: '1', isStage: true, label: 'Story5', green: true }, // Stage 2 header
+  { level: '2', isStage: false, label: 'Story559', green: true },
+  { level: '2', isStage: false, label: 'Story560', green: true },
+  { level: '1', isStage: true, label: '2 agents', green: true }, // Stage 3 header (no shared prefix)
+  { level: '2', isStage: false, label: 'Zeta', green: true },
+  { level: '2', isStage: false, label: 'Omega', green: true },
+  { level: '1', isStage: true, label: 'Label', green: true }, // Stage 4 header
+  { level: '2', isStage: false, label: 'LabelA', green: true },
+  { level: '2', isStage: false, label: 'LabelB', green: true },
+  { level: '1', isStage: true, label: '2 agents', green: false }, // Stage 5 header (mixed finished/failed)
+  { level: '2', isStage: false, label: 'Story559', green: true },
+  { level: '2', isStage: false, label: 'FailAgent', green: false },
+  { level: '1', isStage: false, label: 'R8Solo', green: true }, // Stage 6, solo, stays flat
+  { level: '1', isStage: true, label: 'LongCtx', green: true }, // Stage 7 header
+  { level: '2', isStage: false, label: 'LongCtxA', green: true },
+  { level: '2', isStage: false, label: 'LongCtxB', green: true },
+  { level: '1', isStage: true, label: 'Pfx', green: true }, // Stage 8 header
+  { level: '2', isStage: false, label: 'PfxOne', green: true },
+  { level: '2', isStage: false, label: 'PfxTwo', green: true },
+  { level: '1', isStage: false, label: 'SoloBare', green: true }, // Stage 9, solo, stays flat
+  { level: '1', isStage: true, label: 'Borderline', green: true }, // Stage 10 header
+  { level: '2', isStage: false, label: 'BorderlineA', green: true },
+  { level: '2', isStage: false, label: 'BorderlineB', green: true }
+];
 
-/** Issue #941 part 2: a multi-member call gets its own Stage header treeitem (`aria-level="1"`,
- * found by its own `title=` span exactly like a chat-pane Stage row), plus real member rows
- * nested one level deeper; a solo call (Stage 6/9) stays a single flat row. */
-async function assertPanelGrouping(cdp, findings, failures, themeName) {
-  const multi = [
-    ['Stage 1', PANEL_STAGE1_TITLE, ['G923Code', 'G923Arch']],
-    ['Stage 2', PANEL_STAGE2_TITLE, ['Story559', 'Story560']],
-    ['Stage 3 (no shared prefix)', PANEL_STAGE3_TITLE, ['Zeta', 'Omega']],
-    ['Stage 4', PANEL_STAGE4_TITLE, ['LabelA', 'LabelB']],
-    ['Stage 5 (mixed finished/failed)', PANEL_STAGE5_TITLE, ['Story559', 'FailAgent']],
-    ['Stage 7', PANEL_STAGE7_TITLE, ['LongCtxA', 'LongCtxB']],
-    ['Stage 8', PANEL_STAGE8_TITLE, ['PfxOne', 'PfxTwo']],
-    ['Stage 10', PANEL_STAGE10_TITLE, ['BorderlineA', 'BorderlineB']]
-  ];
-  for (const [label, headerTitle, members] of multi) {
-    const header = await cdp.evaluate(`(() => { const el = ${titleSelector(headerTitle)}; return el ? el.closest('[role="treeitem"]')?.getAttribute('aria-level') : null; })()`);
-    if (header !== '1') {
-      failures.push(`[${themeName}] ${label}'s own panel header (title="${headerTitle}") was not found as an aria-level="1" treeitem (got: ${JSON.stringify(header)}).`);
+/** Issue #941 part 2: walks the panel's own tree in document order, comparing every row's real
+ * `aria-level`/Stage-or-member kind/label text/green colour against `EXPECTED_PANEL_ROWS` at the
+ * SAME index -- proves grouping (header -> nested members, solo calls stay flat), the dropped
+ * "Stage N" naming (item 3), and green state (including Stage 5's own mixed negative case) all
+ * in one pass, immune to the two same-labelled "2 agents" headers and the repeated "Story559"
+ * name a title-based lookup could not tell apart. Also confirms `aria-expanded`/`aria-selected`
+ * presence (item 5) and a Stage header's own accessible name states its roll-up too (item 6). */
+async function assertPanelStructure(cdp, findings, failures, themeName) {
+  const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
+  const rows = await cdp.evaluate(`
+    Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]')).map((el) => {
+      const labelSpan = el.querySelector('span.min-w-0.flex-1.truncate');
+      const bg = (() => { let node = el; while (node) { const bgc = getComputedStyle(node).backgroundColor; if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent') return bgc; node = node.parentElement; } return getComputedStyle(document.body).backgroundColor; })();
+      return {
+        level: el.getAttribute('aria-level'),
+        hasAriaExpanded: el.hasAttribute('aria-expanded'),
+        ariaExpanded: el.getAttribute('aria-expanded'),
+        hasAriaSelected: el.hasAttribute('aria-selected'),
+        ariaLabel: el.getAttribute('aria-label'),
+        label: labelSpan ? labelSpan.textContent : null,
+        labelColor: labelSpan ? getComputedStyle(labelSpan).color : null,
+        bg,
+        rowText: el.textContent
+      };
+    })
+  `);
+  if (rows.length !== EXPECTED_PANEL_ROWS.length) {
+    failures.push(`[${themeName}] The panel's own tree has ${rows.length} treeitem(s), expected exactly ${EXPECTED_PANEL_ROWS.length} (10 Stage headers/flat solo rows plus their real members).`);
+    return;
+  }
+  for (const [index, expected] of EXPECTED_PANEL_ROWS.entries()) {
+    const row = rows[index];
+    const where = `[${themeName}] panel row ${index} (expected ${expected.isStage ? 'Stage header' : 'member/solo row'} "${expected.label}")`;
+    if (row.level !== expected.level) failures.push(`${where}: aria-level is ${JSON.stringify(row.level)}, expected "${expected.level}".`);
+    if (row.label !== expected.label) failures.push(`${where}: label text is ${JSON.stringify(row.label)}, expected ${JSON.stringify(expected.label)}.`);
+    if (expected.isStage) {
+      if (row.ariaExpanded !== 'true') failures.push(`${where}: aria-expanded is ${JSON.stringify(row.ariaExpanded)}, expected the string "true".`);
+      if (row.hasAriaSelected) failures.push(`${where}: carries an aria-selected attribute (${JSON.stringify(row.ariaLabel)}) -- a Stage header has no single subagent id to select and must not carry this attribute at all.`);
+      if (!row.ariaLabel || !row.ariaLabel.includes(expected.label) || !/\d+ (done|of)/.test(row.ariaLabel)) {
+        failures.push(`${where}: own accessible name is ${JSON.stringify(row.ariaLabel)}, expected it to contain both the label and the roll-up count.`);
+      }
     } else {
-      findings.push(`[${themeName}] ${label}'s own panel header renders as an aria-level="1" treeitem, titled exactly "${headerTitle}".`);
+      if (row.hasAriaExpanded) failures.push(`${where}: carries an aria-expanded attribute -- an ordinary member/solo row has no children to expand.`);
+      if (!row.hasAriaSelected) failures.push(`${where}: carries no aria-selected attribute at all -- an ordinary row must always state its own selection state.`);
     }
-    for (const memberName of members) {
-      const level = await cdp.evaluate(`(() => { const el = ${titleSelector(memberName)}; return el ? el.closest('[role="treeitem"]')?.getAttribute('aria-level') : null; })()`);
-      if (level !== '2') {
-        failures.push(`[${themeName}] ${label}'s own member "${memberName}" was not found nested at aria-level="2" (got: ${JSON.stringify(level)}).`);
-      } else {
-        findings.push(`[${themeName}] ${label}'s own member "${memberName}" is nested at aria-level="2", under its Stage header.`);
+    if (expected.green && row.labelColor !== expectedColor) {
+      failures.push(`${where}: own label colour is ${row.labelColor}, expected the theme's --severity-success (${expectedColor}).`);
+    } else if (!expected.green && row.labelColor === expectedColor) {
+      failures.push(`${where}: REGRESSION -- own label colour is green (${row.labelColor}), expected NOT green (this row carries a failure).`);
+    } else if (expected.green) {
+      const ratio = measuredContrastRatio(row.labelColor, row.bg);
+      if (ratio === null || ratio < 4.5) {
+        failures.push(`${where}: own green label measures ${ratio === null ? 'an unparseable' : ratio.toFixed(2)}:1 against its own backdrop, below 4.5:1.`);
       }
     }
-  }
-  for (const [label, soloName] of [
-    ['Stage 6 (solo)', 'R8Solo'],
-    ['Stage 9 (solo)', 'SoloBare']
-  ]) {
-    const level = await cdp.evaluate(`(() => { const el = ${titleSelector(soloName)}; return el ? el.closest('[role="treeitem"]')?.getAttribute('aria-level') : null; })()`);
-    if (level !== '1') {
-      failures.push(`[${themeName}] ${label}'s own single row ("${soloName}") was not found at aria-level="1" (got: ${JSON.stringify(level)}) -- a solo call must stay a flat row, never wrapped in its own Stage header.`);
-    } else {
-      findings.push(`[${themeName}] ${label}'s own single row ("${soloName}") stays a flat aria-level="1" row, never wrapped in a redundant Stage header.`);
+    if (row.rowText && row.rowText.includes('Uses:')) {
+      failures.push(`${where}: unexpectedly contains a "Uses:" line (none of this fixture's own task names carry an agent:// reference -- SubagentSummary has no context field for one to come from): ${JSON.stringify(row.rowText.slice(row.rowText.indexOf('Uses:') - 20, row.rowText.indexOf('Uses:') + 60))}`);
     }
+  }
+  if (failures.length === 0) {
+    findings.push(`[${themeName}] The panel's own tree matches the expected shape exactly across all ${rows.length} rows: Stage headers (never "Stage N", dropped per the ui-architect-v3 ruling) with their real members nested beneath, solo calls staying flat, green state correct including Stage 5's own mixed finished/failed negative case, aria-expanded/aria-selected correctly present/absent, no stray "Uses:" text.`);
   }
 }
 
-/** Issue #941 (FR-079): green applies uniformly in the panel too -- every finished Stage header
- * AND member row; Stage 5 (one failed member) stays NOT green at BOTH its header and its own
- * failed member's row. */
-async function assertPanelGreen(cdp, findings, failures, themeName) {
-  const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
-  const measure = (titleText) =>
-    cdp.evaluate(`(() => {
-      const el = ${titleSelector(titleText)};
-      if (!el) return null;
-      const bg = (() => { let node = el; while (node) { const bgc = getComputedStyle(node).backgroundColor; if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent') return bgc; node = node.parentElement; } return getComputedStyle(document.body).backgroundColor; })();
-      return { color: getComputedStyle(el).color, bg };
-    })()`);
-  const greenRows = [
-    ['Stage 1 header', PANEL_STAGE1_TITLE],
-    ['G923Code member', 'G923Code'],
-    ['G923Arch member', 'G923Arch'],
-    ['Stage 6 (solo)', 'R8Solo'],
-    ['Stage 9 (solo)', 'SoloBare']
-  ];
-  for (const [label, titleText] of greenRows) {
-    const styles = await measure(titleText);
-    if (!styles) {
-      failures.push(`[${themeName}] Could not measure ${label}'s own computed colour (row not found, title="${titleText}").`);
-      continue;
-    }
-    if (styles.color !== expectedColor) {
-      failures.push(`[${themeName}] ${label}'s own panel row colour is ${styles.color}, expected the theme's --severity-success (${expectedColor}).`);
-      continue;
-    }
-    const ratio = measuredContrastRatio(styles.color, styles.bg);
-    if (ratio === null || ratio < 4.5) {
-      failures.push(`[${themeName}] ${label}'s own panel row measures ${ratio === null ? 'an unparseable' : ratio.toFixed(2)}:1 against its own backdrop, below 4.5:1.`);
-    } else {
-      findings.push(`[${themeName}] ${label}'s own panel row resolves to --severity-success (${expectedColor}), measuring ${ratio.toFixed(2)}:1, clears 4.5:1.`);
-    }
-  }
-  for (const [label, titleText] of [
-    ['Stage 5 header (one failed member)', PANEL_STAGE5_TITLE],
-    ["Stage 5's own FailAgent member", 'FailAgent']
-  ]) {
-    const styles = await measure(titleText);
-    if (!styles) {
-      failures.push(`[${themeName}] Could not measure ${label}'s own computed colour.`);
-    } else if (styles.color === expectedColor) {
-      failures.push(`[${themeName}] REGRESSION: ${label} is green (${styles.color}) in the panel -- a Stage/member with any failure must never be green.`);
-    } else {
-      findings.push(`[${themeName}] ${label} stays NOT green in the panel, as issue #941 requires.`);
-    }
-  }
-}
-
-/** Negative check (see file header's documented scope boundary): no panel Stage header shows a
- * stray/malformed "Uses:" line -- `SubagentSummary` carries no `context`, so a positive "Uses:"
- * case is not reachable from this fixture without a riskier, unrelated fixture edit. */
-async function assertPanelNoStrayUsesLine(cdp, findings, failures, themeName) {
-  const text = await cdp.evaluate(`document.querySelector('[role="tree"][aria-label="Subagents"]')?.textContent ?? ''`);
-  if (text.includes('Uses:')) {
-    failures.push(`[${themeName}] The panel's own tree unexpectedly contains a "Uses:" line (none of this fixture's own task names carry an agent:// reference -- SubagentSummary has no context field for one to come from): ${JSON.stringify(text.slice(text.indexOf('Uses:') - 20, text.indexOf('Uses:') + 60))}`);
-  } else {
-    findings.push(`[${themeName}] The panel's own tree shows no stray "Uses:" text, consistent with SubagentSummary carrying no context for this fixture's own dependency references to resolve against.`);
-  }
-}
-
-/** Issue #941 (FR-079's "Up next"): the agent's own pending Todo phases, below the last Stage,
- * in the CHAT pane (not the panel) -- `stages-941.jsonl`'s own `get_state` response now carries
- * two, both still pending. */
+/** Issue #941 (FR-079's "Up next"): the agent's own pending Todo phases, below the Subagent
+ * chain, in the CHAT pane (not the panel) -- `stages-941.jsonl`'s own `get_state` response now
+ * carries two, both still pending (its own raw `tasks[].status` shape, the one
+ * `parse_todo_phases` actually reads -- gate round 1 fix, item 9, CRITICAL). */
 async function assertUpNextList(cdp, findings, failures, themeName) {
   const text = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.textContent ?? ''`);
   if (!text.includes('Up next')) {
     failures.push(`[${themeName}] The transcript does not show an "Up next" heading despite the fixture's own get_state carrying two pending Todo phases.`);
     return;
   }
-  findings.push(`[${themeName}] The transcript shows the "Up next" heading below the last Stage.`);
+  findings.push(`[${themeName}] The transcript shows the "Up next" heading below the Subagent chain.`);
   for (const [name, count] of [
     ['Ship #941 part 2 follow-ups', 2],
     ['Write the verify-941-part2 live-check', 1]
   ]) {
-    if (!text.includes(`${name} \u00b7 ${count} tasks`)) {
-      failures.push(`[${themeName}] "Up next" does not show the exact "${name} \u00b7 ${count} tasks" entry (got transcript text containing: ${JSON.stringify(text.slice(text.indexOf('Up next'), text.indexOf('Up next') + 200))}).`);
+    // Gate round 1 fix (issue #941 part 2, item 8, LOW): singular "1 task", plural otherwise.
+    const expectedPhrase = `${name} \u00b7 ${count} task${count === 1 ? '' : 's'}`;
+    if (!text.includes(expectedPhrase)) {
+      failures.push(`[${themeName}] "Up next" does not show the exact "${expectedPhrase}" entry (got transcript text containing: ${JSON.stringify(text.slice(text.indexOf('Up next'), text.indexOf('Up next') + 200))}).`);
     } else {
-      findings.push(`[${themeName}] "Up next" shows the exact "${name} \u00b7 ${count} tasks" entry.`);
+      findings.push(`[${themeName}] "Up next" shows the exact "${expectedPhrase}" entry.`);
     }
   }
 }
@@ -324,9 +310,7 @@ async function main() {
 
     for (const [themeIndex, theme] of THEMES.entries()) {
       await switchTheme(cdp, theme.id, theme.name);
-      await assertPanelGrouping(cdp, findings, failures, theme.name);
-      await assertPanelGreen(cdp, findings, failures, theme.name);
-      await assertPanelNoStrayUsesLine(cdp, findings, failures, theme.name);
+      await assertPanelStructure(cdp, findings, failures, theme.name);
       await assertUpNextList(cdp, findings, failures, theme.name);
 
       const shotName = `part2-${theme.id}.png`;

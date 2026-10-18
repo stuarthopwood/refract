@@ -346,9 +346,9 @@ export interface ContextUsage {
 }
 
 /** Spec 004 FR-007, FR-017 to FR-020: one row in the Subagents panel and the source the
- * Subagents chip's count is computed from. `id` is the subagent's own `name` from the batch
- * `task()` call's `tasks[]` entry, confirmed stable across every `tool_execution_update`
- * (FINDINGS item 36) -- the same value OMP's own `progress[].id` carries. */
+ * Subagents chip's count is computed from. `id` is `${toolCallId}:${nameOrTask}`
+ * (`subagents.rs::handle_task_start`'s own `base_id`), never the bare agent name alone
+ * (gate-fix, issue #941 part 2, item 1, CRITICAL -- this comment previously claimed otherwise). */
 export interface SubagentSummary {
   id: string;
   /** The owning `task()` call's own `toolCallId` (spec 004 remediation, HIGH): a turn with 2+
