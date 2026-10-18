@@ -174,7 +174,7 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
 
-**Placement** (issue #980, decided Skippy, delegated by Stuart 2026-10-18, `ui-architect-v3` roundtable): `position="bottom-center"`, offset up from the window's bottom edge to clear the composer's own resting height. The default `bottom-right` sat directly over the composer's Send button, and both `bottom-right` and `top-right` sit adjacent to the permanent full-height right rail (`IconRail.tsx`) — `bottom-center` has no horizontal relationship to the rail or the session list, and in split-pane mode falls on the pane splitter, clear of both composers' Send buttons.
+**Placement** (issue #980, decided Skippy, delegated by Stuart 2026-10-18, `ui-architect-v3` roundtable): `position="bottom-center"`, centred on the window on purpose — that is what clears the permanent full-height right rail (`IconRail.tsx`) and the Session list header, which both only ever sit at the window's left/right edges, never its centre, regardless of which pane is focused or how a split (spec 005) is divided. The protection this needs is vertical: the toast sits above whichever composer is currently tallest, tracked live (`composerHeightVar.ts`, a `ResizeObserver` per mounted composer, published as a CSS custom property) rather than a fixed guess, since a composer's own textarea grows and split panes mount two independently-sized composers at once. Below 600px window width, Sonner's own mobile breakpoint takes over positioning (`mobileOffset`), carrying the same live height so the toast still clears Send.
 
 ## Empty states
 

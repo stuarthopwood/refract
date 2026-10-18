@@ -10,22 +10,24 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 // none is planned), `"dark"` is the correct literal for every preset, not a placeholder waiting
 // on a `mode` field `ThemeDefinition` deliberately does not have.
 // Issue #980: the default `bottom-right` placed every toast directly over the composer's own
-// Send button (`MessageInput.tsx`'s `absolute right-1.5 top-1/2` icon button) -- a toast could
-// block the one control a user most needs while it is still visible. `bottom-right` (even
-// offset upward) and `top-right` both also sit adjacent to the permanent 40px-wide right rail
-// (`IconRail.tsx`, spec 013 FR-001, full window height) and `top-right` additionally sits under
-// the OS caption-button corner (`TITLE_BAR_OVERLAY_HEIGHT`); either would need both an X-inset
-// (past the rail) and, for `top-right`, a Y-inset (past the title bar) just to clear window
-// chrome, on top of the Send-button problem itself -- and in split-pane mode (spec 005) a
-// `bottom-right` toast still lands on the RIGHT pane's own Send button regardless. `bottom-center`
-// has no horizontal relationship to the rail (far right edge) or the session list (far left
-// edge), and in split mode falls on the pane splitter, clear of both composers -- decided
-// (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 ruling) as the one placement that
-// clears every conflict with a single static offset. The vertical offset below clears the
-// composer's own resting height (outer `py-3` padding + the box's `pt-1` + the textarea's
-// `min-h-16` + the `gap-1` row divider + the bottom picker row's `pb-2` plus its icon-sm
-// buttons, `MessageInput.tsx`) with headroom for a few extra wrapped lines of typed text.
-const TOAST_BOTTOM_OFFSET = '10rem'
+// Send button (`MessageInput.tsx`'s `absolute right-1.5 top-1/2` icon button). `position=
+// "bottom-center"` (decided Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 ruling) keeps
+// every toast centred on the window ON PURPOSE: that is what clears the permanent full-height
+// right rail (`IconRail.tsx`) and the Session list header, which both only ever sit at the
+// window's left/right edges, never its centre -- this holds regardless of which pane is
+// focused or how a split (spec 005) happens to be divided; it is not "the toast falls on the
+// splitter", and this is not a single static offset clearing every conflict -- the protection
+// this story actually needs is VERTICAL. That part is NOT a fixed number: the textarea alone
+// grows from `min-h-16` to `max-h-48` (`MessageInput.tsx`), and split panes (spec 005) mount TWO
+// independent composers that can each be a different height at once. Gate round 1 fix (High,
+// product/visual): `offset`/`mobileOffset` below read a live CSS custom property instead of a
+// guessed static value -- `composerHeightVar.ts` tracks every mounted composer's own measured
+// height (a `ResizeObserver` per `MessageInput` instance) and publishes the MAX across however
+// many are mounted, dropping an instance's entry on unmount. `mobileOffset` carries the SAME
+// value: Sonner's own `@media (max-width:600px)` rule (`node_modules/sonner`'s own CSS) switches
+// `bottom` onto `--mobile-offset-bottom` instead of `--offset-bottom` -- leaving it unset would
+// silently fall back to Sonner's bare 16px floor below 600px width, right back onto Send.
+const TOAST_BOTTOM_OFFSET = 'calc(var(--refract-composer-height, 8rem) + 1.5rem)'
 
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
@@ -33,6 +35,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="dark"
       position="bottom-center"
       offset={{ bottom: TOAST_BOTTOM_OFFSET }}
+      mobileOffset={{ bottom: TOAST_BOTTOM_OFFSET }}
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
