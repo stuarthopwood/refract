@@ -3173,6 +3173,9 @@ follow-ups above are the only remaining changes, none touching code or the live-
 
 ## Phase 54: Change-count colour and reasoning gauge (#925, #924, #919) [US1]
 
+(Renumbered from a provisional Phase 53/T267-T270 once #966/#554 merged first and claimed those
+numbers on `origin/main`.)
+
 - [X] T272 [US1] #925 diff-stat colour tokens: `--diff-added`/`--diff-removed` component tokens
   (`globals.css`, Dark/Obsidian/Dark high contrast), aliasing `--state-working`/`--destructive`
   so the coloured figures match `DiffView.tsx`'s own insert/delete hue; `--color-diff-added`/
