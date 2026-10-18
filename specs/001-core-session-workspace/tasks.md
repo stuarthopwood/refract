@@ -3028,9 +3028,10 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
 - [X] T268 [US1] Implementation. Renderer: `Settings.chatWidth: ChatWidth` (new
   `src/shared/chatWidth.ts`, its own file rather than inline in `model.ts`/`ipc.ts` -- both
   already at their own `check:file-size` baseline with no slack, the same reasoning `ThemeId`
-  already lives in `themes.ts` rather than `model.ts`; `TranscriptDisplaySettings` and
-  `LowMemoryWarning` moved out to `transcriptDisplay.ts`/re-exported from `model.ts` for the same
-  reason, zero behaviour change, every existing import keeps working); `settings.setChatWidth`
+  already lives in `themes.ts` rather than `model.ts`; `TranscriptDisplaySettings` moved out to
+  `transcriptDisplay.ts` (re-exported from `model.ts` for the same reason); `LowMemoryWarning`
+  moved out of `ipc.ts` into `model.ts` for the same reason (re-exported from `ipc.ts`) --
+  zero behaviour change, every existing import keeps working); `settings.setChatWidth`
   IPC method (`shared/ipc.ts`, `tauri-bridge/index.ts`); new `chat-width-store.ts` mirroring
   `theme-store.ts`'s `preview`/`save`/`cancelPreview` shape exactly (no `chatWidth.preview` IPC
   round trip -- unlike theme, there is no main-process effect for a reading-width preview to
@@ -3112,8 +3113,10 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   that file again without a baseline bump -- split onto two lines, and extracted
   `isConversationStarted` (with its full doc comment) into its own sibling
   `isConversationStarted.ts`, re-exported from `Transcript.tsx` for `ChatPane.tsx`'s existing
-  import, netting real slack instead of just moving the problem. M6 `LowMemoryWarning` moved out
-  of `model.ts` (issue #806's earlier fix) into its own `src/shared/lowMemoryWarning.ts`,
+  import, netting real slack instead of just moving the problem. M6 `LowMemoryWarning` --
+  originally defined inline in `ipc.ts`, moved into `model.ts` by this story's own T268 (NOT
+  issue #806 as this file's own earlier text wrongly credited; corrected as a gate round 2 PASS
+  Low finding) -- moved again, out of `model.ts`, into its own `src/shared/lowMemoryWarning.ts`,
   re-exported from `ipc.ts`; `model.ts` now ends with a trailing newline (previously missing).
   L1 `ThemePicker`'s radiogroup carried a bare `aria-label="Theme"` string duplicating its
   informal heading text, and Chat width had no heading of its own at all -- both groups now get
@@ -3133,11 +3136,37 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   narrower the instant "Reading column" is clicked, before that Save. `pnpm typecheck`, `pnpm
   vitest run` (148 tests), `node scripts/check-indent.mjs`, `node scripts/check-theme-contrast.mjs`,
   `node scripts/check-file-size.mjs` (0 cap violations) and `node --check
-  scripts/verify-554-chat-width.mjs` all re-ran clean after these fixes; the live check itself
-  has NOT yet been re-run against a fresh build (no build slot held at the time these fixes
-  landed) -- left for the next build-lane pass.
+  scripts/verify-554-chat-width.mjs` all re-ran clean after these fixes. Live-checked under
+  Main's own build slot (`ci-local.mjs`'s `cargo fmt --check`/`cargo test`/`cargo clippy`/Tauri
+  debug build, chained into `verify-554-chat-width.mjs`): the first run under the slot added two
+  checks Main required that this phase's own script had not yet covered (a Cancel-button revert
+  distinct from Escape, and an explicit focus-stays-in-group assertion) -- the Escape-path focus
+  assertion then genuinely FAILED, a real bug, not a script issue: H1's "already on a radio,
+  leave it" guard keyed on `role="radio"` alone, so a stale, now off-roving-tabindex radio (a DOM
+  element never auto-blurs just because its own `tabIndex` flips to -1) could still hold focus
+  while reading `aria-checked="false"`, which the guard mistook for "already correct". Fixed by
+  keying the guard on the focused element's `aria-checked === 'true'` instead of merely its
+  `role`. Final run at commit `ea674bd`: **31 findings, 0 failures, 0 notExercised**,
+  `report.json`'s `gitHead` matches the pushed head, `dirty: false`; all 7 screenshots viewed.
 
-Opened as draft PR (`feat/554-chat-width`). **Refs #554** for now (not Closes -- gate round 2's
-own fixes above have not yet been confirmed by a fresh live run); switches to **Closes #554**
-once a build lane runs `ci-local` and the live check green, on a build containing T270's fixes,
-on a real scratch instance.
+- [X] T271 [US1] Gate round 2 docs follow-ups (Main's own review of the PASS, Low findings, all
+  fixed, no code/script change so no re-run needed): this phase's own closing paragraph (below)
+  now records the confirmed `ea674bd` live-check run instead of "not yet re-run"; the
+  Clarifications entry and FR-073 both corrected from the stale `sm`/`md`/`lg` WINDOW-breakpoint
+  wording to the actual pane-width container-query ladder (M1); `src/shared/lowMemoryWarning.ts`'s
+  own doc comment, and this phase's own T268/M6 text, corrected -- `LowMemoryWarning` was
+  originally defined inline in `shared/ipc.ts`, moved into `shared/model.ts` by this story's own
+  T268 (NOT a move issue #806 itself performed, as both files previously, wrongly, credited);
+  `docs/design/product-chat.md`'s Chat width bullet corrected ("beside" -> "below": the H2
+  preview tile renders BELOW `ChatWidthPicker`'s radiogroup, not beside it); `docs/design/
+  product-first-run-and-settings.md`'s watermark-switch bullet corrected (it now sits below Chat
+  width, which this story inserted between it and the Theme picker, not directly below the
+  Theme picker as before). `node scripts/check-indent.mjs` reran clean (0 odd-indent lines);
+  `git diff --numstat origin/main -- specs/001-core-session-workspace/tasks.md` still 0
+  deletions.
+
+Opened as draft PR (`feat/554-chat-width`), now **Closes #554**: `ci-local.mjs` all steps PASS
+and `scripts/verify-554-chat-width.mjs` 31/31 PASS (0 failures, 0 notExercised) on a real scratch
+instance at commit `ea674bd`, confirmed via `report.json`'s own `gitHead`; PR #966 and this
+phase's PLAN.md row both record the result. Gate round 2's five reviewers PASS; T271's docs
+follow-ups above are the only remaining changes, none touching code or the live-checked build.
