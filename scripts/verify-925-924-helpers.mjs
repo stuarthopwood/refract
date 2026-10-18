@@ -49,13 +49,24 @@ export function makeScratchRepoWithTrackedFile(dir, label) {
  * endings before comparing, then rejoins with the file's OWN original EOL style (preserving it
  * for every untouched line, so git diff shows exactly the one real removal and three real
  * additions this function intends -- rejoining with a different EOL would make every surviving
- * line look both removed and re-added). */
+ * line look both removed and re-added).
+ *
+ * Gate round 2 fix (live-check H1, caught by a real CDP run measuring `+4 -1` instead of the
+ * documented `+3 -1`): `raw.split(/\r?\n/)` on a file that ends with a newline (every commit
+ * here does) produces a trailing `''` array element standing in for that one trailing newline,
+ * not a real blank line. The old code left that element in place and then appended FOUR more
+ * entries (`'line five'`, `'line six'`, `'line seven'`, a FRESH `''`) after it, turning the
+ * former end-of-file artifact into a genuine new blank line in the middle of the file -- a real,
+ * unintended fourth addition. Drops that one trailing marker first, so the three new lines land
+ * directly after `'line four'` and the fresh `''` appended at the very end is once again only
+ * the file's own trailing newline, never a visible line. */
 export function editTrackedFileForDiff(worktreePath) {
   const filePath = path.join(worktreePath, TRACKED_FILE_NAME);
   const raw = readFileSync(filePath, 'utf8');
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   const lines = raw.split(/\r?\n/);
-  const withoutOne = lines.filter((line) => line !== 'line one');
+  const withoutTrailingMarker = lines.length > 0 && lines[lines.length - 1] === '' ? lines.slice(0, -1) : lines;
+  const withoutOne = withoutTrailingMarker.filter((line) => line !== 'line one');
   const edited = [...withoutOne, 'line five', 'line six', 'line seven', ''];
   writeFileSync(filePath, edited.join(eol));
 }
