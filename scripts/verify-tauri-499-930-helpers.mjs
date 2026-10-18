@@ -115,6 +115,15 @@ export async function dragHandleBy(cdp, handleFinderExpr, deltaX) {
 export async function driveStateFilter(cdp, tabLabel, optionLabel, { requireSingleAuthor = false } = {}) {
   await cdp.click(`Array.from(document.querySelectorAll('button[role="tab"]')).find((el) => el.textContent.trim() === ${JSON.stringify(tabLabel)})`);
   if (optionLabel) {
+    // Gate-fix (round 3, caught live): a caller may run with the Filters section already
+    // closed (an earlier check in the same run can leave it either way) -- the State select
+    // only exists in the DOM while open, so a bare click used to hang on a null target and
+    // crash the whole run with an uncaught timeout, not a graceful checkFail.
+    const panelOpen = await cdp.evaluate(`!!document.getElementById('pull-request-filters-panel')`);
+    if (!panelOpen) {
+      await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))`);
+      await cdp.waitFor(`!!document.getElementById('pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'Filters panel opens for driveStateFilter' }).catch(() => false);
+    }
     await cdp.click(`document.querySelector('[aria-label="State"]')`);
     await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.trim() === ${JSON.stringify(optionLabel)})`);
   }
