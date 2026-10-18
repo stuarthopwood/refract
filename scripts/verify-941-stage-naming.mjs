@@ -1,23 +1,41 @@
 #!/usr/bin/env node
 // Live CDP check for issue #941 part 1 (Stage naming, the one green exception for a finished
 // Subagent/Stage, the Stage's own batch context on expansion, real "Uses:" dependencies, the
-// per-turn Subagent chain row, and the solo-Stage regression guard).
+// per-turn Subagent chain row, and the now-UNIFIED solo-vs-multi-agent Stage header).
 //
 // Reuses the recorded-frame fake `omp` harness (`verify-tauri.mjs`/`verify-tauri-cdp.mjs`),
-// driving a NEW fixture (`scripts/fixtures/omp-frames/stages-941.jsonl`,
+// driving the fixture (`scripts/fixtures/omp-frames/stages-941.jsonl`,
 // `REFRACT_FAKE_OMP_SCENARIO=stages-941`) via a local `launchBuiltExeWithEnv` (the shared
 // `verify-tauri-scratch-helpers.mjs`'s own `launchBuiltExe` has no `pathPrepend`/`extraEnv`
 // params -- every OTHER `verify-9xx-*.mjs` drives a REAL `omp`, never this fake-frame harness),
 // the same approach `verify-563-subagent-stage.mjs` already uses. That tape scripts ONE user
-// prompt, ONE agent turn, FOUR serial `task()` batches (Stages) -- deliberately never four
-// separate prompt turns: `groupSubagentStages.ts` runs once PER TURN (`Transcript.tsx`'s own
-// `splitIntoTurns`, keyed on `kind: 'user'` items), so Stage 2's "Uses: G923Code (Stage 1)"
-// dependency can only resolve against an earlier Stage inside the SAME turn's own `stages` array.
+// prompt, ONE agent turn, SEVEN serial `task()` batches (Stages) plus one plain, non-Stage
+// `read` tool call -- deliberately never several separate prompt turns: `groupSubagentStages.ts`
+// runs once PER TURN (`Transcript.tsx`'s own `splitIntoTurns`, keyed on `kind: 'user'` items), so
+// a later Stage's own "Uses:" dependency can only resolve against an earlier Stage inside the
+// SAME turn's own `stages` array.
 //
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task -- `node --check` is the
-// only command that has actually been run against this script. Every DOM/class-name selector it
-// (and its helpers) use was grep-verified against the real source it claims to match; see
-// `verify-941-stage-naming-helpers.mjs`'s own header comment for the selector strategy.
+// Gate round 1 rewrite: reworked against the NEW DOM contract (every Stage, solo or not, gets
+// the same unified header) and a seven-Stage fixture covering every item in the gate round 1
+// fix list (bare-label Stage, over-60-char truncation, a mixed finished+failed Stage, a solo
+// Stage with a real dependency, a context-brief overflow/toggle, a same-Stage self-reference
+// drop, a cross-Stage repeated-name "latest occurrence wins" resolution, and a plain non-Stage
+// tool row for the "tool rows stay neutral" regression guard). Item 13 (CRITICAL, previously a
+// missing-at-runtime import of `resolveCssVarColor` from the WRONG module in the helpers file)
+// is proven fixed by loading both this script and its helpers with a real `import()`, not just
+// `node --check`'s syntax-only pass:
+//
+//   $ node -e "import('./scripts/verify-941-stage-naming-helpers.mjs').then(() => console.log('helpers OK'))"
+//   helpers OK
+//   $ node -e "import('./scripts/verify-941-stage-naming.mjs')"
+//   (module loads; execution then proceeds into main(), which requires a build slot to finish --
+//   see the main script's own report for the actual run)
+//
+// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
+// plus the real `import()` load-check above are the only commands that have actually been run
+// against these two files. Every DOM/class-name selector they use was grep-verified against the
+// real source it claims to match; see `verify-941-stage-naming-helpers.mjs`'s own header comment
+// for the selector strategy.
 //
 // PR2 scope (the Subagent panel's own Stage grouping, and the "Up next" todo-phase list) is NOT
 // built yet and is not exercised here (recorded in `report.json`'s own `notExercised`).
@@ -44,20 +62,22 @@ import {
   assertGreenFinished,
   assertDetailsOnExpand,
   assertDependencies,
+  assertContextBriefOverflow,
   assertChainRow,
   STAGE1_TITLE,
   STAGE2_TITLE,
   STAGE3_TITLE,
-  STAGE4_SOLO_TITLE
+  STAGE4_TITLE,
+  STAGE5_TITLE,
+  STAGE6_SOLO_TITLE,
+  STAGE7_TITLE,
+  PLAIN_TOOL_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
-const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR =
-  process.env.REFRACT_941_SHOTS_DIR || path.join(tmpdir(), 'refract-941-stage-naming-shots', new Date().toISOString().replace(/[:.]/g, '-'));
-const PROMPT_MESSAGE = 'Run the #923 quality gate, then the #559/#560 fixes, then the two R8 suites, then the final solo check.';
+const PROMPT_MESSAGE =
+  'Run the #923 quality gate, then the #559/#560 fixes, then read the README, then the zeta/omega probes, the label check, the Story559 polish and fail probe, the final solo check, and the long-context investigation.';
 
 const THEMES = [
   { id: 'dark', name: 'Dark' },
@@ -79,18 +99,36 @@ async function main() {
   let exeHash = null;
   let gitHeadSha = null;
   let dirty = 'unknown';
+  // Gate round 1 fix (item 17): `SHOTS_DIR` is established and created, `requireSharedCargoTarget`
+  // is called, and `gitHead`/`dirty` are read all at the very TOP of this try block, before
+  // anything else that could throw (the scratch-dir creation below, the build itself, the
+  // launch) -- so if ANY of that later throws, the `catch` below still has a real, EXISTING
+  // `SHOTS_DIR` plus real `gitHead`/`dirty` values to write `report.json` into, instead of an
+  // uncaught module-scope throw leaving no report at all (the bug this item names: the previous
+  // version called `requireSharedCargoTarget` at MODULE scope, entirely outside any try/catch,
+  // and before `SHOTS_DIR` even existed on disk). `SHOTS_DIR` is established and `mkdirSync`'d
+  // FIRST, ahead of `requireSharedCargoTarget` itself (a deliberate, more robust reordering of
+  // the three steps named in item 17: a throw from `requireSharedCargoTarget` must land on a
+  // `SHOTS_DIR` that already exists, or the `catch`'s own `writeFileSync` would itself fail with
+  // ENOENT and still leave no report at all -- the exact failure mode this fix exists to close).
+  // `let`, not `const`, and declared OUTSIDE the try body itself: both are read again in `catch`.
+  let SHOTS_DIR = path.join(tmpdir(), 'refract-941-stage-naming-shots', new Date().toISOString().replace(/[:.]/g, '-'));
+  let BUILD_OUTPUT_DIR = null;
   try {
+    SHOTS_DIR = process.env.REFRACT_941_SHOTS_DIR || SHOTS_DIR;
+    mkdirSync(SHOTS_DIR, { recursive: true });
+    BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+    gitHeadSha = gitHead(REPO_ROOT);
+    const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
+    const dirtyLines = gitStatusResult.status === 0 ? gitStatusResult.stdout.split('\n').filter(Boolean) : null;
+    dirty = dirtyLines === null ? 'unknown' : dirtyLines.length ? dirtyLines : false;
+
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-941-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-941-data-'));
     importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-941-import-'));
     repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-941-repo-')), 'verify-941-stage-naming');
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-941-exe-'));
     launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-941-launcher-'));
-    mkdirSync(SHOTS_DIR, { recursive: true });
-    gitHeadSha = gitHead(REPO_ROOT);
-    const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
-    const dirtyLines = gitStatusResult.status === 0 ? gitStatusResult.stdout.split('\n').filter(Boolean) : null;
-    dirty = dirtyLines === null ? 'unknown' : dirtyLines.length ? dirtyLines : false;
     const port = await getFreePort();
 
     console.log(`verify-941: git HEAD ${gitHeadSha}${dirtyLines && dirtyLines.length ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
@@ -160,9 +198,9 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // Wait for all four Stage rows (and the solo row) to settle: every one of their own
-    // `title`-bearing label spans present in the transcript.
-    for (const titleText of [STAGE1_TITLE, STAGE2_TITLE, STAGE3_TITLE, STAGE4_SOLO_TITLE]) {
+    // Wait for all seven Stage rows, the solo Stage, and the plain non-Stage tool row to settle:
+    // every one of their own `title`-bearing label spans present in the transcript.
+    for (const titleText of [STAGE1_TITLE, STAGE2_TITLE, STAGE3_TITLE, STAGE4_TITLE, STAGE5_TITLE, STAGE6_SOLO_TITLE, STAGE7_TITLE, PLAIN_TOOL_TITLE]) {
       await cdp
         .waitFor(`!!${titleSelector(titleText)}`, { timeoutMs: 30_000, label: `"${titleText}" row rendered` })
         .catch((err) => {
@@ -170,13 +208,15 @@ async function main() {
           throw err;
         });
     }
-    // All four Stages finished (no running/failed word anywhere left in the transcript).
+    // Every Stage/tool row settled (no running word anywhere left in the transcript). Stage 5's
+    // own FailAgent settles to "failed", not "running", so this still holds with a genuine
+    // failure present.
     await cdp.waitFor(
-      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running') && !t.textContent.includes('Failed'); })()`,
-      { timeoutMs: 30_000, label: 'All four Stages settled (finished)' }
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
+      { timeoutMs: 30_000, label: 'All seven Stages and the plain tool row settled' }
     );
     await cdp.screenshot(path.join(SHOTS_DIR, '00-all-stages-settled.png'));
-    findings.push('All four Stages rendered and settled to finished.');
+    findings.push('All seven Stages, the solo Stage, and the plain non-Stage tool row rendered and settled.');
 
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
@@ -184,6 +224,7 @@ async function main() {
       await assertGreenFinished(cdp, findings, failures, theme.name);
       await assertDetailsOnExpand(cdp, findings, failures, theme.name);
       await assertDependencies(cdp, findings, failures, theme.name);
+      await assertContextBriefOverflow(cdp, findings, failures, theme.name);
       await assertChainRow(cdp, findings, failures, theme.name);
       const shotName = `stages-941-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
@@ -192,9 +233,6 @@ async function main() {
 
     notExercised.push(
       'PR2 scope (Subagent panel Stage grouping, Up next) is not built yet and is not exercised here.'
-    );
-    notExercised.push(
-      'No plain (non-task) tool row exists anywhere in this fixture\'s own transcript, so the regression guard "a tool row elsewhere in the same transcript stays neutral, never green" (toolStatus.tsx, untouched by issue #941) could not be exercised by THIS tape -- it is covered structurally instead: toolStatus.tsx is a wholly separate module from subagentStatus.tsx (grep-verified, no shared GLYPH_KEY_BY_STATUS/success-done mapping), so there is no code path through which a tool row could pick up the green token this story added.'
     );
 
     const report = {
