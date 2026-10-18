@@ -11,8 +11,6 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
-  AttachmentFileRead,
-  AttachmentImageFile,
   BranchEntry,
   ChatAnswer,
   DiffStat,
@@ -33,6 +31,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
+import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'

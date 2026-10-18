@@ -5,7 +5,7 @@
 // to load first; any entry point loading `attachments.ts` first (a future unit test, say) would
 // hit a load-time ReferenceError. This file only imports FROM `attachments.ts` and `@/state`,
 // never the other way, so it adds no cycle.
-import { buildImageAttachment, formatByteSize } from './attachments'
+import { buildImageAttachment, formatByteSize, looksLikeImagePathToken } from './attachments'
 import { buildPastedFileAttachment, MAX_INLINE_FILE_BYTES } from './anyFileAttachments'
 import { notify, useDraftStore } from '@/state'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
@@ -37,7 +37,7 @@ export async function attachImageFile(sessionId: string, file: File): Promise<vo
  * `buildPastedFileAttachment` (renderer-only, no OS path: Tauri's `File` API exposes none for a
  * pasted file, so a binary/over-cap one has no path to fall back to and is a clear, named error
  * instead of a silent drop). */
-export async function attachPastedFile(sessionId: string, file: File): Promise<void> {
+async function attachPastedFile(sessionId: string, file: File): Promise<void> {
   const result = await buildPastedFileAttachment(file)
   if (!result.ok) {
     notify({
@@ -51,4 +51,15 @@ export async function attachPastedFile(sessionId: string, file: File): Promise<v
   }
   useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
   useDraftStore.getState().announceAttachment(sessionId, `File attached, ${formatByteSize(result.attachment.byteLength)}.`)
+}
+
+/** #926: attaches every non-image FILE from a clipboard paste (Explorer "Copy" a file, then
+ * Ctrl+V) in order -- an image-shaped name still goes through `attachImageFile` unchanged
+ * (#926's own "images still go to omp as images" decision); everything else goes through
+ * `attachPastedFile` above, the only possible outcome for a pasted file with no OS path. */
+export async function attachPastedFiles(sessionId: string, files: readonly File[]): Promise<void> {
+  for (const file of files) {
+    if (looksLikeImagePathToken(file.name)) await attachImageFile(sessionId, file)
+    else await attachPastedFile(sessionId, file)
+  }
 }

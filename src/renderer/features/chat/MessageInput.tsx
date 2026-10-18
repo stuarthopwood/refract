@@ -27,7 +27,7 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { attachImageFile, attachPastedFile } from './attachImage'
+import { attachImageFile, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
   buildImagePathAttachment,
@@ -39,7 +39,6 @@ import {
   formatByteSize,
   isImagePathOnlyText,
   isLargePaste,
-  looksLikeImagePathToken,
   MAX_PATH_ATTACHMENTS_PER_MESSAGE,
   pruneDanglingChips,
   substituteChips,
@@ -994,19 +993,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
 
     // #926: a non-image FILE paste (Explorer "Copy" a file, then Ctrl+V) -- `data.files` carries
-    // real `File` objects here (the clipboard's CF_HDROP representation), never text, so this
-    // never races the TEXT-based image-path detection below (which reads
-    // `data.getData('text/plain')`, a different clipboard format a file copy never populates).
-    // Tauri's `File` API exposes no OS path for a pasted file (unlike a native drag-drop or the
-    // Attach dialog) -- only an inline attachment is possible here; a binary or over-cap pasted
-    // file has no path to fall back to, so it is a clear, named error instead.
+    // real `File` objects here, never text, so this never races the image-path detection below.
+    // `attachPastedFiles` handles a file with no OS path (Tauri's `File` API exposes none).
     const pastedFiles = Array.from(data.files ?? [])
     if (pastedFiles.length > 0) {
       event.preventDefault()
-      for (const file of pastedFiles) {
-        if (looksLikeImagePathToken(file.name)) await attachImageFile(sessionId, file)
-        else await attachPastedFile(sessionId, file)
-      }
+      await attachPastedFiles(sessionId, pastedFiles)
       return
     }
 

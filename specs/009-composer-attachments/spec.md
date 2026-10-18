@@ -27,6 +27,15 @@
 - Q: Wait for #431 (saving pasted images to disk, path-to-agent) before building #432? -> A: No. A dropped/path-attached image goes through the exact same base64-in-`images`-field path (FR-006) a pasted clipboard image already uses; disk-save stays #431's own separate, later concern.
 - Q: A cloud-only OneDrive "Files On-Demand" placeholder path? -> A: Fails the same as any other unreadable file (the existing "could not be read" notice); no special wait/retry/ask flow in v1 -- a disclosed limitation, not a crash.
 
+### Session 2026-10-18 (#926: Stuart's own grill decisions from the issue, plus Decided (Skippy, delegated by Stuart 2026-10-18) for the points the issue left as `[INFERENCE]`, while Stuart is away -- open to his override)
+
+- Q: The issue's own `[INFERENCE]` asks whether the sent message's own bubble shows the raw inlined text/path, or a chip. -> A: A chip, never the raw text. `transcript.rs`'s own `extract_file_attachments` strips the `[[refract-attachments]]` section Refract itself appended back out of the plain message text at transcript-build time, into `TranscriptItem.fileAttachments`; a 256 KB inlined file would otherwise flood the transcript the same way FR-009 already avoids for images.
+- Q: A non-image file pasted from the clipboard (Explorer "Copy" a file, then Ctrl+V) has no OS path Tauri exposes -- inline only, or refuse it entirely? -> A: Inline only, same cap and binary check as any other inlined file; a binary or over-256-KB pasted file has no path to fall back to, so it shows a clear, named error directing the developer to the Attach button or drag-and-drop instead (both resolve a real path).
+- Q: Does this feature generalise FR-022/FR-023's existing image-path-looking-text detection to arbitrary file extensions? -> A: No. Typed or pasted text that merely looks like a file path stays image-only, exactly as #514 already shipped it; generalising it would misfire on ordinary prose ending in a plausible-looking extension, with no quote character to anchor on the way an image path already has.
+- Q: Does a dropped/picked folder get any inline treatment? -> A: No, a folder always attaches as a path-only entry (never inlined, no meaningful byte count) -- the issue's own `[INFERENCE]` that a folder can't be inlined.
+- Q: Does this feature fix #744 (attachment-only send is currently blocked)? -> A: No. Files inherit the exact same pre-existing limit images already have; #744 stays open and is only made more visible by files also being attachable now, per the issue's own "Technical notes and risks".
+- Q: What exactly does the model receive for an inlined file, so Stuart can judge the format? -> A: A fixed, non-instructional lead-in line (`Attached file "<name>" (<n> bytes, inlined below):`), then a fenced code block whose info string is the file name and whose fence is one backtick longer than the longest backtick run already inside the file's own content (FR-040, #558's own advisor-note quoting technique) -- never live Markdown, never parsed or acted on by Refract itself. A path-only file/folder instead gets one line: `Attached file "<name>" (<n> bytes, sent as path, read with your own tools): <absolute path>` (or `Attached folder "<name>" (sent as path, read with your own tools): <absolute path>`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Attach a pasted image to the next message (Priority: P1)
@@ -134,6 +143,50 @@ and a thumbnail appears in the attachment strip after the drop.
    the developer drops a file on its pane, **Then** the drop is refused with a visible notice, never
    silently swallowed.
 
+### User Story 5 - Attach any file type, not only images (#926, Priority: P2)
+
+A developer attaches a non-image file (a log, a config, a source file, a folder) the same way
+they already attach an image: the Attach button, drag-and-drop, or a clipboard paste. A text file
+up to 256 KB is inlined verbatim into the message as a fenced block labelled with its name, so the
+agent reads it directly with no extra tool call; anything larger, binary, or a folder is instead
+added to the message as its own absolute path, for the agent to read with its own tools. Either way
+the composer shows a chip (icon, name, size, "sent as path" when it will not be inlined), never a
+256 KB wall of text in the box, and the sent message's own bubble shows the same chip, never the
+raw inlined text or path line.
+
+**Why this priority**: covers "attach any file type," the only gap Stuart's own v0.3.0 feedback
+named; strictly additive on top of Story 1/3/4's already-shipped attach pipeline (same strip,
+remove control, per-message cap) -- no new wire capability, since a file/folder attachment rides
+the existing plain `message` string, not a new field.
+
+**Independent Test**: Can be fully tested by attaching a small text file via the Attach button,
+confirming its chip says "attached as text," sending the message, and confirming (from the agent's
+own reply or a transcript entry) it received the file's content inline; then attaching a file over
+256 KB or a folder and confirming its chip instead says "sent as path," with the agent's own reply
+showing it read the path with its own tools.
+
+**Acceptance Scenarios**:
+
+1. **Given** an empty message box, **When** the developer attaches a text file of 10 KB via the
+   Attach button, **Then** a chip appears reading it was attached as text, and sending the message
+   inlines its full content as a fenced block labelled with the file name.
+2. **Given** an empty message box, **When** the developer attaches a text file over 256 KB, **Then**
+   its chip says "sent as path," and sending the message adds its own absolute path as a line
+   instead of any of its content.
+3. **Given** an empty message box, **When** the developer attaches a binary file (a NUL byte in its
+   first 8 KB, or not valid UTF-8), **Then** it attaches the same "sent as path" way as an
+   over-256-KB file, regardless of its own size.
+4. **Given** an empty message box, **When** the developer attaches a folder via drag-and-drop,
+   **Then** it attaches as a path-only chip with no byte size shown.
+5. **Given** a pending file attachment, **When** the developer sends the message, **Then** the
+   sent transcript bubble shows the same chip the composer showed, never the raw inlined text or
+   the raw path line the agent actually received.
+6. **Given** a non-image file copied in Explorer and pasted into the message box, **When** it is
+   under 256 KB and valid UTF-8 text, **Then** it attaches inline exactly as an Attach-button file
+   would; **When** it is binary or over 256 KB, **Then** a named error explains it cannot be sent
+   as a path either (no path is ever available from a clipboard paste) and directs the developer
+   to the Attach button or drag-and-drop instead.
+
 ---
 
 ### Edge Cases
@@ -148,6 +201,9 @@ and a thumbnail appears in the attachment strip after the drop.
 - An absolute path outside the Session's own worktree (the common case: a screenshot in Downloads or Pictures) is read and attached the same as one inside it -- this is a user-initiated choice of their own file, not a worktree-contained operation (FR-021).
 - Several quoted/one-per-line image paths pasted or dropped at once each attach independently, up to the per-message cap (FR-026); anything past the cap is left as text (paste) or skipped (drop) with a quiet notice, never a hard error.
 - A split pane: a drop lands only on the pane the pointer is actually over, never the other (unfocused) pane's Session, even if that one is focused.
+- A file that grows past 256 KB between the Attach picker's own read and the point OMP would otherwise have inlined it is sent as a path instead, never truncated and inlined as if it were the whole file (#926).
+- Attachment-only send (no typed text, only pending attachments) stays blocked by the pre-existing #744 for a non-image file exactly as it already was for images; this spec does not fix that bug.
+- A folder dropped or picked among several files attaches as its own path-only chip alongside whatever files were attached in the same batch, up to the shared per-message cap (FR-039).
 
 ## Requirements *(mandatory)*
 
@@ -183,6 +239,16 @@ and a thumbnail appears in the attachment strip after the drop.
 - **FR-028** (#432): A drop onto a Session that is not currently accepting input (stopped, and not in its own first `not-started` state) MUST be refused with a visible notice, never silently swallowed.
 - **FR-029** (#514, #432): Nothing from either path -- the resolved file path, parent folder names, or any other filesystem metadata -- is ever exposed to the renderer beyond the validated image bytes themselves (mirrors FR-006's existing "never a file path" rule for the wire-level `images` field, extended here to the IPC response shape too).
 - **FR-030** (#432): A dropped file that is not one of the four supported image types (PNG, JPEG, GIF, WebP) is rejected the same way an unsupported pasted image would be; this spec adds no new attachment kind for a dropped non-image file.
+- **FR-031** (#926): The Attach button, drag-and-drop, and a clipboard paste MUST accept any file type, not only images; a file whose name looks like a supported image still attaches as an image through Story 1/3/4's existing pipeline, unchanged by this requirement.
+- **FR-032** (#926): A non-image path resolved via the Attach button or drag-and-drop MUST be classified by the main process, never the renderer: a text file up to 256 KB MUST be inlined verbatim into the outgoing message as a fenced block labelled with the file's name; anything larger, binary, or a folder MUST instead be added to the message as its own resolved absolute path.
+- **FR-033** (#926): "Binary" MUST mean a NUL byte anywhere in the first 8 KB of the file, or the file not being valid UTF-8 text once read; the 256 KB inline cap and the binary check are both fixed values, never a Setting.
+- **FR-034** (#926): Each pending non-image file or folder attachment MUST render as its own chip in the existing shared attachment strip: a file-type icon, its name, its byte size (omitted for a folder), and "sent as path" when it will not be inlined; its Remove control MUST be labelled and keyboard-reachable, matching the existing image/text-chip pattern (FR-016).
+- **FR-035** (#926): The sent message's own transcript bubble MUST show the same chips FR-034 describes, never the raw inlined text or the raw path line the agent actually received; Refract MUST parse its own appended attachment section back out of the plain message text at transcript-build time to build those chips, restart-safe (no separate storage).
+- **FR-036** (#926): A folder resolved via the Attach picker or drag-and-drop MUST always attach as a path-only entry; it is never inlined and carries no meaningful byte count.
+- **FR-037** (#926): A non-image FILE pasted directly from the clipboard (Explorer "Copy" a file, then paste) MUST attach inline-only, since Tauri's `File` API exposes no OS path for a pasted file; a binary or over-256-KB pasted file MUST show a clear, named error directing the developer to the Attach button or drag-and-drop instead, never a silent drop.
+- **FR-038** (#926): FR-022/FR-023's existing image-path-looking-text detection MUST NOT be generalised to arbitrary file extensions by this feature; typed or pasted text that merely looks like a non-image file path is left as plain text exactly as before this feature existed.
+- **FR-039** (#926): The existing per-message attachment cap (FR-026, 10) MUST be shared across pending images and pending non-image files together, not doubled by this feature.
+- **FR-040** (#926): Each inlined file's fenced block MUST be preceded by a fixed, non-instructional lead-in line naming the file and identifying its content as untrusted data, and fenced with a run of backticks one longer than the longest run already present inside the file's own content (mirrors `Markdown.tsx`'s existing advisor-note quoting, #558), so the file's own content can never prematurely close the fence; Refract MUST NOT parse or act on an inlined file's contents itself.
 
 ### Key Entities
 
@@ -190,6 +256,8 @@ and a thumbnail appears in the attachment strip after the drop.
 - **Pending text chip**: a clipboard-pasted block of text over the chip threshold, not yet sent; held in the renderer with its full original text, a short label, and the position in the draft its label currently occupies.
 - **Attachment strip**: the shared row above the message box holding every pending image and text chip for the draft currently being composed.
 - **Path-based/dropped image attachment** (#514, #432): the exact same Pending image attachment shape above, built by the main-process reader (FR-020) instead of a browser `File` blob from the clipboard -- never a separate entity or a separate strip/remove/preview UI.
+- **Pending file attachment** (#926): a non-image file or folder attached via the Attach button, drag-and-drop, or a clipboard paste, held in the renderer until the message carrying it is sent; carries its name, its byte size (0 for a folder), whether it will be inlined or sent as path, and (when inline) its decoded text -- rendered in the same shared attachment strip above the message box, with the same remove control, never a second strip or preview UI.
+- **File attachment marker** (#926): the `[[refract-attachments]]` section Refract itself appends to the plain outgoing message text, carrying one block per pending file/folder attachment; parsed back out at transcript-build time into the chips the sent bubble shows, never a separate OMP-side concept or field.
 
 ## Success Criteria *(mandatory)*
 
@@ -202,6 +270,8 @@ and a thumbnail appears in the attachment strip after the drop.
 - **SC-005**: A non-vision model's extra admission delay for a vision-description call (up to 20 seconds) never produces a visible error or a stalled appearance in the composer.
 - **SC-006**: Removing one pending attachment never alters the draft's other text or any other pending attachment.
 - **SC-007** (#514, #432): Every image attached via a resolvable path (paste or drop; typing: #727) reaches the agent as a real image attachment on that message, 100% of the time, the same measurement SC-001 already uses; a path/file that fails validation is left as text (paste) or skipped (drop) with a quiet notice, never sent as a broken/empty attachment.
+- **SC-008** (#926): Every attached non-image file reaches the agent as either its full inlined text (≤256 KB) or its own resolvable absolute path, 100% of the time, measured by the outgoing message's own `[[refract-attachments]]` section always matching the chip the composer showed before send.
+- **SC-009** (#926): The sent message's own transcript bubble never shows an inlined file's raw text or a path-only attachment's raw path line; only its chip, 100% of the time, regardless of the file's own size.
 
 ## Assumptions
 
@@ -209,6 +279,8 @@ and a thumbnail appears in the attachment strip after the drop.
 - A single browser paste event yields at most one image (standard Chromium clipboard-event behaviour, research.md Decision 7); pasting several images one at a time accumulates several independent pending attachments.
 - The 800-character chip threshold is this spec's own default, not a number Stuart specified; research.md Decision 8 records the reasoning, open to revision once seen in use, the same pattern spec 008 used for its avatar size cap.
 - This spec's `docs/DESIGN.md` rule for attachments is written by the implementation task that builds the feature, not by this spec-writing pass, matching how every other spec 001 feature's own doc-update task works.
+- The five #926 decisions recorded in Clarifications above (Session 2026-10-18) were delegated to Skippy while Stuart is away, per the away-mode protocol; open to his override on return.
+- Attachment-only send (no typed text, only pending attachments) remains blocked by the pre-existing #744 for files exactly as it already was for images; #926 does not fix that bug, it only makes it apply to non-image files too.
 - Depends on spec 001's message composer (`MessageInput.tsx`, the existing queue-chip mechanics FR-010 to FR-012, and the existing `chat.send`/`chat.sendNow` IPC) and its existing dialog and accessibility conventions; this spec extends those, it does not replace them.
 - `specs/001-core-session-workspace/spec.md`'s own Assumptions (line 302) name "image attachments" as explicitly out of that spec's scope and deferred to "their own specs" — this is that spec.
 - Windows 11 is the only supported platform, consistent with the constitution.

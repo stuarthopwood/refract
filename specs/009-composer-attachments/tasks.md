@@ -779,3 +779,55 @@ see the PR body's own Gates section for this round's exact results. No live app 
 attempted this round (code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain
 not completed; a manual pass by Stuart in a normal Session is still requested. Still open pending
 that manual pass.
+
+---
+
+## Phase 8: User Story 5 - Attach any file type, not only images (#926, Priority: P2)
+
+**Goal**: the Attach button, drag-and-drop, and a clipboard paste accept any file, not only
+images; a text file up to 256 KB inlines verbatim, everything else (binary, over-cap, or a folder)
+attaches as its own absolute path, reusing Story 1/3/4's shared attachment strip/remove/cap
+machinery end to end rather than a second pipeline.
+
+- [X] T024 [P] (#926) Write `src-tauri/src/ipc/file_attachments.rs`: `attachments.readFile`
+  classifies a resolved non-image path (inline text up to 256 KB, or path for binary/oversized/a
+  folder -- grill decisions 2/3) in one bounded open-stat-read (never a separate stat then read,
+  mirrors `attachments.rs`'s own `read_image_file` guard); `attachments.pickFiles` is the Attach
+  button's native multi-file dialog, no extension filter. Reuses `attachments.rs`'s own
+  `resolve_attachment_path` (made `pub(super)`) rather than a second containment/symlink walk.
+- [X] T025 (#926) Write `src-tauri/src/omp/file_attachment_markers.rs`: parses the
+  `[[refract-attachments]]` section Refract itself appends to the plain message text back into
+  `FileAttachmentRef`s (research.md Decisions 17-18); wired into `transcript.rs`'s own shared
+  `build_user_item`, called from both `apply_message_snapshot` and `items_from_history` so a live
+  turn and a reopened history build the same `TranscriptItem.fileAttachments` the same way.
+- [X] T026 [P] [US5] Write `src/renderer/features/chat/anyFileAttachments.ts`: `buildAnyPathAttachment`
+  routes a resolved path through the existing image reader (by extension, FR-031) or the new file
+  reader; `buildFileAttachmentText`/`appendFileAttachmentText` build the outgoing marker text
+  (FR-040's lead-in line and fence-length rule); `buildPastedFileAttachment` handles a non-image
+  clipboard `File` paste, inline-only (FR-037, no OS path available).
+- [X] T027 [US5] Wire `ComposerPickers.tsx`'s `AttachButton` to the native `attachments.pickFiles`
+  multi-file dialog (any type, replacing the old image-only `<input type="file">`); generalise
+  `ChatPane.tsx`'s drop wording and `attachDroppedPaths.ts`'s shared attach-loop (now
+  images-and-files, FR-039's shared cap) so `useTauriFileDrop.ts`'s existing drop path needs no
+  changes of its own.
+- [X] T028 [US5] Wire `MessageInput.tsx`'s paste handler (`attachPastedFiles`, `attachImage.ts`)
+  and send path: every pending file/folder attachment is appended to the OUTGOING message only
+  (`appendFileAttachmentText`), never the draft text itself, so `parseSlashCommand`/the `/new`
+  check keep reading just the developer's own typed text.
+- [X] T029 [US5] Write `AttachmentStrip.tsx`'s file/folder chips (icon, name, size, "sent as path")
+  and `UserMessageRow.tsx`'s sent-bubble chips (read from `TranscriptItem.fileAttachments`, FR-035);
+  share `removeAttachment.ts`'s own remove-with-focus-restoration core (PR #723's A11y2/A11y3
+  fixes) with the existing image chip rather than a second copy.
+- [ ] T030 Live click-path verification (`scripts/verify-926-attach-any-file.mjs`): attach a small
+  text file, a file over 256 KB, a binary file, an image, and a folder via the Attach picker and
+  via drag-and-drop; confirm each chip's wording, the sent bubble's own chips (never raw text or a
+  raw path line), keyboard Remove, and the transcript's `fileAttachments` on the sent item, in
+  Dark, Obsidian, and Dark high contrast. NOT done yet -- this lane built with no cargo available
+  (no-build prep lane); blocked on the build slot the same way T023 above was blocked on a live
+  pass. T024-T029's own `[X]` marks cover the code being written and non-build-gate-clean, not
+  this live pass.
+
+**Checkpoint**: `pnpm typecheck` (both tsconfigs), existing `vitest` (148/148, no new tests),
+`check:indent`, `check:file-size`, `check:parity --gate`, `check:drag-regions` all green on this
+head (see the PR body's own Gates section for the exact run). `check:theme-contrast` also green.
+`check:ui-text`, a cargo build, and T030's live check are still pending the lane's build slot.
