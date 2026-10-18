@@ -3243,6 +3243,64 @@ product regression. Final run at commit `ee64bf0`: **31 findings, 0 failures, 0 
 unchanged through the copy; all 11 screenshots viewed. `git diff --numstat origin/main --
 specs/001-core-session-workspace/tasks.md` confirmed 0 deletions before this phase was appended.
 
+## Phase 55: Change-count colour and reasoning gauge (#925, #924, #919) [US1]
+
+(Renumbered from a provisional Phase 53/T267-T270, then Phase 54/T272-T275, once #966/#554 and
+#954/#947 each merged first and claimed those numbers on `origin/main` in turn.)
+
+- [X] T275 [US1] #925 diff-stat colour tokens: `--diff-added`/`--diff-removed` component tokens
+  (`globals.css`, Dark/Obsidian/Dark high contrast), aliasing `--state-working`/`--destructive`
+  so the coloured figures match `DiffView.tsx`'s own insert/delete hue; `--color-diff-added`/
+  `--color-diff-removed` Tailwind mapping generating `text-diff-added`/`text-diff-removed`; 20
+  new `scripts/theme-contrast-pairs.mjs` PAIRS entries at the 4.5:1 text floor (the composer
+  status line's `--background`/`--composer-background`, the Session details card's `--popover`,
+  and the Changes tab's per-file header `--muted`), all PASS (`node
+  scripts/check-theme-contrast.mjs`: 457/457 pairs).
+- [X] T276 [US1] #925 shared `DiffStatCounts`/`DiffStatLine` components (`sessionDisplay.tsx`,
+  replacing the old plain-string `formatDiffStat`): a zero count (`+0`/`-0`) stays muted, a
+  positive count takes the new tokens, the leading +/- glyph stays the non-colour cue. Wired
+  into the composer status line's `ChangesChip` (`ReadoutChips.tsx`), the Session details card's
+  diff line, and the Pull requests Changes tab's aggregate line (`ChangesTab.tsx`). #919 (folded
+  into #925's own scope): `DiffViewFromPatch` (`DiffView.tsx`) gains required `additions`/
+  `deletions` props, rendering the same coloured stat next to its Copy button -- the per-file
+  `+/-` header `ChangesTab.tsx`'s own `patch === null` fallback already showed in plain text now
+  colours the same way.
+- [X] T277 [US1] #924 `ReasoningGaugeIcon` (`src/renderer/components/ReasoningGaugeIcon.tsx`,
+  new): a custom inline SVG reusing lucide's own `gauge` arc geometry, needle drawn at one of 7
+  even steps (`off` far left, `medium` upright, `max` far right); `inherit` and an unreported
+  level both draw centred. Replaces the fixed `GaugeIcon` in the composer's `ReasoningPicker`
+  (`ComposerPickers.tsx`, `size-3`) and the Session details card's thinking-level row
+  (`SessionDetailsCard.tsx`, `size-3.5`); decorative (`aria-hidden`), no colour change, the
+  status line's context-usage gauge untouched.
+- [X] T278 [US1] `scripts/verify-925-924-polish.mjs` (new): measures computed colour and
+  contrast ratio of `+N`/`-N`/zero on each of the four #925 surfaces in every theme, and the
+  gauge needle's rendered angle at every reasoning level in the composer picker, changing the
+  level through the real UI, then cross-checks the Session details card's own identical icon
+  against the picker once (at whatever level the level loop ends on), not independently at
+  every level.
+
+Gate round 1 found a real bug in this live check itself (not the product): the scratch
+worktree's own tracked file checks out CRLF on Windows (`core.autocrlf=true`), so the edit's own
+line-ending-naive comparison silently removed nothing -- every prior "PASS" on the composer
+chip/Session details card's non-zero case was really only ever `+4 -0`, never genuinely
+exercising the red `text-diff-removed` branch at all despite reading as a pass. Fixed (CRLF-safe
+split, `requireBothPositive` now a hard failure if either side reads zero on these two
+script-controlled surfaces), not yet re-confirmed live. The Reasoning gauge needle's own apparent
+failures in the SAME run were a second, separate script bug (the angle comparison did not
+account for the formula's own un-normalised >360deg values) -- fixed and later confirmed live, 8
+of 8 levels genuinely PASS, plus a single Session-details-card cross-check at whatever level the
+loop ends on (not independently re-verified at every level). The Pull requests Changes tab/#919
+per-file header is still NOT YET CONFIRMED live: `view-store.ts`'s `openChat` pins the view's own
+repository scope to whichever repo a Session is opened in (by design, research.md decision 7),
+root-caused via the real on-screen error text, fixed (drives the repository Select explicitly).
+
+`pnpm typecheck`, `pnpm test` (148/148), `check:indent`, `check:theme-contrast` (457/457),
+`check:file-size` all clean on every commit in this phase.
+
+Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
+(folded into #925's own scope; closes once every surface above is confirmed live with the
+gate-round-1 fixes in place).
+
 ## Phase 56: Convergence
 
 - [X] T279 [US1] #937 Advisor chip -- Rust lane. New `session::advisor` (issue #784's
