@@ -85,9 +85,11 @@ fn record_allowed_paths(session_id: &str, paths: impl IntoIterator<Item = String
         .lock()
         .expect("allowed_paths_store poisoned");
     let set = store.entry(session_id.to_string()).or_default();
-    // Gate round 4 (Code4 Low): a `HashSet` for the in-batch dedupe, not a `Vec` -- `contains` on
-    // a growing `Vec` made this whole loop O(n^2) for a large batch; a `HashSet`'s own `insert`
-    // both dedupes and reports "was this new" in one O(1) call.
+    // Gate round 4 (Code4 Low): a `HashSet` for the in-batch dedupe, not a `Vec` -- an O(1)
+    // `contains` against the persisted set, then an O(1) `insert` into this batch's own set
+    // (which already dedupes a path repeated more than once within the SAME batch) -- a growing
+    // `Vec`'s own `contains` made the per-path check O(n), the whole loop O(n^2), for a large
+    // batch.
     let mut new_paths: HashSet<String> = HashSet::new();
     for path in paths {
         if !set.contains(&path) {

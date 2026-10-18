@@ -70,7 +70,11 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
             // real 24px target (`size-6`, was `size-4`/16px) and the same INSET focus ring
             // (`outline-offset-[-2px]`), so it never extends further outside the strip's own
             // `p-1` buffer than the file chip's already-fixed Remove button does.
-            className="absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+            // Gate round 5 (UI5 Low): `pointer-events-none` while invisible (`opacity-0`) --
+            // the button still sits in the DOM, overlapping the corner of the 40px image
+            // thumbnail, and a 24px (round 4) invisible hit area is more of this thumbnail to
+            // mis-click than the 16px one was; restored once actually visible (hover/focus).
+            className="pointer-events-none absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
           >
             <XIcon className="size-3" />
           </button>
