@@ -297,7 +297,9 @@ fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationCl
 fn resolve_matched_descriptor<'a>(name: &str, commands: &'a [Value]) -> Option<&'a Value> {
     commands
         .iter()
-        .find(|c| matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str)))
+        .find(|c| {
+            matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str))
+        })
         .or_else(|| commands.iter().find(|c| matches_name(c, name)))
 }
 
@@ -332,7 +334,11 @@ pub enum SubcommandRefusal {
 /// Resolves the SAME descriptor `classify_against_builtin` was refused against (via
 /// `resolve_matched_descriptor`), so the refusal always distinguishes/lists exactly what a
 /// second attempt would accept.
-pub fn classify_unsupported_arguments(name: &str, rest: &str, commands: &[Value]) -> SubcommandRefusal {
+pub fn classify_unsupported_arguments(
+    name: &str,
+    rest: &str,
+    commands: &[Value],
+) -> SubcommandRefusal {
     let verified: Vec<String> = resolve_matched_descriptor(name, commands)
         .and_then(|descriptor| descriptor.get("subcommands"))
         .and_then(Value::as_array)
