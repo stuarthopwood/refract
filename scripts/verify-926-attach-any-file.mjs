@@ -460,23 +460,23 @@ async function main() {
     );
     // Gate round 5 (Test5 HIGH, real bug this live check caught): `cdp.click`/`clickByLabel`
     // dispatch a TRUSTED `Input.dispatchMouseEvent` at the Send button's own screen coordinates
-    // (`verify-tauri-cdp.mjs`'s own doc comment) -- a fixed-position sonner toast stack still
-    // sitting on screen from D1/D4/FR-039 earlier in this run (toasts fade on their own timer,
-    // not on the next assertion, exactly like the earlier toast-baseline bug this script already
-    // fixed) can cover those exact coordinates and intercept the click before it ever reaches the
-    // button underneath, leaving `handleSend` never invoked despite the button itself reporting
-    // `aria-disabled="false"`. Confirms via `elementFromPoint` what is actually there, then waits
-    // for every toast to clear (they are ephemeral; waiting is correct, not a workaround for a
-    // product bug -- real toasts always finish fading on their own).
+    // (`verify-tauri-cdp.mjs`'s own doc comment) -- a fixed-position sonner toast stack still on
+    // screen from D1/D4/FR-039 earlier in this run (toasts fade on their own timer, not on the
+    // next assertion, exactly like the earlier toast-baseline bug this script already fixed) sat
+    // directly on top of those exact coordinates and intercepted the click before it ever reached
+    // the button underneath -- confirmed via `elementFromPoint` ("INTERCEPTING TOAST" below) --
+    // and a follow-up "wait for every toast to clear" fix still timed out at 20s (these
+    // particular toasts do not auto-dismiss quickly). Sends with keyboard Enter instead
+    // (`handleKeyDown`'s own `event.key === 'Enter' && !event.shiftKey`, MessageInput.tsx):
+    // `Input.dispatchKeyEvent` routes to whatever has DOM focus, with no notion of "topmost
+    // element at a screen point" to intercept -- the same mechanism this script's own keyboard
+    // Remove-button step above already uses.
     const preSendButtonState = await cdp.evaluate(
       `(() => { const b = document.querySelector('[aria-label^="Send"]'); if (!b) return { notFound: true }; const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { ariaDisabled: b.getAttribute('aria-disabled'), ariaLabel: b.getAttribute('aria-label'), topElementAtClickPoint: top ? (top.getAttribute('data-sonner-toast') !== null || top.closest('[data-sonner-toast]') ? 'INTERCEPTING TOAST' : top.tagName + (top.getAttribute('aria-label') ? \`[aria-label="\${top.getAttribute('aria-label')}"]\` : '')) : 'none' }; })()`
     );
-    console.log(`${LOG}: DIAG Send button state right before click: ${JSON.stringify(preSendButtonState)}`);
-    await cdp.waitFor(`document.querySelectorAll('[role="status"],[data-sonner-toast]').length === 0`, {
-      timeoutMs: 20_000,
-      label: 'every toast cleared before the trusted Send click (a fixed-position toast stack could intercept it at its own screen coordinates)'
-    });
-    await cdp.clickByLabel('Send message');
+    console.log(`${LOG}: DIAG Send button state right before Enter: ${JSON.stringify(preSendButtonState)}`);
+    await cdp.evaluate(`document.querySelector('[aria-label="Message"]').focus()`);
+    await cdp.pressEnter();
 
     // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
     // trip succeeded) OR a genuinely NEW toast (an unexpected send-side refusal, e.g. a guard
