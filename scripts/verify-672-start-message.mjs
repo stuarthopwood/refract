@@ -57,7 +57,7 @@ import {
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
   readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
-  setupLaunch, teardownLaunch, quickCreateSessionAndWaitReady, quickCreateSessionId
+  setupLaunch, teardownLaunch, quickCreateSessionId
 } from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -116,12 +116,9 @@ async function main() {
     const fg = await resolveCssVarColor(cdp1, '--foreground', 'color');
     const muted = await resolveCssVarColor(cdp1, '--muted-foreground', 'color');
 
-    // Gate-fix (confirmed live, bg_791/bg_794 runs): `quickCreateSessionAndWaitReady` blocks
-    // until the composer is enabled -- by the time it returned, Session A had ALREADY reached
-    // `ready` and `startProgress` had already cleared, so the very next
-    // `waitForStartProgressKind(..., 'waiting', ...)` below timed out waiting for a state that
-    // had come and gone. `quickCreateSessionId` (non-blocking, same as Launch 2's C/D/E) lets
-    // this observe 'waiting' WHILE it happens; "notice unmounts, ready" below is the real wait.
+    // Gate-fix (confirmed live): a blocking composer-enabled wait here would return only once
+    // A reaches `ready` (startProgress already cleared) -- `quickCreateSessionId` (non-blocking)
+    // lets this section observe 'waiting' WHILE it happens; "notice unmounts" below is the wait.
     const sessionA = await quickCreateSessionId(cdp1, 'brief/A (1st start)');
     findings.push(`Session A created (id ${sessionA.id}, name "${sessionA.name}"), brand-new (no history yet).`);
 
@@ -211,8 +208,11 @@ async function main() {
     });
     findings.push(`Session A sent and settled one real turn through the fake-omp session tape -- currentConversation settled: ${sessionAHasHistory}.`);
 
-    // ---- Session B: a second real Session (front pane), used only as the split-pane partner ----
-    const sessionB = await quickCreateSessionAndWaitReady(cdp1, 'brief/B (split partner)');
+    // ---- Session B: a second real Session (front pane), the split-pane partner. Gate-fix
+    // (confirmed live, bg_814): a single composer-enabled snapshot was already true (A is
+    // already ready/focused), so it returned before B's own create() even finished (empty
+    // diff). `quickCreateSessionId` polls for B's own id instead; B never needs `ready`. ----
+    const sessionB = await quickCreateSessionId(cdp1, 'brief/B (split partner)');
     findings.push(`Session B created (id ${sessionB.id}) as the split-pane partner.`);
 
     // Re-focus Session A (a real plain click, not Ctrl): creating B above focused B instead

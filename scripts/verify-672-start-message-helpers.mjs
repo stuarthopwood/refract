@@ -2,7 +2,7 @@
 // file-size split: extracted once the gate-round-2 contrast/wheel/short-window rewrites pushed
 // the main script past the 600-line soft cap, the same reason `verify-947-938-helpers.mjs` and
 // `verify-560-helpers.mjs` exist for their own scripts). `setupLaunch`/`teardownLaunch`/
-// `quickCreateSessionAndWaitReady`/`quickCreateSessionId` (added in the item-6 gate-fix round)
+// `quickCreateSessionId` (added in the item-6 gate-fix round)
 // are the one exception to "nothing here owns process lifecycle" -- moved here from the main
 // script purely to clear the 600-line cap a second time; they still own launch/cleanup exactly
 // as before.
@@ -416,28 +416,16 @@ export async function teardownLaunch(launch) {
   await safeRmSync(launch.launchDir);
 }
 
-/** Quick-creates a Session via the real UI button and waits for its composer to be enabled
- *  (ready) -- `timeoutMs` must clear `READY_DELAY_*_MS` plus real app/webview overhead. Returns
- *  `{id, name}` read back from `window.refract.sessions.list()` (never a store). */
-export async function quickCreateSessionAndWaitReady(cdp, label, { timeoutMs = 30_000 } = {}) {
-  const before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.map((s) => s.id) : [])`);
-  await cdp.click(`document.querySelector('[data-quick-create-session]')`);
-  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-    timeoutMs,
-    label: `${label}: Session created, fake agent attached, composer enabled`
-  });
-  const after = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value : [])`);
-  const created = after.find((s) => !before.includes(s.id));
-  if (!created) throw new Error(`${label}: could not identify the newly created Session id (before ${JSON.stringify(before)}, after ${JSON.stringify(after.map((s) => s.id))}).`);
-  return { id: created.id, name: created.name };
-}
-
 /** Quick-creates a Session via the real UI button and returns `{id, name}` as soon as it
- *  appears in `window.refract.sessions.list()` -- does NOT wait for readiness, unlike
- *  `quickCreateSessionAndWaitReady` above. Used to create several concurrent starts quickly
- *  (issue #672 gate-fix: exercising the real `queued` startProgress.kind needs two Sessions
- *  already holding the Rust start-queue's own 2 concurrent slots, `MAX_CONCURRENT_STARTS`,
- *  `src-tauri/src/session/start_queue.rs:36`, before a 3rd Session's own start ever queues). */
+ *  appears in `window.refract.sessions.list()` -- diff-based polling, not a single composer-
+ *  enabled snapshot (gate-fix, confirmed live, bg_814 run: a single snapshot check trivially
+ *  passes immediately whenever an EARLIER Session is already ready/focused, before the new
+ *  one's own async create() has even finished -- removed the earlier `quickCreateSessionAndWaitReady`
+ *  entirely rather than leave a known-broken helper unused). Used to create several concurrent
+ *  starts quickly (issue #672 gate-fix: exercising the real `queued` startProgress.kind needs
+ *  two Sessions already holding the Rust start-queue's own 2 concurrent slots,
+ *  `MAX_CONCURRENT_STARTS`, `src-tauri/src/session/start_queue.rs:36`, before a 3rd Session's
+ *  own start ever queues). */
 export async function quickCreateSessionId(cdp, label) {
   const before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.map((s) => s.id) : [])`);
   await cdp.click(`document.querySelector('[data-quick-create-session]')`);
