@@ -51,13 +51,13 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
   readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
-  setupLaunch, teardownLaunch, quickCreateSessionId
+  setupLaunch, teardownLaunch, quickCreateSessionId, resolveExePath
 } from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,15 +99,14 @@ async function main() {
     console.log(`${LOG}: git HEAD ${gitHeadSha}${dirtyLines && dirtyLines.length ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
     console.log(`${LOG}: shots dir ${SHOTS_DIR}`);
 
-    // Built ONCE, launched twice (different env/data dirs each time) -- the slow part is the
-    // Rust/Vite build, not spawning the already-built exe a second time.
-    const built = buildAndCopyExeFresh(exeDir, buildOutputDir, REPO_ROOT, { label: LOG });
+    // Built ONCE, launched twice; `resolveExePath` honours `REFRACT_672_REUSE_EXE` to skip rebuilding.
+    const built = resolveExePath(exeDir, buildOutputDir, REPO_ROOT, LOG);
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
 
     // ======================================================================
-    // Launch 1 ("brief", 3s ready-delay): brand-new sizing/colour, clear-on-ready, the
+    // Launch 1 ("brief", 15s ready-delay): brand-new sizing/colour, clear-on-ready, the
     // announcement rules, real history, Session-with-history dimmed/wheel/focus, split pane,
     // reduced motion.
     // ======================================================================
@@ -167,6 +166,7 @@ async function main() {
     const staleAnnouncement = await cdp1.evaluate(`${ANNOUNCE}?.textContent || ''`);
     if (staleAnnouncement !== '') notExercised.push(`Announcement region still read "${staleAnnouncement}" after waiting 6.5s to auto-clear -- the fresh-start text assertion below may not be measuring a clean first announcement.`);
     await restartAgent(cdp1, sessionA.id);
+    await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 15_000); // confirms 'waiting' before polling the announcement (bg_820 diagnostic narrowing)
     const freshText = await cdp1.waitFor(`${ANNOUNCE}?.textContent || null`, { timeoutMs: 10_000, label: 'fresh restart announcement text set' });
     const expectedFreshText = `Starting agent: ${sessionA.name}`;
     if (freshText !== expectedFreshText) failures.push(`Real undefined->waiting restart announced "${freshText}", expected exactly "${expectedFreshText}".`);

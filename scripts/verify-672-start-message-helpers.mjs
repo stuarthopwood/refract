@@ -6,12 +6,12 @@
 // are the one exception to "nothing here owns process lifecycle" -- moved here from the main
 // script purely to clear the 600-line cap a second time; they still own launch/cleanup exactly
 // as before.
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject } from './verify-tauri-cdp.mjs';
-import { makeScratchRepo, safeRmSync } from './verify-tauri-scratch-helpers.mjs';
+import { makeScratchRepo, safeRmSync, buildAndCopyExeFresh, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const GROUP = `document.querySelector('[aria-label="Agent start"]')`;
@@ -339,6 +339,21 @@ export function assertSizesAndColours(state, widthPx, label, resolvedForeground,
     if (state.counter.color !== resolvedMuted) failures.push(`${label}: seconds counter colour is ${state.counter.color}, expected --muted-foreground ${resolvedMuted}.`);
     else findings.push(`${label}: seconds counter colour matches --muted-foreground.`);
   }
+}
+/** `REFRACT_672_REUSE_EXE` (slot-move gate-fix, 2026-10-18): if set, hashes and reuses that exe
+ *  directly instead of a fresh `tauri build --debug` -- lets this script keep iterating on
+ *  ITSELF alone (no product-code change) without needing the shared build slot back each time.
+ *  The caller is responsible for confirming the pointed-at exe really does match the committed
+ *  head under test; this function only hashes it, never verifies that itself. */
+export function resolveExePath(exeDir, buildOutputDir, repoRoot, label) {
+  const reuseExe = process.env.REFRACT_672_REUSE_EXE;
+  if (reuseExe) {
+    if (!existsSync(reuseExe)) throw new Error(`${label}: REFRACT_672_REUSE_EXE=${reuseExe} does not exist.`);
+    const hash = sha256OfFile(reuseExe);
+    console.log(`${label}: reusing existing exe at ${reuseExe} (sha256 ${hash.slice(0, 12)}…) -- no new build (REFRACT_672_REUSE_EXE set).`);
+    return { dest: reuseExe, hash };
+  }
+  return buildAndCopyExeFresh(exeDir, buildOutputDir, repoRoot, { label });
 }
 /** One scratch Tauri launch: readiness screen through "scratch repository added". Everything
  *  after this (which Sessions get created, in what order) is the caller's own job -- the two
