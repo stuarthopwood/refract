@@ -14,6 +14,7 @@
 // `getBoundingClientRect()` the position actually falls inside.
 import { useEffect, useRef } from 'react'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
+import { notify } from '@/state'
 
 interface PaneDescriptor {
   sessionId: string
@@ -62,6 +63,19 @@ function ensureSubscribed(): void {
 }
 
 async function handleDrop(pane: PaneDescriptor, paths: string[]): Promise<void> {
+  // Gate round 1 (D2 Medium): records the native drop's own paths against this Session's
+  // allow-list BEFORE attaching any of them -- `readFile` refuses an absolute path that was
+  // never recorded this way (or via `pickFiles`), so a CONFUSED renderer (a stale/incorrect
+  // in-memory path, a logic bug) can no longer read an arbitrary absolute file merely by asking
+  // for it.
+  // Gate round 3 (Code3 HIGH): the Result is now checked -- an unknown/deleted sessionId (the
+  // same `invalid-argument` `resolve_session_worktree` already surfaces to `pickFiles`) used to
+  // be silently swallowed here, then fail confusingly later at the first `readFile` call instead.
+  const recordResult = await window.refract.attachments.recordDroppedPaths(pane.sessionId, paths)
+  if (!recordResult.ok) {
+    notify(recordResult.error)
+    return
+  }
   const remainingSlots = remainingAttachmentSlots(pane.sessionId)
   const capped = paths.slice(0, remainingSlots)
   const resolved = capped.map((filePath) => ({ name: filePath.split(/[\\/]/).pop() ?? filePath, filePath }))
