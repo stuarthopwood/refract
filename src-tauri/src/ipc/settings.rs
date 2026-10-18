@@ -14,7 +14,7 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ApprovalMode, SessionListCollapse, SplitLayout};
+use crate::store::settings::{ApprovalMode, ChatWidth, SessionListCollapse, SplitLayout};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 
@@ -56,6 +56,7 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setPullRequestsListWidth",
         settings_set_pull_requests_list_width,
     );
+    d.register("settings.setChatWidth", settings_set_chat_width);
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -219,6 +220,39 @@ pub fn settings_set_watermark_enabled(state: AppState, args: Vec<Value>) -> Hand
         state.session_manager.emit_settings_changed(&value_json);
         Ok(value_json)
     })
+}
+
+/// `settings.setChatWidth(width)` (issue #554, FR-073): same enum-parse-then-persist shape as
+/// `settings_set_approval_mode` above.
+pub fn settings_set_chat_width(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let width = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_chat_width)
+        {
+            Some(width) => width,
+            None => {
+                return Err(invalid_argument(
+                    "settings.setChatWidth expects one of 'full' | 'reading-column'",
+                ))
+            }
+        };
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_chat_width(width)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+fn parse_chat_width(value: &str) -> Option<ChatWidth> {
+    serde_json::from_value(Value::String(value.to_string())).ok()
 }
 
 /// Issue #457: `field` is one of the two known `TranscriptDisplaySettings` keys, validated here

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::atomic_json::write_json_file;
+pub use super::chat_width::ChatWidth;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -91,6 +92,7 @@ pub struct Settings {
     pub split: Option<SplitLayout>,
     pub theme: ThemeId,
     pub watermark_enabled: bool,
+    pub chat_width: ChatWidth,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
@@ -200,6 +202,11 @@ impl SettingsStore {
         let raw_watermark_enabled = object.get("watermarkEnabled").and_then(Value::as_bool);
         let watermark_enabled = raw_watermark_enabled.unwrap_or(true);
 
+        let chat_width = object
+            .get("chatWidth")
+            .and_then(|v| serde_json::from_value::<ChatWidth>(v.clone()).ok())
+            .unwrap_or(ChatWidth::Full);
+
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
             thinking: raw_transcript_display
@@ -251,6 +258,7 @@ impl SettingsStore {
             "split",
             "theme",
             "watermarkEnabled",
+            "chatWidth",
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
@@ -271,6 +279,7 @@ impl SettingsStore {
             split,
             theme,
             watermark_enabled,
+            chat_width,
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
@@ -325,6 +334,7 @@ impl SettingsStore {
         if let Some(enabled) = self.raw_watermark_enabled {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
+        map.insert("chatWidth".to_string(), json!(self.data.chat_width));
         map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
@@ -430,6 +440,14 @@ impl SettingsStore {
         self.raw_watermark_enabled = Some(enabled);
         let next = Settings {
             watermark_enabled: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    pub async fn set_chat_width(&mut self, width: ChatWidth) -> std::io::Result<Settings> {
+        let next = Settings {
+            chat_width: width,
             ..self.data.clone()
         };
         self.persist_whole(next).await

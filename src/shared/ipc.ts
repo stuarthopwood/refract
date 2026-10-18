@@ -3,6 +3,7 @@
 // renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
+import type { LowMemoryWarning } from './lowMemoryWarning';
 
 import type {
   ApprovalMode,
@@ -35,6 +36,7 @@ import type {
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
+import type { ChatWidth } from './chatWidth';
 import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -222,11 +224,7 @@ export type SlashCommand = SlashCommandDescriptor;
 
 export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
-export interface LowMemoryWarning {
-  low: boolean;
-  freeBytes: number;
-  liveAgents: number;
-}
+export type { LowMemoryWarning } from './lowMemoryWarning';
 
 export interface SessionStatusEvent {
   sessionId: string;
@@ -362,6 +360,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
+  SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -717,6 +716,7 @@ export interface RefractApi extends UpdatesApi {
      * `false` (pasting a clipboard image directly is never affected). */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
+    setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };

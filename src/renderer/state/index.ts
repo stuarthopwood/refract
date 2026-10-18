@@ -25,6 +25,7 @@ import { useSessionListStore } from './session-list-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { useThemeStore } from './theme-store'
+import { useChatWidthStore } from './chat-width-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
@@ -57,6 +58,7 @@ export { usePullRequestsStore }
 export type { PullRequestsRepoState, PullRequestsActiveCount } from './pull-requests-store'
 export { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore }
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
+export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
@@ -84,6 +86,7 @@ export interface RefractDevStores {
   pullRequests: typeof usePullRequestsStore
   pullRequestsLayout: typeof usePullRequestsLayoutStore
   theme: typeof useThemeStore
+  chatWidth: typeof useChatWidthStore
   updates: typeof useUpdateStore
 }
 
@@ -121,6 +124,7 @@ if (import.meta.env.DEV) {
     pullRequests: usePullRequestsStore,
     pullRequestsLayout: usePullRequestsLayoutStore,
     theme: useThemeStore,
+    chatWidth: useChatWidthStore,
     updates: useUpdateStore
   }
 }
