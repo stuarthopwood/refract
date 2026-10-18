@@ -1,9 +1,19 @@
 // Shared constants and pure/CDP helpers for `verify-672-start-message.mjs` (issue #672, #806
 // file-size split: extracted once the gate-round-2 contrast/wheel/short-window rewrites pushed
 // the main script past the 600-line soft cap, the same reason `verify-947-938-helpers.mjs` and
-// `verify-560-helpers.mjs` exist for their own scripts). Nothing here owns process lifecycle
-// (launch/build/cleanup) -- that stays in the main script, matching the existing convention.
+// `verify-560-helpers.mjs` exist for their own scripts). `setupLaunch`/`teardownLaunch`/
+// `quickCreateSessionAndWaitReady`/`quickCreateSessionId` (added in the item-6 gate-fix round)
+// are the one exception to "nothing here owns process lifecycle" -- moved here from the main
+// script purely to clear the 600-line cap a second time; they still own launch/cleanup exactly
+// as before.
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject } from './verify-tauri-cdp.mjs';
+import { makeScratchRepo, safeRmSync } from './verify-tauri-scratch-helpers.mjs';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const GROUP = `document.querySelector('[aria-label="Agent start"]')`;
 export const REGIONS = `document.querySelectorAll('[aria-label="Transcript"]')`;
 export const REGION0 = `${REGIONS}[0]`;
@@ -284,4 +294,107 @@ export function assertSizesAndColours(state, widthPx, label, resolvedForeground,
     if (state.counter.color !== resolvedMuted) failures.push(`${label}: seconds counter colour is ${state.counter.color}, expected --muted-foreground ${resolvedMuted}.`);
     else findings.push(`${label}: seconds counter colour matches --muted-foreground.`);
   }
+}
+/** One scratch Tauri launch: readiness screen through "scratch repository added". Everything
+ *  after this (which Sessions get created, in what order) is the caller's own job -- the two
+ *  launches below need different session choreography, not just different env vars. */
+export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
+  const dataDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-data-`));
+  const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-import-`));
+  const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-repo-`)), `verify-672-start-message-${launchLabel}`);
+  const launchDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-launch-`));
+  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
+  const webview2DataDir = path.join(launchDir, 'webview2-data');
+  mkdirSync(webview2DataDir, { recursive: true });
+  const pidFile = path.join(launchDir, 'target.pid');
+  const port = await getFreePort();
+  const env = {
+    ...process.env,
+    ...extraEnv,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
+    REFRACT_DATA_DIR: dataDir,
+    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+    REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+    REFRACT_FAKE_OMP_NODE: process.execPath,
+    REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
+  };
+  const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
+  const child = launched.child;
+  const targetPid = launched.targetPid;
+  // Item 6 gate-fix (code-reviewer/security-auditor, LOW): everything from here on can throw
+  // before this function ever returns a `launch` object `main()` would otherwise clean up --
+  // wrapped so a failure here still stops the real child process and removes this failed
+  // attempt's own scratch folders (never anyone else's), instead of leaking both.
+  try {
+    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
+    const cdp = await CdpSession.connect(wsUrl);
+    if (!isTargetOwningPort(port, targetPid)) {
+      throw new Error(`verify-672: CDP target on port ${port} (${launchLabel}) is not owned by the process this run launched (pid ${targetPid})`);
+    }
+
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: `${launchLabel}: Readiness screen mounted` });
+    await cdp.waitFor(
+      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+      { timeoutMs: 30_000, label: `${launchLabel}: Readiness green (fake omp)` }
+    );
+    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: `${launchLabel}: Add repository dialog open` });
+    await cdp.click(`document.querySelector('[role="dialog"] input')`);
+    await cdp.send('Input.insertText', { text: repoDir });
+    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.waitFor(`!!document.querySelector('[data-quick-create-session]')`, { timeoutMs: 30_000, label: `${launchLabel}: Scratch repository added, quick-create button visible` });
+
+    return { cdp, child, dataDir, importSourceDir, repoDir, launchDir };
+  } catch (err) {
+    await stopLauncher(child).catch(() => {});
+    await safeRmSync(dataDir);
+    await safeRmSync(importSourceDir);
+    await safeRmSync(repoDir);
+    await safeRmSync(launchDir);
+    throw err;
+  }
+}
+
+export async function teardownLaunch(launch) {
+  if (!launch) return;
+  if (launch.cdp) launch.cdp.close();
+  if (launch.child) await stopLauncher(launch.child).catch(() => {});
+  await safeRmSync(launch.dataDir);
+  await safeRmSync(launch.importSourceDir);
+  await safeRmSync(launch.repoDir);
+  await safeRmSync(launch.launchDir);
+}
+
+/** Quick-creates a Session via the real UI button and waits for its composer to be enabled
+ *  (ready) -- `timeoutMs` must clear `READY_DELAY_*_MS` plus real app/webview overhead. Returns
+ *  `{id, name}` read back from `window.refract.sessions.list()` (never a store). */
+export async function quickCreateSessionAndWaitReady(cdp, label, { timeoutMs = 30_000 } = {}) {
+  const before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.map((s) => s.id) : [])`);
+  await cdp.click(`document.querySelector('[data-quick-create-session]')`);
+  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
+    timeoutMs,
+    label: `${label}: Session created, fake agent attached, composer enabled`
+  });
+  const after = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value : [])`);
+  const created = after.find((s) => !before.includes(s.id));
+  if (!created) throw new Error(`${label}: could not identify the newly created Session id (before ${JSON.stringify(before)}, after ${JSON.stringify(after.map((s) => s.id))}).`);
+  return { id: created.id, name: created.name };
+}
+
+/** Quick-creates a Session via the real UI button and returns `{id, name}` as soon as it
+ *  appears in `window.refract.sessions.list()` -- does NOT wait for readiness, unlike
+ *  `quickCreateSessionAndWaitReady` above. Used to create several concurrent starts quickly
+ *  (issue #672 gate-fix: exercising the real `queued` startProgress.kind needs two Sessions
+ *  already holding the Rust start-queue's own 2 concurrent slots, `MAX_CONCURRENT_STARTS`,
+ *  `src-tauri/src/session/start_queue.rs:36`, before a 3rd Session's own start ever queues). */
+export async function quickCreateSessionId(cdp, label) {
+  const before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.map((s) => s.id) : [])`);
+  await cdp.click(`document.querySelector('[data-quick-create-session]')`);
+  const created = await cdp.waitFor(
+    `window.refract.sessions.list().then((r) => { if (!r.ok) return null; const before = ${JSON.stringify(before)}; const found = r.value.find((s) => !before.includes(s.id)); return found ? { id: found.id, name: found.name } : null; })`,
+    { timeoutMs: 10_000, label: `${label}: Session created (id visible in sessions.list())` }
+  );
+  if (!created) throw new Error(`${label}: could not identify the newly created Session id.`);
+  return created;
 }

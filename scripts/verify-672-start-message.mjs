@@ -52,13 +52,14 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject, resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
+import { gitHead, buildLauncher, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
-  readSessionSummary, waitForStartProgressKind, ctrlClickSessionRow, restartAgent
+  readSessionSummary, waitForStartProgressKind, ctrlClickSessionRow, restartAgent,
+  setupLaunch, teardownLaunch, quickCreateSessionAndWaitReady, quickCreateSessionId
 } from './verify-672-start-message-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,83 +70,8 @@ const SHOTS_DIR =
 
 // `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; the "long" delay must clear
 // it with headroom but stay comfortably under `READY_CEILING_MS` (180_000).
-const READY_DELAY_BRIEF_MS = 3_000;
-const READY_DELAY_LONG_MS = 70_000;
-
-/** One scratch Tauri launch: readiness screen through "scratch repository added". Everything
- *  after this (which Sessions get created, in what order) is the caller's own job -- the two
- *  launches below need different session choreography, not just different env vars. */
-async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-data-`));
-  const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-import-`));
-  const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-repo-`)), `verify-672-start-message-${launchLabel}`);
-  const launchDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-launch-`));
-  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
-  const webview2DataDir = path.join(launchDir, 'webview2-data');
-  mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(launchDir, 'target.pid');
-  const port = await getFreePort();
-  const env = {
-    ...process.env,
-    ...extraEnv,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-    REFRACT_FAKE_OMP_NODE: process.execPath,
-    REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
-  };
-  const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
-  const child = launched.child;
-  const targetPid = launched.targetPid;
-
-  const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
-  const cdp = await CdpSession.connect(wsUrl);
-  if (!isTargetOwningPort(port, targetPid)) {
-    throw new Error(`${LOG}: CDP target on port ${port} (${launchLabel}) is not owned by the process this run launched (pid ${targetPid})`);
-  }
-
-  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: `${launchLabel}: Readiness screen mounted` });
-  await cdp.waitFor(
-    `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
-    { timeoutMs: 30_000, label: `${launchLabel}: Readiness green (fake omp)` }
-  );
-  await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: `${launchLabel}: Add repository dialog open` });
-  await cdp.click(`document.querySelector('[role="dialog"] input')`);
-  await cdp.send('Input.insertText', { text: repoDir });
-  await cdp.clickByText('Add repository', { inDialog: true });
-  await cdp.waitFor(`!!document.querySelector('[data-quick-create-session]')`, { timeoutMs: 30_000, label: `${launchLabel}: Scratch repository added, quick-create button visible` });
-
-  return { cdp, child, dataDir, importSourceDir, repoDir, launchDir };
-}
-
-async function teardownLaunch(launch) {
-  if (!launch) return;
-  if (launch.cdp) launch.cdp.close();
-  if (launch.child) await stopLauncher(launch.child).catch(() => {});
-  await safeRmSync(launch.dataDir);
-  await safeRmSync(launch.importSourceDir);
-  await safeRmSync(launch.repoDir);
-  await safeRmSync(launch.launchDir);
-}
-
-/** Quick-creates a Session via the real UI button and waits for its composer to be enabled
- *  (ready) -- `timeoutMs` must clear `READY_DELAY_*_MS` plus real app/webview overhead. Returns
- *  `{id, name}` read back from `window.refract.sessions.list()` (never a store). */
-async function quickCreateSessionAndWaitReady(cdp, label, { timeoutMs = 20_000 } = {}) {
-  const before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.map((s) => s.id) : [])`);
-  await cdp.click(`document.querySelector('[data-quick-create-session]')`);
-  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-    timeoutMs,
-    label: `${label}: Session created, fake agent attached, composer enabled`
-  });
-  const after = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value : [])`);
-  const created = after.find((s) => !before.includes(s.id));
-  if (!created) throw new Error(`${label}: could not identify the newly created Session id (before ${JSON.stringify(before)}, after ${JSON.stringify(after.map((s) => s.id))}).`);
-  return { id: created.id, name: created.name };
-}
+const READY_DELAY_BRIEF_MS = 15_000;
+const READY_DELAY_LONG_MS = 150_000;
 
 async function main() {
   let launch1 = null;
@@ -153,7 +79,7 @@ async function main() {
   const findings = [];
   const failures = [];
   const notExercised = [
-    "`queued`/`memory-deferred` startProgress.kind (issue #512, pre-existing, unchanged by #672) were not exercised: reaching them for real needs a second dedicated launch (REFRACT_FORCE_LOW_MEMORY=1 plus 3 concurrent starts) outside #672's own acceptance criteria (centred/sized/coloured for a brand-new Session and a Session with history, clears on ready, announced once, 3 themes); SessionStartNotice.tsx's shared container (centring, dimming) wraps every kind identically, confirmed by code reading, not a live run."
+    "`memory-deferred` startProgress.kind (issue #512, pre-existing, unchanged by #672) was not exercised: reaching it for real needs REFRACT_FORCE_LOW_MEMORY=1, which would force every OTHER real start in the same launch into memory-deferred too (mutually exclusive with the `queued` exercise below, which needs two REAL starts to actually reach ready); outside #672's own acceptance criteria. `queued` IS now exercised for real (Session E, launch 2) -- SessionStartNotice.tsx's shared plain-text path renders memory-deferred identically, confirmed by code reading, not a live run."
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -226,7 +152,7 @@ async function main() {
     await cdp1.send('Emulation.setEmulatedMedia', { features: [] });
 
     // ---- Clear: notice unmounts, "Ready..." reappears (brand-new Session reaches ready) ----
-    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 15_000, label: 'notice unmounted once the real start reaches ready (brand-new)' });
+    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'notice unmounted once the real start reaches ready (brand-new)' });
     const readyShown = await cdp1.evaluate(`Array.from(${REGIONS}).some((r) => r.textContent.includes('Ready. Type a message to get started.'))`);
     if (!readyShown) failures.push('After the real start reached ready on a brand-new Session, "Ready. Type a message to get started." did not reappear.');
     else findings.push('The notice cleared and "Ready. Type a message to get started." reappeared once the real start reached ready (brand-new Session).');
@@ -247,6 +173,8 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
+    const beforeTick = await readSessionSummary(cdp1, sessionA.id);
+    const elapsedBefore = beforeTick?.startProgress?.kind === 'waiting' ? beforeTick.startProgress.elapsedMs : null;
     await cdp1.evaluate(`(() => {
       window.__672Mutations = 0;
       window.__672Observer = new MutationObserver(() => { window.__672Mutations++; });
@@ -255,11 +183,20 @@ async function main() {
     })()`);
     await sleep(2_500); // real elapsed-ms ticks happen on the Rust side's own ~1s cadence while waiting
     const mutationCount = await cdp1.evaluate(`(() => { window.__672Observer.disconnect(); return window.__672Mutations; })()`);
+    const afterTick = await readSessionSummary(cdp1, sessionA.id);
+    const elapsedAfter = afterTick?.startProgress?.kind === 'waiting' ? afterTick.startProgress.elapsedMs : null;
+    if (afterTick?.startProgress?.kind !== 'waiting') {
+      failures.push(`Announcement mutation window: Session A's own startProgress.kind was "${afterTick?.startProgress?.kind}" after the 2.5s window, expected still "waiting" -- the zero-mutation claim below would be vacuous if the kind itself changed.`);
+    } else if (elapsedBefore === null || elapsedAfter === null || !(elapsedAfter > elapsedBefore)) {
+      failures.push(`Announcement mutation window: real startProgress.elapsedMs did not advance (${elapsedBefore} -> ${elapsedAfter}) across the 2.5s window -- this check would not be exercising a real same-kind re-tick at all.`);
+    } else {
+      findings.push(`Announcement mutation window: real startProgress.elapsedMs advanced (${elapsedBefore}ms -> ${elapsedAfter}ms) while kind stayed "waiting", confirming a genuine same-kind re-render was exercised.`);
+    }
     if (mutationCount !== 0) failures.push(`Announcement region mutated ${mutationCount} time(s) (MutationObserver) across real same-kind (waiting) elapsed-ms ticks -- it must not re-announce (the #618 round-2 fix regressed).`);
     else findings.push('Announcement region recorded zero DOM mutations (MutationObserver) across real same-kind elapsed-ms ticks -- no re-announcement.');
 
     // ---- Build real history on Session A (a real send through the fake-omp session tape) ----
-    await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 15_000, label: 'Session A ready again after the announcement restart' });
+    await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 30_000, label: 'Session A ready again after the announcement restart' });
     await cdp1.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp1.send('Input.insertText', { text: 'Reply with exactly the single word t672turn and nothing else.' });
     await cdp1.clickByLabel('Send message');
@@ -320,9 +257,21 @@ async function main() {
       await cdp1.evaluate(`document.activeElement?.blur()`);
     });
 
-    // ---- (3) Split pane: a real Ctrl+click on Session A's own row (not a direct store call)
-    // moves it into split alongside Session B; measured narrower width; forced under the narrow
-    // breakpoint if this run's own window did not land there naturally. ----
+    // ---- History-with-start clears: once this real restart reaches ready, the dimmed
+    // transcript returns to full opacity (single pane, before the split-pane test below). ----
+    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'history/waiting restart reached ready, notice cleared' });
+    const historyCleared = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
+    if (!historyCleared.ok) failures.push(`history/cleared: transcript region opacity settled at ${historyCleared.value}, expected ~1 after startProgress cleared.`);
+    else findings.push(`history/cleared: transcript region opacity returned to ${historyCleared.value} once startProgress cleared.`);
+    await cdp1.screenshot(path.join(SHOTS_DIR, '04b-history-cleared.png'));
+
+    // ---- (3) Split pane: a FRESH real restart (so the notice is visible again), then a real
+    // Ctrl+click on Session A's own row (not a direct store call) moves it into split alongside
+    // Session B; measured narrower width; forced under the narrow breakpoint if this run's own
+    // window did not land there naturally. ----
+    await restartAgent(cdp1, sessionA.id);
+    await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
+    await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice mounted again for the split-pane test' });
     await ctrlClickSessionRow(cdp1, sessionA.id);
     await cdp1.waitFor(`${REGIONS}.length === 2`, { timeoutMs: 15_000, label: 'Split open (real Ctrl+click): two Transcript regions rendered' });
     let splitState = await readNoticeState(cdp1);
@@ -356,7 +305,68 @@ async function main() {
     // ======================================================================
     launch2 = await setupLaunch(exePath, launcherExe, 'long', { REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS) });
     const cdp2 = launch2.cdp;
-    const sessionC = await quickCreateSessionAndWaitReady(cdp2, 'long/C (1st start, building history)', { timeoutMs: READY_DELAY_LONG_MS + 20_000 });
+
+    // ---- Real `queued`: Session C and D each grab one of the Rust start-queue's own 2
+    // concurrent slots (MAX_CONCURRENT_STARTS, start_queue.rs:36) the instant they're created;
+    // Session E's own start then has no slot free and reaches the real `queued` kind, with no
+    // forced-memory lever needed. E becomes the focused pane on creation, so its own notice is
+    // what GROUP/REGIONS below scope to. ----
+    const sessionC = await quickCreateSessionId(cdp2, 'long/C (1st start, 1st of 2 real slots)');
+    findings.push(`Session C created (id ${sessionC.id}), brand-new, holding one of the 2 real start-queue slots.`);
+    const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots)');
+    findings.push(`Session D created (id ${sessionD.id}) to hold the 2nd real start-queue slot while real queued is exercised.`);
+    const sessionE = await quickCreateSessionId(cdp2, 'long/E (3rd start, observes real queued)');
+    const queuedProgress = await waitForStartProgressKind(cdp2, sessionE.id, 'queued', 10_000);
+    findings.push(`Session E (id ${sessionE.id}) real startProgress is ${JSON.stringify(queuedProgress)} -- both real slots held by C and D, no forced-memory lever used.`);
+    await cdp2.waitFor(`!!document.querySelector('[data-start-plain-text]')`, { timeoutMs: 10_000, label: 'queued: plain-text notice mounted' });
+    const queuedState = await readNoticeState(cdp2);
+    assertCentred(queuedState, 'queued', failures);
+    const queuedOpacity = await waitForRegionOpacity(cdp2, (v) => v > 0.95, 2_000);
+    if (!queuedOpacity.ok) failures.push(`queued: transcript region opacity settled at ${queuedOpacity.value}, expected >0.95 (brand-new Session E has nothing to dim).`);
+    else findings.push(`queued: transcript region opacity settled at ${queuedOpacity.value} (not dimmed), as expected for a brand-new Session.`);
+    const queuedPlainPx = fontSizePx(queuedState.plain?.fontSize);
+    if (queuedPlainPx !== 16) failures.push(`queued: plain text font-size is ${queuedState.plain?.fontSize}, expected 16px (text-base).`);
+    else findings.push('queued: plain text font-size 16px (text-base), as specified.');
+    if (queuedState.plain && queuedState.plain.color !== muted) failures.push(`queued: plain text colour is ${queuedState.plain.color}, expected --muted-foreground ${muted}.`);
+    else findings.push('queued: plain text colour matches --muted-foreground.');
+    if (!queuedState.buttonTexts.includes('Cancel')) failures.push(`queued: no "Cancel" button found (group buttons: ${JSON.stringify(queuedState.buttonTexts)}).`);
+    else findings.push('queued: "Cancel" button present, as specified.');
+    await cdp2.screenshot(path.join(SHOTS_DIR, '05b-queued.png'));
+
+    // Re-focus Session C (a real plain click, not Ctrl) so GROUP/REGIONS scope back to it.
+    await cdp2.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionC.id)}]')`);
+    await cdp2.waitFor(`${REGIONS}.length >= 1 && ${GROUP}`, { timeoutMs: 10_000, label: 'Session C refocused after the queued check' });
+
+    // ---- Brand-new prompt/extended: Session C's own 1st start naturally crosses the real 60s
+    // prompt threshold before it ever reaches ready -- exercised here, before any history
+    // exists, so centring/sizing/button-presence is proven on a genuinely brand-new Session
+    // too, not only the with-history restart later. ----
+    await waitForStartProgressKind(cdp2, sessionC.id, 'prompt', READY_DELAY_LONG_MS);
+    await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'brand-new/prompt: notice mounted (real prompt kind, 1st start)' });
+    const bnPromptOpacity = await waitForRegionOpacity(cdp2, (v) => v > 0.95, 2_000);
+    if (!bnPromptOpacity.ok) failures.push(`brand-new/prompt: transcript region opacity settled at ${bnPromptOpacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
+    else findings.push(`brand-new/prompt: transcript region opacity settled at ${bnPromptOpacity.value} (not dimmed), as expected.`);
+    const bnPromptState = await readNoticeState(cdp2);
+    assertCentred(bnPromptState, 'brand-new/prompt', failures);
+    if (bnPromptState.regionFound) assertSizesAndColours(bnPromptState, bnPromptState.regionRect.width, 'brand-new/prompt', fg, muted, failures, findings);
+    if (!bnPromptState.buttonTexts.includes('Keep waiting')) failures.push(`brand-new/prompt: no "Keep waiting" button found (group buttons: ${JSON.stringify(bnPromptState.buttonTexts)}).`);
+    if (!bnPromptState.buttonTexts.includes('Cancel')) failures.push(`brand-new/prompt: no "Cancel" button found (group buttons: ${JSON.stringify(bnPromptState.buttonTexts)}).`);
+    await cdp2.screenshot(path.join(SHOTS_DIR, '05c-brand-new-prompt.png'));
+
+    await cdp2.clickByText('Keep waiting');
+    await waitForStartProgressKind(cdp2, sessionC.id, 'extended', 5_000);
+    const bnExtendedState = await readNoticeState(cdp2);
+    assertCentred(bnExtendedState, 'brand-new/extended', failures);
+    if (bnExtendedState.regionFound) assertSizesAndColours(bnExtendedState, bnExtendedState.regionRect.width, 'brand-new/extended', fg, muted, failures, findings);
+    const bnExtendedOpacity = await waitForRegionOpacity(cdp2, (v) => v > 0.95, 2_000);
+    if (!bnExtendedOpacity.ok) failures.push(`brand-new/extended: transcript region opacity settled at ${bnExtendedOpacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
+    if (bnExtendedState.buttonTexts.includes('Keep waiting')) failures.push(`brand-new/extended: "Keep waiting" still present (${JSON.stringify(bnExtendedState.buttonTexts)}) -- Extended has no further Keep-waiting decision.`);
+    if (!bnExtendedState.buttonTexts.includes('Cancel')) failures.push(`brand-new/extended: no "Cancel" button found (group buttons: ${JSON.stringify(bnExtendedState.buttonTexts)}).`);
+    else findings.push('brand-new/extended: a real "Keep waiting" click on the 1st (brand-new) start reached the real `extended` kind; Cancel remains, Keep waiting does not.');
+    await cdp2.screenshot(path.join(SHOTS_DIR, '05d-brand-new-extended.png'));
+
+    // ---- Build real history on Session C (1st start finally reaches ready) ----
+    await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: READY_DELAY_LONG_MS, label: 'Session C ready (1st start reaches ready after the brand-new prompt/extended checks)' });
     await cdp2.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp2.send('Input.insertText', { text: 'Reply with exactly the single word t672turnC and nothing else.' });
     await cdp2.clickByLabel('Send message');
@@ -365,11 +375,11 @@ async function main() {
       timeoutMs: 30_000,
       label: 'Session C now has real history (currentConversation settled)'
     });
-    findings.push('Session C sent and settled one real turn -- it now has real history, ready for the prompt/extended restart.');
+    findings.push('Session C sent and settled one real turn -- it now has real history, ready for the with-history prompt/extended restart.');
 
     await restartAgent(cdp2, sessionC.id);
     await waitForStartProgressKind(cdp2, sessionC.id, 'prompt', READY_DELAY_LONG_MS);
-    findings.push('Session C restart reached the real `prompt` startProgress.kind (READY_PROMPT_AFTER_MS, 60s) without any synthetic injection.');
+    findings.push('Session C restart (2nd start, now with history) reached the real `prompt` startProgress.kind (READY_PROMPT_AFTER_MS, 60s) without any synthetic injection.');
 
     await withDeviceMetrics(cdp2, 900, 260, async () => {
       await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/prompt: notice mounted (real prompt kind) after short-viewport override' });
