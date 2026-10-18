@@ -916,8 +916,9 @@
  * **Gate round 1 fix: surface ladder retuned** (card/sidebar closer to Obsidian's own L* step
  * sizes; `--background` unchanged). `--muted-foreground` moves to a warmer, more saturated step
  * (hue 60, chroma 0.06, up from chroma 0.015) per the gate's own finding, still clearing 4.5:1
- * against the new, lighter `--muted` (4.88:1, the narrowest surface) with margin everywhere
- * else (6.52-7.37:1). */
+ * against the new, lighter `--muted` (4.88:1, the narrowest surface) with margin everywhere else
+ * -- popover 5.73:1 (corrected, previously left out of this range), card 6.52:1, sidebar 6.96:1,
+ * background 7.37:1. */
 .theme-cyber-amber {
   color-scheme: dark;
   --scrollbar-thumb: var(--muted-foreground);

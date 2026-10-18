@@ -73,8 +73,8 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   // code-block surface in this app clears -- so it is reverted to `github-dark`, the same
   // "defer precise code-block tuning, Mermaid/Shiki colours are explicitly out of this story's
   // scope" precedent #550 set for Obsidian. Cyber Amber has no comparably-matching bundled
-  // Shiki theme either, so it reuses `github-dark` too. A follow-up (filed separately) tracks
-  // giving each preset's code blocks their own `--card`-matched background instead of
+  // Shiki theme either, so it reuses `github-dark` too. A follow-up (filed separately as #975)
+  // tracks giving each preset's code blocks their own `--card`-matched background instead of
   // reusing whatever a bundled Shiki theme ships with.
   'nordic-frost': {
     id: 'nordic-frost',

@@ -693,11 +693,12 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
 - [X] T028 Answer #551's "may Cyber Amber merge accent, warning and info hues?" open question and
   write the decision into the issue (decision comment) (depends on T026).
   **Done (Skippy, delegated by Stuart 2026-10-18): partially.** `--accent-text` (orange-amber,
-  hue 45) and `--severity-warning` (golden-amber, hue 75) both stay in the theme's own warm
-  "phosphor amber" family (distinguishable by hue and lightness/chroma, and this app's existing
-  icon-plus-word redundancy already covers 1.4.1); `--severity-info` moves OFF amber entirely —
-  merging a genuinely different severity (info) into warning's hue was the real defect the
-  mock's own audit found, not a stylistic choice worth keeping.
+  final shipped value `#fcae93`, real hue 39.9 -- retuned twice since this decision was first
+  written) and `--severity-warning` (golden-amber, real hue ~73.8) both stay in the theme's own
+  warm "phosphor amber" family (distinguishable by hue and lightness/chroma, and this app's
+  existing icon-plus-word redundancy already covers 1.4.1); `--severity-info` moves OFF amber
+  entirely — merging a genuinely different severity (info) into warning's hue was the real
+  defect the mock's own audit found, not a stylistic choice worth keeping.
 - [X] T029 Write `scripts/verify-551-presets.mjs` (live Tauri CDP check: switch to each new
   preset via the real Profile-menu Theme submenu and the Settings Appearance section,
   screenshot the chat/composer, session list, Settings screen and a dialog, confirm persistence
@@ -715,7 +716,7 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
   high-contrast text floor. Raised `oklch(0.78 0.17 22)` to `oklch(0.82 0.17 22)` (same
   hue/chroma); added a dedicated `severity-error`/`muted` pair at `min: 7`, scoped to this theme
   only, in `scripts/theme-contrast-pairs.mjs`; `docs/design/accessibility.md`'s "Known gap" note
-  updated to "Fixed" (depends on T026).
+  updated to "Decided; delivered so far" (depends on T026).
   **Done**: `check:theme-contrast` 726/726 pairs across 5 themes PASS (up from 725 -- the one
   new HC-only pair). `dark`/`obsidian` stay byte-identical; `dark-high-contrast` is the one
   theme this task deliberately retunes (its own `--destructive` literal only), per #552 owning
@@ -745,9 +746,13 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
   5. [High] D: the #927 quiet-composer departure note in `accessibility.md` now explicitly
      covers Nordic Frost/Cyber Amber (same transparent-`--composer-background` family).
   6. [Medium] D: Cyber Amber's accent (`#ff8244`) and error (`#ff696c`) measured only 1.14:1
-     apart (23 degrees) -- `--severity-error`/`--state-stopped`/`--pr-closed` moved to hue 12,
-     `--accent-text`/`--active-indicator` raised to L0.88; now 1.55:1 apart, every existing pair
-     still passing (error 4.74:1 on its own `--muted`, the narrowest case; accent 8.69:1 on
+     apart (23 degrees) -- `--severity-error`/`--state-stopped`/`--pr-closed` moved to hue 12.
+     `--accent-text`/`--active-indicator` went through two retunes before landing: first raised
+     to `oklch(0.88 0.17 45)`, which gate round 2 found clipped to a real post-clip hue of ~57.7
+     -- only 16-17 degrees from `--severity-warning` -- then corrected to the final shipped
+     `oklch(0.82 0.10 40)` (hex `#fcae93`, real hue 39.9, entirely in-gamut): now 33.95 degrees
+     from warning's real ~73.8 and 1.54:1 apart from error (swatch contrast), every existing pair
+     still passing (error 4.74:1 on its own `--muted`, the narrowest case; accent 8.59:1 on
      `--popover`, the narrowest case).
   7. [Medium] D: Cyber Amber's surface ladder retuned (card/sidebar closer to Obsidian's own L*
      step sizes: card +6.18 L*, sidebar +2.78 L*); `--muted-foreground` moved to a warmer,
