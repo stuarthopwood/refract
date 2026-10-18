@@ -43,6 +43,7 @@ import {
   substituteChips,
   toImageContent
 } from './attachments'
+import { useComposerClearanceCallbackRef } from './composerHeightVar'
 import { appendFileAttachmentText, FILE_ATTACHMENTS_MARKER, stripFileAttachmentsMarkerForDisplay } from './anyFileAttachments'
 import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
@@ -1202,14 +1203,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // native `placeholder` is left empty here to avoid drawing both on top of each other -- the
     // disabled branch above is unchanged, it has no overlay.
     : ''
-  // Accessibility remediation (High): a short, persistent sr-only summary of how many
-  // attachments are pending right now, pointed to by the textarea's own `aria-describedby` --
-  // the only programmatic link from the textarea to its pending chips/images before this.
+  // Accessibility remediation (High): a persistent sr-only pending-attachments summary, linked via `aria-describedby`.
   const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length + attachments.files.length
   const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
+  const composerClearanceRef = useComposerClearanceCallbackRef() // #980 gate round 2: hoisted out of JSX for clarity
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
+    <div ref={composerClearanceRef} className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
       {chips.length > 0 && (
         <ul
           ref={chipListRef}

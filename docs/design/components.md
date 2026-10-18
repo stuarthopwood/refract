@@ -174,6 +174,8 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
 
+**Placement** (issue #980, decided Skippy, delegated by Stuart 2026-10-18, `ui-architect-v3` roundtable): `position="bottom-center"`, centred on the window on purpose — that is what clears the permanent full-height right rail (`IconRail.tsx`) and the Session list header, which both only ever sit at the window's left/right edges, never its centre, regardless of which pane is focused or how a split (spec 005) is divided. The protection this needs is vertical: the toast sits above whichever composer is currently tallest, tracked live (`composerHeightVar.ts`, a `ResizeObserver` per mounted composer plus a window-resize listener, published as a CSS custom property) rather than a fixed guess, since a composer's own textarea grows, split panes mount two independently-sized composers at once, and the measurement is each composer's own clearance to the viewport bottom (not just its height), so the status bar sitting below the whole chat workspace is folded in automatically. Below 600px window width, Sonner's own mobile breakpoint takes over positioning (`mobileOffset`), carrying the same live clearance for `bottom` plus a fixed `left`/`right` inset so the now-full-width toast still clears the right rail.
+
 ## Empty states
 
 An empty state is an icon, one line saying what is empty, and the next action — nothing more. See "Placeholders and 'coming soon'" in [patterns.md](patterns.md) for what an empty state is never allowed to show instead.
