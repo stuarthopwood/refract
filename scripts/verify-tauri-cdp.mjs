@@ -342,7 +342,15 @@ export function createReportLogger(filePath) {
  * EXPECTED outline colour for a token like `--composer-focus`/`--ring` is resolved through a
  * REAL probe element's own `getComputedStyle()` -- several theme presets resolve these through
  * `color-mix()`/`var()` chains only the browser's own cascade can finish computing, so string-
- * comparing the token's CSS text would be wrong. */
+ * comparing the token's CSS text would be wrong.
+ *
+ * Gate round 3 fix (Low, Main): used to unconditionally read back `.outlineColor` regardless of
+ * `property`, relying on `outline-color`'s own `currentColor` default to coincidentally pick up
+ * whatever `property` (e.g. `color`) had actually been set -- a trick that only works for
+ * properties CSS itself happens to resolve through `currentColor`, silently wrong for anything
+ * else a future caller might pass (e.g. `background-color`, whose own initial value is
+ * `transparent`, never `currentColor`). Reads back the SAME property that was set, converted to
+ * its camelCase `CSSStyleDeclaration` key. */
 export async function resolveCssVarColor(cdp, varName, property = 'outline-color') {
   return cdp.evaluate(`(() => {
     const probe = document.createElement('div');
@@ -354,7 +362,8 @@ export async function resolveCssVarColor(cdp, varName, property = 'outline-color
     probe.style.outlineWidth = '1px';
     probe.style.setProperty('${property}', 'var(${varName})');
     document.body.appendChild(probe);
-    const value = getComputedStyle(probe).outlineColor;
+    const camel = '${property}'.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    const value = getComputedStyle(probe)[camel];
     probe.remove();
     return value;
   })()`);

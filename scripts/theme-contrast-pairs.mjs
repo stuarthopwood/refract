@@ -293,6 +293,27 @@ export const PAIRS = [
   // surface as `severity-error`/`muted` above).
   { fg: 'pr-closed', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'pr-merged-foreground', bg: 'pr-merged', min: 4.5 },
+  // Issue #925: the diff-stat "+A -D" colouring -- real BODY TEXT (never icon-only), so the
+  // 4.5:1 floor, not the 3:1 non-text floor `state-working`/`destructive` already clear
+  // elsewhere above. `diff-added`/`diff-removed` are new token NAMES (aliasing
+  // `state-working`/`destructive`, `globals.css`), so #570's own "check the token actually
+  // rendered, not an alias" rule means these need their own rows even though the underlying
+  // value is already gated. Five real surfaces, three distinct backdrops: the composer status
+  // line's Changes chip and the Pull requests Changes tab's own aggregate line both render on
+  // `--background` in EVERY theme, including Dark high contrast (gate round 2 correction, Main:
+  // confirmed live -- unlike Send/the "Markdown supported" hint text precedent above, the
+  // status line sits OUTSIDE the composer's own fill, so it is never painted on
+  // `--composer-background`; one `onlyThemes`-free pair below covers all three themes, not a
+  // Send-style split); the Session details card's `HoverCardContent` renders on `--popover`;
+  // the Changes tab's per-file diff header (`DiffViewFromPatch`'s own `bg-muted` header row,
+  // #919) AND the chat transcript's own expanded `DiffView` header (gate round 1 M1, the
+  // identical `bg-muted` header shape) both render on `--muted`, so one shared pair covers both.
+  { fg: 'diff-added', bg: 'background', min: 4.5 },
+  { fg: 'diff-removed', bg: 'background', min: 4.5 },
+  { fg: 'diff-added', bg: 'popover', min: 4.5 },
+  { fg: 'diff-removed', bg: 'popover', min: 4.5 },
+  { fg: 'diff-added', bg: 'muted', min: 4.5 },
+  { fg: 'diff-removed', bg: 'muted', min: 4.5 },
 ]
 
 // Issue #559 decision 28 (gate round 3 correction): the search field's own `<Input>` keeps its

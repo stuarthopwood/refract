@@ -40,7 +40,7 @@ export function buildUnifiedDiff(path: string, oldText: string, newText: string)
 // Gate round 1 (code-reviewer High, H2): the added/removed line count used to be hand-rolled
 // twice -- once here, once in `DiffView.tsx`'s own `stats` -- which could disagree the moment
 // either copy drifted. One function, shared by both: `DiffView`'s expanded body and the row's
-// own "+N −M" stat (#632) can never show a different count for the identical diff again.
+// own "+N -M" stat (#632) can never show a different count for the identical diff again.
 export function countChanges(file: Pick<FileData, 'hunks'>): { added: number; removed: number } {
   let added = 0
   let removed = 0
@@ -53,7 +53,7 @@ export function countChanges(file: Pick<FileData, 'hunks'>): { added: number; re
   return { added, removed }
 }
 
-// #632: the "+N −M" one-line stat a collapsed/expanded `edit` call shows in its own row (never
+// #632: the "+N -M" one-line stat a collapsed/expanded `edit` call shows in its own row (never
 // a wrong count: `undefined` when the two texts parse to no hunks at all, e.g. an unreadable or
 // identical pair, or when `buildUnifiedDiff` gave up above) -- shares `buildUnifiedDiff`/
 // `parseDiff`/`countChanges` with `DiffView.tsx`'s own expanded diff body instead of a second
