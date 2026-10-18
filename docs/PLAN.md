@@ -555,6 +555,8 @@ Also filed 2026-10-16 (late): #937 Advisor chip (grilled with Stuart), #938 and 
 
 Also filed 2026-10-17: #952 follow-ups from the #556 zero-box gate (PR #944). Placed as the "Zero-box follow-ups" row.
 Also filed 2026-10-17: #956 follow-ups from the #560 alert rows gate (PR #945). Placed as the "Alert rows follow-ups" row.
+
+Status update 2026-10-18: #937 Advisor chip built (branch `feat/937-advisor-chip`): `session::advisor` (Rust lane), `AdvisorChip` (`ReadoutChips.tsx`), `advisor:update` event. State source decided narrower than the issue's own proposal: `/advisor status`'s own reply text is not trusted for on/off (#917's own evidence showed it ambiguous); only `/advisor on|off`'s own replies and an unambiguous "Advisor is enabled/disabled" substring from a status reply are trusted, everything else stays hidden. Code-verified only pending the build slot; PR not yet opened by this sub-task.
 Also filed 2026-10-18: #959 follow-ups from the #927/#928 quiet composer gate (PR #951). Placed as the "Quiet composer follow-ups" row.
 
 Audited against the full open-issue list (2026-10-10, 201 open): four long-open strays had no Queue or index placement -- #71 (WCAG AA mediums/lows from the quality gate, added to Phase E), #102 (new-session picker Create button missing the one-click in-flight guard -- likely already fixed as a side effect of #620/PR #635's shared `creatingRepositoryIds` guard, noted on the Session list menu: New Session row; confirm live and close), #388 (spec-007 Mermaid contrast checker non-deterministic after 3 regate rounds, needs Stuart's call -- Decisions-still-needed item 9), #593 (4 remaining odd-indent-allow-listed files from #387/PR #589, added to Phase E).

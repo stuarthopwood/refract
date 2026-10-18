@@ -3170,3 +3170,70 @@ and `scripts/verify-554-chat-width.mjs` 31/31 PASS (0 failures, 0 notExercised) 
 instance at commit `ea674bd`, confirmed via `report.json`'s own `gitHead`; PR #966 and this
 phase's PLAN.md row both record the result. Gate round 2's five reviewers PASS; T271's docs
 follow-ups above are the only remaining changes, none touching code or the live-checked build.
+
+## Phase 54: Convergence
+
+- [X] T272 [US1] #937 Advisor chip -- Rust lane. New `session::advisor` (issue #784's
+  pre-declared-lane pattern, alongside `model`/`readout`/`side_chat`/`start_queue`/
+  `subagents`/`termination`): its own `State` held in `AgentState` via `with_advisor_state`
+  (`agent/mod.rs`'s `with_lane_state!` macro), its own `on_frame`/`on_launch` hooks called
+  from `agent/frame.rs`/`agent/launch.rs` the same way every sibling lane already is. State
+  source decided narrower than the issue's own proposal (Decided, Skippy, delegated by Stuart
+  2026-10-18, recorded on issue #937): `omp://rpc.md` exposes no `get_state` field and no
+  dedicated event for the advisor's on/off boolean, so only `/advisor on`'s ("Advisor
+  enabled.") and `/advisor off`'s ("Advisor disabled.") own reply text, both proven stable
+  by #917's `scripts/verify-917-advisor-command.mjs`, are trusted without reservation;
+  `/advisor status`'s own reply is not (#917's own evidence showed it replying `Advisor
+  "default" is running.` immediately after an explicit `/advisor off`), so a silent
+  attach/resume probe (`consume_if_silent_probe`, a pre-dispatch veto added to `agent/
+  frame.rs`'s own `"command_output"` arm so its reply never reaches the transcript --
+  issue #937's own accessibility requirement) trusts only an unambiguous "Advisor is
+  enabled"/"Advisor is disabled" substring, leaving every other wording (including that
+  exact "is running." text) unknown -- chip hidden, never a wrong "on" state. A typed or
+  chip-sent `/advisor on`/`/advisor off` is never suppressed; `session::advisor::on_frame`
+  only piggy-backs on the same frame `apply_transcript_frame` already rendered. New
+  `advisor:update` event (`events.rs`), `advisorOn` on `SessionSnapshot`
+  (`ipc/conversations.rs`'s `build_snapshot`, `current_advisor_value`). **Code-verified
+  only**: no build slot has been granted for this sub-task, so none of this has been compiled,
+  `cargo test`ed, or run against a real `omp` yet -- see FR-076.
+
+- [X] T273 [US1] #937 Advisor chip -- frontend. New `AdvisorChip` (`ReadoutChips.tsx`, built on
+  the shared `ReadoutChip` baseline), rendered unconditionally (no Settings toggle) as the
+  first item of `ComposerStatusLine.tsx`; icon `EyeIcon`, visible text "Advisor", accessible
+  name "Advisor on. Turn off" (busy: "Advisor on. Turning off…"), hidden (renders `null`)
+  while off. Clicking sends `/advisor off` via `window.refract.chat.send`, ignoring repeat
+  clicks while in flight. New per-session `advisor-store.ts` (Zustand, mirrors `readout-
+  store.ts`'s per-session shape), seeded from `SessionSnapshot.advisorOn` (`applySnapshot.ts`)
+  and kept live by the new `advisor:update` IPC event (`shared/ipc.ts`, `tauri-bridge/
+  index.ts`). `ReadoutChip.tsx` gained an optional `buttonRef?: Ref<HTMLButtonElement>` prop
+  (backward-compatible, threaded onto the `onActivate` `<button>` only); a
+  `useLayoutEffect` keyed on `advisorOn` reads that ref in its own cleanup (the same focus-
+  handoff-on-unmount-equivalent pattern `RequestCard.tsx`'s `ResolvedRequestSummary`/
+  `AskCard.tsx` already use) to move focus to the message textarea and announce "Advisor
+  off" through `MessageInput.tsx`'s existing shared `useDraftStore.getState()
+  .announceAttachment` live region, only when the chip's own button held focus right before
+  the transition -- never for a plain typed `/advisor off`, which already has its own visible
+  transcript notice. **Code-verified only**: `pnpm typecheck`/`pnpm build` have not been run
+  (no build slot for this sub-task yet) -- see FR-076.
+
+- [X] T274 [US1] #937 Docs and live-check script. Amended `CONTEXT.md`'s **Advisor** entry (the
+  readout is part of what "Advisor" means, not a separate term), `docs/design/product-
+  chat.md` (new Advisor readout bullet), `docs/PLAN.md` (2026-10-18 status-update
+  paragraph), and this spec (new FR-076). New `scripts/verify-937-advisor-chip.mjs`
+  (modelled on `verify-917-advisor-command.mjs`/`verify-927-928-quiet-composer.mjs`'s own
+  scratch-launch/CDP pattern): AX-tree accessible-name assertions for both on/off states and
+  both busy wordings, a geometry comparison against a neighbouring status-line chip (24px row
+  height, 14px icon), a mouse-click run and a separate keyboard-only run (Tab, Enter) each
+  asserting the send, the busy no-op, the settled `/advisor status` confirmation, the chip
+  leaving the AX tree, focus landing on the message textarea, and the "Advisor off"
+  announcement, plus Dark/Obsidian/Dark (high contrast) screenshots of the chip ON. `node
+  --check` confirmed it parses. **Not yet run**: no build slot has been granted for this
+  sub-task, so this script has never executed against a real built app -- its own
+  `notExercised` list additionally discloses that it cannot itself prove the silent attach-
+  probe's own transcript suppression without a second scratch run across an app restart.
+
+Not yet opened as a PR: this phase's three tasks were built by delegated sub-tasks with no
+build slot granted, so nothing above has been compiled, typechecked, or live-checked yet --
+every claim above is code-verified only (static read of the diff), per FR-076. The next build
+slot MUST run `cargo fmt --check`/`cargo test`/`cargo clippy`, `pnpm typecheck`, `pnpm
+vitest run`, and `node scripts/verify-937-advisor-chip.mjs` before a PR opens.
