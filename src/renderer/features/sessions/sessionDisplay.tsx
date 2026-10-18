@@ -229,22 +229,50 @@ export function StateIcon({ status }: { status: SessionDisplayStatus }) {
 
 /** Issue #925: the coloured "+A -D" portion of a diff stat -- shared by the status line's
  * `ChangesChip`, the Session details card's diff line, the Pull requests Changes tab's own
- * aggregate line, and its own per-file diff header (`DiffViewFromPatch`, issue #919), so none of
- * them can colour (or leave uncoloured) the same figure a different way. `added`/`removed` each
- * take `text-diff-added`/`text-diff-removed` (`globals.css`, aliasing the same `--state-working`/
- * `--destructive` hues `DiffView.tsx`'s own insert/delete tint already uses) only when strictly
- * positive; a zero count stays `text-muted-foreground` in either direction, so a `-0` never
- * reads as an error. The leading +/- glyph is the non-colour cue (WCAG 1.4.1) in every case.
- * `compact` abbreviates past 1,000 via the shared `compactNumber` formatter (issue #437) for the
- * two surfaces that already did so (the status line and the Session details card); the Changes
- * tab and the per-file header never abbreviated before this issue, so they leave it off. */
-export function DiffStatCounts({ added, removed, compact = false }: { added: number; removed: number; compact?: boolean }) {
+ * aggregate line and per-file diff header (`DiffViewFromPatch`, issue #919), and the chat
+ * transcript's own `DiffView` header, so none of them can colour (or leave uncoloured) the same
+ * figure a different way. `added`/`removed` each take `text-diff-added`/`text-diff-removed`
+ * (`globals.css`, aliasing the same `--state-working`/`--destructive` hues `DiffView.tsx`'s own
+ * insert/delete tint already uses) only when strictly positive; a zero count stays
+ * `text-muted-foreground` in either direction, so a `-0` never reads as an error. The leading
+ * +/- glyph is the non-colour cue (WCAG 1.4.1) in every case. `compact` abbreviates past 1,000
+ * via the shared `compactNumber` formatter (issue #437) for the two surfaces that already did so
+ * (the status line and the Session details card); the Changes tab, its per-file header, and the
+ * chat DiffView header never abbreviated before this issue, so they leave it off.
+ *
+ * Gate round 1 (L1): `accessibleLabel` pairs a real "N additions M deletions" `sr-only` phrase
+ * (dropping the visible glyphs from assistive tech, `DiffStatLine`'s own established pattern)
+ * for the four surfaces that render this component directly with no outer accessible wrapper of
+ * their own (the Changes tab's aggregate line and per-file fallback, `DiffViewFromPatch`'s
+ * header, the chat `DiffView`'s header) -- `DiffStatLine`'s own two callers leave it off
+ * (default `false`), since they already pair a fuller sentence via `formatDiffStatAccessible`
+ * one level up; pairing both here too would double-announce the same figure. */
+export function DiffStatCounts({
+  added,
+  removed,
+  compact = false,
+  accessibleLabel = false
+}: {
+  added: number
+  removed: number
+  compact?: boolean
+  accessibleLabel?: boolean
+}) {
   const addedText = compact ? compactNumber(added) : String(added)
   const removedText = compact ? compactNumber(removed) : String(removed)
   return (
-    <span className="tabular-nums">
-      <span className={added > 0 ? 'text-diff-added' : 'text-muted-foreground'}>+{addedText}</span>{' '}
-      <span className={removed > 0 ? 'text-diff-removed' : 'text-muted-foreground'}>-{removedText}</span>
+    <span className="tabular-nums whitespace-nowrap">
+      {accessibleLabel && (
+        <span className="sr-only">
+          {added} addition{added === 1 ? '' : 's'} {removed} deletion{removed === 1 ? '' : 's'}
+        </span>
+      )}
+      <span aria-hidden={accessibleLabel} className={added > 0 ? 'text-diff-added' : 'text-muted-foreground'}>
+        +{addedText}
+      </span>{' '}
+      <span aria-hidden={accessibleLabel} className={removed > 0 ? 'text-diff-removed' : 'text-muted-foreground'}>
+        -{removedText}
+      </span>
     </span>
   )
 }

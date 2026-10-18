@@ -34,6 +34,20 @@ Markdown rendering is the working default component-token group under this model
 
 `--agent-spinner-core` (`AgentSpinner.tsx`, `src/renderer/components/brand/AgentSpinner.tsx`) is this model's first actually-shipped layer-3 component token (the markdown tokens above are still the working default, not yet built) -- declared once per theme block (`.theme-dark`, `.theme-obsidian`, `.theme-dark-high-contrast` in `globals.css`), defaulting to the same brand violet in every theme today (Stuart, 2026-10-09: "same brand violet in every theme for now"; `#9A68E4` since round 5's A11y remediation -- the original `#864DD6` failed 3:1 against `--sidebar-accent`, the selected/hovered session row where the icon is the only visible status cue, in all three themes). A custom theme file (#458) may override it per-theme once theme-file loading is built, exactly as the three-layer model intends. The component's own `palette` prop/`data-palette` attribute offers two further, deliberately NON-theme-derived overrides (`'export'`, `'blue'`) for Stuart to compare visually -- these are fixed per-instance values, not theme tokens, and win over the inherited theme value because they are declared directly on the `.agent-spinner` element itself. Checked against `--sidebar`, `--sidebar-accent`, `--card`, `--popover` and `--background` (every surface the mark renders on) by `scripts/check-theme-contrast.mjs`'s `PAIRS` list, >=3:1 non-text floor, in every theme.
 
+### Diff-stat colour tokens (issue #925)
+
+`--diff-added`/`--diff-removed` (`globals.css`, every built-in theme) are layer-3 component
+tokens for the coloured `+N`/`-N` portion of a change-count stat, wherever one shows (the
+composer status line's Changes readout, the Session details card's identical diff line, the
+Pull requests Changes tab's aggregate line and per-file diff header, and the chat transcript's
+own expanded `DiffView` header): aliases of the SAME `--state-working`/`--destructive` values
+`DiffView.tsx`/`diff-view.css` already colour the diff gutter and its own line markers with
+(issue #630), never a second, independently-tunable hue (this page's own "do not create a
+second set" rule, #550). A count takes its colour only when strictly positive; a count of
+exactly zero stays `--muted-foreground` in either direction, so a `-0` never reads as an error
+-- the shared `DiffStatCounts` component (`sessionDisplay.tsx`) is the one place this rule is
+implemented.
+
 ## Theme files
 
 A theme is a data file (JSON) of palette, semantic-role, and component-token overrides, loaded from the user's profile folder and listed in the Appearance section of Settings beside the built-in presets (agenda item 9, #458).

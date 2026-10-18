@@ -620,18 +620,24 @@ The developer types a slash command and finds the ones the agent offers. If a se
   surfaces, folding in issue #919): Wherever a change-count stat ("N files changed +A -D")
   renders -- the composer status line's Changes readout (spec 004 FR-002), the Session details
   card's identical diff line, the Pull requests Changes tab's own aggregate line (spec 003
-  FR-009), and its own per-file diff header (`DiffViewFromPatch`, issue #919: never shipped
-  until this issue folded it in) -- the `+N` MUST take the diff view's own green hue once N is
-  strictly positive, the `-M` MUST take its own red hue once M is strictly positive, and either
-  figure MUST stay muted at exactly zero (a `-0` MUST NOT read as an error). Both hues are
+  FR-009), its own per-file diff header (`DiffViewFromPatch`, issue #919: never shipped until
+  this issue folded it in), and the chat transcript's own expanded `DiffView` header (gate round
+  1, M1, Decided, Skippy, delegated by Stuart 2026-10-18: this header used its own raw
+  `text-state-working`/`text-destructive` spans before this amendment, a second colouring copy
+  that could drift from the rule below) -- the `+N` MUST take the diff view's own green hue once
+  N is strictly positive, the `-M` MUST take its own red hue once M is strictly positive, and
+  either figure MUST stay muted at exactly zero (a `-0` MUST NOT read as an error). Both hues are
   dedicated `--diff-added`/`--diff-removed` component tokens (`globals.css`) that alias the SAME
-  `--state-working`/`--destructive` values `DiffView.tsx`'s own insert/delete gutter and stat
-  already colour with (issue #630), never a second, independently-tunable hue. The leading +/-
-  glyph remains the non-colour cue in every case (WCAG 1.4.1). A tool call's own edit stat
-  (`ToolRow.tsx`/`toolRowLabels.tsx`'s `callMeta`) and any Pull requests list row are explicitly
-  OUT of this requirement's scope: colouring the former would reopen issue #570 decision 1/3
-  ("done is neutral on tool rows"), confirmed by a ui-architect-v3 ruling not to apply here, and
-  no list row shows a change count today.
+  `--state-working`/`--destructive` values `DiffView.tsx`'s own insert/delete gutter already
+  colours with (issue #630), never a second, independently-tunable hue; every surface above
+  renders through one shared `DiffStatCounts` component, including its own minus glyph (ASCII
+  `-`, never the Unicode minus sign the chat header used to draw), so no two surfaces can phrase
+  or colour the same figure a different way. The leading +/- glyph remains the non-colour cue in
+  every case (WCAG 1.4.1). A tool call's own edit stat (`ToolRow.tsx`/`toolRowLabels.tsx`'s
+  `callMeta`) and any Pull requests list row are explicitly OUT of this requirement's scope:
+  colouring the former would reopen issue #570 decision 1/3 ("done is neutral on tool rows"),
+  confirmed by a ui-architect-v3 ruling not to apply here, and no list row shows a change count
+  today.
 - **FR-074** (new, 2026-10-18, issue #924; amends FR-064's Reasoning picker trigger icon and
   this card's own identical thinking-level icon): The Reasoning picker's trigger icon (FR-064)
   and the Session details card's own thinking-level icon MUST reflect the Session's current

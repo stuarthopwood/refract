@@ -7,15 +7,23 @@
 // "use lucide's stroke style" rule (#924's own decision) without a second, unrelated face shape.
 //
 // The needle sweeps evenly across the arc's own two endpoints: `off` points at the arc's left
-// tip (150deg), `max` at its right tip (330deg, i.e. -30deg), `medium` sits exactly upright
-// (270deg, straight up) as the issue's own decision requires, and the remaining four levels fall
-// at even 40deg steps between. `inherit` has no step of its own -- issue #924's own decision is
-// to draw it "at the resolved level omp reports", but `Session.lastThinkingLevel` (the only field
-// this component or its callers can read) is already the resolved value by the time `get_state`
-// reports it (`ipc-model.ts`'s own comment on `setThinkingLevel`: OMP resolves `inherit` to a
-// real level before echoing it back), so this component never actually sees the literal string
-// `'inherit'` in practice; a `null`/`undefined`/unrecognised level (no model or level known yet,
-// "Reasoning not reported") falls back to the same centred, upright needle as `medium`.
+// tip (150deg), `max` at its right tip (390deg, i.e. 30deg mod 360 -- past a full turn, since the
+// arc's own major-arc geometry spans 240deg from 150deg), `medium` sits exactly upright (270deg,
+// straight up) as the issue's own decision requires, and the remaining four levels fall at even
+// 40deg steps between. `inherit` has no step of its own -- issue #924's own decision is to draw
+// it "at the resolved level omp reports", but no field exists, separate from
+// `Session.lastThinkingLevel` itself, to read that resolved level independently. Gate round 1
+// fix (M3, Decided, Skippy, delegated by Stuart 2026-10-18, posted on #924): a prior draft of
+// this comment claimed OMP always resolves `inherit` to a real level before echoing it back, so
+// this component would never actually see the literal string -- WRONG, confirmed against
+// `thinking_level.rs:138,152`: Refract's own Rust code explicitly stores the literal string
+// `"inherit"` into `last_thinking_level` whenever a Default request succeeds with no echoed
+// level back from OMP. So this component genuinely can, and does, receive the literal string
+// `'inherit'` -- it draws centred not because that case is rare, but because `'inherit'` is
+// simply absent from `LEVELS` below (the 7 NAMED levels only), so it falls through the same
+// "unrecognised level" branch any other unknown string would, landing on `MEDIUM_INDEX`. A
+// `null`/`undefined` level (no model or level known yet, "Reasoning not reported") takes the
+// identical fallback.
 //
 // Decorative in every case (`aria-hidden`, `docs/design/foundations-icons.md` "Metadata
 // iconography" -- the level itself is already in the trigger's visible/accessible text in both
@@ -24,8 +32,12 @@
 // for `scripts/verify-925-924-polish.mjs` to find this icon by, in both callers, never by the
 // shared `viewBox="0 0 24 24"` alone (ambiguous against any other SVG the same size).
 import type { ThinkingLevel } from '../../shared/ipc-model'
+import { THINKING_LEVELS } from '@/lib/modelDisplay'
 
-const LEVELS: readonly ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+// Gate round 1 fix (M2): derived from the SAME `THINKING_LEVELS` the Reasoning picker's own menu
+// lists (`modelDisplay.ts`), minus `inherit` (which has no step of its own, see above) -- a
+// second hand-maintained copy of this list could silently drift from the picker's real menu.
+const LEVELS: readonly ThinkingLevel[] = THINKING_LEVELS.filter((lvl): lvl is Exclude<ThinkingLevel, 'inherit'> => lvl !== 'inherit')
 const ARC_START_DEG = 150
 const ARC_SWEEP_DEG = 240
 const CENTER_X = 12

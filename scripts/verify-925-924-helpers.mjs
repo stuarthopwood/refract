@@ -38,14 +38,26 @@ export function makeScratchRepoWithTrackedFile(dir, label) {
  * own origin checkout, a different directory once Refract creates the worktree) to produce a
  * real, non-zero, uncommitted diffStat -- appends 3 new lines (a genuine addition) and removes
  * one existing line (a genuine deletion), so the resulting `+3 -1` exercises BOTH the green and
- * the red branch of `DiffStatCounts` in one edit, not just one or the other. */
+ * the red branch of `DiffStatCounts` in one edit, not just one or the other.
+ *
+ * Gate round 1 fix (H1): on Windows, `git worktree add` checks the file out through
+ * `core.autocrlf=true` (the system default, confirmed), so the worktree's own copy of this file
+ * is CRLF, not the LF the scratch repo's own commit holds -- splitting on a bare `\n` left a
+ * trailing `\r` on every line, so `'line one\r' !== 'line one'` and the filter below silently
+ * removed nothing; every run measured a real `+4 -0`, never a genuine deletion, so the red
+ * branch was never actually exercised despite the PASS. Splits on `\r?\n` to normalise BOTH line
+ * endings before comparing, then rejoins with the file's OWN original EOL style (preserving it
+ * for every untouched line, so git diff shows exactly the one real removal and three real
+ * additions this function intends -- rejoining with a different EOL would make every surviving
+ * line look both removed and re-added). */
 export function editTrackedFileForDiff(worktreePath) {
   const filePath = path.join(worktreePath, TRACKED_FILE_NAME);
-  const current = readFileSync(filePath, 'utf8').split('\n');
-  // Drop the "line one" row -- a real deletion against the committed HEAD.
-  const withoutOne = current.filter((line) => line !== 'line one');
+  const raw = readFileSync(filePath, 'utf8');
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const lines = raw.split(/\r?\n/);
+  const withoutOne = lines.filter((line) => line !== 'line one');
   const edited = [...withoutOne, 'line five', 'line six', 'line seven', ''];
-  writeFileSync(filePath, edited.join('\n'));
+  writeFileSync(filePath, edited.join(eol));
 }
 
 // Issue #924: the SAME 7-step angle formula `ReasoningGaugeIcon.tsx` computes, reimplemented
@@ -100,14 +112,23 @@ export async function readDiffStatSpans(cdp, containerExpr) {
     if (!container) return null;
     const counts = container.querySelector('.tabular-nums');
     if (!counts) return null;
-    const spans = Array.from(counts.querySelectorAll(':scope > span'));
+    // Gate round 1 fix: the counts wrapper may ALSO hold an sr-only accessible-label span
+    // (\`DiffStatCounts\`'s own \`accessibleLabel\` prop) -- filtered out here so this always
+    // resolves to exactly the two VISIBLE +N/-N spans, whether or not that prop is set.
+    const spans = Array.from(counts.querySelectorAll(':scope > span')).filter((span) => !span.className.includes('sr-only'));
     if (spans.length !== 2) return null;
     function effectiveBackground(el) {
       let node = el;
       while (node) {
         const bg = getComputedStyle(node).backgroundColor;
-        const isTransparent = bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent';
-        if (!isTransparent) return bg;
+        const match = bg.match(/^rgba?\\(\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*(?:,\\s*([\\d.]+)\\s*)?\\)$/);
+        // Gate round 1 fix (L4): a PARTIALLY transparent background (alpha strictly between 0
+        // and 1) is not the real opaque backdrop either -- the true rendered colour still
+        // depends on whatever is further beneath it. Only alpha === 1 (an explicit '1', or no
+        // alpha channel at all, which rgba()/getComputedStyle always report as fully opaque)
+        // counts as "found"; anything else keeps walking up.
+        const alpha = match && match[1] !== undefined ? parseFloat(match[1]) : 1;
+        if (match && alpha === 1) return bg;
         node = node.parentElement;
       }
       return getComputedStyle(document.body).backgroundColor;

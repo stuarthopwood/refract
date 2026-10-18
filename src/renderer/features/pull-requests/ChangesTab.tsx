@@ -30,7 +30,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
   return (
     <div className="flex flex-col gap-3 p-3">
       <p className="text-sm text-muted-foreground">
-        {files.length} file{files.length === 1 ? '' : 's'} changed, <DiffStatCounts added={additions} removed={deletions} />
+        {files.length} file{files.length === 1 ? '' : 's'} changed, <DiffStatCounts added={additions} removed={deletions} accessibleLabel />
       </p>
       {files.length < changedFilesCount && (
         <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
@@ -62,13 +62,29 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
           {file.patch !== null ? (
             <DiffViewFromPatch path={file.path} patch={file.patch} additions={file.additions} deletions={file.deletions} />
           ) : (
+            // Gate round 1 (M4, Decided, Skippy, delegated by Stuart 2026-10-18, posted on
+            // #925): the same bg-muted header shape `DiffViewFromPatch`'s real diff uses --
+            // path left, the per-file stat and Open in browser right -- instead of the path
+            // alone with the stat relegated to a second plain-text line below.
             <div className="overflow-hidden rounded-md border border-border">
-              <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground" title={file.path}>
-                {file.path}
+              <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+                <span className="min-w-0 truncate" title={file.path}>
+                  {file.path}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <DiffStatCounts added={file.additions} removed={file.deletions} accessibleLabel />
+                  <a
+                    href={`${url}/files`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="flex shrink-0 items-center gap-1 underline underline-offset-2"
+                  >
+                    Open in browser
+                    <ExternalLinkIcon aria-hidden className="size-3" />
+                  </a>
+                </span>
               </div>
-              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">
-                <DiffStatCounts added={file.additions} removed={file.deletions} /> (diff not shown)
-              </div>
+              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Diff not shown.</div>
             </div>
           )}
         </div>

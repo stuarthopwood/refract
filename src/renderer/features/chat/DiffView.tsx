@@ -107,16 +107,14 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {/* #630: added/removed line counts from the parsed hunks, never colour alone (the
-           * leading +/− glyph is the same cue the gutter already uses). `text-state-working` is
-           * the same token the diff gutter's own insert tint uses (diff-view.css) -- quality-gate
-           * remediation (High, round 2): a raw `text-green-600` measured under 4.5:1 against this
-           * `bg-muted` header in the Obsidian theme, and `check-theme-contrast` cannot catch a
-           * raw Tailwind palette colour at all; the token is now a gated PAIRS entry. */}
-          {changedFile && (
-            <span className="tabular-nums">
-              <span className="text-state-working">+{stats.added}</span> <span className="text-destructive">−{stats.removed}</span>
-            </span>
-          )}
+           * leading +/- glyph is the same cue the gutter already uses). Issue #925 gate round 1
+           * (M1, Decided, Skippy, delegated by Stuart 2026-10-18, posted on #925): this header
+           * now renders through the SAME shared `DiffStatCounts` the Changes tab and its own
+           * per-file header use, instead of its own raw `text-state-working`/`text-destructive`
+           * spans -- one colouring rule (muted zero, green/red positive) and one minus glyph
+           * (ASCII `-`, not the Unicode minus sign this header used to draw) everywhere a change
+           * count shows, not two independently-styled copies that could drift apart. */}
+          {changedFile && <DiffStatCounts added={stats.added} removed={stats.removed} accessibleLabel />}
           {/* Copies the full unified diff (git header plus hunks) shown below -- the same "copy
            * exactly the displayed text" rule `CodeBlock`'s Copy button follows (#524); there is
            * nothing to copy for an unchanged file, so the button only renders when a hunk exists.
@@ -125,7 +123,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
           {changedFile && (
             <CopyButton
               getText={() => patch ?? ''}
-              label="Copy diff"
+              label={`Copy diff for ${path}`}
               announcement="Diff copied"
               className="-my-1 text-muted-foreground focus-visible:ring-inset"
             />
@@ -232,11 +230,11 @@ ${patch}`
           {path}
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          <DiffStatCounts added={additions} removed={deletions} />
+          <DiffStatCounts added={additions} removed={deletions} accessibleLabel />
           {changedFile && (
             <CopyButton
               getText={() => wrapped}
-              label="Copy diff"
+              label={`Copy diff for ${path}`}
               announcement="Diff copied"
               className="-my-1 text-muted-foreground focus-visible:ring-inset"
             />

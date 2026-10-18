@@ -16,7 +16,10 @@
 //     no prompt ever sent, no model tokens spent, no `set_thinking_level`-adjacent turn needed.
 //   - A shallow, read-only clone of `stuarthopwood/refract` itself (`verify-tauri-568.mjs`'s own
 //     established pattern), giving the Pull requests view and its Changes tab real GitHub PR
-//     data -- the first row in the (default "Open") list, whichever one that is this run.
+//     data -- scanning up to the first 5 rows in the (default "Open") list for one whose own
+//     real additions AND deletions are both positive, a best-effort (not guaranteed; real PR
+//     data is outside this script's control) attempt to genuinely exercise the red branch on
+//     these two surfaces too, not just the chip/card the edit above directly controls.
 //
 // Checks made, per theme (Dark, Obsidian, Dark high contrast) unless noted:
 //   (1) #925: the composer status line's Changes chip -- `+N`/`-N` spans' own class
@@ -33,9 +36,12 @@
 //       7 named levels) -- the needle's own rendered angle (read off its `<path>` geometry,
 //       `verify-925-924-helpers.mjs`'s `readGaugeNeedleAngle`) compared against the SAME 7-step
 //       formula the component itself computes (`needleAngleDeg`), derived from whatever level
-//       the real RPC round trip actually settles on, never a hardcoded per-level literal. Then
-//       the Session details card's own identical icon, confirmed to match the picker's. Geometry
-//       is theme-independent (decorative, no colour), so this runs once, not per theme.
+//       the real RPC round trip actually settles on, never a hardcoded per-level literal. Then,
+//       once that loop ends on "Max", the Session details card's own identical icon is read
+//       ONCE and confirmed to match the picker's -- a same-Session cross-check, NOT an
+//       independent per-level check of the card itself (the card is never driven through all 8
+//       levels, only read at whatever level the picker loop left the Session on). Geometry is
+//       theme-independent (decorative, no colour), so this runs once, not per theme.
 //
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
 // scripts/verify-925-924-polish.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
@@ -159,16 +165,38 @@ function angleDiffDeg(a, b) {
   return diff;
 }
 
+/** Gate round 1 (L3): a 2x-scaled crop of just the element `finderExpr` resolves to, via CDP's
+ * own `clip` option -- real visual evidence of the needle's position at a specific level, not
+ * only the numeric angle assertion. `false` (no screenshot written) if the element is not found. */
+async function screenshotCrop(cdp, finderExpr, outPath, scale = 2) {
+  const rect = await cdp.evaluate(`(() => { const el = ${finderExpr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`);
+  if (!rect || rect.width === 0 || rect.height === 0) return false;
+  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale } });
+  writeFileSync(outPath, Buffer.from(data, 'base64'));
+  return true;
+}
+
 /** Issue #925: asserts one `DiffStatCounts` pair's own class/colour rule against the real
  * numbers parsed out of its own text -- never trusting the app to have applied the rule
- * correctly, deriving the expectation independently from `+N`/`-N` text each time. */
-function assertDiffStatSpans(label, spans, findings, failures) {
+ * correctly, deriving the expectation independently from `+N`/`-N` text each time.
+ *
+ * Gate round 1 fix (H2): `requireBothPositive` (the chip/card non-zero call sites, where this
+ * script itself controls the edit and so KNOWS both should be positive) turns "removed happened
+ * to read zero" into a hard failure instead of a silent, semantically-true-but-wrong "zero stays
+ * muted" pass -- the whole point of that edit is to exercise BOTH the green and the red branch,
+ * and a script bug that only ever produced an addition must not pass as if it had. The PR
+ * surfaces (real GitHub data, not scripted) leave this off: a real PR's own deletions count is
+ * outside this script's control. */
+function assertDiffStatSpans(label, spans, findings, failures, { requireBothPositive = false } = {}) {
   if (!spans) {
     failures.push(`${label}: DiffStatCounts spans not found.`);
     return;
   }
   const addedN = parseInt(spans.added.text.replace(/[^\d-]/g, ''), 10);
   const removedN = parseInt(spans.removed.text.replace(/[^\d-]/g, ''), 10);
+  if (requireBothPositive && (addedN === 0 || removedN === 0)) {
+    failures.push(`${label}: expected BOTH added and removed strictly positive (this edit controls the diff) to exercise both the green and the red branch -- got "+${addedN} -${removedN}".`);
+  }
   for (const [name, entry, n, expectedClass] of [
     ['added', spans.added, addedN, 'text-diff-added'],
     ['removed', spans.removed, removedN, 'text-diff-removed']
@@ -288,8 +316,8 @@ async function main() {
     findings.push(`Edited the tracked file inside the real worktree (${worktreePath}): a real addition and deletion against HEAD.`);
     await cdp.clickByText('New conversation');
     await cdp.waitFor(
-      `(() => { const el = ${CHANGES_CHIP_CONTAINER}; return !!el && /changed/.test(el.textContent) && !/0 files changed \\+0 -0/.test(el.textContent); })()`,
-      { timeoutMs: 20_000, label: 'Changes chip settles to the real non-zero diffStat' }
+      `(() => { const el = ${CHANGES_CHIP_CONTAINER}; return !!el && /\\+3 -1/.test(el.textContent); })()`,
+      { timeoutMs: 20_000, label: 'Changes chip settles to the real +3 -1 diffStat' }
     );
     findings.push('Changes chip settled to a non-zero diffStat after a local "New conversation" click (no prompt sent, no model tokens spent).');
 
@@ -298,7 +326,7 @@ async function main() {
       await switchTheme(cdp, theme.id, theme.name);
       await sleep(200);
       const chip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures);
+      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures, { requireBothPositive: true });
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-01-changes-chip.png`));
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -308,17 +336,22 @@ async function main() {
       );
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: freshRowRect.x, y: freshRowRect.y });
       await cdp.waitFor(
-        `(() => { const el = ${DETAILS_CARD_DIFF_CONTAINER}; return !!el && /changed/.test(el.textContent) && !/0 files changed \\+0 -0/.test(el.textContent); })()`,
+        `(() => { const el = ${DETAILS_CARD_DIFF_CONTAINER}; return !!el && /\\+3 -1/.test(el.textContent); })()`,
         { timeoutMs: 15_000, label: `${theme.name}: details card diff line settled (+3 -1)` }
       );
       const card = await readDiffStatSpans(cdp, DETAILS_CARD_DIFF_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: Session details card diff line (non-zero)`, card, findings, failures);
+      assertDiffStatSpans(`${theme.name}: Session details card diff line (non-zero)`, card, findings, failures, { requireBothPositive: true });
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-02-details-card.png`));
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     }
 
     // ---- (4) #924: the Reasoning picker's gauge needle, every selectable level, read once
-    // (geometry, decorative, theme-independent -- not re-checked across the loop above). ----
+    // (geometry, decorative, theme-independent -- not re-checked across the loop above).
+    // Gate round 1 fix (L3): explicit switch to Dark first -- the per-theme loop above leaves
+    // the app on whichever theme it iterated last (Dark high contrast), so the "dark-" prefix
+    // on this section's own screenshots used to be false; this makes it true. ----
+    await switchTheme(cdp, 'dark', 'Dark');
+    await sleep(200);
     for (const levelLabel of LEVEL_LABELS) {
       const settledLabel = await selectReasoningLevel(cdp, `(${REASONING_PICKER_FINDER})`, levelLabel);
       // Derive the expected level STRING from the settled label text (the trigger shows the
@@ -334,6 +367,12 @@ async function main() {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}" -- needle angle is ${actualAngle.toFixed(2)}deg, expected ${expectedAngle.toFixed(2)}deg (the 7-step formula's own angle for this settled level, mod 360).`);
       } else {
         findings.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", needle angle ${actualAngle.toFixed(2)}deg matches the formula's own ${expectedAngle.toFixed(2)}deg (mod 360).`);
+      }
+      // Gate round 1 (L3): a 2x crop of just the needle icon at three representative levels --
+      // visual evidence a reviewer can actually judge the needle's own position from, rather
+      // than only the numeric angle assertion above.
+      if (['Off', 'Medium', 'Max'].includes(levelLabel)) {
+        await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${levelLabel.toLowerCase().replace(/\s+/g, '-')}.png`));
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-03-reasoning-picker-max.png'));
@@ -398,14 +437,30 @@ async function main() {
         );
         await cdp.screenshot(path.join(SHOTS_DIR, 'dark-06-pr-list-failure.png'));
       } else {
-        await cdp.click(`document.querySelector('.divide-y button')`);
-        await cdp.waitFor(`!!document.querySelector('h2.line-clamp-2')`, { timeoutMs: 20_000, label: 'PR detail title rendered' });
-        await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
-        await cdp.waitFor(
-          `!!Array.from(document.querySelectorAll('p')).find((el) => /changed/.test(el.textContent))`,
-          { timeoutMs: 15_000, label: 'Changes tab aggregate line rendered' }
-        );
         const AGGREGATE_CONTAINER = `Array.from(document.querySelectorAll('p')).find((el) => /changed/.test(el.textContent))`;
+        // Gate round 1 (H2): scans up to the first 5 rows for one whose own real additions AND
+        // deletions are both positive, so the red branch gets a genuine live exercise on real
+        // PR data too -- not guaranteed (a real PR's own shape is outside this script's
+        // control), but a best effort before falling back to row 0 and recording honestly that
+        // the red branch was not reached on this surface this run.
+        const rowCount = await cdp.evaluate(`document.querySelectorAll('.divide-y button').length`);
+        const scanLimit = Math.min(rowCount, 5);
+        for (let i = 0; i < scanLimit; i++) {
+          await cdp.click(`document.querySelectorAll('.divide-y button')[${i}]`);
+          await cdp.waitFor(`!!document.querySelector('h2.line-clamp-2')`, { timeoutMs: 20_000, label: `PR row ${i} detail title rendered` });
+          await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
+          await cdp.waitFor(`!!(${AGGREGATE_CONTAINER})`, { timeoutMs: 15_000, label: `PR row ${i} Changes tab aggregate rendered` });
+          const probe = await readDiffStatSpans(cdp, AGGREGATE_CONTAINER);
+          const probeAdded = probe ? parseInt(probe.added.text.replace(/[^\d-]/g, ''), 10) : 0;
+          const probeRemoved = probe ? parseInt(probe.removed.text.replace(/[^\d-]/g, ''), 10) : 0;
+          if (probeAdded > 0 && probeRemoved > 0) {
+            findings.push(`Pull requests: row ${i} (of ${scanLimit} scanned) has both additions and deletions (+${probeAdded} -${probeRemoved}) -- chosen to genuinely exercise the red branch on real PR data.`);
+            break;
+          }
+          if (i === scanLimit - 1) {
+            notExercised.push(`Pull requests red-branch exercise: scanned the first ${scanLimit} rows, none had both additions>0 and deletions>0 this run (row ${i} itself: +${probeAdded} -${probeRemoved}) -- proceeding with it anyway; the red branch is not genuinely exercised on the Changes tab/per-file header this run.`);
+          }
+        }
         // #919: a per-file diff header, whichever of the two real render paths this run's first
         // PR's first file happens to take -- a real `DiffViewFromPatch` header (`.diff-view`'s
         // own first child, `bg-muted`), or, for a too-large-to-show file, the plain fallback

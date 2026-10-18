@@ -119,6 +119,19 @@ Attachments and queued-message chips inside the composer area are control afford
 
 Depth between in-flow surfaces (cards, panes, rows, the composer) comes from the surface ladder (background, then surface 1, 2, 3, each a step lighter), never a shadow. See "Elevation and shadows" and "Surface ladder and edges" in [foundations-tokens-theming.md](foundations-tokens-theming.md).
 
+## Diff stat
+
+Issue #925: wherever a change-count stat ("N files changed +A -D") shows -- the composer status
+line's Changes readout, the Session details card's identical diff line, the Pull requests
+Changes tab's aggregate line and per-file diff header, and the chat transcript's own expanded
+diff header -- it renders through one shared `DiffStatCounts` component
+(`src/renderer/features/sessions/sessionDisplay.tsx`), never a per-surface copy. `+N` takes the
+`--diff-added` token once N is strictly positive, `-N` takes `--diff-removed` once N is strictly
+positive (see "Diff-stat colour tokens" in [foundations-tokens-theming.md](foundations-tokens-theming.md)
+for the tokens themselves); a count of exactly zero stays `--muted-foreground` in either
+direction, so a `-0` never reads as an error. The leading +/- glyph is the non-colour cue (WCAG
+1.4.1) in every case, unchanged by which colour (if any) the figure takes.
+
 ## Chips and pills
 
 Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.

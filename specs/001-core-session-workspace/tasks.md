@@ -3036,20 +3036,29 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   status line's context-usage gauge untouched.
 - [X] T270 [US1] `scripts/verify-925-924-polish.mjs` (new): measures computed colour and
   contrast ratio of `+N`/`-N`/zero on each of the four #925 surfaces in every theme, and the
-  gauge needle's rendered angle at every reasoning level in both the composer picker and the
-  Session details card, changing the level through the real UI.
+  gauge needle's rendered angle at every reasoning level in the composer picker, changing the
+  level through the real UI, then cross-checks the Session details card's own identical icon
+  against the picker once (at whatever level the level loop ends on), not independently at
+  every level.
 
-Live-checked (`scripts/verify-925-924-polish.mjs`, real `omp`/GitHub data, no prompt sent): the
-composer status line Changes chip and the Session details card diff line both PASS -- zero and
-positive case, all 3 themes, real measured contrast. The Reasoning gauge needle PASSES at all 8
-selectable levels plus the Session details card cross-check. The Pull requests Changes tab/#919
-per-file header is NOT YET CONFIRMED live: `view-store.ts`'s `openChat` pins the view's own
+Gate round 1 found a real bug in this live check itself (not the product): the scratch
+worktree's own tracked file checks out CRLF on Windows (`core.autocrlf=true`), so the edit's own
+line-ending-naive comparison silently removed nothing -- every prior "PASS" on the composer
+chip/Session details card's non-zero case was really only ever `+4 -0`, never genuinely
+exercising the red `text-diff-removed` branch at all despite reading as a pass. Fixed (CRLF-safe
+split, `requireBothPositive` now a hard failure if either side reads zero on these two
+script-controlled surfaces), not yet re-confirmed live. The Reasoning gauge needle's own apparent
+failures in the SAME run were a second, separate script bug (the angle comparison did not
+account for the formula's own un-normalised >360deg values) -- fixed and later confirmed live, 8
+of 8 levels genuinely PASS, plus a single Session-details-card cross-check at whatever level the
+loop ends on (not independently re-verified at every level). The Pull requests Changes tab/#919
+per-file header is still NOT YET CONFIRMED live: `view-store.ts`'s `openChat` pins the view's own
 repository scope to whichever repo a Session is opened in (by design, research.md decision 7),
-which the script did not account for at first -- root-caused via the real on-screen error text,
-fixed (drives the repository Select explicitly), pushed, pending one more run.
+root-caused via the real on-screen error text, fixed (drives the repository Select explicitly).
 
 `pnpm typecheck`, `pnpm test` (148/148), `check:indent`, `check:theme-contrast` (457/457),
 `check:file-size` all clean on every commit in this phase.
 
 Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
-(folded into #925's own scope; closes once the Changes tab surface is confirmed live).
+(folded into #925's own scope; closes once every surface above is confirmed live with the
+gate-round-1 fixes in place).
