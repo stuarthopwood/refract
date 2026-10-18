@@ -145,6 +145,20 @@ async function connectCdp(port, targetPid) {
   return cdp;
 }
 
+// Issue #924: `needleAngleDeg` (`verify-925-924-helpers.mjs`) can return up to 390deg (the
+// formula's own `ARC_START_DEG + sweep`, never normalised to 0-360 in the component source
+// either -- CSS/SVG trig is periodic, so the component never needed to), while the REAL needle
+// angle read off the rendered `<path>` via `atan2` always lands in (-180, 180]. A naive
+// `Math.abs(a - b)` wrongly fails every genuinely-correct case where the two sides differ by a
+// full 360deg turn (e.g. 270deg vs -90deg, the SAME angle) -- this compares the shortest signed
+// angular distance between the two instead, which is 0 for any such pair.
+function angleDiffDeg(a, b) {
+  let diff = (a - b) % 360;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  return diff;
+}
+
 /** Issue #925: asserts one `DiffStatCounts` pair's own class/colour rule against the real
  * numbers parsed out of its own text -- never trusting the app to have applied the rule
  * correctly, deriving the expectation independently from `+N`/`-N` text each time. */
@@ -262,7 +276,7 @@ async function main() {
     // "New conversation" click fires the same schedule_readout_update a real turn would. ----
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     editTrackedFileForDiff(worktreePath);
-    findings.push(`Edited the tracked file inside the real worktree (${worktreePath}): +3 -1 against HEAD.`);
+    findings.push(`Edited the tracked file inside the real worktree (${worktreePath}): a real addition and deletion against HEAD.`);
     await cdp.clickByText('New conversation');
     await cdp.waitFor(
       `(() => { const el = ${CHANGES_CHIP_CONTAINER}; return !!el && /changed/.test(el.textContent) && !/0 files changed \\+0 -0/.test(el.textContent); })()`,
@@ -275,7 +289,7 @@ async function main() {
       await switchTheme(cdp, theme.id, theme.name);
       await sleep(200);
       const chip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (+3 -1)`, chip, findings, failures);
+      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures);
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-01-changes-chip.png`));
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -289,7 +303,7 @@ async function main() {
         { timeoutMs: 15_000, label: `${theme.name}: details card diff line settled (+3 -1)` }
       );
       const card = await readDiffStatSpans(cdp, DETAILS_CARD_DIFF_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: Session details card diff line (+3 -1)`, card, findings, failures);
+      assertDiffStatSpans(`${theme.name}: Session details card diff line (non-zero)`, card, findings, failures);
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-02-details-card.png`));
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     }
@@ -307,10 +321,10 @@ async function main() {
       const actualAngle = await readGaugeNeedleAngle(cdp, PICKER_GAUGE_SVG);
       if (actualAngle === null) {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", but the gauge needle's own <path> could not be read.`);
-      } else if (Math.abs(actualAngle - expectedAngle) > 0.5) {
-        failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}" -- needle angle is ${actualAngle.toFixed(2)}deg, expected ${expectedAngle.toFixed(2)}deg (the 7-step formula's own angle for this settled level).`);
+      } else if (Math.abs(angleDiffDeg(actualAngle, expectedAngle)) > 0.5) {
+        failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}" -- needle angle is ${actualAngle.toFixed(2)}deg, expected ${expectedAngle.toFixed(2)}deg (the 7-step formula's own angle for this settled level, mod 360).`);
       } else {
-        findings.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", needle angle ${actualAngle.toFixed(2)}deg matches the formula's own ${expectedAngle.toFixed(2)}deg.`);
+        findings.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", needle angle ${actualAngle.toFixed(2)}deg matches the formula's own ${expectedAngle.toFixed(2)}deg (mod 360).`);
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-03-reasoning-picker-max.png'));
@@ -326,10 +340,10 @@ async function main() {
     await cdp.waitFor(`!!(${DETAILS_CARD_GAUGE_SVG})`, { timeoutMs: 10_000, label: 'details card gauge icon rendered' });
     const cardAngle = await readGaugeNeedleAngle(cdp, DETAILS_CARD_GAUGE_SVG);
     const maxAngle = needleAngleDeg('max');
-    if (cardAngle !== null && Math.abs(cardAngle - maxAngle) <= 0.5) {
-      findings.push(`Session details card's own gauge icon independently reads ${cardAngle.toFixed(2)}deg, matching the picker's "Max" angle (${maxAngle.toFixed(2)}deg) -- both read the same Session.`);
+    if (cardAngle !== null && Math.abs(angleDiffDeg(cardAngle, maxAngle)) <= 0.5) {
+      findings.push(`Session details card's own gauge icon independently reads ${cardAngle.toFixed(2)}deg, matching the picker's "Max" angle (${maxAngle.toFixed(2)}deg mod 360) -- both read the same Session.`);
     } else {
-      failures.push(`Session details card's own gauge icon reads ${cardAngle === null ? 'nothing (path not found)' : `${cardAngle.toFixed(2)}deg`}, expected ${maxAngle.toFixed(2)}deg ("Max", matching the picker).`);
+      failures.push(`Session details card's own gauge icon reads ${cardAngle === null ? 'nothing (path not found)' : `${cardAngle.toFixed(2)}deg`}, expected ${maxAngle.toFixed(2)}deg mod 360 ("Max", matching the picker).`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-04-details-card-gauge-max.png'));
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -344,7 +358,19 @@ async function main() {
         { timeoutMs: 30_000, label: 'pull request list settles' }
       );
       if (loaded !== 'rows') {
-        failures.push(`Pull request list did not settle to real rows (${loaded === 'error' ? 'error banner shown' : 'timed out'}) -- cannot prove the Changes tab/#919 per-file header against real PR data.`);
+        const diagnostic = await cdp.evaluate(`(() => {
+          const err = document.querySelector('[role="alert"]');
+          return {
+            errorText: err ? err.textContent.trim() : null,
+            bodyText: document.body.textContent.replace(/\\s+/g, ' ').trim().slice(0, 500)
+          };
+        })()`);
+        failures.push(
+          `Pull request list did not settle to real rows -- ${
+            loaded === 'error' ? `error banner read "${diagnostic.errorText}"` : `timed out after 30s, no error banner either; page text: "${diagnostic.bodyText}"`
+          } -- cannot prove the Changes tab/#919 per-file header against real PR data.`
+        );
+        await cdp.screenshot(path.join(SHOTS_DIR, 'dark-06-pr-list-failure.png'));
       } else {
         await cdp.click(`document.querySelector('.divide-y button')`);
         await cdp.waitFor(`!!document.querySelector('h2.line-clamp-2')`, { timeoutMs: 20_000, label: 'PR detail title rendered' });
