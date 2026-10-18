@@ -27,6 +27,7 @@ use crate::store::settings::SettingsStore;
 pub mod accounts;
 pub mod app;
 pub mod attachments;
+pub mod file_attachments;
 pub mod chat;
 pub mod clipboard;
 pub mod conversations;
@@ -176,6 +177,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     pull_requests::register(dispatcher);
     accounts::register(dispatcher);
     attachments::register(dispatcher);
+    file_attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
     app::register(dispatcher);

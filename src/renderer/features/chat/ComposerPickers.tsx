@@ -29,14 +29,14 @@
 //   and "Reasoning: Reasoning not reported".
 // - `AttachButton` now imports the shared `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`) instead
 //   of duplicating its exact string locally.
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GaugeIcon, Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
-import { attachImageFile } from './attachImage'
+import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useSessionsStore } from '@/state'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
 import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
@@ -122,83 +122,78 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   )
 }
 
+// #926: picks real absolute OS paths via the native multi-file dialog (`attachments.pickFiles`,
+// no extension filter -- "any file type" is the point of this feature) and routes each one
+// through `attachResolvedPaths` (`attachDroppedPaths.ts`), the SAME shared attach-loop/notify
+// core #432's drag-and-drop already uses, generalised by #926 to also attach non-image files.
+// Replaces the old `<input type="file">` element: Tauri's `File` API exposes no OS path for a
+// picker-selected file (same gap `getPathForFile` already documents for a dropped `File`), so a
+// non-image file picked that way would have no path to send as a path-only attachment.
 export function AttachButton({ sessionId, disabled }: { sessionId: string; disabled: boolean }) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return
-    for (const file of Array.from(fileList)) {
-      await attachImageFile(sessionId, file)
+  async function handlePickFiles() {
+    if (disabled) return
+    const result = await window.refract.attachments.pickFiles()
+    if (!result.ok) {
+      notify(result.error)
+      return
     }
+    const paths = result.value
+    if (paths.length === 0) return // dialog cancelled
+    const remainingSlots = remainingAttachmentSlots(sessionId)
+    const capped = paths.slice(0, remainingSlots)
+    const resolved = capped.map((filePath) => ({ name: filePath.split(/[\\/]/).pop() ?? filePath, filePath }))
+    await attachResolvedPaths(sessionId, resolved, [], paths.length, remainingSlots, false)
   }
 
   // Gate round 5 fix (Flow LOW): named its own disabled reason -- previously stayed "Attach
   // images" in both the Tooltip and the accessible name while stopped, unlike both pickers
-  // (which already name theirs).
-  const disabledReason = disabled ? 'Start the agent to attach images.' : null
+  // (which already name theirs). #926: "images" -> "files" (Accessibility: "Drop-zone and Attach
+  // wording change from 'images' to 'files'").
+  const disabledReason = disabled ? 'Start the agent to attach files.' : null
   return (
-    <>
-      {/* Gate round 1 fix (LOW): `hidden` rather than `sr-only` + `tabIndex={-1}` -- a screen
-          reader's own browse mode no longer lands on a stray, do-nothing "Choose files" control
-          that duplicates the visible Attach button below. */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          void handleFiles(event.target.files)
-          event.target.value = ''
-        }}
-      />
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={`Attach images${disabledReason ? `. ${disabledReason}` : ''}`}
-            aria-disabled={disabled}
-            // Gate round 1 fix (LOW): the described-by Radix's own Tooltip auto-wires here would
-            // just repeat this button's own accessible name ("Attach images" both places) -- a
-            // screen reader would say it twice. Suppressed; the tooltip still shows visually.
-            aria-describedby={undefined}
-            // Gate round 5 fix (Visual LOW): shares the SAME disabled-opacity value and the same
-            // opaque focus outline every other composer control now uses, instead of its own
-            // bespoke `opacity-60` and Button's default ring-based focus. Gate round 6 fix
-            // (`agent://Arch877` Visual): imports `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`)
-            // instead of duplicating its exact string, so the two can never drift apart. Gate
-            // round 7 fix (`agent://Arch877` Visual L1): `button.tsx`'s `ghost` variant has its
-            // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
-            // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
-            // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
-            //
-            // Live-check fix (verify-927-928-quiet-composer.mjs, real failure not a script bug):
-            // Attach never picked up the SAME U1/U2 treatment `PICKER_TRIGGER_CLASS` already
-            // gives its three siblings (Approval/Model/Reasoning) -- issue #927's own "Intended
-            // behaviour" names all four as one set of ghost buttons, but Attach stayed on the
-            // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
-            // Dark-high-contrast resting border (U1, `border-composer-control-border`,
-            // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
-            // itself -- that's sized as a padded text+icon pill (`h-6 px-2.5`); Attach stays the
-            // icon-only square `size="icon-xs"` square its own design already is.
-            className={cn(
-              'cursor-pointer border-composer-control-border',
-              COMPOSER_DISABLED_CLASS,
-              'dark:aria-disabled:hover:bg-transparent',
-              GHOST_BUTTON_FOCUS_CLASS
-            )}
-            onClick={() => {
-              if (disabled) return
-              fileInputRef.current?.click()
-            }}
-          >
-            <PaperclipIcon />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{disabledReason ?? 'Attach images'}</TooltipContent>
-      </Tooltip>
-    </>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Attach files${disabledReason ? `. ${disabledReason}` : ''}`}
+          aria-disabled={disabled}
+          // Gate round 1 fix (LOW): the described-by Radix's own Tooltip auto-wires here would
+          // just repeat this button's own accessible name -- a screen reader would say it
+          // twice. Suppressed; the tooltip still shows visually.
+          aria-describedby={undefined}
+          // Gate round 5 fix (Visual LOW): shares the SAME disabled-opacity value and the same
+          // opaque focus outline every other composer control now uses, instead of its own
+          // bespoke `opacity-60` and Button's default ring-based focus. Gate round 6 fix
+          // (`agent://Arch877` Visual): imports `COMPOSER_DISABLED_CLASS` (`pickerShared.tsx`)
+          // instead of duplicating its exact string, so the two can never drift apart. Gate
+          // round 7 fix (`agent://Arch877` Visual L1): `button.tsx`'s `ghost` variant has its
+          // own `dark:hover:bg-muted/50`, same specificity as the shared reset's
+          // `aria-disabled:hover:bg-transparent` -- `dark:aria-disabled:hover:bg-transparent`
+          // adds the extra `dark:` level so the reset wins in Dark/Dark-HC too.
+          //
+          // Live-check fix (verify-927-928-quiet-composer.mjs, real failure not a script bug):
+          // Attach never picked up the SAME U1/U2 treatment `PICKER_TRIGGER_CLASS` already
+          // gives its three siblings (Approval/Model/Reasoning) -- issue #927's own "Intended
+          // behaviour" names all four as one set of ghost buttons, but Attach stayed on the
+          // bare `Button variant="ghost"` with neither `cursor-pointer` (U2) nor the enforced
+          // Dark-high-contrast resting border (U1, `border-composer-control-border`,
+          // transparent in Dark/Obsidian so no visual change there). Not `PICKER_TRIGGER_CLASS`
+          // itself -- that's sized as a padded text+icon pill (`h-6 px-2.5`); Attach stays the
+          // icon-only square `size="icon-xs"` square its own design already is.
+          className={cn(
+            'cursor-pointer border-composer-control-border',
+            COMPOSER_DISABLED_CLASS,
+            'dark:aria-disabled:hover:bg-transparent',
+            GHOST_BUTTON_FOCUS_CLASS
+          )}
+          onClick={() => void handlePickFiles()}
+        >
+          <PaperclipIcon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{disabledReason ?? 'Attach files'}</TooltipContent>
+    </Tooltip>
   )
 }

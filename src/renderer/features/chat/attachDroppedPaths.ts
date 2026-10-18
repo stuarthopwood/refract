@@ -1,12 +1,13 @@
-// Shared attach-loop/notify core for a path-based drop (#432/#793 gate fix): both the Electron
-// DOM `drop` path (`ChatPane.tsx`'s `handlePaneDrop`, `File[]` resolved via `getPathForFile`) and
-// the Tauri `onFileDrop` path (`useTauriFileDrop.ts`, already real OS paths) now go through this
-// one function instead of two near-identical copies of the same loop. Each caller does its own
-// per-build path RESOLUTION first (Electron's `getPathForFile` can throw per file; Tauri's paths
-// never fail to resolve), then hands the already-resolved list here.
+// Shared attach-loop/notify core for a path-based drop (#432/#793 gate fix, generalised to any
+// file type by #926): the Tauri `onFileDrop` path (`useTauriFileDrop.ts`, real OS paths) and
+// `ChatPane.tsx`'s own (now Electron-dead, `getPathForFile` is always absent since the Electron
+// build was deleted at the Rust cutover, #796) DOM `drop` path both go through this one function
+// instead of two near-identical copies of the same loop.
 import { notify, useDraftStore } from '@/state'
-import { buildImagePathAttachment, describeAttachFailureReason, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
+import { MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
 import type { ImagePathAttachFailureReason } from './attachments'
+import { buildAnyPathAttachment, describeAnyAttachFailureReason } from './anyFileAttachments'
+import type { FileAttachFailureReason } from './anyFileAttachments'
 
 export interface ResolvedDropItem {
   /** Basename only (never a full path, FR-029), for the honest-but-private failure notice. */
@@ -14,11 +15,13 @@ export interface ResolvedDropItem {
   filePath: string
 }
 
-/** How many of this Session's CURRENTLY pending images still fit, per issue #432's PER-MESSAGE
- * cap -- both callers compute `capped`/`overflowCount` against this before resolving paths, so
- * neither a `File[]` nor a `string[]` drop ever resolves more paths than could ever be attached. */
+/** How many of this Session's CURRENTLY pending images/files together still fit, per issue
+ * #432's PER-MESSAGE cap (#926: now shared across both kinds) -- both callers compute
+ * `capped`/`overflowCount` against this before resolving paths, so neither a `File[]` nor a
+ * `string[]` drop ever resolves more paths than could ever be attached. */
 export function remainingAttachmentSlots(sessionId: string): number {
-  const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+  const attachments = useDraftStore.getState().bySession[sessionId]?.attachments
+  const alreadyPending = (attachments?.images.length ?? 0) + (attachments?.files.length ?? 0)
   return Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
 }
 
@@ -39,26 +42,30 @@ export async function attachResolvedPaths(
     return
   }
   if (resolved.length === 0 && preFailed.length === 0 && dropped === 0) return
-  let attachedCount = 0
-  const failedFiles: { name: string; reason?: ImagePathAttachFailureReason }[] = [...preFailed]
+  let attachedImages = 0
+  let attachedFiles = 0
+  const failedFiles: { name: string; reason?: ImagePathAttachFailureReason | FileAttachFailureReason }[] = [...preFailed]
   useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
   try {
     for (const { name, filePath } of resolved) {
-      const result = await buildImagePathAttachment(sessionId, filePath)
-      if (result.ok) {
-        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-        attachedCount++
-      } else {
+      const result = await buildAnyPathAttachment(sessionId, filePath, name)
+      if (!result.ok) {
         failedFiles.push({ name, reason: result.reason })
+      } else if (result.kind === 'image') {
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+        attachedImages++
+      } else {
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
+        attachedFiles++
       }
     }
   } finally {
     useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
   }
+  const attachedCount = attachedImages + attachedFiles
   if (attachedCount > 0) {
-    useDraftStore
-      .getState()
-      .announceAttachment(sessionId, attachedCount === 1 ? 'Image attached from a dropped file.' : `${attachedCount} images attached from dropped files.`)
+    const parts = [attachedImages > 0 ? `${attachedImages} image${attachedImages === 1 ? '' : 's'}` : null, attachedFiles > 0 ? `${attachedFiles} file${attachedFiles === 1 ? '' : 's'}` : null]
+    useDraftStore.getState().announceAttachment(sessionId, `${parts.filter(Boolean).join(' and ')} attached from dropped files.`)
   }
   const overflowCount = dropped - resolved.length - preFailed.length
   const skipped = failedFiles.length + overflowCount
@@ -67,17 +74,17 @@ export async function attachResolvedPaths(
   const overflowText =
     overflowCount > 0
       ? remainingSlots === 0
-        ? 'This message already has the maximum of 10 images; nothing more was attached.'
-        : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
+        ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
+        : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
       : null
   const saysOther = attachedCount > 0 || overflowCount > 0
   const failureText =
     failedFiles.length === 1 && only
-      ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
+      ? `"${only.name}" ${only.reason ? describeAnyAttachFailureReason(only.reason) : 'could not be attached'}.`
       : failedFiles.length > 1
         ? saysOther
-          ? `${failedFiles.length} other files could not be attached as images.`
-          : `${failedFiles.length} files could not be attached as images.`
+          ? `${failedFiles.length} other files could not be attached.`
+          : `${failedFiles.length} files could not be attached.`
         : null
   notify({
     code: 'invalid-argument',

@@ -49,10 +49,16 @@ use notice_prefixes::{
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TranscriptItem {
+    #[serde(rename_all = "camelCase")]
     User {
         id: String,
         text: String,
         at: i64,
+        // #926: files/folders attached via the Attach button, drag-and-drop, or a clipboard
+        // file paste -- parsed back out of the plain message text (`extract_file_attachments`
+        // below), never a separate OMP-side concept. Empty for a message with none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        file_attachments: Vec<FileAttachmentRef>,
     },
     #[serde(rename_all = "camelCase")]
     AssistantText {
@@ -181,6 +187,30 @@ pub enum ToolStatus {
     Done,
     Error,
     Interrupted,
+}
+
+/// #926: whether a `FileAttachmentRef` was inlined verbatim into the message text, or sent as
+/// its own absolute path for the agent to read with its own tools.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FileAttachmentSentAs {
+    Inline,
+    Path,
+}
+
+/// #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
+/// paste -- parsed back out of the plain message text at transcript-build time
+/// (`extract_file_attachments` below), never a separate OMP-side concept (OMP's own `images`
+/// field never carries this kind of data). `byte_length` is 0 for a folder (not a meaningful
+/// count). The renderer shows this as a chip, never the raw appended block text.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileAttachmentRef {
+    pub id: String,
+    pub name: String,
+    pub byte_length: u64,
+    pub sent_as: FileAttachmentSentAs,
+    pub is_directory: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -439,6 +469,126 @@ fn join_text(parts: &[Value]) -> String {
         .filter_map(|p| p.get("text").and_then(Value::as_str))
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// #926: file/folder attachments embedded in the plain message text
+// ---------------------------------------------------------------------------
+
+/// The renderer's own `buildFileAttachmentText` (`src/renderer/features/chat/attachments.ts`)
+/// appends every file/folder attachment AFTER this exact marker line, so a message with none
+/// never carries it at all. Never shown; stripped from the displayed text below.
+const FILE_ATTACHMENTS_MARKER: &str = "[[refract-attachments]]";
+
+fn split_first_line(s: &str) -> (&str, &str) {
+    match s.find('\n') {
+        Some(idx) => (&s[..idx], &s[idx + 1..]),
+        None => (s, ""),
+    }
+}
+
+enum ParsedFileHeader<'a> {
+    Inline { name: &'a str, byte_length: u64 },
+    PathFile { name: &'a str, byte_length: u64 },
+    PathFolder { name: &'a str },
+}
+
+/// Recognises exactly the three header line shapes `buildFileAttachmentText` emits; anything
+/// else (including a superficially-similar line a developer actually typed) returns `None`,
+/// which aborts the whole extraction (see `extract_file_attachments` below) -- a false positive
+/// here would silently hide real user text, so every check is exact, never fuzzy.
+fn parse_file_header(line: &str) -> Option<ParsedFileHeader<'_>> {
+    if let Some(after) = line.strip_prefix("Attached file \"") {
+        let (name, rest) = after.split_once('"')?;
+        let rest = rest.strip_prefix(" (")?;
+        if let Some(count) = rest.strip_suffix(" bytes, inlined below):") {
+            return Some(ParsedFileHeader::Inline { name, byte_length: count.parse().ok()? });
+        }
+        const PATH_FILE_MARKER: &str = " bytes, sent as path, read with your own tools): ";
+        let idx = rest.find(PATH_FILE_MARKER)?;
+        let byte_length: u64 = rest[..idx].parse().ok()?;
+        let path = &rest[idx + PATH_FILE_MARKER.len()..];
+        if path.is_empty() {
+            return None;
+        }
+        return Some(ParsedFileHeader::PathFile { name, byte_length });
+    }
+    if let Some(after) = line.strip_prefix("Attached folder \"") {
+        let (name, rest) = after.split_once('"')?;
+        let path = rest.strip_prefix(" (sent as path, read with your own tools): ")?;
+        if path.is_empty() {
+            return None;
+        }
+        return Some(ParsedFileHeader::PathFolder { name });
+    }
+    None
+}
+
+/// Strips the `FILE_ATTACHMENTS_MARKER` section from `text` (if present) and parses every block
+/// after it into a `FileAttachmentRef`, returning the DISPLAY text (never including the marker
+/// or any attachment block) alongside the parsed refs. Any block that fails to parse exactly as
+/// `buildFileAttachmentText` would have written it aborts the WHOLE extraction -- the original
+/// `text` is returned untouched with no refs, rather than risk ever hiding real typed text behind
+/// a misrecognised partial match. A message with no marker (the overwhelming majority, and every
+/// message from before this feature existed) returns immediately with no refs at all.
+fn extract_file_attachments(text: &str, message_id: &str) -> (String, Vec<FileAttachmentRef>) {
+    let Some(marker_at) = text.find(FILE_ATTACHMENTS_MARKER) else {
+        return (text.to_string(), Vec::new());
+    };
+    let display = text[..marker_at].trim_end_matches('\n').to_string();
+    let mut remaining = text[marker_at + FILE_ATTACHMENTS_MARKER.len()..].trim_start_matches('\n');
+    let mut refs = Vec::new();
+    while !remaining.is_empty() {
+        let (line, rest) = split_first_line(remaining);
+        let Some(header) = parse_file_header(line) else {
+            return (text.to_string(), Vec::new());
+        };
+        let id = format!("{message_id}:file:{}", refs.len());
+        match header {
+            ParsedFileHeader::Inline { name, byte_length } => {
+                let (fence_line, after_fence_line) = split_first_line(rest);
+                let fence_len = fence_line.bytes().take_while(|&b| b == b'`').count();
+                if fence_len < 3 || &fence_line[fence_len..] != name {
+                    return (text.to_string(), Vec::new());
+                }
+                let closing = format!("\n{}", "`".repeat(fence_len));
+                let Some(close_at) = after_fence_line.find(&closing) else {
+                    return (text.to_string(), Vec::new());
+                };
+                let after_block = &after_fence_line[close_at + closing.len()..];
+                refs.push(FileAttachmentRef {
+                    id,
+                    name: name.to_string(),
+                    byte_length,
+                    sent_as: FileAttachmentSentAs::Inline,
+                    is_directory: false,
+                });
+                remaining = after_block.trim_start_matches('\n');
+            }
+            ParsedFileHeader::PathFile { name, byte_length } => {
+                refs.push(FileAttachmentRef {
+                    id,
+                    name: name.to_string(),
+                    byte_length,
+                    sent_as: FileAttachmentSentAs::Path,
+                    is_directory: false,
+                });
+                remaining = rest.trim_start_matches('\n');
+            }
+            ParsedFileHeader::PathFolder { name } => {
+                refs.push(FileAttachmentRef {
+                    id,
+                    name: name.to_string(),
+                    byte_length: 0,
+                    sent_as: FileAttachmentSentAs::Path,
+                    is_directory: true,
+                });
+                remaining = rest.trim_start_matches('\n');
+            }
+        }
+    }
+    (display, refs)
+}
+
 
 // ---------------------------------------------------------------------------
 // Subagent-to-parent IRC messages (T079, FR-048): port of `transcript.ts` lines 292-336
@@ -1122,6 +1272,10 @@ fn apply_message_snapshot(
             let parts = content_parts(message);
             let text = join_text(parts);
             let at = as_timestamp(message, "timestamp").unwrap_or_else(now_ms);
+            // #926: strips any `[[refract-attachments]]` section Refract itself appended
+            // (never OMP's own content) into its own parsed `fileAttachments`, so the bubble
+            // never shows the raw inlined/path text.
+            let (text, file_attachments) = extract_file_attachments(&text, message_id);
             replace_message_items(
                 items,
                 message_id,
@@ -1129,6 +1283,7 @@ fn apply_message_snapshot(
                     id: message_id.to_string(),
                     text,
                     at,
+                    file_attachments,
                 })],
             )
         }
@@ -1643,10 +1798,12 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                 let parts = content_parts(message);
                 let text = join_text(parts);
                 let at = as_timestamp(message, "timestamp").unwrap_or(0);
+                let (text, file_attachments) = extract_file_attachments(&text, &message_id);
                 items.push(Arc::new(TranscriptItem::User {
                     id: message_id,
                     text,
                     at,
+                    file_attachments,
                 }));
             }
             "custom" => {

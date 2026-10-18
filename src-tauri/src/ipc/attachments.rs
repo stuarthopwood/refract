@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
+use tauri_plugin_dialog::DialogExt;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
@@ -424,7 +425,7 @@ async fn resolve_in_worktree(worktree_root: &str, token: &str) -> Result<PathBuf
 /// Port of `attachments.ts`'s own `resolveAttachmentPath`: branches on whether `token` is
 /// absolute (walked with no worktree containment, #514's own "the resolved file may legitimately
 /// live anywhere on disk" decision) or relative (delegates entirely to `resolve_in_worktree`).
-async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<PathBuf> {
+pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) -> Option<PathBuf> {
     if is_unsafe_token(token) {
         return None;
     }

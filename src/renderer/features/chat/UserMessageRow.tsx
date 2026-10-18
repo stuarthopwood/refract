@@ -1,8 +1,11 @@
 import * as React from 'react'
+import { FileIcon, FileTextIcon, FolderIcon } from 'lucide-react'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
+import { Badge } from '@/components/ui/badge'
 import type { TranscriptItem } from '../../../shared/model'
 import { initials } from '@/lib/initials'
 import { Markdown } from './Markdown'
+import { formatByteSize } from './attachments'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -92,6 +95,26 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
         </MessageAvatar>
         <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
+          {/* #926: the attached files/folders as chips, never the raw inlined text or path
+              line the actual message carries for the agent -- a 256 KB file would otherwise
+              flood the transcript. Parsed server-side out of the plain message text
+              (`transcript.rs`'s own `extract_file_attachments`), so this is restart-safe too. */}
+          {item.fileAttachments && item.fileAttachments.length > 0 && (
+            <div role="group" aria-label="Attached files" className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              {item.fileAttachments.map((file) => {
+                const sizeLabel = file.isDirectory ? 'folder' : formatByteSize(file.byteLength)
+                const kindLabel = file.isDirectory || file.sentAs === 'path' ? ', sent as path' : ', attached as text'
+                const accessibleName = `${file.name}, ${sizeLabel}${kindLabel}`
+                const Icon = file.isDirectory ? FolderIcon : file.sentAs === 'inline' ? FileTextIcon : FileIcon
+                return (
+                  <Badge key={file.id} variant="secondary" aria-label={accessibleName} className="max-w-56 gap-1.5 py-1">
+                    <Icon aria-hidden className="size-3.5 shrink-0" />
+                    <span aria-hidden className="truncate">{file.name}</span>
+                  </Badge>
+                )
+              })}
+            </div>
+          )}
           <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
         </MessageContent>
       </Message>

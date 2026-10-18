@@ -4,7 +4,7 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
-import { AlertTriangleIcon, ImageIcon, MessageSquareIcon } from 'lucide-react'
+import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -1172,8 +1172,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           aria-hidden
           className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm font-medium text-foreground"
         >
-          <ImageIcon className="size-4" aria-hidden />
-          {composerDisabled ? 'This session is not accepting input right now' : 'Drop images to attach'}
+          <PaperclipIcon className="size-4" aria-hidden />
+          {composerDisabled ? 'This session is not accepting input right now' : 'Drop files to attach'}
         </div>
       )}
       {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring

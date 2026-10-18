@@ -6,6 +6,7 @@
 // hit a load-time ReferenceError. This file only imports FROM `attachments.ts` and `@/state`,
 // never the other way, so it adds no cycle.
 import { buildImageAttachment, formatByteSize } from './attachments'
+import { buildPastedFileAttachment, MAX_INLINE_FILE_BYTES } from './anyFileAttachments'
 import { notify, useDraftStore } from '@/state'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
@@ -29,4 +30,25 @@ export async function attachImageFile(sessionId: string, file: File): Promise<vo
   }
   useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
   useDraftStore.getState().announceAttachment(sessionId, `Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
+}
+
+/** #926: the validate-plus-commit sequence for a non-image clipboard-pasted `File` (Explorer
+ * "Copy" a file, then Ctrl+V) -- mirrors `attachImageFile` above exactly, but for
+ * `buildPastedFileAttachment` (renderer-only, no OS path: Tauri's `File` API exposes none for a
+ * pasted file, so a binary/over-cap one has no path to fall back to and is a clear, named error
+ * instead of a silent drop). */
+export async function attachPastedFile(sessionId: string, file: File): Promise<void> {
+  const result = await buildPastedFileAttachment(file)
+  if (!result.ok) {
+    notify({
+      code: 'invalid-argument',
+      message:
+        result.reason === 'too-large'
+          ? `"${file.name}" is too large to inline (over ${formatByteSize(MAX_INLINE_FILE_BYTES)}) and was pasted with no file path, so it can't be sent as a path reference either; use the Attach button or drag it in instead. Nothing was attached.`
+          : `"${file.name}" is a binary file pasted with no file path, so it can't be sent as a path reference; use the Attach button or drag it in instead. Nothing was attached.`
+    })
+    return
+  }
+  useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
+  useDraftStore.getState().announceAttachment(sessionId, `File attached, ${formatByteSize(result.attachment.byteLength)}.`)
 }

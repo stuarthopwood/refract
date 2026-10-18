@@ -7,17 +7,21 @@
 // see `ChipOverlaySegments` below), but has no remove control of its own: FR-014 removes a chip
 // only by editing or deleting its label the same way any other draft text is edited.
 import type { ReactNode, RefObject } from 'react'
-import { XIcon } from 'lucide-react'
+import { FileIcon, FileTextIcon, FolderIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { TextPreviewModal } from './TextPreviewModal'
-import type { ChipOccurrence, PendingImageAttachment, PendingTextChip } from './attachments'
+import type { ChipOccurrence, PendingFileAttachment, PendingImageAttachment, PendingTextChip } from './attachments'
 import { formatByteSize } from './attachments'
 
 export interface AttachmentStripProps {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
+  // #926: files/folders attached via the Attach button, drag-and-drop, or a clipboard file
+  // paste -- rendered between the image thumbnails and the text chips.
+  files: PendingFileAttachment[]
   onRemoveImage: (id: string) => void
+  onRemoveFile: (id: string) => void
   // PR #723 gate round 3 fix (A11y3 HIGH): lets the caller scope a focus/query to THIS
   // composer's own strip specifically -- in split view, two ChatPanes each render their own
   // MessageInput/AttachmentStrip pair, and a `document`-wide query for `[role="group"][aria-
@@ -26,8 +30,8 @@ export interface AttachmentStripProps {
   containerRef?: RefObject<HTMLDivElement | null>
 }
 
-export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef }: AttachmentStripProps) {
-  if (images.length === 0 && textChips.length === 0) return null
+export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRemoveFile, containerRef }: AttachmentStripProps) {
+  if (images.length === 0 && files.length === 0 && textChips.length === 0) return null
   return (
     <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
       {images.map((image, index) => (
@@ -58,6 +62,28 @@ export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef
           </button>
         </div>
       ))}
+      {files.map((file) => {
+        const sizeLabel = file.isDirectory ? 'folder' : formatByteSize(file.byteLength)
+        const kindLabel = file.isDirectory || file.sentAs === 'path' ? ', sent as path' : ', attached as text'
+        const accessibleName = `${file.name}, ${sizeLabel}${kindLabel}`
+        const Icon = file.isDirectory ? FolderIcon : file.sentAs === 'inline' ? FileTextIcon : FileIcon
+        return (
+          <div key={file.id} role="group" aria-label={accessibleName} className="group relative">
+            <Badge aria-hidden variant="secondary" className="max-w-56 gap-1.5 py-1 pr-5">
+              <Icon aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">{file.name}</span>
+            </Badge>
+            <button
+              type="button"
+              aria-label={`Remove ${accessibleName}`}
+              onClick={() => onRemoveFile(file.id)}
+              className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <XIcon className="size-2.5" />
+            </button>
+          </div>
+        )
+      })}
       {textChips.map((chip) => (
         <TextPreviewModal
           key={chip.id}

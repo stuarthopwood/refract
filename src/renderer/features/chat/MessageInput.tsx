@@ -27,7 +27,7 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
-import { attachImageFile } from './attachImage'
+import { attachImageFile, attachPastedFile } from './attachImage'
 import {
   buildChipLabel,
   buildImagePathAttachment,
@@ -39,11 +39,14 @@ import {
   formatByteSize,
   isImagePathOnlyText,
   isLargePaste,
+  looksLikeImagePathToken,
   MAX_PATH_ATTACHMENTS_PER_MESSAGE,
   pruneDanglingChips,
   substituteChips,
   toImageContent
 } from './attachments'
+import { appendFileAttachmentText } from './anyFileAttachments'
+import { removeAttachment } from './removeAttachment'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { parseSlashCommand } from '../../../shared/slash-commands'
@@ -535,8 +538,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
       // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
       // developer discovering, after the fact, that a pasted screenshot never reached the model.
-      if (attachments.images.length > 0) {
-        toast.error("Side questions don't support image attachments. Remove them and try again.")
+      // #926: a pending file attachment is refused the same way -- side questions have no
+      // attachment concept of their own either.
+      if (attachments.images.length > 0 || attachments.files.length > 0) {
+        toast.error("Side questions don't support attachments. Remove them and try again.")
         return
       }
       // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) instead of sending a
@@ -620,8 +625,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // image-related or not) leaves the draft and every pending attachment untouched -- nothing
     // below this `if` runs until `chat.send` actually succeeds.
     let result
+    // #926: every pending file/folder attachment is appended to the OUTGOING message text only
+    // here -- never into `message` above, so `parseSlashCommand`/the `/new` check above keep
+    // reading just the developer's own typed (and chip-substituted) text.
+    const outgoingMessage = appendFileAttachmentText(message, attachments.files)
     try {
-      result = await window.refract.chat.send(sessionId, message, images)
+      result = await window.refract.chat.send(sessionId, outgoingMessage, images)
     } finally {
       if (isNewConversationCommand) {
         useChatScrollStore.getState().setInFlight(sessionId, false)
@@ -984,6 +993,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
 
+    // #926: a non-image FILE paste (Explorer "Copy" a file, then Ctrl+V) -- `data.files` carries
+    // real `File` objects here (the clipboard's CF_HDROP representation), never text, so this
+    // never races the TEXT-based image-path detection below (which reads
+    // `data.getData('text/plain')`, a different clipboard format a file copy never populates).
+    // Tauri's `File` API exposes no OS path for a pasted file (unlike a native drag-drop or the
+    // Attach dialog) -- only an inline attachment is possible here; a binary or over-cap pasted
+    // file has no path to fall back to, so it is a clear, named error instead.
+    const pastedFiles = Array.from(data.files ?? [])
+    if (pastedFiles.length > 0) {
+      event.preventDefault()
+      for (const file of pastedFiles) {
+        if (looksLikeImagePathToken(file.name)) await attachImageFile(sessionId, file)
+        else await attachPastedFile(sessionId, file)
+      }
+      return
+    }
+
     const pastedText = data.getData('text/plain')
 
     // #514: paste-time image-path detection, shares the main-process reader with #432's
@@ -1172,36 +1198,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
   }
 
-  // PR #723 gate round 2 fix (A11y2 Medium, pre-existing on `main`, now reachable up to 10x per
-  // message once #514/#432 can produce more than one or two pending images): removing the
-  // focused image's own remove button unmounted it with no focus management and no
-  // announcement at all -- focus fell to `<body>` (WCAG 2.4.3) and nothing told a screen-reader
-  // user the removal even happened (WCAG 4.1.3). Now: if focus was inside the attachment strip
-  // when Remove was activated, it moves to whichever image now occupies that same position (the
-  // one that shifted into the removed slot), or the previous image if the removed one was last,
-  // or the textarea if none remain; `announceAttachment` always fires, same live region every
-  // other attachment event already uses.
-  function handleRemoveImage(id: string) {
-    const activeElement = document.activeElement as HTMLElement | null
-    // PR #723 gate round 3 fix (A11y3 HIGH, reproduced): `document.activeElement?.closest(...)`
-    // and the document-wide `querySelector` below used to find ANY strip in the whole page, not
-    // necessarily this composer's own -- in split view, removing an image in pane B moved focus
-    // to pane A's Remove button (a second Enter then deleted pane A's attachment, and "Image
-    // removed." announced through pane A's live region, not pane B's). Both now scope to
-    // `attachmentStripRef`, this composer's own strip, never `document`.
-    const focusWasInStrip = !!attachmentStripRef.current?.contains(activeElement)
-    const currentImages = useDraftStore.getState().bySession[sessionId]?.attachments.images ?? []
-    const removedIndex = currentImages.findIndex((image) => image.id === id)
-    useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
-    announceAttachment('Image removed.')
-    if (!focusWasInStrip || removedIndex === -1) return
-    requestAnimationFrame(() => {
-      const removeButtons = attachmentStripRef.current ? Array.from(attachmentStripRef.current.querySelectorAll('button[aria-label^="Remove"]')) : []
-      const next = (removeButtons[removedIndex] ?? removeButtons[removedIndex - 1]) as HTMLElement | undefined
-      if (next) next.focus()
-      else textareaRef.current?.focus()
-    })
-  }
+  // PR #723 gate round 2 fix (A11y2 Medium) / #926: Remove restores focus to the next chip (or
+  // the textarea) and always announces -- the shared `removeAttachment` core (`removeAttachment.ts`)
+  // owns both the image and the file/folder case, differing only in which draft-store array
+  // each writes and the strip-index math for a file (`imagesCount + itsIndex`).
+  const handleRemoveImage = (id: string) => removeAttachment(sessionId, 'image', id, attachmentStripRef, textareaRef, announceAttachment)
+  const handleRemoveFile = (id: string) => removeAttachment(sessionId, 'file', id, attachmentStripRef, textareaRef, announceAttachment)
 
   const placeholder = disabled
     ? describeStopReason(stopReason, stopDetail)
@@ -1212,7 +1214,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // Accessibility remediation (High): a short, persistent sr-only summary of how many
   // attachments are pending right now, pointed to by the textarea's own `aria-describedby` --
   // the only programmatic link from the textarea to its pending chips/images before this.
-  const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length
+  const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length + attachments.files.length
   const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
 
   return (
@@ -1327,7 +1329,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <ComposerStatusLine sessionId={sessionId} />
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
-      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} containerRef={attachmentStripRef} />
+      <AttachmentStrip
+        images={attachments.images}
+        files={attachments.files}
+        textChips={attachments.textChips}
+        onRemoveImage={handleRemoveImage}
+        onRemoveFile={handleRemoveFile}
+        containerRef={attachmentStripRef}
+      />
       {/* PR #723 gate round 2 fix (Code2/A11y2 Medium): while a background path/drop read is in
           flight, Send/Enter are refused (`pendingAttachmentReads`) with no visible or announced
           reason -- a developer who pressed Enter right after a mixed paste or a drop saw nothing

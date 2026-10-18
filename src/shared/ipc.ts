@@ -130,6 +130,15 @@ export interface AttachmentImageFile {
   byteLength: number;
 }
 
+/** #926: `attachments.readFile`'s success payload -- classifies a non-image path (or folder)
+ * into either `inline` (a text file up to the 256 KB cap, decoded verbatim) or `path` (binary,
+ * over the cap, or a folder: too large/unsafe to inline, sent as its own absolute path instead
+ * for the agent to read with its own tools). Unlike `AttachmentImageFile`, this DOES carry the
+ * resolved path -- the whole point of the `path` case is that the path itself is the payload. */
+export type AttachmentFileRead =
+  | { kind: 'inline'; path: string; name: string; byteLength: number; text: string }
+  | { kind: 'path'; path: string; name: string; byteLength: number; isDirectory: boolean };
+
 export interface Readiness {
   git: Check;
   omp: Check;
@@ -320,6 +329,8 @@ export const IPC_REQUESTS = {
   SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
   SESSIONS_REVEAL_FILE: 'sessions.revealFile',
   ATTACHMENTS_READ_IMAGE_FILE: 'attachments.readImageFile',
+  ATTACHMENTS_READ_FILE: 'attachments.readFile',
+  ATTACHMENTS_PICK_FILES: 'attachments.pickFiles',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
@@ -528,6 +539,20 @@ export interface RefractApi extends UpdatesApi {
      * a pasted clipboard image -- constitution V: the renderer's own check is never trusted
      * alone. Never returns the resolved path or any other file metadata to the renderer. */
     readImageFile(sessionId: string, path: string): Promise<Result<AttachmentImageFile>>;
+    /** #926: classifies a non-image path (or folder) for the "attach any file" feature -- text
+     * up to 256 KB inlined verbatim (`kind: 'inline'`), everything else (binary, over the cap,
+     * or a folder) sent as its own resolved absolute path (`kind: 'path'`) for the agent to read
+     * with its own tools. Same path resolution/symlink-safety rules as `readImageFile` above
+     * (`path` is a USER-initiated absolute OS path or a worktree-relative one); unlike
+     * `readImageFile`, this DOES return the resolved path -- that path IS the payload for the
+     * `path` case, not metadata to withhold. */
+    readFile(sessionId: string, path: string): Promise<Result<AttachmentFileRead>>;
+    /** #926: the Attach button's native multi-file picker (no extension filter -- "any file
+     * type" is the point of this feature), the same `tauri-plugin-dialog` pattern
+     * `repositories.pickFolder` already uses. Real absolute OS paths, routed through
+     * `readImageFile`/`readFile` by the renderer exactly like a dropped or typed path. An empty
+     * array means the dialog was cancelled, never an error. */
+    pickFiles(): Promise<Result<string[]>>;
     /** #432: the renderer-safe replacement for Electron's own `webUtils.getPathForFile`
      * (bridged here, not imported from `electron` in a renderer file, to avoid pulling its
      * ambient Node `setTimeout` override into the whole web program). Optional (issue #793):

@@ -32,12 +32,29 @@ export interface PendingTextChip {
   label: string // literal substring inserted into the textarea's own value at the paste position
 }
 
+/** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
+ * paste. `sentAs: 'inline'` carries the exact decoded text (`text` set, `path` unset); `sentAs:
+ * 'path'` (binary, over the 256 KB cap, or a folder) carries the resolved absolute path instead
+ * (`path` set, `text` unset) -- `buildFileAttachmentText` embeds whichever is present into the
+ * outgoing message. `byteLength` is 0 for a folder (not a meaningful count). */
+export interface PendingFileAttachment {
+  kind: 'file'
+  id: string // uuid, local only, never sent
+  name: string
+  byteLength: number
+  sentAs: 'inline' | 'path'
+  isDirectory: boolean
+  path?: string // present only when sentAs === 'path'
+  text?: string // present only when sentAs === 'inline'
+}
+
 export interface AttachmentsState {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
+  files: PendingFileAttachment[]
 }
 
-export const EMPTY_ATTACHMENTS: AttachmentsState = { images: [], textChips: [] }
+export const EMPTY_ATTACHMENTS: AttachmentsState = { images: [], textChips: [], files: [] }
 
 function isSupportedImageMimeType(value: string): value is SupportedImageMimeType {
   return (SUPPORTED_IMAGE_MIME_TYPES as readonly string[]).includes(value)
@@ -181,7 +198,7 @@ const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
  * has an image-shaped extension AND looks like a path: an absolute Windows drive path, a
  * `file://` URL, or any token containing a path separator (#514: "an absolute Windows path...
  * a file:/// URL... a path relative to the Session's worktree... forward-slash Windows paths"). */
-function looksLikeImagePathToken(token: string): boolean {
+export function looksLikeImagePathToken(token: string): boolean {
   if (!IMAGE_PATH_EXTENSION_RE.test(token)) return false
   if (/^file:\/\//i.test(token)) return true
   if (/^[A-Za-z]:[\\/]/.test(token)) return true
