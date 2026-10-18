@@ -31,9 +31,16 @@ pub struct GhPrListEntry {
 
 const LIST_FIELDS: &str = "number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,statusCheckRollup,labels,reviewRequests,assignees";
 
-/// `--state open` directly (not `--state all --limit 50` filtered client-side): scopes the whole
-/// 50-row limit to open pull requests only.
-pub async fn list_open_pull_requests(repo_path: &Path) -> Result<Vec<GhPrListEntry>, GhError> {
+/// `--state <state>` directly (not `--state all --limit 50` filtered client-side): scopes the
+/// whole 50-row limit to the requested state up front. `state` is one of `gh pr list`'s own
+/// accepted values (`open`, `closed`, `merged`, `all`) -- issue #499's State control only ever
+/// passes `open`, `closed`, or `all` (`"closed"` already returns merged pull requests too, per
+/// the issue's own verified probe against gh 2.102.0), but the whole set is accepted here
+/// unchanged from `gh`'s own vocabulary rather than re-narrowing it in this wrapper.
+pub async fn list_pull_requests_by_state(
+    repo_path: &Path,
+    state: &str,
+) -> Result<Vec<GhPrListEntry>, GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
     gh_json(
         repo_path,
@@ -43,7 +50,7 @@ pub async fn list_open_pull_requests(repo_path: &Path) -> Result<Vec<GhPrListEnt
             "--repo",
             &format!("{owner}/{repo}"),
             "--state",
-            "open",
+            state,
             "--limit",
             "50",
             "--json",
@@ -99,6 +106,7 @@ impl SearchQualifierFlag {
 pub async fn search_pull_requests(
     repo_path: &Path,
     qualifier_flag: SearchQualifierFlag,
+    state: Option<&str>,
     query: Option<&str>,
 ) -> Result<Vec<GhSearchEntry>, GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
@@ -110,9 +118,17 @@ pub async fn search_pull_requests(
         &owner_repo,
         qualifier_flag.as_str(),
         "@me",
-        "--json",
-        SEARCH_FIELDS,
     ];
+    // Issue #499's State control (Open, Closed, All): omitted entirely for "All" (matching
+    // `gh search prs`'s own no-`--state` default of every state), `--state open`/`--state
+    // closed` otherwise -- `--state closed` already includes merged pull requests on this
+    // surface too (the issue's own verified probe).
+    if let Some(state) = state {
+        args.push("--state");
+        args.push(state);
+    }
+    args.push("--json");
+    args.push(SEARCH_FIELDS);
     if let Some(query) = query {
         if !query.is_empty() {
             args.push("--");
