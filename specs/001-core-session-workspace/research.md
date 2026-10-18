@@ -363,3 +363,72 @@ the redesigned toggle, both confirmed as intended behaviour, no code change --
    header (its red icon and "N done, M failed" roll-up render regardless of expand state), the
    per-turn chain row's own roll-up (only when the turn has 2 or more Stages), and the
    screen-reader-only settle announcement.
+
+## 21. Stage rows defer running auto-open to the chain row (issue #1000, 2026-10-18; takes the
+next free decision number -- open PR #1003 is independently using decision 20 on its own
+branch, not yet merged, expect renumbering at merge per the branch's own convention above)
+
+**Problem**: FR-084/decision 19's own upward-only fix means a multi-agent Stage row still
+auto-opens the instant any of its own agents is running, and stays open permanently once it
+does (the sticky latch). In a turn with two or more Stages, the per-turn Subagent chain row
+(FR-068) ALSO lists every agent, with its own default-open-while-unsettled rule -- so a turn
+with several running or recently-settled Stages shows the SAME agents expanded twice over, once
+in each Stage's own row in place, again in the chain row's own body.
+
+**Decision (Skippy, delegated by Stuart 2026-10-18, ruling by ui-architect-v3 at PR #999's own
+gate, recorded on issue #1000)**: once a turn has two or more Stages, a Stage row's own
+`isOpenByDefault` (`StageGroupRow`, `SubagentChainRow.tsx`) drops `running` from its auto-open
+condition -- only `failed`/`cancelled`/`exited` still auto-open it. The chain row already
+carries the live running overview for the whole turn the moment it renders (`stages.length >=
+2`), so a Stage settling in place no longer needs to duplicate that same overview itself. A
+turn with only one Stage keeps today's existing running auto-open unchanged (FR-067): there is
+no chain row yet (it renders nothing below two Stages) to carry an overview for it, so nothing
+is gained by deferring there. **Declined alternative** (named in the issue): collapsing an
+untouched previous-turn row on the next send -- brings back auto-close and the exact focus-drop
+defect decision 19/#991 removed, and risks a scroll shift from the `content-visibility` rows
+the same way #991's own research already flagged for that alternative.
+
+**Grilled and decided (no further design input needed -- a technical-semantics question, not a
+product one)**: what counts as "a turn has two or more Stages" while a later Stage has not
+started streaming yet, so only one Stage currently exists? Read `StageGroup.totalStages` live,
+exactly as it already is (`groupSubagentStages.ts` recomputes it, as `stages.length`, on every
+grouping pass over the transcript items known SO FAR) -- the renderer has no way to know in
+advance how many Stages a turn will eventually have, so there is no other implementable answer.
+Concretely: while a turn's first Stage is the only one that exists, it is treated as a
+single-Stage turn and keeps auto-opening while running (unaffected by this decision); the
+instant a second Stage's own first item streams in, `totalStages` becomes 2 for every Stage in
+the turn (the `stages.forEach(...)` pass in `groupSubagentStages.ts` stamps the SAME final
+count onto every entry), reclassifying all of them, including one already auto-opened while
+running under the single-Stage rule. Does an already-open Stage close itself at that moment?
+No, and no extra code is needed to guarantee it: `useStickyDisclosure`'s own upward-only latch
+(decision 19) is set from the EARLIER render where `autoOpen` was still true and persists in
+local component state for the whole mount, regardless of any later recompute of the auto-open
+CONDITION itself -- `open = manualOpen ?? (latchedAutoOpen || autoOpen)` stays true even once
+`autoOpen` itself later reads false. A Stage this decision exempts from auto-open is never
+exempt from the USER's own manual toggle either (FR-084 unchanged): a user may still open it by
+hand while it runs, and once open that way, decision 19's own upward-only rule applies exactly
+as it already does to any other row.
+
+**Live check** (`scripts/verify-1000-stage-defer.mjs`): the `stages-941.jsonl` fixture gained a
+SECOND additive `{"__delay__": 1500}`, mirroring Stage 1's own existing one (decision 19/#991),
+inserted after Stage 2's own assistant-message echo and before its `tool_execution_end` -- the
+only window in this fixture where a Stage is genuinely, observably running while the turn
+already has two or more Stages. Proves: Stage 2 stays closed while running at that point (red
+on `origin/main`, where it would auto-open unconditionally); the chain row is already open and
+shows "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close itself
+once the turn grows past it; after the whole ten-Stage turn settles, Stage 2 (never failed,
+never manually touched) stays closed (never opened at all, so nothing to self-close), Stage 5
+(its own FailAgent member failed) is open regardless of Stage count (the kept exception), and a
+manual open plus keyboard focus placed inside Stage 2 while running survives both it settling
+and every later Stage streaming in behind it (WCAG 2.4.3, re-proving decision 19's own
+guarantee for a Stage this decision newly exempts from auto-open). This is a pure wall-clock
+pacing addition: no JSON field (status, `durationMs`, `resultText`) changes anywhere in the
+fixture, so every existing content-dependent assertion against it is unaffected -- confirmed by
+re-reading `verify-941-stage-naming-panel-helpers.mjs`'s own Story559 duration-based
+disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms, never confused) and
+`verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check, neither of
+which depends on real-time pacing. `scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1
+`'true'` expand-cycle expectation (decision 19/gate round 3) and
+`scripts/verify-991-stage-focus.mjs`'s own focus-survives-settling phase both still hold
+unchanged: Stage 1's own render during ITS delay window is still single-Stage-so-far (Stage 2's
+new delay runs strictly later in the tape), so it auto-opens exactly as before either way.

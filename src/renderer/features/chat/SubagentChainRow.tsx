@@ -141,7 +141,27 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   React.useEffect(() => {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
-  const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
+  // Issue #1000 (ui-architect-v3 ruling at #999's own gate, decided 2026-10-18, FR-086 --
+  // amends FR-067): once a turn has two or more Stages, a Stage row's own `running` state no
+  // longer auto-opens it by itself; only `failed`/`cancelled`/`exited` still do. The per-turn
+  // Subagent chain row (`SubagentChainRow` below) already carries the live running overview
+  // once a turn reaches two Stages, so a Stage settling in place no longer duplicates the SAME
+  // agents expanded twice over. "Two or more Stages" reads `group.totalStages` -- this turn's
+  // own live-grouped Stage count SO FAR (`groupSubagentStages.ts` recomputes it on every
+  // grouping pass, the same field `ChainStageLine`'s "of N" wording already reads) -- so while
+  // the second Stage has not started streaming yet, the first keeps today's single-Stage
+  // running auto-open (research.md decision 21 has the full rationale for reading it live
+  // rather than waiting for the turn to fully settle, which the renderer can never know in
+  // advance anyway). The instant a second Stage's own first item streams in, every Stage in
+  // this turn (including one already auto-opened while running) is reclassified multi-Stage;
+  // `useStickyDisclosure`'s own upward-only latch (below) is what then keeps an already-open
+  // Stage open regardless -- no extra code needed here for that half of the rule.
+  const isMultiStageTurn = group.totalStages > 1
+  const isOpenByDefault =
+    total > 1 &&
+    (isMultiStageTurn
+      ? status === 'failed' || status === 'cancelled' || status === 'exited'
+      : isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
   // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
   // unanimous): shared `useStickyDisclosure` (research.md decision 19 has the full rationale).
   // Upward-only: a Stage still auto-opens while running/failed/cancelled/exited, but once open
@@ -249,9 +269,10 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
-      // existing running/failed/cancelled/exited auto-open, now sync'd upward only via
-      // `useStickyDisclosure` (issue #991 items 1/3/4) -- see the toggle block above for the
-      // full rationale.
+      // existing running/failed/cancelled/exited auto-open while this turn has fewer than two
+      // Stages, and only failed/cancelled/exited once it has two or more (issue #1000,
+      // FR-086) -- now sync'd upward only via `useStickyDisclosure` (issue #991 items 1/3/4) --
+      // see the toggle block above for the full rationale.
       open={open}
       onOpenChange={onOpenChange}
       triggerAriaLabel={triggerAriaLabel}

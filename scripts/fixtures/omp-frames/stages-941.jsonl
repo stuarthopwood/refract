@@ -58,6 +58,24 @@
 // (deterministically auto-open and staying open by the time they ever run, not closed) -- those
 // assertions were updated to match (`assertExpandCycleByFinder`'s own doc comment has the full
 // story); this fixture's own frames needed no further change beyond the one delay line above.
+//
+// Second additive extension (issue #1000, 2026-10-18, Main-approved): one more
+// `{"__delay__": 1500}` inserted right after Stage 2's own assistant-message echo and before
+// its `tool_execution_end` -- the SAME pattern as Stage 1's own delay above, mirrored onto
+// Stage 2 so it is genuinely observable as a running, two-member Stage WHILE this turn
+// already has two Stages (Stage 1, settled; Stage 2, running) -- the exact window issue #1000
+// narrows the auto-open rule for (`SubagentChainRow.tsx`'s `StageGroupRow`, FR-086). Without
+// this, Stage 2's own frames arrive unpaced (inside the renderer's own 50ms patch-batching
+// window, same as every other non-delayed Stage here), so whether it was ever observably
+// running before settling is not reliably reproducible -- see
+// `verify-941-stage-naming-expand-helpers.mjs`'s own header for that exact wording applied to
+// Stage 2/7 today. This is a pure wall-clock pacing addition: no JSON field (status,
+// `durationMs`, `resultText`) changes anywhere in this file, so Story559's own two occurrences
+// keep their exact, already-exercised durations ("2s" from Stage 2's 1800ms, "4s" from Stage
+// 5's 4300ms, `verify-941-stage-naming-panel-helpers.mjs`'s own "latest occurrence wins"
+// disambiguation), and `verify-941-part2.mjs`'s own position-scoped Subagent-panel structure
+// check is unaffected the same way. `scripts/verify-1000-stage-defer.mjs` is the live check
+// built to use this window.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -82,6 +100,7 @@
 {"type":"tool_execution_start","toolCallId":"stage2-task","toolName":"task","args":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]},"intent":"Building the #559/#560 fixes"}
 {"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage2-task","name":"task","arguments":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]}}],"timestamp":0}}
 {"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage2-task","name":"task","arguments":{"context":"Build the fix for #559 and #560.\nDepends on agent://G923Code; also see agent://NoSuchAgent.","tasks":[{"name":"Story559","task":"Implement the fix for #559."},{"name":"Story560","task":"Implement the fix for #560."}]}}],"timestamp":0}}
+{"__delay__":1500}
 {"type":"tool_execution_end","toolCallId":"stage2-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"Story559","status":"finished","task":"Implement the fix for #559.","durationMs":1800},{"index":1,"id":"Story560","status":"finished","task":"Implement the fix for #560.","durationMs":2000}]}},"isError":false}
 {"type":"message_start","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"Story559","label":"Story559","status":"completed","resultText":"Implemented the fix for #559.\nUnit tests added.","durationMs":1800},{"id":"Story560","label":"Story560","status":"completed","resultText":"Implemented the fix for #560.\nUnit tests added.","durationMs":2000}]},"timestamp":0}}
 {"type":"message_end","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"Story559","label":"Story559","status":"completed","resultText":"Implemented the fix for #559.\nUnit tests added.","durationMs":1800},{"id":"Story560","label":"Story560","status":"completed","resultText":"Implemented the fix for #560.\nUnit tests added.","durationMs":2000}]},"timestamp":0}}

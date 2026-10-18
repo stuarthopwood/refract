@@ -3783,3 +3783,53 @@ Phase 60 to Phase 61, T288/T289 to T291/T292 (all above) -- no src/src-tauri con
 four doc files (this one, spec.md, research.md, docs/PLAN.md), all additive. **Refs #991** until
 the live check above is actually run against a real built exe and confirms every acceptance
 item; switches to **Closes #991** once it does.
+
+## Phase 63: Stage rows defer running auto-open to the chain row (#1000, FR-086, research.md
+decision 21) [US1]
+
+Takes the next free numbers against `origin/main` (this branch's own convention, matching
+Phase 60/61's own notes above): open PR #1003 is independently using FR-085+, decision 20, and
+Phase 62 on its own branch, not yet merged -- expect this phase, its own FR, and its own
+research.md decision to be renumbered again at merge time, same as every prior lane here.
+
+**Goal**: narrow `StageGroupRow`'s own auto-open condition (FR-067/FR-084) so that once a turn
+has two or more Stages, a Stage row no longer auto-opens merely because one of its own agents
+is running -- only failed/cancelled/exited still do -- since the per-turn Subagent chain row
+(FR-068) already carries the live running overview for the whole turn at that point, and a
+turn's running agents were otherwise shown expanded twice over (ui-architect-v3 ruling at PR
+#999's own gate, recorded on issue #1000; full rationale in research.md decision 21).
+
+- [X] T293 `SubagentChainRow.tsx`'s `StageGroupRow`: `isOpenByDefault` now reads
+  `group.totalStages` -- while a turn has only one Stage, unchanged (`total > 1 && (isRunning ||
+  failed/cancelled/exited)`); once a turn has two or more Stages, `running` is dropped from the
+  condition (`total > 1 && (failed/cancelled/exited)`). No change to `useStickyDisclosure`'s own
+  upward-only latch, `StageGroupRow`'s solo-Stage exclusion (`total > 1`), or `SubagentChainRow`'s
+  own `isUnsettled`/default-open rule -- all three already give this decision everything it
+  needs with no further code (FR-086).
+- [X] T294 New `scripts/verify-1000-stage-defer.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additional additive `{"__delay__": 1500}` (no new fixture, AGENTS.md; mirrors
+  Stage 1's own existing delay, now also applied to Stage 2) -- the only window in this fixture
+  where a Stage genuinely, observably runs while the turn already has two or more Stages.
+  Proves: Stage 2 stays closed while running at that point, with the chain row already open and
+  showing "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close
+  itself once the turn grows past it; after the whole ten-Stage turn settles, Stage 2 stays
+  closed (never auto-opened, so nothing to self-close) while Stage 5 (its own failed member) is
+  open regardless of Stage count; a manual open plus keyboard focus placed inside Stage 2 while
+  running survives both it settling and every later Stage streaming in behind it (WCAG 2.4.3).
+  Shim-confirmed check and a fresh, `mkdtemp`'d debug-log path (same pattern as
+  `verify-941-part2.mjs`/`verify-991-stage-focus.mjs`). Written, not run end-to-end (no build
+  slot granted for this sub-task): `node --check` plus a real `import()` load-check, `pnpm
+  typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs`, and `node
+  scripts/check-parity.mjs --gate` all clean.
+- [X] Confirmed, no change needed: `scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1
+  `'true'` expand-cycle expectation and `scripts/verify-991-stage-focus.mjs`'s own
+  focus-survives-settling phase both still hold exactly as before -- Stage 1's own render during
+  ITS OWN delay window is still single-Stage-so-far (Stage 2's new delay runs strictly later in
+  the tape), so it auto-opens under the UNCHANGED single-Stage half of the new condition either
+  way; by the time either script's own assertions run (after the whole turn settles), Stage 1
+  stays open purely through `useStickyDisclosure`'s own upward-only latch, set during its own
+  earlier running window, regardless of the turn later being reclassified multi-Stage. Also
+  confirmed unaffected by the fixture's own second additive delay (a pure wall-clock pacing
+  change, no JSON field): `verify-941-stage-naming-panel-helpers.mjs`'s own Story559
+  duration-based disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms) and
+  `verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check.
