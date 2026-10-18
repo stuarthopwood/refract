@@ -141,7 +141,40 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   React.useEffect(() => {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
-  const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
+  // Issue #1000 (ui-architect-v3 ruling at #999's own gate, decided 2026-10-18, FR-087 --
+  // amends FR-067): once a turn has two or more Stages, a Stage row's own `running` state no
+  // longer auto-opens it by itself; only a failed/cancelled/exited MEMBER still does -- and it
+  // does so the instant that member settles, even while a sibling member in the SAME Stage is
+  // still running (Decided, Skippy, delegated by Stuart 2026-10-18, UI architect's suggested
+  // fix, gate round 1: `hasBadMember` below reads the raw counts, not the Stage's own overall
+  // `status`, which stays `'running'` for as long as ANY member is unsettled and would
+  // otherwise silently delay this open until the whole Stage finally settles). The per-turn
+  // Subagent chain row (`SubagentChainRow` below) already carries the live running overview
+  // once a turn reaches two Stages, so a Stage settling in place no longer duplicates the SAME
+  // agents expanded twice over. "Two or more Stages" reads `group.totalStages` -- this turn's
+  // own live-grouped Stage count SO FAR (`groupSubagentStages.ts` recomputes it on every
+  // grouping pass, the same number this row's own trigger label states as "of N" below,
+  // `triggerAriaLabel` -- NOT `ChainStageLine`, whose own aria-label never restates it) -- so
+  // while the second Stage has not started streaming yet, the first keeps today's
+  // single-Stage running auto-open (research.md decision 22 has the full rationale for reading
+  // it live rather than waiting for the turn to fully settle, which the renderer can never
+  // know in advance anyway). The instant a second Stage's own first item streams in, every
+  // Stage in this turn (including one already auto-opened while running) is reclassified
+  // multi-Stage; `useStickyDisclosure`'s own upward-only latch (below) is what then keeps an
+  // already-open Stage open regardless -- no extra code needed here for that half of the rule.
+  // Concretely: a turn's first Stage always runs alone (nothing else can stream in before it),
+  // so in a genuinely LIVE turn it auto-opens under the single-Stage branch and then STAYS
+  // open for the rest of that mount's life once later Stages arrive, via the latch -- but a
+  // FRESH mount of the same turn (reopened history, a remount) renders every Stage already
+  // knowing the turn's final Stage count: if that first Stage never itself had a bad member,
+  // its one-and-only render computes `isOpenByDefault` under the already-multi-Stage branch,
+  // which never includes `running` -- so it starts CLOSED, same as any other untouched Stage
+  // in that turn. Not a regression: a fresh mount's auto-open condition is evaluated exactly
+  // once, against the turn's own already-known final shape, with no earlier single-Stage
+  // render to have latched anything from.
+  const hasBadMember = counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
+  const isMultiStageTurn = group.totalStages > 1
+  const isOpenByDefault = total > 1 && (isMultiStageTurn ? hasBadMember : isRunning || hasBadMember)
   // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
   // unanimous): shared `useStickyDisclosure` (research.md decision 19 has the full rationale).
   // Upward-only: a Stage still auto-opens while running/failed/cancelled/exited, but once open
@@ -249,9 +282,10 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
-      // existing running/failed/cancelled/exited auto-open, now sync'd upward only via
-      // `useStickyDisclosure` (issue #991 items 1/3/4) -- see the toggle block above for the
-      // full rationale.
+      // existing running/failed/cancelled/exited auto-open while this turn has fewer than two
+      // Stages, and only failed/cancelled/exited once it has two or more (issue #1000,
+      // FR-087) -- now sync'd upward only via `useStickyDisclosure` (issue #991 items 1/3/4) --
+      // see the toggle block above for the full rationale.
       open={open}
       onOpenChange={onOpenChange}
       triggerAriaLabel={triggerAriaLabel}
@@ -262,8 +296,13 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     >
       {/* Gate round 3 fix (item 6): a tighter `space-y-1` for this group specifically, instead
           of `CollapsibleContent`'s own ambient `space-y-2` (which still governs spacing against
-          any OTHER top-level content a future caller might add alongside these three). */}
-      <div className="space-y-1">
+          any OTHER top-level content a future caller might add alongside these three). Gate
+          round 1 fix (issue #1000, item 8, A11y): `aria-live="off"` -- this renders inside
+          `Transcript.tsx`'s own `role="log"` region, whose implicit live-region default would
+          otherwise queue the context brief/"Uses:" line (and member status changes nested
+          inside, though `SpineList`'s own `aria-live="off"` already covers that half) as their
+          own log-addition announcements, matching `SpineList`/`UpNextList`'s own convention. */}
+      <div aria-live="off" className="space-y-1">
         {/* Issue #941 grill item 4: the Stage's own full batch context, rendered Markdown, with
             a real expand/collapse control past about 6 lines (`StageContextBrief`); absent when
             no item in the run captured a `context` (a flat call, or history from before #941). */}

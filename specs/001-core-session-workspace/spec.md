@@ -707,6 +707,32 @@
   looking for a later one with non-empty text -- matching FR-086's "never hide a row" rule
   exactly, not a narrower "find the first message with visible text" one.
 
+### Session 2026-10-18 (Stage rows defer running auto-open to the chain row, #1000)
+
+- Q: Issue #1000: in a turn with two or more Stages, every running Stage row auto-opens AND
+  stays open (FR-084's upward-only rule), while the per-turn Subagent chain row also lists the
+  same agents, so a turn can show each agent expanded twice over. Fix? → A: Decided (Skippy,
+  delegated by Stuart 2026-10-18, ruling by ui-architect-v3 at PR #999's own gate): once a turn
+  has two or more Stages, a Stage row auto-opens only on failed, cancelled, or exited -- no
+  longer merely on running; the chain row already carries the live running overview once a
+  turn reaches two Stages. A single-Stage turn is unaffected: it keeps today's running
+  auto-open (there is no chain row yet to carry an overview for it). Declined alternative:
+  collapsing an untouched previous-turn row on the next send -- brings back auto-close and the
+  focus drop FR-084/#991 removed, and risks a scroll shift from the `content-visibility` rows.
+- Q: What counts as "a turn has two or more Stages" while a later Stage has not started
+  streaming yet (so only one Stage currently exists)? → A: The turn's own live-grouped Stage
+  count so far (`StageGroup.totalStages`, recomputed on every grouping pass, the same number
+  "of N" in a Stage's own accessible name already states) -- there is no way for the renderer
+  to know in advance how many Stages a turn will eventually have, so a Stage currently alone
+  keeps today's single-Stage running auto-open until a second Stage's own first item actually
+  streams in, at which point every Stage in the turn (including one already auto-opened while
+  running) is reclassified multi-Stage.
+- Q: Does a Stage already auto-opened while running stay open once a second Stage appears and
+  reclassifies the turn as multi-Stage? → A: Yes, unconditionally -- FR-084's own upward-only
+  disclosure rule already guarantees this with no further change: the auto-open LATCH a Stage
+  row sets while running persists in its own local component state for the row's whole mount,
+  independent of any later recompute of the auto-open CONDITION itself.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -967,6 +993,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-066** (renumbered from FR-064 during the #877/#564 merge, gate round 2, 2026-10-15: #564 claimed FR-064/FR-065 first on `main`): On a build where OMP confirms its `ask` dialog is enabled (Refract requests this once per OMP process at launch; it counts as unavailable if the request fails, errors, times out, or does not answer `enabled: true`, and Refract never retries for that process's life), a question call with two or more questions MUST render as one Question card with a tab per question at its top, each labelled by the question's own short header or "Question N", wrapping at narrow widths, with an answered tab showing a check mark whose state is also readable by assistive technology; a single question MUST show no tab row. A single-choice question's options MUST be a set of full-width rows offering exactly one pick; a multiple-choice question's options MUST be full-width tick-box rows, any number of which, including none, may be ticked. Every question MUST also always offer a free-text "Other" row with an always-visible input, usable alongside ticked options on a multiple-choice question. A recommended option MUST show as muted text next to its own label and MUST NOT be preselected. The footer MUST offer an outline Cancel at one side and one filled primary button at the other that reads "Next" until every question is complete and "Submit" once it is; the primary button MUST never be disabled, and pressing it while a question is still incomplete MUST move to that question and, if it is already the open one, show an inline message that an option or free text is required. Answers for the whole call MUST be sent only once -- when Submit is pressed, or when OMP's own timeout auto-answers an unanswered question with its recommended (or otherwise first) option -- never when an option is merely chosen; when OMP reports a timeout, the footer MUST show the deadline as a static line, never a counting-down timer. On a build where the dialog is unavailable, a multi-question call MUST instead arrive and be answered one question at a time, exactly as a single question already is (FR-018), each option row answering immediately when chosen as today, with any trailing "(Recommended)" OMP appends to an option's own label removed from what is shown (but kept in what is sent back); Refract MUST show one explanatory notice per OMP process launch, not per card, that questions on this build arrive separately, naming no implementation or version detail (FR-055).
 - **FR-067** (renumbered from FR-064 during the #877/#563 merge, gate round 2, 2026-10-15 -- further renumbered from FR-066 once #572 also independently claimed that number on `main` for its own Ask card restyle, merged first): The subagents started by one `task()` call, or by `task()` calls issued together within the same owning assistant message (a **Stage**, Clarifications 2026-10-15; gate round 2 architect addendum A: keyed on that message's own id, not transcript adjacency), MUST render as one group row: a header combining a status icon, the agent count, a roll-up of non-zero running/finished/failed/cancelled/exited counts, and the Stage's own duration, over the member rows (each still FR-047's own per-subagent baseline line, unchanged). The label MUST read "Stage N" (plus the count and roll-up), never an invented name (the first agent's own name or the task text). A Stage with exactly one agent MUST always render identically to today's single-subagent row, with no group header, regardless of how many Stages the turn has (gate round 2 architect addendum B, supersedes the turn-scoped rule this build shipped with first): its own position ("Stage N of M") is stated only in that row's accessible name, never in the visible label, so nothing is relabelled under the reader as a sibling Stage starts. Every Stage with two or more agents MUST get its own group header (decision 1, Clarifications 2026-10-15), and that header MUST NOT change element type or remount as a second agent or a second Stage streams in.
   > Amended 2026-10-18 by FR-079: one-agent Stages now show the Stage label and the agent's name.
+  > Amended 2026-10-18 by FR-087: while a turn has two or more Stages, a Stage row no longer
+  > auto-opens while merely running -- only failed, cancelled, or exited still do, as soon as
+  > one member settles failed, cancelled or exited (not only once the whole Stage settles).
 - **FR-068** (renumbered from FR-065, then from FR-067, see FR-067's own note): A turn with two or more Stages (FR-067) MUST additionally show one **Subagent chain** row at the end of the turn, above the turn-total-time line (FR-046): a collapsed summary line reading the Stage count, the agent count, and non-zero running/failed/cancelled/exited counts, expandable to one line per Stage with that Stage's own agent entries wrapped onto further lines as needed. The row MUST default open while any agent in the turn is running, failed, cancelled, or exited (Clarifications 2026-10-15: cancelled added to the default-open/always-visible set alongside failed/exited), and default collapsed once every agent has finished; activating an agent entry in the chain MUST open that agent in the Subagent panel (spec 004 FR-017) with it selected (Clarifications 2026-10-15: a Stage's own group row does not open the panel -- only the chain's entries do). The chain row MUST NOT show arrows or other connectors implying a dependency between Stages: OMP's data gives only Stage order and each agent's own status and duration, never a true dependency graph.
 - **FR-069** (issue #735, UX-architect-v3 roundtable decision record, 2026-10-15; final numbering confirmed once #899/#563 landed FR-067/FR-068 on `origin/main`): The session list MUST show a pinned toolbar row above its scroll area, below Pull requests, offering Collapse all and Expand all icon-only buttons in that order; each MUST collapse or expand every Repository group and the Archived group (while Archived is shown) at once, MUST be `aria-disabled` (never natively disabled) when it would be a no-op, and MUST be keyboard reachable with an accessible name and a tooltip naming its action and, when disabled, the no-op reason. Each Repository's own collapsed state and the Archived group's own collapsed state MUST be saved (`Settings.sessionListCollapse`) and restored on the next app start, so neither resets on restart; a Repository removed from Refract MUST be pruned from the saved state. A closed group whose non-archived Sessions include one needing the developer, or one that terminated unexpectedly, or one with an Unread response, MUST show a single marker naming the most urgent of those three states in that order; the session list MUST NOT otherwise mark a closed group as needing attention, and an archived Session MUST NOT drive this marker, nor the group's own active-session cue, in the Repository it was archived from. The Repository group currently holding the visible non-archived Session MUST show its own active-session cue even while closed. A closed group MUST reopen, and that open MUST be saved, only when a create or a restore from Archived moves a Session into it -- never for a plain selection, a notification, a Split restore, or a status change.
 - **FR-070** (new, 2026-10-15, issue #567, ui-architect-v3 roundtable decision record, renumbered from a provisional FR-075 once #570 confirmed FR-069 as the ceiling on origin/main): A Session row MUST be a two-line, 44px square-cornered choice item: line 1 MUST show the shared status icon, the session's display name (truncating; its weight MUST NOT change when the row is selected), and the row's own time at the row's right edge; line 2 MUST show exactly one of, in this order, start-progress text, "Terminated unexpectedly", an archived row's own Project name, or otherwise the session's branch. On hover, on focus inside the row, or while the row's own action menu is open, the time MUST hide and the row's own "..." menu button MUST take its place; under a pointer that cannot hover, both MUST show together. A Session shown in a pane MUST keep the existing 2px active-indicator bar plus its selected fill at all times a pane shows it; hover alone MUST add the fill only, never the bar. A Group header (a Project's own header and the cross-project Archived header) MUST use sentence case, never uppercase or letter-spaced text; the Archived header's own count MUST render as a separate `tabular-nums` figure after the word "Archived", never inside brackets. A Group header's own New-session, branch-picker, and actions buttons MUST be 24px ghost icon buttons, hidden at rest and shown by opacity on hover or focus anywhere in the header, while any of the three is open, while a session is being created in that group, whenever the group has no active Sessions, and always under a pointer that cannot hover. The session list's footer MUST read as one block -- the Add repository entry, then the profile item, then any future alert rows -- separated from the scrollable groups above it by exactly one soft divider.
@@ -1157,6 +1186,33 @@ The developer types a slash command and finds the ones the agent offers. If a se
   user message anywhere is skipped, unchanged from the existing "no user message" rule
   (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
   is being retired (R13) and keeps its existing fixed-window behaviour.
+- **FR-087** (new, 2026-10-18, issue #1000, ui-architect-v3 ruling at PR #999's own gate;
+  amends FR-067/FR-084's Stage row; renumbered from a provisional FR-086 once #1006 claimed
+  FR-086 on `origin/main` first for issue #862): Once a turn has two or more Stages (FR-068's
+  own `totalStages`, read live -- the turn's own currently-known Stage count, which may still
+  grow), a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is
+  running. Only a failed, cancelled, or exited MEMBER still auto-opens it, and it MUST do so the
+  instant that member settles, even while a sibling member in the same Stage is still running --
+  waiting for the whole Stage to finish before opening is not sufficient (Decided, Skippy,
+  delegated by Stuart 2026-10-18, UI architect's suggested fix). The per-turn Subagent chain
+  row (FR-068) already carries the live running overview for the whole turn once it reaches
+  two Stages, so a turn's running agents are no longer shown expanded twice over (once in the
+  Stage row in place, again in the chain row). A turn that currently has only one Stage (a
+  later Stage has not started streaming yet) is unaffected and keeps FR-067's own existing
+  running auto-open, since no chain row exists yet to carry an overview for it; the instant a
+  second Stage's own first item streams in, every Stage in the turn, including one already
+  auto-opened while running, is reclassified multi-Stage, but FR-084's own upward-only rule
+  means an already-open Stage never closes because of that reclassification. Concretely: a
+  turn's first Stage always runs alone, so in a genuinely live turn it opens under the
+  single-Stage exception and then stays open for the rest of that mount's life once later
+  Stages arrive (the upward-only latch); a FRESH mount of the same turn (reopened history, a
+  remount) instead renders every Stage already knowing the turn's final Stage count in one
+  single render, so a first Stage that never itself had a failed/cancelled/exited member starts
+  CLOSED there, same as any other untouched Stage in that turn -- this is not a regression, it
+  is the same auto-open condition evaluated once against the turn's own already-known shape,
+  with no earlier single-Stage render to have latched anything from. A user's own manual toggle
+  on a Stage this requirement exempts from auto-open still opens and closes it exactly as
+  before (FR-084 unchanged), and once opened that way also never auto-closes.
 
 ### Key Entities
 

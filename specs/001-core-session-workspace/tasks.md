@@ -4081,3 +4081,77 @@ user message, found past the old 8...") in full, 9,901 bytes into the file -- pa
 8,192-byte window, under the new 65,536-byte cap. PR #1006 switched from `Refs #862` to
 `Closes #862`.
 
+## Phase 64: Stage rows defer running auto-open to the chain row (#1000, FR-087, research.md
+decision 22) [US1]
+
+Takes the next free numbers against `origin/main` (this branch's own convention, matching
+Phase 60/61's own notes above): #1003 (Async-result job matching, FR-085, decision 20, Phase 62,
+T293-T311) and #1006 (Conversation preview/title scan, FR-086, decision 21, Phase 63, T312/T313)
+both merged first, claiming every number this phase previously used (including a second,
+independent collision on the same T312/T313/FR-086/decision-21/Phase-63 set this branch had
+already renumbered to once for #1003) -- renumbered again to Phase 64, FR-087, decision 22,
+T314/T315 below.
+
+**Goal**: narrow `StageGroupRow`'s own auto-open condition (FR-067/FR-084) so that once a turn
+has two or more Stages, a Stage row no longer auto-opens merely because one of its own agents
+is running -- only failed/cancelled/exited still do -- since the per-turn Subagent chain row
+(FR-068) already carries the live running overview for the whole turn at that point, and a
+turn's running agents were otherwise shown expanded twice over (ui-architect-v3 ruling at PR
+#999's own gate, recorded on issue #1000; full rationale in research.md decision 22).
+
+- [X] T314 `SubagentChainRow.tsx`'s `StageGroupRow`: `isOpenByDefault` now reads
+  `group.totalStages` -- while a turn has only one Stage, unchanged (`total > 1 && (isRunning ||
+  failed/cancelled/exited)`); once a turn has two or more Stages, `running` is dropped from the
+  condition (`total > 1 && (failed/cancelled/exited)`). No change to `useStickyDisclosure`'s own
+  upward-only latch, `StageGroupRow`'s solo-Stage exclusion (`total > 1`), or `SubagentChainRow`'s
+  own `isUnsettled`/default-open rule -- all three already give this decision everything it
+  needs with no further code (FR-087).
+- [X] T315 New `scripts/verify-1000-stage-defer.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additional additive `{"__delay__": 1500}` (no new fixture, AGENTS.md; mirrors
+  Stage 1's own existing delay, now also applied to Stage 2) -- the only window in this fixture
+  where a Stage genuinely, observably runs while the turn already has two or more Stages.
+  Proves: Stage 2 stays closed while running at that point, with the chain row already open and
+  showing "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close
+  itself once the turn grows past it (amended: Stage 3, see gate round 1); after the whole
+  ten-Stage turn settles, Stage 2 stays
+  closed (never auto-opened, so nothing to self-close) while Stage 5 (its own failed member) is
+  open regardless of Stage count; a manual open plus keyboard focus placed inside Stage 2 while
+  running survives both it settling and every later Stage streaming in behind it (WCAG 2.4.3).
+  Shim-confirmed check and a fresh, `mkdtemp`'d debug-log path (same pattern as
+  `verify-941-part2.mjs`/`verify-991-stage-focus.mjs`). Written, not run end-to-end (no build
+  slot granted for this sub-task): `node --check` plus a real `import()` load-check, `pnpm
+  typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs`, and `node
+  scripts/check-parity.mjs --gate` all clean.
+- [X] Confirmed, no change needed: `scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1
+  `'true'` expand-cycle expectation and `scripts/verify-991-stage-focus.mjs`'s own
+  focus-survives-settling phase both still hold exactly as before -- Stage 1's own render during
+  ITS OWN delay window is still single-Stage-so-far (Stage 2's new delay runs strictly later in
+  the tape), so it auto-opens under the UNCHANGED single-Stage half of the new condition either
+  way; by the time either script's own assertions run (after the whole turn settles), Stage 1
+  stays open purely through `useStickyDisclosure`'s own upward-only latch, set during its own
+  earlier running window, regardless of the turn later being reclassified multi-Stage. Also
+  confirmed unaffected by the fixture's own second additive delay (a pure wall-clock pacing
+  change, no JSON field): `verify-941-stage-naming-panel-helpers.mjs`'s own Story559
+  duration-based disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms) and
+  `verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check.
+- [X] Gate round 1 remediation (code-reviewer, test-reviewer, a11y-auditor; #1007): T314's
+  `isOpenByDefault` now reads a new `hasBadMember` (`counts.failed`/`counts.cancelled`/
+  `counts.exited` directly, not the Stage's own overall `status`), opening a multi-Stage Stage
+  the instant any ONE member goes bad instead of waiting for the whole Stage to settle
+  (Decided, Skippy, delegated by Stuart, UI architect's suggested fix; FR-087 and research.md
+  decision 22 reworded to match, Clarifications wording split into two sentences). T315's
+  `verify-1000-stage-defer.mjs` rewritten: "is Stage 2 running" now reads the always-rendered
+  TRIGGER's own `aria-label`, never the collapsible content (Radix never renders it while
+  closed -- Stage 2 staying closed IS the behaviour under test, so the old content-based wait
+  silently timed out and masked the whole discriminator); the closed-while-running screenshot
+  now taken BEFORE the manual-open step, so it actually shows what it claims; a NEW, genuinely
+  untouched multi-agent Stage (Stage 3) checked closed at full settle, since Stage 2 itself is
+  manually opened later in the same run and is no longer a clean "never touched" witness; a
+  distinct NOT-PROVEN verdict and exit code (2), never DONE/exit 0, when the critical discriminator
+  window is missed. `SubagentChainRow.tsx` gained `aria-live="off"` on the Stage content
+  wrapper (context brief/"Uses:" line), matching `SpineList`/`UpNextList`'s own convention.
+  Stale "Stage 2 has no delay" comments fixed in `verify-941-stage-naming-expand-helpers.mjs`
+  and `verify-991-stage-focus.mjs` (both now state Stage 2 carries its own additive delay too
+  and is deterministically closed, not merely unpaced). Non-build checks re-run clean
+  (`node --check`, `pnpm typecheck`, `pnpm vitest run` 148/148, `check:indent`, `check:file-size`,
+  `check:parity --gate`).
