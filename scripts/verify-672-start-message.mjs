@@ -58,7 +58,7 @@ import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
-  readSessionSummary, waitForStartProgressKind, ctrlClickSessionRow, restartAgent,
+  readSessionSummary, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionAndWaitReady, quickCreateSessionId
 } from './verify-672-start-message-helpers.mjs';
 
@@ -78,9 +78,9 @@ async function main() {
   let launch2 = null;
   const findings = [];
   const failures = [];
-  const notExercised = [
-    "`memory-deferred` startProgress.kind (issue #512, pre-existing, unchanged by #672) was not exercised: reaching it for real needs REFRACT_FORCE_LOW_MEMORY=1, which would force every OTHER real start in the same launch into memory-deferred too (mutually exclusive with the `queued` exercise below, which needs two REAL starts to actually reach ready); outside #672's own acceptance criteria. `queued` IS now exercised for real (Session E, launch 2) -- SessionStartNotice.tsx's shared plain-text path renders memory-deferred identically, confirmed by code reading, not a live run."
-  ];
+  // Both `queued` and `memory-deferred` (issue #512, pre-existing, unchanged by #672) are
+  // exercised for real below (launch 2, Sessions D and E) -- nothing left notExercised.
+  const notExercised = [];
   let exeHash = null;
   let gitHeadSha = null;
   let dirty = 'unknown';
@@ -299,39 +299,50 @@ async function main() {
     launch1 = null;
 
     // ======================================================================
-    // Launch 2 ("long", 70s ready-delay): the REAL `prompt`/`extended` stages on a Session that
+    // Launch 2 ("long", 150s ready-delay): the REAL `prompt`/`extended` stages on a Session that
     // already has history -- Keep waiting/Cancel reachability, overlay-hide-on-focus, theme
-    // contrast, the 600px-tall window case.
+    // contrast, the 600px-tall window case. Also the real `queued`/`memory-deferred` kinds.
     // ======================================================================
-    launch2 = await setupLaunch(exePath, launcherExe, 'long', { REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS) });
+    launch2 = await setupLaunch(exePath, launcherExe, 'long', {
+      REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS),
+      REFRACT_FORCE_LOW_MEMORY: '1'
+    });
     const cdp2 = launch2.cdp;
 
-    // ---- Real `queued`: Session C and D each grab one of the Rust start-queue's own 2
-    // concurrent slots (MAX_CONCURRENT_STARTS, start_queue.rs:36) the instant they're created;
-    // Session E's own start then has no slot free and reaches the real `queued` kind, with no
-    // forced-memory lever needed. E becomes the focused pane on creation, so its own notice is
-    // what GROUP/REGIONS below scope to. ----
+    // ---- Real `queued` and `memory-deferred`: Session C grabs the Rust start-queue's 1st real
+    // slot and actually spawns (MAX_CONCURRENT_STARTS, start_queue.rs:36); Session D grabs the
+    // 2nd slot but, with REFRACT_FORCE_LOW_MEMORY=1 AND C still spawned, defers
+    // (start_queue.rs:387); Session E then has no slot free at all and queues. Each becomes the
+    // focused pane on its own creation (confirmed via aria-current below), so its own notice is
+    // what GROUP/REGIONS scope to in turn. Both D and E are cancelled once their states are
+    // captured -- left running, D's own eventual real spawn (once its 60s
+    // MEMORY_DEFER_CEILING_MS elapses) would compete with Session C's own later with-history
+    // restart for the same 2 real slots, adding a long, flaky, unrelated real-time dependency to
+    // checks that are really about these two kinds' own rendering. ----
     const sessionC = await quickCreateSessionId(cdp2, 'long/C (1st start, 1st of 2 real slots)');
     findings.push(`Session C created (id ${sessionC.id}), brand-new, holding one of the 2 real start-queue slots.`);
-    const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots)');
-    findings.push(`Session D created (id ${sessionD.id}) to hold the 2nd real start-queue slot while real queued is exercised.`);
+    const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
+    const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 10_000);
+    findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C is still spawned (start_queue.rs:387).`);
+    await assertFocusedPlainStageNotice(cdp2, {
+      sessionId: sessionD.id, kind: 'memory-deferred', expectedText: 'Starting agent… waiting for memory to free up',
+      muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05a-memory-deferred.png')
+    });
+
     const sessionE = await quickCreateSessionId(cdp2, 'long/E (3rd start, observes real queued)');
     const queuedProgress = await waitForStartProgressKind(cdp2, sessionE.id, 'queued', 10_000);
-    findings.push(`Session E (id ${sessionE.id}) real startProgress is ${JSON.stringify(queuedProgress)} -- both real slots held by C and D, no forced-memory lever used.`);
-    await cdp2.waitFor(`!!document.querySelector('[data-start-plain-text]')`, { timeoutMs: 10_000, label: 'queued: plain-text notice mounted' });
-    const queuedState = await readNoticeState(cdp2);
-    assertCentred(queuedState, 'queued', failures);
-    const queuedOpacity = await waitForRegionOpacity(cdp2, (v) => v > 0.95, 2_000);
-    if (!queuedOpacity.ok) failures.push(`queued: transcript region opacity settled at ${queuedOpacity.value}, expected >0.95 (brand-new Session E has nothing to dim).`);
-    else findings.push(`queued: transcript region opacity settled at ${queuedOpacity.value} (not dimmed), as expected for a brand-new Session.`);
-    const queuedPlainPx = fontSizePx(queuedState.plain?.fontSize);
-    if (queuedPlainPx !== 16) failures.push(`queued: plain text font-size is ${queuedState.plain?.fontSize}, expected 16px (text-base).`);
-    else findings.push('queued: plain text font-size 16px (text-base), as specified.');
-    if (queuedState.plain && queuedState.plain.color !== muted) failures.push(`queued: plain text colour is ${queuedState.plain.color}, expected --muted-foreground ${muted}.`);
-    else findings.push('queued: plain text colour matches --muted-foreground.');
-    if (!queuedState.buttonTexts.includes('Cancel')) failures.push(`queued: no "Cancel" button found (group buttons: ${JSON.stringify(queuedState.buttonTexts)}).`);
-    else findings.push('queued: "Cancel" button present, as specified.');
-    await cdp2.screenshot(path.join(SHOTS_DIR, '05b-queued.png'));
+    findings.push(`Session E (id ${sessionE.id}) real startProgress is ${JSON.stringify(queuedProgress)} -- both real slots held (C spawned, D deferred).`);
+    await assertFocusedPlainStageNotice(cdp2, {
+      sessionId: sessionE.id, kind: 'queued', expectedText: 'Waiting to start…',
+      muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05b-queued.png')
+    });
+
+    const cancelD = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionD.id)})`);
+    if (!cancelD?.ok) failures.push(`memory-deferred: cancelStart(D) did not return ok (${JSON.stringify(cancelD)}) -- Session D may still hold its real slot, risking cross-talk with Session C's own later restart.`);
+    else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot before Session C's own later restart.");
+    const cancelE = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionE.id)})`);
+    if (!cancelE?.ok) failures.push(`queued: cancelStart(E) did not return ok (${JSON.stringify(cancelE)}).`);
+    else findings.push("queued: Session E's start cancelled (real cancelStart) after asserting.");
 
     // Re-focus Session C (a real plain click, not Ctrl) so GROUP/REGIONS scope back to it.
     await cdp2.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionC.id)}]')`);

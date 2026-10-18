@@ -165,12 +165,25 @@ export async function ctrlClickSessionRow(cdp, sessionId) {
  *  replays from its own line 1 on each new child process): `sync_from_state.rs` only ever
  *  PATCHES `current_conversation` when `message_count > 0`, never clears it, so the Session's
  *  real history persists across this restart untouched (confirmed by reading that guard, not
- *  assumed). */
+ *  assumed).
+ *
+ *  Gate-fix (HIGH, test delta on c5756d7): `recover()`'s own returned Promise does not settle
+ *  until `agent.start()` fully finishes -- ready or failure (`sessions_agent.rs:404` ->
+ *  `launch.rs:202`'s `wait_ready`). Awaiting it directly here used to block this whole function
+ *  for the ENTIRE real start (60-180s), overrunning CdpSession's own request timeout well
+ *  before that -- every `waiting`/`prompt` poll AFTER this call then ran against a start that
+ *  had already finished (or a thrown timeout), never the live transition it meant to observe.
+ *  Fired without awaiting its own resolution instead (stashed on `window`, polled for later by
+ *  nothing in this script -- no caller here needs the eventual outcome, only the live
+ *  transition `waitForStartProgressKind` polls for separately): this function now returns as
+ *  soon as the call is DISPATCHED, not once the whole start settles. */
 export async function restartAgent(cdp, sessionId) {
   const stopped = await cdp.evaluate(`window.refract.sessions.stopAgent(${JSON.stringify(sessionId)})`);
   if (!stopped?.ok) throw new Error(`restartAgent(${sessionId}): stopAgent failed: ${JSON.stringify(stopped)}`);
-  const recovered = await cdp.evaluate(`window.refract.sessions.recover(${JSON.stringify(sessionId)})`);
-  if (!recovered?.ok) throw new Error(`restartAgent(${sessionId}): recover failed: ${JSON.stringify(recovered)}`);
+  await cdp.evaluate(`(() => {
+    window.__672RecoverResult = window.refract.sessions.recover(${JSON.stringify(sessionId)});
+    return true;
+  })()`);
 }
 
 /** Generic version of `waitForRegionOpacity` for an arbitrary selector expression (the overlay's
@@ -299,36 +312,40 @@ export function assertSizesAndColours(state, widthPx, label, resolvedForeground,
  *  after this (which Sessions get created, in what order) is the caller's own job -- the two
  *  launches below need different session choreography, not just different env vars. */
 export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-data-`));
-  const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-import-`));
-  const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-repo-`)), `verify-672-start-message-${launchLabel}`);
-  const launchDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-launch-`));
-  writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
-  const webview2DataDir = path.join(launchDir, 'webview2-data');
-  mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(launchDir, 'target.pid');
-  const port = await getFreePort();
-  const env = {
-    ...process.env,
-    ...extraEnv,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
-    REFRACT_DATA_DIR: dataDir,
-    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-    REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-    REFRACT_FAKE_OMP_NODE: process.execPath,
-    REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
-  };
-  const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
-  const child = launched.child;
-  const targetPid = launched.targetPid;
-  // Item 6 gate-fix (code-reviewer/security-auditor, LOW): everything from here on can throw
-  // before this function ever returns a `launch` object `main()` would otherwise clean up --
-  // wrapped so a failure here still stops the real child process and removes this failed
-  // attempt's own scratch folders (never anyone else's), instead of leaking both.
+  // Item 5 gate-fix (LOW, test delta on c5756d7): the `try` now covers every mkdtemp call and
+  // the launch itself too, not just the steps after it -- a throw from any of THOSE used to
+  // leak whatever had already been created (the failed attempt's own scratch folders, or a
+  // spawned child with no `cdp` to close) with nothing in scope to clean it up. Each variable
+  // starts `undefined`; the `catch` below only removes/stops what actually got created.
+  let dataDir, importSourceDir, repoDir, launchDir, child;
+  let cdp;
   try {
+    dataDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-data-`));
+    importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-import-`));
+    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-repo-`)), `verify-672-start-message-${launchLabel}`);
+    launchDir = mkdtempSync(path.join(tmpdir(), `refract-672-${launchLabel}-launch-`));
+    writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ version: 1, approvalMode: 'auto' }));
+    const webview2DataDir = path.join(launchDir, 'webview2-data');
+    mkdirSync(webview2DataDir, { recursive: true });
+    const pidFile = path.join(launchDir, 'target.pid');
+    const port = await getFreePort();
+    const env = {
+      ...process.env,
+      ...extraEnv,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+      WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
+      REFRACT_DATA_DIR: dataDir,
+      REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+      REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+      REFRACT_FAKE_OMP_NODE: process.execPath,
+      REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
+    };
+    const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
+    child = launched.child;
+    const targetPid = launched.targetPid;
+
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
-    const cdp = await CdpSession.connect(wsUrl);
+    cdp = await CdpSession.connect(wsUrl);
     if (!isTargetOwningPort(port, targetPid)) {
       throw new Error(`verify-672: CDP target on port ${port} (${launchLabel}) is not owned by the process this run launched (pid ${targetPid})`);
     }
@@ -347,11 +364,12 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
 
     return { cdp, child, dataDir, importSourceDir, repoDir, launchDir };
   } catch (err) {
-    await stopLauncher(child).catch(() => {});
-    await safeRmSync(dataDir);
-    await safeRmSync(importSourceDir);
-    await safeRmSync(repoDir);
-    await safeRmSync(launchDir);
+    if (cdp) cdp.close();
+    if (child) await stopLauncher(child).catch(() => {});
+    if (dataDir) await safeRmSync(dataDir);
+    if (importSourceDir) await safeRmSync(importSourceDir);
+    if (repoDir) await safeRmSync(repoDir);
+    if (launchDir) await safeRmSync(launchDir);
     throw err;
   }
 }
@@ -396,5 +414,46 @@ export async function quickCreateSessionId(cdp, label) {
     { timeoutMs: 10_000, label: `${label}: Session created (id visible in sessions.list())` }
   );
   if (!created) throw new Error(`${label}: could not identify the newly created Session id.`);
+  // Item 4 gate-fix (MEDIUM, test delta on c5756d7): `RepositoryGroup.tsx`'s own quick-create
+  // guard (`creatingRepositoryIds.has(repository.id)`) silently no-ops a click that lands before
+  // the PREVIOUS create's own async work has fully settled (confirmed by reading that guard, not
+  // assumed) -- waiting only for the id to appear in `sessions.list()` can still race it, since
+  // that list update and the guard's own clear are not provably the same step. Waiting for THIS
+  // Session's own row to report `aria-current="true"` (set only once `replaceFocused`/
+  // `targetSession` -- the LAST real side effect of a successful create -- has actually run)
+  // gives a caller that creates several Sessions back-to-back (the real `queued`/
+  // `memory-deferred` exercise below) a safe moment before clicking again.
+  await cdp.waitFor(
+    `document.querySelector('[data-session-open=${JSON.stringify(created.id)}]')?.getAttribute('aria-current') === 'true'`,
+    { timeoutMs: 10_000, label: `${label}: Session's own row reports aria-current (focused, quick-create guard clear)` }
+  );
   return created;
+}
+
+/** Shared by the real `queued`/`memory-deferred` exercise (main script, Launch 2): both kinds
+ *  render the SAME plain-text path (`[data-start-plain-text]`), centred, not dimmed (each
+ *  Session here is brand-new), muted-16px text, a Cancel button -- only the expected text
+ *  differs. `sessionId` confirms the notice being read is genuinely this Session's own (its row
+ *  reports `aria-current`), not a stale read of whichever pane happened to be focused before. */
+export async function assertFocusedPlainStageNotice(cdp, { sessionId, kind, expectedText, muted, failures, findings, screenshotPath }) {
+  const focused = await cdp.evaluate(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')?.getAttribute('aria-current') === 'true'`);
+  if (!focused) failures.push(`${kind}: Session ${sessionId} is not the focused pane (aria-current) -- the notice asserted below may not actually be its own.`);
+  else findings.push(`${kind}: Session ${sessionId} is confirmed the focused pane (aria-current) -- the notice asserted below is its own.`);
+  await cdp.waitFor(`!!document.querySelector('[data-start-plain-text]')`, { timeoutMs: 10_000, label: `${kind}: plain-text notice mounted` });
+  const state = await readNoticeState(cdp);
+  assertCentred(state, kind, failures);
+  const opacity = await waitForRegionOpacity(cdp, (v) => v > 0.95, 2_000);
+  if (!opacity.ok) failures.push(`${kind}: transcript region opacity settled at ${opacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
+  else findings.push(`${kind}: transcript region opacity settled at ${opacity.value} (not dimmed), as expected for a brand-new Session.`);
+  const text = await cdp.evaluate(`document.querySelector('[data-start-plain-text]')?.textContent ?? null`);
+  if (text !== expectedText) failures.push(`${kind}: plain text reads "${text}", expected exactly "${expectedText}" (describeStartProgress).`);
+  else findings.push(`${kind}: plain text reads exactly "${text}", as specified.`);
+  const plainPx = fontSizePx(state.plain?.fontSize);
+  if (plainPx !== 16) failures.push(`${kind}: plain text font-size is ${state.plain?.fontSize}, expected 16px (text-base).`);
+  else findings.push(`${kind}: plain text font-size 16px (text-base), as specified.`);
+  if (state.plain && state.plain.color !== muted) failures.push(`${kind}: plain text colour is ${state.plain.color}, expected --muted-foreground ${muted}.`);
+  else findings.push(`${kind}: plain text colour matches --muted-foreground.`);
+  if (!state.buttonTexts.includes('Cancel')) failures.push(`${kind}: no "Cancel" button found (group buttons: ${JSON.stringify(state.buttonTexts)}).`);
+  else findings.push(`${kind}: "Cancel" button present, as specified.`);
+  if (screenshotPath) await cdp.screenshot(screenshotPath);
 }
