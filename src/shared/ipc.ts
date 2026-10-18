@@ -220,9 +220,7 @@ export interface SessionSnapshot {
   // back) shows the real current list instead of an empty one -- subsequent changes still arrive
   // via `subagents:update`, this is only the seed `sessions.open`/`recover` itself must not drop.
   subagents: SubagentSummary[];
-  // Issue #937: initial Advisor-chip on/off state (session::advisor, Rust); subsequent changes
-  // via advisor:update. Session-scoped, not reset on a Conversation switch.
-  advisorOn: boolean;
+  advisorOn: boolean; // issue #937: initial Advisor-chip on/off state; subsequent changes via advisor:update
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
@@ -431,12 +429,8 @@ export const IPC_EVENTS = {
   UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
-/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
- * `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a
- * synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React
- * mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept out
- * of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and
- * out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
+/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42).
+ * Kept out of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
 export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 
 // ---------------------------------------------------------------------------

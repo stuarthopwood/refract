@@ -100,9 +100,7 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    // D1/D2 (#572): `set_ask_dialog` result; in-memory only. Gate round 2 (security Low):
-    // purely INFORMATIONAL -- the fallback decision uses `send_set_ask_dialog`'s own return
-    // value directly (`launch.rs`); nothing reads this field back.
+    // D1/D2 (#572): `set_ask_dialog` result; in-memory only. Gate round 2 (security Low): purely INFORMATIONAL -- the fallback decision uses `send_set_ask_dialog`'s own return value directly (`launch.rs`); nothing reads this field back.
     #[allow(dead_code)]
     ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
@@ -110,7 +108,6 @@ struct AgentState {
     stop_requested: bool,
     shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
-    #[allow(dead_code)]
     advisor: crate::session::advisor::State,
     #[allow(dead_code)]
     model: crate::session::model::State,
