@@ -141,7 +141,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   React.useEffect(() => {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
-  // Issue #1000 (ui-architect-v3 ruling at #999's own gate, decided 2026-10-18, FR-086 --
+  // Issue #1000 (ui-architect-v3 ruling at #999's own gate, decided 2026-10-18, FR-087 --
   // amends FR-067): once a turn has two or more Stages, a Stage row's own `running` state no
   // longer auto-opens it by itself; only a failed/cancelled/exited MEMBER still does -- and it
   // does so the instant that member settles, even while a sibling member in the SAME Stage is
@@ -156,7 +156,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // grouping pass, the same number this row's own trigger label states as "of N" below,
   // `triggerAriaLabel` -- NOT `ChainStageLine`, whose own aria-label never restates it) -- so
   // while the second Stage has not started streaming yet, the first keeps today's
-  // single-Stage running auto-open (research.md decision 21 has the full rationale for reading
+  // single-Stage running auto-open (research.md decision 22 has the full rationale for reading
   // it live rather than waiting for the turn to fully settle, which the renderer can never
   // know in advance anyway). The instant a second Stage's own first item streams in, every
   // Stage in this turn (including one already auto-opened while running) is reclassified
@@ -284,7 +284,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
       // existing running/failed/cancelled/exited auto-open while this turn has fewer than two
       // Stages, and only failed/cancelled/exited once it has two or more (issue #1000,
-      // FR-086) -- now sync'd upward only via `useStickyDisclosure` (issue #991 items 1/3/4) --
+      // FR-087) -- now sync'd upward only via `useStickyDisclosure` (issue #991 items 1/3/4) --
       // see the toggle block above for the full rationale.
       open={open}
       onOpenChange={onOpenChange}

@@ -76,7 +76,7 @@
 // its `tool_execution_end` -- the SAME pattern as Stage 1's own delay above, mirrored onto
 // Stage 2 so it is genuinely observable as a running, two-member Stage WHILE this turn
 // already has two Stages (Stage 1, settled; Stage 2, running) -- the exact window issue #1000
-// narrows the auto-open rule for (`SubagentChainRow.tsx`'s `StageGroupRow`, FR-086). Without
+// narrows the auto-open rule for (`SubagentChainRow.tsx`'s `StageGroupRow`, FR-087). Without
 // this, Stage 2's own frames arrive unpaced (inside the renderer's own 50ms patch-batching
 // window, same as every other non-delayed Stage here), so whether it was ever observably
 // running before settling is not reliably reproducible -- see

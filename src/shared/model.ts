@@ -562,7 +562,7 @@ export interface ConversationInfo {
   id: string; // the UUID suffix of the file name
   createdAt: string; // ISO timestamp prefix of the file name (no file open needed)
   title: string; // `title` field of the first line of the file, may be empty
-  preview: string; // first user message, truncated to 120 characters
+  preview: string; // first user message, truncated to 120 characters; empty if none is found within the bounded scan (issue #862)
   isCurrent: boolean; // file === Session.currentConversation
 }
 

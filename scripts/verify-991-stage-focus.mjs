@@ -16,7 +16,7 @@
 // first is not reliably reproducible) accepts either known boolean. Gate round 1 fix (issue
 // #1000, item 9): Stage 2 is no longer "no delay" either -- it gained its own additive
 // `{"__delay__": 1500}` (issue #1000, `scripts/verify-1000-stage-defer.mjs`), and under
-// FR-086's multi-Stage defer rule it is now deterministically CLOSED while running, not open;
+// FR-087's multi-Stage defer rule it is now deterministically CLOSED while running, not open;
 // its own expand-cycle call site here is unaffected by that fix (still accepts either boolean).
 //
 // ui-architect-v3 ruling (posted on #991, recorded in research.md decision 19): item 4 (a mouse

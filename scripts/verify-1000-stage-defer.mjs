@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1000 (UI polish: Stage rows defer running auto-open to the chain
-// row once a turn has two or more Stages; FR-086, amends FR-067). ui-architect-v3 ruling at
-// PR #999's own gate, recorded on #1000 and in research.md decision 21: once a turn has two or
+// row once a turn has two or more Stages; FR-087, amends FR-067). ui-architect-v3 ruling at
+// PR #999's own gate, recorded on #1000 and in research.md decision 22: once a turn has two or
 // more Stages, a Stage row's own `running` state no longer auto-opens it by itself -- only
 // `failed`/`cancelled`/`exited` still do, so a turn's running agents are no longer shown
 // expanded TWICE over (once in the Stage row in place, once again in the per-turn Subagent
@@ -273,7 +273,7 @@ async function main() {
     // ---- Phase 2: Stage 2 is genuinely running WHILE this turn already has two Stages (the
     // second additive delay window) -- Stage 2 itself stays CLOSED, the chain row is already
     // open and shows the live overview, and Stage 1 (opened earlier) has not closed itself
-    // (issue #1000, FR-086). "Running" is read from the TRIGGER's own `aria-label`
+    // (issue #1000, FR-087). "Running" is read from the TRIGGER's own `aria-label`
     // (`stageIsRunningExpr`), never the collapsible content -- Radix does not render content at
     // all while Stage 2 stays closed, which is exactly the state under test (gate round 1 fix,
     // item 1, Critical). ----
@@ -305,9 +305,9 @@ async function main() {
     if (phase2Exercised) {
       const stage2TriggerWhileRunning = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
       if (stage2TriggerWhileRunning !== 'false') {
-        failures.push(`Stage 2 auto-opened while running even though this turn already has two Stages (aria-expanded was ${JSON.stringify(stage2TriggerWhileRunning)}, expected "false") -- issue #1000 (FR-086) regression: a multi-Stage turn's own running Stage must defer to the chain row, not auto-open itself. THE ONE RED/GREEN DISCRIMINATOR in this script: this is the only check here that fails on unpatched \`origin/main\` and passes once fixed.`);
+        failures.push(`Stage 2 auto-opened while running even though this turn already has two Stages (aria-expanded was ${JSON.stringify(stage2TriggerWhileRunning)}, expected "false") -- issue #1000 (FR-087) regression: a multi-Stage turn's own running Stage must defer to the chain row, not auto-open itself. THE ONE RED/GREEN DISCRIMINATOR in this script: this is the only check here that fails on unpatched \`origin/main\` and passes once fixed.`);
       } else {
-        findings.push('Stage 2 stayed CLOSED while genuinely running, with this turn already at two Stages -- issue #1000 (FR-086) fix confirmed (the one red/green discriminator in this script).');
+        findings.push('Stage 2 stayed CLOSED while genuinely running, with this turn already at two Stages -- issue #1000 (FR-087) fix confirmed (the one red/green discriminator in this script).');
       }
 
       const chainState = await cdp.evaluate(`(() => {
@@ -428,9 +428,9 @@ async function main() {
 
     const stage3Trigger = await cdp.evaluate(`(${stageTriggerSelector(STAGE3_TITLE)})?.getAttribute('aria-expanded') ?? null`);
     if (stage3Trigger !== 'false') {
-      failures.push(`Stage 3 (two agents, never failed, never manually touched by this script) is not closed once settled (aria-expanded was ${JSON.stringify(stage3Trigger)}, expected "false") -- issue #1000 (FR-086) regression: it never had any failed/cancelled/exited member, so it should never have auto-opened at all, in a multi-Stage turn.`);
+      failures.push(`Stage 3 (two agents, never failed, never manually touched by this script) is not closed once settled (aria-expanded was ${JSON.stringify(stage3Trigger)}, expected "false") -- issue #1000 (FR-087) regression: it never had any failed/cancelled/exited member, so it should never have auto-opened at all, in a multi-Stage turn.`);
     } else {
-      findings.push('Stage 3 (two agents, never failed, never manually touched) stayed closed through the whole settled turn -- the clean "settled and never touched stays closed" proof, confirming it never auto-opened at all (issue #1000, FR-086).');
+      findings.push('Stage 3 (two agents, never failed, never manually touched) stayed closed through the whole settled turn -- the clean "settled and never touched stays closed" proof, confirming it never auto-opened at all (issue #1000, FR-087).');
     }
 
     const stage5Trigger = await cdp.evaluate(`(${stageTriggerSelector(STAGE5_TITLE)})?.getAttribute('aria-expanded') ?? null`);

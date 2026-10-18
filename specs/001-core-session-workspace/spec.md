@@ -675,6 +675,38 @@
   pair sits at the real fixture's own lines 66/67, not 19/20 (the earlier citation came from a
   filtered, comment-and-blank-line-stripped array, not the real file).
 
+### Session 2026-10-18 (Conversation history hiding a long-first-message Conversation, issue #862)
+
+- Q: Issue #862: OMP now writes a `memory_recall` entry (about 8.6 KB) and eager todo/task
+  prelude entries before the first user message, so the Rust Conversation-history listing's old
+  fixed `PREVIEW_SCAN_BYTES = 8 * 1024` window never reaches it and silently skips the whole
+  Conversation. How should the listing find the first user message without reading whole
+  multi-megabyte Conversation files in full? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): stream complete JSONL lines (so a record is never parsed out of a byte buffer
+  that can cut it off mid-line) up to a 64 KiB hard cap on total bytes read per file -- generous
+  headroom over the ~11 KB observed in the wild, while remaining far cheaper than reading a
+  14 MB file in full (research.md decision 21). Reading stops the instant the first `role:
+  'user'` message is found, so the common case (first message well inside the cap) is cheaper
+  still. A file whose cap is hit before any user message is found is still listed (its own
+  title, with an empty preview) rather than hidden; only a file that reaches genuine end-of-file
+  within the cap with no user message anywhere is skipped, unchanged from the existing rule.
+- Q: Does finding the title need its own, separately bounded read? → A: No -- `omp://session.md`
+  ("File Format"): OMP physically fixes the title at a 256-byte slot that is always the file's
+  first line, well inside the 64 KiB preview-scan cap either way, so the same single streaming
+  pass reads it for free; no separate read is needed.
+- Q: Does Electron's own identical `PREVIEW_SCAN_BYTES` bug (`src/main/conversations.ts`) need
+  the same fix? → A: No (per the issue's own acceptance criteria): Electron is being retired
+  (epic #797, R13) and gets no further fixes; only the Rust build (`src-tauri`) is fixed here.
+- Q: Gate round 1 (code-reviewer/test-reviewer, PR #1006): a Conversation whose first user
+  message is image-only (or otherwise has empty/missing `content`) currently returns `None` once
+  the scan reaches real end-of-file with no non-empty-text message ever found, hiding the row --
+  the same bug FR-086 exists to fix, under a different trigger. Does "found" require non-empty
+  text? → A: No (Decided, Skippy, delegated by Stuart 2026-10-18): any `role: 'user'` message
+  counts as found, whatever its content; `preview` is its first text part, or an empty string
+  when it has none. The scan stops there -- it never continues past the first user message
+  looking for a later one with non-empty text -- matching FR-086's "never hide a row" rule
+  exactly, not a narrower "find the first message with visible text" one.
+
 ### Session 2026-10-18 (Stage rows defer running auto-open to the chain row, #1000)
 
 - Q: Issue #1000: in a turn with two or more Stages, every running Stage row auto-opens AND
@@ -1134,12 +1166,33 @@ The developer types a slash command and finds the ones the agent offers. If a se
   best-effort `started_at` guess -- this frame carries no real correlation key to settle it for
   certain; the real fix is #712's `parentToolCallId`, not yet wired up. This requirement's
   guarantee therefore holds for sequential Stages only.
-- **FR-086** (new, 2026-10-18, issue #1000, ui-architect-v3 ruling at PR #999's own gate;
-  amends FR-067/FR-084's Stage row): Once a turn has two or more Stages (FR-068's own
-  `totalStages`, read live -- the turn's own currently-known Stage count, which may still grow),
-  a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is running.
-  Only a failed, cancelled, or exited MEMBER still auto-opens it, and it MUST do so the instant
-  that member settles, even while a sibling member in the same Stage is still running --
+- **FR-086** (new, 2026-10-18, issue #862, bug: the Rust Conversation history list hid any
+  Conversation whose first user message started past the build's old fixed 8 KB preview-scan
+  window; renumbered from a provisional FR-087 once #1003 claimed FR-085 on `origin/main`
+  first): Listing a Session's Conversations MUST show every Conversation file that has at least
+  one `role: 'user'` message, whatever byte offset that message starts at and whatever its
+  content -- an image-only message, or one with an empty or missing `content`, still counts as
+  "found" (Decided, Skippy, delegated by Stuart 2026-10-18, gate round 1): the row MUST still be
+  listed, with an empty `preview`, never with the scan instead continuing past it looking for a
+  later, text-bearing message. Finding it MUST stream complete JSONL lines (never parse a line
+  out of a fixed-size byte buffer that can cut it off mid-record) up to a bounded hard cap on
+  total bytes actually read from the file itself (64 KiB, Decided, Skippy, delegated by Stuart
+  2026-10-18; research.md decision 21), so a multi-megabyte Conversation file stays cheap to
+  list; reading MUST stop the instant the first user message is found rather than continuing on
+  to the cap, so the common case is cheaper still. A Conversation whose cap is reached before a
+  user message is found MUST still be listed -- its title (OMP's own fixed-width,
+  always-first-line `type: "title"` slot, well inside the cap) with an empty preview -- rather
+  than being hidden; only a Conversation that reaches real end-of-file within the cap with no
+  user message anywhere is skipped, unchanged from the existing "no user message" rule
+  (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
+  is being retired (R13) and keeps its existing fixed-window behaviour.
+- **FR-087** (new, 2026-10-18, issue #1000, ui-architect-v3 ruling at PR #999's own gate;
+  amends FR-067/FR-084's Stage row; renumbered from a provisional FR-086 once #1006 claimed
+  FR-086 on `origin/main` first for issue #862): Once a turn has two or more Stages (FR-068's
+  own `totalStages`, read live -- the turn's own currently-known Stage count, which may still
+  grow), a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is
+  running. Only a failed, cancelled, or exited MEMBER still auto-opens it, and it MUST do so the
+  instant that member settles, even while a sibling member in the same Stage is still running --
   waiting for the whole Stage to finish before opening is not sufficient (Decided, Skippy,
   delegated by Stuart 2026-10-18, UI architect's suggested fix). The per-turn Subagent chain
   row (FR-068) already carries the live running overview for the whole turn once it reaches

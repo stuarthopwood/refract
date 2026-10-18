@@ -37,7 +37,7 @@ export async function expandRow(cdp, titleText) {
  * forever after. Stage 1's own additive `{"__delay__": 1500}` makes it deterministically
  * observed running, so `'true'`. Gate round 1 fix (issue #1000, item 9): Stage 2 is NO LONGER
  * "no delay" either -- it gained its own additive `{"__delay__": 1500}` (issue #1000), and
- * under FR-086's multi-Stage defer rule it is now deterministically CLOSED while running
+ * under FR-087's multi-Stage defer rule it is now deterministically CLOSED while running
  * (`'false'`), not open -- but its own call site (`assertDependencies`,
  * `verify-941-stage-naming-panel-helpers.mjs`) still conservatively passes `undefined` here,
  * unchanged by this fix. Stage 7 alone remains genuinely unpaced (inside the renderer's own
