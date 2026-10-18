@@ -268,7 +268,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const notStarted = status === 'stopped' && stopReason === 'not-started'
   const disabled = status === 'stopped' && !notStarted
 
-  const { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
+  const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
     sessionId,
     text,
     commands,
@@ -1375,9 +1375,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               id={slashMenuId}
               commands={slashMatches}
               activeIndex={clampedSlashActiveIndex}
-              labelPrefix={slashMenuState?.step === 'subcommand' ? '' : '/'} hasQuery={(slashMenuState?.query ?? '') !== ''}
-              ariaLabel={slashMenuState?.step === 'subcommand' ? `/${slashMenuState.parent.name} subcommands` : 'Slash commands'}
-              noMatchesText={slashMenuState?.step === 'subcommand' ? 'No matching subcommands' : 'No matching commands'}
+              {...slashMenuViewProps}
               onSelect={(command, isRunBare) => {
                 const result = handleSlashMenuSelect(command, { runBare: isRunBare }); if (result) void handleSend(result.sendText)
               }}

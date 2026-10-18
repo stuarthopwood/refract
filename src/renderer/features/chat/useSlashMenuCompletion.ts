@@ -50,6 +50,10 @@ export interface UseSlashMenuCompletionResult {
    * item 1), so switching from typing `/advisor` to its own subcommand step counts as a real
    * change even when both happen to read the same raw text. */
   slashMenuKey: string | null
+  /** The four `SlashMenu` display props that all derive purely from `slashMenuState` (round 2
+   * gate finding: extracted here, not computed inline in MessageInput.tsx's JSX, so that file --
+   * already at its file-size baseline -- never has to grow just to add one more of these. */
+  slashMenuViewProps: { labelPrefix: string; ariaLabel: string; noMatchesText: string; hasQuery: boolean }
   slashAnnouncement: string
   /** Routes a selection (mousedown, or an Enter/Tab the caller already resolved to a command) to
    * the right completion for whichever step is currently showing. Returns `{ sendText }` when
@@ -77,6 +81,12 @@ export function useSlashMenuCompletion({
   const showSlashMenu = slashMenuState !== null && !slashDismissed
   const slashMenuKey =
     slashMenuState === null ? null : slashMenuState.step === 'command' ? `c:${slashMenuState.query}` : `s:${slashMenuState.parent.name}:${slashMenuState.query}`
+  const slashMenuViewProps = {
+    labelPrefix: slashMenuState?.step === 'subcommand' ? '' : '/',
+    ariaLabel: slashMenuState?.step === 'subcommand' ? `/${slashMenuState.parent.name} subcommands` : 'Slash commands',
+    noMatchesText: slashMenuState?.step === 'subcommand' ? 'No matching subcommands' : 'No matching commands',
+    hasQuery: (slashMenuState?.query ?? '') !== ''
+  }
 
   // Issue #947 ("Announce the result count politely when it changes... debounced", mirroring
   // `SessionList.tsx`'s own search-result announcement): a fresh 500ms timer per real change to
@@ -215,5 +225,5 @@ export function useSlashMenuCompletion({
     return handleSlashMenuSelect(match.command, { runBare: match.isRunBare })
   }
 
-  return { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey }
+  return { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey }
 }
