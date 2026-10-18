@@ -68,7 +68,7 @@ import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
-  readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, clickSessionRow, restartAgent, assertFocusedPlainStageNotice,
+  readVisibleStartKind, waitForStartProgressKind, parseWaitTimeoutAbsence, classifyPossibleAbsence, ctrlClickSessionRow, clickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionId, resolveExePath
 } from './verify-672-start-message-helpers.mjs';
 
@@ -78,9 +78,13 @@ const LOG = 'verify-672';
 const SHOTS_DIR =
   process.env.REFRACT_672_SHOTS_DIR || path.join(tmpdir(), 'refract-672-start-message-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; the "long" delay must clear
-// it with headroom but stay comfortably under `READY_CEILING_MS` (180_000).
-const READY_DELAY_BRIEF_MS = 15_000;
+// `READY_PROMPT_AFTER_MS` (src-tauri/src/omp/process.rs) is 60_000; the "brief" delay must clear
+// enough real headroom for the several checks between a restart and composer-ready (confirmed
+// live, 2026-10-18: 15s lost two separate races against this delay under normal CDP/CI
+// round-trip latency alone) while staying well below 60s (nothing on this launch ever reaches
+// `prompt`, unlike `READY_DELAY_LONG_MS` below); the "long" delay must clear 60s with headroom
+// but stay comfortably under `READY_CEILING_MS` (180_000).
+const READY_DELAY_BRIEF_MS = 45_000;
 const READY_DELAY_LONG_MS = 150_000;
 
 async function main() {
@@ -166,7 +170,7 @@ async function main() {
     await cdp1.send('Emulation.setEmulatedMedia', { features: [] });
 
     // ---- Clear: notice unmounts, "Ready..." reappears (brand-new Session reaches ready) ----
-    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'notice unmounted once the real start reaches ready (brand-new)' });
+    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 60_000, label: 'notice unmounted once the real start reaches ready (brand-new)' });
     const readyShown = await cdp1.evaluate(`Array.from(${REGIONS}).some((r) => r.textContent.includes('Ready. Type a message to get started.'))`);
     if (!readyShown) failures.push('After the real start reached ready on a brand-new Session, "Ready. Type a message to get started." did not reappear.');
     else findings.push('The notice cleared and "Ready. Type a message to get started." reappeared once the real start reached ready (brand-new Session).');
@@ -190,10 +194,10 @@ async function main() {
     else findings.push('Announcement text does not include the joke message, as specified.');
 
     // Gate-fix (2026-10-18, found live): this launch's own fake-omp reaches real `ready`
-    // READY_DELAY_BRIEF_MS (15s) after the restart dispatched above, same real timer as every
-    // other check on this launch -- not a synthetic one this script controls. Under a slow run
-    // (confirmed live: real memory pressure from concurrent sibling lanes) the restart/waiting/
-    // announcement polling above can itself eat several of those 15s, leaving too little margin
+    // READY_DELAY_BRIEF_MS (now 45s, raised from 15s the same day after it lost two separate
+    // races) after the restart dispatched above, same real timer as every other check on this
+    // launch -- not a synthetic one this script controls. Under a slow run the restart/waiting/
+    // announcement polling above can still eat into that margin, leaving too little
     // for the mutation window below to observe a genuine same-kind re-tick before `ready`
     // legitimately arrives and unmounts the notice out from under it -- that is an honest race
     // in THIS check's own fixed margin, not a product bug, and asserting a failure on it would
@@ -226,7 +230,7 @@ async function main() {
     }
 
     // ---- Build real history on Session A (a real send through the fake-omp session tape) ----
-    await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 30_000, label: 'Session A ready again after the announcement restart' });
+    await cdp1.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session A ready again after the announcement restart' });
     await cdp1.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp1.send('Input.insertText', { text: 'Reply with exactly the single word t672turn and nothing else.' });
     await cdp1.clickByLabel('Send message');
@@ -263,7 +267,15 @@ async function main() {
     await cdp1.screenshot(path.join(SHOTS_DIR, '04-history-dimmed.png'));
 
     await withDeviceMetrics(cdp1, 900, 260, async () => {
-      await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted after short-viewport override' });
+      try {
+        await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted after short-viewport override' });
+      } catch (err) {
+        // Gate-fix (2026-10-18): real failure with evidence, not an uncaught crash -- this
+        // restart's own `waiting` was just confirmed moments earlier, well inside the delay.
+        const { classifierRead, composerEnabledNow } = await classifyPossibleAbsence(cdp1);
+        failures.push(`history/wheel (short viewport): the notice was not mounted after the device-metrics override (${err.message}); classifier read ${JSON.stringify(classifierRead)}, composer enabled: ${composerEnabledNow}.`);
+        return;
+      }
       const probe = await cdp1.evaluate(`(() => {
         const region = ${REGION0}, group = ${GROUP};
         if (!region) return null;
@@ -298,7 +310,7 @@ async function main() {
 
     // ---- History-with-start clears: once this real restart reaches ready, the dimmed
     // transcript returns to full opacity (single pane, before the split-pane test below). ----
-    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'history/waiting restart reached ready, notice cleared' });
+    await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 60_000, label: 'history/waiting restart reached ready, notice cleared' });
     const historyCleared = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
     if (!historyCleared.ok) failures.push(`history/cleared: transcript region opacity settled at ${historyCleared.value}, expected ~1 after startProgress cleared.`);
     else findings.push(`history/cleared: transcript region opacity returned to ${historyCleared.value} once startProgress cleared.`);
@@ -368,14 +380,8 @@ async function main() {
       memoryDeferredObserved = true;
     } catch (err) {
       // Gate-fix (2026-10-18, code review): downgrade to notExercised ONLY the known #985
-      // absence pattern -- `waitForStartProgressKind`'s own timeout whose last read genuinely
-      // carried no `kind` at all (`{}`/`{"note":...}`), never a DEFINED other kind. Any other
-      // failure shape (an unexpected but defined kind, or a throw with a different message
-      // entirely) is a real bug this check must still catch as a failure, not a known skip.
-      const lastReadMatch = /last read was (.+)$/.exec(err.message ?? '');
-      let lastRead;
-      try { lastRead = lastReadMatch ? JSON.parse(lastReadMatch[1]) : undefined; } catch { lastRead = undefined; }
-      const isKnownAbsence = /^waitForStartProgressKind\(/.test(err.message ?? '') && lastRead !== undefined && !('kind' in lastRead);
+      // absence (`parseWaitTimeoutAbsence`) -- any other failure shape is a real bug.
+      const { isKnownAbsence, lastRead } = parseWaitTimeoutAbsence(err);
       if (isKnownAbsence) {
         notExercised.push(`memory-deferred startProgress.kind did not become observable live this run: ${err.message} -- same #985 class as prompt/extended (a start-queue stage never surfacing a live DOM-observable startProgress, last read had no kind at all), despite Session C1 confirmed reaching 'waiting' moments earlier on the identical mechanism.`);
       } else {
@@ -440,7 +446,7 @@ async function main() {
     await withDeviceMetrics(cdp2, 900, 260, async () => {
       await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/waiting: notice mounted after short-viewport override' });
       const dimBefore = await readNoticeState(cdp2);
-      const composerEnabledNow = await cdp2.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`);
+      const { composerEnabledNow } = await classifyPossibleAbsence(cdp2);
       if (!dimBefore.present && composerEnabledNow) {
         notExercised.push(`history/waiting (short viewport): the notice (readNoticeState) had already vanished entirely (present:false) and the composer was enabled by the time this check ran, only moments after the restart was confirmed live at 'waiting' -- the same #985 absence class, not a stale read. Centring, sizing, dimming and focus-hide could not be asserted here this run.`);
         return;
@@ -514,9 +520,8 @@ async function main() {
         await cdp2.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${theme.id}`)})`, { timeoutMs: 10_000, label: `${theme.name} theme applied` });
       }
       await cdp2.screenshot(path.join(SHOTS_DIR, `07-theme-${theme.id}.png`));
-      const classifierRead = await readVisibleStartKind(cdp2);
-      const composerEnabledNow = await cdp2.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`);
-      if (classifierRead?.kind === undefined && composerEnabledNow) {
+      const { isKnownAbsence, classifierRead, composerEnabledNow } = await classifyPossibleAbsence(cdp2);
+      if (isKnownAbsence) {
         notExercised.push(`${theme.name}: the notice is absent (classifier read ${JSON.stringify(classifierRead)}) and the composer is enabled -- same #985 absence class as above, not a stale read. Sizing/colour/contrast could not be measured for this theme this run.`);
         continue;
       }

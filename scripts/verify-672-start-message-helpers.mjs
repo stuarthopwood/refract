@@ -179,6 +179,34 @@ export async function waitForStartProgressKind(cdp, sessionId, kind, timeoutMs =
   throw new Error(`waitForStartProgressKind(${sessionId}, ${kind}): timed out after ${timeoutMs}ms, last read was ${JSON.stringify(last)}`);
 }
 
+/** Classifies a `waitForStartProgressKind` timeout as the known #985 absence (last read
+ *  genuinely had no `kind` at all -- `{}`/`{"note":...}`) versus any other, unexpected failure
+ *  shape (a DEFINED other kind, or a message this was never thrown from) -- callers downgrade
+ *  ONLY the former to `notExercised`, the latter is always a real failure. Shared by every
+ *  caller that needs this distinction (`memory-deferred`'s own catch), so the parse logic lives
+ *  in one place. */
+export function parseWaitTimeoutAbsence(err) {
+  const lastReadMatch = /last read was (.+)$/.exec(err?.message ?? '');
+  let lastRead;
+  try { lastRead = lastReadMatch ? JSON.parse(lastReadMatch[1]) : undefined; } catch { lastRead = undefined; }
+  const isKnownAbsence = /^waitForStartProgressKind\(/.test(err?.message ?? '') && lastRead !== undefined && !('kind' in lastRead);
+  return { isKnownAbsence, lastRead };
+}
+
+/** Classifies the CURRENT moment (not a thrown error) as the known #985 absence: the DOM
+ *  classifier reports no `kind` at all AND the composer is already enabled -- the Session's own
+ *  startProgress resolved away before this check ran, not a stale read. Shared by every
+ *  post-`waiting`-confirmed check that can race this (the short-viewport dim check, the theme
+ *  sweep, the wheel-probe). Best-effort: a failed sub-read becomes `null`/`false`, never throws
+ *  itself, so a caller already inside error handling never faces a second exception. */
+export async function classifyPossibleAbsence(cdp) {
+  const classifierRead = await readVisibleStartKind(cdp).catch(() => null);
+  const composerEnabledNow = await cdp
+    .evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`)
+    .catch(() => null);
+  return { isKnownAbsence: classifierRead?.kind === undefined && composerEnabledNow === true, classifierRead, composerEnabledNow };
+}
+
 /** Shared by `ctrlClickSessionRow`/`clickSessionRow`: scrolls a Session row (`data-session-open`,
  *  SessionRow.tsx) into view and confirms (`elementFromPoint`) the computed click point
  *  genuinely hits it before dispatching -- a bare `getBoundingClientRect()` can be stale if the
