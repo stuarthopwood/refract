@@ -145,6 +145,12 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   React.useEffect(() => {
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
+  const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
+  const userToggledRef = React.useRef(false)
+  const [open, setOpen] = React.useState(isOpenByDefault)
+  React.useEffect(() => {
+    if (!userToggledRef.current) setOpen(isOpenByDefault)
+  }, [isOpenByDefault])
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
@@ -239,8 +245,23 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
-      // existing running/failed/cancelled/exited auto-open.
-      defaultOpen={total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')}
+      // existing running/failed/cancelled/exited auto-open, auto-closing once finished.
+      // Gate-fix (first real build-slot run, never exercised before now): the OLD uncontrolled
+      // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState` AT FIRST MOUNT --
+      // if this row mounts (one more member just streamed in) WHILE still running, that
+      // initializer captures `true` once and never re-reads a later recompute once this Stage
+      // settles, so a finished multi-agent Stage could stay stuck open forever (confirmed live:
+      // Stage 7's own trigger stayed `aria-expanded="true"` on the FIRST theme pass instead of
+      // the fixture's real `false` starting state). Fixed by going fully controlled, re-syncing
+      // `open` to the live `isOpenByDefault` value in BOTH directions whenever it changes,
+      // UNTIL the user explicitly toggles it (`userToggledRef`) -- unlike the per-turn chain
+      // row (issue #941, decision 2026-10-18: sync upward only), this row's own documented
+      // design has always auto-closed once settled, so both directions stay correct here.
+      open={open}
+      onOpenChange={(next) => {
+        userToggledRef.current = true
+        setOpen(next)
+      }}
       triggerAriaLabel={triggerAriaLabel}
       // #565 decision 8: a multi-agent Stage's own `SpineList` needs its `ml-4`/`pt-1`; a
       // one-agent Stage's single `SubagentBody` instead starts at the ordinary label column
