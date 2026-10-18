@@ -236,6 +236,13 @@ async function main() {
     }
 
     await cdp.waitFor(`(${STOPPED_BASH_ROW}) !== undefined`, { timeoutMs: 15_000, label: 'bash row (to be stopped) rendered' });
+    // Gate-fix (Main, 2026-10-18): confirm the call is GENUINELY running before Stop is
+    // clicked -- without this, a fast-settling fixture replay could click Stop after the row
+    // already moved on, making the whole discriminator meaningless.
+    await cdp.waitFor(`${rowStateExpr(STOPPED_BASH_ROW)}?.statusWord === 'Running'`, {
+      timeoutMs: 15_000,
+      label: 'bash row genuinely Running before Stop is clicked'
+    });
     await cdp.screenshot(path.join(SHOTS_DIR, '01-turn-a-bash-running.png'));
 
     // Real Stop click -- sends OMP's own `abort` command, which `stop-911.jsonl`'s tape is
@@ -245,15 +252,13 @@ async function main() {
       { timeoutMs: 15_000, label: 'Stop button enabled' }
     );
     await cdp.clickByLabel('Stop');
-    findings.push("Clicked the real 'Stop' button while the bash call was still genuinely running.");
+    findings.push("Clicked the real 'Stop' button while the bash call was confirmed genuinely running.");
 
     await cdp.waitFor(`${rowStateExpr(STOPPED_BASH_ROW)}?.statusWord === 'Stopped'`, {
       timeoutMs: 20_000,
       label: 'stopped bash row settles to the Stopped status word'
     });
     const stoppedState = await readRowState(cdp, STOPPED_BASH_ROW);
-    const mutedForeground = await resolveCssVarColor(cdp, '--muted-foreground', 'color');
-    const severityError = await resolveCssVarColor(cdp, '--severity-error', 'color');
 
     if (stoppedState?.statusWord !== 'Stopped') {
       failures.push(`The Stop-cut-short bash row's own status word is ${JSON.stringify(stoppedState?.statusWord)}, expected "Stopped" -- issue #911 regression (or origin/main's pre-fix behaviour: a tool row has no neutral cancelled status, so a Stop click settles it to the full "Failed" treatment instead).`);
@@ -264,13 +269,6 @@ async function main() {
       failures.push(`The Stop-cut-short bash row still carries an aria-describedby (${JSON.stringify(stoppedState.ariaDescribedby)}, text: ${JSON.stringify(stoppedState.detailText)}) -- a user-initiated Stop must never mount an Error line (THE discriminator this issue exists to fix).`);
     } else {
       findings.push('The Stop-cut-short bash row mounts no Error line at all (no aria-describedby) -- confirmed neutral, never the red "Command aborted" Error line #570\'s own gate round 1 found live.');
-    }
-    if (stoppedState?.iconColor !== mutedForeground) {
-      failures.push(`The Stop-cut-short bash row's own icon colour is ${JSON.stringify(stoppedState?.iconColor)}, expected the resolved --muted-foreground token (${JSON.stringify(mutedForeground)}) -- not the neutral colour token \`subagentStatus.tsx\`'s own subagent cancelled already uses.`);
-    } else if (stoppedState?.iconColor === severityError) {
-      failures.push('The Stop-cut-short bash row\'s own icon colour matches --severity-error -- the full failed/red treatment, exactly the bug issue #911 reports.');
-    } else {
-      findings.push(`The Stop-cut-short bash row's own icon colour resolves to the --muted-foreground token (${mutedForeground}), confirmed distinct from --severity-error (${severityError}) -- the neutral cancelled treatment, never red.`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-turn-a-stopped-neutral.png'));
 
@@ -297,15 +295,29 @@ async function main() {
     } else {
       findings.push(`Turn B's own genuine bash failure shows its own Error line: ${JSON.stringify(failedState.detailText)}.`);
     }
-    if (failedState?.iconColor !== severityError) {
-      failures.push(`Turn B's own genuine bash failure icon colour is ${JSON.stringify(failedState?.iconColor)}, expected the resolved --severity-error token (${JSON.stringify(severityError)}) -- a real failure must still render in the error colour.`);
-    } else {
-      findings.push('Turn B\'s own genuine bash failure icon colour resolves to the --severity-error token -- a real failure still reads red, confirming this fix never blanket-neutralises every isError:true call.');
-    }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-turn-b-genuine-failure-red.png'));
 
+    // Gate-fix (Main, 2026-10-18): colour-token comparisons run ONCE PER THEME (not only
+    // under the default theme) -- both tokens resolve differently per theme, so checking them
+    // only before this loop started would never catch a theme-specific regression.
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
+      const mutedForeground = await resolveCssVarColor(cdp, '--muted-foreground', 'color');
+      const severityError = await resolveCssVarColor(cdp, '--severity-error', 'color');
+      const themedStoppedState = await readRowState(cdp, STOPPED_BASH_ROW);
+      const themedFailedState = await readRowState(cdp, FAILED_BASH_ROW);
+      if (themedStoppedState?.iconColor !== mutedForeground) {
+        failures.push(`[${theme.name}] The Stop-cut-short bash row's own icon colour is ${JSON.stringify(themedStoppedState?.iconColor)}, expected the resolved --muted-foreground token (${JSON.stringify(mutedForeground)}).`);
+      } else if (themedStoppedState?.iconColor === severityError) {
+        failures.push(`[${theme.name}] The Stop-cut-short bash row's own icon colour matches --severity-error -- the full failed/red treatment, exactly the bug issue #911 reports.`);
+      } else {
+        findings.push(`[${theme.name}] The Stop-cut-short bash row's own icon colour resolves to --muted-foreground (${mutedForeground}), distinct from --severity-error (${severityError}).`);
+      }
+      if (themedFailedState?.iconColor !== severityError) {
+        failures.push(`[${theme.name}] Turn B's own genuine bash failure icon colour is ${JSON.stringify(themedFailedState?.iconColor)}, expected the resolved --severity-error token (${JSON.stringify(severityError)}).`);
+      } else {
+        findings.push(`[${theme.name}] Turn B's own genuine bash failure icon colour resolves to --severity-error -- a real failure still reads red in this theme.`);
+      }
       const shotName = `911-stop-neutral-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}).`);

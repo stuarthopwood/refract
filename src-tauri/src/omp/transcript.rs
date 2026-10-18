@@ -1285,7 +1285,8 @@ fn apply_tool_execution_end(
     let result_details = result.get("details").cloned();
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
-        if !is_error {
+        // Issue #911 (gate-fix): a Stop-cut-short hidden call (e.g. `todo`) posts no notice either.
+        if !is_error || turn_abort_requested {
             return items;
         }
         let mut items = items;
@@ -1305,6 +1306,7 @@ fn apply_tool_execution_end(
             is_error,
             result_details.as_ref().unwrap_or(&Value::Null),
             true,
+            turn_abort_requested,
         );
         if updated.len() != items.len()
             || !updated
@@ -1333,11 +1335,8 @@ fn apply_tool_execution_end(
             tool_call_id,
             tool: tool_name,
             target: String::new(),
-            status: if is_error {
-                ToolStatus::Error
-            } else {
-                ToolStatus::Done
-            },
+            // Issue #911 (gate-fix): no tracked start for this id, but still "cut short, not failed".
+            status: if !is_error { ToolStatus::Done } else if turn_abort_requested { ToolStatus::Cancelled } else { ToolStatus::Error },
             started_at: Some(now_ms()),
             duration_ms: Some(0),
             args: Value::Null,
@@ -1400,7 +1399,8 @@ fn apply_prompt_result_notice(
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
-                text: "Turn aborted.".to_string(),
+                // Issue #911 (gate-fix): matches the Stop button's own word, not OMP's "aborted".
+                text: "Turn stopped.".to_string(),
             }));
             items
         }
@@ -1543,8 +1543,8 @@ fn attach_tool_result(
 
     let mut items = items;
     if tool_name == "task" {
-        let updated =
-            apply_batch_task_result(items.clone(), &tool_call_id, is_error, details_ref, false);
+        let updated = // issue #911: history replay has no live abort signal, always `false`
+            apply_batch_task_result(items.clone(), &tool_call_id, is_error, details_ref, false, false);
         if updated.len() != items.len()
             || !updated
                 .iter()
@@ -1746,7 +1746,7 @@ impl TranscriptState {
         }
     }
 
-    /// Finalizes every still-live row: tool->`error`; subagent settles per `cause` (`#563` decision 15: `UserStop`->`Cancelled`, `Crash`->`Exited`).
+    /// Finalizes every still-live row: tool AND subagent both settle per `cause` (`#563` decision 15, extended to Tool by #911: `UserStop`->`Cancelled`, `Crash`-> `Error`/`Exited` respectively).
     pub fn finalize_live_items(&mut self, cause: SubagentFinalizeCause) {
         let items = std::mem::take(&mut self.items);
         self.items = finalize_live_transcript(items, cause);

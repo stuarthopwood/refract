@@ -36,6 +36,9 @@ impl SessionAgent {
                     if state.turn_generation % 2 == 0 {
                         state.turn_generation = state.turn_generation.wrapping_add(1);
                     }
+                    // Issue #911 (gate-fix): every new turn starts clean -- also covers a
+                    // queued follow-up/steer starting its own next turn after a stop.
+                    state.turn_abort_requested = false;
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
@@ -307,12 +310,16 @@ impl SessionAgent {
         code: Option<i32>,
         requested: bool,
     ) -> (bool, bool, bool, u64) {
-        let (is_current, stop_requested, was_already_stopped, epoch_at_exit, exited_pid) = {
+        let (is_current, stop_requested, was_already_stopped, epoch_at_exit, exited_pid, turn_abort_requested) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             let was_already_stopped = state.status == SessionStatus::Stopped;
+            let turn_abort_requested = state.turn_abort_requested;
             if is_current {
                 state.process = None;
+                // Issue #911 (gate-fix): this exit ends whatever turn the flag belonged to --
+                // clear it here so it can never leak into a later reattach/fresh launch.
+                state.turn_abort_requested = false;
             }
             (
                 is_current,
@@ -323,6 +330,7 @@ impl SessionAgent {
                 // later read left a race window open.
                 state.termination.epoch,
                 proc.pid(),
+                turn_abort_requested,
             )
         };
         if is_current {
@@ -342,12 +350,16 @@ impl SessionAgent {
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
         // crash or `stop()` mid-turn leaves a streaming/running row spinning forever. `cause` is
-        // decided from the SAME `requested`/`stop_requested` already captured above (#563
-        // decision 15): `requested && stop_requested` is this call's own branch below for "the
-        // user asked this session to stop" (`set_status(Stopped, ...)`); anything else -- a
-        // genuine crash, or `launch()`'s internal handshake-cleanup stop, which is not a user
-        // request either -- settles a still-running Subagent row to `Exited`, not `Cancelled`.
-        let finalize_cause = if requested && stop_requested {
+        // `UserStop` either from the SAME `requested`/`stop_requested` session-level signal
+        // already captured above (#563 decision 15: "the user asked this session to stop"), OR
+        // (issue #911 gate-fix) from `turn_abort_requested` -- the user's own chat-pane Stop
+        // click was in flight for this turn when the process exited (a crash, or a race between
+        // the abort taking effect and the process otherwise going down) -- so a cut-short call
+        // still settles `Cancelled`, never `Error`/`Exited`, exactly as it would have had the
+        // abort settled normally instead. Anything else -- a genuine crash, or `launch()`'s
+        // internal handshake-cleanup stop, which is not a user request either -- settles a
+        // still-running Subagent/Tool row to `Exited`/`Error`.
+        let finalize_cause = if (requested && stop_requested) || turn_abort_requested {
             SubagentFinalizeCause::UserStop
         } else {
             SubagentFinalizeCause::Crash

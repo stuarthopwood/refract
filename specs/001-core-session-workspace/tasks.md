@@ -4216,3 +4216,30 @@ no `cancelled` concept the way subagents already got at #563 decision 15.
 
 **Spec**: `spec.md` gains FR-088 (amends FR-008) and a dated Clarifications section recording
 the decision, Decided/Skippy/delegated-by-Stuart per this story's own away-mode convention.
+
+**Gate round 1 remediation** (code-reviewer/test-reviewer/accessibility-auditor/ui-architect-v3;
+all addressed): **(1, High)** `turn_abort_requested` narrowed to only SET while a turn is
+genuinely in flight (`Working`/`NeedsYou` AND odd `turn_generation`), and cleared in every
+place it could otherwise leak (`agent_start`, a fresh launch/attach, `handle_exit`, and
+`chat.rs::stop()` itself when the `abort` RPC errors/times out/returns `success != true`).
+**(2, High)** `src-tauri/tests/transcript_golden.rs:79` updated for the new `apply_frame`
+signature (contract update, not a new test); grepped the whole crate for every other caller of
+every changed signature, none found. **(3, Medium)** `handle_exit`'s own `finalize_cause` now
+also reads `UserStop` from `turn_abort_requested` alone (not only the session-level
+`requested && stop_requested`), so a process exit racing an in-flight Stop still settles
+`Cancelled`. **(4, Medium)** `apply_batch_task_result` (`subagent_items.rs`) settles a still-
+`Running` subagent member `Cancelled` when `turn_abort_requested` is set, even when OMP's own
+per-agent `progress[i]` entry says nothing of the kind. **(5, Medium, Decided)** history
+reload has no persisted abort signal -- recorded as a known limitation (FR-088, Clarifications,
+and the live-check's own `notExercised`), deliberately NOT worked around with an error-text
+heuristic. **(6, Medium, Decided)** the `prompt_result{status:"aborted"}` notice now reads
+"Turn stopped." (was "Turn aborted."); subagent `Cancelled` and the `ask` tool's own
+"Cancelled" wording are unchanged (both confirmed to have sources other than the user's Stop).
+**(7, Medium)** `docs/design/foundations-icons.md`/`product-chat.md` updated for the tool-row
+`cancelled` status and the group's "N stopped" count. **(8, Medium)** `verify-911-stop-
+neutral.mjs` now waits for the bash row's own status word to read "Running" before clicking
+Stop, and re-resolves both colour tokens plus both rows' own icon colour once per theme inside
+the existing screenshot loop, not only under the default theme. **(9, Low)**
+`finalize_live_items`'s own stale doc comment fixed; a stopped hidden bookkeeping call (e.g.
+`todo`) no longer posts a red failure notice; the no-matching-`tool_execution_start` end-frame
+branch now also respects `turn_abort_requested`.

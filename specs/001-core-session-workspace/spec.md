@@ -769,6 +769,64 @@
   issue's own wording) makes a user-stopped call exactly as unremarkable as a plain `done` one,
   so it is governed by the same toggle, never force-shown.
 
+### Session 2026-10-18 (issue #911, gate round 1)
+
+- Q: Gate round 1 (code-reviewer/test-reviewer FAIL, item 1 High): `turn_abort_requested` was
+  only ever cleared by `handle_turn_settled`, so it could leak into a NEXT turn across a
+  settle-gap race, and was set whenever status was merely "not Idle" (also true `Stopped`
+  mid-launch, with no live turn to cut short). Fix? → A: Decided (Skippy, delegated by Stuart
+  2026-10-18): only SET while a turn is genuinely in flight (`Working`/`NeedsYou` status AND
+  `turn_generation` odd); clear it on every new turn (`agent_start`, covering a queued
+  follow-up/steer's own next turn too), on a fresh process launch/attach, on process exit
+  (`handle_exit`, same lock as `state.process = None`), and when `chat.stop`'s own `abort` RPC
+  errors, times out, or returns `success != true` (the stop never actually took effect).
+- Q: Gate round 1 (code-reviewer Medium, item 3): if the process exits (crash, or the session
+  itself is killed) WHILE a chat-pane Stop was already in flight for the current turn, does a
+  cut-short call still settle `Cancelled`, or does the process-exit path's own
+  `SubagentFinalizeCause` miss it (only `requested && stop_requested`, the session-level kill
+  signal, not the turn-level one)? → A: `turn_abort_requested` now also drives
+  `handle_exit`'s own `finalize_cause` (`(requested && stop_requested) || turn_abort_requested`
+  -> `UserStop`), so both Tool and Subagent rows still settle `Cancelled`/`Exited` correctly
+  either way.
+- Q: Gate round 1 (accessibility-auditor/code-reviewer Medium, item 4): a subagent still
+  running under a stopped `task` batch call only settled `Cancelled` when OMP's own per-agent
+  `progress[i].status` entry itself said `cancelled`/`aborted` -- a still-Running member with no
+  such entry (or a stale `pending`) fell back to `Error`, the exact bug #911 is about, just on
+  the Subagent side. Fix? → A: `apply_batch_task_result` now also settles a member `Cancelled`
+  when `turn_abort_requested` is set AND that member was genuinely still `Running`, regardless
+  of what (or whether) OMP's own progress entry says.
+- Q: Gate round 1 (UI+Code, item 5): reopening a Conversation from history re-derives every
+  tool row's status from the persisted `isError`/result shape alone -- there is no persisted
+  signal for "the user's Stop was in flight when this settled". A reopened history row for a
+  Stop-cut-short call therefore reads `error` (red), not `cancelled` (neutral), even though it
+  read neutral live. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): a KNOWN,
+  accepted limitation -- recorded here, in Phase 65, and as a live-check `notExercised` entry.
+  Explicitly NOT fixed by inventing a heuristic from the call's own error text (the entire
+  point of this issue is that matching text like "Command aborted" is not a reliable signal);
+  the real fix would need OMP to persist a distinguishable marker, which is out of scope here.
+- Q: Gate round 1 (UI Medium, item 6): one Stop click produces three different words across
+  three surfaces -- "Stopped" (tool row), "Cancelled" (subagent row), "Turn aborted." (the
+  `prompt_result{status:"aborted"}` notice). Unify? → A: Investigated whether subagent
+  `Cancelled` has any source OTHER than the user's own Stop: YES -- `map_progress_status`
+  (`subagent_items.rs`) maps OMP's own live per-agent `progress[i].status` string
+  (`"cancelled"`/`"aborted"`) to `Cancelled` unconditionally, independent of
+  `turn_abort_requested`, whenever OMP itself reports a subagent that way (for example a
+  parent task deciding to cancel one of its own children) -- so "Cancelled" for subagents is
+  NOT exclusively a Stop-click word and stays as-is. Decided (Skippy, delegated by Stuart
+  2026-10-18): the notice's own wording changes from "Turn aborted." to "Turn stopped." (OMP's
+  internal "aborted" term replaced with the chat pane's own Stop button word); the tool row's
+  "Stopped" word is unchanged (it IS exclusively a Stop-click word there, confirmed by
+  `apply_tool_execution_end`'s own `turn_abort_requested` gate). The `ask` tool's own
+  pre-existing "Cancelled" wording (`RequestCard.tsx`) also stays: an `ask` call can be
+  cancelled by the process/Conversation ending with no answer, independent of a Stop click, the
+  same "other sources exist" reasoning.
+- Q: Gate round 1 (Low, item 9): is the new "Stopped" status word ever shown VISIBLY, the way
+  "Failed"/"Done" already are? → A: Only where every other status word already is: `sr-only`
+  inside a solo/group header's icon slot (`StatusIcon`, never visible text there for ANY
+  status), and genuinely visible in two places that already show every other status word the
+  same way -- the group meta slot's "N stopped" count, and `ToolCallDialog.tsx`'s own small
+  "View full call" header. No new visible-label surface was added or is needed.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1264,9 +1322,20 @@ The developer types a slash command and finds the ones the agent offers. If a se
   group exactly as it hides a plain `done` one; FR-008's existing force-visible rule for a
   failed/interrupted group is unchanged and does not extend to `cancelled`, since nothing is
   known to have gone wrong. This status is reached only through Refract's own per-turn signal
-  (set when the user's own Stop click sends OMP's `abort` command, cleared once the turn fully
-  settles); a genuine tool failure in the same turn or any later turn MUST still settle
-  `error`.
+  (set only while a turn is genuinely in flight -- `Working`/`NeedsYou` status AND an odd
+  `turn_generation` -- when the user's own Stop click sends OMP's `abort` command; cleared on
+  every new turn, on process exit, on a fresh launch/attach, and if the abort itself failed);
+  a genuine tool failure in the same turn or any later turn MUST still settle `error`. A
+  subagent still running under a stopped `task` batch call MUST settle `Cancelled` the same
+  way (gate round 1, item 4), even when OMP's own per-agent progress entry says nothing of the
+  kind. **Known limitation** (gate round 1, item 5, Decided): reopening a Conversation from
+  history has no persisted signal for this and MUST NOT guess one from the call's own error
+  text -- a Stop-cut-short call reopened from history reads `error`, not `cancelled`. The
+  `prompt_result{status:"aborted"}` notice reads "Turn stopped." (gate round 1, item 6,
+  Decided), not OMP's own "aborted" term; the subagent `Cancelled` word and the `ask` tool's
+  own "Cancelled" wording are unchanged (both have sources other than the user's own Stop
+  click, confirmed by code: `map_progress_status`'s own direct OMP-wire-string mapping, and an
+  `ask` call cancelled by the process/Conversation ending with no answer, respectively).
 
 ### Key Entities
 
