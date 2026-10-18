@@ -503,7 +503,9 @@
   the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
   its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
   stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
-  made it continue, mark the todo done, and reply "t917turn" again.
+  made it continue, mark the todo done, and reply "t917turn" again. A second, independent
+  #954/#947 verify run's own session log shows the identical shape against "t947turn",
+  confirming this is the general mechanism, not a one-off.
   `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
   (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
   keyed by `message_id`/`message_id:index`, so no code path can render one message's own

@@ -3619,14 +3619,14 @@ Renumbered against `origin/main` just before merging (this file's own convention
 merged first and kept Phase 59 (research.md decision 17); this phase moved to Phase 60 and its
 own research.md note to decision 18.
 
-- [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains
-  `verified_subcommand_names(name, commands)`, resolving the same descriptor
-  `classify_against_builtin` refused against (the anti-shadow fix's own `shadowed_builtin`
-  first, the plain match otherwise) and returning its verified subcommand names (`[]` for a
-  command with none, including `/switch`, whose own table is always pruned empty).
-  `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch now lists them
-  (`/{name} takes one of: {sub1}, {sub2}, ....`) when non-empty, keeping the existing generic
-  wording otherwise. Exported via `session::agent::mod.rs`.
+- [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains a shared
+  `resolve_matched_descriptor(name, commands)` helper (also used by `classify_slash_invocation`
+  itself) and `classify_unsupported_arguments(name, rest, commands) -> SubcommandRefusal`,
+  distinguishing an unrecognised first word (lists the verified subcommand names, `[]` for a
+  command with none, including `/switch`, whose own table is always pruned empty) from a
+  recognised first word with extra text following it (names that one subcommand instead).
+  `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch matches on `SubcommandRefusal` to
+  pick the right wording. Exported via `session::agent::mod.rs`.
 - [X] T289 [US1] #938 items 3 and 5/FR-082/FR-083: `NoticeRow.tsx`'s short-notice branch passes
   `summaryWrap` to `CollapsedLine` (ui-architect-v3 roundtable ruling: wrap in place, never an
   expand control with nothing behind it). `ModelRolesSection.tsx`'s Advisor role description
@@ -3655,19 +3655,23 @@ yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot grante
 from Main.
 
 **Gate round 1 fixes** (code-reviewer HIGH/MEDIUM, ui-architect-v3 decided, test-reviewer
-MEDIUM): item 6's cause corrected (above, research.md decision 18); `verified_subcommand_names`
-shares one resolve helper with `classify_slash_invocation` rather than duplicating the
-descriptor lookup, and drops its unreachable any-match fallback; a first-word-is-a-valid-
-subcommand-but-extra-text-follows refusal now reads "/{name} {sub} doesn't take more text yet.
-Try /{name} {sub} on its own." (never the "takes one of" listing, which is reserved for an
-unrecognised first word); `docs/design/product-chat.md` documents both the short-notice wrap
-rule and the two refusal wordings; the item-3 live check now forces real wrapping (narrowed
-viewport) and measures it directly, falling back to a disclosed `notExercised` only if it
-genuinely cannot be forced to wrap; the item-2 skip text now reads "unproven in this run"
-rather than claiming unit coverage, and a missing `/advisor` is a hard failure for both checks
-it would otherwise skip; the script's own toast wait counts toasts present before sending and
-waits for a NEW one, and resolves the `/advisor` descriptor the same way Rust does (prefer a
-builtin-sourced match, then name/alias) instead of a bare `.find(name)`.
+MEDIUM): item 6's cause corrected (above, research.md decision 18); the old
+`verified_subcommand_names` helper (with its own separate, unreachable-in-context any-match
+fallback) is replaced by `classify_unsupported_arguments` sharing `resolve_matched_descriptor`
+with `classify_slash_invocation` -- that shared resolver still has an any-match fallback, but
+it is genuinely reachable there (`classify_slash_invocation`'s own file/skill command path
+calls it for every command, not only a builtin already known to be `UnsupportedArguments`); a
+first-word-is-a-valid-subcommand-but-extra-text-follows refusal now reads "/{name} {sub}
+doesn't take more text yet. Try /{name} {sub} on its own." (never the "takes one of" listing,
+which is reserved for an unrecognised first word); `docs/design/product-chat.md` documents both
+the short-notice wrap rule and the two refusal wordings; the item-3 live check now forces real
+wrapping (narrowed viewport) and measures it directly, falling back to a disclosed
+`notExercised` only if it genuinely cannot be forced to wrap; the item-2 skip text now reads
+"unproven in this run" rather than claiming unit coverage, and a missing `/advisor` is a hard
+failure for both checks it would otherwise skip; the script's own toast wait counts toasts
+present before sending and waits for a NEW one, and resolves the `/advisor` descriptor the same
+way Rust does (prefer a builtin-sourced match, then name/alias) instead of a bare
+`.find(name)`.
 
 Opened as draft PR #996 (branch `feat/938-slash-rest`). **Refs #938** (items 2, 3, and 5 land
 here; item 1 and 4 already shipped via #954; item 6 was resolved by investigation, no code to

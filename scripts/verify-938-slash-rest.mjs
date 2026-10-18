@@ -22,9 +22,11 @@
 //     `window.refract.chat.commands`, resolved the same way Rust's own `resolve_matched_descriptor`
 //     does -- a builtin-sourced match first, else the first match at all -- never a bare
 //     `.find(name)`), in that install's own order -- not the old generic "doesn't support
-//     arguments yet" wording. `/advisor` missing entirely from this install is a hard FAILURE for
-//     this check and FR-082 below (both depend on a real `/advisor off` round trip), not a quiet
-//     skip -- gate round 1 decision.
+//     arguments yet" wording. Also checks the OTHER refusal wording (gate round 1 decision): a
+//     valid subcommand with extra text after it (`/advisor on now`) refuses as "doesn't take
+//     more text yet", never the "takes one of" listing. `/advisor` missing entirely from this
+//     install is a hard FAILURE for this check and FR-082 below (both depend on a real
+//     `/advisor off` round trip), not a quiet skip -- gate round 1 decision.
 //   FR-082 (item 3): `/advisor off`'s own short, deterministic "Advisor disabled." reply renders
 //     as a `NoticeRow` whose summary span REALLY wraps once the window is narrow enough to force
 //     it (`textOverflow !== 'ellipsis'`, `scrollWidth <= clientWidth`, height over one 20px line)
@@ -180,13 +182,16 @@ function resolveAdvisorDescriptor(commands) {
 // (`verify-980-toast-send.mjs`'s own header comment records this), so the first match is the
 // most recent. `before` (gate round 1, item 7) is the toast count sampled BEFORE sending, so the
 // wait below can never read a STALE toast left over from an earlier step as this command's own.
+// `:not([data-removed="true"])` (gate round 2, Test LOW) excludes a toast still mid-exit
+// animation from both the count and the read -- it is not this command's own reply either.
 async function sendAndReadToast(cdp, command) {
-  const before = await cdp.evaluate(`document.querySelectorAll('[data-sonner-toast]').length`);
+  const selector = `document.querySelectorAll('[data-sonner-toast]:not([data-removed="true"])')`;
+  const before = await cdp.evaluate(`${selector}.length`);
   await clearComposer(cdp);
   await cdp.typeIntoByLabel('Message', command);
   await cdp.clickByLabel('Send message');
-  await cdp.waitFor(`document.querySelectorAll('[data-sonner-toast]').length > ${before}`, { timeoutMs: 15_000, label: 'A NEW refusal toast mounted' });
-  return cdp.evaluate(`document.querySelector('[data-sonner-toast]')?.textContent ?? null`);
+  await cdp.waitFor(`${selector}.length > ${before}`, { timeoutMs: 15_000, label: 'A NEW refusal toast mounted' });
+  return cdp.evaluate(`${selector}[0]?.textContent ?? null`);
 }
 
 async function main() {
@@ -282,13 +287,18 @@ async function main() {
     // quiet skip) -- both depend on a real `/advisor off` round trip, and #917's own live check
     // already established this ambient install is expected to offer it.
     const commandsResult = await cdp.evaluate(`window.refract.chat.commands(${JSON.stringify(sessionId)})`);
-    const commands = commandsResult?.ok ? commandsResult.value : [];
-    const advisorCommand = resolveAdvisorDescriptor(commands);
-    if (!advisorCommand) {
-      failures.push(
-        'FR-081/FR-082 unproven in this run: this ambient omp install does not list "/advisor" at all, so neither the refusal-wording check nor the short-notice-wrap check (both depend on a real "/advisor off" round trip) could run.'
-      );
+    let advisorCommand = null;
+    if (!commandsResult?.ok) {
+      failures.push(`FR-081/FR-082 unproven in this run: window.refract.chat.commands failed: ${JSON.stringify(commandsResult?.error ?? commandsResult)}.`);
     } else {
+      advisorCommand = resolveAdvisorDescriptor(commandsResult.value);
+      if (!advisorCommand) {
+        failures.push(
+          'FR-081/FR-082 unproven in this run: this ambient omp install does not list "/advisor" at all, so neither the refusal-wording check nor the short-notice-wrap check (both depend on a real "/advisor off" round trip) could run.'
+        );
+      }
+    }
+    if (advisorCommand) {
       // ==== FR-081 (item 2): refusal wording ====
       const subNames = advisorCommand.subcommands?.map((s) => s.name) ?? [];
       if (subNames.length === 0) {
@@ -354,8 +364,16 @@ async function main() {
         }
         notExercised.push('FR-082: real multi-line wrapping could not be forced in this run at any probed window width -- className-only evidence recorded above instead.');
       }
+      // Gate round 2 fix (Test MEDIUM): `switchTheme` clicks the profile name button, which can
+      // sit off-screen at a width narrow enough to force wrapping -- clear the override before
+      // switching, then re-apply the SAME width (the one actually measured above, or none if
+      // wrapping was never forced) only for the screenshot itself.
       for (const theme of THEMES) {
+        await cdp.send('Emulation.clearDeviceMetricsOverride', {});
         await switchTheme(cdp, theme.id, theme.name);
+        if (forcedWrapWidth) {
+          await cdp.send('Emulation.setDeviceMetricsOverride', { width: forcedWrapWidth, height: 800, deviceScaleFactor: 1, mobile: false });
+        }
         const shotName = theme.id === 'dark' ? '02-notice-wrap-dark.png' : theme.id === 'obsidian' ? '03-notice-wrap-obsidian.png' : '04-notice-wrap-dark-high-contrast.png';
         await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       }
@@ -364,12 +382,12 @@ async function main() {
 
     // ==== Item 6 (possible duplicate render): resolved by static code audit, not a live probe ====
     findings.push(
-      'Item 6 (possible duplicate render) was investigated by static code audit, not a live probe -- corrected gate round 1 after re-reading the real OMP session log. ' +
+      'Item 6 (possible duplicate render) was investigated by static code audit, not a live probe -- corrected gate round 1 after re-reading the real OMP session logs. ' +
       '`build_assistant_items`/`apply_message_snapshot`/`replace_message_items` (src-tauri/src/omp/transcript.rs) apply every assistant message snapshot as a full ' +
-      'replace keyed by message_id/message_id:index, so no code path can render one message\'s own content index twice. The #917 screenshot\'s three "t917turn" ' +
-      'occurrences are the user\'s own prompt (containing the sentinel word once, as an instruction) plus TWO genuinely distinct assistant messages: the model ' +
-      'called the hidden `todo` tool, replied once, and stopped; OMP\'s own incomplete-todo reminder made it continue, mark the todo done, and reply a second ' +
-      'time. Recorded in research.md decision 18 and spec.md\'s Clarifications session; no code change, nothing to assert live.'
+      'replace keyed by message_id/message_id:index, so no code path can render one message\'s own content index twice. Both the #917 screenshot\'s and a #954/#947 ' +
+      'verify run\'s own session log show the same shape: the user\'s own prompt (containing the sentinel word once, as an instruction) plus TWO genuinely distinct ' +
+      'assistant messages -- the model called the hidden `todo` tool, replied once, and stopped; OMP\'s own incomplete-todo reminder made it continue, mark the ' +
+      'todo done, and reply a second time. Recorded in research.md decision 18 and spec.md\'s Clarifications session; no code change, nothing to assert live.'
     );
 
     const report = {

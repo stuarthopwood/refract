@@ -218,12 +218,16 @@ moves focus into its first member (same file, `handleRowKeyDown`); there is no c
 
 ## 18. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
 
-**Decision**: `ipc::chat`'s generic "doesn't support arguments yet" refusal lists a command's
-own verified subcommands by name whenever it has any (`verified_subcommand_names`,
-`src-tauri/src/session/agent/commands.rs`), resolving the exact same descriptor
-`classify_against_builtin` was refused against so the list can never drift from what a second
-attempt would actually accept. `NoticeRow.tsx`'s short-notice branch gets `summaryWrap` rather
-than becoming expandable (`ui-architect-v3` roundtable ruling).
+**Decision**: `ipc::chat`'s refusal for an `UnsupportedArguments` command distinguishes two
+cases via `classify_unsupported_arguments` (`src-tauri/src/session/agent/commands.rs`): when the
+typed first word is not one of the command's own verified subcommands, it lists them by name
+("/advisor takes one of: on, off, status."); when that first word IS a verified subcommand but
+more text follows it, it instead says so directly ("/advisor on doesn't take more text yet. Try
+/advisor on on its own.", `ui-architect-v3` roundtable ruling). Both branches resolve the
+descriptor through one shared `resolve_matched_descriptor` helper -- also used by
+`classify_slash_invocation` itself -- so a refusal's own presentation can never resolve a
+DIFFERENT descriptor than the one that actually produced it. `NoticeRow.tsx`'s short-notice
+branch gets `summaryWrap` rather than becoming expandable (same roundtable ruling).
 
 **Alternatives (notice wrap)**: making every short notice expandable (matching the long-notice
 branch's own chevron) was rejected -- the common case has nothing behind the chevron (no second
@@ -239,13 +243,16 @@ hidden `todo` tool (`HIDDEN_TOOLS`, never rendered as its own row) then replied 
 (message `62b79278`) and stopped; OMP's own incomplete-todo nudge (`"You stopped with 1
 incomplete todo item(s)"`, a `developer`-role reminder, line 15) made it continue, mark the todo
 done, and reply `"t917turn"` a SECOND time (message `bc1f768c`) -- two genuinely distinct
-assistant messages, each with its own `message_id`, each correctly rendered once. `
-build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
-(`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot
-(`message_start`/`message_update`/`message_end`) as a full replace keyed by
+assistant messages, each with its own `message_id`, each correctly rendered once. A second,
+independent #954/#947 verify run's own session log
+(`~/.omp/agent/sessions/.../2026-10-18T03-23-16-685Z_....jsonl`, messages `6e0a81f1`/`00f9bf00`)
+shows the IDENTICAL shape against `"t947turn"`, confirming this is the general mechanism (the
+incomplete-todo nudge), not a one-off. `build_assistant_items`/`apply_message_snapshot`/
+`replace_message_items` (`src-tauri/src/omp/transcript.rs`) apply every assistant message
+snapshot (`message_start`/`message_update`/`message_end`) as a full replace keyed by
 `message_id`/`message_id:index`, stripping every existing item under that key before inserting
 the fresh set -- there is no code path that can render one message's own content index twice.
-The screenshot's THREE occurrences (not two) are: the user's own prompt bubble (the instruction
-text itself contains the sentinel word once), plus these two real, separate assistant replies.
-Not a duplicate render; `role="log"` announces each of the three rows exactly once, as it
-should. No code change.
+The #917 screenshot's THREE occurrences (not two) are: the user's own prompt bubble (the
+instruction text itself contains the sentinel word once), plus these two real, separate
+assistant replies. Not a duplicate render; `role="log"` announces each of the three rows exactly
+once, as it should. No code change.
