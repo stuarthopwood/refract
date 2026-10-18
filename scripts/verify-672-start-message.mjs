@@ -19,18 +19,18 @@
 // (`MAX_CONCURRENT_STARTS=2`, a pure semaphore check, no omp timing involved).
 //
 // Costs real wall-clock time (~5-6 minutes): the real 60s/180s timers are waited out, not a
-// guessed sleep. Opacity reads poll with a timeout; the dimmed transcript stays scrollable and
-// restores full opacity on focus; split-pane/short-window are FORCED via
+// guessed sleep. Opacity reads poll with a timeout; split-pane/short-window are FORCED via
 // `Emulation.setDeviceMetricsOverride`; a failed `theme.set` is a failure, not `notExercised`.
 //
 // Root cause found (2026-10-18): this script never built or PATH-prepended the recorded-frame
-// omp shim -- `setupLaunch` set the `REFRACT_FAKE_OMP_*` env vars but never put a shim
-// `omp.exe` on PATH ahead of the real one, so every run before this fix silently launched the
-// REAL omp (ready in 1-2s, explaining the 0s elapsedMs placeholders, no real `prompt`/
-// `extended` transition, and the vanishing notice) -- not a product bug. Fixed: the shim is
-// built once in `main()`, its directory passed as `pathPrepend` to both launches, and
-// `setupLaunch` refuses unless the fake-omp's own debug log proves the shim, not the real
-// binary, ran. `prompt`/`extended`/`queued` are asserted for real again below.
+// omp shim, so every run before this fix silently launched the REAL omp (ready in 1-2s, no
+// real `prompt`/`extended` transition, 0s elapsedMs placeholders). Fixed: the shim is built
+// once in `main()`, passed as `pathPrepend` to both launches; `setupLaunch` refuses unless the
+// fake-omp's own persisted debug log (`SHOTS_DIR`, survives teardown) proves it ran; a real
+// turn now clicks the tape's own Approve card too (the fake always replays `session.jsonl`'s
+// recorded `extension_ui_request` regardless of the omp CLI's `--approval-mode` flag, which
+// only a REAL binary would ever honour by skipping the ask). `prompt`/`extended`/`queued` are
+// asserted for real again below.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -173,10 +173,8 @@ async function main() {
     if (jokeMessageText && freshText.includes(jokeMessageText)) failures.push(`Announcement text ("${freshText}") includes the joke message ("${jokeMessageText}") -- the joke must never be announced.`);
     else findings.push('Announcement text does not include the joke message, as specified.');
 
-    // Defensive margin check (cheap, harmless if it never fires): a genuine same-kind re-tick
-    // window still needs SOME slack against `ready` legitimately arriving mid-check (READY_
-    // DELAY_BRIEF_MS, 15s) -- skip to notExercised rather than assert a false failure on a race
-    // this check's own fixed window cannot fully rule out.
+    // Defensive margin check (cheap, harmless if it never fires): a same-kind re-tick needs
+    // SOME slack against `ready` legitimately arriving mid-check (15s) -- skip to notExercised rather than assert a false failure on an unruled-out race.
     const marginMsBeforeReady = READY_DELAY_BRIEF_MS - (Date.now() - restartDispatchedAt) - 2_500;
     if (marginMsBeforeReady < 3_000) {
       notExercised.push(`Announcement mutation window: skipped -- only ${marginMsBeforeReady}ms of margin remained before this launch's own real ${READY_DELAY_BRIEF_MS}ms ready delay (restart-to-announcement polling above took longer than usual, likely real resource pressure), too tight to run a genuine same-kind re-tick window without racing a legitimate 'ready' transition.`);
@@ -209,6 +207,9 @@ async function main() {
     await cdp1.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp1.send('Input.insertText', { text: 'Reply with exactly the single word t672turn and nothing else.' });
     await cdp1.clickByLabel('Send message');
+    // session.jsonl's own tool call needs a real Approve click (the fake always replays it, Auto mode is a CLI flag it never checks).
+    await cdp1.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Session A: tool-call approval card rendered' });
+    await cdp1.clickByText('Approve');
     await cdp1.waitFor(`Array.from(${REGIONS}).some((r) => /t672turn/.test(r.textContent))`, { timeoutMs: 60_000, label: 'Real turn settled (fake-omp reply contains sentinel)' });
     const sessionAHasHistory = await cdp1.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionA.id)})?.currentConversation !== null)`, {
       timeoutMs: 30_000,
@@ -241,8 +242,7 @@ async function main() {
       try {
         await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted after short-viewport override' });
       } catch (err) {
-        // Gate-fix (2026-10-18): real failure with evidence, not an uncaught crash -- this
-        // restart's own `waiting` was just confirmed moments earlier, well inside the delay.
+        // Gate-fix: real failure with evidence, not an uncaught crash (this restart's own `waiting` was just confirmed moments earlier, well inside the delay).
         const { classifierRead, composerEnabledNow } = await classifyPossibleAbsence(cdp1);
         failures.push(`history/wheel (short viewport): the notice was not mounted after the device-metrics override (${err.message}); classifier read ${JSON.stringify(classifierRead)}, composer enabled: ${composerEnabledNow}.`);
         return;
@@ -317,9 +317,8 @@ async function main() {
     await teardownLaunch(launch1);
     launch1 = null;
 
-    // ---- Launch 2 ("long", 150s ready-delay): the REAL `prompt`/`extended` stages on a
-    // with-history Session -- Keep waiting/Cancel reachability, overlay-hide-on-focus, theme
-    // contrast, the 600px-tall window case; also the real `queued`/`memory-deferred` kinds. ----
+    // ---- Launch 2 ("long", 150s ready-delay): the REAL `prompt`/`extended` stages on a with-history
+    // Session -- Keep waiting/Cancel reachability, overlay-hide-on-focus, theme contrast, the 600px window; also real `queued`/`memory-deferred`. ----
     launch2 = await setupLaunch(exePath, launcherExe, 'long', {
       REFRACT_FAKE_OMP_READY_DELAY_MS: String(READY_DELAY_LONG_MS),
       REFRACT_FORCE_LOW_MEMORY: '1',
@@ -394,6 +393,8 @@ async function main() {
     await cdp2.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp2.send('Input.insertText', { text: 'Reply with exactly the single word t672turnC and nothing else.' });
     await cdp2.clickByLabel('Send message');
+    await cdp2.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Session C: tool-call approval card rendered' });
+    await cdp2.clickByText('Approve');
     await cdp2.waitFor(`Array.from(${REGIONS}).some((r) => /t672turnC/.test(r.textContent))`, { timeoutMs: 60_000, label: 'Real turn settled on Session C (fake-omp reply contains sentinel)' });
     await cdp2.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionC.id)})?.currentConversation !== null)`, {
       timeoutMs: 30_000,
@@ -460,9 +461,8 @@ async function main() {
       await cdp2.evaluate(`document.activeElement?.blur()`);
     });
 
-    // ---- Themes: a failed theme.set is a FAILURE. Driven at the real `prompt` stage; contrast
-    // measured against the panel's own WORST-CASE effective background for message, counter,
-    // guidance and every button label (a self-check confirms this catches a regression). ----
+    // ---- Themes: a failed theme.set is a FAILURE. Driven at the real `prompt` stage; contrast measured
+    // against the panel's own WORST-CASE effective background for message/counter/guidance/button label (a self-check confirms this catches a regression). ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         const result = await cdp2.evaluate(`window.refract.theme.set(${JSON.stringify(theme.id)}).then((r) => r.ok)`);
