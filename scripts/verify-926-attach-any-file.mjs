@@ -447,18 +447,28 @@ async function main() {
     await cdp.clickByLabel('Send message');
 
     // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
-    // trip succeeded) OR a toast (an unexpected send-side refusal, e.g. a guard mis-firing on
-    // one of these 5 real attached files) -- a prior run timed out on a message-row-only wait
-    // with no way to tell whether nothing was sent at all, a toast silently blocked it, or a
-    // different chip count rendered. Whichever fires first is logged before the real assertion.
+    // trip succeeded) OR a genuinely NEW toast (an unexpected send-side refusal, e.g. a guard
+    // mis-firing on one of these 5 real attached files) -- sonner toasts from D1/D4/FR-039
+    // earlier in this same run are still mounted (they fade on their own timer, not on the next
+    // assertion), so a naive "any toast present" check fires instantly on THEIR stale text and
+    // never actually waits for this send's own outcome. `toastBaseline` snapshots exactly what
+    // was already on screen right before this click; only text absent from that baseline counts
+    // as new.
+    const toastBaseline = await cdp.evaluate(
+      `Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).map((el) => el.textContent.trim())`
+    );
     await cdp.waitFor(
-      `document.querySelectorAll('[data-slot="message"]').length > 0 || !!document.querySelector('[role="status"],[data-sonner-toast]')`,
-      { label: 'either a message row appears or a toast fires after Send', timeoutMs: 30_000 }
+      `(() => {
+        if (document.querySelectorAll('[data-slot="message"]').length > 0) return true;
+        const baseline = ${JSON.stringify(toastBaseline)};
+        return Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).some((el) => !baseline.includes(el.textContent.trim()));
+      })()`,
+      { label: 'either a message row appears or a NEW toast fires after Send (stale toasts from earlier steps excluded)', timeoutMs: 30_000 }
     );
     const sendOutcome = await cdp.evaluate(
       `({
         messageRows: document.querySelectorAll('[data-slot="message"]').length,
-        toastTexts: Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).map((el) => el.textContent.trim()),
+        newToastTexts: Array.from(document.querySelectorAll('[role="status"],[data-sonner-toast]')).map((el) => el.textContent.trim()).filter((t) => !(${JSON.stringify(toastBaseline)}).includes(t)),
         textareaValue: document.querySelector('[aria-label="Message"]')?.value
       })`
     );
