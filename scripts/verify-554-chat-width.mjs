@@ -377,17 +377,26 @@ async function main() {
       failures.push('Reading column (keyboard-saved): transcript column or viewport not found after closing Settings.');
     }
 
-    // ---- Check 3b (gate fix M2): Cancel (here, Escape) must DISCARD an unsaved preview, not
-    // persist it -- arrow back to "Full" (previewing, Save enabled) then press a real Escape,
-    // and confirm the radiogroup reverts to the ACTUAL saved value ("Reading column") with Save
-    // disabled again, and the transcript is still capped at 1920px afterward (the discarded
-    // "Full" preview must never reach settings.json). ----
+    // ---- Check 3b (gate fix M2, Main's build-slot request): Escape must DISCARD an unsaved
+    // preview, not persist it -- arrow back to "Full" (previewing, Save enabled) then press a
+    // real Escape, and confirm the radiogroup reverts to the ACTUAL saved value ("Reading
+    // column") with Save disabled again, and the transcript is still capped at 1920px afterward
+    // (the discarded "Full" preview must never reach settings.json). Also confirms H1's
+    // "already on a radio, leave it" focus-restoration branch: Escape never moves focus away
+    // from the radio in the first place, so it must still read back as the checked radio
+    // afterward, not yanked to the heading or anywhere else. ----
     await openSettingsAppearance(cdp);
     await cdp.click(readingColumnRadio); // focuses the currently-checked radio
     await pressArrowUp(cdp); // previews "Full" again, without saving
     await cdp.waitFor(`(${fullRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Full" previewed again (keyboard, before Escape)' });
     await pressKey(cdp, 27, 'Escape', 'Escape');
     await cdp.waitFor(`(${readingColumnRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: 'Escape reverted the radiogroup to the saved "Reading column" value' });
+    const focusAfterEscape = await cdp.evaluate(`(() => { const el = document.activeElement; return el && el.getAttribute ? { role: el.getAttribute('role'), checked: el.getAttribute('aria-checked') } : null; })()`);
+    if (!focusAfterEscape || focusAfterEscape.role !== 'radio' || focusAfterEscape.checked !== 'true') {
+      failures.push(`Escape: H1's "already on a radio, leave it" guard expected focus to stay on the checked radio, got ${JSON.stringify(focusAfterEscape)}.`);
+    } else {
+      findings.push('Escape left focus exactly where it was (on the now-checked "Reading column" radio, never yanked away) -- H1\'s "already on a radio, leave it" guard confirmed.');
+    }
     const saveDisabledAfterEscape = await cdp.evaluate(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
     if (!saveDisabledAfterEscape) {
       failures.push('Escape: Save stayed enabled after reverting the preview -- a cancelled preview should leave nothing dirty to save.');
@@ -400,6 +409,33 @@ async function main() {
       assertClose('After Escape-cancelled preview at 1920px: column still equals the 64rem cap (the discarded "Full" preview never persisted)', afterEscapeLayout.column.width, READING_COLUMN_PX, 'Escape must discard, not save, FR-005.', 2);
     } else {
       failures.push('After Escape: transcript column or viewport not found.');
+    }
+
+    // ---- Check 3c (Main's build-slot request): Cancel -- the BUTTON, not Escape -- must also
+    // discard rather than persist, and exercises the OTHER H1 focus-restoration branch: clicking
+    // Cancel moves focus onto the button itself (not a radio), so H1's `lastDirtyGroupRef` must
+    // route focus back onto the correct GROUP's checked radio (Chat width, the only group
+    // previewed here) afterward, never onto Theme's. ----
+    await openSettingsAppearance(cdp);
+    await cdp.click(readingColumnRadio); // focuses the currently-checked radio
+    await pressArrowUp(cdp); // previews "Full" again, without saving
+    await cdp.waitFor(`(${fullRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: '"Full" previewed again (keyboard, before Cancel button)' });
+    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Cancel' && !el.disabled)`);
+    await cdp.waitFor(`(${readingColumnRadio})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: 'Cancel button reverted the radiogroup to the saved "Reading column" value' });
+    const focusAfterCancelClick = await cdp.evaluate(`(() => { const el = document.activeElement; return el && el.getAttribute ? { role: el.getAttribute('role'), checked: el.getAttribute('aria-checked'), labelledBy: el.getAttribute('aria-labelledby') } : null; })()`);
+    if (!focusAfterCancelClick || focusAfterCancelClick.role !== 'radio' || focusAfterCancelClick.checked !== 'true' || focusAfterCancelClick.labelledBy !== 'chat-width-option-reading-column-name') {
+      failures.push(`Cancel button: H1's \`lastDirtyGroupRef\` focus-restoration expected to land on the checked "Reading column" radio (Chat width group, not Theme's), got ${JSON.stringify(focusAfterCancelClick)}.`);
+    } else {
+      findings.push('Cancel button reverted the preview and H1 correctly moved focus onto the now-checked "Reading column" radio (the Chat width group that was actually dirty, not Theme\'s).');
+    }
+    const saveDisabledAfterCancelClick = await cdp.evaluate(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
+    if (!saveDisabledAfterCancelClick) failures.push('Cancel button: Save stayed enabled after reverting the preview.');
+    await closeSettings(cdp);
+    const afterCancelClickLayout = await measureLayout(cdp);
+    if (afterCancelClickLayout.column && afterCancelClickLayout.viewport) {
+      assertClose('After Cancel-button-discarded preview at 1920px: column still equals the 64rem cap (the discarded "Full" preview never persisted)', afterCancelClickLayout.column.width, READING_COLUMN_PX, 'Cancel must discard, not save, FR-005.', 2);
+    } else {
+      failures.push('After Cancel button: transcript column or viewport not found.');
     }
 
     // ---- Check 4: narrow window (360px) -- no horizontal scroll under Reading column. ----
