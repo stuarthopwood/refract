@@ -458,10 +458,24 @@ async function main() {
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, 'Here are five files.'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
+    // Gate round 5 (Test5 HIGH, real bug this live check caught): `cdp.click`/`clickByLabel`
+    // dispatch a TRUSTED `Input.dispatchMouseEvent` at the Send button's own screen coordinates
+    // (`verify-tauri-cdp.mjs`'s own doc comment) -- a fixed-position sonner toast stack still
+    // sitting on screen from D1/D4/FR-039 earlier in this run (toasts fade on their own timer,
+    // not on the next assertion, exactly like the earlier toast-baseline bug this script already
+    // fixed) can cover those exact coordinates and intercept the click before it ever reaches the
+    // button underneath, leaving `handleSend` never invoked despite the button itself reporting
+    // `aria-disabled="false"`. Confirms via `elementFromPoint` what is actually there, then waits
+    // for every toast to clear (they are ephemeral; waiting is correct, not a workaround for a
+    // product bug -- real toasts always finish fading on their own).
     const preSendButtonState = await cdp.evaluate(
-      `(() => { const b = document.querySelector('[aria-label^="Send"]'); return b ? { ariaDisabled: b.getAttribute('aria-disabled'), ariaLabel: b.getAttribute('aria-label') } : { notFound: true }; })()`
+      `(() => { const b = document.querySelector('[aria-label^="Send"]'); if (!b) return { notFound: true }; const r = b.getBoundingClientRect(); const cx = r.x + r.width / 2; const cy = r.y + r.height / 2; const top = document.elementFromPoint(cx, cy); return { ariaDisabled: b.getAttribute('aria-disabled'), ariaLabel: b.getAttribute('aria-label'), topElementAtClickPoint: top ? (top.getAttribute('data-sonner-toast') !== null || top.closest('[data-sonner-toast]') ? 'INTERCEPTING TOAST' : top.tagName + (top.getAttribute('aria-label') ? \`[aria-label="\${top.getAttribute('aria-label')}"]\` : '')) : 'none' }; })()`
     );
     console.log(`${LOG}: DIAG Send button state right before click: ${JSON.stringify(preSendButtonState)}`);
+    await cdp.waitFor(`document.querySelectorAll('[role="status"],[data-sonner-toast]').length === 0`, {
+      timeoutMs: 20_000,
+      label: 'every toast cleared before the trusted Send click (a fixed-position toast stack could intercept it at its own screen coordinates)'
+    });
     await cdp.clickByLabel('Send message');
 
     // Gate round 5 (Test5 HIGH, diagnostic): waits for EITHER a message row (chat.send round
