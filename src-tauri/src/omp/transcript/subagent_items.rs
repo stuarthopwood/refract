@@ -25,6 +25,14 @@ pub(super) fn read_task_specs(args: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Reads the batch call's own shared `context` argument (sibling of `tasks[]` on the wire,
+/// `omp/tools/task.md`'s batch schema `{ context, tasks[] }`): the Stage's batch brief, whose
+/// first line names the Stage (issue #941). `None` for a flat (non-batch) call or a malformed/
+/// missing string.
+pub(super) fn read_batch_context(args: &Value) -> Option<String> {
+    args.get("context").and_then(Value::as_str).map(str::to_string)
+}
+
 pub(super) fn task_text(spec: &Value) -> String {
     spec.get("task")
         .and_then(Value::as_str)
@@ -59,6 +67,7 @@ pub(super) fn upsert_subagent_items(
     mut items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
     specs: &[Value],
+    context: Option<&str>,
 ) -> Vec<Arc<TranscriptItem>> {
     for (index, spec) in specs.iter().enumerate() {
         let id = format!("subagent:{tool_call_id}:{index}");
@@ -68,11 +77,15 @@ pub(super) fn upsert_subagent_items(
         match existing_pos {
             Some(pos) => {
                 if let TranscriptItem::Subagent {
-                    name: n, task: t, ..
+                    name: n,
+                    task: t,
+                    context: c,
+                    ..
                 } = Arc::make_mut(&mut items[pos])
                 {
                     *n = name;
                     *t = task;
+                    *c = context.map(str::to_string);
                 }
             }
             None => items.push(Arc::new(TranscriptItem::Subagent {
@@ -81,6 +94,7 @@ pub(super) fn upsert_subagent_items(
                 spec_index: index as u32,
                 name,
                 task,
+                context: context.map(str::to_string),
                 status: SubagentStatus::Running,
                 started_at: Some(now_ms()),
                 duration_ms: None,
@@ -312,4 +326,72 @@ pub(super) fn try_apply_async_result(
     }
     let jobs = details.get("jobs").and_then(Value::as_array)?;
     Some(apply_async_result_jobs(items.to_vec(), jobs))
+}
+
+/// Builds/updates one message's own `subagent` items from its `toolCall` part's echoed `task`
+/// call (`build_assistant_items`'s own task branch in the parent `transcript` module): the
+/// owning assistant message's id is known HERE (unlike `upsert_subagent_items` above, called
+/// from the earlier live `tool_execution_start` frame, before any message snapshot exists), so
+/// `message_id` is stamped for real this time. Split out of `transcript.rs` itself (#806
+/// file-size discipline, issue #941's own technical note: "`transcript.rs` is over the 600-line
+/// cap ... add the parsing in a sibling module").
+pub(super) fn build_message_subagent_items(
+    existing_items: &[Arc<TranscriptItem>],
+    part_id: &str,
+    specs: &[Value],
+    context: Option<&str>,
+    message_id: &str,
+    capture_timing: bool,
+) -> Vec<TranscriptItem> {
+    let mut result = Vec::with_capacity(specs.len());
+    for (spec_index, spec) in specs.iter().enumerate() {
+        let sub_id = format!("subagent:{part_id}:{spec_index}");
+        let sub_name = subagent_name(spec);
+        let task = task_text(spec);
+        let existing = existing_items
+            .iter()
+            .map(|item| item.as_ref())
+            .find(|item| matches!(item, TranscriptItem::Subagent { id, .. } if *id == sub_id));
+        match existing {
+            Some(TranscriptItem::Subagent {
+                id,
+                tool_call_id,
+                spec_index,
+                status,
+                started_at,
+                duration_ms,
+                result: sub_result,
+                job_id,
+                ..
+            }) => result.push(TranscriptItem::Subagent {
+                id: id.clone(),
+                tool_call_id: tool_call_id.clone(),
+                spec_index: *spec_index,
+                name: sub_name,
+                task,
+                context: context.map(str::to_string),
+                status: *status,
+                started_at: *started_at,
+                duration_ms: *duration_ms,
+                result: sub_result.clone(),
+                job_id: job_id.clone(),
+                message_id: message_id.to_string(),
+            }),
+            _ => result.push(TranscriptItem::Subagent {
+                id: sub_id,
+                tool_call_id: part_id.to_string(),
+                spec_index: spec_index as u32,
+                name: sub_name,
+                task,
+                context: context.map(str::to_string),
+                status: SubagentStatus::Running,
+                started_at: if capture_timing { Some(now_ms()) } else { None },
+                duration_ms: None,
+                result: None,
+                job_id: None,
+                message_id: message_id.to_string(),
+            }),
+        }
+    }
+    result
 }

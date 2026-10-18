@@ -12,17 +12,22 @@ import * as React from 'react'
 import { BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { Markdown } from './Markdown'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
+import { StageUsesLine } from './StageDependencies'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import type { StageGroup } from './groupSubagentStages'
 import {
   chatRowStatus,
+  isSubagentSuccessStatus,
   SUBAGENT_STATUS_LABEL,
+  SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
   SubagentStatusIcon,
   summarizeSubagentStatuses,
@@ -120,13 +125,18 @@ export function stageSettleSummary(group: StageGroup): string {
  * header (decision 1: "a single stage is fully summarised by its own group header"); its content
  * is the member `SpineList` (a one-agent Stage's content is the agent's own body directly, no
  * `SpineList`/`<ol>` at all -- #565 decision 13: a list mounts only once a 2nd member arrives). */
-export function StageGroupRow({ group }: { group: StageGroup }) {
+export function StageGroupRow({ group, sessionId }: { group: StageGroup; sessionId: string | null }) {
   const statuses = group.items.map((item) => chatRowStatus(item.status))
   const counts = summarizeSubagentStatuses(statuses)
   const status = overallStatus(counts)
   const isRunning = status === 'running'
   const total = group.items.length
   const solo = total === 1
+  // Issue #941 grill item 2: a finished agent or Stage gets green icon AND text (the one
+  // exception to "done is neutral" -- tool rows/groups are untouched, `toolStatus.tsx`'s own
+  // module). The icon already gets its colour from `STATUS_GLYPH` via `SubagentStatusGlyph`;
+  // this is the matching text-colour half, applied to the label below.
+  const successLabelClass = isSubagentSuccessStatus(status) ? SUBAGENT_SUCCESS_TEXT_CLASS : undefined
 
   // #563 remediation (L4/decision 19, #565 decision 26) fade-in: a member row that mounts WHILE
   // this Stage is live (running) fades in; one present at a settled/history mount never does.
@@ -162,6 +172,7 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       <CollapsedLine
         icon={<SubagentStatusGlyph status={status} />}
         label={item.name}
+        labelClassName={successLabelClass}
         meta={meta}
         // Gate round 3 attempt at architect M9 was REVERTED (code/a11y spot check, High): setting
         // `defaultOpen` here made every lone running/failed/cancelled/exited agent mount
@@ -199,11 +210,15 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
     </span>
   )
+  // Issue #941 grill item 3: "Stage N" stays bare only when neither a context nor a shared name
+  // prefix produced a label (`group.label`, the three-tier rule in `groupSubagentStages.ts`).
+  const stageLabel = group.label ? `Stage ${group.stageIndex} \u00b7 ${group.label}` : `Stage ${group.stageIndex}`
 
   return (
     <CollapsedLine
       icon={<SubagentStatusGlyph status={status} />}
-      label={`Stage ${group.stageIndex}`}
+      label={stageLabel}
+      labelClassName={successLabelClass}
       // M1/L2: label and summary joined with a literal "· " separator, aria-hidden on the dot
       // only -- the accessible name comes entirely from `triggerAriaLabel` below instead.
       summary={
@@ -220,12 +235,22 @@ export function StageGroupRow({ group }: { group: StageGroup }) {
       // unmounts while collapsed and so is invisible to assistive tech in the common case).
       // Gate round 2 (Low): also restates the running/failed/etc. word and duration `meta` shows
       // visibly, since `aria-label` replaces the content name outright -- otherwise a running
-      // Stage's own accessible name carries no "Running" and no elapsed time at all.
-      triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
+      // Stage's own accessible name carries no "Running" and no elapsed time at all. Issue #941:
+      // also states the Stage's own name, once, ahead of the agent/status summary.
+      triggerAriaLabel={`Stage ${group.stageIndex} of ${group.totalStages}${group.label ? `, ${group.label}` : ''}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       // #565 decision 8: the sole geometry in play once a `SpineList` is the content is its own
       // `ml-4`/`pt-1` -- `total` is always >= 2 here (a solo Stage returns early above).
       contentClassName={SPINE_HOST_CONTENT_CLASS}
     >
+      {/* Issue #941 grill item 4: the Stage's own full batch context, rendered Markdown,
+          visually capped to about 6 lines; absent when no item in the run captured a `context`
+          (a flat call, or history from before #941). */}
+      {group.context && (
+        <div className="max-h-32 overflow-hidden text-xs text-muted-foreground [&_*:last-child]:mb-0">
+          <Markdown id={`${group.id}-context`} text={group.context} className="text-muted-foreground" />
+        </div>
+      )}
+      <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} />
       <SpineList gap="member">
         {group.items.map((item) => (
           <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
@@ -255,7 +280,7 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
   const content = (
     <>
       <SubagentStatusIcon status={status} />
-      <span className="min-w-0 truncate" title={item.name}>
+      <span className={cn('min-w-0 truncate', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)} title={item.name}>
         {item.name}
       </span>
       {duration && <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{duration}</span>}
@@ -289,13 +314,16 @@ function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: st
   const counts = summarizeSubagentStatuses(stage.items.map((item) => chatRowStatus(item.status)))
   const status = overallStatus(counts)
   const summaryText = status === 'running' ? stageRunningSummary(counts, stage.items.length) : stageSettleSummary(stage)
+  // Issue #941 grill item 3: the same three-tier Stage label `StageGroupRow` shows, here on the
+  // chain's own terse one-line-per-stage summary.
+  const stageLabel = stage.label ? `Stage ${stage.stageIndex} \u00b7 ${stage.label}` : `Stage ${stage.stageIndex}`
   return (
     <div
       role="group"
-      aria-label={`Stage ${stage.stageIndex} of ${stage.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}`}
+      aria-label={`${stageLabel}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
     >
-      <span className="shrink-0 font-medium">Stage {stage.stageIndex}</span>
+      <span className={cn('shrink-0 font-medium', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}>{stageLabel}</span>
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         {stage.items.map((item) => (
           <ChainAgentEntry key={item.id} item={item} sessionId={sessionId} />

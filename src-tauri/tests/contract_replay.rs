@@ -338,6 +338,11 @@ fn scrub_known_divergences(value: &mut Value) {
             // the same pattern `remote.kind` above uses.
             if map.contains_key("changes") && map.contains_key("contextUsage") {
                 map.remove("branch");
+                // Issue #941: `readout`'s own `todoPhases` ("Up next") is the same kind of
+                // brand-new, Rust-only field as `branch` above -- Electron's own frozen
+                // `readout.ts` never named todo phases either, so it never appears on that
+                // shell's side of this diff.
+                map.remove("todoPhases");
             }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {

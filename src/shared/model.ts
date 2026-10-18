@@ -335,6 +335,11 @@ export interface SessionReadout {
   // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
   todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
+  /** Issue #941 "Up next": the agent's own pending Todo phases (name and outstanding task
+   * count), one entry per phase with at least one task not yet `completed`/`abandoned`, in
+   * phase order; `null` when there is no todo list, or every phase is finished -- a brand-new,
+   * Rust-only field (Electron's own frozen `readout.ts` never named phases either). */
+  todoPhases: Array<{ name: string; pendingCount: number }> | null;
 }
 
 /** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */
@@ -448,6 +453,11 @@ export type TranscriptItem =
       specIndex: number; // this spec's position in the owning call's own `tasks[]` (issue #489 gate finding 1: the correlation key `reconcileSubagentsOnAttach` uses, since `id`'s scheme never matches `SubagentSummary.id`'s)
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
+      /** The owning batch `task()` call's own shared `context` argument (sibling of `tasks[]`
+       * on the wire, OMP's `task` tool batch schema `{ context, tasks[] }`): the Stage's batch
+       * brief, whose first line names the Stage (issue #941, `groupSubagentStages.ts`). Absent
+       * for a flat (non-batch) call or when the field was never captured (pre-#941 history). */
+      context?: string;
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */

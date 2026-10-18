@@ -1,8 +1,11 @@
 import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 import type { GroupedTranscriptItem } from './groupToolItems'
+import { computeStageLabel, extractAgentRefs, type StageDependency } from './stageMeta'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
+
+export type { StageDependency } from './stageMeta'
 
 export interface StageGroup {
   kind: 'stage-group'
@@ -16,6 +19,16 @@ export interface StageGroup {
    * field exists for the header's OWN text ("Stage N of M") and the chain's "N stages" summary,
    * never as a second condition gating whether the header renders at all. */
   totalStages: number
+  /** Issue #941 grill item 3: the batch context's own first line (cleaned, truncated), else
+   * the agents' shared name prefix, else `null` -- the renderer then shows a bare "Stage N". */
+  label: string | null
+  /** The Stage's own shared batch `context` argument (issue #941 grill item 4's "full context
+   * brief" on expansion); `undefined` when no item in the run captured one (a flat call, or
+   * history from before #941). */
+  context?: string
+  /** Real `agent://<id>` references this Stage's own context or tasks make to an agent STARTED
+   * BY AN EARLIER STAGE in the same turn (issue #941 grill item 5); empty when none resolve. */
+  dependencies: StageDependency[]
 }
 
 // Code-review gate fix (Medium, round 4, 2026-10-15): every `subagent`-kind item is now ALWAYS
@@ -58,7 +71,21 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
 
   const flush = () => {
     if (run.length === 0) return
-    const stage: StageGroup = { kind: 'stage-group', id: `stage:${run[0]!.id}`, items: run, stageIndex: 0, totalStages: 0 }
+    const context = run[0]!.context
+    const label = computeStageLabel(
+      context,
+      run.map((item) => item.name)
+    )
+    const stage: StageGroup = {
+      kind: 'stage-group',
+      id: `stage:${run[0]!.id}`,
+      items: run,
+      stageIndex: 0,
+      totalStages: 0,
+      label,
+      context,
+      dependencies: []
+    }
     stages.push(stage)
     result.push(stage)
     run = []
@@ -88,6 +115,36 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
     stage.stageIndex = index + 1
     stage.totalStages = stages.length
   })
+  applyDependencies(stages)
 
   return result
+}
+
+/** Issue #941 grill item 5: a Stage's own "Uses:" is real, never a guess -- resolves every
+ * `agent://<id>` reference this Stage's own batch context or tasks make against the agent ids
+ * (OMP agent ids are name-based: `shared/model.ts`'s own `SubagentSummary.id` doc comment)
+ * STARTED BY AN EARLIER Stage in the same turn, and drops any reference that matches nothing
+ * or points at the Stage's own agents or a LATER Stage (not yet started, so never a real
+ * dependency). Mutates `stage.dependencies` in place once every Stage's final `stageIndex` is
+ * known. */
+function applyDependencies(stages: StageGroup[]): void {
+  const stageIndexByAgentId = new Map<string, number>()
+  for (const stage of stages) {
+    for (const item of stage.items) {
+      if (!stageIndexByAgentId.has(item.name)) stageIndexByAgentId.set(item.name, stage.stageIndex)
+    }
+  }
+  for (const stage of stages) {
+    const text = [stage.context ?? '', ...stage.items.map((item) => item.task)].join('\n')
+    const seenAgentIds = new Set<string>()
+    const dependencies: StageDependency[] = []
+    for (const agentId of extractAgentRefs(text)) {
+      const refStageIndex = stageIndexByAgentId.get(agentId)
+      if (refStageIndex === undefined || refStageIndex >= stage.stageIndex) continue
+      if (seenAgentIds.has(agentId)) continue
+      seenAgentIds.add(agentId)
+      dependencies.push({ agentId, stageIndex: refStageIndex })
+    }
+    stage.dependencies = dependencies
+  }
 }

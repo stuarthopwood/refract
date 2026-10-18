@@ -3300,3 +3300,60 @@ root-caused via the real on-screen error text, fixed (drives the repository Sele
 Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
 (folded into #925's own scope; closes once every surface above is confirmed live with the
 gate-round-1 fixes in place).
+
+## Phase 56: Stage naming, green finished state, real dependencies (#941, part 1 of 2) [US1]
+
+(Provisional numbering, same convention Phase 54/55 note: renumbers against `origin/main` just
+before this merges, since PR #972 (`feat/937-advisor-chip`, in flight) also claims "Phase 56"
+and FR-078 on its own branch.)
+
+- [X] T279 [US1] Rust: `TranscriptItem::Subagent` gains `context: Option<String>` (the batch
+  `task()` call's own shared `context` argument, sibling of `tasks[]` on the wire per
+  `omp/tools/task.md`'s own batch schema `{ context, tasks[] }`), threaded through both
+  construction sites -- the live `tool_execution_start` path (`upsert_subagent_items`'s new
+  `context` parameter) and the message-echo path, split into a new sibling function
+  `subagent_items::build_message_subagent_items` (keeps `transcript.rs` under its own 600-line
+  cap, per the issue's own technical note). `session::readout`'s `TodoPhaseState` gains a `name`
+  field (OMP `todoPhases[].name`, previously parsed then discarded) and a new `todoPhases` wire
+  field on `SessionReadout` -- `Array<{name, pendingCount}>` for every phase with outstanding
+  work, `null` otherwise -- computed in a new sibling module `readout_todo.rs` (same file-size
+  reason). Both are brand-new, Rust-only fields (Electron's own frozen shells never had either):
+  `contract-replay`'s golden trace (`session-scenario.rust-trace.json`) and
+  `scrub_known_divergences` updated the same way PR #972 (in flight) did for its own `advisorOn`
+  field.
+- [X] T280 [US1] `groupSubagentStages.ts` computes a Stage's own `label` (the batch context's
+  first line, Markdown heading/"Goal:" stripped, ~60 chars, else the agents' shared name prefix,
+  else `null`) and real `dependencies` (`agent://<id>` references in the Stage's own context/
+  tasks resolved against EARLIER Stages' agent ids only, dropped when unmatched or forward-
+  pointing) via a new sibling `stageMeta.ts`. `statusGlyph.ts` gains a `success-done` glyph key;
+  `subagentStatus.tsx` maps `finished` to it (green icon on every consumer: `SubagentRow`, Stage
+  rows, the chain, the panel) and exports `isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`
+  for the matching green TEXT half -- tool rows/groups (`toolStatus.tsx`) are untouched.
+  `SubagentChainRow.tsx`'s `StageGroupRow`/`ChainStageLine`/`ChainAgentEntry` and `ToolRow.tsx`'s
+  `SubagentRow` apply the green text and the Stage label; a new `StageDependencies.tsx` renders
+  the "Uses:" line (grouped by the earlier Stage, each id a real button when the live tracker
+  still knows it, else plain text). `SubagentRow` also gains a one-line `summary` of the agent's
+  own result, visible the moment its owning Stage is expanded, with no need to expand the row
+  itself too. A multi-agent Stage's own expansion also shows its full batch context as rendered
+  Markdown, visually capped to about 6 lines, above its member rows.
+- [ ] T281 [US1] NOT YET BUILT (second PR, reported to Main before starting it): the Subagent
+  panel's own Stage-level tree node (grouping `SubagentSummary[]` by `toolCallId` the same way,
+  through the same `stageMeta.ts`/`StageDependencies.tsx` helpers) and the "Up next" list (from
+  the new `todoPhases` readout field T279 already wired) in the Subagent chain's own expanded
+  body.
+
+This phase covers issue #941's 2026-10-15 grill items 2 to 5 and the Subagent chain/Stage-row
+half of item 7 (terms, item 1, already landed via PR #942's docs-only change); items 6 (Up next)
+and the Subagent panel half of item 7 are explicitly deferred to a second PR.
+
+`pnpm typecheck`, `pnpm vitest run` (148/148), `node scripts/check-indent.mjs`, `node
+scripts/check-file-size.mjs`, `node scripts/check-parity.mjs --gate` (100/100 requests, 23/23
+events), `node scripts/check-drag-regions.mjs`, `node scripts/check-theme-contrast.mjs`
+(455/455 pairs) all clean on this phase's own head. The Rust side is CODE-VERIFIED ONLY at
+authoring time (no build slot granted yet): `cargo fmt --check`/`cargo test`/`cargo clippy`/the
+Tauri debug build, and a live check against a real `omp`, are each pending the build slot grant
+from Main.
+
+Opened as draft PR (number recorded once opened) on branch `feat/941-stages`. **Refs #941**
+(items 6 and the Subagent panel half of item 7 are not yet built, and nothing above has been
+live-proven against a real build yet).

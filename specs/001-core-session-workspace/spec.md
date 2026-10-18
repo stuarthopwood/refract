@@ -426,6 +426,30 @@
   places, and the level itself is already in the trigger's own visible and accessible text, so
   the icon is never the sole way to read the level.
 
+### Session 2026-10-18 (Stage naming, green finished state, dependencies, Up next)
+
+- Q: Issue #941 (Stuart's own `grill-with-docs` session, 2026-10-15, all 7 points resolved in
+  the issue body, none deferred): the Subagent chain's Stages read "Stage 1" through "Stage 5"
+  with no indication what each was for, every finished agent draws a flat neutral check
+  regardless of surface, and the turn's own pending Todo phases are invisible. What changes, and
+  where? → A: A finished agent or Stage (never a tool row/group, FR-061's own rule unchanged)
+  draws a green check icon and green name/label text, the success token. A Stage's own name is
+  the first line of its batch `task()` call's own `context` argument (Markdown heading markers
+  and "Goal:" prefixes stripped, truncated to about 60 characters -- "Stage 1 · Quality gate for
+  #923"); absent a captured `context`, the agents' own shared name prefix ("Stage 1 · G923");
+  absent both, a bare "Stage N". Expanding a Stage additionally shows its own full context as
+  rendered Markdown (capped to about 6 lines) and each member's own one-line result; a Stage's
+  own "Uses:" names only real `agent://<id>` references its context or tasks make to an agent an
+  EARLIER Stage in the same turn actually started (dropped when unmatched or pointing forward).
+  Below the last Stage, a muted "Up next" list shows the agent's own pending Todo phases (OMP
+  `get_state().todoPhases`, name and outstanding task count), live state only -- never shown for
+  a reopened Conversation. Applies to the Subagent chain, each Stage row, and the Subagent panel
+  tree.
+- Q: Is the "Up next" list itself a new kind of Stage, or something else entirely? → A: Neither
+  a Stage nor a tool: a **Todo phase** is the agent's own planned work (its todo list), distinct
+  from a **Stage** (one `task()` batch); the glossary gained both terms (`CONTEXT.md`, PR #942).
+
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -732,6 +756,22 @@ The developer types a slash command and finds the ones the agent offers. If a se
   uncoloured in both places, unchanged from FR-064's own rule; the status line's context-usage
   readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
   reasoning.
+- **FR-079** (new, 2026-10-18, issue #941, Stuart's own `grill-with-docs` session, 2026-10-15;
+  amends FR-047/FR-048's own Subagent chain and Stage rendering): A finished agent or Stage
+  (never a tool row or group, FR-061 unchanged) MUST show a green check icon and green name/
+  label text, the success token, on the Subagent chain, each Stage row, and the Subagent panel.
+  A multi-agent Stage's own header MUST state a name: the first line of its batch `task()`
+  call's own `context` argument (Markdown heading markers and "Goal:" prefixes stripped,
+  truncated to about 60 characters), else the agents' own shared name prefix, else a bare
+  "Stage N". Expanding a multi-agent Stage MUST additionally show its own full captured context
+  as rendered Markdown (visually capped to about 6 lines) and each member's own one-line result;
+  a Stage's own "Uses:" line MUST name only real `agent://<id>` references its own context or
+  tasks make to an agent an EARLIER Stage in the same turn actually started, grouped by that
+  Stage, dropping any reference that matches nothing or points at the Stage's own agents or a
+  later Stage. Below the last Stage, Refract MUST show a muted "Up next" list of the agent's own
+  pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count) whenever
+  at least one phase has outstanding work; hidden entirely when there is no todo list, every
+  phase is finished, or the Conversation is reopened history (live state only).
 
 ### Key Entities
 
