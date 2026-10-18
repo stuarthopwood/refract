@@ -1,8 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useCommandsStore, useDraftStore } from '@/state'
 import type { SlashCommand } from '../../../shared/ipc'
-import { parseSlashMenuState, rankSlashMenuCommands, type SlashCommandMatch, type SlashMenuState } from './SlashMenu'
+import { parseSlashMenuState, rankSlashMenuCommands, type SlashMenuRow, type SlashMenuState } from './SlashMenu'
 import { pruneDanglingChips, type PendingTextChip } from './attachments'
 
 // Split out of MessageInput.tsx to stay within the 600-line file-size cap (scripts/check-file-
@@ -15,7 +15,7 @@ import { pruneDanglingChips, type PendingTextChip } from './attachments'
 // causes an infinite re-render loop.
 const EMPTY_COMMANDS: SlashCommand[] = []
 // Same stable-reference reasoning as `EMPTY_COMMANDS` above, for the ranked-match list below.
-const EMPTY_MATCHES: SlashCommandMatch[] = []
+const EMPTY_MATCHES: SlashMenuRow[] = []
 
 export interface UseSlashMenuCompletionArgs {
   sessionId: string
@@ -28,9 +28,21 @@ export interface UseSlashMenuCompletionArgs {
   announceChipRemoval: (removed: readonly PendingTextChip[]) => void
 }
 
+export interface SlashMenuSelectOptions {
+  /** True for the subcommand step's own synthetic "Run /<cmd>" row (issue #938 item 1, decided
+   * 2026-10-18): sends the bare parent command AT ONCE regardless of how it was activated
+   * (Enter, Tab, or a click) -- the whole point of a row literally labelled "Run". */
+  runBare?: boolean
+  /** True only when the caller (MessageInput's own Enter handler) has already confirmed the
+   * typed subcommand query is an EXACT, case-insensitive match for `command.name` -- sends the
+   * completed `/parent subcommand` AT ONCE. Never set for Tab: "Tab still completes" (decided
+   * 2026-10-18) -- only Enter on an exact match sends. */
+  sendImmediately?: boolean
+}
+
 export interface UseSlashMenuCompletionResult {
   slashMenuState: SlashMenuState | null
-  slashMatches: SlashCommandMatch[]
+  slashMatches: SlashMenuRow[]
   showSlashMenu: boolean
   /** A stable string key for the parsed step, used both to reset the active row (component-
    * owned, since `slashActiveIndex` is used well beyond this hook) and to debounce the result-
@@ -40,8 +52,14 @@ export interface UseSlashMenuCompletionResult {
   slashMenuKey: string | null
   slashAnnouncement: string
   /** Routes a selection (mousedown, or an Enter/Tab the caller already resolved to a command) to
-   * the right completion for whichever step is currently showing. */
-  handleSlashMenuSelect: (command: SlashCommand) => void
+   * the right completion for whichever step is currently showing. Returns `{ sendText }` when
+   * the caller must ALSO send that exact text immediately (the run-bare row, or an Enter on an
+   * exact subcommand match, issue #938 item 1 decided 2026-10-18) -- `undefined` for an ordinary
+   * completion that only fills the composer. */
+  handleSlashMenuSelect: (command: SlashCommand, options?: SlashMenuSelectOptions) => { sendText: string } | undefined
+  /** Keyboard Enter/Tab convenience wrapper around `handleSlashMenuSelect`, see its own doc
+   * comment at the call site below. */
+  handleSlashMenuKey: (key: string, shiftKey: boolean, activeIndex: number) => { sendText: string } | undefined | 'unhandled'
 }
 
 export function useSlashMenuCompletion({
@@ -67,6 +85,11 @@ export function useSlashMenuCompletion({
   // array in its dependencies (a fresh `[]`/mapped array identity every render would otherwise
   // retrigger the timer on every keystroke, defeating the debounce).
   const [slashAnnouncement, announceSlashResultCount] = useClearedAnnouncement()
+  // M1 (gate round 1): announces only when the COUNT itself actually changes -- `slashMenuKey`
+  // changes on every keystroke, but many of those keystrokes narrow nothing (the same set of
+  // commands still matches), and re-announcing an unchanged count on every debounce firing would
+  // be noise, not news.
+  const lastAnnouncedCountRef = useRef<number | null>(null)
   useEffect(() => {
     if (!showSlashMenu) return
     const timer = setTimeout(() => {
@@ -75,7 +98,18 @@ export function useSlashMenuCompletion({
       const liveState = parseSlashMenuState(liveText, liveCommands)
       if (liveState === null) return
       const liveMatches = rankSlashMenuCommands(liveState, liveCommands)
-      announceSlashResultCount(liveMatches.length === 0 ? 'No matching commands' : `${liveMatches.length} matching command${liveMatches.length === 1 ? '' : 's'}`)
+      if (liveState.step === 'subcommand') {
+        // The synthetic "Run /<cmd>" row is not itself a subcommand -- excluded from the count.
+        const subcommandCount = liveMatches.length - 1
+        if (subcommandCount === lastAnnouncedCountRef.current) return
+        lastAnnouncedCountRef.current = subcommandCount
+        announceSlashResultCount(subcommandCount === 0 ? 'No matching subcommands' : `/${liveState.parent.name}: ${subcommandCount} subcommand${subcommandCount === 1 ? '' : 's'}`)
+        return
+      }
+      const shownCount = liveMatches.length
+      if (shownCount === lastAnnouncedCountRef.current) return
+      lastAnnouncedCountRef.current = shownCount
+      announceSlashResultCount(`${shownCount} of ${liveCommands.length} command${liveCommands.length === 1 ? '' : 's'}`)
     }, 500)
     return () => clearTimeout(timer)
   }, [slashMenuKey, showSlashMenu, sessionId, announceSlashResultCount])
@@ -115,13 +149,39 @@ export function useSlashMenuCompletion({
     completeSlashText(`/${parent.name} ${subcommand.name} `)
   }
 
-  function handleSlashMenuSelect(command: SlashCommand) {
+  function handleSlashMenuSelect(command: SlashCommand, options?: SlashMenuSelectOptions): { sendText: string } | undefined {
+    if (options?.runBare) {
+      const sendText = `/${command.name}`
+      completeSlashText(sendText)
+      return { sendText }
+    }
     if (slashMenuState?.step === 'subcommand') {
       completeSubcommand(slashMenuState.parent, command)
-    } else {
-      completeSlashCommand(command)
+      if (options?.sendImmediately) {
+        return { sendText: `/${slashMenuState.parent.name} ${command.name}` }
+      }
+      return undefined
     }
+    completeSlashCommand(command)
+    return undefined
   }
 
-  return { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashAnnouncement, handleSlashMenuSelect }
+  /** Resolves a keyboard Enter/Tab against the row currently highlighted at `activeIndex`
+   * (component-owned, see `slashMenuKey`'s own doc comment) and routes it through
+   * `handleSlashMenuSelect` -- `'unhandled'` for any other key, an empty list, or Shift+Tab (gate
+   * round 1 Low: left to its normal backward focus-movement behaviour, never captured here). */
+  function handleSlashMenuKey(key: string, shiftKey: boolean, activeIndex: number): { sendText: string } | undefined | 'unhandled' {
+    if ((key !== 'Enter' && key !== 'Tab') || (key === 'Tab' && shiftKey) || slashMatches.length === 0) return 'unhandled'
+    const match = slashMatches[Math.min(activeIndex, slashMatches.length - 1)]
+    if (!match) return 'unhandled'
+    if (key === 'Tab') return handleSlashMenuSelect(match.command, { runBare: match.isRunBare })
+    // Issue #938 item 1 (decided 2026-10-18): Enter on a subcommand typed out in FULL (an exact,
+    // case-insensitive match for its own name, not just the current fuzzy-ranked top row) sends
+    // the completed invocation at once instead of only filling the composer.
+    const exactSubcommandMatch =
+      !match.isRunBare && slashMenuState?.step === 'subcommand' && slashMenuState.query.length > 0 && slashMenuState.query.toLowerCase() === match.command.name.toLowerCase()
+    return handleSlashMenuSelect(match.command, { runBare: match.isRunBare, sendImmediately: exactSubcommandMatch })
+  }
+
+  return { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey }
 }
