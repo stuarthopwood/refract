@@ -62,7 +62,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR =
-  process.env.REFRACT_938_SHOTS_DIR || path.join(tmpdir(), 'refract-938-slash-rest-shots', new Date().toISOString().replace(/[:.]/g, '-'));
+  process.env.REFRACT_938_SHOTS_DIR || path.join(tmpdir(), `refract-938-slash-rest-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   '00-settings-advisor-description.png',
   '01-refusal-toast.png',
