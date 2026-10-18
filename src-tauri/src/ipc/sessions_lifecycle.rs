@@ -22,7 +22,6 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::git::diff_stat::diff_stat;
 use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
 use crate::git::worktree_validity::comparable_path;
@@ -30,7 +29,6 @@ use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,
     remove_worktree,
 };
-use crate::process::executables::explorer_exe_path;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -379,6 +377,10 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_registry_error)?;
         state.session_manager.remove_agent(&id);
+        // Gate round 2 (D2-rev Sec2 Medium): drops this Session's own absolute-path allow-list
+        // entry (`file_attachments.rs`'s own `ALLOWED_PATHS_STORE`) now that it is truly gone,
+        // so that process-wide map never accumulates one stale entry per Session ever deleted.
+        super::file_attachments::forget_session(&id);
         // Issue #657/#658: same reclaim hook `sessions_archive` fires, called here too since
         // delete releases a worktree exactly as finally as an archive does. Fires only on
         // success (every earlier failure path returns via `?` before reaching this line).
@@ -448,70 +450,8 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-/// `sessions.diffStat` (T068): read-only, so `diff_stat` itself never throws past its own
-/// boundary -- this handler's own `Result` is always `Ok`, carrying `null` for a timeout, a
-/// missing worktree, a missing Base branch, or any git failure.
-pub fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => return Err(invalid_argument("sessions.diffStat expects a string id")),
-        };
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
-        let result = diff_stat(Path::new(&session.worktree_path), &session.base_branch).await;
-        Ok(serde_json::to_value(result).expect("Option<DiffStatResult> is always serialisable"))
-    })
-}
-
-/// `sessions.revealWorktree` (T068): looks the worktree up by Session id in the registry, never
-/// a path handed in by the renderer (constitution V). No `tauri_plugin_opener`/`shell.openPath`
-/// equivalent is called from Rust elsewhere in this crate yet, so this spawns Windows'
-/// `explorer.exe` via its fixed `%SystemRoot%` path (`process::executables::explorer_exe_path`),
-/// never the bare name `"explorer"` -- same PATH/cwd-search-avoidance reasoning `git::git`'s own
-/// `which` doc comment documents. This build is Windows-only, per `git::git`'s own
-/// `CREATE_NO_WINDOW` comment.
-pub fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => {
-                return Err(invalid_argument(
-                    "sessions.revealWorktree expects a string id",
-                ))
-            }
-        };
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
-        let worktree_is_directory = tokio::fs::metadata(&session.worktree_path)
-            .await
-            .map(|metadata| metadata.is_dir())
-            .unwrap_or(false);
-        if !worktree_is_directory {
-            return Err(IpcError::new(
-                "worktree-missing",
-                format!("Worktree missing: {}", session.worktree_path),
-            ));
-        }
-        match tokio::process::Command::new(explorer_exe_path())
-            .arg(&session.worktree_path)
-            .spawn()
-        {
-            Ok(_) => Ok(Value::Null),
-            Err(err) => Err(IpcError::new("worktree-failed", err.to_string())),
-        }
-    })
-}
+mod diag;
+use diag::{sessions_diff_stat, sessions_reveal_worktree};
 
 /// Issues #657/#658 (gate round 2: a reviewer found this bullet in #785 asks only for a call
 /// point plus a test, never the 5-slice reclaim POLICY those two issues themselves scope --

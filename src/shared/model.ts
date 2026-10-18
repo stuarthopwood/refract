@@ -388,9 +388,22 @@ export interface SubagentSummary {
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
 }
 
+/** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
+ * paste, parsed back out of the plain message text at transcript-build time (never a separate
+ * OMP-side concept -- OMP's own `images` field never carries this kind of data). `byteLength` is
+ * 0 for a folder (not a meaningful count). The transcript bubble renders this as a chip, never
+ * the raw appended block text. */
+export interface FileAttachmentRef {
+  id: string;
+  name: string;
+  byteLength: number;
+  sentAs: 'inline' | 'path';
+  isDirectory: boolean;
+}
+
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[] }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';

@@ -30,6 +30,7 @@ pub mod attachments;
 pub mod chat;
 pub mod clipboard;
 pub mod conversations;
+pub mod file_attachments;
 pub mod file_explorer;
 pub mod files;
 pub mod model;
@@ -176,6 +177,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     pull_requests::register(dispatcher);
     accounts::register(dispatcher);
     attachments::register(dispatcher);
+    file_attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
     app::register(dispatcher);

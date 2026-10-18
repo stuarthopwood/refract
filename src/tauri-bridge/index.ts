@@ -11,7 +11,6 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
-  AttachmentImageFile,
   BranchEntry,
   ChatAnswer,
   DiffStat,
@@ -32,6 +31,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
+import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
@@ -153,6 +153,9 @@ const refract: RefractApi = {
 
   attachments: {
     readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
+    readFile: (sessionId, path) => request<AttachmentFileRead>(IPC_REQUESTS.ATTACHMENTS_READ_FILE, sessionId, path),
+    pickFiles: (sessionId) => request<string[]>(IPC_REQUESTS.ATTACHMENTS_PICK_FILES, sessionId),
+    recordDroppedPaths: (sessionId, paths) => request<void>(IPC_REQUESTS.ATTACHMENTS_RECORD_DROPPED_PATHS, sessionId, paths),
     // #432/#793: Tauri's own native drag-drop handler owns the drop (`dragDropEnabled` defaults
     // to `true`, left unset in `tauri.conf.json`'s window config -- spike section 2), so the
     // page's own HTML5 `drop` event never fires; `getPathForFile` has no Tauri equivalent either
