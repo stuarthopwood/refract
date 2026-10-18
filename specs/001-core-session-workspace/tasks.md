@@ -4081,3 +4081,62 @@ user message, found past the old 8...") in full, 9,901 bytes into the file -- pa
 8,192-byte window, under the new 65,536-byte cap. PR #1006 switched from `Refs #862` to
 `Closes #862`.
 
+
+## Phase 64: Side chat panel double scrollbar (#802) [US1]
+
+**Goal**: fix the bug where the Side chat panel (spec 014) showed two vertical scrollbars at
+its right edge once an answer grew taller than the pane -- chore/bugfix, no FR change (same
+category as #811/Phase 38): the panel's documented behaviour (one scroll container, composer
+pinned, nothing clipped) is unchanged; only the implementation that failed to deliver it is
+fixed.
+
+- [X] T314 [US1] `src/renderer/features/right-pane/side-chat/SideChatPanel.tsx`: root div
+  changed from `flex h-full flex-col` to `flex min-h-0 flex-1 flex-col`. Root cause (read from
+  code; the issue's own on-issue probe needs a live build this lane was never granted):
+  `react-resizable-panels`' `Panel` component (`node_modules/react-resizable-panels/dist/
+  react-resizable-panels.js`) renders an un-overridable wrapper whose own `height` default is
+  the literal string `"auto"` (not `100%`), wrapping an inner div with its own un-overridable
+  `overflow: "auto"` default -- an ancestor scroll container entirely invisible to a
+  source-level grep of `RightPaneShell.tsx`/`App.tsx`/`resizable.tsx` (the issue's own grep
+  found none, correctly, since this one is injected by the library at runtime). A bare `h-full`
+  on `SideChatPanel.tsx`'s own root depends on every ancestor in that chain resolving a
+  definite height to stay bounded to the pane's own available space; every OTHER self-scrolling
+  root in this codebase that fills a flex column already avoids that dependency entirely
+  (`Transcript.tsx`'s `MessageScroller className="h-full flex-1"`, `ModelPicker.tsx`'s list
+  `min-h-0 flex-1 overflow-y-auto`) by using `flex-1` (flex-basis:0%, flex-grow:1), which
+  derives its size directly from the flex algorithm's own free-space distribution rather than a
+  percentage that can resolve against an indefinite ancestor. `SideChatPanel.tsx` was the one
+  outlier; matching the proven pattern removes the second scroll container without touching the
+  `react-resizable-panels` wrapper itself (out of scope: every other `ResizablePanel` in the app
+  shares the same injected wrapper and none of them are reported as double-scrolling, so
+  changing the shared library wrapper is not this bug's fix).
+- [X] T315 [US1] New `scripts/fixtures/omp-frames/side-chat-long-answer.jsonl` (a minimal
+  Session-shaped tape plus one `get_btw_history`/`btw` exchange whose response is already a
+  COMPLETE record with a deliberately tall-but-narrow 87-line markdown answer: a 40-item bullet
+  list, a small 2-column table, and a 30-line code block, ending in a literal last-line marker)
+  and new `scripts/verify-802-side-chat-scrollbars.mjs`, modelled on
+  `verify-439-history-truncate.mjs`/`verify-862-conversation-history.mjs`'s own guarded-tmpdir,
+  fresh-exe-copy, themed-screenshot pattern: opens the Side chat panel through the real
+  permanent icon rail, types the question and presses Enter (never `window.refract.*`
+  directly), waits for the answer's own last-line marker to render, then asserts exactly one
+  element inside `#right-pane-active-panel` has `scrollHeight > clientHeight` and a computed
+  `overflow-y` of `auto`/`scroll`, asserts zero elements in that subtree have
+  `scrollWidth > clientWidth`, scrolls the one container to its own `scrollHeight` and asserts
+  the last-line marker's bounding rect falls inside the container's visible viewport bounds,
+  and re-confirms both the one-scroller and no-horizontal-overflow guarantees under Dark,
+  Obsidian and Dark (high contrast), screenshotting each. WRITTEN, NOT RUN (lane brief: "NO
+  BUILD"): `node --check` passed; a real `import()` check with `CARGO_TARGET_DIR` unset
+  confirmed every import resolves and the script stops exactly at the
+  `requireSharedCargoTarget` guard, never starting `pnpm tauri build` itself.
+
+Opened as draft PR (branch `fix/802-side-chat-scrollbars`); `Refs #802` until the live check
+above is confirmed against a real build (no cargo build run in this lane -- no-build prep lane,
+blocked on the build slot). `pnpm typecheck` (both tsconfigs, 0 errors), `pnpm check:indent` (0
+odd-indent lines across 395 files), `pnpm check:file-size` (0 cap violations across 447 files),
+and the existing `pnpm vitest run` suite (148 pass, no new tests added per AGENTS.md's
+prototyping rule -- the new fixture is a fake-omp frame tape, not a test) all ran clean.
+**Decided (Skippy, delegated by Stuart 2026-10-18, issue #802):** the optional, separately-noted
+polish items the issue itself calls "not the fix" (the themed `scrollbar-thin` treatment and
+`overscroll-contain` on the side-chat scroller) are intentionally NOT built in this change --
+root-cause fix only, no scope creep; filed nowhere else since the issue's own text already
+records them as open, undecided follow-ups.
