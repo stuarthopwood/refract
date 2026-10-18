@@ -27,7 +27,7 @@ import { usePullRequestsStore } from './pull-requests-store'
 import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
-import { stageToggleKey, useStageToggleStore } from './stage-toggle-store'
+import { useStageToggleStore } from './stage-toggle-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
@@ -63,7 +63,7 @@ export { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, u
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
-export { stageToggleKey, useStageToggleStore }
+export { useStageToggleStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {

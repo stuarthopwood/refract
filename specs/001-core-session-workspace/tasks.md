@@ -3626,24 +3626,32 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   ("sync `open` to `isOpenByDefault` whichever way it moves") to upward-only -- a Stage still
   auto-opens while running/failed/cancelled/exited, but never auto-closes once open, matching
   FR-068's existing rule for the per-turn Subagent chain row (research.md decision 18).
-- [X] New `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`, non-persisted, keyed
-  by session id plus a Stage's own `group.id` or `chain:<first stage id>` for the chain row):
-  both `StageGroupRow` and `SubagentChainRow` move their own `userToggledRef`/`open` pair onto
-  it, surviving a remount (a session switch, or the chain row's own `stages.length < 2` unmount)
+- [X] New `src/renderer/features/chat/useStickyDisclosure.ts` (shared by both rows, gate round 1
+  fix, code-reviewer DRY) plus `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`,
+  non-persisted, `bySession: Record<string, Record<string, boolean>>`, keyed by session id plus
+  a Stage's own `group.id` or `chain:<first stage id>` for the chain row): the hook's own LOCAL
+  state holds the auto-open latch (needs no persistence), the store holds ONLY a user's own
+  manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or the
+  chain row's own `stages.length < 2` unmount, or `Transcript.tsx`'s sr-only-stub/full-row swap)
   (FR-081).
 - [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
   `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
-  Subagent chain row's own duplicate title text (`ChainStageLine`).
+  Subagent chain row's own duplicate title text (`ChainStageLine`); `stageContentSelector`/
+  `stageTriggerSelector` gate round 1 fix: `?.closest(...)` (not a bare `.closest(...)`) so a
+  not-yet-rendered row evaluates to `undefined` throughout instead of throwing mid-`waitFor`.
 - [X] T289 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
   fixture with one additive `{"__delay__": 1500}` (no new fixture, AGENTS.md): proves keyboard
   focus placed inside a genuinely running Stage 1 survives it settling all-success with the row
-  itself staying open; proves `titleSelector`'s scoping directly against the chain row's own
-  live duplicate title; proves a manual toggle on a solo Stage row and on the chain row both
-  survive a real session-switch remount. Written, not run end-to-end (no build slot granted for
+  itself staying open; proves `titleSelector`'s scoping (recorded honestly as order-independent
+  hardening, not a red/green regression in this fixture's own DOM order); proves a manual toggle
+  on a solo Stage row and on the chain row both survive a real session-switch remount, while an
+  UNTOUCHED settled Stage (Stage 2) closes instead (proving the store holds only the manual
+  choice). Gate round 1 fixes: a shim-confirmed check (fake-omp debug log's startup line); a
+  real `waitFor` replacing a fixed sleep after the session switch; `clearKnownOutputFiles` plus
+  a post-`stopLauncher` exit confirmation. Written, not run end-to-end (no build slot granted for
   this sub-task): `node --check` plus a real `import()` load-check on every touched/adjacent
   script, `pnpm typecheck` and `pnpm vitest run` (148/148) clean, `node scripts/check-indent.mjs`
-  and `node scripts/check-file-size.mjs` clean (the helpers file's own added comment was trimmed
-  to stay under the #806 600-line cap).
+  and `node scripts/check-file-size.mjs` clean.
 
 Draft PR, branch `feat/991-stage-focus`. **Refs #991** until the live check above is actually run
 against a real built exe and confirms every acceptance item; switches to **Closes #991** once it

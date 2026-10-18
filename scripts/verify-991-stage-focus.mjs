@@ -14,14 +14,17 @@
 // ui-architect-v3 ruling (posted on #991, recorded in research.md decision 18): item 4 (a mouse
 // user reading a Stage row while it auto-closes on an all-success finish) is fixed by making
 // `StageGroupRow` sync its own disclosure upward only (never auto-close), matching the per-turn
-// Subagent chain row's existing rule -- this also resolves item 1 (the a11y defect) as a side
-// effect: with no more automatic close, there is no more transition left that could silently
-// drop a keyboard user's focus to `<body>`. This script's own "focus survives settling" check
-// (phase 1) therefore proves the STRONGER, now-actual guarantee directly: a Stage opened while
-// running stays open and never disturbs focus once it settles, rather than proving a
-// focus-rescue INSIDE a close that no longer happens.
+// Subagent chain row's existing rule -- this also resolves the AUTO-CLOSE-driven slice of item 1
+// (the a11y defect) as a side effect: with no more automatic close, there is no more such
+// transition left that could silently drop a keyboard user's focus to `<body>`. A SEPARATE,
+// pre-existing focus-loss path is NOT fixed here (gate round 1, Main is filing it separately): a
+// solo Stage's own body (`SubagentBody`) swaps for a `SpineList` the instant a second agent
+// streams into the same Stage, unmounting whatever was focused inside it. This script's own
+// "focus survives settling" check (phase 1) proves the narrower, now-actual guarantee: a Stage
+// opened while running stays open and never disturbs focus once it settles, via the auto-close
+// path specifically.
 //
-// Three things proved, in this order (each needs the state the previous one left, so they run
+// Four things proved, in this order (each needs the state the previous one left, so they run
 // once, not per theme -- a theme pass takes a screenshot only, at the very end):
 //   1. Keyboard focus placed inside Stage 1's content while it is genuinely still running
 //      survives it settling all-success, and the row itself stays open (not collapsed) --
@@ -30,19 +33,31 @@
 //      Stage 1 the instant it settles, which unmounts its `CollapsibleContent` (Radix) and drops
 //      focus to `<body>`.
 //   2. `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` is scoped to a real
-//      per-position Stage row (`[data-slot="message-scroller-item"]` ancestor), proven directly
-//      against the chain row's own duplicate title text (the per-turn Subagent chain row stays
-//      open for the whole run here, since Stage 5's own `FailAgent` failure keeps it
-//      permanently unsettled) -- not merely "the right element happened to appear first".
+//      per-position Stage row (`[data-slot="message-scroller-item"]` ancestor). Gate round 1
+//      correction (test-reviewer): with Stage rows always rendering BEFORE the per-turn chain
+//      row in this app's own DOM order (`Transcript.tsx`), even the OLD unscoped selector would
+//      already resolve correctly in this exact fixture -- this phase cannot fail against
+//      `origin/main`'s own helper file in this DOM shape, so it is order-independent HARDENING,
+//      proved by the count check (Stage 1's own title genuinely exists twice while the chain row
+//      is open) plus the ancestor-based disambiguation, not a red/green regression demonstration.
+//      Recorded honestly in `notExercised`, not claimed as a pass against a real former failure.
 //   3. A user's own manual toggle on a Stage row (Stage 6, a solo Stage manually expanded) and
 //      on the Subagent chain row (manually collapsed) both survive a real session switch away
 //      and back -- a genuine React unmount/remount of every Stage/chain row keyed to Session A's
-//      own transcript items, even though `ChatPane`/`Transcript` itself is never unmounted.
-//      MUST fail on `origin/main`: `userToggledRef`/`open` live in a plain `useRef`/`useState`
-//      pair there, reset to whatever the row's own `isOpenByDefault`/`isUnsettled` recomputes on
-//      remount -- Stage 6 (solo) always recomputes `false` (never auto-expands), and the chain
-//      row always recomputes `true` (Stage 5's failure keeps `isUnsettled` permanently true), so
-//      both would read the OPPOSITE of the user's own choice after switching back.
+//      own transcript items (ordinary keyed-list reconciliation: a session switch changes which
+//      rows a Session's own Transcript renders; neither `<Transcript>` nor `<ChatPane>` itself
+//      carries a `key`). MUST fail on `origin/main`: `userToggledRef`/`open` live in a plain
+//      `useRef`/`useState` pair there, reset to whatever the row's own
+//      `isOpenByDefault`/`isUnsettled` recomputes on remount -- Stage 6 (solo) always recomputes
+//      `false` (never auto-expands), and the chain row always recomputes `true` (Stage 5's
+//      failure keeps `isUnsettled` permanently true), so both would read the OPPOSITE of the
+//      user's own choice after switching back.
+//   4. An UNTOUCHED, settled-all-success Stage (Stage 2) is OPEN before the switch (its own
+//      local auto-open latch is still holding, having been set while it was running earlier)
+//      but CLOSED after the switch-and-back remount (the latch is local-only and recomputes
+//      fresh; with no manual override on record, it reads the Stage's own current
+//      `isOpenByDefault`, now `false`) -- proves the store holds ONLY a user's own manual choice,
+//      never the ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign).
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check are the only commands that have actually been run against
@@ -50,12 +65,12 @@
 // `verify-941-*` scripts that share them; the two new finder expressions (the G923Code member
 // trigger, the chain row's own "Subagents" trigger) are built the same, already-proven way.
 
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, getProcessExecutablePath } from './verify-tauri-cdp.mjs';
 import {
   gitHead,
   buildLauncher,
@@ -63,7 +78,8 @@ import {
   buildAndCopyExeFresh,
   safeRmSync,
   requireSharedCargoTarget,
-  switchTheme
+  switchTheme,
+  clearKnownOutputFiles
 } from './verify-tauri-scratch-helpers.mjs';
 import {
   buildOmpShim,
@@ -74,6 +90,7 @@ import {
   stageContentSelector,
   stageTriggerSelector,
   STAGE1_TITLE,
+  STAGE2_TITLE,
   STAGE6_SOLO_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, sessionOpenButtonFinder } from './verify-tauri-session-list-helpers.mjs';
@@ -82,6 +99,20 @@ import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROMPT_MESSAGE = 'Run the full ten-stage batch (issue #991 live check: focus and toggle persistence).';
+const SHOTS_DIR = process.env.REFRACT_991_SHOTS_DIR || path.join(tmpdir(), 'refract-991-stage-focus-shots');
+const SHOT_NAMES = [
+  '01-stage1-running-focus-inside.png',
+  '02-all-stages-settled.png',
+  '03-stage1-open-focus-preserved-after-settle.png',
+  '04-manual-toggles-before-switch.png',
+  '05-manual-toggles-survived-switch.png',
+  '991-stage-focus-dark.png',
+  '991-stage-focus-obsidian.png',
+  '991-stage-focus-dark-high-contrast.png',
+  'report.json',
+  'app.log',
+  'fake-omp-invocations.log'
+];
 
 const THEMES = [
   { id: 'dark', name: 'Dark' },
@@ -102,6 +133,7 @@ function g923CodeTriggerExpr() {
 async function main() {
   let shimDir, dataDir, importSourceDir, repoDir, exeDir, launcherDir;
   let child;
+  let targetPid;
   let cdp;
   const findings = [];
   const failures = [];
@@ -109,11 +141,14 @@ async function main() {
   let exeHash = null;
   let gitHeadSha = null;
   let dirty = 'unknown';
-  let SHOTS_DIR = path.join(tmpdir(), 'refract-991-stage-focus-shots', new Date().toISOString().replace(/[:.]/g, '-'));
   let BUILD_OUTPUT_DIR = null;
   try {
-    SHOTS_DIR = process.env.REFRACT_991_SHOTS_DIR || SHOTS_DIR;
-    mkdirSync(SHOTS_DIR, { recursive: true });
+    // Gate round 1 fix (issue #991, LOW, test-reviewer): a caller overriding
+    // `REFRACT_991_SHOTS_DIR` to a FIXED, reused path across runs could otherwise see a later
+    // failed run's report sitting next to an earlier run's stale screenshots -- clears only
+    // this script's own KNOWN output files by literal name (never the folder itself; matches
+    // `verify-tauri-559.mjs`/`-560.mjs`'s own convention), then recreates the directory.
+    clearKnownOutputFiles(SHOTS_DIR, 'refract-991-stage-focus-shots', SHOT_NAMES);
     BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
     gitHeadSha = gitHead(REPO_ROOT);
     const gitStatusResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
@@ -154,7 +189,7 @@ async function main() {
       }
     });
     child = launched.child;
-    const targetPid = launched.targetPid;
+    targetPid = launched.targetPid;
 
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
@@ -167,6 +202,21 @@ async function main() {
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
+
+    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): shim-confirmed check, same pattern
+    // as `verify-941-part2.mjs` -- without this, a silently-wrong fake-omp shim (a stale PATH
+    // entry shadowing it, or the shim crashing before its first `debugLog` call) could still let
+    // the whole run "pass" on UI state alone.
+    const debugLogPath = path.join(exeDir, 'fake-omp-invocations.log');
+    if (!existsSync(debugLogPath)) {
+      throw new Error(`verify-991: fake-omp debug log not found at ${debugLogPath} -- the fake omp shim never ran (shim confirmed check).`);
+    }
+    const debugLogFirstLine = readFileSync(debugLogPath, 'utf8').split('\n')[0] ?? '';
+    if (!/^pid=\d+ argv=/.test(debugLogFirstLine)) {
+      throw new Error(`verify-991: fake-omp debug log's first line does not match the expected "pid=<pid> argv=..." startup line (shim confirmed check); got: ${JSON.stringify(debugLogFirstLine)}`);
+    }
+    findings.push(`Fake omp shim confirmed: debug log's first line is its own startup pid line (${debugLogPath}).`);
+
     await addRepository(cdp, repoDir);
     await createSessionViaQuickCreate(cdp, repoName);
     const sessionA = await latestSessionIdAndName(cdp, repoName, []);
@@ -189,7 +239,19 @@ async function main() {
     }
     await cdp.evaluate(`(${g923CodeTriggerExpr()})?.focus()`);
     const focusedBeforeSettle = await cdp.evaluate(`document.activeElement === (${g923CodeTriggerExpr()})`);
-    if (!focusedBeforeSettle) {
+    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): re-checks the precondition AFTER the
+    // focus round trip, not just at the earlier `waitFor` poll -- the ~1.5s delay window can
+    // close between that poll and this evaluate's own round trip. If Stage 1 already settled by
+    // now, this phase did not genuinely exercise "focus while running" and must say so honestly
+    // instead of treating whatever `focusedBeforeSettle` read as a pass.
+    const stillRunningAfterFocus = await cdp.evaluate(
+      `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`
+    );
+    let phase1Exercised = true;
+    if (!stillRunningAfterFocus) {
+      phase1Exercised = false;
+      notExercised.push('Stage 1 settled before focus could be confirmed placed while it was still genuinely running -- the additive 1.5s delay window closed before this check landed; the focus-survives-settling proof (items 1/4) did not run as designed this pass.');
+    } else if (!focusedBeforeSettle) {
       failures.push('Could not place keyboard focus on the G923Code member row trigger inside Stage 1 while it was still running.');
     } else {
       findings.push('Keyboard focus placed on the G923Code member row trigger, inside Stage 1\'s content, while Stage 1 was still genuinely running.');
@@ -208,22 +270,25 @@ async function main() {
     } else {
       findings.push('Stage 1 stayed open after settling all-success (sync upward only, issue #991 item 4 fix confirmed).');
     }
-    const activeAfterSettle = await cdp.evaluate(`(() => {
-      const active = document.activeElement;
-      const expected = (${g923CodeTriggerExpr()});
-      return { isExpected: active === expected, isBody: active === document.body, tag: active?.tagName ?? null };
-    })()`);
-    if (activeAfterSettle.isBody) {
-      failures.push('Keyboard focus fell to <body> once Stage 1 settled -- issue #991 item 1 (WCAG 2.4.3) regression.');
-    } else if (!activeAfterSettle.isExpected) {
-      failures.push(`Keyboard focus moved away from the G923Code member trigger once Stage 1 settled (now a ${activeAfterSettle.tag ?? 'null'} element), expected it to stay put.`);
-    } else {
-      findings.push('Keyboard focus stayed on the G923Code member row trigger after Stage 1 settled all-success -- never dropped to <body> (issue #991 item 1, WCAG 2.4.3, fix confirmed).');
+    if (phase1Exercised) {
+      const activeAfterSettle = await cdp.evaluate(`(() => {
+        const active = document.activeElement;
+        const expected = (${g923CodeTriggerExpr()});
+        return { isExpected: active === expected, isBody: active === document.body, tag: active?.tagName ?? null };
+      })()`);
+      if (activeAfterSettle.isBody) {
+        failures.push('Keyboard focus fell to <body> once Stage 1 settled -- issue #991 item 1 (WCAG 2.4.3) regression.');
+      } else if (!activeAfterSettle.isExpected) {
+        failures.push(`Keyboard focus moved away from the G923Code member trigger once Stage 1 settled (now a ${activeAfterSettle.tag ?? 'null'} element), expected it to stay put.`);
+      } else {
+        findings.push('Keyboard focus stayed on the G923Code member row trigger after Stage 1 settled all-success -- never dropped to <body> (issue #991 item 1, WCAG 2.4.3, fix confirmed).');
+      }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '03-stage1-open-focus-preserved-after-settle.png'));
 
-    // ---- Phase 2: titleSelector's scoping fix, proven directly against the chain row's own
-    // live duplicate (issue #991 item 3) ----
+    // ---- Phase 2: titleSelector's scoping, hardened against the chain row's own live
+    // duplicate (issue #991 item 3) -- see the header note: order-independent hardening, not a
+    // red/green regression demonstration in this exact DOM shape ----
     const scoping = await cdp.evaluate(`(() => {
       const matches = Array.from(document.querySelectorAll(${JSON.stringify(`[title="${STAGE1_TITLE}"]`)}));
       const withAncestor = matches.filter((el) => !!el.closest('[data-slot="message-scroller-item"]'));
@@ -244,11 +309,19 @@ async function main() {
     if (!titleSelectorPicksRealRow) {
       failures.push('verify-941-stage-naming-helpers.mjs\'s titleSelector did not resolve to the real, per-position Stage row (the one with a "message-scroller-item" ancestor) -- issue #991 item 3 regression.');
     } else {
-      findings.push('verify-941-stage-naming-helpers.mjs\'s titleSelector resolves to the real per-position Stage row, scoped by its "message-scroller-item" ancestor -- not merely the first DOM match (issue #991 item 3 fix confirmed).');
+      findings.push('verify-941-stage-naming-helpers.mjs\'s titleSelector resolves to the real per-position Stage row, scoped by its "message-scroller-item" ancestor.');
     }
+    notExercised.push('No red/green discrimination is possible for the selector-scoping fix with this fixture: Stage rows always render BEFORE the per-turn chain row in Transcript.tsx\'s own DOM order, so even the OLD unscoped titleSelector would already resolve correctly here -- this phase is order-independent hardening (proved by the count + ancestor checks above), not a regression this fixture can make fail against origin/main\'s own helper file.');
 
     // ---- Phase 3: a manual toggle on a Stage row and on the chain row both survive a real
-    // session switch away and back (issue #991 item 2) ----
+    // session switch away and back (issue #991 item 2); an UNTOUCHED settled Stage (Stage 2)
+    // closes instead, proving the store holds only the manual choice (item 2/4 redesign) ----
+    const stage2ExpandedBeforeSwitch = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
+    if (stage2ExpandedBeforeSwitch !== 'true') {
+      notExercised.push(`Stage 2 (untouched) was not open before the switch (aria-expanded ${JSON.stringify(stage2ExpandedBeforeSwitch)}) -- the "untouched Stage closes on remount" proof could not be set up as designed.`);
+    } else {
+      findings.push('Stage 2 (never manually touched) is open before the switch -- its own local auto-open latch is still holding from when it was running earlier.');
+    }
     await clickScrolled(cdp, CHAIN_TRIGGER);
     const chainExpandedBeforeSwitch = await cdp.evaluate(`(${CHAIN_TRIGGER})?.getAttribute('aria-expanded') ?? null`);
     if (chainExpandedBeforeSwitch !== 'false') {
@@ -267,11 +340,23 @@ async function main() {
 
     await createSessionViaQuickCreate(cdp, repoName);
     findings.push(`Switched away to a second Session (created in the same scratch repo), unmounting "${sessionA.name}"'s own Transcript rows.`);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const sessionAOpenButtonExpr = sessionOpenButtonFinder(sessionA.name);
+    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): a fixed sleep replaced with a real
+    // condition -- Session A's own Stage 1/chain rows must have actually unmounted, and Session
+    // A's own row must no longer read as the active one, before this phase's own checks below
+    // can mean anything.
+    await cdp.waitFor(
+      `(() => {
+        const stage1Gone = !${titleSelector(STAGE1_TITLE)};
+        const chainGone = !document.querySelector('[title="Subagents"]');
+        const sessionAActive = (${sessionAOpenButtonExpr})?.getAttribute('aria-current') === 'true';
+        return stage1Gone && chainGone && !sessionAActive;
+      })()`,
+      { timeoutMs: 15_000, label: `Switched away from "${sessionA.name}": its Stage/chain rows unmounted, a different Session now active` }
+    );
 
-    const sessionAOpenButton = sessionOpenButtonFinder(sessionA.name);
-    await cdp.click(sessionAOpenButton);
-    await cdp.waitFor(`(${sessionAOpenButton})?.getAttribute('aria-current') === 'true'`, { timeoutMs: 15_000, label: `Switched back to "${sessionA.name}"` });
+    await cdp.click(sessionAOpenButtonExpr);
+    await cdp.waitFor(`(${sessionAOpenButtonExpr})?.getAttribute('aria-current') === 'true'`, { timeoutMs: 15_000, label: `Switched back to "${sessionA.name}"` });
     await cdp.waitFor(`!!${titleSelector(STAGE1_TITLE)}`, { timeoutMs: 15_000, label: 'Stage 1 row remounted after switching back' });
     findings.push(`Switched back to "${sessionA.name}"; its Transcript rows remounted.`);
 
@@ -292,6 +377,14 @@ async function main() {
       failures.push(`Stage 1 was no longer open after the session-switch remount (aria-expanded is ${JSON.stringify(stage1ExpandedAfterSwitch)}) -- the item 4 "stays open once settled" guarantee must also survive a remount.`);
     } else {
       findings.push('Stage 1 (opened automatically, never manually touched) is still open after the session-switch remount too.');
+    }
+    const stage2ExpandedAfterSwitch = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
+    if (stage2ExpandedBeforeSwitch === 'true') {
+      if (stage2ExpandedAfterSwitch !== 'false') {
+        failures.push(`Stage 2 (untouched, settled all-success) read "${stage2ExpandedAfterSwitch}" after the remount, expected "false" -- the store must hold only a MANUAL choice, never the ephemeral auto-open latch (issue #991 item 2/4 redesign regression).`);
+      } else {
+        findings.push('Stage 2 (never manually touched) is closed after the remount -- its own local auto-open latch recomputed fresh (now false, settled all-success), proving the store never persisted the ephemeral auto-open state, only a genuine manual choice.');
+      }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '05-manual-toggles-survived-switch.png'));
 
@@ -336,7 +429,20 @@ async function main() {
     process.exitCode = 1;
   } finally {
     if (cdp) cdp.close();
-    if (child) await stopLauncher(child).catch(() => {});
+    if (child) {
+      await stopLauncher(child).catch(() => {});
+      // Gate round 1 fix (issue #991, LOW, test-reviewer): confirms the launched process
+      // actually exited instead of silently leaving an orphaned exe running (best-effort
+      // diagnostic only -- cleanup already proceeds regardless either way).
+      if (targetPid != null) {
+        const stillRunningExePath = getProcessExecutablePath(targetPid);
+        if (stillRunningExePath) {
+          console.warn(`verify-991: process ${targetPid} still appears to be running after stopLauncher (exe path: ${stillRunningExePath}) -- cleanup may be incomplete.`);
+        } else {
+          console.log(`verify-991: confirmed process ${targetPid} exited after stopLauncher.`);
+        }
+      }
+    }
     try {
       if (exeDir && existsSync(path.join(exeDir, 'app.log'))) copyFileSync(path.join(exeDir, 'app.log'), path.join(SHOTS_DIR, 'app.log'));
       if (exeDir && existsSync(path.join(exeDir, 'fake-omp-invocations.log'))) copyFileSync(path.join(exeDir, 'fake-omp-invocations.log'), path.join(SHOTS_DIR, 'fake-omp-invocations.log'));

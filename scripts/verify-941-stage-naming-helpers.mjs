@@ -119,21 +119,21 @@ export const PLAIN_TOOL_TITLE = 'read';
 
 /** Live-build fix (first real build-slot run, never exercised before): the old version wrapped
  * the JSON-stringified attribute value inside an OUTER single-quoted JS string -- an apostrophe
- * anywhere in `titleText` (STAGE10_BORDERLINE_TITLE's own "brief's own") closed that string
- * early, a syntax error the instant this title was ever actually waited on. Fixed by building
- * the CSS value first (escaping backslash/double-quote), then `JSON.stringify`-ing the WHOLE
- * `querySelector` argument once. Issue #991 follow-up 3: scoped to `[data-slot="message-scroller-item"]` (research.md decision 18) so this never matches the open chain row's own duplicate title (`ChainStageLine`). */
+ * anywhere in `titleText` closed that string early, a syntax error the instant this title was
+ * ever actually waited on. Fixed by building the CSS value first, then `JSON.stringify`-ing the WHOLE `querySelector` argument once. Issue #991 follow-up 3: scoped to `[data-slot="message-scroller-item"]` (research.md decision 18) so this never matches the open chain row's own duplicate title (`ChainStageLine`). */
 export function titleSelector(titleText) {
   const cssValue = titleText.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `Array.from(document.querySelectorAll(${JSON.stringify(`[title="${cssValue}"]`)})).find(el => el.closest('[data-slot="message-scroller-item"]'))`;
 }
 
+// Gate round 1 fix (issue #991, HIGH): a bare `.closest(...)` right after `titleSelector`'s own
+// `.find(...)` threw when the row did not exist yet (`cdp.waitFor` rethrows a real error instead of polling again) -- `?.closest(...)` below.
 export function stageContentSelector(titleText) {
-  return `${titleSelector(titleText)}.closest('[data-slot="collapsible"]')?.querySelector('[data-slot="collapsible-content"]')`;
+  return `${titleSelector(titleText)}?.closest('[data-slot="collapsible"]')?.querySelector('[data-slot="collapsible-content"]')`;
 }
 
 export function stageTriggerSelector(titleText) {
-  return `${titleSelector(titleText)}.closest('[data-slot="collapsible-trigger"]')`;
+  return `${titleSelector(titleText)}?.closest('[data-slot="collapsible-trigger"]')`;
 }
 
 /** Gate round 5 fix (item 9, MEDIUM): `verify-tauri-cdp.mjs`'s own `click()` never scrolls its

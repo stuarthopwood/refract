@@ -255,3 +255,31 @@ own `ChainStageLine` once open (its default state). Scoped instead to an element
 ancestor is a real per-position row (`data-slot="message-scroller-item"`,
 `MessageScrollerItem`) -- the chain row renders directly in the turn's own `React.Fragment`,
 with no such ancestor, so this can never match its own duplicate regardless of DOM order.
+
+**Gate round 1 correction (ui-architect-v3/code-reviewer/test-reviewer, unanimous)**: the store
+above was staging both the auto-open latch AND the user's own manual choice together, which
+code-reviewer flagged as unnecessary coupling and ui-architect-v3/test-reviewer confirmed was
+the wrong persistence boundary -- the auto-open latch needs no persistence at all (recomputing
+it fresh on every mount is already correct), so only a deliberate user override belongs in the
+store. Redesigned: `useStageToggleStore` now holds only `bySession: Record<string,
+Record<string, boolean>>` (the manual choice alone, same shape as `draft-store.ts`); the
+auto-open latch moved into a new shared `useStickyDisclosure` hook's own local component state,
+which also folds the two rows' previously-duplicated toggle logic into one place (code-reviewer,
+DRY). The remount description above is also corrected: `<Transcript>`/`ChatPane` carry no
+explicit `key` -- a session switch unmounts a Stage/chain row through ordinary keyed-list
+reconciliation (a different session renders a different row-id set), and `Transcript.tsx`'s own
+sr-only-stub/full-row visibility swap is a second, separate path that can unmount and remount
+the same row id.
+
+**Gate round 1 correction (test-reviewer)**: the selector-scoping fix (`titleSelector`) cannot
+be proven as a red/green regression against this exact fixture, since Stage rows always render
+before the chain row in `Transcript.tsx`'s own DOM order -- even the OLD unscoped selector would
+already resolve correctly here. The live check records this as order-independent hardening
+(proved by a count check confirming the duplicate genuinely exists, plus the ancestor-based
+disambiguation), not a demonstrable fix of an actual failure in this fixture.
+
+**Gate round 1 correction (accessibility-auditor)**: "no more path left that drops focus" (an
+earlier draft's wording) overclaimed -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+own body (`SubagentBody`) still swaps for a `SpineList` the instant a second agent streams into
+the same Stage, which can still unmount whatever was focused inside it (a separate, pre-existing
+defect from #941, filed as its own follow-up by Main, not fixed by this change).

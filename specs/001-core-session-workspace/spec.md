@@ -492,6 +492,27 @@
   Yes -- scoped to an element whose closest ancestor is a real per-position row
   (`data-slot="message-scroller-item"`, `MessageScrollerItem`); the chain row has no such
   ancestor, so it can never match the chain row's own duplicate regardless of DOM order.
+- Q: Gate round 1 (ui-architect-v3/code-reviewer/test-reviewer, unanimous): the store above
+  persists BOTH the auto-open latch and the user's own manual choice together -- is that right?
+  → A: No, amended: the store holds ONLY the user's own manual choice. The auto-open latch
+  ("has this row ever been open while running/unsettled") moved into a new shared
+  `useStickyDisclosure` hook's own LOCAL component state (`useStickyDisclosure.ts`) -- it needs
+  no persistence, since recomputing it fresh on every mount is already correct; only a
+  deliberate user override needs to survive a remount. The two rows' duplicated toggle logic
+  folded into this one hook (code-reviewer, DRY).
+- Q: Gate round 1 (test-reviewer): does the live check's selector-scoping phase (item 3) prove a
+  genuine red/green regression? → A: No -- corrected: Stage rows always render BEFORE the
+  per-turn chain row in `Transcript.tsx`'s own DOM order, so even the OLD unscoped
+  `document.querySelector` would already resolve correctly in this exact fixture. The fix is
+  order-independent hardening (proved by the live-check's own count + ancestor checks), not a
+  demonstrable regression against this fixture's DOM shape; the live check records this
+  honestly rather than claiming a false red/green pass.
+- Q: Gate round 1 (accessibility-auditor): "no more path left that drops focus" (the original
+  wording) is an overclaim? → A: Yes -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+  own body still swaps for a member list the instant a second agent streams into the same
+  Stage, which can still unmount whatever was focused inside it. That is a separate,
+  pre-existing defect from #941, not fixed here -- filed as its own follow-up (Main, gate round
+  1) rather than folded into this fix.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -872,12 +893,17 @@ The developer types a slash command and finds the ones the agent offers. If a se
   or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close itself
   again on settling all-success; only the user's own toggle may close it, matching the existing
   per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's focus
-  already inside an open Stage's content is never silently dropped to `<body>` by an automatic
-  collapse (WCAG 2.4.3): the only way the row closes is the user's own activation of its own
-  trigger, which already holds focus at that moment. A Stage row's and the Subagent chain row's
-  own manual-toggle state MUST survive a remount of the row (a session switch, or the chain
-  row's own unmount when a turn's Stage count drops back below two and later rises again),
-  keyed per session and per row.
+  already inside an open Stage's content is never silently dropped to `<body>` by this
+  specific automatic collapse (WCAG 2.4.3): the only way the row closes is the user's own
+  activation of its own trigger, which already holds focus at that moment. A SEPARATE,
+  pre-existing focus-loss path is explicitly OUT OF SCOPE here (gate round 1, 2026-10-18): a
+  solo Stage's own body swaps for a member list the instant a second agent streams into the
+  same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up,
+  not fixed by this requirement. A Stage row's and the Subagent chain row's own manual-toggle
+  state MUST survive a remount of the row (a session switch, or the chain row's own unmount
+  when a turn's Stage count drops back below two and later rises again), keyed per session and
+  per row -- scoped to Stage and chain rows only; a tool-call group row and a thought-run row
+  still reset their own disclosure on remount, unchanged by this requirement.
 
 ### Key Entities
 
