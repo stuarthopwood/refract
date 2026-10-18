@@ -136,7 +136,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
             <HistoryIcon />
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[70vh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[70vh] overflow-x-hidden overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Conversation history</DialogTitle>
           </DialogHeader>
@@ -145,9 +145,9 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
           ) : conversations.length === 0 ? (
             <p className="text-sm text-muted-foreground">No earlier Conversations.</p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul className="flex min-w-0 flex-col gap-1">
               {conversations.map((conversation) => (
-                <li key={conversation.file}>
+                <li key={conversation.file} className="min-w-0">
                   <button
                     type="button"
                     aria-disabled={!canSwitch || switching || conversation.isCurrent}
@@ -157,17 +157,17 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                       void handleOpenConversation(conversation.file)
                     }}
                     data-choice-item
-                    className="flex w-full flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
+                    className="flex w-full min-w-0 flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      <span className="truncate">{conversation.title || 'Untitled conversation'}</span>
+                      <span className="min-w-0 truncate" title={conversation.title || 'Untitled conversation'}>{conversation.title || 'Untitled conversation'}</span>
                       {conversation.isCurrent && <Badge variant="secondary">Current</Badge>}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {new Date(conversation.createdAt).toLocaleString()}
                     </span>
                     {conversation.preview && (
-                      <span className="truncate text-xs text-muted-foreground">{conversation.preview}</span>
+                      <span className="truncate text-xs text-muted-foreground" title={conversation.preview}>{conversation.preview}</span>
                     )}
                   </button>
                 </li>
