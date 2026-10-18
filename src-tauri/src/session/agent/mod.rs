@@ -64,8 +64,8 @@ mod status;
 mod sync_from_state;
 mod types;
 pub use commands::{
-    classify_slash_invocation, parse_slash_command, SlashInvocationClassification,
-    NATIVE_RESERVED_COMMANDS,
+    classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
+    SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;

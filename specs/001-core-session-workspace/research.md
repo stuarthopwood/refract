@@ -216,7 +216,154 @@ collapse); its real members are always rendered nested beneath it. `ArrowRight` 
 moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
 "collapse" action anywhere in this tree.
 
-## 19. Async-result job matching must be Stage-scoped, not bare job_id/label (issue #989, 2026-10-18)
+## 18. Slash refusal text, notice wrap, and the #938 item 6 duplicate-render investigation (2026-10-18)
+
+**Decision**: `ipc::chat`'s refusal for an `UnsupportedArguments` command distinguishes two
+cases via `classify_unsupported_arguments` (`src-tauri/src/session/agent/commands.rs`): when the
+typed first word is not one of the command's own verified subcommands, it lists them by name
+("/advisor takes one of: on, off, status."); when that first word IS a verified subcommand but
+more text follows it, it instead says so directly ("/advisor on doesn't take more text yet. Try
+/advisor on on its own.", `ui-architect-v3` roundtable ruling). Both branches resolve the
+descriptor through one shared `resolve_matched_descriptor` helper -- also used by
+`classify_slash_invocation` itself -- so a refusal's own presentation can never resolve a
+DIFFERENT descriptor than the one that actually produced it. `NoticeRow.tsx`'s short-notice
+branch gets `summaryWrap` rather than becoming expandable (same roundtable ruling).
+
+**Alternatives (notice wrap)**: making every short notice expandable (matching the long-notice
+branch's own chevron) was rejected -- the common case has nothing behind the chevron (no second
+paragraph, just the same one clause re-wrapped), so the control would be a dead end most of the
+time; `summaryWrap` is the system's existing no-children escape hatch for exactly this shape of
+problem (already used by the Subagents panel for a long path/paragraph).
+
+**Investigation (issue #938 item 6, not a bug -- corrected, gate round 1)**: a first draft of
+this note wrongly attributed the #917/#954 screenshots' doubled sentinel text to the live-check
+scripts' own wait condition (prompt plus one reply = 2). Re-read against the actual OMP session
+log (`~/.omp/agent/sessions/.../2026-10-16T11-14-21-749Z_....jsonl`): the model called the
+hidden `todo` tool (`HIDDEN_TOOLS`, never rendered as its own row) then replied `"t917turn"`
+(message `62b79278`) and stopped; OMP's own incomplete-todo nudge (`"You stopped with 1
+incomplete todo item(s)"`, a `developer`-role reminder, line 15) made it continue, mark the todo
+done, and reply `"t917turn"` a SECOND time (message `bc1f768c`) -- two genuinely distinct
+assistant messages, each with its own `message_id`, each correctly rendered once. A second,
+independent #954/#947 verify run's own session log
+(`~/.omp/agent/sessions/.../2026-10-18T03-23-16-685Z_....jsonl`, messages `6e0a81f1`/`00f9bf00`)
+shows the IDENTICAL shape against `"t947turn"`, confirming this is the general mechanism (the
+incomplete-todo nudge), not a one-off. `build_assistant_items`/`apply_message_snapshot`/
+`replace_message_items` (`src-tauri/src/omp/transcript.rs`) apply every assistant message
+snapshot (`message_start`/`message_update`/`message_end`) as a full replace keyed by
+`message_id`/`message_id:index`, stripping every existing item under that key before inserting
+the fresh set -- there is no code path that can render one message's own content index twice.
+The #917 screenshot's THREE occurrences (not two) are: the user's own prompt bubble (the
+instruction text itself contains the sentinel word once), plus these two real, separate
+assistant replies. Not a duplicate render; `role="log"` announces each of the three rows exactly
+once, as it should. No code change.
+
+## 19. Stage row focus and toggle follow-ups (issue #991, 2026-10-18; renumbered from a
+provisional decision 18 once #938/PR #996 claimed it on `origin/main` first)
+
+**Decision (ui-architect-v3 ruling, posted on issue #991)**: `StageGroupRow`'s own open/close
+sync effect (`SubagentChainRow.tsx`) changes from bidirectional ("sync `open` to
+`isOpenByDefault` whichever way it moves") to upward-only -- a multi-agent Stage still
+auto-opens while running/failed/cancelled/exited, but once open (by auto-open or the user), it
+stays open until the user collapses it themselves. This matches the per-turn Subagent chain
+row's own rule, already decided this way during the #941 gate (2026-10-18, "sync UPWARD only,
+never auto-close -- an untouched row closing itself the instant everything finishes would
+collapse Stage rows the user expanded mid-read and drop their focus"). The "documented design"
+rationale the #941 gate used to defer this (treating the Stage row as a deliberately different,
+always-auto-closing case) does not hold up under re-reading: before #941 the row used an
+uncontrolled `defaultOpen` prop, which Radix reads only once at mount and never re-applies, so a
+Stage settling to green in place never actually auto-closed before #941's own mount-bug fix went
+in (`dc80999`) -- the bidirectional sync was a side effect of that fix, not a separately
+considered original choice. Removing the auto-close resolves two of #991's four items at once:
+the a11y defect (a keyboard user's focus inside the content can no longer be dropped by an
+automatic Radix unmount, since the only remaining way to close the row is the user's own
+activation of its own trigger, which already holds focus at that moment) and the "mouse user
+reading it when it closes" annoyance (there is no longer an automatic close to interrupt either
+kind of user). Follow-up filed, not built here: issue #1000 (Stage rows auto-opening AND the
+chain row both showing every agent once a turn has 2+ Stages; narrows the auto-open condition to
+failed/cancelled/exited only in that case) and issue #1001 (a solo Stage's own body swapping for
+a `SpineList` can still drop focus, pre-existing from #941).
+
+**Decision**: `userToggledRef`/`open`, for both the Stage row and the Subagent chain row, move
+out of a plain `useRef`/`useState` pair into a new `useStageToggleStore`
+(`src/renderer/state/stage-toggle-store.ts`), keyed by session id plus the row's own stable id
+(a Stage's own `group.id`; `chain:<first stage id>` for the chain row, which has no id of its
+own). Non-persisted, in-memory only -- same convention as `alert-dismiss-store.ts`: reset only
+by a full app restart, never written to `settings.json`/disk. This survives the kind of remount
+named in the issue: a session switch, where a different Session's own row set replaces this
+one's through ordinary keyed-list reconciliation (gate round 1/2 correction below has the full,
+corrected mechanism).
+
+**Decision**: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` (a plain
+`document.querySelector('[title="..."]')`) only ever found the right Stage because a turn's
+Stage rows render earlier in the DOM than the chain row that repeats the same label text in its
+own `ChainStageLine` once open (its default state). Scoped instead to an element whose closest
+ancestor is a real per-position row (`data-slot="message-scroller-item"`,
+`MessageScrollerItem`) -- the chain row renders directly in the turn's own `React.Fragment`,
+with no such ancestor, so this can never match its own duplicate regardless of DOM order.
+
+**Gate round 1 correction (ui-architect-v3/code-reviewer/test-reviewer, unanimous)**: the store
+above was staging both the auto-open latch AND the user's own manual choice together, which
+code-reviewer flagged as unnecessary coupling and ui-architect-v3/test-reviewer confirmed was
+the wrong persistence boundary -- the auto-open latch needs no persistence at all (recomputing
+it fresh on every mount is already correct), so only a deliberate user override belongs in the
+store. Redesigned: `useStageToggleStore` now holds only `bySession: Record<string,
+Record<string, boolean>>` (the manual choice alone, same shape as `draft-store.ts`); the
+auto-open latch moved into a new shared `useStickyDisclosure` hook's own local component state,
+which also folds the two rows' previously-duplicated toggle logic into one place (code-reviewer,
+DRY). The remount description above is also corrected: `<Transcript>`/`ChatPane` carry no
+explicit `key` -- a session switch unmounts a Stage/chain row through ordinary keyed-list
+reconciliation (a different session renders a different row-id set), and `Transcript.tsx`'s own
+sr-only-stub/full-row visibility swap is a second, separate path that can unmount and remount
+the same row id.
+
+**Gate round 1 correction (test-reviewer)**: the selector-scoping fix (`titleSelector`) cannot
+be proven as a red/green regression against this exact fixture, since Stage rows always render
+before the chain row in `Transcript.tsx`'s own DOM order -- even the OLD unscoped selector would
+already resolve correctly here. The live check records this as order-independent hardening
+(proved by a count check confirming the duplicate genuinely exists, plus the ancestor-based
+disambiguation), not a demonstrable fix of an actual failure in this fixture.
+
+**Gate round 1 correction (accessibility-auditor)**: "no more path left that drops focus" (an
+earlier draft's wording) overclaimed -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+own body (`SubagentBody`) still swaps for a `SpineList` the instant a second agent streams into
+the same Stage, which can still unmount whatever was focused inside it (a separate, pre-existing
+defect from #941, filed as its own follow-up by Main as issue #1001, not fixed by this change).
+
+**Gate round 2 correction (code-reviewer)**: an earlier draft of the decision above claimed the
+chain row "fully unmounts whenever a turn's Stage count drops back below 2 (`if (stages.length <
+2) return null`) and later rises again" -- re-read, this is NOT true: returning `null` from a
+component does not unmount it or reset its hooks; React keeps the exact same instance, with
+every hook's own state intact, and simply paints no output for that render. The only genuine
+remount this store/hook pair needs to survive is the session-switch case the gate round 1
+correction above already describes correctly (ordinary keyed-list reconciliation, plus
+`Transcript.tsx`'s own sr-only-stub/full-row visibility swap).
+
+**Gate round 2 fix (code-reviewer, LOW)**: `useStickyDisclosure`'s own `open` value used to read
+`manualOpen ?? latchedAutoOpen` -- since the latch's own `useEffect` only commits
+`setLatchedAutoOpen(true)` on the render AFTER `autoOpen` first turns true (effects run
+post-commit, not during the same render), this showed one stale closed frame the instant a
+Stage started running. Fixed: `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the
+CURRENT `autoOpen` value closes that one-render lag; the effect still matters for holding the
+latch `true` on a LATER render once `autoOpen` has already swung back to `false` again, which
+the OR alone cannot do by itself.
+
+**Decided (Skippy, delegated by Stuart 2026-10-18, gate round 2, UI Lows)**: two edge cases in
+the redesigned toggle, both confirmed as intended behaviour, no code change --
+1. A toggle attempted on the chain row before its own row id exists (`turnKey` undefined only
+   while `stages` is empty) is dropped by design -- this only ever happens while
+   `stages.length < 2`, the same range the chain row itself renders `null` for (which also
+   covers a turn with exactly one Stage, where the row id IS already defined): it falls back to
+   local-only state for that render, never persisted, and there is nothing visible for a user
+   to have toggled in the first place either way.
+2. A user's own manual CLOSE on a Stage is never overridden by a LATER failure on that same
+   Stage (`autoOpen` swinging back to `true`): `open = manualOpen ?? (...)` means a defined
+   `manualOpen` always wins, by design -- the user's choice to keep a Stage collapsed is
+   respected even once it fails. Gate round 3 correction (UI): the failure is NOT surfaced by a
+   toast (none exists for a Stage failure) -- it still surfaces through the CLOSED Stage's own
+   header (its red icon and "N done, M failed" roll-up render regardless of expand state), the
+   per-turn chain row's own roll-up (only when the turn has 2 or more Stages), and the
+   screen-reader-only settle announcement.
+## 20. Async-result job matching must be Stage-scoped, not bare job_id/label (issue #989, 2026-10-18)
 
 Filed by the #941 lane from PR #979: `apply_async_result_jobs` (`subagent_items.rs`) matched an
 async-result frame's `details.jobs[]` entries against EVERY `subagent` item built so far in the
@@ -330,9 +477,14 @@ against three scenarios:
 outstanding, both still Running when the shared-name job arrives (tiers 1 and 2 both tie) --
 tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
 frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. Not fixed here;
-the real fix is #712's `parentToolCallId` once that subscription path is wired up. FR-084's
-guarantee is narrowed to sequential Stages accordingly (spec.md Clarifications, gate round 2
-entry, supersedes the gate round 1 entry above).
+the real fix is #712's `parentToolCallId` once that subscription path is wired up. Tier 1 itself
+can also swap a result the OTHER way (gate round 4, `agent://Main`): row A already ended its own
+batch call but is still unsettled (genuinely owed its own real async-result, not yet delivered),
+row B is a later, same-named Stage still Running -- a job meant for A can still land on B
+instead, since tier 1 always prefers the Running row regardless of which row the job actually
+belongs to; A then never settles. FR-085's guarantee is narrowed to sequential Stages
+accordingly (spec.md Clarifications, gate round 2 entry, supersedes the gate round 1 entry
+above).
 
 **Gate round 3 correction (`agent://Main`, Code FAIL, 2026-10-18)**: item 1 required settling,
 from the REAL installed omp binary's own source rather than the fixture, whether omp's RPC
@@ -370,9 +522,11 @@ job-summary text) that `message_end`'s own `try_apply_async_result` call never r
 removes (nothing tracks the earlier Notice by `message_id` for removal once a later frame for
 the same message applies a *different* kind of update). Fixed by short-circuiting on
 `custom_type == ASYNC_RESULT_CUSTOM_TYPE` before any other `custom` arm (`transcript.rs`): an
-async-result message now never builds a Notice/advisory/agent-message item at ANY frame --
-`message_start`/`message_update` apply nothing and leave the transcript unchanged; `message_end`
-is the only frame that ever applies its jobs.
+async-result message now never builds a Notice/advisory/agent-message item at ANY frame on the
+LIVE path -- `message_start`/`message_update` apply nothing and leave the transcript unchanged;
+`message_end` is the only frame that ever applies its jobs. The separate HISTORY replay path
+(`items_from_history`) keeps its own, unchanged fallthrough: a stored async-result message with
+no `details.jobs` at all still falls through to the same checks.
 
 **Gate round 3 fix 3 (`agent://Main`, LOW, Code, decided)**: tier 2 (`job_id` beats label-only)
 now only applies BETWEEN two rows that are both still Running -- a `job_id` match from a row
@@ -387,3 +541,11 @@ frame" was wrong -- neither fixture contains any `async-result` message at all; 
 `message_start`/`message_end` pair cited above sits at raw file lines 66/67, not 19/20 (the
 earlier citation came from a filtered line array with comment/blank lines stripped, not the real
 file). Trace (a)'s Stage 5 row is corrected above to a `job_id` match, not label-only.
+
+**Gate round 4 (`agent://Main`, Code/Test/Sec all PASS, one follow-up)**: `stages-941.jsonl` now
+carries `"display":true` on every one of its ten async-result messages (both `message_start`/
+`message_end`), matching real omp, so the live check can actually exercise the gate-round-3 fix
+2 Notice-leak regression; `scripts/verify-941-part2.mjs` gained a check scanning the whole
+Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:"), since every async-result
+message's own `content` is `""` in this fixture and a bare substring match would never fire
+regardless of the bug -- the row's existence, not its text, is the only reliable signal.

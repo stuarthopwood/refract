@@ -12,8 +12,8 @@ use crate::omp::images::{
     validate_image_attachment_decoded, validate_image_attachment_shape, ImageValidationError,
 };
 use crate::session::agent::{
-    classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
-    NATIVE_RESERVED_COMMANDS,
+    classify_slash_invocation, classify_unsupported_arguments, is_chat_answer, parse_slash_command,
+    SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::{model, SessionManager};
 
@@ -244,10 +244,20 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
-                    return Err(IpcError::new(
-                        "unsupported-arguments",
-                        format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own."),
-                    ));
+                    let message = match classify_unsupported_arguments(&name, &rest, &commands) {
+                        SubcommandRefusal::ExtraTextAfterSubcommand { subcommand } => {
+                            format!("/{original_name} {subcommand} doesn't take more text yet. Try /{original_name} {subcommand} on its own.")
+                        }
+                        SubcommandRefusal::UnrecognisedSubcommand { verified }
+                            if !verified.is_empty() =>
+                        {
+                            format!("/{original_name} takes one of: {}.", verified.join(", "))
+                        }
+                        SubcommandRefusal::UnrecognisedSubcommand { .. } => {
+                            format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own.")
+                        }
+                    };
+                    return Err(IpcError::new("unsupported-arguments", message));
                 }
                 SlashInvocationClassification::Supported => {
                     if name == "switch" {

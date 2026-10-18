@@ -3613,17 +3613,188 @@ Opened as draft PR #993 on branch `feat/941-stages-part2`, stacked on part 1's n
 `feat/941-stages` (PR #979, merged as `d9c88f2`). **Refs #941** until the live check above
 confirms every acceptance item; switches to **Closes #941** once it does.
 
-## Phase 61: Async-result job matching scoped to unresolved Stage items (#989) [US1]
+## Phase 60: Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) [US1]
+
+Renumbered against `origin/main` just before merging (this file's own convention): #941 part 2
+merged first and kept Phase 59 (research.md decision 17); this phase moved to Phase 60 and its
+own research.md note to decision 18.
+
+- [X] T288 [US1] #938 item 2/FR-081: `src-tauri/src/session/agent/commands.rs` gains a shared
+  `resolve_matched_descriptor(name, commands)` helper (also used by `classify_slash_invocation`
+  itself) and `classify_unsupported_arguments(name, rest, commands) -> SubcommandRefusal`,
+  distinguishing an unrecognised first word (lists the verified subcommand names, `[]` for a
+  command with none, including `/switch`, whose own table is always pruned empty) from a
+  recognised first word with extra text following it (names that one subcommand instead).
+  `src-tauri/src/ipc/chat.rs`'s `UnsupportedArguments` branch matches on `SubcommandRefusal` to
+  pick the right wording. Exported via `session::agent::mod.rs`.
+- [X] T289 [US1] #938 items 3 and 5/FR-082/FR-083: `NoticeRow.tsx`'s short-notice branch passes
+  `summaryWrap` to `CollapsedLine` (ui-architect-v3 roundtable ruling: wrap in place, never an
+  expand control with nothing behind it). `ModelRolesSection.tsx`'s Advisor role description
+  becomes "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to
+  Slow."
+- [X] T290 [US1] #938 item 6 investigated (research.md decision 18, spec.md Clarifications):
+  not a bug, no code change -- see those entries for the full root cause (OMP's own
+  incomplete-todo nudge made the model reply twice, two real distinct messages). New
+  `scripts/verify-938-slash-rest.mjs` (modelled on `verify-917-advisor-command.mjs`'s own real-
+  ambient-omp structure, since no existing fake-omp fixture lists a builtin command with
+  verified subcommands and AGENTS.md forbids adding one): asserts the Settings > Model roles
+  Advisor description's exact new text, the refusal toast's exact text computed from this
+  install's own real `/advisor` subcommand list (never hardcoded), and the short-notice
+  summary span's real wrapping behaviour (narrowed viewport, `textOverflow`/`scrollWidth`/
+  height measured, never a className check alone unless wrapping cannot be forced) across
+  Dark, Obsidian, and Dark (high contrast), with screenshots and `report.json` (`gitHead`,
+  `dirty`, `exeSha256`, `scriptSha256`, `findings`, `failures`, `notExercised`).
+
+`pnpm typecheck`, `node scripts/check-indent.mjs`, `node scripts/check-file-size.mjs` all clean
+on this phase's own head. `node --check` on the new script, plus a real import of it, confirmed
+it refuses at its own module-scope `requireSharedCargoTarget` guard (issue #946) before touching
+the filesystem or build -- the intended non-build-check behaviour when no build slot is granted
+yet. The Rust side is CODE-VERIFIED ONLY at authoring time (no build slot granted yet):
+`cargo fmt --check`/`cargo test`/`cargo clippy`, the Tauri debug build, and
+`verify-938-slash-rest.mjs` run live against a real app are each pending the build slot grant
+from Main.
+
+**Gate round 1 fixes** (code-reviewer HIGH/MEDIUM, ui-architect-v3 decided, test-reviewer
+MEDIUM): item 6's cause corrected (above, research.md decision 18); the old
+`verified_subcommand_names` helper (with its own separate, unreachable-in-context any-match
+fallback) is replaced by `classify_unsupported_arguments` sharing `resolve_matched_descriptor`
+with `classify_slash_invocation` -- that shared resolver still has an any-match fallback, but
+it is genuinely reachable there (`classify_slash_invocation`'s own file/skill command path
+calls it for every command, not only a builtin already known to be `UnsupportedArguments`); a
+first-word-is-a-valid-subcommand-but-extra-text-follows refusal now reads "/{name} {sub}
+doesn't take more text yet. Try /{name} {sub} on its own." (never the "takes one of" listing,
+which is reserved for an unrecognised first word); `docs/design/product-chat.md` documents both
+the short-notice wrap rule and the two refusal wordings; the item-3 live check now forces real
+wrapping (narrowed viewport) and measures it directly, falling back to a disclosed
+`notExercised` only if it genuinely cannot be forced to wrap; the item-2 skip text now reads
+"unproven in this run" rather than claiming unit coverage, and a missing `/advisor` is a hard
+failure for both checks it would otherwise skip; the script's own toast wait counts toasts
+present before sending and waits for a NEW one, and resolves the `/advisor` descriptor the same
+way Rust does (prefer a builtin-sourced match, then name/alias) instead of a bare
+`.find(name)`.
+
+Opened as draft PR #996 (branch `feat/938-slash-rest`), merged `origin/main` (v0.4.0, `47e4ad7`)
+before the build slot, no src/src-tauri conflicts. Build slot granted 2026-10-18: `cargo fmt
+--check` found two real formatting diffs in this phase's own new Rust (fixed with `cargo fmt`);
+the first two live runs each found and fixed one genuine SCRIPT-only bug, never product
+behaviour: `clearKnownOutputFiles`'s own safety guard expects `SHOTS_DIR`'s parent to resolve
+directly to the OS temp dir (one level, matching `verify-556-zero-box.mjs`'s own pattern), not
+the two-level container-then-timestamp folder this script first used; and `clearComposer` must
+click the message field before backspacing -- a prior `clickByLabel('Send message')` leaves real
+browser focus on the Send BUTTON (no `onMouseDown` guard prevents it), so raw Backspace events
+landed on the button instead of the textarea whenever a refusal left the draft text unCleared
+(FR-019). **Final clean run, head `4721e918` (clean tree, `dirty: false`)**: `ci-local.mjs` all
+16 steps PASS (Rust tests, Rust lint, and the Tauri debug build all genuinely ran this time, not
+skipped); `verify-938-slash-rest.mjs` against the real built exe and real omp: **0 failures, 0
+notExercised** -- FR-083's exact description text confirmed via DOM read; FR-081's two refusal
+wordings both confirmed verbatim ("/advisor takes one of: on, off, status." and "/advisor on
+doesn't take more text yet. Try /advisor on on its own."); FR-082's short notice was forced to a
+REAL second line at a narrowed 220px width (height 40px over the 20px one-line baseline, no
+horizontal overflow, text-overflow "clip") and screenshotted across Dark, Obsidian, and Dark
+(high contrast). **Refs #938** switches to **Closes #938**: every remaining item (2, 3, 5) is
+now live-proven on this exact head; item 1 and 4 already shipped via #954; item 6 was resolved
+by investigation (research.md decision 18), no code to ship for it.
+
+## Phase 61: Stage row focus and toggle follow-ups (#991, gate follow-ups from #941 part 1, PR #979) [US1]
+
+Renumbered against `origin/main` just before merging (this branch's own convention, matching
+Phase 60's own note above): #938/PR #996 merged first and claimed Phase 60, FR-081 to FR-083,
+and research.md decision 18 -- this phase moved to Phase 61, its own tasks renumbered T288/T289
+to T291/T292, its FR renumbered FR-081 to FR-084, and its own research.md note to decision 19.
+
+**Goal**: fix the three code-level follow-ups the #941 lane's final gate deferred (four-round
+rule, 2026-10-18): a running Stage auto-closing can drop a keyboard user's focus (a11y, WCAG
+2.4.3), a manual Stage/chain-row toggle forgotten on remount, and a selector-scoping gap in
+`scripts/verify-941-stage-naming-helpers.mjs`. The fourth item (a mouse user reading a Stage row
+while it auto-closes) is a reconsideration, not a bug; see research.md decision 19 for the
+ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
+
+- [X] T291 `SubagentChainRow.tsx`'s `StageGroupRow`: the sync effect changes from bidirectional
+  ("sync `open` to `isOpenByDefault` whichever way it moves") to upward-only -- a Stage still
+  auto-opens while running/failed/cancelled/exited, but never auto-closes once open, matching
+  FR-068's existing rule for the per-turn Subagent chain row (research.md decision 19).
+- [X] New `src/renderer/features/chat/useStickyDisclosure.ts` (shared by both rows, gate round 1
+  fix, code-reviewer DRY) plus `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`,
+  non-persisted, `bySession: Record<string, Record<string, boolean>>`, keyed by session id plus
+  a Stage's own `group.id` or `chain:<first stage id>` for the chain row): the hook's own LOCAL
+  state holds the auto-open latch (needs no persistence), the store holds ONLY a user's own
+  manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or
+  `Transcript.tsx`'s sr-only-stub/full-row swap -- gate round 2 correction: the chain row's own
+  `stages.length < 2` early return does NOT unmount it; `null` keeps the instance and its hooks)
+  (FR-084).
+- [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
+  `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
+  Subagent chain row's own duplicate title text (`ChainStageLine`); `stageContentSelector`/
+  `stageTriggerSelector` gate round 1 fix: `?.closest(...)` (not a bare `.closest(...)`) so a
+  not-yet-rendered row evaluates to `undefined` throughout instead of throwing mid-`waitFor`.
+- [X] T292 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additive `{"__delay__": 1500}` (no new fixture, AGENTS.md): proves keyboard
+  focus placed inside a genuinely running Stage 1 survives it settling all-success with the row
+  itself staying open; proves `titleSelector`'s scoping (recorded honestly as order-independent
+  hardening, not a red/green regression in this fixture's own DOM order); proves a manual toggle
+  on a solo Stage row and on the chain row both survive a real session-switch remount, while an
+  UNTOUCHED settled Stage (Stage 1) closes instead (proving the store holds only the manual
+  choice). Gate round 1 fixes: a shim-confirmed check (fake-omp debug log's startup line); a
+  real `waitFor` replacing a fixed sleep after the session switch; `clearKnownOutputFiles` plus
+  a post-`stopLauncher` exit confirmation. Written, not run end-to-end (no build slot granted for
+  this sub-task): `node --check` plus a real `import()` load-check on every touched/adjacent
+  script, `pnpm typecheck` and `pnpm vitest run` (148/148) clean, `node scripts/check-indent.mjs`
+  and `node scripts/check-file-size.mjs` clean.
+- [X] Gate round 2 remediation (test-reviewer, code-reviewer, security-auditor, UI Lows): the
+  store/hook stays manual-only (no change needed from round 1's own redesign); `open` now reads
+  `manualOpen ?? (latchedAutoOpen || autoOpen)` (closes a one-render lag); the latch resets
+  during render if its own session+row identity ever changes. The live check's Phase 3 uses
+  Stage 1 (not Stage 2, which can mount already settled -- unpaced frames, dropped for
+  reliability) as the proof that an untouched Stage closes on remount; a missed Running window
+  is caught and recorded in `notExercised` instead of aborting the run; `SHOTS_DIR` regained its
+  default timestamp suffix (now in the same path segment, not a nested folder, so
+  `clearKnownOutputFiles`'s own direct-child-of-`tmpdir()` check still passes). Corrected two
+  stale claims: the chain row's own `stages.length < 2` early return does not unmount it
+  (returning `null` keeps the instance and every hook's state); `defaultOpen`'s own historical
+  comment reworded to the past tense. `clearKnownOutputFiles` (verify-tauri-scratch-helpers.mjs)
+  hardened against a symlink/junction planted at the shots-dir path, and now deletes/recreates
+  under its own validated, canonical path rather than the caller's raw string.
+- [X] Gate round 3 remediation (test-reviewer, code-reviewer, security-auditor, UI): the
+  `{"__delay__": 1500}` plus the upward-only redesign together mean Stage 1 is now
+  deterministically OPEN by the time `verify-941-stage-naming.mjs`'s own expand-cycle assertion
+  for it ever runs -- fixed to expect `'true'`, not `'false'`; Stage 2/Stage 7 (no delay of
+  their own, unpaced frames) now accept either known boolean instead of asserting a specific
+  starting state. `expandByFinder`/`expandRow`/`assertExpandCycleByFinder` extracted to a new
+  `scripts/verify-941-stage-naming-expand-helpers.mjs` (#806 file-size discipline, re-exported
+  from the main helpers file for every existing consumer). The live check's own Stage-1-closes-
+  on-remount proof is now explicitly recorded (in both the header and a `notExercised` entry) as
+  hardening that cannot fail against `origin/main` on its own -- the genuine red there comes from
+  the earlier stays-open/focus-preserved checks and the Stage 6/chain-row manual-toggle proof.
+  Failure-visibility wording corrected throughout (no toast exists for a Stage failure; the
+  visible signal is the closed Stage's own red icon plus "N done, M failed" header, the chain
+  row's own roll-up only when the turn has 2+ Stages, and the screen-reader-only settle
+  announcement). `useStickyDisclosure`'s identity-reset branch now also clears
+  `localManualOpen`, so local-only state genuinely lasts only while an id stays `null`.
+  `clearKnownOutputFiles` refuses any `fileNames` entry that is not a bare filename
+  (`path.basename(name) !== name`), closing a path-traversal gap.
+- [X] All five reviewers PASS (gate round 4). Follow-ups filed, not built here: issue #1000
+  (Stage rows auto-opening AND the chain row both showing every agent once a turn has 2+
+  Stages; narrows the auto-open condition in that case) and issue #1001 (the pre-existing
+  solo-body/SpineList focus-loss path, #941).
+
+Draft PR #999, branch `feat/991-stage-focus`, merged `origin/main` (#938/PR #996, `73c2c87`)
+after the gate, before the build slot: renumbered FR-081 to FR-084, decision 18 to decision 19,
+Phase 60 to Phase 61, T288/T289 to T291/T292 (all above) -- no src/src-tauri conflicts, only the
+four doc files (this one, spec.md, research.md, docs/PLAN.md), all additive. **Refs #991** until
+the live check above is actually run against a real built exe and confirms every acceptance
+item; switches to **Closes #991** once it does.
+
+## Phase 62: Async-result job matching scoped to unresolved Stage items (#989) [US1]
 
 Filed 2026-10-18 by the #941 lane from PR #979: `apply_async_result_jobs`
 (`subagent_items.rs`) matched an async-result job against EVERY `subagent` item in the whole
 turn by bare `job_id`/`label`, with no `tool_call_id` scoping, so a repeated subagent name
 across Stages (fixture `stages-941.jsonl`'s own "Story559", Stage 2 then Stage 5) let Stage 5's
 later async-result clobber Stage 2's already-settled `result`/`duration_ms` (research.md
-decision 19, FR-084). Gate round 1 (`agent://Main`, Code/Test FAIL) found the first fix under-
+decision 20, FR-085). Gate round 1 (`agent://Main`, Code/Test FAIL) found the first fix under-
 protected two ways and found a real clippy violation; all addressed below.
 
-- [X] T288 [US1] `apply_async_result_jobs` (`subagent_items.rs`) rewritten as a single pass per
+- [X] T293 [US1] `apply_async_result_jobs` (`subagent_items.rs`) rewritten as a single pass per
   job: an idempotency no-op check first (a job whose `job_id` an already-settled item holds,
   with that item's current status/result/duration already matching exactly what re-applying it
   would write, is skipped outright -- the live pipeline applies the SAME async-result message
@@ -3634,7 +3805,7 @@ protected two ways and found a real clippy violation; all addressed below.
   item per call. No `tool_call_id` scoping was possible: the async-result frame itself carries
   none (confirmed against `stages-941.jsonl`, the only fixture carrying any `async-result`
   message at all).
-- [X] T291 [US1] Gate round 1 remediation (`agent://Main`, 3 findings, all addressed):
+- [X] T294 [US1] Gate round 1 remediation (`agent://Main`, 3 findings, all addressed):
   **(1, HIGH, Code)** settlement is no longer `result.is_none()` -- a new Rust-only
   `async_settled` flag (`TranscriptItem::Subagent`, `#[serde(skip)]`, no wire/TS change) is set
   `true` only when a job's REAL data (`resultText`/`errorText`/`schema.data`) resolves a row,
@@ -3649,13 +3820,13 @@ protected two ways and found a real clippy violation; all addressed below.
   LATER async-result for ITS OWN Story559 then arrives -- pooling both match types and picking
   the latest `started_at` now correctly selects Stage 5 (started after Stage 2) instead of
   reusing the earlier bug's own failure mode through a different combination of unsettled rows.
-  Doc comment and research.md decision 19/FR-084 amended to record all three rules.
-- [X] T292 [US1] **(HIGH, Test, clippy)** `map_or(true, ...)` replaced with `.is_none_or(...)`
+  Doc comment and research.md decision 20/FR-085 amended to record all three rules.
+- [X] T295 [US1] **(HIGH, Test, clippy)** `map_or(true, ...)` replaced with `.is_none_or(...)`
   throughout (clippy `unnecessary_map_or`, `-D warnings` in CI, matches the repo's own
   `ipc/sessions_agent.rs:284` precedent); the `else if { if ... }` nesting this rewrite
   introduced for the match-type-priority logic is gone entirely now that job_id/label matches
   are pooled (no `collapsible_if` surface left).
-- [X] T289 [US1] Live-check coverage added additively to `scripts/verify-941-part2.mjs`
+- [X] T296 [US1] Live-check coverage added additively to `scripts/verify-941-part2.mjs`
   (reusing the `stages-941.jsonl` fixture already recorded there -- no new fixture): a new
   `assertAsyncResultStageScoping` expands Stage 2 (starts collapsed) and Stage 5 (starts
   EXPANDED by default -- `StageGroupRow`'s own `isOpenByDefault` is true because Stage 5 has a
@@ -3666,7 +3837,7 @@ protected two ways and found a real clippy violation; all addressed below.
   "Implemented the fix for #559.", 1800ms -> "2s"; Stage 5: "Polished Story559 follow-up
   items.", 4300ms -> "4s"). `node --check`ed; not run (no-build prep lane, blocked on the build
   slot).
-- [X] T293 [US1] Gate round 1 (MEDIUM, Test): duration assertions narrowed to the Story559
+- [X] T297 [US1] Gate round 1 (MEDIUM, Test): duration assertions narrowed to the Story559
   member row's own rendered duration text specifically, not the whole Stage's `textContent`
   (which also happens to contain Story560's own "2s" in Stage 2); `notExercised` entries added
   naming what this fixture does NOT prove -- a `job_id` match beating a label match when BOTH
@@ -3678,21 +3849,21 @@ protected two ways and found a real clippy violation; all addressed below.
   -- this fixture drives every job through the `custom`/`async-result` message path only.
   Gate round 2 correction: the "double-application-is-a-no-op case IS exercised" claim this
   task originally recorded was wrong -- no fixture state lets a second application land on a
-  different row than the first, so it was never actually a proven finding; superseded by T294's
-  design change, which removes the second application entirely (see T298's corrected
+  different row than the first, so it was never actually a proven finding; superseded by T299's
+  design change, which removes the second application entirely (see T303's corrected
   `notExercised` entry).
-- [X] T290 [US1] Docs: FR-084 added to this spec (`### Session 2026-10-18 (async-result Stage
-  scoping, issue #989)` Clarifications entry plus the FR itself), research.md decision 19, and
-  this Phase 61.
+- [X] T298 [US1] Docs: FR-085 added to this spec (`### Session 2026-10-18 (async-result Stage
+  scoping, issue #989)` Clarifications entry plus the FR itself), research.md decision 20, and
+  this Phase 62.
 
 Gate round 2 (`agent://Main`, Code Critical + Design + Q1, Test HIGH): round 1 shipped a
 compile error and two further design gaps; all addressed.
 
-- [X] T294 [US1] **CRITICAL (Code)**: `upsert_subagent_items` (`subagent_items.rs:88`) lost its
-  own `let existing_pos = items.iter().position(...)` binding during T288's rewrite, leaving a
+- [X] T299 [US1] **CRITICAL (Code)**: `upsert_subagent_items` (`subagent_items.rs:88`) lost its
+  own `let existing_pos = items.iter().position(...)` binding during T293's rewrite, leaving a
   compile error (`match existing_pos` with nothing bound). Restored. Grepped every identifier
-  T288 removed (`targets`, `by_job_id`, `by_label`) for leftover uses -- none found.
-- [X] T295 [US1] **Design change (Code reviewer's option 2)**: a custom `async-result`
+  T293 removed (`targets`, `by_job_id`, `by_label`) for leftover uses -- none found.
+- [X] T300 [US1] **Design change (Code reviewer's option 2)**: a custom `async-result`
   message's jobs are now applied exactly ONCE, on `message_end` only -- `apply_message_snapshot`
   (`transcript.rs`) gates the `try_apply_async_result` call on its own `streaming == false`
   parameter (`message_start`/`message_update` both carry `streaming == true`), matching what
@@ -3701,15 +3872,15 @@ compile error and two further design gaps; all addressed.
   between them for every one of `stages-941.jsonl`'s ten async-result messages (confirmed by
   reading the raw fixture: `msg-ar1`'s pair sits at raw file lines 66/67), so skipping the
   `message_start` application leaves no user-visible gap. Round 1's value-based idempotency
-  no-op check (T288) is deleted outright -- no longer needed, and could itself have wrongly
+  no-op check (T293) is deleted outright -- no longer needed, and could itself have wrongly
   no-op'd a genuinely new job that happened to match a settled row's current values.
-- [X] T296 [US1] **(MEDIUM, Code, Q1)** Candidate ranking replaced with three tiers, each only
+- [X] T301 [US1] **(MEDIUM, Code, Q1)** Candidate ranking replaced with three tiers, each only
   a tie-break for the one before it: (1) a still-**Running** row beats one already ended by its
   own batch result (Error/Cancelled/Done without a real async result yet); (2) a `job_id` match
   beats a label-only match; (3) latest `started_at` wins any remaining tie (implemented as one
   lexicographic tuple comparison `(is_running, matches_job_id, started_at)`). Traced by hand
   (not executed against a real build) against three scenarios, recorded in research.md decision
-  19's gate-round-2 correction: (a) the sequential repro (Stage 2 batch-errored, not Running;
+  20's gate-round-2 correction: (a) the sequential repro (Stage 2 batch-errored, not Running;
   Stage 5 later, Running) -- tier 1 alone decides it, Stage 5 wins outright; (b) the concurrent
   trace (A: Running, already carries this job's own `job_id`; B: Running, later `started_at`,
   label-only) -- tier 1 ties, tier 2 decides it, A wins even though B started later ("A must
@@ -3717,20 +3888,20 @@ compile error and two further design gaps; all addressed.
   Stage 2 is excluded entirely at the settlement filter (settled via its own real `msg-ar2`
   before Stage 5 even starts), so Stage 5 is the only candidate and wins trivially, confirming
   the fixture itself never exercises (a) or (b) directly.
-- [X] T297 [US1] **(MEDIUM, Test)** Known, accepted limit recorded: any overlap of two same-name
+- [X] T302 [US1] **(MEDIUM, Test)** Known, accepted limit recorded: any overlap of two same-name
   jobs whose own async-result is still outstanding, both still Running (tiers 1 and 2 both
   tie), can still have results swapped by tier 3's best-effort `started_at` guess -- there is no
   real correlation key on this frame to settle it for certain; the real fix is #712's
-  `parentToolCallId`. FR-084's "MUST only ever resolve the specific item" guarantee is narrowed
+  `parentToolCallId`. FR-085's "MUST only ever resolve the specific item" guarantee is narrowed
   to sequential Stages accordingly; the gate-round-1 Clarifications answer (spec.md, "Session
   2026-10-18 (async-result Stage scoping, issue #989)") is marked SUPERSEDED by a new, separate
   gate-round-2 entry (add-only convention), never edited in place.
-- [X] T298 [US1] **(HIGH, Test)** `scripts/verify-941-part2.mjs`'s finding claiming the
+- [X] T303 [US1] **(HIGH, Test)** `scripts/verify-941-part2.mjs`'s finding claiming the
   double-application case "IS exercised" was wrong (no fixture state lets a second application
   land on a different row than the first -- it was never actually proven); removed, replaced
-  with a `notExercised` entry stating T295 removes the second application entirely, so there is
+  with a `notExercised` entry stating T300 removes the second application entirely, so there is
   nothing left to exercise either way. All "traced by hand"/"hand-traced ... not executed"
-  language (this file, `subagent_items.rs`'s doc comment, research.md decision 19,
+  language (this file, `subagent_items.rs`'s doc comment, research.md decision 20,
   `verify-941-part2.mjs`, `docs/PLAN.md`) now says exactly that, replacing "verified"/
   "live repro"/"proven" wording that overclaimed execution which never happened -- nothing is
   proven or live until a real build-slot run.
@@ -3738,7 +3909,7 @@ compile error and two further design gaps; all addressed.
 Gate round 3 (`agent://Main`, Code FAIL): item 1 required settling a fact from the REAL
 installed omp, not the fixture; all 5 items addressed.
 
-- [X] T299 [US1] **Settled from the real omp 18.11.1 binary (`agent://Main` item 1)**: extracted
+- [X] T304 [US1] **Settled from the real omp 18.11.1 binary (`agent://Main` item 1)**: extracted
   the bundled JS source embedded in the installed `omp.exe` (no separate npm/bun-global install
   exists; the compiled binary's own embedded strings were read directly) and found
   `packages/agent/src/agent-loop.ts`'s own `rt(e, t)` helper -- the ONE place in the whole
@@ -3746,33 +3917,33 @@ installed omp, not the fixture; all 5 items addressed.
   followed by a `message_end` for the SAME message, with no code path anywhere that constructs
   one without the other. An async-result message (built by `packages/coding-agent/src/session/
   async-job-delivery.ts`'s `bQe(u)`, confirmed matching this repo's own fixture/Rust field
-  shape) is appended the same way as any other message, through this exact pair. Settles T295's
+  shape) is appended the same way as any other message, through this exact pair. Settles T300's
   design (apply at `message_end` only) as grounded in REAL omp behaviour, not merely a fixture
   assumption -- `stages-941.jsonl`'s own header already says "SYNTHESIZED, not captured live".
-- [X] T300 [US1] **HIGH (Code, `agent://Main` item 2)**: the same `bQe(u)` builder confirms real
+- [X] T305 [US1] **HIGH (Code, `agent://Main` item 2)**: the same `bQe(u)` builder confirms real
   omp always sets `display: true` on an async-result message. Before this fix, a `message_start`
-  frame (its own job application already skipped by T295) fell through every other `custom` arm
+  frame (its own job application already skipped by T300) fell through every other `custom` arm
   to the plain `display == true` Notice branch, leaving a permanent Notice row that
   `message_end`'s own async-result application never replaces or removes. Fixed by
   short-circuiting on `custom_type == ASYNC_RESULT_CUSTOM_TYPE` before any other `custom` arm
   (`transcript.rs`): an async-result message now never builds a Notice/advisory/agent-message
   item at ANY frame.
-- [X] T301 [US1] **LOW (Code, `agent://Main` item 3, decided)**: tier 2 (`job_id` beats
+- [X] T306 [US1] **LOW (Code, `agent://Main` item 3, decided)**: tier 2 (`job_id` beats
   label-only) now applies ONLY between two rows that are both still Running -- a `job_id` match
   from a row that is itself not running must never out-rank a label-only match just because it
   shares this job's `job_id`; among two not-running rows, tier 2 ties and tier 3 (`started_at`)
-  decides directly. Known-limit sentence (T297) widened to "any overlap of two same-name jobs
+  decides directly. Known-limit sentence (T302) widened to "any overlap of two same-name jobs
   whose async-result is still outstanding".
-- [X] T302 [US1] **MEDIUM (Test, `agent://Main` item 4)**: dropped the false claim that
+- [X] T307 [US1] **MEDIUM (Test, `agent://Main` item 4)**: dropped the false claim that
   `subagents.jsonl`/`subagents-background-turn.jsonl` were checked for async-result messages
   (neither has any; only `stages-941.jsonl` does). Fixed the `msg-ar1` line citation to the raw
   file's actual lines 66/67 (the earlier "19/20" came from a filtered, comment-stripped line
   array, not the real file). Corrected research trace (a): Stage 5's row is a `job_id` match
   (its own `apply_batch_task_result` already set `job_id` from `progress[].id` before its own
   async-result applies, exactly like Stage 2), not label-only as originally traced. Recorded
-  that `stages-941.jsonl` is synthesized (its own header says so) and T299's real-omp finding,
+  that `stages-941.jsonl` is synthesized (its own header says so) and T304's real-omp finding,
   not the fixture, is what actually grounds the `message_end`-guarantee assumption.
-- [X] T303 [US1] **LOW (Test, `agent://Main` item 5)**: fixed the "Both Stage rows start
+- [X] T308 [US1] **LOW (Test, `agent://Main` item 5)**: fixed the "Both Stage rows start
   collapsed" JSDoc claim in `scripts/verify-941-part2.mjs` -- Stage 5 actually starts EXPANDED
   by default (`StageGroupRow`'s own `isOpenByDefault = total > 1 && (isRunning || status ===
   'failed' || ...)` evaluates true because Stage 5 has a failed member, FailAgent); `expandRow`
@@ -3784,14 +3955,14 @@ installed omp, not the fixture; all 5 items addressed.
 Gate round 4 (`agent://Main`, Code/Test/Sec all PASS, one follow-up to make the live run prove
 round 3's HIGH): all 3 items addressed.
 
-- [X] T304 [US1] `scripts/fixtures/omp-frames/stages-941.jsonl`: `"display":true` added to
+- [X] T309 [US1] `scripts/fixtures/omp-frames/stages-941.jsonl`: `"display":true` added to
   every async-result message (`msg-ar1`..`msg-ar10`, both `message_start` and `message_end`
   frames), matching real omp. Checked origin/main's full set of this fixture's consumers
   (`git grep -l "stages-941" origin/main -- 'scripts/*.mjs'`: only `verify-941-part2.mjs` and
   `verify-941-stage-naming.mjs`) -- neither references `display`/`Notice`/`async-result` text
   anywhere, so none is affected (an async-result message never renders a transcript row of its
   own regardless). Fixture header comment updated to record the change and that check.
-- [X] T305 [US1] `scripts/verify-941-part2.mjs`: new check after all ten Stages settle --
+- [X] T310 [US1] `scripts/verify-941-part2.mjs`: new check after all ten Stages settle --
   scans the whole Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:") and fails if
   any exist (every async-result message's own `content` is `""` in this fixture, so a bare
   substring match on "async-result" or the content text would never fire regardless of the bug;
@@ -3801,7 +3972,7 @@ round 3's HIGH): all 3 items addressed.
   short-circuit, and `message_end`'s own async-result application never removes the item it
   left behind -- ten stray notices would survive to the end of the turn. At HEAD the gate-round-
   3 short-circuit returns `items` unchanged on `message_start`, so none is ever built.
-- [X] T306 [US1] Narrowed the doc comment at `transcript.rs`'s `"custom"` arm: the "never builds
+- [X] T311 [US1] Narrowed the doc comment at `transcript.rs`'s `"custom"` arm: the "never builds
   a Notice/advisory/agent-message item at ANY frame" claim applies to the LIVE path only --
   `items_from_history`'s own separate `"custom"` arm keeps its unchanged fallthrough, so a
   stored async-result message with no `details.jobs` at all still falls through to the same

@@ -25,6 +25,7 @@ import { formatElapsed } from './formatElapsed'
 import { stageHeading, extractContextLabel, stageRollupText } from './stageMeta'
 import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
+import { useStickyDisclosure } from './useStickyDisclosure'
 import {
   chatRowStatus,
   isSubagentSuccessStatus,
@@ -141,11 +142,19 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
   const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
-  const userToggledRef = React.useRef(false)
-  const [open, setOpen] = React.useState(isOpenByDefault)
-  React.useEffect(() => {
-    if (!userToggledRef.current) setOpen(isOpenByDefault)
-  }, [isOpenByDefault])
+  // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
+  // unanimous): shared `useStickyDisclosure` (research.md decision 19 has the full rationale).
+  // Upward-only: a Stage still auto-opens while running/failed/cancelled/exited, but once open
+  // (by auto-open or the user), it never auto-closes again -- only the user's own toggle can
+  // close it. This fixes item 4 and, as a side effect, the AUTO-CLOSE-driven slice of item 1's
+  // a11y defect (WCAG 2.4.3): the only way this row closes now is the user's own activation of
+  // its own trigger, which already holds focus. A SEPARATE, pre-existing focus-loss path is NOT
+  // fixed here and stays open on the issue (Main, gate round 1): a solo Stage's own body
+  // (`SubagentBody`) swaps for a `SpineList` the instant a second agent streams into the same
+  // Stage, unmounting whatever was focused inside it. A manual toggle survives this row's own
+  // remount (a session switch, or `Transcript.tsx`'s sr-only-stub/full-row visibility swap),
+  // keyed by session + this Stage's own `group.id`.
+  const { open, onOpenChange } = useStickyDisclosure(sessionId, group.id, isOpenByDefault)
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
@@ -240,23 +249,11 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
-      // existing running/failed/cancelled/exited auto-open, auto-closing once finished.
-      // Gate-fix (first real build-slot run, never exercised before now): the OLD uncontrolled
-      // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState` AT FIRST MOUNT --
-      // if this row mounts (one more member just streamed in) WHILE still running, that
-      // initializer captures `true` once and never re-reads a later recompute once this Stage
-      // settles, so a finished multi-agent Stage could stay stuck open forever (confirmed live:
-      // Stage 7's own trigger stayed `aria-expanded="true"` on the FIRST theme pass instead of
-      // the fixture's real `false` starting state). Fixed by going fully controlled, re-syncing
-      // `open` to the live `isOpenByDefault` value in BOTH directions whenever it changes,
-      // UNTIL the user explicitly toggles it (`userToggledRef`) -- unlike the per-turn chain
-      // row (issue #941, decision 2026-10-18: sync upward only), this row's own documented
-      // design has always auto-closed once settled, so both directions stay correct here.
+      // existing running/failed/cancelled/exited auto-open, now sync'd upward only via
+      // `useStickyDisclosure` (issue #991 items 1/3/4) -- see the toggle block above for the
+      // full rationale.
       open={open}
-      onOpenChange={(next) => {
-        userToggledRef.current = true
-        setOpen(next)
-      }}
+      onOpenChange={onOpenChange}
       triggerAriaLabel={triggerAriaLabel}
       // #565 decision 8: a multi-agent Stage's own `SpineList` needs its `ml-4`/`pt-1`; a
       // one-agent Stage's single `SubagentBody` instead starts at the ordinary label column
@@ -454,25 +451,37 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   }, [isRunning, stages.length])
 
   // Gate-fix (live build, first real build-slot run -- never exercised before now):
-  // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState(defaultOpen ?? false)`
-  // AT THE INSTANT this component first mounts. If this chain row mounts (`stages.length` first
-  // reaches 2) while every agent so far is still genuinely pending/finished -- entirely
-  // plausible: Stage 5's own failure may not exist yet -- that initializer captures `false` once
-  // and never re-reads a LATER `defaultOpen` recompute, so a Stage that fails well after this
+  // `defaultOpen` below USED TO only matter to `CollapsedLine`'s own `useState(defaultOpen ??
+  // false)` AT THE INSTANT this component first mounted (pre-`useStickyDisclosure`; no caller
+  // passes a bare `defaultOpen` any more). If this chain row mounted (`stages.length` first
+  // reaches 2) while every agent so far was still genuinely pending/finished -- entirely
+  // plausible: Stage 5's own failure may not exist yet -- that initializer captured `false` once
+  // and never re-read a LATER `defaultOpen` recompute, so a Stage that failed well after this
   // row's first mount could never auto-open it (confirmed live: this fixture's own Stage 5
   // failure left the chain row closed on first render instead of Decision 6's "expanded while
-  // anything is unsettled"). Fixed by going fully controlled here, auto-opening once `isUnsettled`
-  // turns true, UNTIL the user explicitly toggles it (`userToggledRef`). Decision (Skippy,
-  // delegated by Stuart 2026-10-18, posted on issue #941): sync UPWARD only, never auto-close --
-  // an untouched row closing itself the instant everything finishes would collapse Stage rows
-  // the user expanded mid-read and drop their focus, so settling back to all-green never
-  // auto-collapses a row the user never touched either.
+  // anything is unsettled"). Fixed by going fully controlled here, auto-opening once
+  // `isUnsettled` turns true, UNTIL the user explicitly toggles it (now `useStickyDisclosure`,
+  // issue #991 items 1/3/4). Decision (Skippy, delegated by Stuart 2026-10-18, posted on issue
+  // #941): sync UPWARD only, never auto-close -- an untouched row closing itself the instant
+  // everything finishes would collapse Stage rows the user expanded mid-read and drop their
+  // focus, so settling back to all-green never auto-collapses a row the user never touched
+  // either.
   const isUnsettled = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
-  const userToggledRef = React.useRef(false)
-  const [open, setOpen] = React.useState(isUnsettled)
-  React.useEffect(() => {
-    if (!userToggledRef.current && isUnsettled) setOpen(true)
-  }, [isUnsettled])
+  // Issue #991 items 1/2/3/4 (gate round 1: ui-architect-v3 + code-reviewer + test-reviewer,
+  // unanimous): shared `useStickyDisclosure`, same rationale as `StageGroupRow` above. `turnKey`
+  // is `undefined` only when `stages` is empty (no Stage exists yet for this turn) --
+  // `useStickyDisclosure` falls back to local-only state for that case, same as a null
+  // `sessionId`. This only ever happens while `stages.length < 2` (the early return just below
+  // also covers a turn with exactly one Stage, where `turnKey` IS defined but the chain row
+  // still renders nothing), so there is never anything visible to toggle regardless. A
+  // manual toggle survives a SESSION SWITCH -- a different Session's own row set unmounts this
+  // component entirely through ordinary keyed-list reconciliation. Gate round 2 correction
+  // (code-reviewer): `stages.length` dropping back below 2 is NOT a remount by itself -- React
+  // keeps this exact component instance, and every hook's own state, alive when a component
+  // returns `null`; it never loses anything a manual toggle would need to survive on its own.
+  const turnKey = stages[0]?.id
+  const toggleRowId = turnKey ? `chain:${turnKey}` : null
+  const { open, onOpenChange } = useStickyDisclosure(sessionId, toggleRowId, isUnsettled)
 
   if (stages.length < 2) return null
 
@@ -524,10 +533,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       // Gate round 6 fix (issue #941, item 1, MEDIUM): same opt-in as the Stage row above.
       metaClassName="min-w-0 shrink"
       open={open}
-      onOpenChange={(next) => {
-        userToggledRef.current = true
-        setOpen(next)
-      }}
+      onOpenChange={onOpenChange}
       className="mt-6"
       contentClassName={SPINE_HOST_CONTENT_CLASS}
       // Gate round 2 (Low): also restates the running/failed/etc. word `meta` shows visibly,

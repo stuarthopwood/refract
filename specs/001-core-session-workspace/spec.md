@@ -461,6 +461,128 @@
   still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
   of its status.
 
+### Session 2026-10-18 (Stage row focus and toggle follow-ups)
+
+- Q: Issue #991 (gate follow-ups from the #941 lane's final gate, PR #979, four-round rule):
+  a running multi-agent Stage auto-closes on finish even when a keyboard user has focus inside
+  its content, Radix unmounts the content and focus falls to `<body>` (WCAG 2.4.3). Fix? → A:
+  ui-architect-v3 ruling (posted on the issue): the same "sync upward only, never auto-close"
+  rule already shipped for the per-turn Subagent chain row (FR-068, decision 2026-10-18) applies
+  to the Stage row too -- the "documented design" rationale for treating them differently did
+  not hold up: pre-#941 the row used an uncontrolled `defaultOpen` Radix never re-applied after
+  mount, so a Stage settling to green never actually auto-closed before #941's own mount-bug
+  fix introduced the bidirectional sync as a side effect, not a deliberately separate choice.
+  Removing the auto-close also resolves the focus-loss defect directly: the only way a Stage
+  row closes now is the user's own activation of its own trigger, which already holds focus.
+- Q: Does this also settle item 4 (a mouse user reading a Stage row while it auto-closes on an
+  all-success finish)? → A: Yes, the same change answers both: the row no longer auto-closes
+  on an all-success finish at all, for a mouse or a keyboard user.
+- Q: `userToggledRef`/`open` live in a plain `useRef`/`useState` pair for both the Stage row and
+  the Subagent chain row, so a manual toggle is forgotten if the row remounts (a session switch,
+  or the chain row's own `stages.length` dropping below 2 and later rising again)? → A: Moved to
+  a new `useStageToggleStore` (`src/renderer/state/stage-toggle-store.ts`), non-persisted,
+  keyed by session id plus the row's own stable id (a Stage's `group.id`, or `chain:<first
+  stage id>` for the chain row). Same convention as `alert-dismiss-store.ts`: reset only by a
+  full app restart, never written to `settings.json`/disk.
+- Q: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` finds a Stage's own title
+  by a plain `document.querySelector`, which returns the FIRST matching element in the whole
+  document -- the per-turn chain row's own `ChainStageLine` repeats the same Stage label text
+  in its own `title` once the chain row is open (its default state), so this only ever found
+  the right element because Stage rows happen to render earlier in the DOM. Scope it? → A:
+  Yes -- scoped to an element whose closest ancestor is a real per-position row
+  (`data-slot="message-scroller-item"`, `MessageScrollerItem`); the chain row has no such
+  ancestor, so it can never match the chain row's own duplicate regardless of DOM order.
+- Q: Gate round 1 (ui-architect-v3/code-reviewer/test-reviewer, unanimous): the store above
+  persists BOTH the auto-open latch and the user's own manual choice together -- is that right?
+  → A: No, amended: the store holds ONLY the user's own manual choice. The auto-open latch
+  ("has this row ever been open while running/unsettled") moved into a new shared
+  `useStickyDisclosure` hook's own LOCAL component state (`useStickyDisclosure.ts`) -- it needs
+  no persistence, since recomputing it fresh on every mount is already correct; only a
+  deliberate user override needs to survive a remount. The two rows' duplicated toggle logic
+  folded into this one hook (code-reviewer, DRY).
+- Q: Gate round 1 (test-reviewer): does the live check's selector-scoping phase (item 3) prove a
+  genuine red/green regression? → A: No -- corrected: Stage rows always render BEFORE the
+  per-turn chain row in `Transcript.tsx`'s own DOM order, so even the OLD unscoped
+  `document.querySelector` would already resolve correctly in this exact fixture. The fix is
+  order-independent hardening (proved by the live-check's own count + ancestor checks), not a
+  demonstrable regression against this fixture's DOM shape; the live check records this
+  honestly rather than claiming a false red/green pass.
+- Q: Gate round 1 (accessibility-auditor): "no more path left that drops focus" (the original
+  wording) is an overclaim? → A: Yes -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+  own body still swaps for a member list the instant a second agent streams into the same
+  Stage, which can still unmount whatever was focused inside it. That is a separate,
+  pre-existing defect from #941, not fixed here -- filed as its own follow-up (Main, gate round
+  1) rather than folded into this fix.
+
+- Q: Gate round 2 (code-reviewer): the decision above also claimed a manual toggle needed to
+  survive the chain row's own unmount "whenever a turn's Stage count drops back below 2" -- is
+  that a real remount? → A: No -- corrected: returning `null` from a React component does not
+  unmount it or reset its hooks; the only genuine remount this needs to survive is a session
+  switch (ordinary keyed-list reconciliation, a different Session's own row set).
+- Q: Gate round 2 (code-reviewer): `useStickyDisclosure`'s own `open` showed one stale closed
+  frame right as a Stage started running -- why? → A: The latch's own effect only commits on
+  the render AFTER `autoOpen` first turns true (effects run post-commit). Fixed:
+  `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the current value closes the lag.
+- Q: Gate round 2 (UI Lows): does a user's manual close on a Stage get overridden if it later
+  fails, and what happens to a toggle attempted before the chain row has a real row id? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18): the manual close wins permanently (the
+  failure still surfaces through the closed Stage's own header -- its red icon and "N done, M
+  failed" roll-up show regardless of expand state -- the chain row's own roll-up when the turn
+  has 2 or more Stages, and the screen-reader-only settle announcement; there is no toast);
+  the pre-row-id toggle (the row id is missing only while `stages` is empty) only ever happens
+  while `stages.length < 2` -- the chain row renders nothing at all for that whole range
+  (FR-068's own gate, which also covers a turn with exactly one Stage, where the row id IS
+  already defined), so there is never a visible trigger to have toggled either way.
+### Session 2026-10-18 (slash refusal text, notice wrap, advisor settings mention, duplicate-render investigation)
+
+- Q: Issue #938 item 2 (gate follow-up from PR #923/#917, still open after #954): the generic
+  unsupported-arguments refusal ("/{name} doesn't support arguments yet. Try /{name} on its
+  own.") shows for `/advisor dump`, `/advisor configure`, and any typo, even when the command
+  has verified subcommands. What should it say instead? → A: Decided (Skippy, delegated by
+  Stuart, 2026-10-18): when the matched builtin command has one or more verified subcommands
+  (FR-032), the refusal lists them instead: "/{name} takes one of: {sub1}, {sub2}, ...." (e.g.
+  "/advisor takes one of: on, off, status."). A command with no verified subcommands at all
+  (`/dump`, `/switch`'s free-form argument, an unknown name) keeps the existing generic
+  wording -- there is nothing to usefully list.
+- Q: Gate round 1 (UI/Code/A11y, decided by ui-architect-v3): when the first word after the
+  command IS a valid subcommand but extra text follows (`/advisor on now`), does the "takes one
+  of" listing still make sense, since `on` is already correct? → A: No -- that wording would
+  wrongly suggest the typed subcommand itself is unrecognised. The refusal instead reads
+  "/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own." (e.g.
+  "/advisor on doesn't take more text yet. Try /advisor on on its own."); "takes one of: ..." is
+  reserved for when the first word itself is not a recognised subcommand (FR-081).
+- Q: Issue #938 item 3 (still open after #954): a short notice (`NoticeRow.tsx`) can still lose
+  text to its own one-line ellipsis close to the 160-char threshold (`/advisor status`'s spend
+  clause). Wrap it in place (`summaryWrap`), or make every short notice expandable? → A:
+  `ui-architect-v3` roundtable ruling, 2026-10-18: `summaryWrap` -- the existing no-children
+  "wrap instead of truncate" escape hatch (`CollapsedLine.tsx`, already used by the Subagents
+  panel for the identical failure mode). Making every short notice expandable would add a
+  chevron/trigger that leads nowhere on the common case (nothing is actually hidden beyond the
+  same clause re-wrapped), misrepresenting the row's own structure.
+- Q: Issue #938 item 5 (still open after #954): should `ModelRolesSection.tsx`'s Advisor role
+  description mention how to turn the advisor on? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): yes. Gate round 1 wording decided by ui-architect-v3: "Reviews a Session's turns
+  while the Advisor is on (/advisor on); falls back to Slow." The description renders as plain
+  text (no markdown), so the slash command shows as literal text, consistent with how a
+  refusal message or a notice already shows a literal command name elsewhere in the app.
+- Q: Issue #938 item 6 (possible duplicate render, not yet investigated as of #954): the
+  #917/#954 live-check screenshots show the assistant's own sentinel answer
+  ("t917turn"/"t947turn") appearing more than once in one turn. A duplicate render, or two real
+  text blocks from the model? → A: Investigated, not a bug (Skippy, delegated by Stuart,
+  2026-10-18; corrected, gate round 1 -- a first draft of this answer wrongly blamed the
+  live-check scripts' own wait condition alone): read against the real OMP session log, the
+  #917 screenshot's three occurrences are the user's own prompt (which deliberately contains
+  the sentinel word as an instruction) plus TWO separate, real assistant messages, each with
+  its own `message_id`: the model called the hidden `todo` tool, replied "t917turn", and
+  stopped; OMP's own incomplete-todo reminder ("You stopped with 1 incomplete todo item(s)")
+  made it continue, mark the todo done, and reply "t917turn" again. A second, independent
+  #954/#947 verify run's own session log shows the identical shape against "t947turn",
+  confirming this is the general mechanism, not a one-off.
+  `build_assistant_items`/`apply_message_snapshot`/`replace_message_items`
+  (`src-tauri/src/omp/transcript.rs`) apply every assistant message snapshot as a full replace
+  keyed by `message_id`/`message_id:index`, so no code path can render one message's own
+  content index twice -- each of the three rows is real, distinct, and announced once; not a
+  duplicate render. No change made.
 ### Session 2026-10-18 (async-result Stage scoping, issue #989)
 
 - Q: Issue #989 (filed by the #941 lane from PR #979, 2026-10-18): `apply_async_result_jobs`
@@ -509,7 +631,7 @@
   jobs whose own async-result is still outstanding, both still Running when the shared-name job
   arrives (tier 1 ties; tier 2 ties too, gate round 3 narrows it to a Running-only comparison) --
   tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
-  frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. FR-084's
+  frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. FR-085's
   guarantee is narrowed accordingly: it holds for Stages that run one after another (including
   this fixture's own Stage 2/Stage 5, which never overlap), not for two Stages the agent
   genuinely runs at the same time with an identical subagent name.
@@ -537,7 +659,9 @@
   other `custom` arm to the plain `display == true` Notice branch, leaving a permanent Notice
   row (the raw job-summary text) that `message_end`'s own application never replaced or removed.
   Fixed by short-circuiting on the `async-result` custom type itself, before any other `custom`
-  arm: it now never builds a Notice/advisory/agent-message item at any frame.
+  arm: it now never builds a Notice/advisory/agent-message item at any frame on the LIVE path
+  (history replay keeps its own, separate, unchanged fallthrough for a stored message with no
+  `details.jobs`).
 - Q: Gate round 3 (code-reviewer LOW, item 3, decided): should tier 2 (`job_id` beats
   label-only) apply even when the `job_id`-matching row is NOT currently Running? → A: No --
   narrowed to apply ONLY between two rows that are both still Running; a `job_id` match from a
@@ -924,7 +1048,38 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
-- **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
+- **FR-081** (new, 2026-10-18, issue #938 item 2, gate follow-up from PR #923/#917, still open after #954/#947 shipped items 1 and 4; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): When a slash command is refused as `UnsupportedArguments` (FR-032): if the first word after the command IS one of that command's own verified subcommands but further text follows it (for example `/advisor on now`), the refusal MUST read `/{name} {subcommand} doesn't take more text yet. Try /{name} {subcommand} on its own.`; otherwise, when the matched builtin command carries one or more verified subcommands at all, the refusal MUST list them by name instead of the generic wording: `/{name} takes one of: {sub1}, {sub2}, ....` (for example `/advisor takes one of: on, off, status.`). A command with no verified subcommands at all (an unknown name, or a command like `/switch` whose one argument is a free-form token rather than a fixed table) MUST keep the existing generic refusal (`/{name} doesn't support arguments yet. Try /{name} on its own.`).
+- **FR-082** (new, 2026-10-18, issue #938 item 3, gate follow-up from PR #923/#917, still open after #954/#947; ui-architect-v3 roundtable decision record): A short notice (`NoticeRow.tsx`, under the long-notice threshold and carrying no embedded line break) MUST let its one-line summary wrap across lines instead of truncating with an ellipsis, so a notice whose text happens to sit close to that threshold is never cut off; it MUST NOT gain a chevron/expand control (there is nothing behind one once the whole text is already visible wrapped).
+- **FR-083** (new, 2026-10-18, issue #938 item 5, gate follow-up from PR #923/#917, still open after #954/#947; Decided, Skippy, delegated by Stuart 2026-10-18; gate round 1 wording decided by ui-architect-v3): The Settings screen's Advisor role description (`ModelRolesSection.tsx`) MUST mention how a Session's advisor is turned on (`/advisor on`), alongside its existing fallback-to-Slow wording: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow."
+- **FR-084** (new, 2026-10-18, issue #991, gate follow-ups from #941 part 1/PR #979; amends
+  FR-067's Stage row; renumbered from a provisional FR-081 once #938/PR #996 claimed FR-081 to
+  FR-083 on `origin/main` first): A multi-agent Stage row (FR-067) MUST sync its disclosure open
+  **upward only** -- it MUST still auto-open while any of its own agents is running, failed,
+  cancelled, or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close
+  itself again on settling all-success; only the user's own toggle may close it, matching the
+  existing per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's
+  focus already inside an open Stage's content is never silently dropped to `<body>` by this
+  specific automatic collapse (WCAG 2.4.3): the only way the row closes is the user's own
+  activation of its own trigger, which already holds focus at that moment. A SEPARATE,
+  pre-existing focus-loss path is explicitly OUT OF SCOPE here (gate round 1, 2026-10-18): a
+  solo Stage's own body swaps for a member list the instant a second agent streams into the
+  same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up
+  (issue #1001), not fixed by this requirement. A Stage row's and the Subagent chain row's own
+  manual-toggle state MUST survive a remount of the row (a session switch, where a different
+  Session's own row set replaces this one through ordinary keyed-list reconciliation), keyed
+  per session and per row -- scoped to Stage and chain rows only; a tool-call group row and a
+  thought-run row still reset their own disclosure on remount, unchanged by this requirement. A
+  user's own manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice
+  wins permanently over any later auto-open condition; the failure still surfaces through the
+  closed Stage's own header -- its red icon and "N done, M failed" roll-up show regardless of
+  expand state -- the chain row's own roll-up when the turn has 2 or more Stages, and the
+  screen-reader-only settle announcement; there is no toast, decided gate round 2). A toggle
+  attempted on the chain row before it has mounted with a real row id (the row id is missing
+  only while the turn has no Stage at all yet) is dropped by design -- this only ever happens
+  while `stages.length < 2`, the same range the chain row renders nothing at all for (FR-068's
+  own gate, which also covers a turn with exactly one Stage, where the row id IS already
+  defined), so there is never a visible trigger to have toggled either way.
+- **FR-085** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
   round 1, then gate round 2, then gate round 3, `agent://Main`, 2026-10-18): A subagent's
   async-result frame (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that
   issued the matching tool call, never an unrelated item from a different Stage that happens to
