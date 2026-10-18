@@ -374,12 +374,17 @@ async function main() {
       timeoutMs: 90_000,
       label: 'Relaunch: Session reattached, composer enabled'
     });
-    await setWindowWidth(cdp, 1280);
+    // 1920px, not 1280px: at 1280 the cap cannot bind regardless of which value persisted (the
+    // pane content itself is narrower than 64rem, Check 2/3's own 1280 branch already proves
+    // this), so measuring there could not actually distinguish "Reading column survived" from
+    // "silently reverted to Full" -- at 1920 the two are unambiguous: 1024px (capped) vs ~1445px
+    // (Full, Check 1's own measured value).
+    await setWindowWidth(cdp, 1920);
     const relaunchLayout = await measureLayout(cdp);
     if (!relaunchLayout.column || !relaunchLayout.viewport) {
       failures.push('Relaunch persistence: transcript column or viewport not found after reopening the Session.');
     } else {
-      assertClose('Relaunch persistence at 1280px: column width (Reading column must survive with no Settings round trip)', relaunchLayout.column.width, READING_COLUMN_PX, '`settings.json` must have persisted chatWidth: reading-column across the relaunch, read back at boot with no re-save.');
+      assertClose('Relaunch persistence at 1920px: column width equals the 64rem cap exactly (Reading column must survive with no Settings round trip)', relaunchLayout.column.width, READING_COLUMN_PX, '`settings.json` must have persisted chatWidth: reading-column across the relaunch, read back at boot with no re-save.', 2);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '04-relaunch-persisted.png'));
 
