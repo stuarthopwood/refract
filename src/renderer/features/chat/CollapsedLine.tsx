@@ -24,6 +24,15 @@ export interface CollapsedLineProps {
   meta?: React.ReactNode
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
+  /** Gate round 3 fix (issue #941): the default summary slot is `flex-1 min-w-0` with a 0%
+   * flex-basis -- when the row's OTHER fixed-width content (the label, `meta`) already fills
+   * the available width with no free space left over, a 0%-basis flex-grow item is correctly
+   * assigned exactly 0px, and `truncate`'s own `overflow:hidden` then shows nothing at all (a
+   * one-agent Stage's own agent name, `SubagentChainRow.tsx`'s `soloAgentName`, vanished this
+   * way). Opt-in: `shrink-0 max-w-[40%] truncate` instead, reserving a real minimum share of
+   * the row regardless of the label's own length, at the cost of the summary no longer growing
+   * to fill genuinely empty space the way the default behaviour does for every other caller. */
+  summaryFixedWidth?: boolean
   /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
    * label and icon render in the error colour, #570 decision 4; the target stays muted). */
   labelClassName?: string
@@ -86,6 +95,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     summary,
     meta,
     summaryClassName,
+    summaryFixedWidth,
     labelClassName,
     summaryWrap,
     wrapWhenOpen,
@@ -136,10 +146,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       {summary !== undefined ? (
         <span
           className={cn(
-            'min-w-0 flex-1',
+            summaryFixedWidth ? 'shrink-0 max-w-[40%]' : 'min-w-0 flex-1',
             summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
             summaryClassName ?? 'text-muted-foreground'
           )}
+          title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
         >
           {summary}
         </span>

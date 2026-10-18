@@ -161,28 +161,39 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // the label, not merely on `total === 1`.
   const soloContextLabel = total === 1 && group.context ? extractContextLabel(group.context) : null
   const soloAgentName = soloContextLabel ? group.items[0]!.name : undefined
-  // Gate round 2 fix (item 5): `joinMetaParts` (the shared `· `/sr-only-comma separator every
-  // other meta slot in this codebase already uses) instead of plain string concatenation; the
-  // bare status word now shows ONLY while running (the settled "N done"/"N done, M failed"
-  // wording already states failed/cancelled/exited, so repeating the word there is redundant);
-  // "started" is now part of the VISIBLE text, not only the accessible name; the start time
-  // hides first in a narrow Chat pane (a container query against the chat pane's own
+  // Gate round 2 fix (item 5), gate round 3 fix: `joinMetaParts` (the shared `· `/sr-only-comma
+  // separator every other meta slot in this codebase already uses) covers the ALWAYS-shown
+  // core (the roll-up counts, then duration) -- the status word (shown only while running) and
+  // the start time are each a separate, individually narrow-hideable unit instead, the
+  // separator bundled INSIDE the same hideable span as its own content (gate round 3 fix:
+  // `joinMetaParts` renders a part's own separator as a SEPARATE sibling before it, so hiding
+  // only the content left a dangling "·" with nothing after it at a narrow width) -- hidden
+  // together below `@max-[32rem]` (a container query against the chat pane's own
   // `[container-type:size]` ancestor, #554's same mechanism) so the Stage's own label -- never
-  // this -- is what gives up space first.
+  // this -- is what gives up space first; the settled "N done"/"N done, M failed" wording
+  // already states failed/cancelled/exited, so a bare status word is shown only while running.
   const meta = (
     <span aria-hidden="true" className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
       {joinMetaParts([
         <span key="summary">{summaryText}</span>,
-        isRunning ? <span key="status">{SUBAGENT_STATUS_LABEL[status]}</span> : undefined,
         durationMs != null ? (
           <span key="duration" className="tabular-nums">
             {formatElapsed(durationMs)}
           </span>
-        ) : undefined,
-        startTimeText != null ? (
-          <span key="start" className="tabular-nums @max-[380px]:hidden">{`started ${startTimeText}`}</span>
         ) : undefined
       ])}
+      {isRunning && (
+        <span className="@max-[32rem]:hidden">
+          <span> · </span>
+          {SUBAGENT_STATUS_LABEL[status]}
+        </span>
+      )}
+      {startTimeText != null && (
+        <span className="@max-[32rem]:hidden">
+          <span> · </span>
+          <span className="tabular-nums">{`started ${startTimeText}`}</span>
+        </span>
+      )}
     </span>
   )
   const stageLabel = stageHeading(group.stageIndex, group.label)
@@ -204,6 +215,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       label={stageLabel}
       labelClassName={successLabelClass}
       summary={soloAgentName}
+      summaryFixedWidth={soloAgentName !== undefined}
       meta={meta}
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
@@ -216,22 +228,27 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // (#565 decisions 10/13) every other Spine member's own body does.
       contentClassName={total > 1 ? SPINE_HOST_CONTENT_CLASS : LABEL_COLUMN_CONTENT_CLASS}
     >
-      {/* Issue #941 grill item 4: the Stage's own full batch context, rendered Markdown, with a
-          real expand/collapse control past about 6 lines (`StageContextBrief`); absent when no
-          item in the run captured a `context` (a flat call, or history from before #941). */}
-      {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
-      <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
-      {total > 1 ? (
-        <SpineList gap="member">
-          {group.items.map((item) => (
-            <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-              <SubagentRow item={item} />
-            </SpineItem>
-          ))}
-        </SpineList>
-      ) : (
-        <SubagentBody item={group.items[0]!} />
-      )}
+      {/* Gate round 3 fix (item 6): a tighter `space-y-1` for this group specifically, instead
+          of `CollapsibleContent`'s own ambient `space-y-2` (which still governs spacing against
+          any OTHER top-level content a future caller might add alongside these three). */}
+      <div className="space-y-1">
+        {/* Issue #941 grill item 4: the Stage's own full batch context, rendered Markdown, with
+            a real expand/collapse control past about 6 lines (`StageContextBrief`); absent when
+            no item in the run captured a `context` (a flat call, or history from before #941). */}
+        {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
+        <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
+        {total > 1 ? (
+          <SpineList gap="member">
+            {group.items.map((item) => (
+              <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+                <SubagentRow item={item} />
+              </SpineItem>
+            ))}
+          </SpineList>
+        ) : (
+          <SubagentBody item={group.items[0]!} />
+        )}
+      </div>
     </CollapsedLine>
   )
 }
@@ -268,7 +285,11 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
       type="button"
       className="inline-flex max-w-48 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       onClick={(event) =>
-        openHostedPanel('subagents', sessionId, { selectSubagentId: match.id, opener: event.currentTarget })
+        openHostedPanel('subagents', sessionId, {
+          selectSubagentId: match.id,
+          selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
+          opener: event.currentTarget
+        })
       }
     >
       {content}

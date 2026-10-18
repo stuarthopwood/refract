@@ -11,7 +11,7 @@ import type { PanelId } from './panel-registry'
 export function openHostedPanel(
   id: PanelId,
   sessionId: string | null,
-  options?: { selectSubagentId?: string; opener?: HTMLElement | null }
+  options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }
 ): void {
   if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId, options)
   // Issue #563 gate remediation: when the caller pre-selects an agent, `SubagentPanel.tsx`'s own

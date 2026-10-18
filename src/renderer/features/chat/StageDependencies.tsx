@@ -63,7 +63,15 @@ export function StageUsesLine({
                     className={mutedLinkClassName}
                     aria-label={`${dep.agentId}, open in Subagents panel`}
                     onClick={(event) =>
-                      openHostedPanel('subagents', sessionId, { selectSubagentId: match.id, opener: event.currentTarget })
+                      openHostedPanel('subagents', sessionId, {
+                        selectSubagentId: match.id,
+                        // Gate round 3 fix (item 4): disambiguates two same-named agents
+                        // (`SubagentSummary.id` is name-based) so exactly the matched one --
+                        // not whichever same-named row the tracker finds first -- is selected
+                        // and focused in the panel.
+                        selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
+                        opener: event.currentTarget
+                      })
                     }
                   >
                     {dep.agentId}
