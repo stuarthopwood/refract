@@ -68,14 +68,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   'rate-limited': 'GitHub rate limit reached. Try again in a few minutes.'
 }
 
-// TEMPORARY diagnostic instrumentation (caught live, Enter-activates-last-tab scroll bug): see
-// the scroll effect's own comment below. Remove once the actual root cause is found and fixed.
-declare global {
-  interface Window {
-    __prTabScrollLog?: Array<Record<string, unknown>>
-  }
-}
-
 interface PullRequestListProps {
   repositoryId: string
 }
@@ -112,11 +104,6 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
   // fade; `updateFade` (scroll + `ResizeObserver`, not just the tab/repository change this effect
   // already re-runs on) keeps `data-fade-left`/`data-fade-right` honest the rest of the time too
   // -- a manual trackpad/wheel scroll, or the column being resized, with no tab switch at all.
-  // TEMPORARY diagnostic instrumentation (caught live, Enter-activates-last-tab scroll bug):
-  // exposes every `revealActiveTab`/native `scroll` event, its caller and the exact
-  // before/after scrollLeft and tab geometry, on `window` so a live verify run can observe the
-  // real call sequence directly instead of guessing at it again. Remove once the actual root
-  // cause is found and fixed.
   useLayoutEffect(() => {
     const wrap = tabsWrapRef.current
     if (!wrap) return
@@ -128,31 +115,19 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
     // ResizeObserver below can re-reveal the active tab too -- resizing the list column used to
     // only refresh the fade flags, leaving the active tab stranded under the fade if the column
     // narrowed enough to clip it with no tab/repository change to re-trigger this effect.
-    const revealActiveTab = (source: string) => {
+    const revealActiveTab = () => {
       const tab = wrap.querySelector<HTMLElement>('[data-state="active"]')
-      const before = wrap.scrollLeft
-      if (!tab) {
-        ;(window.__prTabScrollLog ??= []).push({ source, tabFound: false, before, at: performance.now() })
-        return
-      }
+      if (!tab) return
       const tabLeft = tab.offsetLeft
       const tabRight = tab.offsetLeft + tab.offsetWidth
       if (tabLeft < wrap.scrollLeft + TABS_FADE_PX) wrap.scrollLeft = Math.max(0, tabLeft - TABS_FADE_PX)
       else if (tabRight > wrap.scrollLeft + wrap.clientWidth - TABS_FADE_PX) wrap.scrollLeft = tabRight - wrap.clientWidth + TABS_FADE_PX
-      ;(window.__prTabScrollLog ??= []).push({
-        source, tabFound: true, tabText: tab.textContent?.trim(), tabLeft, tabRight,
-        clientWidth: wrap.clientWidth, before, after: wrap.scrollLeft, at: performance.now()
-      })
     }
-    revealActiveTab('effect')
+    revealActiveTab()
     updateFade()
-    const onScroll = () => {
-      updateFade()
-      ;(window.__prTabScrollLog ??= []).push({ source: 'native-scroll-event', scrollLeft: wrap.scrollLeft, at: performance.now() })
-    }
-    wrap.addEventListener('scroll', onScroll, { passive: true })
+    wrap.addEventListener('scroll', updateFade, { passive: true })
     const observer = new ResizeObserver(() => {
-      revealActiveTab('resize-observer')
+      revealActiveTab()
       updateFade()
     })
     observer.observe(wrap)
@@ -173,7 +148,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
     }
     wrap.addEventListener('wheel', handleWheel, { passive: false })
     return () => {
-      wrap.removeEventListener('scroll', onScroll)
+      wrap.removeEventListener('scroll', updateFade)
       wrap.removeEventListener('wheel', handleWheel)
       observer.disconnect()
     }

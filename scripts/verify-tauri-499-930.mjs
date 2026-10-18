@@ -260,10 +260,7 @@ async function main() {
             // (No surrounding backticks here on purpose: this whole block is itself the body of
             // an outer template literal -- a literal backtick in this comment would terminate it.)
             effectRan: wrapScrollLeft !== null && wrapScrollLeft !== ${JSON.stringify(wrapScrollLeftBeforeEnter)},
-            expectedScrollLeft: wrapClientWidth !== null ? tabOffsetLeft + tabOffsetWidth - wrapClientWidth : null,
-            // TEMPORARY diagnostic (caught live, Enter-activates-last-tab scroll bug): see
-            // PullRequestList.tsx's own window.__prTabScrollLog comment (no backticks here either).
-            prTabScrollLog: window.__prTabScrollLog ?? null
+            expectedScrollLeft: wrapClientWidth !== null ? tabOffsetLeft + tabOffsetWidth - wrapClientWidth : null
           };
         })()`).catch((err) => ({ evaluateFailed: err.message }));
         return false;
