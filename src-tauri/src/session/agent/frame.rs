@@ -213,6 +213,12 @@ impl SessionAgent {
                 return;
             }
             state.turn_generation = state.turn_generation.wrapping_add(1);
+            // Issue #911: this turn (whichever one it was) has now fully settled -- every
+            // `tool_execution_end` it will ever receive has already been applied (frames are
+            // handled strictly in arrival order, one at a time; a prompt_result/session_settled
+            // frame is always the LAST frame of its own turn). Safe to clear unconditionally:
+            // a no-op on a turn `stop()` was never called for (the flag was already false).
+            state.turn_abort_requested = false;
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;

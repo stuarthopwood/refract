@@ -425,8 +425,8 @@ export type TranscriptItem =
        * (terminationDetection.ts) confirms the writing process is actually gone -- same family as
        * `'exited'` on a `subagent` item below (#489), just file-tail-derived instead of
        * registry-derived, and never asserted for a Session that is genuinely still `working`
-       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. */
-      status: 'running' | 'done' | 'error' | 'interrupted';
+       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. `'cancelled'` (issue #911): the user's own Stop button cut a still-running call short, same family as a `subagent` item's own `'cancelled'` (#563 decision 15). */
+      status: 'running' | 'done' | 'error' | 'interrupted' | 'cancelled';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;

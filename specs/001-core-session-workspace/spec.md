@@ -733,6 +733,42 @@
   row sets while running persists in its own local component state for the row's whole mount,
   independent of any later recompute of the auto-open CONDITION itself.
 
+### Session 2026-10-18 (Stop-cut-short tool rows settle neutral, issue #911)
+
+- Q: Issue #911 (Decided, Skippy, delegated by Stuart 2026-10-18): confirmed live during #570's
+  own gate round 1 (`verify-570-tool-colours.mjs` turn (c), 2026-10-16, real signed-in `omp`;
+  flagged there as an [INFERENCE] by `ui-architect-v3`, then confirmed, not merely inferred) --
+  clicking Stop on a running tool call settles that row to `error`: red icon, red label, and an
+  Error line reading "Command aborted", the identical full failed treatment a genuine failure
+  gets, since OMP closes the cut-short call's own `tool_execution_end` with `isError:true` and
+  carries no field of its own that says why. Tool rows had no `cancelled` state the way
+  subagents already do (#563 decision 15). Fix? → A: A new tool-row `cancelled` status
+  (`ToolStatus::Cancelled` / `RowStatus` `'cancelled'`), reusing the SAME stop-circle icon and
+  neutral muted colour `subagentStatus.tsx`'s own subagent `cancelled` already uses
+  (`statusGlyph.ts`), with a muted "Stopped" label -- never "Failed", and never the `ask`
+  tool's own pre-existing "Cancelled" wording either (that stays reserved for a cancelled
+  question, unaffected, though the new tool status reads the same way there since an
+  unanswered question is an unanswered question either way). Distinguished by Refract's OWN
+  per-turn abort-request signal (`chat.stop`'s own `abort` RPC sets
+  `AgentState.turn_abort_requested`, cleared once the turn fully settles), never by matching
+  the call's own error text ("Command aborted" is OMP's wording, not a documented contract):
+  `apply_tool_execution_end` applies it only to a call that was genuinely still `running` when
+  the flag was set, so a genuine failure in the same or a later turn still settles `error`.
+  `finalize_live_transcript`'s process-exit path (a Session-level stop/crash, not the chat
+  pane's own Stop button) is extended the same way, mirroring the existing
+  `SubagentFinalizeCause::UserStop` split exactly (`Cancelled` vs. `Crash` -> `Error`) rather
+  than leaving Tool rows as the one remaining exception to that split.
+- Q: Does a multi-call group with one stopped member and no failed member settle to `error`,
+  `interrupted`, or something new? → A: A new `cancelled` group status, ranked between
+  `interrupted` and `done` in the group's own worst-state order (a genuine `error` anywhere in
+  the group still wins, unchanged); the group's own meta slot gains an "N stopped" count
+  alongside "N failed"/"N interrupted", in the same neutral (never red) colour "N interrupted"
+  already uses.
+- Q: Does "Show tool calls" off still force a cancelled-only group visible, the way a failed or
+  interrupted one already does (FR-008)? → A: No -- "nothing is known to have gone wrong" (the
+  issue's own wording) makes a user-stopped call exactly as unremarkable as a plain `done` one,
+  so it is governed by the same toggle, never force-shown.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1213,6 +1249,24 @@ The developer types a slash command and finds the ones the agent offers. If a se
   with no earlier single-Stage render to have latched anything from. A user's own manual toggle
   on a Stage this requirement exempts from auto-open still opens and closes it exactly as
   before (FR-084 unchanged), and once opened that way also never auto-closes.
+- **FR-088** (new, 2026-10-18, issue #911, confirmed live during #570's own gate round 1;
+  amends FR-008): A tool call the user Stops mid-flight -- its own `tool_execution_end`
+  reporting `isError:true` only because Refract's own per-turn abort-request signal was set
+  when it arrived, never because the call's own output happened to match stop-related wording
+  -- MUST settle to a NEW, separate `cancelled` status: a stop-circle icon (the same shape
+  `subagentStatus.tsx`'s own subagent `cancelled` already uses), a muted "Stopped" label, and
+  NO Error line, never FR-008's own `error` status or red treatment a genuine failure gets. A
+  multi-call group with a stopped member and no failed member MUST settle its own header to
+  the same neutral `cancelled` status (ranked between `interrupted` and `done` in FR-008's own
+  worst-state order; a genuine `error` anywhere in the group still wins), with an "N stopped"
+  count joining the existing "N failed"/"N interrupted" counts in the meta slot, in the same
+  neutral colour "N interrupted" already uses. "Show tool calls" off MUST hide a cancelled-only
+  group exactly as it hides a plain `done` one; FR-008's existing force-visible rule for a
+  failed/interrupted group is unchanged and does not extend to `cancelled`, since nothing is
+  known to have gone wrong. This status is reached only through Refract's own per-turn signal
+  (set when the user's own Stop click sends OMP's `abort` command, cleared once the turn fully
+  settles); a genuine tool failure in the same turn or any later turn MUST still settle
+  `error`.
 
 ### Key Entities
 

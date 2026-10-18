@@ -1,0 +1,57 @@
+// SYNTHESIZED (issue #911 live check): the standard negotiate_protocol/get_state/set_ask_dialog/
+// get_messages_page preamble reuses session.jsonl's own genuinely-recorded shapes verbatim. The
+// turn-A tool sequence (tool_execution_start for a `bash` call, then a genuine `abort` command
+// arriving mid-flight, then that SAME call's own `tool_execution_end` with `isError:true` and
+// `result.content` reading "Command aborted", followed by `prompt_result{status:"aborted"}`) is
+// hand-written against the documented wire contract (src/shared/frames.ts's `PromptResultFrame`
+// already lists `status: 'aborted'`; `transcript.rs`'s own `apply_prompt_result_notice` already
+// has an `"aborted"` arm) and against #570's own live finding (verify-570-tool-colours.mjs turn
+// (c), 2026-10-16, real signed-in omp): a Stop click mid-flight produces EXACTLY this isError:true/
+// "Command aborted" shape on the cut-short call's own tool_execution_end. This is NOT itself a
+// fresh live capture of a real omp's own abort response -- #570's own turn (c) already captured
+// the shape once, live; re-capturing it here was out of scope for this fix. See README.md's
+// provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stop-911\\conversation.json","sessionId":"sess-911-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"call-911-read","toolName":"read","args":{"path":"README.md"},"intent":"Reading README.md"}
+{"type":"tool_execution_end","toolCallId":"call-911-read","toolName":"read","result":{"content":[{"type":"text","text":"issue-911 fixture readme content"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-911-bash","toolName":"bash","args":{"command":"sleep 30"},"intent":"Running a long command"}
+{"__wait__":["abort"]}
+{"id":"$lastId","type":"response","command":"abort","success":true}
+{"type":"tool_execution_end","toolCallId":"call-911-bash","toolName":"bash","result":{"content":[{"type":"text","text":"Command aborted"}]},"isError":true}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"aborted","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stop-911\\conversation.json","sessionId":"sess-911-0001","messageCount":1,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u2","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u2","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"call-911-fail","toolName":"bash","args":{"command":"ls /definitely-not-a-real-path-911"},"intent":"Listing a path"}
+{"type":"tool_execution_end","toolCallId":"call-911-fail","toolName":"bash","result":{"content":[{"type":"text","text":"ls: cannot access '/definitely-not-a-real-path-911': No such file or directory\nCommand exited with code 2\nWall time: 0.01 seconds"}]},"isError":true}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a2","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"t911b-"}],"timestamp":0}}}
+{"__delay__":500}
+{"type":"message_update","messageId":"msg-a2","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"t911b-done"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":"t911b-done"}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stop-911\\conversation.json","sessionId":"sess-911-0001","messageCount":3,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}

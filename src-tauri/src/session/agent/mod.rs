@@ -107,6 +107,7 @@ struct AgentState {
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
+    turn_abort_requested: bool, // issue #911: true while `chat.stop`'s own `abort` RPC is in flight for this turn
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
     advisor: crate::session::advisor::State,
     #[allow(dead_code)]
@@ -202,6 +203,7 @@ impl SessionAgent {
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
+                turn_abort_requested: false,
                 advisor: Default::default(),
                 model: Default::default(),
                 readout: Default::default(),
@@ -472,7 +474,7 @@ impl SessionAgent {
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
-        state.transcript.apply_frame(frame);
+        state.transcript.apply_frame(frame, state.turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
         // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own

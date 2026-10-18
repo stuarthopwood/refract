@@ -207,6 +207,7 @@ pub enum ToolStatus {
     Done,
     Error,
     Interrupted,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -1259,7 +1260,7 @@ fn apply_tool_execution_start(
 
 fn apply_tool_execution_end(
     items: Vec<Arc<TranscriptItem>>,
-    frame: &Value,
+    frame: &Value, turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = frame
         .get("toolCallId")
@@ -1357,7 +1358,7 @@ fn apply_tool_execution_end(
                     Arc::make_mut(&mut item)
                 {
                     let new_duration = Some(started_at.map(|sa| (now_ms() - sa).max(0)).unwrap_or(0));
-                    *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
+                    *status = if !is_error { ToolStatus::Done } else if turn_abort_requested && matches!(status, ToolStatus::Running) { ToolStatus::Cancelled } else { ToolStatus::Error };
                     *duration_ms = new_duration;
                     *out = Some(output.clone());
                     *det = result_details.clone();
@@ -1418,7 +1419,7 @@ fn apply_prompt_result_notice(
 fn apply_frame_items(
     items: Vec<Arc<TranscriptItem>>,
     frame: &Value,
-    has_user_acted: bool,
+    has_user_acted: bool, turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
     match frame_type {
@@ -1449,7 +1450,7 @@ fn apply_frame_items(
             }
         }
         "tool_execution_start" => apply_tool_execution_start(items, frame),
-        "tool_execution_end" => apply_tool_execution_end(items, frame),
+        "tool_execution_end" => apply_tool_execution_end(items, frame, turn_abort_requested),
         "prompt_result" => apply_prompt_result_notice(items, frame),
         "command_output" => {
             let text = frame
@@ -1764,10 +1765,10 @@ impl TranscriptState {
 
     /// Applies one live rpc-ui frame (port of `applyFrame`), mutating `self.items` in place so
     /// that only the items the frame actually touched get a new `Arc` -- everything else keeps
-    /// its identity (see this struct's own doc comment).
-    pub fn apply_frame(&mut self, frame: &Value) {
+    /// its identity (see this struct's own doc comment). `turn_abort_requested` (issue #911): `session::agent`'s own per-turn flag, read fresh under the same lock -- see `apply_tool_execution_end`'s own doc comment.
+    pub fn apply_frame(&mut self, frame: &Value, turn_abort_requested: bool) {
         let items = std::mem::take(&mut self.items);
-        self.items = apply_frame_items(items, frame, self.has_user_acted);
+        self.items = apply_frame_items(items, frame, self.has_user_acted, turn_abort_requested);
     }
 
     pub fn items(&self) -> &[Arc<TranscriptItem>] {

@@ -140,7 +140,7 @@ interface AskAnswer {
  * call whose single question carries no real `id` -- never ambiguous, since there is only one. */
 function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
   const count = Math.max(questionIds.length, 1)
-  if (item.status === 'error') return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
+  if (item.status === 'error' || item.status === 'cancelled') return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
   // Issue #510 slice 3 (PLAN.md row A0 evidence): "an unanswered ask renders as 'question not
   // answered'" -- the process died before the user's reply ever landed.
   if (item.status === 'interrupted') return Array.from({ length: count }, () => ({ text: 'Question not answered', timedOut: false }))
@@ -180,7 +180,7 @@ function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
 type AskCallStatus = 'answered' | 'answered-automatically' | 'cancelled' | 'not-answered'
 
 function askCallStatus(item: AskToolItem, answers: AskAnswer[]): AskCallStatus {
-  if (item.status === 'error') return 'cancelled'
+  if (item.status === 'error' || item.status === 'cancelled') return 'cancelled'
   if (item.status === 'interrupted') return 'not-answered'
   return answers.some((answer) => answer.timedOut) ? 'answered-automatically' : 'answered'
 }

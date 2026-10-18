@@ -90,6 +90,10 @@ export function rowVisibility(row: AdvisoryGroupedTranscriptItem, transcriptDisp
     return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
   }
   if (isToolGroup(row)) {
+    // Issue #911: a `cancelled` tool call deliberately does NOT join `error`/`interrupted`
+    // here -- unlike those two, "nothing is known to have gone wrong" for it (the issue's own
+    // wording); it is exactly as unremarkable as a plain `done` call, so "Show tool calls" off
+    // hides it the same way, same reasoning `toolStatus.tsx`'s own neutral icon/label treats it.
     if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
     return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
   }

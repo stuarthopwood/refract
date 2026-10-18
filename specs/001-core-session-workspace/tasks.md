@@ -4155,3 +4155,64 @@ turn's running agents were otherwise shown expanded twice over (ui-architect-v3 
   and is deterministically closed, not merely unpaced). Non-build checks re-run clean
   (`node --check`, `pnpm typecheck`, `pnpm vitest run` 148/148, `check:indent`, `check:file-size`,
   `check:parity --gate`).
+
+## Phase 65: Stop-cut-short tool rows settle neutral (#911, FR-088) [US1]
+
+**Goal**: a tool call the user Stops mid-flight settles to a new, neutral `cancelled` status
+(stop-circle icon, muted "Stopped" label, no Error line) instead of the full failed/red
+treatment a genuine failure gets -- confirmed live during #570's own gate round 1
+(`verify-570-tool-colours.mjs` turn (c), 2026-10-16), recorded there as a gap this story's own
+pre-existing `interrupted`/`exited` code did not cover (out of scope for #570). Tool rows had
+no `cancelled` concept the way subagents already got at #563 decision 15.
+
+- [X] T316 `src-tauri/src/omp/transcript.rs`: new `ToolStatus::Cancelled` variant. New
+  `AgentState.turn_abort_requested` (`session/agent/mod.rs`), set by `chat.rs::stop()` under
+  the same lock its existing no-op checks already read (before the `abort` RPC goes out),
+  cleared by `handle_turn_settled` (`frame.rs`) once the turn it belongs to fully settles.
+  Threaded through `apply_transcript_frame` → `TranscriptState::apply_frame` →
+  `apply_frame_items` → `apply_tool_execution_end`, which now settles a call's `isError:true`
+  end frame to `Cancelled` (instead of `Error`) only when the flag is set AND the call's own
+  prior status was genuinely `Running` -- never by matching the call's own error text ("Command
+  aborted" is OMP's wording, not a contract). `finalize_live_transcript`'s process-exit path
+  (`diff.rs`) extended the same way: `SubagentFinalizeCause::UserStop` now also settles a
+  still-running Tool row to `Cancelled` (`Crash` still settles it `Error`), removing the one
+  remaining "Tool rows have no `Cancelled` concept" exception that split left behind.
+  Renderer: `src/shared/model.ts`'s tool `status` union gains `'cancelled'`; `toolStatus.tsx`'s
+  `RowStatus`/`toolStatusLabel` ("Stopped")/`GLYPH_KEY_BY_STATUS` (the SAME `cancelled`
+  stop-circle shape `subagentStatus.tsx`'s own subagent `cancelled` already uses, via the
+  shared `statusGlyph.ts` table, never a second hand-written copy); `ToolRow.tsx`'s
+  `ToolGroupRow` gains a `cancelledCount`, ranked between `interrupted` and `done` in the
+  group's own worst-state order, with an "N stopped" meta count beside "N failed"/
+  "N interrupted"; `transcriptRowVisibility.ts`'s tool-group force-visible rule deliberately
+  does NOT extend to `cancelled` (as unremarkable as `done`, FR-088); `RequestCard.tsx`'s `ask`
+  tool handling folds the new status into its existing "Cancelled" wording (D22), alongside the
+  pre-existing `error` case.
+- [X] T317 New `scripts/verify-911-stop-neutral.mjs`, modelled on
+  `scripts/verify-570-tool-colours.mjs` (live Stop button) and
+  `scripts/verify-1000-stage-defer.mjs` (fake-omp fixture, report.json, themed screenshots).
+  New fixture `scripts/fixtures/omp-frames/stop-911.jsonl` (AGENTS.md: a fake-omp frame
+  fixture genuinely needed here -- no existing tape scripts an `abort` wait, and a real omp's
+  own abort timing is not deterministic enough to assert against): turn A runs a `bash` call,
+  waits for the real `abort` command the script's own Stop click sends, then settles that
+  call's `tool_execution_end` with `isError:true` (OMP's own real wire shape, per #570's live
+  finding) and a `prompt_result` of `status: "aborted"`; turn B runs a second `bash` call that
+  fails genuinely (`isError:true`, no abort in flight); a third, already-`done` call proves
+  unaffected. Proves: turn A's row settles to the neutral `cancelled` treatment (stop-circle
+  icon class, muted colour token, "Stopped" label, no Error line); turn B's row stays `error`
+  (red icon/label, Error line); the done call is untouched. Must fail on `origin/main` for the
+  right reason (no `Cancelled`/`turn_abort_requested` code there at all -- turn A settles
+  `error` exactly like turn B). Screenshots in all 3 themes (`switchTheme`). Written, not run
+  end-to-end: no build slot granted for this sub-task (the fix is Rust-side, so the live check
+  cannot genuinely pass without a rebuilt exe) -- `node --check` plus a real `import()`
+  load-check are the only commands actually run against this file and the new fixture.
+  **notExercised**: the fixture's own `abort`→`tool_execution_end{isError:true}`→
+  `prompt_result{status:"aborted"}` sequence is hand-written against the documented wire
+  contract (`src/shared/frames.ts`'s `PromptResultFrame.status` union already lists
+  `'aborted'`; `transcript.rs`'s own `apply_prompt_result_notice` already has an `"aborted"`
+  arm) and against #570's own live finding of the exact `isError:true`/"Command aborted" shape
+  a genuine OMP abort produces -- it is not itself a fresh live capture of a real signed-in
+  `omp`'s own abort response (recapturing one was out of scope for this fix; #570's own
+  turn (c) already captured the shape once, live, confirming it).
+
+**Spec**: `spec.md` gains FR-088 (amends FR-008) and a dated Clarifications section recording
+the decision, Decided/Skippy/delegated-by-Stuart per this story's own away-mode convention.

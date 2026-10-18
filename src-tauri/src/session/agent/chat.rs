@@ -69,8 +69,20 @@ impl SessionAgent {
     /// live process.
     pub async fn stop(&self) -> Result<(), AgentError> {
         let (proc, status) = {
-            let state = self.state.lock().await;
-            (state.process.clone(), state.status)
+            let mut state = self.state.lock().await;
+            let proc = state.process.clone();
+            let status = state.status;
+            // Issue #911: set BEFORE the `abort` RPC goes out (same lock acquisition the
+            // no-op checks below also read `process`/`status` under), so a `tool_execution_end`
+            // for a call this abort cuts short -- which can arrive the instant OMP processes
+            // the request -- never races a flag that is not yet true. Left false for the
+            // no-op case (nothing live to cut short); cleared once the turn this starts
+            // fully settles (`handle_turn_settled`), ready for the NEXT turn's own genuine
+            // failures to still read `error`.
+            if proc.is_some() && status != SessionStatus::Idle {
+                state.turn_abort_requested = true;
+            }
+            (proc, status)
         };
         let Some(proc) = proc else { return Ok(()) };
         if status == SessionStatus::Idle {
