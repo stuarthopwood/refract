@@ -300,6 +300,12 @@ impl SessionAgent {
             state.stop_reason = None;
             state.stop_detail = None;
             state.launched_mode = approval_mode;
+            // Issue #937, gate round 2 fix (decided): a NEW life's own `available_commands_update`
+            // frame can arrive any time after this point -- stale commands from a PREVIOUS life
+            // (never re-initialised here before) must not keep answering `available_commands()`
+            // as if they were this life's own confirmed list in the meantime (`session::advisor`'s
+            // own `on_launch` reads this to decide whether to probe at all).
+            state.commands = Vec::new();
             state.pending_mode = if current_mode == approval_mode {
                 None
             } else {

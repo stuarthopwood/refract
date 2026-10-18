@@ -14,9 +14,11 @@ import {
   GaugeIcon,
   GitPullRequestIcon,
   ListTodoIcon,
+  Loader2Icon,
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
@@ -24,7 +26,7 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDiffStat, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
-import { COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
 import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
 
 // Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
@@ -263,6 +265,10 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
 // Gate round 1 fix (High, #937): `chat.send` resolving while `/advisor off` turns out to fail
 // still leaves a live chip whose repeat clicks must work again -- bounded so a reply that never
 // arrives (a dropped `advisor:update`) cannot leave it stuck "Turning off..." forever either.
+// Gate round 2 fix (Medium): only armed for an IMMEDIATE (not `queued`) send -- a send accepted
+// while a turn is already running legitimately waits past this bound (the turn itself decides
+// how long), so arming it there would reset `turningOff` to false while `/advisor off` is still
+// genuinely pending, letting a second click queue a duplicate.
 const ADVISOR_TURN_OFF_TIMEOUT_MS = 10_000
 
 /** Issue #937 (follow-up to #917/PR #923): a quiet Advisor readout, shown only while omp's
@@ -299,6 +305,12 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
     return () => {
       window.clearTimeout(timeoutRef.current)
       if (!buttonRef.current?.contains(document.activeElement)) return
+      // Gate round 2 fix (Low): this cleanup fires on ANY unmount of this instance -- a Session
+      // switch, the whole composer unmounting, not only a genuine toggle-off -- so the store's
+      // OWN current reading for this session is the real check, never just "the button is
+      // gone": a focus/announcement pair belongs only to an actual turn-off, never a reason
+      // this chip merely stopped being rendered.
+      if (useAdvisorStore.getState().bySession[sessionId]) return
       textareaRef.current?.focus()
       useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
     }
@@ -310,19 +322,36 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
     setTurningOff(true)
     // Gate round 1 fix (High): bounded, so a reply that never arrives (a dropped
     // `advisor:update`, an unexpected process exit) cannot leave the chip stuck "Turning
-    // off..." and unclickable forever -- it simply becomes retryable again.
+    // off..." and unclickable forever -- it simply becomes retryable again. Gate round 2 fix
+    // (Medium): cleared below instead, without ever firing, when the send turns out to have
+    // been `queued` (a turn is already running) -- that case has no fixed bound of its own.
     timeoutRef.current = window.setTimeout(() => setTurningOff(false), ADVISOR_TURN_OFF_TIMEOUT_MS)
-    void window.refract.chat.send(sessionId, '/advisor off').then((result) => {
-      // Gate round 1 fix (High): `chat.send` resolves a `Result`, it does not reject on a
-      // refusal (`unknown-command`, `not-idle`, ...) -- the old `.catch` only ever reset this
-      // on a genuine IPC-layer throw, never on an ordinary `{ ok: false }` refusal, so a
-      // refused send left the chip stuck busy with no way to retry.
-      if (!result.ok) {
+    window.refract.chat
+      .send(sessionId, '/advisor off')
+      .then((result) => {
+        // Gate round 1 fix (High): `chat.send` resolves a `Result`, it does not reject on a
+        // refusal (`unknown-command`, `not-idle`, ...) -- an ordinary `{ ok: false }` refusal
+        // must still reset this, or a refused send leaves the chip stuck busy with no retry.
+        if (!result.ok) {
+          window.clearTimeout(timeoutRef.current)
+          setTurningOff(false)
+          notify(result.error)
+          return
+        }
+        // Gate round 2 fix (Medium): `queued: true` means a turn was already running and
+        // `/advisor off` is now waiting its turn, genuinely past this fixed bound -- stays busy
+        // until `advisor:update` actually arrives (whenever the turn settles), so a second
+        // click can never queue a duplicate `/advisor off` behind the first.
+        if (result.value.queued) window.clearTimeout(timeoutRef.current)
+      })
+      .catch((err: unknown) => {
+        // Gate round 2 fix (Medium): the one path the `Result` handling above cannot cover -- a
+        // genuine IPC-layer throw (the channel itself failing), not an ordinary `{ ok: false }`
+        // refusal; left unhandled before, an unresolved rejection with no reset at all.
         window.clearTimeout(timeoutRef.current)
         setTurningOff(false)
-        notify(result.error)
-      }
-    })
+        toast.error(err instanceof Error ? err.message : String(err))
+      })
   }
 
   const label = turningOff ? 'Advisor on. Turning off…' : 'Advisor on. Turn off'
@@ -335,11 +364,24 @@ function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; text
           type="button"
           onClick={handleActivate}
           aria-label={label}
-          aria-busy={turningOff}
           aria-disabled={turningOff}
-          className={cn(READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, turningOff && COMPOSER_DISABLED_OPACITY_CLASS)}
+          className={cn(
+            READOUT_CHIP_BASE_CLASS,
+            READOUT_CHIP_INTERACTIVE_ADDITIONS,
+            turningOff && COMPOSER_DISABLED_OPACITY_CLASS,
+            turningOff && COMPOSER_DISABLED_HOVER_RESET_CLASS
+          )}
         >
-          <EyeIcon aria-hidden className="size-3.5" />
+          {/* Gate round 2 fix (Medium, decided): a keyboard user gets no OTHER pending cue once
+              focused (`:focus-visible` already overrides the dimmed opacity, and the tooltip
+              closes the moment focus leaves it on activation) -- a spinning icon is the one cue
+              that still shows either way, matching `ComposerPickers.tsx`'s own pending-icon
+              swap exactly (`motion-reduce:animate-none` for vestibular-motion sensitivity). */}
+          {turningOff ? (
+            <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <EyeIcon aria-hidden className="size-3.5" />
+          )}
           <span aria-hidden>Advisor</span>
         </button>
       </TooltipTrigger>

@@ -40,7 +40,7 @@ import {
   getAccessibleNameAndRole
 } from './verify-tauri-scratch-helpers.mjs';
 import { measuredContrastRatio } from './contrast-math.mjs';
-import { pressTab } from './verify-tauri-session-list-helpers.mjs';
+import { pressKey } from './verify-tauri-session-list-helpers.mjs';
 import {
   readAdvisorChipGeometry,
   readOtherChipGeometry,
@@ -59,6 +59,15 @@ const SHOTS_DIR =
 
 async function pressEnterKey(cdp) {
   await cdp.pressEnter();
+}
+
+/** Gate round 2 fix (High, falsified against a DOM read): the status line (and so the Advisor
+ * chip) renders BEFORE the message textarea in `MessageInput.tsx`'s own JSX
+ * (`ComposerStatusLine` at line ~1327, the textarea itself further down) -- a FORWARD Tab chain
+ * starting at the textarea can never reach it; only Shift+Tab (CDP modifier bitmask 8) walks
+ * backward into it. */
+async function pressShiftTabKey(cdp) {
+  await pressKey(cdp, 9, 'Tab', 'Tab', 8);
 }
 
 const THEMES = [
@@ -140,13 +149,28 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
-    // Gate round 1 fix (Medium, item 15, decided): a profile whose own omp config already
-    // carries `advisor.enabled: true` legitimately shows the chip from the FIRST attach (issue
-    // #937's own body: "Profiles with advisor.enabled: true in omp config show the chip from
-    // the start") -- this is not automatically a bug, so an initial presence branches on a
-    // real `/advisor status` instead of failing outright; only a status reply that then
-    // contradicts the presence (claims disabled while the chip shows on) is a real failure.
-    const absentAtStart = !(await advisorChipPresent(cdp));
+    // Gate round 2 fix (High, item 12): moved to BEFORE any visible `/advisor` command this
+    // script itself sends (the mouse/keyboard cycles below, each of which sends a real,
+    // visible `/advisor status` whose OWN reply -- e.g. `Advisor "default" is running.` --
+    // would otherwise match the same leak pattern and fail this check for a reason that has
+    // nothing to do with the SILENT probe). Waits long enough for `session::advisor`'s own
+    // bounded attempts (idle-gated, ~2s) plus its reply timeout (~5s) to have long settled one
+    // way or the other before reading the transcript.
+    await new Promise((resolve) => setTimeout(resolve, 8_000));
+    await assertNoProbeLeak(cdp, findings, failures, notExercised, 'Before any visible /advisor command');
+
+    // Gate round 2 fix (Medium, item 14): polled, not a single immediate read -- the silent
+    // probe (if this profile's own omp config defaults the advisor on) needs the SAME ~8s this
+    // script already waited above to have had a chance to confirm/seed the chip's own state;
+    // an immediate read right after Session creation could read "absent" only because that
+    // probe had not yet resolved, not because the profile genuinely defaults the advisor off.
+    let absentAtStart = true;
+    const absentDeadline = Date.now() + 8_000;
+    while (Date.now() < absentDeadline) {
+      absentAtStart = !(await advisorChipPresent(cdp));
+      if (!absentAtStart) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
     if (absentAtStart) {
       findings.push('Advisor chip absent at Session start (advisor off by default), as FR-078 requires.');
     } else {
@@ -159,17 +183,10 @@ async function main() {
     }
 
     // ---- Mouse-driven cycle (item 2-4 of the issue's own brief) ----
-    await runAdvisorToggleCycle(cdp, { mode: 'mouse', pressTab, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
-
-    // ---- Gate round 1 fix (High, item 14): this Session's own `on_launch` just ran its
-    // silent attach probe (if the omp build lists `advisor` and the Session settled idle in
-    // time) with the first real cycle above now long complete -- plenty of time for any reply
-    // to have arrived and, if `agent/frame.rs`'s own veto failed, leaked ----
-    await assertNoProbeLeak(cdp, findings, failures, 'After the first mouse cycle');
+    await runAdvisorToggleCycle(cdp, { mode: 'mouse', pressShiftTab: pressShiftTabKey, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
 
     // ---- Keyboard-only cycle, a FRESH `/advisor on` (item 5: never the same run as mouse) ----
-    await runAdvisorToggleCycle(cdp, { mode: 'keyboard', pressTab, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
-
+    await runAdvisorToggleCycle(cdp, { mode: 'keyboard', pressShiftTab: pressShiftTabKey, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
     // ---- Geometry comparison (item 3): a third, final `/advisor on` so the chip is present to
     // measure, since both cycles above end with it toggled off ----
     await sendAdvisorOnForGeometryPhase(cdp, findings, failures);
@@ -189,6 +206,24 @@ async function main() {
     } else {
       findings.push(`Advisor chip geometry matches a neighbouring status-line chip's own measured geometry: ${JSON.stringify(otherGeometry)}`);
     }
+    // Gate round 2 fix (High, item 11): structural order, not just reachability -- asserts the
+    // Advisor chip is the LAST `[data-slot="readout-chip"]` within the status line (the issue's
+    // own gate round 1 decision D: right before the `ml-auto` Current time chip, which is OFF
+    // by default in a fresh scratch profile -- `DEFAULT_SESSION_READOUT`, `shared/model.ts` --
+    // so "last of all readout chips" is the exact, literal assertion in this scratch run).
+    const order = await cdp.evaluate(`(() => {
+      const chips = Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]'));
+      const index = chips.findIndex((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor');
+      return { total: chips.length, index };
+    })()`);
+    if (order.index === -1) {
+      failures.push('Could not find the Advisor chip among the status line\'s own readout chips for the order check.');
+    } else if (order.index !== order.total - 1) {
+      failures.push(`Advisor chip is not the LAST readout chip in the status line (index ${order.index} of ${order.total} total) -- expected last, right before the ml-auto Current time chip.`);
+    } else {
+      findings.push(`Advisor chip is the LAST readout chip in the status line (index ${order.index} of ${order.total} total), as decided.`);
+    }
+
 
     // ---- Themed screenshots of the chip ON (Dark, Obsidian, Dark high contrast) ----
     for (const theme of THEMES) {
@@ -308,6 +343,16 @@ async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings,
   try {
     await cdp.waitFor(`!!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `[${themeName}] Advisor chip tooltip opened on hover` });
     tooltipText = await cdp.evaluate(`document.querySelector('[role="tooltip"]')?.textContent ?? null`);
+    // Gate round 2 fix (Low, item 16): confirms OUR OWN deliberate `aria-describedby={undefined}`
+    // override still holds -- Radix sets this on the trigger while its tooltip is open by
+    // default (a double-announcement risk the UI gate checklist calls out), suppressed here on
+    // purpose; a regression that dropped the override would otherwise go unnoticed.
+    const describedBy = await cdp.evaluate(`(${ADVISOR_CHIP_SELECTOR})?.getAttribute('aria-describedby') ?? null`);
+    if (describedBy !== null) {
+      failures.push(`[${themeName}] Advisor chip button carries aria-describedby=${JSON.stringify(describedBy)} while its tooltip is open -- the deliberate override must suppress this (risk of a double announcement).`);
+    } else {
+      findings.push(`[${themeName}] Advisor chip button carries no aria-describedby while its tooltip is open, as the deliberate override requires.`);
+    }
   } catch (err) {
     failures.push(`[${themeName}] ${err.message}`);
   }
@@ -329,21 +374,38 @@ async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings,
     }
   }
 
+  // Gate round 2 fix (High, item 13): the hover above leaves `hover:bg-muted`/`hover:text-
+  // foreground` active -- measuring contrast WHILE still hovering reads the wrong (hover-state)
+  // colours, not what a user normally sees at rest. Moves the mouse away and waits for the
+  // tooltip to CLOSE before measuring. The background walk now starts AT the chip itself (not
+  // its parent, which silently skipped the chip's own background and would still have missed a
+  // hover-state background had the mouse still been over it).
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
+  try {
+    await cdp.waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `[${themeName}] Advisor chip tooltip closed after moving the mouse away` });
+  } catch (err) {
+    failures.push(`[${themeName}] ${err.message}`);
+  }
   const styles = await cdp.evaluate(`(() => {
     const el = ${ADVISOR_CHIP_SELECTOR};
     if (!el) return null;
     const color = getComputedStyle(el).color;
-    let bgEl = el.parentElement;
+    let bgEl = el;
     let background = null;
     while (bgEl) {
       const bg = getComputedStyle(bgEl).backgroundColor;
       if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') { background = bg; break; }
       bgEl = bgEl.parentElement;
     }
-    return { color, background: background ?? getComputedStyle(document.body).backgroundColor };
+    return { color, background };
   })()`);
   if (!styles) {
     failures.push(`[${themeName}] could not read the Advisor chip's own computed style for a contrast measurement.`);
+  } else if (!styles.background) {
+    // Gate round 2 fix (High, item 13): no opaque background was found walking up from the
+    // chip itself -- failing loudly here, never silently substituting an unrelated `<body>`
+    // reading as a stand-in for "the real background this text actually sits on".
+    failures.push(`[${themeName}] could not resolve an opaque background behind the Advisor chip for a contrast measurement (walked up to <html> and found none): ${JSON.stringify(styles)}`);
   } else {
     const ratio = measuredContrastRatio(styles.color, styles.background);
     if (ratio === null) {

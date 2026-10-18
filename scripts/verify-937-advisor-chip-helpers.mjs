@@ -23,15 +23,19 @@ async function allNoticeTexts(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).map((row) => (row.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim())`);
 }
 
-/** Gate round 1 fix (High, item 14): proves the silent attach/resume probe's own reply, IF the
- * probe fired for this brand-new Session's own `on_launch` (`session::advisor`'s own header),
- * never leaked into the visible transcript as anything other than the expected `/advisor on`
- * reply itself -- a status-reply-shaped notice (`Advisor is ...`, `Advisor "..."`, any `Spend`
- * figure) would mean `agent/frame.rs`'s own pre-dispatch veto failed to consume it. Also checks
- * the probe was never echoed as a literal user-authored message bubble (the probe is sent via
- * `request_rpc`, never through `chat.send`'s own transcript-mutating path -- defensive,
- * belt-and-braces, not expected to ever actually find one). */
-export async function assertNoProbeLeak(cdp, findings, failures, label) {
+/** Gate round 1 fix (High, item 14), reworked gate round 2 (High, item 12): the leak scan
+ * itself must run BEFORE this script's own first visible `/advisor status` (its real reply,
+ * e.g. `Advisor "default" is running.`, would otherwise match the same pattern and fail this
+ * check for a reason that has nothing to do with the silent probe -- the caller now runs this
+ * right after Session creation, not after a cycle that has already sent one). Proves no
+ * status-reply-shaped notice leaked into the transcript (`Advisor is ...`, `Advisor "..."`, any
+ * `Spend` figure) and that the probe's own command text was never echoed as a user message.
+ * Gate round 2 (High, item 12): this script has no way to prove the silent probe actually FIRED
+ * (no RPC trace/app.log instrumentation reaches that deep) -- a clean scan here is consistent
+ * with "the probe ran and nothing leaked" but equally consistent with "the probe never ran at
+ * all" (omp build without `advisor` listed yet, or still mid-idle-wait); `notExercised` records
+ * that honestly rather than reporting a pass this script cannot actually back up. */
+export async function assertNoProbeLeak(cdp, findings, failures, notExercised, label) {
   const texts = await allNoticeTexts(cdp);
   const leaked = texts.filter((t) => /Advisor (is |")|Spend/.test(t));
   if (leaked.length > 0) {
@@ -39,7 +43,7 @@ export async function assertNoProbeLeak(cdp, findings, failures, label) {
       `${label}: a status-reply-shaped notice leaked into the transcript (the silent probe's own reply must never render): ${JSON.stringify(leaked)}`
     );
   } else {
-    findings.push(`${label}: no leaked status-reply-shaped notice found (the silent attach probe, if it ran, never surfaced).`);
+    findings.push(`${label}: no leaked status-reply-shaped notice found in the transcript.`);
   }
   const echoed = await cdp.evaluate(`(${TRANSCRIPT})?.textContent?.includes('/advisor status') ?? false`);
   if (echoed) {
@@ -47,6 +51,9 @@ export async function assertNoProbeLeak(cdp, findings, failures, label) {
   } else {
     findings.push(`${label}: the silent probe's own command text was never echoed anywhere in the transcript.`);
   }
+  notExercised.push(
+    `${label}: whether the silent attach/resume probe actually FIRED (as opposed to never running at all -- an omp build without \`advisor\` listed yet, or still mid-idle-wait) cannot be proven from this script's own CDP read; the clean scan above is consistent with either outcome, recorded as a finding, not asserted as proof the probe ran.`
+  );
 }
 
 async function clearComposer(cdp) {
@@ -164,15 +171,18 @@ export async function activeElementIsMessageBox(cdp) {
   return cdp.evaluate(`document.activeElement === ${MESSAGE_FINDER}`);
 }
 
-/** Walks a real keyboard Tab chain from the message textarea until an element whose
- * `aria-label` starts with "Advisor on." is focused, or throws after `stepCap` tabs -- the
- * Advisor chip renders LAST in `ComposerStatusLine.tsx`'s own left group (gate round 1
- * decision, right before the `ml-auto` Current time chip), so a small cap still reaches it from
- * the message textarea; a larger cap would hide a real regression (the chip moved, or stopped
- * rendering, far enough away that "eventually reachable" no longer means "where FR-078 sits"). */
-export async function tabToAdvisorChip(cdp, pressTab, { stepCap = 8 } = {}) {
+/** Gate round 2 fix (High, falsified against a DOM read, item 11): the status line (and so the
+ * Advisor chip) renders BEFORE the message textarea in `MessageInput.tsx`'s own JSX -- a
+ * FORWARD Tab chain from the textarea can never reach it. Walks a real Shift+Tab chain
+ * BACKWARD from the message textarea instead until an element whose `aria-label` starts with
+ * "Advisor on." is focused, or throws after `stepCap` tabs -- the Advisor chip renders LAST in
+ * `ComposerStatusLine.tsx`'s own left group (gate round 1 decision, right before the `ml-auto`
+ * Current time chip, itself off by default in a fresh scratch profile), so a small cap still
+ * reaches it; a larger cap would hide a real regression (the chip moved, or stopped rendering,
+ * far enough away that "eventually reachable" no longer means "where FR-078 sits"). */
+export async function tabToAdvisorChip(cdp, pressShiftTab, { stepCap = 8 } = {}) {
   for (let i = 0; i < stepCap; i++) {
-    await pressTab(cdp);
+    await pressShiftTab(cdp);
     await new Promise((resolve) => setTimeout(resolve, 50));
     const label = await cdp.evaluate(`document.activeElement?.getAttribute('aria-label') ?? null`);
     if (label && label.startsWith('Advisor on.')) return true;
@@ -181,13 +191,14 @@ export async function tabToAdvisorChip(cdp, pressTab, { stepCap = 8 } = {}) {
 }
 
 /** One full on -> toggle-off cycle, driven either by a real mouse click or a real keyboard
- * Tab+Enter (never a scripted `.click()`/`.focus()` call), asserting every outcome the issue's
- * own brief lists for each activation method: the chip appears with "Advisor on. Turn off", a
- * repeat activation during the busy window is a no-op, the authoritative "Advisor disabled."
- * notice (plus a supplementary, real `/advisor status` -- its own wording not asserted to a
- * fixed pattern, per `session::advisor`'s own documented ambiguity), the chip leaves the AX
- * tree, focus lands on the message textarea, and "Advisor off" is announced. */
-export async function runAdvisorToggleCycle(cdp, { mode, pressTab, pressEnterKey, shotsDir, findings, failures }) {
+ * Shift+Tab+Enter (never a scripted `.click()`/`.focus()` call), asserting every outcome the
+ * issue's own brief lists for each activation method: the chip appears with "Advisor on. Turn
+ * off", a repeat activation during the busy window is a no-op, the authoritative "Advisor
+ * disabled." notice (plus a supplementary, real `/advisor status` -- its own wording not
+ * asserted to a fixed pattern, per `session::advisor`'s own documented ambiguity), the chip
+ * leaves the AX tree, focus lands on the message textarea, and "Advisor off" is announced. */
+export async function runAdvisorToggleCycle(cdp, { mode, pressShiftTab, pressEnterKey, shotsDir, findings, failures }) {
+
   const tag = `[${mode}]`;
   await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
   findings.push(`${tag} "/advisor on" produced the authoritative enable reply.`);
@@ -215,9 +226,9 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressTab, pressEnterKey
   } else {
     await clearComposer(cdp);
     await cdp.click(MESSAGE_FINDER);
-    const reached = await tabToAdvisorChip(cdp, pressTab);
+    const reached = await tabToAdvisorChip(cdp, pressShiftTab);
     if (!reached) {
-      failures.push(`${tag} could not Tab to the Advisor chip within the step cap.`);
+      failures.push(`${tag} could not Shift+Tab to the Advisor chip within the step cap.`);
       return;
     }
     await pressEnterKey(cdp);
@@ -233,9 +244,17 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressTab, pressEnterKey
     findings.push(`${tag} busy accessible name "Advisor on. Turning off…" observed.`);
     if (mode === 'mouse') await cdp.click(ADVISOR_CHIP_FINDER).catch(() => {});
     else await pressEnterKey(cdp);
-    const stillBusy = await cdp.evaluate(`document.querySelector('[aria-label^="Advisor on. Turning off"]') ? true : false`);
-    if (!stillBusy) failures.push(`${tag} a repeat activation during the busy window did not stay in the busy state (expected a no-op).`);
-    else findings.push(`${tag} a repeat activation during the busy window was a no-op, as expected.`);
+    // Gate round 2 fix (Medium, item 15): "the chip is already gone" is INCONCLUSIVE on its
+    // own (the first toggle may have simply finished in the meantime) -- the exactly-one "Advisor
+    // disabled." notice count below is the real proof a duplicate send did not happen, not this.
+    const chipGoneAfterRepeat = await cdp.evaluate(`!(${ADVISOR_CHIP_FINDER})`);
+    if (chipGoneAfterRepeat) {
+      findings.push(`${tag} the chip was already gone by the time the repeat activation's own effect could be checked -- inconclusive here; see the exactly-one "Advisor disabled." count below for the real proof.`);
+    } else {
+      const stillBusy = await cdp.evaluate(`document.querySelector('[aria-label^="Advisor on. Turning off"]') ? true : false`);
+      if (!stillBusy) failures.push(`${tag} a repeat activation during the busy window did not stay in the busy state (expected a no-op).`);
+      else findings.push(`${tag} a repeat activation during the busy window was a no-op, as expected.`);
+    }
   } else {
     findings.push(`${tag} the busy window closed before it could be observed (a fast real reply) -- not a failure, just too quick to catch.`);
   }

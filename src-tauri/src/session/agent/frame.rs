@@ -39,11 +39,19 @@ impl SessionAgent {
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
-            "session_settled" => self.handle_turn_settled().await,
+            "session_settled" => {
+                self.handle_turn_settled().await;
+                // Issue #937, gate round 2 fix (decided): a settled turn is the one signal
+                // that is genuinely safe to retry the silent attach/resume probe on -- see
+                // `session::advisor`'s own header for why `on_launch` alone cannot tell "a
+                // prompt is in flight" from "truly idle".
+                crate::session::advisor::on_turn_settled(self).await;
+            }
             "prompt_result" => {
                 self.apply_transcript_frame(&frame).await;
                 if frame.get("sessionSettled").and_then(Value::as_bool) == Some(true) {
                     self.handle_turn_settled().await;
+                    crate::session::advisor::on_turn_settled(self).await;
                 }
             }
             "queue_update" => {
