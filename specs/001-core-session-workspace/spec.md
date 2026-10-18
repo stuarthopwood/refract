@@ -505,14 +505,51 @@
   `started_at` wins any remaining tie. A row still only becomes settled (permanently excluded)
   once a job carrying REAL data (`resultText`/`errorText`/`schema.data`) resolves it -- a bare
   label-echo fallback (the `wait` tool's shape with no text at all) never settles a row.
-  **Known, accepted limit (tracked on #712, not fixed here)**: two Stages running the SAME
-  subagent name truly CONCURRENTLY, both already carrying a `job_id` (tier 1 ties, both
-  Running; tier 2 ties, both are `job_id` matches), can still have their results swapped --
+  **Known, accepted limit (tracked on #712, not fixed here)**: any overlap of two same-name
+  jobs whose own async-result is still outstanding, both still Running when the shared-name job
+  arrives (tier 1 ties; tier 2 ties too, gate round 3 narrows it to a Running-only comparison) --
   tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
   frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. FR-084's
   guarantee is narrowed accordingly: it holds for Stages that run one after another (including
   this fixture's own Stage 2/Stage 5, which never overlap), not for two Stages the agent
   genuinely runs at the same time with an identical subagent name.
+
+### Session 2026-10-18 (async-result Stage scoping, issue #989, gate round 3)
+
+- Q: Gate round 3 (code-reviewer FAIL, item 1): is `message_end` actually guaranteed for a
+  custom `async-result` message on the real omp RPC stream, or is that merely an assumption the
+  `stages-941.jsonl` fixture (itself SYNTHESIZED, not captured live, per its own header comment)
+  happens to satisfy? → A: Guaranteed, confirmed directly from the installed omp 18.11.1
+  binary's own embedded source (no separate npm/bun-global install exists to read source from;
+  the compiled binary's own bundled JS strings were extracted and read instead).
+  `packages/agent/src/agent-loop.ts`'s own `rt(e, t)` helper is the ONE place in the whole
+  binary that constructs a `message_start` frame, and it unconditionally pushes one immediately
+  followed by a `message_end` for the same message, with no code path anywhere that pushes one
+  without the other; an async-result message (built by `packages/coding-agent/src/session/
+  async-job-delivery.ts`'s own job-delivery function, confirmed matching this repo's own
+  fixture/Rust field shape) is appended the same way as any other message, through this exact
+  pair. The gate-round-2 design (apply at `message_end` only) is therefore grounded in real omp
+  behaviour, not a fixture coincidence.
+- Q: Gate round 3 (code-reviewer HIGH, item 2): the same real-omp source also confirms
+  `display: true` is always set on an async-result message -- does that leak a stray Notice row
+  into the transcript? → A: It did, on `message_start` specifically, before this fix: with job
+  application now skipped on `message_start` (gate round 2), that frame fell through every
+  other `custom` arm to the plain `display == true` Notice branch, leaving a permanent Notice
+  row (the raw job-summary text) that `message_end`'s own application never replaced or removed.
+  Fixed by short-circuiting on the `async-result` custom type itself, before any other `custom`
+  arm: it now never builds a Notice/advisory/agent-message item at any frame.
+- Q: Gate round 3 (code-reviewer LOW, item 3, decided): should tier 2 (`job_id` beats
+  label-only) apply even when the `job_id`-matching row is NOT currently Running? → A: No --
+  narrowed to apply ONLY between two rows that are both still Running; a `job_id` match from a
+  row that is itself not running must never out-rank a label-only match just because it shares
+  this job's `job_id`. Among two not-running rows, tier 2 ties and tier 3 (`started_at`) decides
+  directly -- the known-limit sentence above is widened accordingly.
+- Q: Gate round 3 (code-reviewer MEDIUM, item 4): were the doc citations accurate? → A: No, two
+  were wrong, both corrected: the claim that `subagents.jsonl`/`subagents-background-turn.jsonl`
+  were "checked against every async-result message" was false (neither has any async-result
+  message at all; only `stages-941.jsonl` does), and the `msg-ar1` `message_start`/`message_end`
+  pair sits at the real fixture's own lines 66/67, not 19/20 (the earlier citation came from a
+  filtered, comment-and-blank-line-stripped array, not the real file).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -888,26 +925,31 @@ The developer types a slash command and finds the ones the agent offers. If a se
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
 - **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979; amended gate
-  round 1, then gate round 2, `agent://Main`, 2026-10-18): A subagent's async-result frame
-  (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that issued the
-  matching tool call, never an unrelated item from a different Stage that happens to share the
-  same subagent `name`/job `label`/`id` string, for Stages that run one after another. A custom
-  `async-result` message's jobs MUST be applied exactly ONCE (on `message_end` only -- matching
-  the already-once-per-message history replay path), not once per `message_start`/`message_end`
-  pair. A row only becomes **settled** (permanently ineligible for any further match) once a job
+  round 1, then gate round 2, then gate round 3, `agent://Main`, 2026-10-18): A subagent's
+  async-result frame (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that
+  issued the matching tool call, never an unrelated item from a different Stage that happens to
+  share the same subagent `name`/job `label`/`id` string, for Stages that run one after another.
+  A custom `async-result` message's jobs MUST be applied exactly ONCE (on `message_end` only --
+  matching the already-once-per-message history replay path), not once per
+  `message_start`/`message_end` pair; a `message_end` IS guaranteed for every such message
+  (confirmed from the real installed omp binary's own source, not merely assumed from a
+  fixture). An async-result message MUST NOT build a Notice/advisory/agent-message item at any
+  frame (real omp always sets `display: true` on it, which would otherwise leak a stray Notice
+  row). A row only becomes **settled** (permanently ineligible for any further match) once a job
   carrying a REAL result (`resultText`, `errorText`, or `schema.data`) resolves it -- a job with
   none of those (the `wait` tool's bare completion shape) MUST NOT settle the row, so a later,
   genuinely-real job for the same `job_id` can still apply. Among still-unsettled items,
   candidates MUST be ranked by three tiers, each only a tie-break for the one before it: (1) a
   still-Running row beats one already ended by its own batch result (Error/Cancelled/Done
-  without ever getting a real async result); (2) a `job_id` match beats a label-only match (the
-  latter only possible when the item's own `job_id` is still unset); (3) the latest `started_at`
-  wins any remaining tie. A single job entry MUST resolve at most one item per async-result
-  frame. **Known, accepted limit**: two Stages running the SAME subagent name truly
-  concurrently, both already carrying a `job_id` (tiers 1 and 2 both tie), can still have their
-  results swapped by tier 3's best-effort `started_at` guess -- this frame carries no real
-  correlation key to settle it for certain; the real fix is #712's `parentToolCallId`, not yet
-  wired up. This requirement's guarantee therefore holds for sequential Stages only.
+  without ever getting a real async result); (2) a `job_id` match beats a label-only match, but
+  ONLY between two rows that are BOTH still Running (a `job_id` match from a non-Running row
+  must never out-rank a label-only match); (3) the latest `started_at` wins any remaining tie. A
+  single job entry MUST resolve at most one item per async-result frame. **Known, accepted
+  limit**: any overlap of two same-name jobs whose own async-result is still outstanding, both
+  still Running (tiers 1 and 2 both tie), can still have their results swapped by tier 3's
+  best-effort `started_at` guess -- this frame carries no real correlation key to settle it for
+  certain; the real fix is #712's `parentToolCallId`, not yet wired up. This requirement's
+  guarantee therefore holds for sequential Stages only.
 
 ### Key Entities
 
