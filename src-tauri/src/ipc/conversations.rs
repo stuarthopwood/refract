@@ -164,17 +164,8 @@ fn parse_file_name(file_name: &str) -> Option<(String, String)> {
     Some((format!("{date_part}:{minute}:{second}.{millis}Z"), id))
 }
 
-const PREVIEW_SCAN_BYTES: usize = 8 * 1024;
+const PREVIEW_SCAN_HARD_CAP_BYTES: usize = 64 * 1024;
 const PREVIEW_MAX_LENGTH: usize = 120;
-
-async fn read_preview_window(file: &std::path::Path) -> std::io::Result<String> {
-    use tokio::io::AsyncReadExt;
-    let mut handle = tokio::fs::File::open(file).await?;
-    let mut buffer = vec![0u8; PREVIEW_SCAN_BYTES];
-    let bytes_read = handle.read(&mut buffer).await?;
-    buffer.truncate(bytes_read);
-    Ok(String::from_utf8_lossy(&buffer).into_owned())
-}
 
 /// Extracts plain text from a stored `role: 'user'` message's `content` (string, or an array of
 /// `{ type: 'text', text: '...' }` parts).
@@ -192,59 +183,89 @@ fn extract_user_text(content: &Value) -> String {
     }
 }
 
-/// Reads the file's first line for `title` and the first `role: 'user'` message within the first
-/// 8 KB for `preview`. Returns `None` when no user message is found there, which the caller treats
-/// as "skip this file" (data-model.md: "files with no user message skipped").
+/// Reads the file's first line for `title` (OMP writes a fixed-width, 256-byte `type: "title"`
+/// slot there -- `omp://session.md` "File Format" -- so it is always complete well inside any
+/// cap below) and streams complete lines, up to `PREVIEW_SCAN_HARD_CAP_BYTES`, looking for the
+/// first `role: 'user'` message for `preview`.
+///
+/// Issue #862: OMP's own prelude between the header and the first user message --
+/// `model_change`, `thinking_level_change`, `service_tier_change`, and now a `memory_recall`
+/// `custom` entry (about 8.6 KB) plus `eager-todo-prelude`/`eager-task-prelude` `custom_message`
+/// entries -- pushed that first user message to about 11 KB in the wild, past the old fixed
+/// 8 KB window (`PREVIEW_SCAN_BYTES`), so the Conversation was silently skipped. Streaming
+/// complete lines means a line is never parsed from a buffer that cut it off mid-record; the
+/// hard cap bounds the read for a multi-megabyte Conversation file instead of a fixed window
+/// size, and reading stops the instant a user message is found, however far in it was (cheap
+/// for the common case, not just the worst case).
+///
+/// Returns `None` only when real end-of-file is reached within the cap without ever finding a
+/// user message (data-model.md: "files with zero user messages are not listed"). Returns
+/// `Some((title, None))` when the cap is hit first: the Conversation still has a title (or an
+/// empty one) and is still listed, just without a preview, rather than hidden -- reaching the
+/// cap proves nothing about whether a user message exists further in the file.
 async fn read_conversation_file(
     file: &std::path::Path,
-) -> std::io::Result<Option<(String, String)>> {
-    let window = read_preview_window(file).await?;
+) -> std::io::Result<Option<(String, Option<String>)>> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let handle = tokio::fs::File::open(file).await?;
+    let mut reader = BufReader::new(handle);
     let mut title = String::new();
     let mut preview: Option<String> = None;
-    for (index, line) in window.split('\n').enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    let mut bytes_read_total = 0usize;
+    let mut line_index = 0usize;
+    let mut cap_hit = false;
+    loop {
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line).await?;
+        if bytes_read == 0 {
+            // Real end of file: every line has been scanned.
+            break;
         }
-        // The last line in an 8 KB window may be cut off mid-record; skip it rather than fail
-        // the whole scan.
-        let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
-            continue;
-        };
-        let Some(object) = parsed.as_object() else {
-            continue;
-        };
-        if index == 0 {
-            if object.get("type").and_then(Value::as_str) == Some("title") {
-                title = object
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
+        bytes_read_total += bytes_read;
+        let current_index = line_index;
+        line_index += 1;
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+                if let Some(object) = parsed.as_object() {
+                    if current_index == 0 {
+                        if object.get("type").and_then(Value::as_str) == Some("title") {
+                            title = object
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                        }
+                    } else if preview.is_none()
+                        && object.get("type").and_then(Value::as_str) == Some("message")
+                    {
+                        if let Some(message) = object.get("message").and_then(Value::as_object) {
+                            if message.get("role").and_then(Value::as_str) == Some("user") {
+                                if let Some(content) = message.get("content") {
+                                    let text = extract_user_text(content);
+                                    if !text.is_empty() {
+                                        preview =
+                                            Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            continue;
         }
         if preview.is_some() {
-            continue;
+            break;
         }
-        if object.get("type").and_then(Value::as_str) != Some("message") {
-            continue;
-        }
-        let Some(message) = object.get("message").and_then(Value::as_object) else {
-            continue;
-        };
-        if message.get("role").and_then(Value::as_str) != Some("user") {
-            continue;
-        }
-        let Some(content) = message.get("content") else {
-            continue;
-        };
-        let text = extract_user_text(content);
-        if !text.is_empty() {
-            preview = Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
+        if bytes_read_total >= PREVIEW_SCAN_HARD_CAP_BYTES {
+            cap_hit = true;
+            break;
         }
     }
-    Ok(preview.map(|preview| (title, preview)))
+    if preview.is_none() && !cap_hit {
+        return Ok(None);
+    }
+    Ok(Some((title, preview)))
 }
 
 fn same_file(a: &str, b: &str) -> bool {
@@ -300,7 +321,7 @@ pub(crate) async fn list_conversations(
             id,
             created_at,
             title,
-            preview,
+            preview: preview.unwrap_or_default(),
             is_current,
         });
     }

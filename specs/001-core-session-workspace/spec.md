@@ -584,6 +584,29 @@
   content index twice -- each of the three rows is real, distinct, and announced once; not a
   duplicate render. No change made.
 
+### Session 2026-10-18 (Conversation history hiding a long-first-message Conversation, issue #862)
+
+- Q: Issue #862: OMP now writes a `memory_recall` entry (about 8.6 KB) and eager todo/task
+  prelude entries before the first user message, so the Rust Conversation-history listing's old
+  fixed `PREVIEW_SCAN_BYTES = 8 * 1024` window never reaches it and silently skips the whole
+  Conversation. How should the listing find the first user message without reading whole
+  multi-megabyte Conversation files in full? → A: Decided (Skippy, delegated by Stuart,
+  2026-10-18): stream complete JSONL lines (so a record is never parsed out of a byte buffer
+  that can cut it off mid-line) up to a 64 KiB hard cap on total bytes read per file -- generous
+  headroom over the ~11 KB observed in the wild, while remaining far cheaper than reading a
+  14 MB file in full (research.md decision 22). Reading stops the instant the first `role:
+  'user'` message is found, so the common case (first message well inside the cap) is cheaper
+  still. A file whose cap is hit before any user message is found is still listed (its own
+  title, with an empty preview) rather than hidden; only a file that reaches genuine end-of-file
+  within the cap with no user message anywhere is skipped, unchanged from the existing rule.
+- Q: Does finding the title need its own, separately bounded read? → A: No -- `omp://session.md`
+  ("File Format"): OMP physically fixes the title at a 256-byte slot that is always the file's
+  first line, well inside the 64 KiB preview-scan cap either way, so the same single streaming
+  pass reads it for free; no separate read is needed.
+- Q: Does Electron's own identical `PREVIEW_SCAN_BYTES` bug (`src/main/conversations.ts`) need
+  the same fix? → A: No (per the issue's own acceptance criteria): Electron is being retired
+  (epic #797, R13) and gets no further fixes; only the Rust build (`src-tauri`) is fixed here.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -988,6 +1011,21 @@ The developer types a slash command and finds the ones the agent offers. If a se
   while `stages.length < 2`, the same range the chain row renders nothing at all for (FR-068's
   own gate, which also covers a turn with exactly one Stage, where the row id IS already
   defined), so there is never a visible trigger to have toggled either way.
+- **FR-087** (new, 2026-10-18, issue #862, bug: the Rust Conversation history list hid any
+  Conversation whose first user message started past the build's old fixed 8 KB preview-scan
+  window): Listing a Session's Conversations MUST show every Conversation file that has at least
+  one `role: 'user'` message, whatever byte offset that message starts at. Finding it MUST stream
+  complete JSONL lines (never parse a line out of a fixed-size byte buffer that can cut it off
+  mid-record) up to a bounded hard cap on total bytes read per file (64 KiB, Decided, Skippy,
+  delegated by Stuart 2026-10-18; research.md decision 22), so a multi-megabyte Conversation file
+  stays cheap to list; reading MUST stop the instant the first user message is found rather than
+  continuing on to the cap, so the common case is cheaper still. A Conversation whose cap is
+  reached before a user message is found MUST still be listed -- its title (OMP's own
+  fixed-width, always-first-line `type: "title"` slot, well inside the cap) with an empty
+  preview -- rather than being hidden; only a Conversation that reaches real end-of-file within
+  the cap with no user message anywhere is skipped, unchanged from the existing "no user message"
+  rule (data-model.md). Electron (`src/main/conversations.ts`) is unaffected and gets no fix: it
+  is being retired (R13) and keeps its existing fixed-window behaviour.
 
 ### Key Entities
 

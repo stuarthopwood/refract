@@ -104,10 +104,10 @@ Read by scanning `Session.sessionDir` for `*.jsonl` files:
 | `id` | the UUID suffix of the file name |
 | `createdAt` | ISO timestamp prefix of the file name (no file open needed) |
 | `title` | `title` field of the first line of the file, may be empty |
-| `preview` | first user message, read from the first 8 KB of the file, truncated to 120 characters |
+| `preview` | first user message, found by streaming complete JSONL lines up to a 64 KiB hard cap (not a fixed byte window), truncated to 120 characters; empty if the cap is hit before a user message is found (issue #862: OMP's own `memory_recall`/prelude entries can push it well past 8 KB) |
 | `isCurrent` | `file === Session.currentConversation` |
 
-A Conversation's history is loaded by attaching an agent to it and calling `get_messages`, not by parsing the file, so its format stays OMP's business. Files with zero user messages are not listed.
+A Conversation's history is loaded by attaching an agent to it and calling `get_messages`, not by parsing the file, so its format stays OMP's business. A Conversation reaching real end-of-file within the scan cap with no user message anywhere is not listed; one whose cap is hit first (preview empty, title still read) is still listed, never hidden (research.md decision 22).
 
 ## Held in memory
 

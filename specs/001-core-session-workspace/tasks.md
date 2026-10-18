@@ -3783,3 +3783,44 @@ Phase 60 to Phase 61, T288/T289 to T291/T292 (all above) -- no src/src-tauri con
 four doc files (this one, spec.md, research.md, docs/PLAN.md), all additive. **Refs #991** until
 the live check above is actually run against a real built exe and confirms every acceptance
 item; switches to **Closes #991** once it does.
+
+## Phase 64: Bounded Conversation preview/title scan (#862) [US1]
+
+**Goal**: fix the bug where the Conversation history list silently hid any Conversation whose
+first user message landed past the Rust build's old fixed 8 KB preview-scan window (OMP's own
+`memory_recall`/eager-prelude entries now routinely push it there) -- see research.md decision 22
+for the full root cause and the bounded-line-streaming design that replaces the old fixed window.
+
+- [X] T293 `src-tauri/src/ipc/conversations.rs`: `read_conversation_file` redesigned to stream
+  complete JSONL lines (`tokio::io::BufReader::read_line`, never a fixed-size byte buffer that
+  can cut a record off mid-way) up to a new `PREVIEW_SCAN_HARD_CAP_BYTES` (64 KiB) hard cap on
+  total bytes read per file, replacing the old fixed `PREVIEW_SCAN_BYTES` (8 KiB) window and its
+  `read_preview_window` helper entirely. Reading stops the instant the first `role: 'user'`
+  message is found; a file whose cap is hit first still returns its title with `preview: None`
+  (turned into an empty string by `list_conversations`, FR-087) instead of being skipped --
+  `None` is now returned only when real end-of-file is reached within the cap with no user
+  message anywhere, unchanged from the existing rule. `src/shared/model.ts`'s `ConversationInfo.
+  preview` doc comment, `specs/001-core-session-workspace/data-model.md`'s own `preview` row, and
+  `docs/spike/FINDINGS.md` item 11's stale "within the first 8 KB" assumption are all updated to
+  match (FR-087, research.md decision 22).
+- [X] T294 New `scripts/verify-862-conversation-history.mjs`, reusing the existing fake-omp
+  harness and `user-message-time.jsonl` fixture verbatim (no new fixture, AGENTS.md) plus
+  `verify-941-stage-naming-helpers.mjs`'s `buildOmpShim`/`launchBuiltExeWithEnv` and
+  `verify-tauri-session-list-helpers.mjs`'s `addRepository`/`createSessionViaQuickCreate`: seeds
+  two real, hand-built Conversation `.jsonl` files in the Session's own `session_dir` before
+  launch (a normal one, and a long-prelude one whose own prefix bytes are measured and asserted
+  to sit strictly between the old 8 KiB window and the new 64 KiB cap, matching issue #862's own
+  observed shape), then opens the Conversation-history dialog and asserts both rows render with
+  the correct title and preview text. Shim-confirmed guard (fake-omp debug log's own startup pid
+  line) and a fresh-log guard (the debug log lives inside a freshly `mkdtemp`'d directory every
+  run, never a reused path). MUST fail on `origin/main`: there, `list_conversations` silently
+  `continue`s past the long-prelude file, so the row-count assertion reads 1, not 2 -- explained
+  from the code in the script's own header comment, not run against `origin/main` (no build slot
+  granted for this sub-task). **Not exercised by this script**: that a genuinely multi-megabyte
+  Conversation file stays cheap to list -- proven by reading `read_conversation_file`'s own
+  early-break-on-match and hard cap, not by constructing a multi-MB fixture file on disk (recorded
+  honestly in the script's own `notExercised`). Written, not run end-to-end (no build slot
+  granted for this sub-task): `node --check` plus a real `import()` load-check on every helper
+  module it imports, `node scripts/check-indent.mjs` and `node scripts/check-file-size.mjs`
+  clean, `rustfmt --edition 2021 --check src-tauri/src/ipc/conversations.rs` clean.
+
