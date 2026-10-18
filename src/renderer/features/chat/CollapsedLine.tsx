@@ -139,11 +139,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * it rather than flush against the top. */}
       <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
-        // Gate round 4 fix (issue #941, P4, HIGH): `min-w-16` floors the label at 64px --
-        // without it, `min-w-0` (needed so `truncate` can ever engage at all) let the label
-        // shrink all the way to 0px at narrow pane widths (~240px) once the summary/meta/
-        // chevron's own combined width left it no room, clipping the chevron along with it.
-        <span className={cn('min-w-16 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
+        // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` moved OUT of this shared
+        // base class -- every other `CollapsedLine` caller (tool rows, advisory rows, notices)
+        // shared this exact span and was silently widened by a floor only the solo-Stage row
+        // needed. Back to `min-w-0` here (still required so `truncate` can ever engage); the
+        // Stage row passes its own `min-w-16` via `labelClassName`
+        // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
+        <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}
@@ -189,8 +191,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // the separator's own text -- with the summary's own text ending in no whitespace of its
         // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
         // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
-        // removes the extra boundary that caused it.
-        <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
+        // removes the extra boundary that caused it. Gate round 5 fix (issue #941, item 2,
+        // HIGH): `shrink-0` -> `min-w-0 shrink` -- a `shrink-0` meta slot NEVER gives up width,
+        // so at 240-319px the label/chevron absorbed the whole squeeze and the chevron clipped;
+        // the caller's own `meta` content truncates its own roll-up text first instead.
+        <span className="min-w-0 shrink text-xs leading-5 text-muted-foreground tabular-nums">
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not

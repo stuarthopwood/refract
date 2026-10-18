@@ -9,6 +9,8 @@
 import {
   expandRow,
   assertExpandCycleByFinder,
+  clickScrolled,
+  clickByLabelScrolled,
   stageContentSelector,
   stageTriggerSelector,
   STAGE1_TITLE,
@@ -83,7 +85,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   // id FIRST, lowercase "open" -- this call used the wrong, never-matching
   // "Open <id> in Subagents panel" text, so `clickByLabel`'s own default EXACT match
   // (`verify-tauri-cdp.mjs`) found nothing and the click silently no-opped.
-  await cdp.clickByLabel('G923Code, open in Subagents panel');
+  await clickByLabelScrolled(cdp, 'G923Code, open in Subagents panel');
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 2's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const selectedRowText = await cdp.evaluate(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')?.textContent ?? null`);
   if (!selectedRowText || !selectedRowText.includes('G923Code')) {
@@ -91,7 +93,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   } else {
     findings.push(`[${themeName}] Clicking the real "Uses:" G923Code button opened the Subagent panel with G923Code's own row selected.`);
   }
-  await cdp.click(`document.querySelector('[data-panel-close]')`).catch(() => {});
+  await clickScrolled(cdp, `document.querySelector('[data-panel-close]')`).catch(() => {});
   await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagent panel closed` }).catch(() => {});
 
   // Fixture items f/g: Stage 6 (solo) depends on "Story559", resolved to Stage 5 (the LATEST
@@ -106,7 +108,7 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
     findings.push(`[${themeName}] Stage 6 (solo)'s own "Uses:" line resolves Story559 to (Stage 5), the LATEST earlier occurrence, proving the solo path is no longer special-cased.`);
   }
   // Gate round 4 fix (issue #941, item 8, HIGH): same real-label fix as G923Code above.
-  await cdp.clickByLabel('Story559, open in Subagents panel');
+  await clickByLabelScrolled(cdp, 'Story559, open in Subagents panel');
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 6's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   // Gate round 4 fix (issue #941, item 9, HIGH): checks exactly ONE row in the whole panel is
   // selected (not merely "some Story559 row carries 4s", which would silently pass even if
@@ -138,12 +140,12 @@ export async function assertDependencies(cdp, findings, failures, themeName, isF
   // `SubagentPanel` (`activePanelId === 'subagents' && (...)`, not merely a CSS-hidden tab) --
   // proving the selection survives a real remount via the STORE's own `selectedKey`
   // (`subagent-store.ts`), not a component-local `useState` that a remount would have reset.
-  await cdp.clickByLabel('File explorer panel');
+  await clickByLabelScrolled(cdp, 'File explorer panel');
   await cdp.waitFor(`!!document.querySelector('[aria-label="File explorer"]')`, { timeoutMs: 10_000, label: `[${themeName}] File explorer panel opened (tab switch away)` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  await cdp.click(`document.querySelector('#panel-tab-subagents')`);
+  await clickScrolled(cdp, `document.querySelector('#panel-tab-subagents')`);
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagents tab reactivated, panel remounted` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   await assertStory559PanelSelection('After tab-switch-away-and-back remount');
-  await cdp.click(`document.querySelector('[aria-label="Close File explorer panel"]')`).catch(() => {});
-  await cdp.click(`document.querySelector('[data-panel-close]')`).catch(() => {});
+  await clickScrolled(cdp, `document.querySelector('[aria-label="Close File explorer panel"]')`).catch(() => {});
+  await clickScrolled(cdp, `document.querySelector('[data-panel-close]')`).catch(() => {});
   await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagent panel closed` }).catch(() => {});
 }

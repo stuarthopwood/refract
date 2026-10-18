@@ -144,6 +144,45 @@ export function stageTriggerSelector(titleText) {
   return `${titleSelector(titleText)}.closest('[data-slot="collapsible-trigger"]')`;
 }
 
+/** Gate round 5 fix (issue #941, item 9, MEDIUM): `verify-tauri-cdp.mjs`'s own `click()` never
+ * scrolls its target into view before computing the click coordinate -- a target scrolled out
+ * of the viewport (this app's own long transcript, or a device-metrics-overridden narrow/short
+ * viewport, `assertSoloAgentName`'s own 320px/240px passes) would compute a coordinate the
+ * synthetic mouse event lands on whatever (or nothing) is actually visible there instead, not
+ * the intended element. Scoped to these 941 scripts only (not `verify-tauri-cdp.mjs` itself,
+ * which many other already-passing live-check scripts also call unmodified): scrolls the
+ * resolved target to the viewport's own centre and waits one frame for the scroll to settle
+ * before delegating to the real click. A no-op extra `scrollIntoView` call when the target is
+ * already fully in view. */
+export async function clickScrolled(cdp, finderExpr, options) {
+  await cdp.evaluate(`(() => { const el = ${finderExpr}; if (el) el.scrollIntoView({ block: 'center' }); })()`);
+  await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+  await cdp.click(finderExpr, options);
+}
+
+// Mirrors `verify-tauri-cdp.mjs`'s own `clickByLabel`/`clickByText` finder construction exactly
+// (grep-verified), so `clickByLabelScrolled`/`clickByTextScrolled` scroll the SAME element the
+// real click then resolves, never a near-miss built from drifted selector logic.
+function labelFinderExpr(label, { inDialog = false, prefix = false } = {}) {
+  const scope = inDialog ? `document.querySelector('[role="dialog"]')` : 'document.body';
+  return prefix
+    ? `(() => { const root = ${scope}; if (!root) return null; return Array.from(root.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(label)})); })()`
+    : `(() => { const root = ${scope}; if (!root) return null; return root.querySelector('[aria-label=${JSON.stringify(label)}]'); })()`;
+}
+
+export async function clickByLabelScrolled(cdp, label, options) {
+  await clickScrolled(cdp, labelFinderExpr(label, options), options);
+}
+
+function textFinderExpr(text, { inDialog = false, tag = 'button' } = {}) {
+  const scope = inDialog ? `document.querySelector('[role="dialog"]')` : 'document.body';
+  return `(() => { const root = ${scope}; if (!root) return null; return Array.from(root.querySelectorAll('${tag}')).find((el) => el.textContent.trim() === ${JSON.stringify(text)}); })()`;
+}
+
+export async function clickByTextScrolled(cdp, text, options) {
+  await clickScrolled(cdp, textFinderExpr(text, options), options);
+}
+
 /** Gate round 2 fix (item 9): generalized over any trigger-finding JS expression (a Stage's own
  * title-keyed trigger, or the chain row's own `aria-label`-keyed trigger) -- reads the REAL
  * current `aria-expanded` value and only clicks when it is not already `'true'`. Driving the
@@ -153,7 +192,7 @@ export function stageTriggerSelector(titleText) {
  * re-collapse a row the first pass already expanded. */
 export async function expandByFinder(cdp, triggerFinderExpr) {
   const isExpanded = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') === 'true'`);
-  if (!isExpanded) await cdp.click(triggerFinderExpr);
+  if (!isExpanded) await clickScrolled(cdp, triggerFinderExpr);
 }
 
 export async function expandRow(cdp, titleText) {
@@ -236,7 +275,7 @@ export async function assertStageNaming(cdp, findings, failures, themeName) {
  * the Stage's own label AND the agent's name again as `CollapsedLine`'s own `summary` slot,
  * visible in the trigger's `textContent` while still collapsed (summary renders inside the
  * always-mounted trigger, never inside `CollapsibleContent`, so no expand is needed here). */
-export async function assertSoloAgentName(cdp, findings, failures, themeName) {
+export async function assertSoloAgentName(cdp, findings, failures, themeName, notExercised) {
   const noCtxText = await cdp.evaluate(`${stageTriggerSelector(STAGE9_SOLO_NOCTX_TITLE)}?.textContent ?? ''`);
   if (!noCtxText.includes('SoloBare')) {
     failures.push(`[${themeName}] Stage 9 (solo, no context)'s own trigger does not contain its sole agent's name "SoloBare" (got: ${JSON.stringify(noCtxText)}).`);
@@ -267,46 +306,73 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName) {
   } else {
     findings.push(`[${themeName}] Stage 6 (solo, with context)'s own CollapsedLine summary slot shows its sole agent's real name "R8Solo" (never "Story559", which is only Stage 6's own context-derived LABEL text) at a visible width of ${summarySpan.width}px (>0, the #941 gate-round-3 zero-width regression guard).`);
   }
-  // Gate round 4 fix (issue #941, P4, HIGH): resize to a ~320px pane and re-check the same
-  // solo Stage's own summary span, its LABEL span, and the chevron icon -- `CollapsedLine.tsx`'s
-  // P4 fix (the label's own `min-w-16` floor, the fixed-width summary's `shrink` instead of
-  // `shrink-0`, and a genuine `flex-1` spacer before meta) specifically targets this exact
-  // narrow-pane squeeze: before it, the label could shrink all the way to 0px and the chevron
-  // itself could clip once nothing else had any slack left to give.
-  const NARROW_PANE_WIDTH = 320;
+  // Gate round 4 fix (issue #941, P4, HIGH; gate round 5 fix, item 8, MEDIUM): the chat pane
+  // has its own `minSize={360}` floor (`App.tsx:527`) -- narrowing the WINDOW to a given width
+  // does NOT mean the Stage trigger itself ever reaches that width; the previous version
+  // asserted against the REQUESTED window width (320) instead of the trigger's own real
+  // rendered width, which could silently pass or fail for the wrong reason once the pane's own
+  // floor kicked in. This waits two animation frames for layout to settle after each resize,
+  // then measures the trigger's own ACTUAL width and bases every message on THAT value. A
+  // second, narrower 240px window is also attempted; if the trigger's own measured width does
+  // not genuinely shrink further there (the floor holding), that is recorded honestly in
+  // `notExercised` instead of asserting against a width the layout never reached.
+  const measureNarrowTrigger = () => cdp.evaluate(`(() => {
+    const trigger = ${stageTriggerSelector(STAGE6_SOLO_TITLE)};
+    if (!trigger) return null;
+    const label = trigger.querySelector('span.font-medium');
+    const summary = trigger.querySelector('[title="R8Solo"]');
+    const svgs = trigger.querySelectorAll('svg');
+    const chevron = svgs.length > 0 ? svgs[svgs.length - 1] : null;
+    const triggerRect = trigger.getBoundingClientRect();
+    const chevronRect = chevron ? chevron.getBoundingClientRect() : null;
+    return {
+      triggerWidth: triggerRect.width,
+      labelWidth: label ? label.getBoundingClientRect().width : null,
+      summaryWidth: summary ? summary.getBoundingClientRect().width : null,
+      chevronWidth: chevronRect ? chevronRect.width : null,
+      chevronHeight: chevronRect ? chevronRect.height : null,
+      chevronClipped: chevronRect ? chevronRect.right > triggerRect.right + 1 || chevronRect.left < triggerRect.left - 1 : null
+    };
+  })()`);
+  const waitTwoFrames = () => cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const assertAtMeasuredWidth = (narrow, requestedWindowWidth) => {
+    if (!narrow) {
+      failures.push(`[${themeName}] Could not measure Stage 6's own trigger at a ${requestedWindowWidth}px window.`);
+      return;
+    }
+    const w = Math.round(narrow.triggerWidth);
+    if (!(narrow.labelWidth > 0)) {
+      failures.push(`[${themeName}] At a ${requestedWindowWidth}px window (Stage 6's own trigger measured ${w}px wide), the label span has width ${narrow.labelWidth} (expected > 0px -- the label must never shrink all the way to 0px, P4's own regression).`);
+    } else {
+      findings.push(`[${themeName}] At a ${requestedWindowWidth}px window (trigger measured ${w}px wide), Stage 6 (solo)'s own label span keeps a visible width of ${narrow.labelWidth}px.`);
+    }
+    if (!(narrow.summaryWidth > 0)) {
+      failures.push(`[${themeName}] At a ${requestedWindowWidth}px window (trigger measured ${w}px wide), Stage 6 (solo)'s own summary span ("R8Solo") has width ${narrow.summaryWidth} (expected > 0px).`);
+    } else {
+      findings.push(`[${themeName}] At a ${requestedWindowWidth}px window (trigger measured ${w}px wide), Stage 6 (solo)'s own summary span keeps a visible width of ${narrow.summaryWidth}px.`);
+    }
+    if (!(narrow.chevronWidth > 0) || !(narrow.chevronHeight > 0) || narrow.chevronClipped) {
+      failures.push(`[${themeName}] At a ${requestedWindowWidth}px window (trigger measured ${w}px wide), Stage 6's own chevron icon is clipped or has zero size (${JSON.stringify(narrow)}).`);
+    } else {
+      findings.push(`[${themeName}] At a ${requestedWindowWidth}px window (trigger measured ${w}px wide), Stage 6's own chevron icon stays fully visible (${narrow.chevronWidth}x${narrow.chevronHeight}px, not clipped), fully inside the row.`);
+    }
+  };
   try {
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: NARROW_PANE_WIDTH, height: 800, deviceScaleFactor: 1, mobile: false });
-    const narrow = await cdp.evaluate(`(() => {
-      const trigger = ${stageTriggerSelector(STAGE6_SOLO_TITLE)};
-      if (!trigger) return null;
-      const label = trigger.querySelector('span.font-medium');
-      const summary = trigger.querySelector('[title="R8Solo"]');
-      const svgs = trigger.querySelectorAll('svg');
-      const chevron = svgs.length > 0 ? svgs[svgs.length - 1] : null;
-      const triggerRect = trigger.getBoundingClientRect();
-      const chevronRect = chevron ? chevron.getBoundingClientRect() : null;
-      return {
-        labelWidth: label ? label.getBoundingClientRect().width : null,
-        summaryWidth: summary ? summary.getBoundingClientRect().width : null,
-        chevronWidth: chevronRect ? chevronRect.width : null,
-        chevronHeight: chevronRect ? chevronRect.height : null,
-        chevronClipped: chevronRect ? chevronRect.right > triggerRect.right + 1 || chevronRect.left < triggerRect.left - 1 : null
-      };
-    })()`);
-    if (!narrow || !(narrow.labelWidth > 0)) {
-      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own label span has width ${narrow?.labelWidth ?? 'null'} (expected > 0px -- the label must never shrink all the way to 0px, P4's own regression).`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+    await waitTwoFrames();
+    const narrow320 = await measureNarrowTrigger();
+    assertAtMeasuredWidth(narrow320, 320);
+
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 240, height: 800, deviceScaleFactor: 1, mobile: false });
+    await waitTwoFrames();
+    const narrow240 = await measureNarrowTrigger();
+    if (narrow240 && narrow320 && narrow240.triggerWidth < narrow320.triggerWidth - 1) {
+      findings.push(`[${themeName}] A 240px window genuinely narrows Stage 6's own trigger further (${Math.round(narrow240.triggerWidth)}px, was ${Math.round(narrow320.triggerWidth)}px at 320px) -- re-checked at this width.`);
+      assertAtMeasuredWidth(narrow240, 240);
     } else {
-      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own label span keeps a visible width of ${narrow.labelWidth}px.`);
-    }
-    if (!narrow || !(narrow.summaryWidth > 0)) {
-      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own summary span ("R8Solo") has width ${narrow?.summaryWidth ?? 'null'} (expected > 0px).`);
-    } else {
-      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own summary span keeps a visible width of ${narrow.summaryWidth}px.`);
-    }
-    if (!narrow || !(narrow.chevronWidth > 0) || !(narrow.chevronHeight > 0) || narrow.chevronClipped) {
-      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6's own chevron icon is clipped or has zero size (${JSON.stringify(narrow)}).`);
-    } else {
-      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6's own chevron icon stays fully visible (${narrow.chevronWidth}x${narrow.chevronHeight}px, not clipped).`);
+      notExercised.push(
+        `[${themeName}] A 240px-wide Stage 6 trigger was not reached (320px window measured ${narrow320 ? Math.round(narrow320.triggerWidth) : 'unknown'}px, 240px window measured ${narrow240 ? Math.round(narrow240.triggerWidth) : 'unknown'}px) -- the chat pane's own minSize={360} floor (App.tsx:527) appears to hold regardless of the requested window width.`
+      );
     }
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride', {}).catch(() => {});

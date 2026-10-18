@@ -5,7 +5,8 @@
 // `context` itself changing can all flip whether it overflows; `DiffView.tsx`'s own identical
 // pattern). Gate round 2 fix, item 3: the visible text is NEVER `inert` (a screen reader must
 // still read it in full); only a focusable descendant (a link, a footnote backref, a task-list
-// checkbox) whose own TOP edge sits PAST the visible fold is pulled out of the Tab order while
+// checkbox) whose own BOTTOM edge sits PAST the visible fold (minus the fade overlay) is pulled
+// out of the Tab order while
 // collapsed, restored the instant it expands or the fold itself moves. Gate round 2 fix, item
 // 4: the label-column indent is the CALLER's own choice (`className`), never hardcoded here --
 // a one-agent Stage's `CollapsibleContent` already supplies it, so this component must not add
@@ -48,9 +49,11 @@ export function StageContextBrief({ id, context, className }: { id: string; cont
   // this measures -- on mount, on every real layout change the `ResizeObserver` reports, and
   // (via the second effect below) the instant `expanded` itself toggles -- so a reflow that
   // changes which descendants sit past the fold without the overall overflow BOOLEAN changing
-  // can never leave a stale override in place. "Past the fold" is judged by the element's own
-  // TOP edge only (`offsetTop > CAP`), not its bottom: an element straddling the fold boundary
-  // is still at least partially visible, so it stays reachable.
+  // can never leave a stale override in place. "Past the fold" is judged by each descendant's
+  // own BOTTOM edge (via `getBoundingClientRect()`, not `offsetTop` -- wrong inside a Markdown
+  // table, gate round 4 fix item P3) against the cap MINUS the 24px fade overlay, not its top:
+  // an element straddling the fold boundary is still at least partially visible, so it stays
+  // reachable only once its own bottom clears the fade too.
   const measure = React.useCallback(() => {
     const el = contentRef.current
     if (!el) return
@@ -131,7 +134,10 @@ export function StageContextBrief({ id, context, className }: { id: string; cont
           type="button"
           aria-expanded={expanded}
           aria-controls={contentId}
-          className={cn(mutedLinkClassName, 'mt-1 inline-block text-xs text-muted-foreground')}
+          // Gate round 5 fix (issue #941, item 3, MEDIUM): `min-h-6 inline-flex items-center`
+          // -- WCAG 2.5.8's 24px target-size minimum; the previous `inline-block` left this
+          // link-styled toggle at its own text line-height alone, under 24px tall.
+          className={cn(mutedLinkClassName, 'mt-1 min-h-6 inline-flex items-center text-xs text-muted-foreground')}
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? 'Show less' : `Show full brief (${extraLines} more line${extraLines === 1 ? '' : 's'})`}

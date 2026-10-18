@@ -10,6 +10,7 @@
 import {
   expandRow,
   assertExpandCycleByFinder,
+  clickScrolled,
   stageContentSelector,
   stageTriggerSelector,
   STAGE7_TITLE,
@@ -115,7 +116,7 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     findings.push(`[${themeName}] Stage 7's own overflowing code-block region carries tabindex="-1" while collapsed, out of the Tab order.`);
   }
 
-  await cdp.click(briefButtonFinder);
+  await clickScrolled(cdp, briefButtonFinder);
   await cdp.waitFor(`(${briefButtonFinder})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: `[${themeName}] Stage 7's "Show full brief" expanded` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const expanded = await measure();
   if (!expanded) {
@@ -171,7 +172,7 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     }
   }
 
-  await cdp.click(briefButtonFinder);
+  await clickScrolled(cdp, briefButtonFinder);
   await cdp.waitFor(`(${briefButtonFinder})?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: `[${themeName}] Stage 7's "Show less" re-collapsed` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const reCollapsed = await measure();
   if (!reCollapsed) {

@@ -98,7 +98,12 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   // itself has no specific instance (a name-only caller, or nothing selected yet) -- the same
   // ambiguous-match behaviour already accepted elsewhere, never worse.
   const effectiveSelectedKey = useMemo(() => {
-    if (storeSelectedKey) return storeSelectedKey
+    // Gate round 5 fix (issue #941, item 4, LOW): the stored key is used only when a CURRENT
+    // row actually carries it -- a stale key (the agent list regenerated, e.g. a new turn
+    // started, before `resetForNewTurn` cleared the store) would otherwise match no row at
+    // all, silently selecting nothing instead of falling back to the same name-based match
+    // every other ambiguous caller already accepts.
+    if (storeSelectedKey && rows.some((row) => row.node.key === storeSelectedKey)) return storeSelectedKey
     if (!selectedId) return null
     return rows.find((row) => row.node.id === selectedId)?.node.key ?? null
   }, [storeSelectedKey, selectedId, rows])

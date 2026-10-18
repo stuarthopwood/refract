@@ -58,6 +58,9 @@ import {
 import {
   buildOmpShim,
   launchBuiltExeWithEnv,
+  clickScrolled,
+  clickByLabelScrolled,
+  clickByTextScrolled,
   assertStageNaming,
   assertSoloAgentName,
   assertStageMetaRollup,
@@ -178,21 +181,24 @@ async function main() {
     );
     findings.push('Readiness screen green (fake omp, stages-941 scenario).');
 
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+    // Gate round 5 fix (issue #941, item 9, MEDIUM): every real click below scrolls its own
+    // target into view first (`clickScrolled`/`clickByLabelScrolled`/`clickByTextScrolled`,
+    // `verify-tauri-cdp.mjs`'s own `click()` never does) -- a no-op when already in view.
+    await clickScrolled(cdp, `document.querySelector('[data-readiness-primary]')`);
     await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
-    await cdp.click(`document.querySelector('[role="dialog"] input')`);
+    await clickScrolled(cdp, `document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await clickByTextScrolled(cdp, 'Add repository', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Scratch repository added' }
     );
-    await cdp.clickByLabel('New session from a branch in ', { prefix: true });
+    await clickByLabelScrolled(cdp, 'New session from a branch in ', { prefix: true });
     await cdp.waitFor(
       `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
       { timeoutMs: 15_000, label: 'New session dialog open, Create session enabled' }
     );
-    await cdp.clickByText('Create session', { inDialog: true });
+    await clickByTextScrolled(cdp, 'Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
       timeoutMs: 60_000,
@@ -201,7 +207,7 @@ async function main() {
     findings.push('Session created, agent attached (fake omp, stages-941.jsonl scenario).');
 
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
-    await cdp.clickByLabel('Send message');
+    await clickByLabelScrolled(cdp, 'Send message');
 
     // Wait for all ten Stage rows, the solo Stages, and the plain non-Stage tool row to settle:
     // every one of their own `title`-bearing label spans present in the transcript.
@@ -242,12 +248,21 @@ async function main() {
       const isFirstThemePass = themeIndex === 0;
       await switchTheme(cdp, theme.id, theme.name);
       await assertStageNaming(cdp, findings, failures, theme.name);
-      await assertSoloAgentName(cdp, findings, failures, theme.name);
+      await assertSoloAgentName(cdp, findings, failures, theme.name, notExercised);
       await assertStageMetaRollup(cdp, findings, failures, theme.name);
-      await assertGreenFinished(cdp, findings, failures, theme.name);
+      // Gate round 5 fix (items 6/7, HIGH): both expand-cycle "starts collapsed" first-pass
+      // checks now run BEFORE anything else ever expands that same row -- `assertGreenFinished`
+      // below expands Stage 1 (and Stage 5) for its own member-colour check, and
+      // `assertDependencies` expands Stage 7 for its own self-reference check; either one
+      // running FIRST made the later "starts collapsed" assertion a false failure (the row was
+      // already open by the time it ran). `assertDetailsOnExpand`'s own re-expand is a no-op
+      // once `assertGreenFinished` later re-touches the same row (`expandByFinder` only clicks
+      // when not already open); `assertContextBriefOverflow` leaves Stage 7 RE-collapsed at the
+      // end of its own cycle, so `assertDependencies`'s later plain `expandRow` is unaffected.
       await assertDetailsOnExpand(cdp, findings, failures, theme.name, isFirstThemePass);
-      await assertDependencies(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertContextBriefOverflow(cdp, findings, failures, theme.name, isFirstThemePass);
+      await assertGreenFinished(cdp, findings, failures, theme.name);
+      await assertDependencies(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertNarrowViewportOverflow(cdp, findings, failures, theme.name);
       await assertChainRow(cdp, findings, failures, theme.name, isFirstThemePass);
 

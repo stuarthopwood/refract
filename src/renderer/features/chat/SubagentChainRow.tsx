@@ -173,8 +173,10 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // this -- is what gives up space first; the settled "N done"/"N done, M failed" wording
   // already states failed/cancelled/exited, so a bare status word is shown only while running.
   const meta = (
-    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs leading-5 text-muted-foreground">
-      {joinMetaParts([<span key="summary">{summaryText}</span>])}
+    // Gate round 5 fix (issue #941, item 2, HIGH): `shrink-0` -> `min-w-0 shrink` -- this slot
+    // never gave up width at 240-319px, forcing the label/chevron to absorb the whole squeeze.
+    <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 whitespace-nowrap text-xs leading-5 text-muted-foreground">
+      {joinMetaParts([<span key="summary" className="min-w-0 truncate">{summaryText}</span>])}
       {durationMs != null && (
         // Gate round 4 fix (issue #941, P5, MEDIUM): previously inside the `joinMetaParts`
         // array above (`shrink-0`, no hide rule at all), so a multi-agent Stage's own meta slot
@@ -221,7 +223,11 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     <CollapsedLine
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
-      labelClassName={successLabelClass}
+      // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` lives HERE now, not in
+      // `CollapsedLine`'s own shared base class -- every other caller (tool rows, advisory
+      // rows, notices) shares that same label span and was silently widened by a floor only
+      // this Stage row needed.
+      labelClassName={cn('min-w-16', successLabelClass)}
       summary={soloAgentName}
       summaryFixedWidth={soloAgentName !== undefined}
       meta={meta}
@@ -443,10 +449,22 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // of the duration -- gated off for `finished` (decision 14). `aria-hidden` (gate round 2,
   // double-word fix): `triggerAriaLabel` below restates the word and duration once on its own,
   // so the formerly-separate `sr-only` "Took ..." span is dead now and dropped entirely.
+  const statusVisible = status !== 'finished'
   const meta = (
-    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      {status !== 'finished' && SUBAGENT_STATUS_LABEL[status]}
-      {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
+    // Gate round 5 fix (issue #941, item 2, HIGH/MEDIUM): `shrink-0` -> `min-w-0 shrink` (same
+    // 240-319px chevron-clip fix as the Stage row above); the status word and duration used to
+    // run together with NO separator at all when both rendered ("Running1m 20s") -- a real "·"
+    // now joins them, bundled inside the duration's own narrow-hideable span (so hiding the
+    // duration at `@max-[20rem]` -- matching the Stage row's own threshold -- never leaves a
+    // dangling leading "·" with nothing visible before it).
+    <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 text-xs text-muted-foreground">
+      {statusVisible && <span className="min-w-0 truncate">{SUBAGENT_STATUS_LABEL[status]}</span>}
+      {durationMs != null && (
+        <span className="@max-[20rem]:hidden">
+          {statusVisible && <span> · </span>}
+          <span className="tabular-nums">{formatElapsed(durationMs)}</span>
+        </span>
+      )}
     </span>
   )
 
