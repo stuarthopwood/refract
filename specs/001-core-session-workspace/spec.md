@@ -375,6 +375,57 @@
   wrapping, Settings text, and the suspected duplicate render) are untouched by this story and
   remain open on the issue.
 
+### Session 2026-10-18 (change-count colour and reasoning gauge)
+
+- Q: Issue #925 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body,
+  no open questions left): wherever a change-count stat ("N files changed +A -D") shows,
+  additions should read green and deletions red, with a zero count staying muted. Which
+  surfaces, and new tokens or reused ones? → A: Three surfaces (the composer status line's
+  Changes readout, the Session details card's identical diff line, and the Pull requests
+  Changes tab, including a per-file header issue #919 was meant to add but never shipped) get
+  dedicated `--diff-added`/`--diff-removed` tokens, reusing `DiffView.tsx`'s own insert/delete
+  hue so the counts match the diff view exactly; a zero count (either `+0` or `-0`) stays muted
+  in every case.
+- Q: Does this reopen issue #570's "done is neutral on tool rows" rule -- `toolRowLabels.tsx`'s
+  own `callMeta` deliberately dropped colour from an `edit` call's own "+N −M" row stat for
+  exactly that reason (PR #950 gate round 1, ui-architect-v3 finding H5) -- and is a Pull
+  requests list ROW (as opposed to the Changes TAB) in scope? → A: Decided (Skippy, delegated by
+  Stuart 2026-10-18, ui-architect-v3 roundtable): no to both. #925's own grill never reopened
+  #570's tool-row rule, and colouring a tool call's own edit stat would re-litigate a closed,
+  previously-gated decision; there is no Pull requests list row showing a change count today,
+  only the Changes tab, which is in scope.
+- Q: `--diff-added`/`--diff-removed` -- a new, independently-tunable hue, or an alias? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3 roundtable): a layer-3
+  component-token alias of the SAME `--state-working`/`--destructive` values
+  `DiffView.tsx`/`diff-view.css` already colour the diff gutter and its own expanded-body stat
+  with (issue #630) -- never a second hue, matching the #550 "do not create a second set" rule
+  the existing `--severity-success`/`--severity-error` roles already follow the same way.
+- Q: Issue #919 (open, never implemented: `ChangesTab.tsx`'s own per-file diff header has no
+  +/- counts at all, a #568 acceptance-criterion gap) -- #925's own grill already folds "the
+  per-file header #919 adds" into its own scope. Build it now, or defer #925's own colouring of
+  that surface until #919 ships separately? → A: Decided (Skippy, delegated by Stuart
+  2026-10-18): build it now, as part of this same change -- `DiffViewFromPatch`'s header gains
+  the `additions`/`deletions` props the issue's own "Suggested fix" names, coloured the same way
+  as every other surface; #919 closes alongside #925 rather than staying open with nothing left
+  to do.
+- Q: Issue #924 (Stuart's own `grill-with-docs` session, 2026-10-16, resolved in the issue body):
+  the Reasoning picker's and the Session details card's gauge icon is a fixed glyph regardless
+  of the Session's actual reasoning level. What should move, and how is `inherit` (or no reported
+  level at all) drawn? → A: A custom inline SVG needle sweeping across 7 even steps (`off` far
+  left, `medium` upright, `max` far right) reusing lucide's own `gauge` arc in its stroke style;
+  `inherit` draws at "the resolved level omp reports", which in practice is always `medium`'s own
+  centred angle -- `Session.lastThinkingLevel` (the only field either caller reads) is already
+  the model's resolved value by the time `get_state` echoes it back (`ipc-model.ts`'s own
+  comment: OMP resolves `inherit` before it is ever reported), so no second "resolved level"
+  field exists to read separately; a Session with no level reported at all falls back to the
+  identical centred angle.
+- Q: Is a single shared angle-mapping function and one SVG viewBox, reused at both the picker's
+  `size-3` and the card's `size-3.5`, sharp enough at 12px to tell `low` from `minimal` or `high`
+  from `medium`? → A: Decided (Skippy, delegated by Stuart 2026-10-18, ui-architect-v3
+  roundtable): yes -- one function, one viewBox; the icon is decorative (`aria-hidden`) in both
+  places, and the level itself is already in the trigger's own visible and accessible text, so
+  the icon is never the sole way to read the level.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -642,6 +693,45 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-073** (new, 2026-10-18, issue #554, ui-architect-v3 roundtable decision record): Settings, Appearance MUST offer a "Chat width" choice of Full (default) or Reading column, applying to the transcript only (never the message box, the status line, or any other chat-pane chrome). Full MUST leave the transcript's own column unconstrained, filling the pane; Reading column MUST cap it at 64rem, centred, with wider side padding as the chat pane's own container width (not the window) grows past 40rem/48rem/64rem than Full's own padding (gate round 2 fix M1: a Tailwind v4 container query against the pane's `[container-type:size]` ancestor, not a window media query). The cap is a maximum width, not a minimum: a pane narrower than 64rem (including a Split pane at or near its 360px minimum) MUST show the column simply filling the available width with no horizontal scrolling, never a special-cased breakpoint. The choice MUST be a keyboard-operable, live-previewed control (arrow keys/Home/End move the preview immediately, matching the Theme picker's own interaction model, FR-002/FR-003) committed only by Save, reverted by Cancel, Escape, or navigating away without saving, the same Save/Cancel model FR-004 (spec 007) already gives Theme. The brand watermark (spec 012 FR-001/FR-006) and the scroll-to-end button MUST stay anchored to the full reading area regardless of which width is chosen.
 - **FR-074** (new, 2026-10-17, issue #947, decided as delegated while Stuart was away; renumbered from a provisional FR-073 once #966/#554 landed the real FR-073 on `origin/main` first): Typing `/` or further text after it MUST rank every listed command (FR-032) by how well it matches what has been typed so far, not only by whether its name starts with it: an exact match first, then a prefix match, then a match starting right after `-`, `_`, `:` or a space, then a substring match anywhere in the name, then a subsequence match (the typed letters appearing in order with gaps); two commands tied on the same tier MUST keep the order they would otherwise be listed in. A skill command (`skill:<name>`) MUST match on its name with or without the `skill:` prefix, so a skill reachable only by its own name (for example `code-review`) is found without typing the prefix, and typing `skill` alone MUST list every skill. A command's description MUST also be searched, but only for a match starting right after a word boundary or anywhere as a substring (never a subsequence match, amended gate round 1: a subsequence hit against a whole prose sentence barely narrows anything); a description match, with no match in the name or any alias, MUST rank below every command with a name match. The characters of the name that were matched MUST be shown in a heavier weight than the rest of the name, without changing the option's own accessible name, and the shown-versus-total result count MUST be announced to assistive technology, debounced while typing.
 - **FR-075** (new, 2026-10-17, issue #938 item 1, gate follow-up from PR #923/#917; renumbered from a provisional FR-074 for the same reason as FR-074 above): Choosing a listed command that has one or more verified subcommands (FR-032) MUST NOT run the bare command immediately; the menu MUST instead show that command's own verified subcommands as a second step -- with `status` listed first when nothing has been typed for it yet, otherwise ranked as FR-074 describes -- and choosing one of those completes the full `name subcommand` invocation. Decided (Skippy, delegated by Stuart 2026-10-18): the subcommand step's own first row MUST always be "Run /<cmd>", which sends the bare command at once regardless of how it is activated (click, Enter, or Tab), restoring the pre-FR-075 "Enter, Enter" path deliberately instead of blindly; separately, when the typed subcommand text is an EXACT, case-insensitive match for one of the listed subcommands, Enter completes AND sends that full invocation at once, while Tab on the same exact match still only completes the text (no regression for a bare command with no subcommands, e.g. `/dump`, `/effort`, `/prewalk`, which are unaffected and still run on their own Enter/Tab exactly as before).
+- **FR-076** (new, 2026-10-18, issue #925, ui-architect-v3 roundtable decision record; renumbered
+  from a provisional FR-073, then FR-074, once #966/#554 and #954/#947 each merged first and
+  claimed those numbers on `origin/main` in turn; amends
+  spec 003-pull-request-management FR-009/FR-011 and spec 004-session-readout FR-002's own two
+  surfaces, folding in issue #919): Wherever a change-count stat ("N files changed +A -D")
+  renders -- the composer status line's Changes readout (spec 004 FR-002), the Session details
+  card's identical diff line, the Pull requests Changes tab's own aggregate line (spec 003
+  FR-009), its own per-file diff header (`DiffViewFromPatch`, issue #919: never shipped until
+  this issue folded it in), and the chat transcript's own expanded `DiffView` header (gate round
+  1, M1, Decided, Skippy, delegated by Stuart 2026-10-18: this header used its own raw
+  `text-state-working`/`text-destructive` spans before this amendment, a second colouring copy
+  that could drift from the rule below) -- the `+N` MUST take the diff view's own green hue once
+  N is strictly positive, the `-M` MUST take its own red hue once M is strictly positive, and
+  either figure MUST stay muted at exactly zero (a `-0` MUST NOT read as an error). Both hues are
+  dedicated `--diff-added`/`--diff-removed` component tokens (`globals.css`) that alias the SAME
+  `--state-working`/`--destructive` values `DiffView.tsx`'s own insert/delete gutter already
+  colours with (issue #630), never a second, independently-tunable hue; every surface above
+  renders through one shared `DiffStatCounts` component, including its own minus glyph (ASCII
+  `-`, never the Unicode minus sign the chat header used to draw), so no two surfaces can phrase
+  or colour the same figure a different way. The leading +/- glyph remains the non-colour cue in
+  every case (WCAG 1.4.1). A tool call's own edit stat (`ToolRow.tsx`/`toolRowLabels.tsx`'s
+  `callMeta`) and any Pull requests list row are explicitly OUT of this requirement's scope:
+  colouring the former would reopen issue #570 decision 1/3 ("done is neutral on tool rows"),
+  confirmed by a ui-architect-v3 ruling not to apply here, and no list row shows a change count
+  today.
+- **FR-077** (new, 2026-10-18, issue #924; renumbered from a provisional FR-074, then FR-075, the
+  same way; amends FR-064's Reasoning picker trigger icon and
+  this card's own identical thinking-level icon): The Reasoning picker's trigger icon (FR-064)
+  and the Session details card's own thinking-level icon MUST reflect the Session's current
+  reasoning level as a gauge needle rather than a fixed glyph: a custom inline SVG reusing
+  lucide's own `gauge` arc and stroke style, with the needle drawn at one of 7 even steps across
+  that arc -- `off` at its own left tip, `medium` upright (straight up), `max` at its own right
+  tip, `minimal`/`low`/`high`/`xhigh` falling evenly between. `inherit`, and a Session with no
+  reasoning level reported yet, both draw the same centred, upright needle as `medium` -- no
+  field exists, separate from the last-known value FR-064 already reads, to show "the resolved
+  level omp reports" for `inherit` specifically. The icon stays decorative (`aria-hidden`) and
+  uncoloured in both places, unchanged from FR-064's own rule; the status line's context-usage
+  readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
+  reasoning.
 
 ### Key Entities
 
