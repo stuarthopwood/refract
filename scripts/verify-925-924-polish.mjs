@@ -310,10 +310,22 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-00-details-card-zero.png'));
 
     // ---- edit the tracked file inside the REAL worktree, then a real, local, token-free
-    // "New conversation" click fires the same schedule_readout_update a real turn would. ----
+    // "New conversation" click fires the same schedule_readout_update a real turn would. The
+    // Session may still be attaching (status not yet 'idle'/'stopped') this soon after
+    // `createSessionViaQuickCreate`, during which `ConversationSwitcher.tsx`'s own button is
+    // `aria-disabled` with `aria-disabled:pointer-events-none` -- a coordinate-based
+    // `Input.dispatchMouseEvent` click at that point is real Chromium hit-testing, so it is
+    // silently swallowed with no error (never reaches the element at all), which is exactly what
+    // a bare `clickByText` here produced: no exception, just a 20s timeout on the chip below.
+    // Wait for the button's own enabled state first, the same idiom as the Readiness button
+    // above. ----
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     editTrackedFileForDiff(worktreePath);
     findings.push(`Edited the tracked file inside the real worktree (${worktreePath}): a real addition and deletion against HEAD.`);
+    await cdp.waitFor(
+      `(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'New conversation'); return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`,
+      { timeoutMs: 20_000, label: 'New conversation button enabled (Session finished attaching)' }
+    );
     await cdp.clickByText('New conversation');
     await cdp.waitFor(
       `(() => { const el = ${CHANGES_CHIP_CONTAINER}; return !!el && /\\+3 -1/.test(el.textContent); })()`,
