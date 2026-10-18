@@ -20,7 +20,8 @@ import { cn } from '@/lib/utils'
 import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
-import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
+import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
+import { useSlashMenuCompletion } from './useSlashMenuCompletion'
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
@@ -267,9 +268,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const notStarted = status === 'stopped' && stopReason === 'not-started'
   const disabled = status === 'stopped' && !notStarted
 
-  const slashQuery = parseSlashQuery(text)
-  const slashMatches = slashQuery !== null ? filterSlashCommands(slashQuery, commands) : EMPTY_COMMANDS
-  const showSlashMenu = slashQuery !== null && !slashDismissed
+  const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
+    sessionId,
+    text,
+    commands,
+    slashDismissed,
+    setSlashDismissed,
+    clearGhostState,
+    textChips: attachments.textChips,
+    announceChipRemoval
+  })
   // `slashActiveIndex` is reset to 0 by the post-commit effect below, but for the one commit in
   // between a shorter filtered list and that effect running, it can still reference a row past
   // the end -- clamp at render so `aria-activedescendant` and the highlighted option never
@@ -425,11 +433,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   // The active row resets whenever the typed query changes, so a stale index from a longer list
-  // never survives into a shorter, filtered one.
-  useEffect(() => {
+  // never survives into a shorter, filtered one. Gate round 1 fix (Low): `useLayoutEffect`, not
+  // `useEffect` -- the plain-`useEffect` version could still commit one paint with the OLD
+  // active index against the NEW (shorter) list before this ran, visibly highlighting the wrong
+  // row for a frame.
+  useLayoutEffect(() => {
     setSlashActiveIndex(0)
-  }, [slashQuery])
-
+  }, [slashMenuKey])
   // Ctrl+Shift+X stops the running turn while this pane is mounted AND focused (docs/DESIGN.md
   // "Keyboard"; spec 005 FR-010: acts only on the focused/owning pane while a split is open).
   useEffect(() => {
@@ -446,13 +456,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  async function handleSend() {
+  /** `overrideText` (issue #938 item 1): a just-completed "Run /<cmd>" or exact-subcommand
+   * selection must send THAT text at once -- `text` is this render's stale closure value until
+   * the store write it just made applies on a later render. */
+  async function handleSend(overrideText?: string) {
     // PR #723 gate round 1 fix (Code1 Medium): refuses while a background path/drop image read
     // for this session is still in flight (`pendingAttachmentReads`, draft-store.ts's own doc
     // comment) -- otherwise Enter mid-read sent the message WITHOUT the image (which then landed
     // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
     if (disabled || starting || pendingAttachmentReads > 0) return
-    const draftText = text
+    const draftText = overrideText ?? text
     if (!draftText.trim()) return
     // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
@@ -648,25 +661,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     clearGhostState()
   }
 
-  /** Enter or Tab on a highlighted slash command (FR-032): fills the box with `/name ` so the
-   * box no longer parses as a bare slash query, which closes the menu without extra state. */
-  function completeSlashCommand(command: SlashCommand) {
-    clearGhostState() // bypasses the normal onChange path too (#358/#359 remediation)
-    const nextText = `/${command.name} `
-    useDraftStore.getState().setText(sessionId, nextText)
-    setSlashDismissed(false)
-    // Medium remediation (test-reviewer): this also bypasses onChange's own `pruneDanglingChips`
-    // call the same way Enter-send and Esc-clear do -- without this a chip whose label no longer
-    // appears in the draft stays pending indefinitely, and a stale pending label can wrongly count
-    // as "already used" when a later paste tries to disambiguate against it (compounding the
-    // Critical chip-collision remediation above).
-    const prunedChips = pruneDanglingChips(nextText, attachments.textChips)
-    if (prunedChips.length !== attachments.textChips.length) {
-      announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
-      useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
-    }
-  }
-
   /** Sends `predictWordFeedback` for whatever suggestion is currently shown, at most once per
    * shown-then-abandoned suggestion (FR-058), then clears it. A no-op when nothing is shown. */
   function dismissGhost(accepted: boolean) {
@@ -783,11 +777,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         setSlashActiveIndex((index) => Math.max(index - 1, 0))
         return
       }
-      if ((event.key === 'Enter' || event.key === 'Tab') && slashMatches.length > 0) {
-        event.preventDefault()
-        const command = slashMatches[Math.min(slashActiveIndex, slashMatches.length - 1)]
-        if (command) completeSlashCommand(command)
-        return
+      if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing) {
+        const outcome = handleSlashMenuKey(event.key, event.shiftKey, slashActiveIndex)
+        if (outcome !== 'unhandled') {
+          event.preventDefault()
+          if (outcome) void handleSend(outcome.sendText)
+          return
+        }
+        // 'unhandled' (an empty list, or Shift+Tab, gate round 1 Low): falls through so Tab's
+        // own ghost-suggestion/focus-movement handling further below still runs for this key.
       }
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -836,7 +834,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       setAnnouncedSuggestion(null)
       return
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void handleSend()
       return
@@ -1301,8 +1299,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {placeholder}
         </span>
       )}
-      <div role="status" aria-live="polite" className="sr-only">
-        {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
+      <div data-slot="slash-menu-announcement" role="status" aria-live="polite" className="sr-only">
+        {slashAnnouncement}
       </div>
       {/* Accessibility remediation (High): announces a chip/image being created or a chip being
           silently dropped (`announceChipRemoval`, `handlePaste`) -- separate from the slash-menu
@@ -1377,7 +1375,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               id={slashMenuId}
               commands={slashMatches}
               activeIndex={clampedSlashActiveIndex}
-              onSelect={completeSlashCommand}
+              {...slashMenuViewProps}
+              onSelect={(command, isRunBare) => {
+                const result = handleSlashMenuSelect(command, { runBare: isRunBare })
+                if (result) void handleSend(result.sendText)
+              }}
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
@@ -1389,7 +1391,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             aria-expanded={showSlashMenu && slashMatches.length > 0}
             aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
             aria-activedescendant={
-              showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
+              showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : undefined
             }
             aria-describedby={describedByIds}
             value={text}
