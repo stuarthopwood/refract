@@ -18,17 +18,10 @@ export const THEMES = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
-// The joke-stage kinds (SessionStartNotice.tsx's own `isJokeStage`) and the plain-text kinds,
-// each with a `showControls` kind mixed in so Keep waiting/Cancel reachability gets checked too.
-export const JOKE_STAGES = [
-  { kind: 'waiting', elapsedMs: 0 },
-  { kind: 'prompt', elapsedMs: 15_000 },
-  { kind: 'extended', elapsedMs: 45_000 }
-];
-export const PLAIN_STAGES = [
-  { kind: 'queued', elapsedMs: 0 },
-  { kind: 'memory-deferred', elapsedMs: 0 }
-];
+// Button-text groups used to assert Keep waiting/Cancel reachability once each kind is reached
+// for real (`isJokeStage`'s own grouping in SessionStartNotice.tsx): `prompt`/`extended` show
+// both; `waiting` shows neither (no decision to make yet, nothing to cancel being offered).
+export const PROMPT_STAGE_BUTTONS = ['Keep waiting', 'Cancel'];
 
 // The sizing rule under test (SessionStartNotice.tsx's own `@min-[40rem]`): below 40rem (640px)
 // of container width the compact sizes apply (`text-xl`/`text-[40px]`); at or above it the large
@@ -110,15 +103,64 @@ export async function focusLastTabbableOrSelf(cdp, regionExpr) {
   })()`);
 }
 
-export async function setStartProgress(cdp, sessionId, startProgress) {
-  const value = startProgress === undefined ? 'undefined' : JSON.stringify(startProgress);
-  const ok = await cdp.evaluate(`(() => {
-    const store = window.__refractStores.sessions;
-    const sessions = store.getState().sessions.map((s) => s.id === ${JSON.stringify(sessionId)} ? { ...s, startProgress: ${value} } : s);
-    store.setState({ sessions });
-    return true;
+/** Real production path (gate-fix, 2026-10-18 build-slot run: `window.__refractStores` is
+ *  DEV-only, per `verify-tauri-scratch-helpers.mjs`'s own documented gotcha -- a `tauri build
+ *  --debug` still runs `vite build` in PRODUCTION mode, so that global never exists against the
+ *  exe this script actually launches; every store-injection call here failed with "Cannot read
+ *  properties of undefined (reading 'sessions')" on the very first use). `window.refract.
+ *  sessions.list()` is the same real, production IPC bridge `verify-557`/`verify-564`/
+ *  `verify-tauri-560`/`verify-rm-live-check` etc. already use to read live Session state. */
+export async function readSessionSummary(cdp, sessionId) {
+  return cdp.evaluate(
+    `window.refract.sessions.list().then((r) => r.ok ? (r.value.find((s) => s.id === ${JSON.stringify(sessionId)}) ?? null) : null)`
+  );
+}
+
+/** Polls the REAL `startProgress.kind` (set by the Rust start-queue's own timers/IPC handlers,
+ *  never written by this script) until it matches `kind`, or throws with the last-seen value. */
+export async function waitForStartProgressKind(cdp, sessionId, kind, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  while (Date.now() < deadline) {
+    const session = await readSessionSummary(cdp, sessionId);
+    last = session?.startProgress ?? null;
+    if (last?.kind === kind) return last;
+    await sleep(150);
+  }
+  throw new Error(`waitForStartProgressKind(${sessionId}, ${kind}): timed out after ${timeoutMs}ms, last startProgress was ${JSON.stringify(last)}`);
+}
+
+/** Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2) on a Session row's
+ *  own open button (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and exact
+ *  modifier combination `onClick`'s own `event.ctrlKey` branch checks, which calls the real
+ *  `openInSplit(session.id)` -- not a direct store call (same production path a user's own
+ *  Ctrl+click takes). */
+export async function ctrlClickSessionRow(cdp, sessionId) {
+  const rect = await cdp.evaluate(`(() => {
+    const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   })()`);
-  if (!ok) throw new Error(`setStartProgress(${sessionId}): store update did not return true`);
+  if (!rect) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
+}
+
+/** A real `stopAgent` + `recover` round trip (`window.refract.sessions.*`, the same bridge
+ *  methods ChatPane.tsx's own Stop/Retry buttons call) -- re-enters the REAL start-queue flow a
+ *  second time on a Session that already has real history, so `waiting`/`prompt`/`extended` can
+ *  be observed on a Session this script already proved `hasHistory` for. Safe against the
+ *  restarted process's own fresh `get_state` reporting `messageCount:0` (every fixture's tape
+ *  replays from its own line 1 on each new child process): `sync_from_state.rs` only ever
+ *  PATCHES `current_conversation` when `message_count > 0`, never clears it, so the Session's
+ *  real history persists across this restart untouched (confirmed by reading that guard, not
+ *  assumed). */
+export async function restartAgent(cdp, sessionId) {
+  const stopped = await cdp.evaluate(`window.refract.sessions.stopAgent(${JSON.stringify(sessionId)})`);
+  if (!stopped?.ok) throw new Error(`restartAgent(${sessionId}): stopAgent failed: ${JSON.stringify(stopped)}`);
+  const recovered = await cdp.evaluate(`window.refract.sessions.recover(${JSON.stringify(sessionId)})`);
+  if (!recovered?.ok) throw new Error(`restartAgent(${sessionId}): recover failed: ${JSON.stringify(recovered)}`);
 }
 
 /** Generic version of `waitForRegionOpacity` for an arbitrary selector expression (the overlay's
