@@ -119,7 +119,15 @@ async function assertPanelStructure(cdp, findings, failures, themeName) {
   const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
   const rows = await cdp.evaluate(`
     Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]')).map((el) => {
-      const labelSpan = el.querySelector('span.min-w-0.flex-1.truncate');
+      // Live-run fix (falsified script-vs-product): cn() (tailwind-merge-style, src/renderer/
+      // lib/utils.ts) correctly drops min-w-0 from a Stage header's own label span once
+      // min-w-16 is ALSO passed (same min-w conflict group, last one wins by design -- a
+      // Stage header's label genuinely never carries min-w-0 in the real DOM, confirmed with a
+      // throwaway cn('min-w-0 flex-1 truncate', 'min-w-16', ...) call against the real config:
+      // returns 'flex-1 truncate min-w-16 ...', no min-w-0). '.flex-1.truncate' alone is
+      // unambiguous within one treeitem (the only other classed spans are the rollup slot,
+      // 'shrink truncate' -- no flex-1 -- and the Uses line, neither flex-1 nor truncate).
+      const labelSpan = el.querySelector('span.flex-1.truncate');
       const bg = (() => { let node = el; while (node) { const bgc = getComputedStyle(node).backgroundColor; if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent') return bgc; node = node.parentElement; } return getComputedStyle(document.body).backgroundColor; })();
       return {
         level: el.getAttribute('aria-level'),
