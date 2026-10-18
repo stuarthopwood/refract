@@ -1,51 +1,49 @@
 #!/usr/bin/env node
-// Live CDP check for issue #672 (follow-up to #618, shipped and closed): one centred Session
-// start notice for every Session, larger and in the normal foreground colour, the transcript
-// dimmed behind it for a Session that already has history. Modelled on
-// `verify-947-938-slash-menu.mjs`'s own structure and isolation posture; the fake-omp launch
-// (env vars only, no PATH shim) follows `verify-563-subagent-stage.mjs`/`verify-556-zero-box.mjs`'s
-// own direct `launchViaJobObject` pattern, since the shared `launchBuiltExe` in
-// `verify-tauri-scratch-helpers.mjs` supports only a real-omp launch.
+// Live CDP check for issue #672 (follow-up to #618, shipped and closed): one centred Session start
+// notice for every Session, larger and in the normal foreground colour, the transcript dimmed
+// behind it for a Session that already has history. Modelled on `verify-947-938-slash-menu.mjs`'s
+// own structure; the fake-omp launch (env vars only, no PATH shim) follows
+// `verify-563-subagent-stage.mjs`'s own `launchViaJobObject` pattern (the shared `launchBuiltExe`
+// in `verify-tauri-scratch-helpers.mjs` supports only a real-omp launch).
 //
-// REWRITE (gate-fix, 2026-10-18 build-slot run): the FIRST version of this script drove every
-// `startProgress.kind` by writing directly into `window.__refractStores` (a dev-only CDP
-// injection seam). That global does not exist against the exe this script actually launches --
-// `tauri build --debug` still runs `vite build` in PRODUCTION mode (`import.meta.env.DEV` is
-// false), exactly the gotcha `verify-tauri-scratch-helpers.mjs`'s own `launchBuiltExe` doc
-// comment already records for a different store -- so every call failed outright on first use
-// ("Cannot read properties of undefined (reading 'sessions')"), before a single finding was
-// recorded. This version drives every `startProgress.kind` through REAL production paths only:
+// REWRITE (gate-fix, 2026-10-18 build-slot run): the FIRST version drove every
+// `startProgress.kind` by writing into `window.__refractStores` (a dev-only CDP injection
+// seam). That global does not exist against the exe this script launches -- `tauri build
+// --debug` still runs `vite build` in PRODUCTION mode, the same gotcha
+// `verify-tauri-scratch-helpers.mjs`'s own `launchBuiltExe` doc comment records for a
+// different store -- every call failed outright on first use. This version drives every
+// `startProgress.kind` through REAL production paths only:
 //   - `waiting`/`prompt`/`extended`: the Rust start-queue's OWN real timers
 //     (`READY_PROMPT_AFTER_MS`=60s, `src-tauri/src/omp/process.rs`), made observable on a
 //     human timescale via a new, generic `REFRACT_FAKE_OMP_READY_DELAY_MS` knob on the shared
 //     `verify-tauri-fake-omp.mjs` harness (delays the fake `omp`'s own first frame; does NOT
 //     add a new `.jsonl` fixture -- AGENTS.md says not to, and `verify-563-subagent-stage.mjs`'s
 //     own header comment already establishes reusing existing fixtures over adding one).
-//   - Session id/name/`startProgress`/`currentConversation`: `window.refract.sessions.list()`,
-//     the same real IPC bridge `verify-557`/`verify-564`/`verify-tauri-560`/
-//     `verify-rm-live-check.mjs` etc. already read live Session state through.
+//   - Session id/name/`currentConversation`: `window.refract.sessions.list()`, the same real
+//     IPC bridge `verify-557`/`verify-564`/`verify-tauri-560` etc. already read live Session
+//     state through. `startProgress` is NOT included in that response at all (`session/agent/
+//     mod.rs`: "summary_fields (registry-only sessions.list rows) deliberately does not call
+//     this") -- only ever pushed via the live `session:status` event (renderer store only,
+//     never fetched back out through this IPC method). Read from the DOM instead
+//     (`readVisibleStartKind`): the component renders faithfully from that same live store.
 //   - A fresh start on an already-ready Session: a real `stopAgent` + `recover` round trip (the
-//     same bridge methods ChatPane.tsx's own Stop/Retry buttons call), safe against the
-//     restarted tape's own fresh `get_state{messageCount:0}` because `sync_from_state.rs` only
-//     ever PATCHES `current_conversation` when `message_count > 0` (read directly, not assumed)
-//     -- real history built earlier survives the restart untouched.
+//     same bridge methods ChatPane.tsx's own Stop/Retry buttons call), fired without awaiting
+//     its own resolution (`recover()`'s Promise does not settle until the whole start finishes),
+//     safe against the restarted tape's own fresh `get_state{messageCount:0}` because
+//     `sync_from_state.rs` only ever PATCHES `current_conversation` when `message_count > 0`
+//     (read directly, not assumed) -- real history built earlier survives the restart untouched.
 //   - Split pane: a real Ctrl+click on the OTHER Session's own row (`[data-session-open]`,
 //     `SessionRow.tsx`'s own `onClick` branch), not a direct `useSplitStore` call.
-// `queued`/`memory-deferred` (issue #512, pre-existing, unchanged by #672) are intentionally not
-// exercised here -- see the `notExercised` entry below for why.
+//   - `queued`/`memory-deferred` (issue #512, pre-existing, unchanged by #672): exercised for
+//     real too (launch 2) -- a 2nd Session defers behind a 1st still-spawned one
+//     (`REFRACT_FORCE_LOW_MEMORY=1`, `start_queue.rs:387`), a 3rd then queues behind both.
 //
-// This costs real wall-clock time the synthetic version didn't: one dedicated "long" launch
-// waits out the genuine 60s `READY_PROMPT_AFTER_MS` threshold twice (once to build real history,
-// once more to reach `prompt` on the restarted Session) -- around 2-3 minutes added, entirely
-// spent waiting on the SAME timers the shipped code actually runs on, not a fixed sleep guessed
-// to "probably be enough".
-//
+// This costs real wall-clock time the synthetic version didn't (~5-6 minutes): the real 60s
+// `READY_PROMPT_AFTER_MS`/180s `READY_CEILING_MS` timers are waited out, not a guessed sleep.
 // Gate round 1 (Main, A11y/UI/Test FAIL, kept from the original version): opacity reads poll
-// with a timeout instead of a single read; the dimmed transcript is proven to stay genuinely
-// scrollable (a real wheel event, forced scrollable via a temporary short viewport override) and
-// to restore full opacity on focus; the split-pane and short-window cases are FORCED via
-// `Emulation.setDeviceMetricsOverride` rather than only measuring whatever width/height this run
-// happens to get; a failed `theme.set` is a failure, not `notExercised`.
+// with a timeout, not a single read; the dimmed transcript stays scrollable (a real wheel
+// event) and restores full opacity on focus; split-pane/short-window are FORCED via
+// `Emulation.setDeviceMetricsOverride`; a failed `theme.set` is a failure, not `notExercised`.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -120,11 +118,10 @@ async function main() {
 
     // Gate-fix (confirmed live, bg_791/bg_794 runs): `quickCreateSessionAndWaitReady` blocks
     // until the composer is enabled -- by the time it returned, Session A had ALREADY reached
-    // `ready` and `startProgress` had already cleared to `null`, so the very next
+    // `ready` and `startProgress` had already cleared, so the very next
     // `waitForStartProgressKind(..., 'waiting', ...)` below timed out waiting for a state that
-    // had already come and gone. `quickCreateSessionId` (non-blocking, same as Launch 2's own
-    // C/D/E) lets this section observe 'waiting' WHILE it is still happening; the explicit
-    // "notice unmounts, ready" wait further down is still the real ready-wait for this Session.
+    // had come and gone. `quickCreateSessionId` (non-blocking, same as Launch 2's C/D/E) lets
+    // this observe 'waiting' WHILE it happens; "notice unmounts, ready" below is the real wait.
     const sessionA = await quickCreateSessionId(cdp1, 'brief/A (1st start)');
     findings.push(`Session A created (id ${sessionA.id}, name "${sessionA.name}"), brand-new (no history yet).`);
 
@@ -217,6 +214,12 @@ async function main() {
     // ---- Session B: a second real Session (front pane), used only as the split-pane partner ----
     const sessionB = await quickCreateSessionAndWaitReady(cdp1, 'brief/B (split partner)');
     findings.push(`Session B created (id ${sessionB.id}) as the split-pane partner.`);
+
+    // Re-focus Session A (a real plain click, not Ctrl): creating B above focused B instead
+    // (sessions-store.ts's own `create` calls `replaceFocused` on every create), and every
+    // check below needs A's own notice mounted again.
+    await cdp1.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionA.id)}]')`);
+    await cdp1.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session A refocused after creating Session B' });
 
     // ---- (2) Session with history, real restart: centred, dimmed ~40%, stays interactive ----
     await restartAgent(cdp1, sessionA.id);
@@ -320,12 +323,10 @@ async function main() {
     // slot and actually spawns (MAX_CONCURRENT_STARTS, start_queue.rs:36); Session D grabs the
     // 2nd slot but, with REFRACT_FORCE_LOW_MEMORY=1 AND C still spawned, defers
     // (start_queue.rs:387); Session E then has no slot free at all and queues. Each becomes the
-    // focused pane on its own creation (confirmed via aria-current below), so its own notice is
-    // what GROUP/REGIONS scope to in turn. Both D and E are cancelled once their states are
-    // captured -- left running, D's own eventual real spawn (once its 60s
-    // MEMORY_DEFER_CEILING_MS elapses) would compete with Session C's own later with-history
-    // restart for the same 2 real slots, adding a long, flaky, unrelated real-time dependency to
-    // checks that are really about these two kinds' own rendering. ----
+    // focused pane on its own creation (confirmed via aria-current below). D and E are cancelled
+    // once their states are captured -- left running, D's own eventual real spawn would compete
+    // with Session C's own later with-history restart for the same 2 slots, a long, flaky,
+    // unrelated real-time dependency for checks that are really about these kinds' rendering. ----
     const sessionC = await quickCreateSessionId(cdp2, 'long/C (1st start, 1st of 2 real slots)');
     findings.push(`Session C created (id ${sessionC.id}), brand-new, holding one of the 2 real start-queue slots.`);
     const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
