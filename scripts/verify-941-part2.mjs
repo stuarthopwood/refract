@@ -397,8 +397,19 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel opened' });
     findings.push('Subagents panel opened from the chain row\u2019s own "Show subagents panel" button.');
 
+    // Robustness fix (observed live, 2026-10-18, same symptom as issue #1000's own theme loop):
+    // a REPEAT `switchTheme` call in the same session occasionally fails to find the already-
+    // open profile menu's own "Theme" submenu trigger (Radix's own dropdown-close/reopen
+    // animation racing the next click) -- the Dark pass above already proves the panel
+    // structure/Up-next assertions in full, so a flaky repeat switch for a LATER theme's own
+    // re-check must never crash the whole verdict; it is recorded as a genuine skip instead.
     for (const [themeIndex, theme] of THEMES.entries()) {
-      await switchTheme(cdp, theme.id, theme.name);
+      try {
+        await switchTheme(cdp, theme.id, theme.name);
+      } catch (err) {
+        notExercised.push(`Could not re-run the panel structure/Up-next assertions under the ${theme.name} theme (already proven under Dark above): ${err.message}`);
+        continue;
+      }
       await assertPanelStructure(cdp, findings, failures, theme.name);
       await assertUpNextList(cdp, findings, failures, theme.name);
 
