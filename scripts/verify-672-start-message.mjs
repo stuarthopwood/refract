@@ -361,22 +361,36 @@ async function main() {
     const c1Progress = await waitForStartProgressKind(cdp2, sessionC1.id, 'waiting', 10_000);
     findings.push(`Session C1 created (id ${sessionC1.id}), brand-new, real startProgress ${JSON.stringify(c1Progress)}, holding one of the 2 real start-queue slots.`);
     const sessionD = await quickCreateSessionId(cdp2, 'long/D (2nd of 2 real slots, defers)');
+    let memoryDeferredObserved = false;
     try {
       const memoryDeferredProgress = await waitForStartProgressKind(cdp2, sessionD.id, 'memory-deferred', 20_000);
       findings.push(`Session D (id ${sessionD.id}) real startProgress is ${JSON.stringify(memoryDeferredProgress)} -- REFRACT_FORCE_LOW_MEMORY=1 while Session C1 is still spawned (start_queue.rs:387).`);
-      await assertFocusedPlainStageNotice(cdp2, {
-        sessionId: sessionD.id, kind: 'memory-deferred', expectedText: 'Starting agent… waiting for memory to free up',
-        muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05a-memory-deferred.png')
-      });
+      memoryDeferredObserved = true;
     } catch (err) {
-      // Gate-fix (2026-10-18, issue #985): `memory-deferred` has, on repeated runs tonight,
-      // never become observable within 20s -- the same `{}`/absence pattern as `prompt`/
-      // `extended` below (see notExercised), despite Session C1 confirmed reaching `waiting`
-      // moments earlier on the identical start-queue mechanism. Not papered over: recorded
-      // here as a genuine finding, but the REST of this launch (Session C's own with-history
-      // checks, the 3-theme sizing/colour/contrast sweep -- the core #672 acceptance evidence)
-      // still needs to run, so this degrades to `notExercised` instead of aborting the script.
-      notExercised.push(`memory-deferred startProgress.kind did not become observable live this run: ${err.message} -- same #985 class as prompt/extended (a start-queue stage never surfacing a live DOM-observable startProgress), despite Session C1 confirmed reaching 'waiting' moments earlier on the identical mechanism.`);
+      // Gate-fix (2026-10-18, code review): downgrade to notExercised ONLY the known #985
+      // absence pattern -- `waitForStartProgressKind`'s own timeout whose last read genuinely
+      // carried no `kind` at all (`{}`/`{"note":...}`), never a DEFINED other kind. Any other
+      // failure shape (an unexpected but defined kind, or a throw with a different message
+      // entirely) is a real bug this check must still catch as a failure, not a known skip.
+      const lastReadMatch = /last read was (.+)$/.exec(err.message ?? '');
+      let lastRead;
+      try { lastRead = lastReadMatch ? JSON.parse(lastReadMatch[1]) : undefined; } catch { lastRead = undefined; }
+      const isKnownAbsence = /^waitForStartProgressKind\(/.test(err.message ?? '') && lastRead !== undefined && !('kind' in lastRead);
+      if (isKnownAbsence) {
+        notExercised.push(`memory-deferred startProgress.kind did not become observable live this run: ${err.message} -- same #985 class as prompt/extended (a start-queue stage never surfacing a live DOM-observable startProgress, last read had no kind at all), despite Session C1 confirmed reaching 'waiting' moments earlier on the identical mechanism.`);
+      } else {
+        failures.push(`memory-deferred: unexpected failure, not the known #985 absence pattern (last read parsed as ${JSON.stringify(lastRead)}): ${err.message}`);
+      }
+    }
+    if (memoryDeferredObserved) {
+      try {
+        await assertFocusedPlainStageNotice(cdp2, {
+          sessionId: sessionD.id, kind: 'memory-deferred', expectedText: 'Starting agent… waiting for memory to free up',
+          muted, failures, findings, screenshotPath: path.join(SHOTS_DIR, '05a-memory-deferred.png')
+        });
+      } catch (err) {
+        failures.push(`memory-deferred: assertFocusedPlainStageNotice threw unexpectedly: ${err.message}`);
+      }
     }
 
     const cancelD = await cdp2.evaluate(`window.refract.sessions.cancelStart(${JSON.stringify(sessionD.id)})`);
@@ -426,6 +440,11 @@ async function main() {
     await withDeviceMetrics(cdp2, 900, 260, async () => {
       await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/waiting: notice mounted after short-viewport override' });
       const dimBefore = await readNoticeState(cdp2);
+      const composerEnabledNow = await cdp2.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`);
+      if (!dimBefore.present && composerEnabledNow) {
+        notExercised.push(`history/waiting (short viewport): the notice (readNoticeState) had already vanished entirely (present:false) and the composer was enabled by the time this check ran, only moments after the restart was confirmed live at 'waiting' -- the same #985 absence class, not a stale read. Centring, sizing, dimming and focus-hide could not be asserted here this run.`);
+        return;
+      }
       if (!dimBefore.regionFound || !(dimBefore.regionOpacity <= 0.45)) {
         failures.push(`history/waiting (short viewport): transcript region opacity is ${dimBefore.regionFound ? dimBefore.regionOpacity : 'unknown (region not found)'}, expected <=0.45 (dimmed behind the real overlay).`);
       } else {
@@ -436,29 +455,42 @@ async function main() {
       await cdp2.screenshot(path.join(SHOTS_DIR, '06-history-waiting.png'));
 
       // Focus-hide (hide half only; the reveal-on-Tab-to-"Keep waiting" half needs real
-      // `prompt` buttons, not reachable this run -- see notExercised / issue #985): with real
-      // focus inside the dimmed history, the overlay itself hides (WCAG 2.4.11).
-      await focusLastTabbableOrSelf(cdp2, REGION0);
-      const hiddenOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v <= 0.05, 2_000);
-      const hidden = await cdp2.evaluate(`(() => {
-        const overlay = ${OVERLAY};
-        const wrapper = document.querySelector('[data-start-notice-wrapper]');
-        if (!overlay || !wrapper) return null;
-        const r = ${REGION0}.getBoundingClientRect();
-        const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-        return {
-          wrapperPointerEvents: getComputedStyle(wrapper).pointerEvents,
-          hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy))
-        };
-      })()`);
-      if (!hiddenOpacityPoll.ok || !hidden || hidden.wrapperPointerEvents !== 'none') {
-        failures.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} (expected <=0.05) and the wrapper read pointer-events ${hidden?.wrapperPointerEvents} (expected none) -- WCAG 2.4.11.`);
-      } else if (!hidden.hitIsTranscript) {
-        failures.push('focus-hide: the overlay is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
+      // `prompt` buttons, not reachable this run -- see notExercised / issue #985). Gate-fix
+      // (2026-10-18, code review): only a meaningful exercise if the overlay genuinely
+      // started fully visible -- asserted directly (not inferred from `dimBefore`) BEFORE
+      // focusing anything, so a notice/overlay mismatch can never read as a vacuous pass. If
+      // the geometry check above already found no owning region, there is nothing confirmed
+      // visible to hide in the first place, so this records notExercised, not a pass.
+      if (!dimBefore.regionFound) {
+        notExercised.push('focus-hide: skipped -- the dimmed-overlay geometry check above already found no owning Transcript region, so there is nothing confirmed visible to hide on focus (see that failure/notExercised entry for the reason).');
       } else {
-        findings.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} and the wrapper reads pointer-events none (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
+        const beforeFocusOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v >= 0.95, 2_000);
+        if (!beforeFocusOpacityPoll.ok) {
+          failures.push(`focus-hide: the overlay was not fully visible (opacity ${beforeFocusOpacityPoll.value}, expected >=0.95) BEFORE focusing anything -- the hide-on-focus check below would be vacuous starting from here.`);
+        } else {
+          await focusLastTabbableOrSelf(cdp2, REGION0);
+          const hiddenOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v <= 0.05, 2_000);
+          const hidden = await cdp2.evaluate(`(() => {
+            const overlay = ${OVERLAY};
+            const wrapper = document.querySelector('[data-start-notice-wrapper]');
+            if (!overlay || !wrapper) return null;
+            const r = ${REGION0}.getBoundingClientRect();
+            const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+            return {
+              wrapperPointerEvents: getComputedStyle(wrapper).pointerEvents,
+              hitIsTranscript: ${REGION0}.contains(document.elementFromPoint(cx, cy))
+            };
+          })()`);
+          if (!hiddenOpacityPoll.ok || !hidden || hidden.wrapperPointerEvents !== 'none') {
+            failures.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} (expected <=0.05) and the wrapper read pointer-events ${hidden?.wrapperPointerEvents} (expected none) -- WCAG 2.4.11.`);
+          } else if (!hidden.hitIsTranscript) {
+            failures.push('focus-hide: the overlay is hidden but the transcript region centre is still not the elementFromPoint hit -- something else may be covering it.');
+          } else {
+            findings.push(`focus-hide: starting fully visible (opacity ${beforeFocusOpacityPoll.value}), with focus inside the history the overlay opacity settled at ${hiddenOpacityPoll.value} and the wrapper reads pointer-events none (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
+          }
+          await cdp2.evaluate(`document.activeElement?.blur()`);
+        }
       }
-      await cdp2.evaluate(`document.activeElement?.blur()`);
     });
 
     // ---- Themes: a failed theme.set is a FAILURE now, not notExercised. Driven at the real
@@ -482,13 +514,19 @@ async function main() {
         await cdp2.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${theme.id}`)})`, { timeoutMs: 10_000, label: `${theme.name} theme applied` });
       }
       await cdp2.screenshot(path.join(SHOTS_DIR, `07-theme-${theme.id}.png`));
+      const classifierRead = await readVisibleStartKind(cdp2);
+      const composerEnabledNow = await cdp2.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`);
+      if (classifierRead?.kind === undefined && composerEnabledNow) {
+        notExercised.push(`${theme.name}: the notice is absent (classifier read ${JSON.stringify(classifierRead)}) and the composer is enabled -- same #985 absence class as above, not a stale read. Sizing/colour/contrast could not be measured for this theme this run.`);
+        continue;
+      }
       const themeState = await readNoticeState(cdp2);
       const panelRaw = await cdp2.evaluate(`(() => { const el = ${GROUP}; return el ? getComputedStyle(el).backgroundColor : null; })()`);
       const panel = parseRgba(panelRaw);
       const backgroundRgb = parseRgba(await resolveCssVarColor(cdp2, '--background', 'background-color'));
       const foregroundRgb = parseRgba(await resolveCssVarColor(cdp2, '--foreground', 'background-color'));
       if (!panel || !backgroundRgb || !foregroundRgb) {
-        failures.push(`${theme.name}: could not resolve panel (${panelRaw})/--background/--foreground colours for contrast math.`);
+        failures.push(`${theme.name}: could not resolve panel (${panelRaw})/--background/--foreground colours for contrast math (classifier read ${JSON.stringify(classifierRead)}, composer enabled: ${composerEnabledNow} -- not the known #985 absence pattern).`);
         continue;
       }
       if (!(panel.a >= 0.85 && panel.a <= 0.95)) failures.push(`${theme.name}: panel background-color ${panelRaw} has alpha ${panel.a}, expected 0.85-0.95 (bg-background/90); the panel class may not be applied correctly.`);
