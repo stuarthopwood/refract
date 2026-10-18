@@ -456,7 +456,7 @@ async function main() {
 
       // Gate-fix (round 3, item 8): see `checkSidebarDblClickDoesNotAffectPrColumn`'s own
       // docstring (`verify-tauri-499-930-helpers.mjs`) for the full root cause. ----
-      const sidebarDblClickResult = await checkSidebarDblClickDoesNotAffectPrColumn(cdp, LIST_PANEL_FINDER);
+      const sidebarDblClickResult = await checkSidebarDblClickDoesNotAffectPrColumn(cdp, LIST_PANEL_FINDER, DEFAULT_WIDTH_PX);
       if (sidebarDblClickResult.pass) checkPass('Double-clicking the session-list handle never persists a stale width for the PR column', JSON.stringify(sidebarDblClickResult.detail));
       else checkFail('Double-clicking the session-list handle never persists a stale width for the PR column', JSON.stringify(sidebarDblClickResult.detail));
 

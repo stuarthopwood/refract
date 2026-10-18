@@ -164,8 +164,15 @@ export async function stateFilterDiagnostic(cdp) {
  * pre-click value was too strict. The real invariant is that whatever the REAL post-click width
  * is, the persisted `settings.json` value matches it (never a stale/unrelated value, e.g. the
  * session-list's own 320px default) -- compares `persisted` against `after`, not `before`.
+ * Gate-fix (round 4, Main's own review): `persisted ~= after` alone is not independent enough --
+ * a racy DOM read could in principle land on ~320 right alongside a genuinely-wrong ~320
+ * persist, passing for the wrong reason. Adds an explicit, independent guard: `persisted` may
+ * never be ~`defaultWidthPx` unless the width was ALREADY ~`defaultWidthPx` BEFORE the click
+ * (the exact signature of the original bug -- a prior, clearly-different width silently
+ * replaced by the session-list's own default). `defaultWidthPx` is the caller's own
+ * `PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX` (320), passed in rather than duplicated here.
  * Returns `{ pass, detail }`. */
-export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFinder) {
+export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFinder, defaultWidthPx) {
   const before = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   const rect = await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Resize session list"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   if (!rect) return { pass: false, detail: 'session-list handle not found' };
@@ -175,6 +182,8 @@ export async function checkSidebarDblClickDoesNotAffectPrColumn(cdp, listPanelFi
   const after = await cdp.evaluate(`${listPanelFinder}?.getBoundingClientRect().width ?? null`);
   const persisted = await cdp.evaluate(`(async () => { const r = await window.refract.settings.get(); return r.ok ? r.value.pullRequestsListWidthPx : null; })()`);
   const detail = { prWidthBeforeSidebarDblClick: before, prWidthAfterSidebarDblClick: after, persistedAfterSidebarDblClick: persisted };
-  const pass = after != null && persisted != null && Math.abs(persisted - after) <= 1;
+  const persistedMatchesRealWidth = after != null && persisted != null && Math.abs(persisted - after) <= 1;
+  const suspiciousDefaultReset = persisted != null && Math.abs(persisted - defaultWidthPx) <= 1 && before != null && Math.abs(before - defaultWidthPx) > 1;
+  const pass = persistedMatchesRealWidth && !suspiciousDefaultReset;
   return { pass, detail };
 }
