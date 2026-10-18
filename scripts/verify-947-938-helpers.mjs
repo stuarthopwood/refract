@@ -231,6 +231,10 @@ export async function pressEnter(cdp) {
   await pressKey(cdp, 13, 'Enter', 'Enter');
 }
 
+export async function pressTab(cdp) {
+  await pressKey(cdp, 9, 'Tab', 'Tab');
+}
+
 /** Reads whichever slash-menu listbox is mounted (top-level or a subcommand step share the same
  * markup): its own accessible name and each option row's name text, description, and whether (and
  * how heavily, via COMPUTED style -- not mere tag presence) its name is rendered bold. `null`
@@ -243,7 +247,7 @@ export async function readSlashMenu(cdp) {
       return {
         ariaLabel: list.getAttribute('aria-label'),
         options: Array.from(list.querySelectorAll('li[role="option"]')).map((li) => {
-          const nameEl = li.querySelector('span.font-medium');
+          const nameEl = li.querySelector('span.font-normal');
           const boldEl = nameEl?.querySelector('b') ?? null;
           const normalWeight = nameEl ? Number(getComputedStyle(nameEl).fontWeight) : null;
           const boldWeight = boldEl ? Number(getComputedStyle(boldEl).fontWeight) : null;
