@@ -172,15 +172,22 @@ export function useSlashMenuCompletion({
    * round 1 Low: left to its normal backward focus-movement behaviour, never captured here). */
   function handleSlashMenuKey(key: string, shiftKey: boolean, activeIndex: number): { sendText: string } | undefined | 'unhandled' {
     if ((key !== 'Enter' && key !== 'Tab') || (key === 'Tab' && shiftKey) || slashMatches.length === 0) return 'unhandled'
+    // Gate round 1 fix (confirmed live regression, not just a test gap): the subcommand step's
+    // own `activeIndex` defaults to 0 -- the ALWAYS-first "Run /<cmd>" row -- regardless of what
+    // the user has typed, and nothing moves it unless they explicitly press an arrow key. Without
+    // this check, typing out a full subcommand name (e.g. "/advisor status") and pressing Tab
+    // still acted on the untouched, still-highlighted "Run /<cmd>" row and SENT the bare command
+    // at once -- exactly the unwanted blind-send #938 exists to prevent, and the opposite of "Tab
+    // still completes" (decided 2026-10-18). An exact, case-insensitive typed match is now found
+    // directly in the ranked list and acted on by name, independent of whatever row is currently
+    // highlighted: Enter sends it, Tab only completes to it.
+    if (slashMenuState?.step === 'subcommand' && slashMenuState.query.length > 0) {
+      const exactMatch = slashMatches.find((row) => !row.isRunBare && row.command.name.toLowerCase() === slashMenuState.query.toLowerCase())
+      if (exactMatch) return handleSlashMenuSelect(exactMatch.command, { sendImmediately: key === 'Enter' })
+    }
     const match = slashMatches[Math.min(activeIndex, slashMatches.length - 1)]
     if (!match) return 'unhandled'
-    if (key === 'Tab') return handleSlashMenuSelect(match.command, { runBare: match.isRunBare })
-    // Issue #938 item 1 (decided 2026-10-18): Enter on a subcommand typed out in FULL (an exact,
-    // case-insensitive match for its own name, not just the current fuzzy-ranked top row) sends
-    // the completed invocation at once instead of only filling the composer.
-    const exactSubcommandMatch =
-      !match.isRunBare && slashMenuState?.step === 'subcommand' && slashMenuState.query.length > 0 && slashMenuState.query.toLowerCase() === match.command.name.toLowerCase()
-    return handleSlashMenuSelect(match.command, { runBare: match.isRunBare, sendImmediately: exactSubcommandMatch })
+    return handleSlashMenuSelect(match.command, { runBare: match.isRunBare })
   }
 
   return { slashMenuState, slashMatches, showSlashMenu, slashMenuKey, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey }
