@@ -451,11 +451,12 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   }, [isRunning, stages.length])
 
   // Gate-fix (live build, first real build-slot run -- never exercised before now):
-  // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState(defaultOpen ?? false)`
-  // AT THE INSTANT this component first mounts. If this chain row mounts (`stages.length` first
-  // reaches 2) while every agent so far is still genuinely pending/finished -- entirely
-  // plausible: Stage 5's own failure may not exist yet -- that initializer captures `false` once
-  // and never re-reads a LATER `defaultOpen` recompute, so a Stage that fails well after this
+  // `defaultOpen` below USED TO only matter to `CollapsedLine`'s own `useState(defaultOpen ??
+  // false)` AT THE INSTANT this component first mounted (pre-`useStickyDisclosure`; no caller
+  // passes a bare `defaultOpen` any more). If this chain row mounted (`stages.length` first
+  // reaches 2) while every agent so far was still genuinely pending/finished -- entirely
+  // plausible: Stage 5's own failure may not exist yet -- that initializer captured `false` once
+  // and never re-read a LATER `defaultOpen` recompute, so a Stage that failed well after this
   // row's first mount could never auto-open it (confirmed live: this fixture's own Stage 5
   // failure left the chain row closed on first render instead of Decision 6's "expanded while
   // anything is unsettled"). Fixed by going fully controlled here, auto-opening once
@@ -470,9 +471,13 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // unanimous): shared `useStickyDisclosure`, same rationale as `StageGroupRow` above. `turnKey`
   // is `undefined` only in the brief window before this turn's first Stage exists --
   // `useStickyDisclosure` falls back to local-only state for that case, same as a null
-  // `sessionId`. A manual toggle survives this component's own remount (a session switch, or
-  // its own full unmount whenever a turn's Stage count drops back below 2, the early return
-  // just below).
+  // `sessionId` (the chain row renders nothing to toggle in that window anyway: `stages.length
+  // < 2` returns `null` just below, the same condition that leaves `turnKey` undefined). A
+  // manual toggle survives a SESSION SWITCH -- a different Session's own row set unmounts this
+  // component entirely through ordinary keyed-list reconciliation. Gate round 2 correction
+  // (code-reviewer): `stages.length` dropping back below 2 is NOT a remount by itself -- React
+  // keeps this exact component instance, and every hook's own state, alive when a component
+  // returns `null`; it never loses anything a manual toggle would need to survive on its own.
   const turnKey = stages[0]?.id
   const toggleRowId = turnKey ? `chain:${turnKey}` : null
   const { open, onOpenChange } = useStickyDisclosure(sessionId, toggleRowId, isUnsettled)

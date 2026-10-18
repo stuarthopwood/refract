@@ -3652,6 +3652,20 @@ ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
   this sub-task): `node --check` plus a real `import()` load-check on every touched/adjacent
   script, `pnpm typecheck` and `pnpm vitest run` (148/148) clean, `node scripts/check-indent.mjs`
   and `node scripts/check-file-size.mjs` clean.
+- [X] Gate round 2 remediation (test-reviewer, code-reviewer, security-auditor, UI Lows): the
+  store/hook stays manual-only (no change needed from round 1's own redesign); `open` now reads
+  `manualOpen ?? (latchedAutoOpen || autoOpen)` (closes a one-render lag); the latch resets
+  during render if its own session+row identity ever changes. The live check's Phase 3 uses
+  Stage 1 (not Stage 2, which can mount already settled -- unpaced frames, dropped for
+  reliability) as the proof that an untouched Stage closes on remount; a missed Running window
+  is caught and recorded in `notExercised` instead of aborting the run; `SHOTS_DIR` regained its
+  default timestamp suffix (now in the same path segment, not a nested folder, so
+  `clearKnownOutputFiles`'s own direct-child-of-`tmpdir()` check still passes). Corrected two
+  stale claims: the chain row's own `stages.length < 2` early return does not unmount it
+  (returning `null` keeps the instance and every hook's state); `defaultOpen`'s own historical
+  comment reworded to the past tense. `clearKnownOutputFiles` (verify-tauri-scratch-helpers.mjs)
+  hardened against a symlink/junction planted at the shots-dir path, and now deletes/recreates
+  under its own validated, canonical path rather than the caller's raw string.
 
 Draft PR, branch `feat/991-stage-focus`. **Refs #991** until the live check above is actually run
 against a real built exe and confirms every acceptance item; switches to **Closes #991** once it

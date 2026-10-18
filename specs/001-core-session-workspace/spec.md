@@ -514,6 +514,23 @@
   pre-existing defect from #941, not fixed here -- filed as its own follow-up (Main, gate round
   1) rather than folded into this fix.
 
+- Q: Gate round 2 (code-reviewer): the decision above also claimed a manual toggle needed to
+  survive the chain row's own unmount "whenever a turn's Stage count drops back below 2" -- is
+  that a real remount? → A: No -- corrected: returning `null` from a React component does not
+  unmount it or reset its hooks; the only genuine remount this needs to survive is a session
+  switch (ordinary keyed-list reconciliation, a different Session's own row set).
+- Q: Gate round 2 (code-reviewer): `useStickyDisclosure`'s own `open` showed one stale closed
+  frame right as a Stage started running -- why? → A: The latch's own effect only commits on
+  the render AFTER `autoOpen` first turns true (effects run post-commit). Fixed:
+  `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the current value closes the lag.
+- Q: Gate round 2 (UI Lows): does a user's manual close on a Stage get overridden if it later
+  fails, and what happens to a toggle attempted before the chain row has a real row id? → A:
+  Decided (Skippy, delegated by Stuart 2026-10-18): the manual close wins permanently (the
+  failure still surfaces through the chain row's roll-up and the settle announcer/toast,
+  independent of this one row's own open state); the pre-row-id toggle is dropped by design --
+  that window coincides exactly with the chain row rendering nothing at all (FR-068's own
+  `stages.length < 2` gate), so there is never a visible trigger to have toggled.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -900,10 +917,16 @@ The developer types a slash command and finds the ones the agent offers. If a se
   solo Stage's own body swaps for a member list the instant a second agent streams into the
   same Stage, which can still unmount whatever was focused inside it; tracked as a follow-up,
   not fixed by this requirement. A Stage row's and the Subagent chain row's own manual-toggle
-  state MUST survive a remount of the row (a session switch, or the chain row's own unmount
-  when a turn's Stage count drops back below two and later rises again), keyed per session and
+  state MUST survive a remount of the row (a session switch, where a different Session's own
+  row set replaces this one through ordinary keyed-list reconciliation), keyed per session and
   per row -- scoped to Stage and chain rows only; a tool-call group row and a thought-run row
-  still reset their own disclosure on remount, unchanged by this requirement.
+  still reset their own disclosure on remount, unchanged by this requirement. A user's own
+  manual CLOSE MUST NOT be overridden by that Stage later failing (the user's choice wins
+  permanently over any later auto-open condition; the failure still surfaces through the chain
+  row's own roll-up and the settle announcer/toast, decided gate round 2). A toggle attempted
+  on the chain row before it has mounted with a real row id is dropped by design (that window
+  coincides exactly with the chain row rendering nothing at all, FR-068's own `stages.length <
+  2` gate, so there is never a visible trigger to have toggled).
 
 ### Key Entities
 

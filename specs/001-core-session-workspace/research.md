@@ -243,10 +243,10 @@ out of a plain `useRef`/`useState` pair into a new `useStageToggleStore`
 (`src/renderer/state/stage-toggle-store.ts`), keyed by session id plus the row's own stable id
 (a Stage's own `group.id`; `chain:<first stage id>` for the chain row, which has no id of its
 own). Non-persisted, in-memory only -- same convention as `alert-dismiss-store.ts`: reset only
-by a full app restart, never written to `settings.json`/disk. This survives both kinds of
-remount named in the issue: a session switch (the whole `Transcript` unmounts), and the chain
-row's own full unmount whenever a turn's Stage count drops back below 2 (`if (stages.length < 2)
-return null`) and later rises again.
+by a full app restart, never written to `settings.json`/disk. This survives the kind of remount
+named in the issue: a session switch, where a different Session's own row set replaces this
+one's through ordinary keyed-list reconciliation (gate round 1/2 correction below has the full,
+corrected mechanism).
 
 **Decision**: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` (a plain
 `document.querySelector('[title="..."]')`) only ever found the right Stage because a turn's
@@ -283,3 +283,34 @@ earlier draft's wording) overclaimed -- corrected to "no more AUTO-CLOSE path": 
 own body (`SubagentBody`) still swaps for a `SpineList` the instant a second agent streams into
 the same Stage, which can still unmount whatever was focused inside it (a separate, pre-existing
 defect from #941, filed as its own follow-up by Main, not fixed by this change).
+
+**Gate round 2 correction (code-reviewer)**: an earlier draft of the decision above claimed the
+chain row "fully unmounts whenever a turn's Stage count drops back below 2 (`if (stages.length <
+2) return null`) and later rises again" -- re-read, this is NOT true: returning `null` from a
+component does not unmount it or reset its hooks; React keeps the exact same instance, with
+every hook's own state intact, and simply paints no output for that render. The only genuine
+remount this store/hook pair needs to survive is the session-switch case the gate round 1
+correction above already describes correctly (ordinary keyed-list reconciliation, plus
+`Transcript.tsx`'s own sr-only-stub/full-row visibility swap).
+
+**Gate round 2 fix (code-reviewer, LOW)**: `useStickyDisclosure`'s own `open` value used to read
+`manualOpen ?? latchedAutoOpen` -- since the latch's own `useEffect` only commits
+`setLatchedAutoOpen(true)` on the render AFTER `autoOpen` first turns true (effects run
+post-commit, not during the same render), this showed one stale closed frame the instant a
+Stage started running. Fixed: `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the
+CURRENT `autoOpen` value closes that one-render lag; the effect still matters for holding the
+latch `true` on a LATER render once `autoOpen` has already swung back to `false` again, which
+the OR alone cannot do by itself.
+
+**Decided (Skippy, delegated by Stuart 2026-10-18, gate round 2, UI Lows)**: two edge cases in
+the redesigned toggle, both confirmed as intended behaviour, no code change --
+1. A toggle attempted on the chain row before its own row id exists (`turnKey` undefined, which
+   only ever coincides with `stages.length < 2`, the same condition under which the chain row
+   itself renders `null` with no interactive trigger to toggle at all) is dropped by design: it
+   falls back to local-only state for that render, never persisted, and there is nothing visible
+   for a user to have toggled in the first place.
+2. A user's own manual CLOSE on a Stage is never overridden by a LATER failure on that same
+   Stage (`autoOpen` swinging back to `true`): `open = manualOpen ?? (...)` means a defined
+   `manualOpen` always wins, by design -- the user's choice to keep a Stage collapsed is
+   respected even once it fails; the failure itself still surfaces through the chain row's own
+   roll-up and the settle announcer/toast, independent of this one row's own open state.

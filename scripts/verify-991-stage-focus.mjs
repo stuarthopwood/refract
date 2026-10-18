@@ -52,12 +52,17 @@
 //      `false` (never auto-expands), and the chain row always recomputes `true` (Stage 5's
 //      failure keeps `isUnsettled` permanently true), so both would read the OPPOSITE of the
 //      user's own choice after switching back.
-//   4. An UNTOUCHED, settled-all-success Stage (Stage 2) is OPEN before the switch (its own
-//      local auto-open latch is still holding, having been set while it was running earlier)
-//      but CLOSED after the switch-and-back remount (the latch is local-only and recomputes
-//      fresh; with no manual override on record, it reads the Stage's own current
-//      `isOpenByDefault`, now `false`) -- proves the store holds ONLY a user's own manual choice,
-//      never the ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign).
+//   4. Stage 1 itself (never manually touched, opened only by auto-open while running) is OPEN
+//      throughout its own continuous mount (point 1 above) but comes back CLOSED after the
+//      session-switch-and-back REMOUNT (the auto-open latch is local-only and recomputes fresh
+//      from Stage 1's own current, settled state; with no manual override on record, `open`
+//      resolves to `false`) -- proves the store holds ONLY a user's own manual choice, never the
+//      ephemeral auto-open latch itself (issue #991 gate round 1, item 2/4 redesign). MUST fail
+//      on `origin/main`: there, `open`/`userToggledRef` are plain `useState`/`useRef`, and the
+//      OLD bidirectional sync already auto-closes Stage 1 the moment it settles (before this
+//      phase even reaches the switch), so it would read "false" for the wrong reason entirely --
+//      this phase's OWN earlier point-1 check (still open while mounted) is what makes this a
+//      genuine redesign proof, not a coincidental match.
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check are the only commands that have actually been run against
@@ -90,7 +95,6 @@ import {
   stageContentSelector,
   stageTriggerSelector,
   STAGE1_TITLE,
-  STAGE2_TITLE,
   STAGE6_SOLO_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, sessionOpenButtonFinder } from './verify-tauri-session-list-helpers.mjs';
@@ -99,7 +103,11 @@ import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROMPT_MESSAGE = 'Run the full ten-stage batch (issue #991 live check: focus and toggle persistence).';
-const SHOTS_DIR = process.env.REFRACT_991_SHOTS_DIR || path.join(tmpdir(), 'refract-991-stage-focus-shots');
+// Gate round 2 fix (issue #991, item 4, LOW, test-reviewer): the default includes a timestamp
+// suffix IN the same path segment (not a nested subdirectory), so a fresh unique folder is
+// still `clearKnownOutputFiles`'s own required direct-child-of-`tmpdir()` shape; an override
+// (`REFRACT_991_SHOTS_DIR`) may point at a fixed, reused name for the same reason.
+const SHOTS_DIR = process.env.REFRACT_991_SHOTS_DIR || path.join(tmpdir(), `refract-991-stage-focus-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   '01-stage1-running-focus-inside.png',
   '02-all-stages-settled.png',
@@ -227,34 +235,46 @@ async function main() {
 
     // ---- Phase 1: focus placed inside a genuinely running Stage 1 survives it settling, and
     // the row itself stays open (issue #991 items 1 and 4) ----
-    await cdp.waitFor(
-      `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`,
-      { timeoutMs: 15_000, label: 'Stage 1 genuinely running (additive fixture delay window)' }
-    );
-    const stage1TriggerBefore = await cdp.evaluate(`(${stageTriggerSelector(STAGE1_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-    if (stage1TriggerBefore !== 'true') {
-      failures.push(`Stage 1 was not auto-open while running (aria-expanded was ${JSON.stringify(stage1TriggerBefore)}, expected "true").`);
-    } else {
-      findings.push('Stage 1 auto-opened while running, as expected.');
-    }
-    await cdp.evaluate(`(${g923CodeTriggerExpr()})?.focus()`);
-    const focusedBeforeSettle = await cdp.evaluate(`document.activeElement === (${g923CodeTriggerExpr()})`);
-    // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): re-checks the precondition AFTER the
-    // focus round trip, not just at the earlier `waitFor` poll -- the ~1.5s delay window can
-    // close between that poll and this evaluate's own round trip. If Stage 1 already settled by
-    // now, this phase did not genuinely exercise "focus while running" and must say so honestly
-    // instead of treating whatever `focusedBeforeSettle` read as a pass.
-    const stillRunningAfterFocus = await cdp.evaluate(
-      `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`
-    );
     let phase1Exercised = true;
-    if (!stillRunningAfterFocus) {
+    try {
+      await cdp.waitFor(
+        `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`,
+        { timeoutMs: 15_000, label: 'Stage 1 genuinely running (additive fixture delay window)' }
+      );
+    } catch (err) {
+      // Gate round 2 fix (issue #991, item 3, LOW, test-reviewer): a genuinely missed window
+      // (the additive delay already elapsed by the time this ever polled, a slow CI host, ...)
+      // used to abort the WHOLE run via `waitFor`'s own throw -- phases 2/3/4 below are
+      // independent of this one and can still run and mean something on their own, so this is
+      // recorded honestly in `notExercised` instead.
       phase1Exercised = false;
-      notExercised.push('Stage 1 settled before focus could be confirmed placed while it was still genuinely running -- the additive 1.5s delay window closed before this check landed; the focus-survives-settling proof (items 1/4) did not run as designed this pass.');
-    } else if (!focusedBeforeSettle) {
-      failures.push('Could not place keyboard focus on the G923Code member row trigger inside Stage 1 while it was still running.');
-    } else {
-      findings.push('Keyboard focus placed on the G923Code member row trigger, inside Stage 1\'s content, while Stage 1 was still genuinely running.');
+      notExercised.push(`Stage 1 never showed as genuinely running within the 15s window -- the additive fixture delay may have already elapsed, or the turn settled unusually fast; the focus-survives-settling proof (items 1/4) could not run as designed this pass (${err.message}).`);
+    }
+    if (phase1Exercised) {
+      const stage1TriggerBefore = await cdp.evaluate(`(${stageTriggerSelector(STAGE1_TITLE)})?.getAttribute('aria-expanded') ?? null`);
+      if (stage1TriggerBefore !== 'true') {
+        failures.push(`Stage 1 was not auto-open while running (aria-expanded was ${JSON.stringify(stage1TriggerBefore)}, expected "true").`);
+      } else {
+        findings.push('Stage 1 auto-opened while running, as expected.');
+      }
+      await cdp.evaluate(`(${g923CodeTriggerExpr()})?.focus()`);
+      const focusedBeforeSettle = await cdp.evaluate(`document.activeElement === (${g923CodeTriggerExpr()})`);
+      // Gate round 1 fix (issue #991, MEDIUM, test-reviewer): re-checks the precondition AFTER
+      // the focus round trip, not just at the earlier `waitFor` poll -- the ~1.5s delay window
+      // can close between that poll and this evaluate's own round trip. If Stage 1 already
+      // settled by now, this phase did not genuinely exercise "focus while running" and must say
+      // so honestly instead of treating whatever `focusedBeforeSettle` read as a pass.
+      const stillRunningAfterFocus = await cdp.evaluate(
+        `(() => { const c = (${stageContentSelector(STAGE1_TITLE)}); return !!c && c.textContent.includes('Running'); })()`
+      );
+      if (!stillRunningAfterFocus) {
+        phase1Exercised = false;
+        notExercised.push('Stage 1 settled before focus could be confirmed placed while it was still genuinely running -- the additive 1.5s delay window closed before this check landed; the focus-survives-settling proof (items 1/4) did not run as designed this pass.');
+      } else if (!focusedBeforeSettle) {
+        failures.push('Could not place keyboard focus on the G923Code member row trigger inside Stage 1 while it was still running.');
+      } else {
+        findings.push('Keyboard focus placed on the G923Code member row trigger, inside Stage 1\'s content, while Stage 1 was still genuinely running.');
+      }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-stage1-running-focus-inside.png'));
 
@@ -314,14 +334,16 @@ async function main() {
     notExercised.push('No red/green discrimination is possible for the selector-scoping fix with this fixture: Stage rows always render BEFORE the per-turn chain row in Transcript.tsx\'s own DOM order, so even the OLD unscoped titleSelector would already resolve correctly here -- this phase is order-independent hardening (proved by the count + ancestor checks above), not a regression this fixture can make fail against origin/main\'s own helper file.');
 
     // ---- Phase 3: a manual toggle on a Stage row and on the chain row both survive a real
-    // session switch away and back (issue #991 item 2); an UNTOUCHED settled Stage (Stage 2)
-    // closes instead, proving the store holds only the manual choice (item 2/4 redesign) ----
-    const stage2ExpandedBeforeSwitch = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-    if (stage2ExpandedBeforeSwitch !== 'true') {
-      notExercised.push(`Stage 2 (untouched) was not open before the switch (aria-expanded ${JSON.stringify(stage2ExpandedBeforeSwitch)}) -- the "untouched Stage closes on remount" proof could not be set up as designed.`);
-    } else {
-      findings.push('Stage 2 (never manually touched) is open before the switch -- its own local auto-open latch is still holding from when it was running earlier.');
-    }
+    // session switch away and back (issue #991 item 2). Stage 1 itself (never manually touched)
+    // is the proof that the store holds ONLY a manual choice, never the ephemeral auto-open
+    // latch (item 2/4 redesign): it stays open for as long as this mount lives (already proved
+    // above), but comes back CLOSED after the session-switch remount, since the latch is
+    // local-only and recomputes fresh from Stage 1's own current (settled) state. Gate round 2
+    // fix (item 1/2, test-reviewer): the original design used a separate Stage 2 for this proof,
+    // expecting it to still read "open" pre-switch -- but Stage 2's own frames arrive unpaced
+    // (no `__delay__`), so it can already mount fully settled before this script ever observes
+    // it mid-run, landing that check in `notExercised` unreliably; dropped in favour of Stage 1,
+    // which this script already drives with precise timing control.
     await clickScrolled(cdp, CHAIN_TRIGGER);
     const chainExpandedBeforeSwitch = await cdp.evaluate(`(${CHAIN_TRIGGER})?.getAttribute('aria-expanded') ?? null`);
     if (chainExpandedBeforeSwitch !== 'false') {
@@ -373,18 +395,10 @@ async function main() {
       findings.push('Stage 6\'s own manual expand survived the session-switch remount (stayed "true", not reverted to its own always-false solo-Stage default) -- issue #991 item 2 fix confirmed.');
     }
     const stage1ExpandedAfterSwitch = await cdp.evaluate(`(${stageTriggerSelector(STAGE1_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-    if (stage1ExpandedAfterSwitch !== 'true') {
-      failures.push(`Stage 1 was no longer open after the session-switch remount (aria-expanded is ${JSON.stringify(stage1ExpandedAfterSwitch)}) -- the item 4 "stays open once settled" guarantee must also survive a remount.`);
+    if (stage1ExpandedAfterSwitch !== 'false') {
+      failures.push(`Stage 1 (untouched, settled all-success) read "${stage1ExpandedAfterSwitch}" after the session-switch remount, expected "false" -- the store must hold only a MANUAL choice, never the ephemeral auto-open latch (issue #991 item 2/4 redesign regression).`);
     } else {
-      findings.push('Stage 1 (opened automatically, never manually touched) is still open after the session-switch remount too.');
-    }
-    const stage2ExpandedAfterSwitch = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-    if (stage2ExpandedBeforeSwitch === 'true') {
-      if (stage2ExpandedAfterSwitch !== 'false') {
-        failures.push(`Stage 2 (untouched, settled all-success) read "${stage2ExpandedAfterSwitch}" after the remount, expected "false" -- the store must hold only a MANUAL choice, never the ephemeral auto-open latch (issue #991 item 2/4 redesign regression).`);
-      } else {
-        findings.push('Stage 2 (never manually touched) is closed after the remount -- its own local auto-open latch recomputed fresh (now false, settled all-success), proving the store never persisted the ephemeral auto-open state, only a genuine manual choice.');
-      }
+      findings.push('Stage 1 (never manually touched) is closed after the remount -- its own local auto-open latch recomputed fresh (now false, settled all-success), proving the store never persisted the ephemeral auto-open state, only a genuine manual choice (issue #991 item 2/4 fix confirmed).');
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '05-manual-toggles-survived-switch.png'));
 
