@@ -45,6 +45,15 @@
 // brief's own ~6-line/144px cap at a normal composer width but overflow once the window is
 // narrowed, proving `StageContextBrief.tsx`'s own `ResizeObserver` genuinely re-measures on a
 // real layout change rather than only once at mount (gate round 2 item 12's second check).
+// Additive extension (issue #991, 2026-10-18, gate follow-ups from the #941 lane's PR #979):
+// one `{"__delay__": 1500}` inserted right after Stage 1's own assistant-message echo (so
+// `message_id` is already stamped and Stage 1 genuinely renders as an open, running,
+// two-member Stage) and before its `tool_execution_end` -- a deliberate ~1.5s window where
+// Stage 1 is observably still running, for `scripts/verify-991-stage-focus.mjs`'s own
+// keyboard-focus-survives-settling check. Nothing else in this file changes: every frame's
+// own content, order, and every existing `verify-941-*`/`verify-941-part2` assertion (all of
+// which wait on FINAL settled content, 30s timeouts) are unaffected by one extra ~1.5s pause
+// this early in the tape.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -62,6 +71,7 @@
 {"type":"tool_execution_start","toolCallId":"stage1-task","toolName":"task","args":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]},"intent":"Running the #923 quality gate"}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage1-task","name":"task","arguments":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]}}],"timestamp":0}}
 {"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage1-task","name":"task","arguments":{"context":"# Goal\nQuality gate for #923","tasks":[{"name":"G923Code","task":"Review the code changes for #923."},{"name":"G923Arch","task":"Review the architecture for #923."}]}}],"timestamp":0}}
+{"__delay__":1500}
 {"type":"tool_execution_end","toolCallId":"stage1-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"G923Code","status":"finished","task":"Review the code changes for #923.","durationMs":1200},{"index":1,"id":"G923Arch","status":"finished","task":"Review the architecture for #923.","durationMs":1500}]}},"isError":false}
 {"type":"message_start","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"G923Code","label":"G923Code","status":"completed","resultText":"Reviewed the code for #923.\nNo blocking issues found.","durationMs":1200},{"id":"G923Arch","label":"G923Arch","status":"completed","resultText":"Reviewed the architecture for #923.\nAll boundaries look sound.","durationMs":1500}]},"timestamp":0}}
 {"type":"message_end","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","content":"","details":{"jobs":[{"id":"G923Code","label":"G923Code","status":"completed","resultText":"Reviewed the code for #923.\nNo blocking issues found.","durationMs":1200},{"id":"G923Arch","label":"G923Arch","status":"completed","resultText":"Reviewed the architecture for #923.\nAll boundaries look sound.","durationMs":1500}]},"timestamp":0}}

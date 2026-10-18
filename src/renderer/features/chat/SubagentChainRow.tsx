@@ -13,7 +13,7 @@ import { BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, stageToggleKey, useReadoutStore, useStageToggleStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
@@ -141,11 +141,29 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     for (const item of group.items) seenIds.add(item.id)
   }, [group.items, seenIds])
   const isOpenByDefault = total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')
-  const userToggledRef = React.useRef(false)
-  const [open, setOpen] = React.useState(isOpenByDefault)
+  // Issue #991 item 4 (ui-architect-v3 ruling, 2026-10-18, posted on the issue): this effect
+  // used to re-sync `open` to `isOpenByDefault` in BOTH directions, so a Stage auto-closed the
+  // instant it settled all-success even while a mouse user was still reading it -- the exact
+  // complaint the per-turn chain row below was already fixed for in the same #941 gate (sync
+  // upward only, never auto-close). Now matches: a Stage still auto-opens while running/
+  // failed/cancelled/exited, but once opened (by auto-open OR the user), it stays open until
+  // the user collapses it themselves. This also resolves follow-up 1 (Medium, a11y, WCAG
+  // 2.4.3) as a side effect: with no more automatic close, there is no more path left where a
+  // keyboard user's focus inside the content can be dropped by an auto-close-triggered Radix
+  // unmount -- the only way this row ever closes now is the user's own `onOpenChange`
+  // (clicking/activating this exact trigger, which therefore already has focus).
+  //
+  // Issue #991 follow-up 2 (Low): toggle state now lives in `useStageToggleStore` (keyed by
+  // session + this Stage's own `group.id`), not a plain `useRef`/`useState` pair, so a manual
+  // toggle survives this row remounting (a session switch unmounts the whole `Transcript`).
+  const toggleKey = stageToggleKey(sessionId, group.id)
+  const toggleEntry = useStageToggleStore((s) => s.byKey[toggleKey])
+  const setToggle = useStageToggleStore((s) => s.setToggle)
+  const userToggled = toggleEntry?.userToggled ?? false
+  const open = toggleEntry?.open ?? isOpenByDefault
   React.useEffect(() => {
-    if (!userToggledRef.current) setOpen(isOpenByDefault)
-  }, [isOpenByDefault])
+    if (!userToggled && isOpenByDefault) setToggle(toggleKey, true, false)
+  }, [isOpenByDefault, toggleKey, userToggled, setToggle])
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
@@ -240,22 +258,12 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
       // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
       // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
-      // existing running/failed/cancelled/exited auto-open, auto-closing once finished.
-      // Gate-fix (first real build-slot run, never exercised before now): the OLD uncontrolled
-      // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState` AT FIRST MOUNT --
-      // if this row mounts (one more member just streamed in) WHILE still running, that
-      // initializer captures `true` once and never re-reads a later recompute once this Stage
-      // settles, so a finished multi-agent Stage could stay stuck open forever (confirmed live:
-      // Stage 7's own trigger stayed `aria-expanded="true"` on the FIRST theme pass instead of
-      // the fixture's real `false` starting state). Fixed by going fully controlled, re-syncing
-      // `open` to the live `isOpenByDefault` value in BOTH directions whenever it changes,
-      // UNTIL the user explicitly toggles it (`userToggledRef`) -- unlike the per-turn chain
-      // row (issue #941, decision 2026-10-18: sync upward only), this row's own documented
-      // design has always auto-closed once settled, so both directions stay correct here.
+      // existing running/failed/cancelled/exited auto-open, now sync'd upward only (issue #991
+      // item 4, ui-architect-v3 ruling) -- see the toggle block above for the full rationale,
+      // which also covers follow-up 1's a11y fix as a side effect.
       open={open}
       onOpenChange={(next) => {
-        userToggledRef.current = true
-        setOpen(next)
+        setToggle(toggleKey, next, true)
       }}
       triggerAriaLabel={triggerAriaLabel}
       // #565 decision 8: a multi-agent Stage's own `SpineList` needs its `ml-4`/`pt-1`; a
@@ -468,11 +476,23 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   // the user expanded mid-read and drop their focus, so settling back to all-green never
   // auto-collapses a row the user never touched either.
   const isUnsettled = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
-  const userToggledRef = React.useRef(false)
-  const [open, setOpen] = React.useState(isUnsettled)
+  // Issue #991 follow-up 2 (Low, deferred from the #941 gate, PR #979): this toggle used to
+  // live in a plain `useRef`/`useState` pair, so it was forgotten the instant this component
+  // unmounted -- which it does entirely, `useState`/`useRef` and all, whenever a turn's own
+  // Stage count drops back below 2 (the early return below) and remounts fresh if it rises
+  // again. Keyed by `stages[0].id` (stable per turn, same id `StageGroupRow` itself derives
+  // its own key from) via `useStageToggleStore`, so a manual toggle survives that remount, and
+  // a session switch, the same way `StageGroupRow`'s own toggle now does.
+  const turnKey = stages[0]?.id
+  const toggleKey = turnKey ? stageToggleKey(sessionId, `chain:${turnKey}`) : null
+  const toggleEntry = useStageToggleStore((s) => (toggleKey ? s.byKey[toggleKey] : undefined))
+  const setToggle = useStageToggleStore((s) => s.setToggle)
+  const userToggled = toggleEntry?.userToggled ?? false
+  const open = toggleEntry?.open ?? isUnsettled
   React.useEffect(() => {
-    if (!userToggledRef.current && isUnsettled) setOpen(true)
-  }, [isUnsettled])
+    if (!toggleKey) return
+    if (!userToggled && isUnsettled) setToggle(toggleKey, true, false)
+  }, [isUnsettled, toggleKey, userToggled, setToggle])
 
   if (stages.length < 2) return null
 
@@ -525,8 +545,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       metaClassName="min-w-0 shrink"
       open={open}
       onOpenChange={(next) => {
-        userToggledRef.current = true
-        setOpen(next)
+        if (toggleKey) setToggle(toggleKey, next, true)
       }}
       className="mt-6"
       contentClassName={SPINE_HOST_CONTENT_CLASS}

@@ -122,10 +122,10 @@ export const PLAIN_TOOL_TITLE = 'read';
  * anywhere in `titleText` (STAGE10_BORDERLINE_TITLE's own "brief's own") closed that string
  * early, a syntax error the instant this title was ever actually waited on. Fixed by building
  * the CSS value first (escaping backslash/double-quote), then `JSON.stringify`-ing the WHOLE
- * `querySelector` argument once -- correct for any content, apostrophes included. */
+ * `querySelector` argument once. Issue #991 follow-up 3: scoped to `[data-slot="message-scroller-item"]` (research.md decision 18) so this never matches the open chain row's own duplicate title (`ChainStageLine`). */
 export function titleSelector(titleText) {
   const cssValue = titleText.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `document.querySelector(${JSON.stringify(`[title="${cssValue}"]`)})`;
+  return `Array.from(document.querySelectorAll(${JSON.stringify(`[title="${cssValue}"]`)})).find(el => el.closest('[data-slot="message-scroller-item"]'))`;
 }
 
 export function stageContentSelector(titleText) {

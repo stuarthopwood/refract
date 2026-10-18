@@ -3612,3 +3612,39 @@ Stage shows a stray "Uses:" line (the fixture's own task names carry no `agent:/
 Opened as draft PR #993 on branch `feat/941-stages-part2`, stacked on part 1's now-merged
 `feat/941-stages` (PR #979, merged as `d9c88f2`). **Refs #941** until the live check above
 confirms every acceptance item; switches to **Closes #941** once it does.
+
+## Phase 60: Stage row focus and toggle follow-ups (#991, gate follow-ups from #941 part 1, PR #979) [US1]
+
+**Goal**: fix the three code-level follow-ups the #941 lane's final gate deferred (four-round
+rule, 2026-10-18): a running Stage auto-closing can drop a keyboard user's focus (a11y, WCAG
+2.4.3), a manual Stage/chain-row toggle forgotten on remount, and a selector-scoping gap in
+`scripts/verify-941-stage-naming-helpers.mjs`. The fourth item (a mouse user reading a Stage row
+while it auto-closes) is a reconsideration, not a bug; see research.md decision 18 for the
+ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
+
+- [X] T288 `SubagentChainRow.tsx`'s `StageGroupRow`: the sync effect changes from bidirectional
+  ("sync `open` to `isOpenByDefault` whichever way it moves") to upward-only -- a Stage still
+  auto-opens while running/failed/cancelled/exited, but never auto-closes once open, matching
+  FR-068's existing rule for the per-turn Subagent chain row (research.md decision 18).
+- [X] New `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`, non-persisted, keyed
+  by session id plus a Stage's own `group.id` or `chain:<first stage id>` for the chain row):
+  both `StageGroupRow` and `SubagentChainRow` move their own `userToggledRef`/`open` pair onto
+  it, surviving a remount (a session switch, or the chain row's own `stages.length < 2` unmount)
+  (FR-081).
+- [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
+  `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
+  Subagent chain row's own duplicate title text (`ChainStageLine`).
+- [X] T289 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additive `{"__delay__": 1500}` (no new fixture, AGENTS.md): proves keyboard
+  focus placed inside a genuinely running Stage 1 survives it settling all-success with the row
+  itself staying open; proves `titleSelector`'s scoping directly against the chain row's own
+  live duplicate title; proves a manual toggle on a solo Stage row and on the chain row both
+  survive a real session-switch remount. Written, not run end-to-end (no build slot granted for
+  this sub-task): `node --check` plus a real `import()` load-check on every touched/adjacent
+  script, `pnpm typecheck` and `pnpm vitest run` (148/148) clean, `node scripts/check-indent.mjs`
+  and `node scripts/check-file-size.mjs` clean (the helpers file's own added comment was trimmed
+  to stay under the #806 600-line cap).
+
+Draft PR, branch `feat/991-stage-focus`. **Refs #991** until the live check above is actually run
+against a real built exe and confirms every acceptance item; switches to **Closes #991** once it
+does.

@@ -215,3 +215,43 @@ toggle control and no `aria-selected` either (a header has no single subagent id
 collapse); its real members are always rendered nested beneath it. `ArrowRight` on a header row
 moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
 "collapse" action anywhere in this tree.
+
+## 18. Stage row focus and toggle follow-ups (issue #991, 2026-10-18)
+
+**Decision (ui-architect-v3 ruling, posted on issue #991)**: `StageGroupRow`'s own open/close
+sync effect (`SubagentChainRow.tsx`) changes from bidirectional ("sync `open` to
+`isOpenByDefault` whichever way it moves") to upward-only -- a multi-agent Stage still
+auto-opens while running/failed/cancelled/exited, but once open (by auto-open or the user), it
+stays open until the user collapses it themselves. This matches the per-turn Subagent chain
+row's own rule, already decided this way during the #941 gate (2026-10-18, "sync UPWARD only,
+never auto-close -- an untouched row closing itself the instant everything finishes would
+collapse Stage rows the user expanded mid-read and drop their focus"). The "documented design"
+rationale the #941 gate used to defer this (treating the Stage row as a deliberately different,
+always-auto-closing case) does not hold up under re-reading: before #941 the row used an
+uncontrolled `defaultOpen` prop, which Radix reads only once at mount and never re-applies, so a
+Stage settling to green in place never actually auto-closed before #941's own mount-bug fix went
+in (`dc80999`) -- the bidirectional sync was a side effect of that fix, not a separately
+considered original choice. Removing the auto-close resolves two of #991's four items at once:
+the a11y defect (a keyboard user's focus inside the content can no longer be dropped by an
+automatic Radix unmount, since the only remaining way to close the row is the user's own
+activation of its own trigger, which already holds focus at that moment) and the "mouse user
+reading it when it closes" annoyance (there is no longer an automatic close to interrupt either
+kind of user).
+
+**Decision**: `userToggledRef`/`open`, for both the Stage row and the Subagent chain row, move
+out of a plain `useRef`/`useState` pair into a new `useStageToggleStore`
+(`src/renderer/state/stage-toggle-store.ts`), keyed by session id plus the row's own stable id
+(a Stage's own `group.id`; `chain:<first stage id>` for the chain row, which has no id of its
+own). Non-persisted, in-memory only -- same convention as `alert-dismiss-store.ts`: reset only
+by a full app restart, never written to `settings.json`/disk. This survives both kinds of
+remount named in the issue: a session switch (the whole `Transcript` unmounts), and the chain
+row's own full unmount whenever a turn's Stage count drops back below 2 (`if (stages.length < 2)
+return null`) and later rises again.
+
+**Decision**: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` (a plain
+`document.querySelector('[title="..."]')`) only ever found the right Stage because a turn's
+Stage rows render earlier in the DOM than the chain row that repeats the same label text in its
+own `ChainStageLine` once open (its default state). Scoped instead to an element whose closest
+ancestor is a real per-position row (`data-slot="message-scroller-item"`,
+`MessageScrollerItem`) -- the chain row renders directly in the turn's own `React.Fragment`,
+with no such ancestor, so this can never match its own duplicate regardless of DOM order.

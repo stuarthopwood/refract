@@ -461,6 +461,38 @@
   still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
   of its status.
 
+### Session 2026-10-18 (Stage row focus and toggle follow-ups)
+
+- Q: Issue #991 (gate follow-ups from the #941 lane's final gate, PR #979, four-round rule):
+  a running multi-agent Stage auto-closes on finish even when a keyboard user has focus inside
+  its content, Radix unmounts the content and focus falls to `<body>` (WCAG 2.4.3). Fix? → A:
+  ui-architect-v3 ruling (posted on the issue): the same "sync upward only, never auto-close"
+  rule already shipped for the per-turn Subagent chain row (FR-068, decision 2026-10-18) applies
+  to the Stage row too -- the "documented design" rationale for treating them differently did
+  not hold up: pre-#941 the row used an uncontrolled `defaultOpen` Radix never re-applied after
+  mount, so a Stage settling to green never actually auto-closed before #941's own mount-bug
+  fix introduced the bidirectional sync as a side effect, not a deliberately separate choice.
+  Removing the auto-close also resolves the focus-loss defect directly: the only way a Stage
+  row closes now is the user's own activation of its own trigger, which already holds focus.
+- Q: Does this also settle item 4 (a mouse user reading a Stage row while it auto-closes on an
+  all-success finish)? → A: Yes, the same change answers both: the row no longer auto-closes
+  on an all-success finish at all, for a mouse or a keyboard user.
+- Q: `userToggledRef`/`open` live in a plain `useRef`/`useState` pair for both the Stage row and
+  the Subagent chain row, so a manual toggle is forgotten if the row remounts (a session switch,
+  or the chain row's own `stages.length` dropping below 2 and later rising again)? → A: Moved to
+  a new `useStageToggleStore` (`src/renderer/state/stage-toggle-store.ts`), non-persisted,
+  keyed by session id plus the row's own stable id (a Stage's `group.id`, or `chain:<first
+  stage id>` for the chain row). Same convention as `alert-dismiss-store.ts`: reset only by a
+  full app restart, never written to `settings.json`/disk.
+- Q: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` finds a Stage's own title
+  by a plain `document.querySelector`, which returns the FIRST matching element in the whole
+  document -- the per-turn chain row's own `ChainStageLine` repeats the same Stage label text
+  in its own `title` once the chain row is open (its default state), so this only ever found
+  the right element because Stage rows happen to render earlier in the DOM. Scope it? → A:
+  Yes -- scoped to an element whose closest ancestor is a real per-position row
+  (`data-slot="message-scroller-item"`, `MessageScrollerItem`); the chain row has no such
+  ancestor, so it can never match the chain row's own duplicate regardless of DOM order.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -834,6 +866,18 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
+- **FR-081** (new, 2026-10-18, issue #991, gate follow-ups from #941 part 1/PR #979; amends
+  FR-067's Stage row): A multi-agent Stage row (FR-067) MUST sync its disclosure open **upward
+  only** -- it MUST still auto-open while any of its own agents is running, failed, cancelled,
+  or exited, but once open (by that auto-open or by the user), it MUST NOT auto-close itself
+  again on settling all-success; only the user's own toggle may close it, matching the existing
+  per-turn Subagent chain row's rule (FR-068). This also guarantees a keyboard user's focus
+  already inside an open Stage's content is never silently dropped to `<body>` by an automatic
+  collapse (WCAG 2.4.3): the only way the row closes is the user's own activation of its own
+  trigger, which already holds focus at that moment. A Stage row's and the Subagent chain row's
+  own manual-toggle state MUST survive a remount of the row (a session switch, or the chain
+  row's own unmount when a turn's Stage count drops back below two and later rises again),
+  keyed per session and per row.
 
 ### Key Entities
 
