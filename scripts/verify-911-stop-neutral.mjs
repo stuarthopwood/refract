@@ -326,9 +326,9 @@ async function main() {
     notExercised.push(
       "This fixture's own turn-A abort sequence (`tool_execution_start`, a REAL `abort` wait, then that same call's own `tool_execution_end{isError:true, \"Command aborted\"}`, then `prompt_result{status:\"aborted\"}`) is hand-written against the documented wire contract (src/shared/frames.ts's PromptResultFrame.status already lists 'aborted'; transcript.rs's own apply_prompt_result_notice already has an \"aborted\" arm) and against issue #911's own live finding (verify-570-tool-colours.mjs turn (c), 2026-10-16, real signed-in omp, which captured this exact isError:true/\"Command aborted\" shape once, live) -- it is NOT itself a fresh live capture of a real omp's own abort response; re-probing a real omp for it was out of scope for this fix."
     );
-    notExercised.push(
-      'This run was written, not executed end-to-end: no build slot has been granted for this sub-task, and the fix is Rust-side (ToolStatus::Cancelled, AgentState.turn_abort_requested), so the live check cannot genuinely pass without a rebuilt exe containing it. Only `node --check` and a real `import()` load-check have actually been run against this file and the new stop-911.jsonl fixture.'
-    );
+    // Issue #911 live-verified (build slot granted by Main, 2026-10-18): ran end to end,
+    // 0 failures, screenshots viewed in all 3 themes. The "written, not run" note this script
+    // carried before that run is removed -- it is no longer true.
 
     const verdict = failures.length > 0 ? 'FAILED' : 'DONE';
     const exitCode = failures.length > 0 ? 1 : 0;
