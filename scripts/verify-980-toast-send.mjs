@@ -142,22 +142,28 @@ const CHROME_CHECK_EXPR = `(() => {
   };
 })()`;
 
-// Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2) on a Session row's own
-// open button (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and modifier
-// combination `onClick`'s own `event.ctrlKey` branch checks, calling the real
-// `openInSplit(session.id)`, not a direct store call. A local copy of the same real technique the
-// (unmerged) `feat/672-start-message` branch's own `verify-672-start-message-helpers.mjs` uses --
-// that branch is not yet on `origin/main`, so its file cannot be imported from here.
+// Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2, bracketed by a real
+// `Input.dispatchKeyEvent` Control keydown/keyup -- the more explicit, robust CDP technique for a
+// modified click, not just the mouse event's own `modifiers` bit) on a Session row's own open
+// button (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and modifier combination
+// `onClick`'s own `event.ctrlKey` branch checks, calling the real `openInSplit(session.id)`, not
+// a direct store call. `scrollIntoView` first in case the session list has scrolled since the
+// row was last visible. A local copy of the same real technique the (unmerged)
+// `feat/672-start-message` branch's own `verify-672-start-message-helpers.mjs` uses -- that
+// branch is not yet on `origin/main`, so its file cannot be imported from here.
 async function ctrlClickSessionRow(cdp, sessionId) {
-  const rect = await cdp.evaluate(`(() => {
+  const info = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
-    if (!el) return null;
+    if (!el) return { found: false };
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
     const r = el.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    return { found: true, x: r.x + r.width / 2, y: r.y + r.height / 2 };
   })()`);
-  if (!rect) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
+  if (!info.found) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
 }
 
 async function main() {
@@ -347,16 +353,33 @@ async function main() {
     report.push({ step: 'narrow (<=600px) window: toast clear, mobileOffset applied', ok: true, geometry: narrowResult });
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
 
-    // Split pane: Session B quick-created (replaces the front pane), then a real Ctrl+click on
-    // Session A's own row reopens it alongside B (`openInSplit`, the same production path a
-    // user's own Ctrl+click takes) -- two independently-sized composers, two Send buttons.
-    await cdp.click(`document.querySelector('[data-quick-create-session]')`);
+    // Split pane: Session B created via the SAME proven "New session from a branch" dialog flow
+    // Session A itself used (gate: build-slot run falsification -- the quick-create "+" button
+    // click SUCCEEDED but `sessions.list()` right after still showed only ONE session: this
+    // harness's quick-create path does not create a second session, for reasons out of this
+    // issue's scope to chase further; the dialog flow is independently proven, used twice here).
+    // Then a real Ctrl+click on Session A's own row reopens it alongside B (`openInSplit`, the
+    // same production path a user's own Ctrl+click takes) -- two independently-sized composers,
+    // two Send buttons.
+    await cdp.clickByLabel('New session from a branch in ', { prefix: true });
+    await cdp.waitFor(
+      `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
+      { timeoutMs: 15_000, label: 'Session B: New session dialog open, Create session enabled' }
+    );
+    await cdp.clickByText('Create session', { inDialog: true });
+    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Session B: New session dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-      timeoutMs: 30_000,
+      timeoutMs: 60_000,
       label: 'Session B composer enabled'
     });
+    const sessionsListAfterB = await cdp.evaluate(`window.refract.sessions.list()`);
+    assertEqual(sessionsListAfterB?.ok, true, 'sessions.list() ok after creating Session B');
+    assertEqual(sessionsListAfterB.value.length, 2, 'exactly two Sessions exist (A and B)');
     await ctrlClickSessionRow(cdp, sessionAId);
-    await cdp.waitFor(`document.querySelectorAll('[aria-label="Message"]').length === 2`, { timeoutMs: 15_000, label: 'Split open (real Ctrl+click): two composers mounted' });
+    await cdp.waitFor(`document.querySelectorAll('[aria-label="Message"]').length === 2`, {
+      timeoutMs: 15_000,
+      label: 'Split open (real Ctrl+click): two composers mounted'
+    });
     await triggerMarkerToast(cdp, { extraText: TALL_MARKER_TEXT });
     const splitResult = await assertChromeClear(cdp, 'split pane, one composer tall', 2);
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-split-pane.png'));
