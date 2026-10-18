@@ -63,7 +63,6 @@ import {
   assertStageMetaRollup,
   assertGreenFinished,
   assertDetailsOnExpand,
-  assertDependencies,
   assertChainRow,
   STAGE1_TITLE,
   STAGE2_TITLE,
@@ -77,6 +76,7 @@ import {
   STAGE10_BORDERLINE_TITLE,
   PLAIN_TOOL_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
+import { assertDependencies } from './verify-941-stage-naming-panel-helpers.mjs';
 import { assertContextBriefOverflow, assertNarrowViewportOverflow } from './verify-941-stage-naming-overflow-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -235,17 +235,21 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '00-all-stages-settled.png'));
     findings.push('All ten Stages, the solo Stages, and the plain non-Stage tool row rendered and settled.');
 
-    for (const theme of THEMES) {
+    for (const [themeIndex, theme] of THEMES.entries()) {
+      // Gate round 3 fix (item 11): only the FIRST pass through this loop can assert a row's
+      // own REAL `defaultOpen` starting value exactly -- `switchTheme` never reloads the app,
+      // so a row a later pass already expanded stays expanded across every subsequent theme.
+      const isFirstThemePass = themeIndex === 0;
       await switchTheme(cdp, theme.id, theme.name);
       await assertStageNaming(cdp, findings, failures, theme.name);
       await assertSoloAgentName(cdp, findings, failures, theme.name);
       await assertStageMetaRollup(cdp, findings, failures, theme.name);
       await assertGreenFinished(cdp, findings, failures, theme.name);
-      await assertDetailsOnExpand(cdp, findings, failures, theme.name);
-      await assertDependencies(cdp, findings, failures, theme.name);
-      await assertContextBriefOverflow(cdp, findings, failures, theme.name);
+      await assertDetailsOnExpand(cdp, findings, failures, theme.name, isFirstThemePass);
+      await assertDependencies(cdp, findings, failures, theme.name, isFirstThemePass);
+      await assertContextBriefOverflow(cdp, findings, failures, theme.name, isFirstThemePass);
       await assertNarrowViewportOverflow(cdp, findings, failures, theme.name);
-      await assertChainRow(cdp, findings, failures, theme.name);
+      await assertChainRow(cdp, findings, failures, theme.name, isFirstThemePass);
 
       const shotName = `stages-941-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));

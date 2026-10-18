@@ -173,15 +173,23 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // this -- is what gives up space first; the settled "N done"/"N done, M failed" wording
   // already states failed/cancelled/exited, so a bare status word is shown only while running.
   const meta = (
-    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
-      {joinMetaParts([
-        <span key="summary">{summaryText}</span>,
-        durationMs != null ? (
-          <span key="duration" className="tabular-nums">
-            {formatElapsed(durationMs)}
-          </span>
-        ) : undefined
-      ])}
+    <span aria-hidden="true" className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs leading-5 text-muted-foreground">
+      {joinMetaParts([<span key="summary">{summaryText}</span>])}
+      {durationMs != null && (
+        // Gate round 4 fix (issue #941, P5, MEDIUM): previously inside the `joinMetaParts`
+        // array above (`shrink-0`, no hide rule at all), so a multi-agent Stage's own meta slot
+        // could never give up the duration's own width under real pressure. Pulled out into
+        // the SAME standalone, separator-bundled wrapper pattern `isRunning`/`startTimeText`
+        // already use below (gate round 3 fix: `joinMetaParts` renders a part's own separator
+        // as a SEPARATE sibling before it, so hiding only the content would leave a dangling
+        // "·" with nothing after it at a narrow width) -- hidden together with them, one step
+        // earlier (`@max-[20rem]`, narrower than their own `@max-[32rem]`), so the duration is
+        // the LAST of the three optional parts to give up space, not the first.
+        <span className="@max-[20rem]:hidden">
+          <span> · </span>
+          <span className="tabular-nums">{formatElapsed(durationMs)}</span>
+        </span>
+      )}
       {isRunning && (
         <span className="@max-[32rem]:hidden">
           <span> · </span>
@@ -263,8 +271,11 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
   // Quality-gate remediation (Medium, code review): the bare `?? []` fallback returned a fresh
   // array identity on every render, defeating zustand's `useSyncExternalStore` memoisation under
   // React 19 -- `EMPTY_READOUT_ENTRY` is the stable singleton the rest of the codebase already
-  // uses for exactly this (e.g. `SubagentPanel.tsx`).
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : []))
+  // uses for exactly this (e.g. `SubagentPanel.tsx`). Gate round 4 fix (issue #941, P7, LOW):
+  // the OUTER `sessionId ? ... : []` branch still had its own fresh-literal fallback below this
+  // comment was originally written to describe fixing -- both branches now resolve to the same
+  // stable `EMPTY_READOUT_ENTRY.subagents` reference.
+  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
   const status = chatRowStatus(item.status)
   const duration = item.durationMs != null ? formatElapsed(item.durationMs) : undefined

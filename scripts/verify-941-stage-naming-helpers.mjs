@@ -164,10 +164,27 @@ export async function expandRow(cdp, titleText) {
  * (`'true'` or `'false'`) before expanding -- never specifically `'false'`, since a prior theme
  * pass in the SAME run may have already expanded this exact row (see the module header) -- and
  * is exactly `'true'` after. Generalized over any trigger-finding JS expression so the chain
- * row's own expand click gets the identical guard (previously it had none at all). */
-export async function assertExpandCycleByFinder(cdp, triggerFinderExpr, findings, failures, themeName, label) {
+ * row's own expand click gets the identical guard (previously it had none at all).
+ *
+ * Gate round 3 fix (item 11): `firstPassExpectedBefore` (when given) asserts the row's own REAL
+ * `defaultOpen` starting value exactly, instead of merely "a known boolean" -- a caller passes
+ * it only when the theme pass currently running is the FIRST one for this scenario run (nothing
+ * has expanded or collapsed any row yet) and the fixture's own data makes that starting value
+ * unambiguous: `'false'` for a Stage whose own `defaultOpen` is false (every agent finished, no
+ * failure/cancel/exit -- Stage 1/2/7 here), or `'true'` for the chain row (this fixture's own
+ * Stage 5 carries one `failed` agent, so `counts.failed > 0` makes the WHOLE TURN's chain row
+ * default OPEN, `SubagentChainRow.tsx:429`). On every later pass (and for any row this fixture
+ * cannot make an unambiguous claim about) `firstPassExpectedBefore` is left `undefined` and the
+ * old "a known boolean, either value" check runs unchanged. */
+export async function assertExpandCycleByFinder(cdp, triggerFinderExpr, findings, failures, themeName, label, firstPassExpectedBefore) {
   const before = await cdp.evaluate(`(${triggerFinderExpr})?.getAttribute('aria-expanded') ?? null`);
-  if (before !== 'true' && before !== 'false') {
+  if (firstPassExpectedBefore !== undefined) {
+    if (before !== firstPassExpectedBefore) {
+      failures.push(`[${themeName}] ${label}'s own trigger aria-expanded was ${JSON.stringify(before)} before expanding on the FIRST theme pass, expected exactly the string ${JSON.stringify(firstPassExpectedBefore)} (this fixture's own real defaultOpen starting state).`);
+    } else {
+      findings.push(`[${themeName}] ${label}'s own trigger aria-expanded is exactly ${JSON.stringify(firstPassExpectedBefore)} before expanding, as expected on the first theme pass (a genuine starting-state check against this fixture's own real defaultOpen value, not merely a known boolean).`);
+    }
+  } else if (before !== 'true' && before !== 'false') {
     failures.push(`[${themeName}] ${label}'s own trigger aria-expanded was ${JSON.stringify(before)} before expanding, expected the string "true" or "false" (a known starting state).`);
   } else {
     findings.push(`[${themeName}] ${label}'s own trigger aria-expanded is a known starting state (${JSON.stringify(before)}) before expanding (a prior theme pass in this run may have already expanded it -- switchTheme never reloads the app).`);
@@ -181,8 +198,8 @@ export async function assertExpandCycleByFinder(cdp, triggerFinderExpr, findings
   }
 }
 
-async function assertExpandCycle(cdp, titleText, findings, failures, themeName, label) {
-  await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label);
+async function assertExpandCycle(cdp, titleText, findings, failures, themeName, label, firstPassExpectedBefore) {
+  await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label, firstPassExpectedBefore);
 }
 
 /** Issue #941 grill item 3 (Naming): all ten Stages' own visible labels, including Stage 3's
@@ -226,11 +243,73 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName) {
   } else {
     findings.push(`[${themeName}] Stage 9 (solo, no context)'s own visible label IS its sole agent's name "SoloBare" (computeStageLabel's own names.length === 1 fallback, gate round 2 item 1).`);
   }
-  const withCtxText = await cdp.evaluate(`${stageTriggerSelector(STAGE6_SOLO_TITLE)}?.textContent ?? ''`);
-  if (!withCtxText.includes('Story559')) {
-    failures.push(`[${themeName}] Stage 6 (solo, with context)'s own trigger does not show its sole agent's name "Story559" alongside its context-derived label (got: ${JSON.stringify(withCtxText)}).`);
+  // Gate round 3 fix (item 10): the real agent `task()` named for Stage 6 is "R8Solo" (fixture
+  // `stage6-task`), not "Story559" -- "Story559" only ever appears in Stage 6's own CONTEXT
+  // text ("Final solo check building on agent://Story559."), which becomes STAGE6_SOLO_TITLE
+  // itself (the Stage's own LABEL, already asserted by `assertStageNaming`). The old
+  // `includes('Story559')` check against the WHOLE trigger's `textContent` was therefore
+  // trivially true via the label alone and never actually exercised `CollapsedLine`'s own
+  // `summary` slot at all -- nor could it have caught the #941 gate-round-3 zero-width
+  // regression (a solo Stage's summary rendering at 0px once the row's label/meta already
+  // filled the available width, `summaryFixedWidth`'s own `title` attribute on the summary
+  // SPAN -- set only when `summaryFixedWidth` is true, i.e. only for a solo Stage WITH context
+  // -- is the one source-grounded selector for that exact element). This now targets that
+  // SPAN specifically, by its own `title="R8Solo"`, and asserts both its text AND a real
+  // rendered width greater than 0px.
+  const summarySpan = await cdp.evaluate(`(() => {
+    const el = ${stageTriggerSelector(STAGE6_SOLO_TITLE)}?.querySelector('[title="R8Solo"]');
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { text: el.textContent, width: rect.width };
+  })()`);
+  if (!summarySpan || summarySpan.text !== 'R8Solo' || !(summarySpan.width > 0)) {
+    failures.push(`[${themeName}] Stage 6 (solo, with context)'s own CollapsedLine summary slot (found by its own title="R8Solo") does not show its sole agent's real name "R8Solo" at a visible (>0px) width (got: ${JSON.stringify(summarySpan)}).`);
   } else {
-    findings.push(`[${themeName}] Stage 6 (solo, with context)'s own trigger shows its sole agent's name "Story559" as CollapsedLine's own summary slot, alongside its context-derived label.`);
+    findings.push(`[${themeName}] Stage 6 (solo, with context)'s own CollapsedLine summary slot shows its sole agent's real name "R8Solo" (never "Story559", which is only Stage 6's own context-derived LABEL text) at a visible width of ${summarySpan.width}px (>0, the #941 gate-round-3 zero-width regression guard).`);
+  }
+  // Gate round 4 fix (issue #941, P4, HIGH): resize to a ~320px pane and re-check the same
+  // solo Stage's own summary span, its LABEL span, and the chevron icon -- `CollapsedLine.tsx`'s
+  // P4 fix (the label's own `min-w-16` floor, the fixed-width summary's `shrink` instead of
+  // `shrink-0`, and a genuine `flex-1` spacer before meta) specifically targets this exact
+  // narrow-pane squeeze: before it, the label could shrink all the way to 0px and the chevron
+  // itself could clip once nothing else had any slack left to give.
+  const NARROW_PANE_WIDTH = 320;
+  try {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: NARROW_PANE_WIDTH, height: 800, deviceScaleFactor: 1, mobile: false });
+    const narrow = await cdp.evaluate(`(() => {
+      const trigger = ${stageTriggerSelector(STAGE6_SOLO_TITLE)};
+      if (!trigger) return null;
+      const label = trigger.querySelector('span.font-medium');
+      const summary = trigger.querySelector('[title="R8Solo"]');
+      const svgs = trigger.querySelectorAll('svg');
+      const chevron = svgs.length > 0 ? svgs[svgs.length - 1] : null;
+      const triggerRect = trigger.getBoundingClientRect();
+      const chevronRect = chevron ? chevron.getBoundingClientRect() : null;
+      return {
+        labelWidth: label ? label.getBoundingClientRect().width : null,
+        summaryWidth: summary ? summary.getBoundingClientRect().width : null,
+        chevronWidth: chevronRect ? chevronRect.width : null,
+        chevronHeight: chevronRect ? chevronRect.height : null,
+        chevronClipped: chevronRect ? chevronRect.right > triggerRect.right + 1 || chevronRect.left < triggerRect.left - 1 : null
+      };
+    })()`);
+    if (!narrow || !(narrow.labelWidth > 0)) {
+      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own label span has width ${narrow?.labelWidth ?? 'null'} (expected > 0px -- the label must never shrink all the way to 0px, P4's own regression).`);
+    } else {
+      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own label span keeps a visible width of ${narrow.labelWidth}px.`);
+    }
+    if (!narrow || !(narrow.summaryWidth > 0)) {
+      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own summary span ("R8Solo") has width ${narrow?.summaryWidth ?? 'null'} (expected > 0px).`);
+    } else {
+      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6 (solo)'s own summary span keeps a visible width of ${narrow.summaryWidth}px.`);
+    }
+    if (!narrow || !(narrow.chevronWidth > 0) || !(narrow.chevronHeight > 0) || narrow.chevronClipped) {
+      failures.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6's own chevron icon is clipped or has zero size (${JSON.stringify(narrow)}).`);
+    } else {
+      findings.push(`[${themeName}] At a ${NARROW_PANE_WIDTH}px pane, Stage 6's own chevron icon stays fully visible (${narrow.chevronWidth}x${narrow.chevronHeight}px, not clipped).`);
+    }
+  } finally {
+    await cdp.send('Emulation.clearDeviceMetricsOverride', {}).catch(() => {});
   }
 }
 
@@ -373,8 +452,8 @@ export async function assertGreenFinished(cdp, findings, failures, themeName) {
  * `ToolRow.tsx`'s `SubagentRow`, `extractResultSummary`): expanding Stage 1 reveals its own batch
  * context, and BOTH members show their own result's first line with no need to also expand the
  * member row itself. */
-export async function assertDetailsOnExpand(cdp, findings, failures, themeName) {
-  await assertExpandCycle(cdp, STAGE1_TITLE, findings, failures, themeName, 'Stage 1');
+export async function assertDetailsOnExpand(cdp, findings, failures, themeName, isFirstThemePass) {
+  await assertExpandCycle(cdp, STAGE1_TITLE, findings, failures, themeName, 'Stage 1', isFirstThemePass ? 'false' : undefined);
   await cdp.waitFor(`${stageContentSelector(STAGE1_TITLE)}?.textContent.includes('Quality gate for #923') ?? false`, {
     timeoutMs: 10_000,
     label: `[${themeName}] Stage 1 expanded content shows its own context`
@@ -402,103 +481,13 @@ export async function assertDetailsOnExpand(cdp, findings, failures, themeName) 
   }
 }
 
-/** Issue #941 grill item 5: Stage 2's real "Uses: G923Code (Stage 1)" dependency, the dropped
- * unmatched `agent://NoSuchAgent` reference, Stage 1/Stage 3's own absence of any "Uses:" line
- * (gate round 2 fix, item 11c: both are now EXPANDED first -- `CollapsedLine.tsx`'s own comment
- * confirms Radix unmounts `CollapsibleContent` while closed, so checking an unexpanded row's
- * content for an absent "Uses:" line was a guaranteed-trivial pass, never a real negative),
- * Stage 7's own SELF-reference drop, Stage 6 (solo)'s real "Uses:" resolving the repeated name
- * "Story559" to the LATEST earlier Stage (Stage 5, by its own distinct duration "4s"), and
- * clicking the real `G923Code`/`Story559` buttons to open the Subagent panel with that agent
- * selected (`aria-selected`, re-grep-verified against `SubagentPanel.tsx`, unchanged from gate
- * round 1 -- see this file's own header for why duration remains the only available
- * disambiguator for a repeated name's two panel rows). */
-export async function assertDependencies(cdp, findings, failures, themeName) {
-  await assertExpandCycle(cdp, STAGE2_TITLE, findings, failures, themeName, 'Stage 2');
-  await cdp.waitFor(`${stageContentSelector(STAGE2_TITLE)}?.textContent.includes('Uses:') ?? false`, {
-    timeoutMs: 10_000,
-    label: `[${themeName}] Stage 2 expanded, Uses: line visible`
-  }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  const stage2ContentText = await cdp.evaluate(`${stageContentSelector(STAGE2_TITLE)}?.textContent ?? ''`);
-  const usesLineText = stage2ContentText.includes('Uses:') ? stage2ContentText.slice(stage2ContentText.indexOf('Uses:')) : '';
-  if (!usesLineText.includes('G923Code') || !usesLineText.includes('Stage 1')) {
-    failures.push(`[${themeName}] Stage 2's own "Uses:" does not contain "G923Code" grouped under "(Stage 1)": ${JSON.stringify(usesLineText.slice(0, 120))}`);
-  } else {
-    findings.push(`[${themeName}] Stage 2's own "Uses:" line names G923Code under (Stage 1), as issue #941 requires.`);
-  }
-  if (usesLineText.includes('NoSuchAgent')) {
-    failures.push(`[${themeName}] REGRESSION: Stage 2's own "Uses:" line contains the unmatched "agent://NoSuchAgent" reference, which should have been silently dropped.`);
-  } else {
-    findings.push(`[${themeName}] Stage 2's own "Uses:" line never mentions the unmatched NoSuchAgent reference.`);
-  }
-
-  for (const [label, titleText] of [
-    ['Stage 1', STAGE1_TITLE],
-    ['Stage 3', STAGE3_TITLE]
-  ]) {
-    // Gate round 2 fix (item 11c): expand first -- a collapsed row's own `CollapsibleContent`
-    // is unmounted (not merely `hidden`), so without this an absent "Uses:" line proves nothing.
-    await expandRow(cdp, titleText);
-    const text = await cdp.evaluate(`${stageContentSelector(titleText)}?.textContent ?? ''`);
-    if (text.includes('Uses:')) {
-      failures.push(`[${themeName}] ${label} unexpectedly shows a "Uses:" line (it has no real inbound dependency): ${JSON.stringify(text.slice(0, 120))}`);
-    } else {
-      findings.push(`[${themeName}] ${label}, now expanded, shows no "Uses:" line, as expected (no real dependency) -- a genuine negative, not merely an unmounted row.`);
-    }
-  }
-
-  // Fixture item e: Stage 7's own self-reference (agent://LongCtxA, one of its OWN agents) is
-  // dropped -- no other, non-self dependency exists there, so "Uses:" must not render at all.
-  await expandRow(cdp, STAGE7_TITLE);
-  const stage7ContentText = await cdp.evaluate(`${stageContentSelector(STAGE7_TITLE)}?.textContent ?? ''`);
-  if (stage7ContentText.includes('Uses:')) {
-    failures.push(`[${themeName}] REGRESSION: Stage 7 shows a "Uses:" line (${JSON.stringify(stage7ContentText.slice(stage7ContentText.indexOf('Uses:'), stage7ContentText.indexOf('Uses:') + 80))}) despite its only reference being a SELF-reference (agent://LongCtxA, one of Stage 7's own agents), which must be dropped.`);
-  } else {
-    findings.push(`[${themeName}] Stage 7 shows no "Uses:" line -- its own self-reference to agent://LongCtxA (one of its own agents) was correctly dropped.`);
-  }
-
-  // Clicking the real G923Code button opens the Subagent panel with that agent selected.
-  await cdp.clickByLabel('Open G923Code in Subagents panel');
-  await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 2's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  const selectedRowText = await cdp.evaluate(`document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')?.textContent ?? null`);
-  if (!selectedRowText || !selectedRowText.includes('G923Code')) {
-    failures.push(`[${themeName}] Clicking the "Uses:" G923Code button did not select G923Code's own row in the Subagent panel (selected row text: ${JSON.stringify(selectedRowText)}).`);
-  } else {
-    findings.push(`[${themeName}] Clicking the real "Uses:" G923Code button opened the Subagent panel with G923Code's own row selected.`);
-  }
-  await cdp.click(`document.querySelector('[data-panel-close]')`).catch(() => {});
-  await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagent panel closed` }).catch(() => {});
-
-  // Fixture items f/g: Stage 6 (solo) depends on "Story559", resolved to Stage 5 (the LATEST
-  // earlier occurrence, not Stage 2's) -- a real "Uses:" line on a SOLO Stage, proving it is no
-  // longer special-cased.
-  await expandRow(cdp, STAGE6_SOLO_TITLE);
-  const stage6ContentText = await cdp.evaluate(`${stageContentSelector(STAGE6_SOLO_TITLE)}?.textContent ?? ''`);
-  const stage6UsesText = stage6ContentText.includes('Uses:') ? stage6ContentText.slice(stage6ContentText.indexOf('Uses:')) : '';
-  if (!stage6UsesText.includes('Story559') || !stage6UsesText.includes('Stage 5')) {
-    failures.push(`[${themeName}] Stage 6 (solo)'s own "Uses:" does not contain "Story559" grouped under "(Stage 5)" (the LATEST earlier occurrence): ${JSON.stringify(stage6UsesText.slice(0, 120))}`);
-  } else {
-    findings.push(`[${themeName}] Stage 6 (solo)'s own "Uses:" line resolves Story559 to (Stage 5), the LATEST earlier occurrence, proving the solo path is no longer special-cased.`);
-  }
-  await cdp.clickByLabel('Open Story559 in Subagents panel');
-  await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: `[${themeName}] Subagent panel opened from Stage 6's Uses: button` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
-  const selectedStory559Durations = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')).filter((el) => el.textContent.includes('Story559')).map((el) => el.textContent)`);
-  if (selectedStory559Durations.some((text) => text.includes('4s'))) {
-    findings.push(`[${themeName}] Clicking Stage 6's "Uses:" Story559 button selected the row carrying Stage 5's own duration ("4s", from its 4300ms), proving the LATEST occurrence (not Stage 2's 1800ms/"2s") was resolved by toolCallId+specIndex, not name alone.`);
-  } else {
-    failures.push(`[${themeName}] No selected Subagent row carries Stage 5's own duration ("4s") after clicking Stage 6's "Uses:" Story559 button (selected rows: ${JSON.stringify(selectedStory559Durations)}).`);
-  }
-  await cdp.click(`document.querySelector('[data-panel-close]')`).catch(() => {});
-  await cdp.waitFor(`!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 10_000, label: `[${themeName}] Subagent panel closed` }).catch(() => {});
-}
-
 /** Issue #941 grill item 5/decision 6: with ten Stages the per-turn "Subagents" chain row
  * renders (`SubagentChainRow.tsx`, `stages.length >= 2`), and its own compact `ChainStageLine`
  * entries show each Stage's label (speech form) and green finished agent names, matching the
  * in-place rows. Gate round 2 fix (item 9): the chain row's own expand click now goes through
  * the same `aria-expanded`-aware guard every Stage row uses, since a prior theme pass in this
  * same run may have already expanded it. */
-export async function assertChainRow(cdp, findings, failures, themeName) {
+export async function assertChainRow(cdp, findings, failures, themeName, isFirstThemePass) {
   const chainTriggerFinder = `Array.from(document.querySelectorAll('[aria-label="Transcript"] [data-slot="collapsible-trigger"]')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Subagents, '))`;
   const chainPresent = await cdp.evaluate(`!!(${chainTriggerFinder})`);
   if (!chainPresent) {
@@ -506,7 +495,11 @@ export async function assertChainRow(cdp, findings, failures, themeName) {
     return;
   }
   findings.push(`[${themeName}] The per-turn "Subagents" chain row rendered (10 Stages in this turn).`);
-  await assertExpandCycleByFinder(cdp, chainTriggerFinder, findings, failures, themeName, 'The chain row');
+  // Gate round 3 fix (item 11): on the FIRST theme pass, this fixture's own data makes the
+  // starting value unambiguous -- Stage 5 carries one `failed` agent, so `counts.failed > 0`
+  // makes the WHOLE TURN's chain row default OPEN (`SubagentChainRow.tsx:429`), the opposite
+  // of a Stage row's own default-closed state; asserted as `'true'`, never `'false'`.
+  await assertExpandCycleByFinder(cdp, chainTriggerFinder, findings, failures, themeName, 'The chain row', isFirstThemePass ? 'true' : undefined);
   await cdp.waitFor(`document.querySelectorAll('[aria-label="Transcript"] [role="group"]').length >= 10`, { timeoutMs: 10_000, label: `[${themeName}] Chain row expanded, 10 ChainStageLine entries visible` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const groups = await cdp.evaluate(`Array.from(document.querySelectorAll('[aria-label="Transcript"] [role="group"]')).map((el) => el.getAttribute('aria-label') ?? '')`);
   const expectedSubstrings = [

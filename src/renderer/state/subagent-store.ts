@@ -36,6 +36,19 @@ let fetchSeq = 0
 interface SubagentPanelState {
   sessionId: string | null
   selectedId: string | null
+  /** Gate round 4 fix (issue #941, P1, HIGH): the same `toolCallId:specIndex` composite key
+   * `SubagentPanel.tsx`'s own tree rows carry, kept HERE (not as that component's local
+   * `useState`) so a tab-switch remount (`RightPaneShell.tsx` unmounts the panel while its tab
+   * isn't active) does not lose which of two same-named rows was actually selected, falling
+   * back to "a row at all" (`tabbableIndex`'s own `found === -1 ? 0` branch) instead of the real
+   * one. Set alongside `selectedId` by `selectSubagent`'s own optional second argument;
+   * omitting that argument (as `resume()` does) leaves this field UNCHANGED, so a suspend/
+   * resume round trip (no rebind, same selection) never discards a key a prior explicit
+   * selection already set. `null` means "no specific instance known" (a name-only caller, or
+   * nothing selected yet) -- `SubagentPanel.tsx` falls back to the first row matching
+   * `selectedId` in that case, the same ambiguous-match behaviour this field exists to avoid
+   * where a real key IS available. */
+  selectedKey: string | null
   streams: Record<string, TranscriptItem[]>
   /** Spec 013 gate remediation (High, round 3): true only between a real `suspend()` and its
    * matching `resume()` -- lets `resume()` no-op when nothing was ever suspended (a fresh mount
@@ -95,7 +108,13 @@ interface SubagentPanelState {
    * 'subagents' is already closed there), so every existing call site stays the single place
    * this panel's close goes through. */
   closePanel(options?: { restoreFocus?: boolean }): void
-  selectSubagent(subagentId: string): Promise<void>
+  /** `key` (gate round 4, issue #941, P1): the composite `toolCallId:specIndex` instance this
+   * selection came from, when the caller knows it (a row's own `onFocus`, a pre-selected
+   * `openPanel`) -- stored alongside `selectedId` as `selectedKey`. Omitting it (as `resume()`
+   * does, re-selecting the same `selectedId` after a suspend with no new instance information)
+   * leaves the EXISTING `selectedKey` unchanged; passing it explicitly (including `null`, a
+   * deliberate "no specific instance known") always replaces it. */
+  selectSubagent(subagentId: string, key?: string | null): Promise<void>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
   /** Spec 004 remediation (HIGH, code-reviewer + test-reviewer sibling case): fired by
@@ -125,6 +144,7 @@ interface SubagentPanelState {
 export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   sessionId: null,
   selectedId: null,
+  selectedKey: null,
   streams: {},
   suspended: false,
   openerEl: null,
@@ -153,6 +173,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       set({
         sessionId,
         selectedId: null,
+        selectedKey: null,
         streams: {},
         suspended: false,
         openerEl,
@@ -174,7 +195,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // on a specific agent -- reuses `selectSubagent`'s own fetch/cache logic rather than
     // duplicating it; `sessionId` above is already committed by the synchronous `set` calls
     // just above, so `selectSubagent`'s own `get().sessionId` read sees it.
-    if (options?.selectSubagentId) void get().selectSubagent(options.selectSubagentId)
+    if (options?.selectSubagentId) void get().selectSubagent(options.selectSubagentId, options.selectSubagentKey ?? null)
   },
   closePanel: (options) => {
     const { sessionId, openerEl } = get()
@@ -192,7 +213,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // those controls in the Tab order and in screen-reader browse mode. The shell (RightPaneShell)
     // also gates the content on `openPanelIds`, but clearing `sessionId` here too means no stale
     // panel state lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
-    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
     useRightPaneStore.getState().closePanel('subagents')
     // High remediation (code-reviewer, spec-004 final confirmation pass): the readout update
     // that unmounts this panel's content is debounced, so the chip this used to focus
@@ -222,7 +243,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       }
     }
   },
-  selectSubagent: async (subagentId) => {
+  selectSubagent: async (subagentId, key) => {
     const { sessionId } = get()
     if (!sessionId) return
     const seq = fetchSeq
@@ -232,7 +253,13 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // cache afterward would then see that partial entry as "already fetched" and skip the real
     // snapshot, leaving the stream permanently incomplete.
     const alreadyFetched = Boolean(get().streams[subagentId])
-    set({ selectedId: subagentId })
+    // Gate round 4 fix (issue #941, P1): `key === undefined` means the caller (e.g. `resume()`,
+    // re-selecting the same agent with no new instance information) did not resolve one --
+    // leave the EXISTING `selectedKey` untouched rather than clobbering a real key a prior
+    // explicit selection already set. A caller that DOES know (a row's own `onFocus`, a
+    // pre-selected `openPanel`) always passes it explicitly, including `null` for "deliberately
+    // no specific instance".
+    set((state) => ({ selectedId: subagentId, selectedKey: key !== undefined ? key : state.selectedKey }))
     try {
       await window.refract.chat.setVisibleSubagent(sessionId, subagentId)
       if (alreadyFetched) return
@@ -272,7 +299,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .setVisibleSubagent(sessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
-    set({ sessionId: null, selectedId: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewTurn: (sessionId) => {
@@ -283,7 +310,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       return
     }
     fetchSeq += 1
-    set({ selectedId: null, streams: {}, suspended: false })
+    set({ selectedId: null, selectedKey: null, streams: {}, suspended: false })
   },
   suspend: () => {
     const { sessionId } = get()

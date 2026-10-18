@@ -16,8 +16,8 @@ import {
   STAGE10_BORDERLINE_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 
-async function assertExpandCycle(cdp, titleText, findings, failures, themeName, label) {
-  await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label);
+async function assertExpandCycle(cdp, titleText, findings, failures, themeName, label, firstPassExpectedBefore) {
+  await assertExpandCycleByFinder(cdp, stageTriggerSelector(titleText), findings, failures, themeName, label, firstPassExpectedBefore);
 }
 
 // Gate round 2 fix (item 12): the narrow-viewport width, same value `verify-557-thought-runs.mjs`/
@@ -36,10 +36,9 @@ const NARROW_WIDTH = 360;
  * `tabindex` attribute is removed (restored to the Tab order); then (re-collapsed): both revert.
  * Every check below is an INDEPENDENT `if` (gate round 2 fix, item 10) -- never an `if`/`else
  * if` chain that would silently skip a later assertion once an earlier one matches. */
-export async function assertContextBriefOverflow(cdp, findings, failures, themeName) {
-  await assertExpandCycle(cdp, STAGE7_TITLE, findings, failures, themeName, 'Stage 7');
+export async function assertContextBriefOverflow(cdp, findings, failures, themeName, isFirstThemePass) {
+  await assertExpandCycle(cdp, STAGE7_TITLE, findings, failures, themeName, 'Stage 7', isFirstThemePass ? 'false' : undefined);
   const briefButtonFinder = `Array.from((${stageContentSelector(STAGE7_TITLE)})?.querySelectorAll('button') ?? []).find((b) => /Show full brief|Show less/.test(b.textContent.trim()))`;
-  await cdp.waitFor(`!!(${briefButtonFinder})`, { timeoutMs: 10_000, label: `[${themeName}] Stage 7's "Show full brief" toggle rendered` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
   const measure = () => cdp.evaluate(`(() => {
     const btn = ${briefButtonFinder};
     if (!btn) return null;
@@ -47,7 +46,14 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     const container = contentId ? document.getElementById(contentId) : null;
     if (!container) return null;
     const heading = container.querySelector('h1,h2,h3,h4,h5,h6');
-    const link = container.querySelector('a[href], button, [tabindex]');
+    const link = container.querySelector('a[href]');
+    // Gate round 4 fix (issue #941, item 12, MEDIUM): a fenced code block (Markdown.tsx's own
+    // \`CodeBlock\`, always \`tabIndex=0\` on its content region, \`role="region"\`) is a SEPARATE
+    // kind of pre-existing focusable descendant from the plain link above -- the gate-round-3
+    // fix's own comment specifically calls out restoring "a scrollable code block's own
+    // tabIndex=0" without blindly clobbering it to null, which no fixture element exercised
+    // before this (the old selector's own \`[tabindex]\` branch could silently match either).
+    const code = container.querySelector('pre[role="region"], div[role="region"]');
     return {
       buttonText: btn.textContent.trim(),
       ariaExpanded: btn.getAttribute('aria-expanded'),
@@ -56,7 +62,10 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
       headingOffsetTop: heading ? heading.offsetTop : null,
       headingTag: heading ? heading.tagName : null,
       hasLink: !!link,
-      linkTabIndexAttr: link ? link.getAttribute('tabindex') : null
+      linkTabIndexAttr: link ? link.getAttribute('tabindex') : null,
+      hasCode: !!code,
+      codeTabIndexAttr: code ? code.getAttribute('tabindex') : null,
+      focusIsOnButton: document.activeElement === btn
     };
   })()`);
 
@@ -69,6 +78,15 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     failures.push(`[${themeName}] Stage 7's "Show full brief" button aria-expanded was ${JSON.stringify(collapsed.ariaExpanded)} while collapsed, expected the string "false".`);
   } else {
     findings.push(`[${themeName}] Stage 7's "Show full brief" button aria-expanded is the string "false" while collapsed.`);
+  }
+  // Gate round 4 fix (issue #941, item 12, MEDIUM): the button's own text was captured by
+  // `measure()` but never actually asserted anywhere below -- only `aria-expanded` was. "Show
+  // less" (item 12's own wording) must genuinely exist as the button's real rendered text once
+  // expanded, not merely inferred from the ARIA state.
+  if (!collapsed.buttonText.startsWith('Show full brief (')) {
+    failures.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(collapsed.buttonText)} while collapsed, expected it to start with "Show full brief (".`);
+  } else {
+    findings.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(collapsed.buttonText)} while collapsed.`);
   }
   if (collapsed.clientHeight >= collapsed.scrollHeight) {
     failures.push(`[${themeName}] Stage 7's own context brief is not actually capped (clientHeight ${collapsed.clientHeight} >= scrollHeight ${collapsed.scrollHeight}) -- the overflow this test depends on never happened.`);
@@ -89,6 +107,13 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
   } else {
     findings.push(`[${themeName}] Stage 7's own overflowing link descendant carries tabindex="-1" while collapsed, out of the Tab order -- the visible text itself stays fully readable by a screen reader regardless.`);
   }
+  if (!collapsed.hasCode) {
+    failures.push(`[${themeName}] Stage 7's own context brief has no fenced code block descendant near its end to prove the tabindex-RESTORE behaviour (distinct from a plain link, item 12) -- fixture expectation not met.`);
+  } else if (collapsed.codeTabIndexAttr !== '-1') {
+    failures.push(`[${themeName}] Stage 7's own overflowing code-block region has tabindex=${JSON.stringify(collapsed.codeTabIndexAttr)} while collapsed, expected "-1".`);
+  } else {
+    findings.push(`[${themeName}] Stage 7's own overflowing code-block region carries tabindex="-1" while collapsed, out of the Tab order.`);
+  }
 
   await cdp.click(briefButtonFinder);
   await cdp.waitFor(`(${briefButtonFinder})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: `[${themeName}] Stage 7's "Show full brief" expanded` }).catch((err) => failures.push(`[${themeName}] ${err.message}`));
@@ -101,6 +126,20 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     } else {
       findings.push(`[${themeName}] Stage 7's "Show full brief" button aria-expanded is the string "true" after expanding.`);
     }
+    if (expanded.buttonText !== 'Show less') {
+      failures.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(expanded.buttonText)} after expanding, expected exactly "Show less".`);
+    } else {
+      findings.push(`[${themeName}] Stage 7's toggle button reads exactly "Show less" after expanding.`);
+    }
+    // Gate round 4 fix (issue #941, item 12, MEDIUM): the click's own event target is this
+    // button, but React re-rendering its CHILDREN (the label text, the grown container) could
+    // still strand focus elsewhere if any of that re-render ever unmounted the button itself --
+    // asserted explicitly rather than assumed.
+    if (!expanded.focusIsOnButton) {
+      failures.push(`[${themeName}] Focus is no longer on Stage 7's own toggle button after expanding it (it should stay there -- the button itself never unmounts, only its label text and the container's height change).`);
+    } else {
+      findings.push(`[${themeName}] Focus stays on Stage 7's own toggle button after expanding it.`);
+    }
     if (expanded.headingOffsetTop === null || expanded.headingOffsetTop >= expanded.clientHeight) {
       failures.push(`[${themeName}] Stage 7's own Markdown heading is still clipped (offsetTop ${expanded.headingOffsetTop}, clientHeight ${expanded.clientHeight}) after expanding -- it should now be fully within the visible, grown container.`);
     } else {
@@ -112,6 +151,23 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
       failures.push(`[${themeName}] Stage 7's own link descendant still carries tabindex=${JSON.stringify(expanded.linkTabIndexAttr)} after expanding, expected the attribute removed (restored to the Tab order).`);
     } else {
       findings.push(`[${themeName}] Stage 7's own link descendant has its tabindex attribute removed after expanding, restored to the Tab order, now within the grown container's visible area.`);
+    }
+    if (!expanded.hasCode) {
+      failures.push(`[${themeName}] Stage 7's own code-block region disappeared after expanding (expected it still present).`);
+    } else if (expanded.codeTabIndexAttr !== '0') {
+      // Gate round 3 fix (item 2)'s own exact regression this guards: a code block's own
+      // ORIGINAL tabindex is "0" (Markdown.tsx's own `tabIndex={0}`), never "no attribute at
+      // all" -- a blind `removeAttribute('tabindex')` (the pre-gate-round-3 bug) would restore
+      // it to NO tabindex rather than its own true original value, silently demoting it from an
+      // explicit Tab stop to one that merely inherits default element focusability (or none, for
+      // a `<div>`). The ONLY fixture element that can prove this restores the ORIGINAL value
+      // (not merely "removed") rather than "any non -1 value" is one whose own original
+      // tabindex was never null to begin with -- the plain `<a href>` link above has no
+      // original tabindex attribute at all, so its own restore-to-null assertion cannot catch
+      // this; the code block can.
+      failures.push(`[${themeName}] Stage 7's own code-block region has tabindex=${JSON.stringify(expanded.codeTabIndexAttr)} after expanding, expected its own ORIGINAL value "0" restored (never a blind \`removeAttribute\`, which would leave no tabindex attribute at all).`);
+    } else {
+      findings.push(`[${themeName}] Stage 7's own code-block region has its ORIGINAL tabindex="0" restored after expanding (not merely removed), now within the grown container's visible area.`);
     }
   }
 
@@ -126,6 +182,16 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
     } else {
       findings.push(`[${themeName}] Stage 7's "Show less" button aria-expanded is the string "false" after re-collapsing.`);
     }
+    if (!reCollapsed.buttonText.startsWith('Show full brief (')) {
+      failures.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(reCollapsed.buttonText)} after re-collapsing, expected it to start with "Show full brief (" again.`);
+    } else {
+      findings.push(`[${themeName}] Stage 7's toggle button reads ${JSON.stringify(reCollapsed.buttonText)} after re-collapsing.`);
+    }
+    if (!reCollapsed.focusIsOnButton) {
+      failures.push(`[${themeName}] Focus is no longer on Stage 7's own toggle button after re-collapsing it with "Show less" (it should stay there).`);
+    } else {
+      findings.push(`[${themeName}] Focus stays on Stage 7's own toggle button after clicking "Show less" to re-collapse it.`);
+    }
     if (reCollapsed.headingOffsetTop === null || reCollapsed.headingOffsetTop < reCollapsed.clientHeight) {
       failures.push(`[${themeName}] Stage 7's own heading did not re-clip correctly after "Show less" (offsetTop ${reCollapsed.headingOffsetTop}, clientHeight ${reCollapsed.clientHeight}).`);
     } else {
@@ -135,6 +201,11 @@ export async function assertContextBriefOverflow(cdp, findings, failures, themeN
       failures.push(`[${themeName}] Stage 7's own link descendant did not regain tabindex="-1" after re-collapsing (hasLink ${reCollapsed.hasLink}, tabindex ${JSON.stringify(reCollapsed.linkTabIndexAttr)}).`);
     } else {
       findings.push(`[${themeName}] Stage 7's own link descendant regains tabindex="-1" after re-collapsing, pulled back out of the Tab order.`);
+    }
+    if (!reCollapsed.hasCode || reCollapsed.codeTabIndexAttr !== '-1') {
+      failures.push(`[${themeName}] Stage 7's own code-block region did not regain tabindex="-1" after re-collapsing (hasCode ${reCollapsed.hasCode}, tabindex ${JSON.stringify(reCollapsed.codeTabIndexAttr)}).`);
+    } else {
+      findings.push(`[${themeName}] Stage 7's own code-block region regains tabindex="-1" after re-collapsing, pulled back out of the Tab order.`);
     }
   }
 }

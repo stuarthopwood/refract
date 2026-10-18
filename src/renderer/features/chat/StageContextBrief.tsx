@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { Markdown, mutedLinkClassName } from './Markdown'
 
 const COLLAPSED_MAX_HEIGHT_PX = 144 // ~6 lines at this text's own line-height
+const FADE_HEIGHT_PX = 24 // h-6, the bottom fade overlay's own height
 const COLLAPSED_CLASS = 'max-h-36 overflow-hidden'
 const FOCUSABLE_SELECTOR = 'a[href], button, [tabindex]'
 
@@ -60,8 +61,20 @@ export function StageContextBrief({ id, context, className }: { id: string; cont
 
     const collapsedAndOverflowing = !expandedRef.current && does
     const originals = originalTabIndexRef.current
+    // Gate round 4 fix (issue #941, P3, MEDIUM): `offsetTop` is relative to the nearest
+    // POSITIONED ancestor -- for a node inside a Markdown-rendered `<table>`, that is the
+    // table/cell itself in some layout engines, never this component's own `el`, so a
+    // focusable element nested in a table read a wrong, cell-relative offset here.
+    // `getBoundingClientRect()` is always viewport-absolute regardless of ancestry; subtracting
+    // `el`'s own rect (plus `el.scrollTop`, in case `el` is ever itself scrolled) gives
+    // `el`-relative coordinates unconditionally. Judged by the node's own BOTTOM edge, not its
+    // top, against the cap MINUS the 24px fade overlay's own height: an element whose lower
+    // portion is already visually obscured by the fade gradient -- even when its own top sits
+    // above the raw 144px cap -- must not stay a reachable tab stop either.
+    const elRect = el.getBoundingClientRect()
     for (const node of el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) {
-      const pastFold = collapsedAndOverflowing && node.offsetTop > COLLAPSED_MAX_HEIGHT_PX
+      const nodeBottomWithinEl = node.getBoundingClientRect().bottom - elRect.top + el.scrollTop
+      const pastFold = collapsedAndOverflowing && nodeBottomWithinEl > COLLAPSED_MAX_HEIGHT_PX - FADE_HEIGHT_PX
       if (pastFold) {
         if (!originals.has(node)) originals.set(node, node.getAttribute('tabindex'))
         node.setAttribute('tabindex', '-1')
@@ -78,9 +91,22 @@ export function StageContextBrief({ id, context, className }: { id: string; cont
     const el = contentRef.current
     if (!el) return
     measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
+    const resizeObserver = new ResizeObserver(measure)
+    resizeObserver.observe(el)
+    // Gate round 4 fix (issue #941, P2, HIGH): `el`'s own box size is PINNED to 144px while
+    // collapsed (`max-h-36 overflow-hidden`), so `ResizeObserver` never fires when inner
+    // content changes WITHOUT changing `el`'s own observed box -- for example Shiki's
+    // asynchronous syntax-highlighting pass (`Markdown.tsx`) swapping a plain code block for a
+    // new scrollable, `tabIndex=0` one well after the initial render this component first
+    // measured. A `MutationObserver` watching `childList`/`subtree` re-runs the identical
+    // `measure()` pass whenever the DOM inside `el` actually changes, independent of whether
+    // `el`'s own box size ever moved.
+    const mutationObserver = new MutationObserver(measure)
+    mutationObserver.observe(el, { childList: true, subtree: true })
+    return () => {
+      resizeObserver.disconnect()
+      mutationObserver.disconnect()
+    }
   }, [context, measure])
 
   // Toggling expand/collapse changes which descendants are "past the fold" immediately, without

@@ -44,8 +44,12 @@ export function StageUsesLine({
   sessionId: string | null
   className?: string
 }) {
-  // Rules of Hooks: the store read runs unconditionally, before the empty-list early return.
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : []))
+  // Gate round 4 fix (issue #941, P7, LOW): the bare `?? []` fallback below used to return a
+  // fresh array identity on every render once `sessionId` is null -- `EMPTY_READOUT_ENTRY`
+  // (the same module-level singleton `SubagentPanel.tsx` already uses for this) is a stable
+  // reference instead, so zustand v5's reference-equality memoisation never sees a "changed"
+  // snapshot purely from this selector re-running.
+  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
   if (dependencies.length === 0) return null
   const groups = groupByStage(dependencies)
   return (

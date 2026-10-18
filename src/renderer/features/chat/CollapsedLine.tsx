@@ -139,21 +139,43 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * it rather than flush against the top. */}
       <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
-        <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
+        // Gate round 4 fix (issue #941, P4, HIGH): `min-w-16` floors the label at 64px --
+        // without it, `min-w-0` (needed so `truncate` can ever engage at all) let the label
+        // shrink all the way to 0px at narrow pane widths (~240px) once the summary/meta/
+        // chevron's own combined width left it no room, clipping the chevron along with it.
+        <span className={cn('min-w-16 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}
       {summary !== undefined ? (
-        <span
-          className={cn(
-            summaryFixedWidth ? 'shrink-0 max-w-[40%]' : 'min-w-0 flex-1',
-            summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
-            summaryClassName ?? 'text-muted-foreground'
+        <>
+          <span
+            className={cn(
+              // Gate round 4 fix (issue #941, P4, HIGH): a fixed-width summary (a solo Stage's
+              // own agent name) was `shrink-0`, so it NEVER gave up width at a narrow pane --
+              // at 380-520px that left meta/chevron hugging it directly once nothing else had
+              // any slack left to give. `min-w-0 shrink` (dropping `shrink-0`) lets it
+              // genuinely shrink below its own content width under real pressure, while
+              // `max-w-[40%]` still caps how much of the row it can claim either way.
+              summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
+              summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+              summaryClassName ?? 'text-muted-foreground'
+            )}
+            title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
+          >
+            {summary}
+          </span>
+          {summaryFixedWidth && (
+            // Gate round 4 fix (issue #941, P4, HIGH): a fixed-width summary claims no free
+            // space of its own (no `flex-1`), so without a genuine flexible spacer after it,
+            // meta/chevron sat directly adjacent to a short summary with nothing between them
+            // to absorb the pane's own slack. Scoped to the fixed-width case only -- the
+            // default summary already IS `flex-1` and already does this job for every other
+            // existing caller, which a second always-on spacer here would otherwise split
+            // growth with and subtly shift.
+            <span className="min-w-0 flex-1" />
           )}
-          title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
-        >
-          {summary}
-        </span>
+        </>
       ) : (
         // No summary (e.g. a plain member row inside a `SpineList`): a spacer still pushes
         // meta/chevron to the far right so they line up with the header row's own trailing edge
