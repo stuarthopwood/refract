@@ -15,10 +15,22 @@ interface PullRequestsLayoutState {
    *  never persists by itself -- `commit` below decides that, the same split between "live" and
    *  "persisted" `split-store.ts`'s `setDividerPercent`/`onLayoutChange` pair uses. */
   setWidth(widthPx: number): void
-  /** `ResizablePanelGroup`'s own `onLayoutChanged` meta: persists (debounced ~300ms) the
-   *  CURRENT `widthPx` only when `isUserInteraction` is true (a pointer drag or an arrow-key
-   *  resize), never for a programmatic layout set (initial mount, a window resize re-clamp). */
-  commit(isUserInteraction: boolean): void
+  /** `ResizablePanelGroup`'s own `onLayoutChanged` meta: persists (debounced ~300ms) the given
+   *  width only when `isUserInteraction` is true (a pointer drag or an arrow-key resize), never
+   *  for a programmatic layout set (initial mount, a window resize re-clamp). Gate-fix (round
+   *  4, caught live): takes `widthPx` as an explicit argument, read by the CALLER from the
+   *  panel's own real DOM measurement -- the previous version read `get().widthPx` from this
+   *  store instead, which `setWidth` (wired to `onResize`) updates independently and can still
+   *  be stale (the pre-interaction value) at the exact moment `onLayoutChanged` fires, since
+   *  this library calls these two callbacks with no guaranteed relative order. A double-click
+   *  reset's own `resetToDefault()` (always persists the hardcoded default) and THIS commit
+   *  share one debounced timer (last call wins) -- when commit's own call read a stale width,
+   *  it could fire after and overwrite the reset's own correct persist with a leftover,
+   *  pre-reset value (confirmed live: a reset to 320 round-tripped the OLD dragged width, 433,
+   *  through a relaunch instead). Reading the real DOM instead of store state is never stale:
+   *  layout/style mutations are synchronous, unlike a Zustand state update's own timing.
+   */
+  commit(widthPx: number): void
   /** Gate-fix (H1, caught live 2026-10-18): `react-resizable-panels`' own double-click reset
    *  calls `panel.resize(defaultSize)` directly, never through `onLayoutChanged`'s
    *  `isUserInteraction` meta -- `commit(false)` (or no commit at all) never persists it, so the
@@ -55,8 +67,8 @@ function persist(widthPx: number): void {
 export const usePullRequestsLayoutStore = create<PullRequestsLayoutState>((set, get) => ({
   widthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX,
   setWidth: (widthPx) => set({ widthPx }),
-  commit: (isUserInteraction) => {
-    if (isUserInteraction) persist(get().widthPx)
+  commit: (widthPx) => {
+    persist(widthPx)
   },
   resetToDefault: () => {
     set({ widthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX })

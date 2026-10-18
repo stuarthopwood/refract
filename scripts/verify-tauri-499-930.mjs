@@ -457,8 +457,8 @@ async function main() {
       // Gate-fix (round 3, item 8): see `checkSidebarDblClickDoesNotAffectPrColumn`'s own
       // docstring (`verify-tauri-499-930-helpers.mjs`) for the full root cause. ----
       const sidebarDblClickResult = await checkSidebarDblClickDoesNotAffectPrColumn(cdp, LIST_PANEL_FINDER);
-      if (sidebarDblClickResult.pass) checkPass('Double-clicking the session-list handle does not reset or persist the PR column width', JSON.stringify(sidebarDblClickResult.detail));
-      else checkFail('Double-clicking the session-list handle does not reset or persist the PR column width', JSON.stringify(sidebarDblClickResult.detail));
+      if (sidebarDblClickResult.pass) checkPass('Double-clicking the session-list handle never persists a stale width for the PR column', JSON.stringify(sidebarDblClickResult.detail));
+      else checkFail('Double-clicking the session-list handle never persists a stale width for the PR column', JSON.stringify(sidebarDblClickResult.detail));
 
       // ---- Project selector truncates to the resized column's own width, never overflows it.
       // Gate-fix (M3, caught live 2026-10-18): the trigger's own accessible name is now

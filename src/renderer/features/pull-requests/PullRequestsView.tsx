@@ -222,7 +222,14 @@ export function PullRequestsView({ reservesWindowControls = true }: { reservesWi
           elementRef={groupElementRef}
           orientation="horizontal"
           className="min-h-0 flex-1"
-          onLayoutChanged={(_layout, meta) => usePullRequestsLayoutStore.getState().commit(meta.isUserInteraction)}
+          // Gate-fix (round 4, caught live): reads the panel's own real DOM width, not the
+          // layout store's `widthPx` -- see `commit`'s own docstring
+          // (`pull-requests-layout-store.ts`) for the stale-state race this closes.
+          onLayoutChanged={(_layout, meta) => {
+            if (!meta.isUserInteraction) return
+            const width = panelElementRef.current?.getBoundingClientRect().width
+            if (width != null) usePullRequestsLayoutStore.getState().commit(width)
+          }}
           // Gate-fix (M3, caught live round 2 2026-10-18, test-reviewer Medium): the library's
           // own double-click-to-reset is detected via a native `dblclick` listener shared across
           // every Group on the page (hit-tested by coordinate proximity against ALL registered
