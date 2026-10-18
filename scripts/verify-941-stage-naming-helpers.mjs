@@ -1,29 +1,26 @@
 // Shared driving/assertion helpers for `scripts/verify-941-stage-naming.mjs` (issue #941: Stage
 // naming, the one green exception for a finished Subagent/Stage, the Stage's own batch context on
-// expansion, real "Uses:" dependencies, the per-turn Subagent chain row, and the now-UNIFIED solo-vs-multi-agent Stage header, split out to stay under the #806 600-line file-size cap).
+// expansion, real "Uses:" dependencies, the per-turn Subagent chain row, and the now-UNIFIED
+// solo-vs-multi-agent Stage header), split out to stay under the #806 600-line file-size cap.
 //
-// Gate round 1 rewrite: EVERY Stage (solo or not) gets the same header via `stageHeading()`
+// Gate round 1: EVERY Stage (solo or not) gets the same header via `stageHeading()`
 // (`./stageMeta.ts`), a muted roll-up ("N done"/"N done, M failed") plus a muted duration AND
 // start time, all inside `meta`; expanded content order is `StageContextBrief` (only when
-// `group.context` is set), then `StageUsesLine`, then either `SubagentBody` (solo) or a `SpineList` of `SubagentRow`s (multi).
-//
-// Gate round 2 rewrite (items 9-12, re-grep-verified against the real current source): item 9
-// added the `aria-expanded`-aware expand-cycle guard every Stage/chain row below now uses
-// (`switchTheme` never reloads the app, so a prior pass's own expand survives into the next);
-// item 10 confirmed `StageContextBrief.tsx` never applies `inert` to its own container, only
-// `tabindex="-1"` to an overflowing focusable descendant; item 11 added Stage 8's
-// `sharedNamePrefix` fallback and `assertStageMetaRollup`'s exact counts/duration/start-time
-// check; item 12 added Stage 9 (solo, no context) and Stage 10 (borderline-length,
-// `assertNarrowViewportOverflow` proves `ResizeObserver` genuinely re-measures on a real
-// narrow-viewport change).
+// `group.context` is set), then `StageUsesLine`, then either `SubagentBody` (solo) or a
+// `SpineList` of `SubagentRow`s (multi). Gate round 2 (items 9-12): the `aria-expanded`-aware
+// expand-cycle guard every Stage/chain row below uses (`switchTheme` never reloads the app, so
+// a prior theme pass's own expand survives into the next); Stage 8's `sharedNamePrefix`
+// fallback and `assertStageMetaRollup`'s exact counts/duration/start-time check; Stage 9 (solo,
+// no context) and Stage 10 (borderline-length, `assertNarrowViewportOverflow` proves
+// `ResizeObserver` genuinely re-measures on a real narrow-viewport change).
 //
 // Selector strategy unchanged: `CollapsedLine.tsx` sets a plain `title` attribute on a Stage/
 // member row's own visible label SPAN whenever that label is a literal string -- a real,
 // source-grounded way to find one exact row without guessing at the FULL accessible name
-// (`triggerAriaLabel`). The Naming assertion reads the label SPAN's own accessible name via
-// `Accessibility.getPartialAXTree` (never `.textContent`); every other assertion that wants
-// visible, non-AX text (meta rollup, solo summary, Uses: lines) reads `textContent` instead,
-// since `meta`/`summary` render visibly inside the always-mounted `CollapsibleTrigger`.
+// (`triggerAriaLabel`). The Naming assertion reads the label SPAN's own name via `axText`
+// (walks direct AX children, not `nodes[0].name` -- empty on a bare span, gate-fix above);
+// every other assertion wanting visible, non-AX text (meta rollup, solo summary, Uses: lines)
+// reads `textContent` instead, since `meta`/`summary` render inside the mounted trigger.
 //
 // `SubagentPanel.tsx` now keys its own tree rows by a `toolCallId:specIndex` composite (gate
 // round 3/4), disambiguating two same-named agents -- see `verify-941-stage-naming-panel-helpers.mjs`'s own header.
@@ -33,7 +30,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchViaJobObject } from './verify-tauri-cdp.mjs';
 import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
-import { getAccessibleNameAndRole } from './verify-tauri-scratch-helpers.mjs';
+import { axText } from './verify-tauri-scratch-helpers.mjs';
 import { measuredContrastRatio } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -253,8 +250,13 @@ export async function assertStageNaming(cdp, findings, failures, themeName) {
     ['Stage 9 (solo, no context)', STAGE9_SOLO_NOCTX_TITLE, 'solo Stage, NO context -- its own agent name is the WHOLE label'],
     ['Stage 10', STAGE10_BORDERLINE_TITLE, 'borderline-length context (narrow-viewport ResizeObserver check only)']
   ];
+  // Gate-fix (first real build-slot run, never exercised before): `getAccessibleNameAndRole`'s
+  // `nodes[0].name` is reliable for a WIDGET but comes back EMPTY for this plain text-content
+  // span -- Chromium computes "name" on nested leaves under the node, not the node itself
+  // (confirmed live: all ten Stages came back `""`; `verify-tauri-560-helpers.mjs`'s own
+  // `axText` already fixed this against a different span, promoted here to the shared helpers).
   for (const [label, titleText, rule] of expectations) {
-    const { name } = await getAccessibleNameAndRole(cdp, titleSelector(titleText));
+    const name = await axText(cdp, titleSelector(titleText));
     if (name !== titleText) {
       failures.push(`[${themeName}] ${label}'s own visible label (AX name of its label span) was ${JSON.stringify(name)}, expected exactly ${JSON.stringify(titleText)} (${rule}).`);
     } else {
@@ -277,18 +279,13 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName, no
     findings.push(`[${themeName}] Stage 9 (solo, no context)'s own visible label IS its sole agent's name "SoloBare" (computeStageLabel's own names.length === 1 fallback, gate round 2 item 1).`);
   }
   // Gate round 3 fix (item 10): the real agent `task()` named for Stage 6 is "R8Solo" (fixture
-  // `stage6-task`), not "Story559" -- "Story559" only ever appears in Stage 6's own CONTEXT
-  // text ("Final solo check building on agent://Story559."), which becomes STAGE6_SOLO_TITLE
-  // itself (the Stage's own LABEL, already asserted by `assertStageNaming`). The old
-  // `includes('Story559')` check against the WHOLE trigger's `textContent` was therefore
-  // trivially true via the label alone and never actually exercised `CollapsedLine`'s own
-  // `summary` slot at all -- nor could it have caught the #941 gate-round-3 zero-width
-  // regression (a solo Stage's summary rendering at 0px once the row's label/meta already
-  // filled the available width, `summaryFixedWidth`'s own `title` attribute on the summary
-  // SPAN -- set only when `summaryFixedWidth` is true, i.e. only for a solo Stage WITH context
-  // -- is the one source-grounded selector for that exact element). This now targets that
-  // SPAN specifically, by its own `title="R8Solo"`, and asserts both its text AND a real
-  // rendered width greater than 0px.
+  // `stage6-task`), not "Story559" -- that only appears in Stage 6's own CONTEXT text, already
+  // asserted by `assertStageNaming` as the Stage's own LABEL. The old `includes('Story559')`
+  // check against the WHOLE trigger's `textContent` was trivially true via the label alone and
+  // never exercised `CollapsedLine`'s own `summary` slot (nor the #941 gate-round-3 zero-width
+  // regression: a solo Stage's summary rendering at 0px once label/meta filled the available
+  // width). This targets that SPAN specifically, by its own `title="R8Solo"` (set only when
+  // `summaryFixedWidth` is true, i.e. a solo Stage WITH context), asserting text AND width > 0.
   const summarySpan = await cdp.evaluate(`(() => {
     const el = ${stageTriggerSelector(STAGE6_SOLO_TITLE)}?.querySelector('[title="R8Solo"]');
     if (!el) return null;
@@ -300,16 +297,12 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName, no
   } else {
     findings.push(`[${themeName}] Stage 6 (solo, with context)'s own CollapsedLine summary slot shows its sole agent's real name "R8Solo" (never "Story559", which is only Stage 6's own context-derived LABEL text) at a visible width of ${summarySpan.width}px (>0, the #941 gate-round-3 zero-width regression guard).`);
   }
-  // Gate round 4 fix (issue #941, P4, HIGH; gate round 5 fix, item 8, MEDIUM): the chat pane
-  // has its own `minSize={360}` floor (`App.tsx:527`) -- narrowing the WINDOW to a given width
-  // does NOT mean the Stage trigger itself ever reaches that width; the previous version
-  // asserted against the REQUESTED window width (320) instead of the trigger's own real
-  // rendered width, which could silently pass or fail for the wrong reason once the pane's own
-  // floor kicked in. This waits two animation frames for layout to settle after each resize,
-  // then measures the trigger's own ACTUAL width and bases every message on THAT value. A
-  // second, narrower 240px window is also attempted; if the trigger's own measured width does
-  // not genuinely shrink further there (the floor holding), that is recorded honestly in
-  // `notExercised` instead of asserting against a width the layout never reached.
+  // Gate round 4/5 fix: the chat pane has its own `minSize={360}` floor (`App.tsx:527`) --
+  // narrowing the WINDOW does NOT mean the Stage trigger itself ever reaches that width; the
+  // previous version asserted against the REQUESTED window width instead of the trigger's own
+  // real rendered width. Waits two animation frames for layout to settle after each resize,
+  // then measures the trigger's own ACTUAL width; a 240px window not genuinely narrowing the
+  // trigger further (the floor holding) is recorded honestly in `notExercised` instead.
   const measureNarrowTrigger = () => cdp.evaluate(`(() => {
     const trigger = ${stageTriggerSelector(STAGE6_SOLO_TITLE)};
     if (!trigger) return null;
@@ -374,12 +367,11 @@ export async function assertSoloAgentName(cdp, findings, failures, themeName, no
 }
 
 /** Issue #941 grill item 3 (gate round 2 fix, item 11b): a settled Stage's own `meta` slot shows
- * the exact "N done"/"N done, M failed" counts wording (never "finished", never a bare agent
- * count) TOGETHER WITH a rendered duration AND a "started <time>" text, all inside the same
- * `CollapsibleTrigger` (`SubagentChainRow.tsx`'s own `joinMetaParts` build) -- read via the
- * trigger's own `textContent`, since `meta` renders visibly there, not only in
- * `triggerAriaLabel`. Stage 1 (every agent finished) and Stage 5 (one finished, one failed)
- * cover both wording shapes. */
+ * the exact "N done"/"N done, M failed" counts wording TOGETHER WITH a rendered duration AND a
+ * "started <time>" text, all inside the same `CollapsibleTrigger` (`SubagentChainRow.tsx`'s own
+ * `joinMetaParts` build) -- read via `textContent`, since `meta` renders visibly there, not only
+ * in `triggerAriaLabel`. Stage 1 (all finished) and Stage 5 (one finished, one failed) cover
+ * both wording shapes. */
 export async function assertStageMetaRollup(cdp, findings, failures, themeName) {
   const expectations = [
     ['Stage 1', STAGE1_TITLE, '2 done'],
@@ -406,19 +398,21 @@ export async function assertStageMetaRollup(cdp, findings, failures, themeName) 
 }
 
 /** Issue #941 grill item 2: every finished agent/Stage gets a green icon AND green label text
- * (`statusGlyph.ts`'s `success-done` key, `subagentStatus.tsx`'s `SUBAGENT_SUCCESS_TEXT_CLASS`).
- * Measured against the theme's own resolved `--severity-success`, not a hardcoded hex. Also
- * measures a MEMBER row INSIDE an expanded multi-agent Stage, each cross-checked at a measured
- * 4.5:1 contrast ratio against its own rendered background; also confirms Stage 5's own FAILED
- * agent (`FailAgent`) is NOT green. */
+ * (`statusGlyph.ts`'s `success-done` key, `subagentStatus.tsx`'s `SUBAGENT_SUCCESS_TEXT_CLASS`),
+ * measured against the theme's own resolved `--severity-success`. Also measures a MEMBER row
+ * INSIDE an expanded multi-agent Stage at a measured 4.5:1 contrast ratio; confirms Stage 5's
+ * own FAILED agent (`FailAgent`) is NOT green. */
 export async function assertGreenFinished(cdp, findings, failures, themeName) {
   const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
+  // Gate-fix (first real build-slot run): Stage 5's own HEADER was wrongly listed here as
+  // expected-green -- `summarizeSubagentStatuses` prioritises `failed` over `finished`, so a
+  // Stage with one FAILED agent is STAGE-LEVEL status `'failed'` and is correctly NOT green
+  // (confirmed live). Moved to a real negative check next to the FailAgent one below instead.
   const finishedRows = [
     ['Stage 1 header', STAGE1_TITLE],
     ['Stage 2 header', STAGE2_TITLE],
     ['Stage 3 header', STAGE3_TITLE],
     ['Stage 4 header', STAGE4_TITLE],
-    ['Stage 5 header', STAGE5_TITLE],
     ['Stage 6 (solo) header', STAGE6_SOLO_TITLE],
     ['Stage 7 header', STAGE7_TITLE],
     ['Stage 8 header', STAGE8_PREFIX_TITLE],
@@ -474,8 +468,24 @@ export async function assertGreenFinished(cdp, findings, failures, themeName) {
     }
   }
 
-  // Negative case (fixture item c): Stage 5's own FailAgent is NOT green.
+  // Negative case (fixture item c): Stage 5's own FailAgent is NOT green, and neither is Stage
+  // 5's own HEADER (a Stage's overall status prioritises `failed` over `finished`, so a Stage
+  // with any failed member is never itself green, same as the member).
   await expandRow(cdp, STAGE5_TITLE);
+  const stage5HeaderStyles = await cdp.evaluate(`(() => {
+    const span = ${titleSelector(STAGE5_TITLE)};
+    if (!span) return null;
+    const row = span.closest('[data-slot="collapsible-trigger"]') ?? span.parentElement;
+    const icon = row?.querySelector('svg');
+    return { labelColor: getComputedStyle(span).color, iconColor: icon ? getComputedStyle(icon).color : null };
+  })()`);
+  if (!stage5HeaderStyles) {
+    failures.push(`[${themeName}] Could not measure Stage 5's own header computed colour.`);
+  } else if (stage5HeaderStyles.labelColor === expectedColor || stage5HeaderStyles.iconColor === expectedColor) {
+    failures.push(`[${themeName}] REGRESSION: Stage 5's own header (one failed member) is green (label ${stage5HeaderStyles.labelColor}, icon ${stage5HeaderStyles.iconColor}) -- a Stage with any failed member must never be green, only a fully finished Stage.`);
+  } else {
+    findings.push(`[${themeName}] Stage 5's own header (one failed member) stays NOT green, as issue #941 requires (only a fully finished Stage/agent is green).`);
+  }
   const failedStyles = await cdp.evaluate(`(() => {
     const span = ${titleSelector('FailAgent')};
     if (!span) return null;
@@ -509,9 +519,8 @@ export async function assertGreenFinished(cdp, findings, failures, themeName) {
 }
 
 /** Issue #941 grill item 4 (context on expand) and item 7 (member-row one-line summary,
- * `ToolRow.tsx`'s `SubagentRow`, `extractResultSummary`): expanding Stage 1 reveals its own batch
- * context, and BOTH members show their own result's first line with no need to also expand the
- * member row itself. */
+ * `ToolRow.tsx`'s `SubagentRow`, `extractResultSummary`): expanding Stage 1 reveals its own
+ * batch context; BOTH members show their result's first line with no need to expand further. */
 export async function assertDetailsOnExpand(cdp, findings, failures, themeName, isFirstThemePass) {
   await assertExpandCycle(cdp, STAGE1_TITLE, findings, failures, themeName, 'Stage 1', isFirstThemePass ? 'false' : undefined);
   await cdp.waitFor(`${stageContentSelector(STAGE1_TITLE)}?.textContent.includes('Quality gate for #923') ?? false`, {

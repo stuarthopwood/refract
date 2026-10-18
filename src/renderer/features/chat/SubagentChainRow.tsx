@@ -437,6 +437,29 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
     return () => clearInterval(interval)
   }, [isRunning, stages.length])
 
+  // Gate-fix (live build, first real build-slot run -- never exercised before now):
+  // `defaultOpen` below only mattered to `CollapsedLine`'s own `useState(defaultOpen ?? false)`
+  // AT THE INSTANT this component first mounts. If this chain row mounts (`stages.length` first
+  // reaches 2) while every agent so far is still genuinely pending/finished -- entirely
+  // plausible: Stage 5's own failure may not exist yet -- that initializer captures `false` once
+  // and never re-reads a LATER `defaultOpen` recompute, so a Stage that fails well after this
+  // row's first mount could never auto-open it (confirmed live: this fixture's own Stage 5
+  // failure left the chain row closed on first render instead of Decision 6's "expanded while
+  // anything is unsettled"). Fixed by going fully controlled here and re-syncing `open` to the
+  // live unsettled condition whenever it changes, UNTIL the user explicitly toggles it
+  // (`userToggledRef`) -- an explicit collapse/expand always wins from that point on, matching
+  // ordinary disclosure-widget expectations, while an untouched row keeps tracking "anything
+  // unsettled" dynamically instead of freezing at whatever was true the first time this
+  // component happened to mount. Hooks run unconditionally, ahead of the `stages.length < 2`
+  // early return below.
+  const isUnsettled = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
+  const userToggledRef = React.useRef(false)
+  const [open, setOpen] = React.useState(isUnsettled)
+  React.useEffect(() => {
+    if (userToggledRef.current) return
+    setOpen(isUnsettled)
+  }, [isUnsettled])
+
   if (stages.length < 2) return null
 
   const { startedAt, endedAt } = stageTimeRange(allItems)
@@ -446,9 +469,6 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
   const durationMs = startedAt == null ? undefined : isRunning ? Date.now() - startedAt : endedAt != null ? endedAt - startedAt : undefined
   const rollup = rollupPhrase(counts)
   const summary = `${stages.length} stages, ${allItems.length} agent${allItems.length === 1 ? '' : 's'}${rollup ? `, ${rollup}` : ''}`
-  // Decision 6: expanded while anything is unsettled, collapsed once every agent finished --
-  // covering a reopened history the same way.
-  const defaultOpen = counts.running > 0 || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
   // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
   // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta`, ahead
   // of the duration -- gated off for `finished` (decision 14). `aria-hidden` (gate round 2,
@@ -489,7 +509,11 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       meta={meta}
       // Gate round 6 fix (issue #941, item 1, MEDIUM): same opt-in as the Stage row above.
       metaClassName="min-w-0 shrink"
-      defaultOpen={defaultOpen}
+      open={open}
+      onOpenChange={(next) => {
+        userToggledRef.current = true
+        setOpen(next)
+      }}
       className="mt-6"
       contentClassName={SPINE_HOST_CONTENT_CLASS}
       // Gate round 2 (Low): also restates the running/failed/etc. word `meta` shows visibly,
