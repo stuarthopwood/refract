@@ -858,6 +858,11 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* #925 (post-#967-merge gap): this preset was built in a parallel branch before #967 added
+   * `--diff-added`/`--diff-removed` to Dark/Obsidian/HC -- same alias as `.theme-dark`'s own
+   * comment above, not a second, independently-tunable hue (#550 "do not create a second set"). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
 
   /* ---- Layer 3: component tokens ---------------------------------------------------------- */
   --chat-foreground: #d5e0e6;
@@ -1027,6 +1032,11 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* #925 (post-#967-merge gap): this preset was built in a parallel branch before #967 added
+   * `--diff-added`/`--diff-removed` to Dark/Obsidian/HC -- same alias as `.theme-dark`'s own
+   * comment above, not a second, independently-tunable hue (#550 "do not create a second set"). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
 
   --chat-foreground: #e6dcd4;
   --composer-background: transparent;
