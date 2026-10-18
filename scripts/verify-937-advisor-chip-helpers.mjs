@@ -37,7 +37,11 @@ async function allNoticeTexts(cdp) {
  * that honestly rather than reporting a pass this script cannot actually back up. */
 export async function assertNoProbeLeak(cdp, findings, failures, notExercised, label) {
   const texts = await allNoticeTexts(cdp);
-  const leaked = texts.filter((t) => /Advisor (is |")|Spend/.test(t));
+  // Gate round 4 fix (Medium, decided): `Spend` scoped to lines that already start "Advisor "
+  // -- the bare, unscoped alternative below used to flag ANY notice anywhere in the
+  // transcript that merely happens to mention "Spend" (an unrelated cost/budget notice has
+  // nothing to do with a leaked advisor status reply) as if it were this specific leak.
+  const leaked = texts.filter((t) => /^Advisor (is |")/.test(t) || (/^Advisor /.test(t) && /Spend/.test(t)));
   if (leaked.length > 0) {
     failures.push(
       `${label}: a status-reply-shaped notice leaked into the transcript (the silent probe's own reply must never render): ${JSON.stringify(leaked)}`

@@ -214,25 +214,31 @@ async function main() {
     // text (`ComposerStatusLine.tsx`'s own gate round 1 comment) specifically orders against.
     // Turns `current-time` on for this scratch profile first, so a REAL later sibling exists.
     const readoutResult = await cdp.evaluate(`window.refract.settings.setReadoutVisibility('current-time', true).then((r) => r.ok)`);
-    if (!readoutResult) failures.push('Could not enable the Current time readout chip via settings.setReadoutVisibility for the order check.');
-    await cdp.waitFor(
-      `!!Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"] .sr-only')).some((el) => el.textContent?.startsWith('Current time:'))`,
-      { timeoutMs: 5_000, label: 'Current time chip appeared after enabling it for the order check' }
-    ).catch((err) => failures.push(err.message));
-    const order = await cdp.evaluate(`(() => {
-      const chips = Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]'));
-      const index = chips.findIndex((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor');
-      const lastIsCurrentTime = (chips.at(-1)?.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time:');
-      return { total: chips.length, index, lastIsCurrentTime };
-    })()`);
-    if (order.index === -1) {
-      failures.push('Could not find the Advisor chip among the status line\'s own readout chips for the order check.');
-    } else if (!order.lastIsCurrentTime) {
-      failures.push(`Expected the Current time chip last (total ${order.total}) to confirm the order check's own setup -- found something else last.`);
-    } else if (order.index !== order.total - 2) {
-      failures.push(`Advisor chip is not second-to-last, right before the Current time chip (index ${order.index} of ${order.total} total) -- expected ${order.total - 2}.`);
+    // Gate round 4 fix (Medium, decided): skips the rest of this check entirely on setup
+    // failure, rather than falling through into a `waitFor` timeout and an order read that
+    // would both fail too -- a single clear cause, not three cascading failures from one root.
+    if (!readoutResult) {
+      failures.push('Could not enable the Current time readout chip via settings.setReadoutVisibility -- skipping the order check.');
     } else {
-      findings.push(`Advisor chip sits right before the Current time chip (index ${order.index} of ${order.total} total, Current time chip last), as decided.`);
+      await cdp.waitFor(
+        `!!Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"] .sr-only')).some((el) => el.textContent?.startsWith('Current time:'))`,
+        { timeoutMs: 5_000, label: 'Current time chip appeared after enabling it for the order check' }
+      ).catch((err) => failures.push(err.message));
+      const order = await cdp.evaluate(`(() => {
+        const chips = Array.from(document.querySelectorAll('[data-slot="composer-status-line"] [data-slot="readout-chip"]'));
+        const index = chips.findIndex((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor');
+        const lastIsCurrentTime = (chips.at(-1)?.querySelector('.sr-only')?.textContent ?? '').startsWith('Current time:');
+        return { total: chips.length, index, lastIsCurrentTime };
+      })()`);
+      if (order.index === -1) {
+        failures.push('Could not find the Advisor chip among the status line\'s own readout chips for the order check.');
+      } else if (!order.lastIsCurrentTime) {
+        failures.push(`Expected the Current time chip last (total ${order.total}) to confirm the order check's own setup -- found something else last.`);
+      } else if (order.index !== order.total - 2) {
+        failures.push(`Advisor chip is not second-to-last, right before the Current time chip (index ${order.index} of ${order.total} total) -- expected ${order.total - 2}.`);
+      } else {
+        findings.push(`Advisor chip sits right before the Current time chip (index ${order.index} of ${order.total} total, Current time chip last), as decided.`);
+      }
     }
 
 

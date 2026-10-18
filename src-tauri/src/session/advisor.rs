@@ -144,14 +144,20 @@ fn parse_status_reply(trimmed: &str) -> Option<bool> {
 /// The one OTHER wording this module has actually seen a `/advisor status` reply use (#917's
 /// own live evidence, `Advisor "default" is running.`) -- recognised so it is still consumed
 /// (never left to render as a stray notice) without ever being trusted for an on/off reading
-/// (see `parse_status_reply`'s own doc comment). Gate round 3 fix (Low, decided): also requires
-/// a single line (no embedded `\n`) -- a longer, multi-line reply that merely starts and ends
-/// with these same fragments is not this known, short shape and must not be swallowed on that
-/// resemblance alone. Anything starting "Advisor " that matches NEITHER this nor
+/// (see `parse_status_reply`'s own doc comment). Gate round
+/// 3 fix (Low, decided): also requires a single line -- a longer, multi-line reply that merely
+/// starts and ends with these same fragments is not this known, short shape and must not be
+/// swallowed on that resemblance alone. Gate round 4 fix (Low, decided): rejects an embedded
+/// `\r` too, not just `\n` -- a bare CR (a stray CRLF artifact) can make a string look
+/// single-line to a `\n`-only check while still not actually being this module's own known,
+/// single-line shape. Anything starting "Advisor " that matches NEITHER this nor
 /// `parse_status_reply` is wording this module has never seen; it renders normally rather than
 /// being guessed at.
 fn is_known_ambiguous_status_shape(trimmed: &str) -> bool {
-    trimmed.starts_with("Advisor \"") && trimmed.ends_with("is running.") && !trimmed.contains('\n')
+    trimmed.starts_with("Advisor \"")
+        && trimmed.ends_with("is running.")
+        && !trimmed.contains('\n')
+        && !trimmed.contains('\r')
 }
 
 async fn apply_and_emit(agent: &SessionAgent, advisor_on: bool) {
@@ -184,7 +190,11 @@ pub(super) async fn handle_command_output(agent: &SessionAgent, frame: &Value) -
         .and_then(Value::as_str)
         .or_else(|| frame.get("message").and_then(Value::as_str))
         .unwrap_or("");
-    let trimmed = text.trim_start();
+    // Gate round 4 fix (Low, decided): `trim()` (both ends), not `trim_start()` alone -- the
+    // shape checks below include an `ends_with` match (`is_known_ambiguous_status_shape`),
+    // which a trailing newline/space the start-only trim left behind could make miss a reply
+    // that is otherwise exactly this known shape.
+    let trimmed = text.trim();
 
     // The two authoritative toggle replies always win, and are never swallowed, even while a
     // probe is still pending (a chip click or a typed `/advisor on|off` racing the probe).
@@ -235,22 +245,48 @@ pub(super) async fn handle_command_output(agent: &SessionAgent, frame: &Value) -
 /// attempt claimed under still match, so a rollback from an attempt that lost its own race can
 /// never re-arm a probe a different, already-progressed attempt (or a user's own `/advisor`,
 /// `cancel_pending_probe`) has since moved past. Returns `true` once settled one way or another
-/// under this generation (claimed-and-sent, or nothing left to claim) so a caller retry-loop
-/// can stop; `false` only when a later retry under the SAME generation might still succeed.
+/// under this generation (claimed-and-sent, or genuinely nothing left to ever claim -- already
+/// resolved by a real reply, or cancelled) so a caller retry-loop can stop; `false` whenever a
+/// later retry under the SAME generation might still succeed -- gate round 4 fix (Low,
+/// decided): this now ALSO covers losing the claim to another attempt that is still in flight
+/// right now (`awaiting_silent_probe` already true) and might yet roll back -- the earlier
+/// version returned `true` here too, so `on_launch`'s own bounded retry loop could stop early
+/// on a race it only LOOKED settled, and never get another chance if the winning attempt's own
+/// `rollback` below ran moments later.
 async fn maybe_send_probe(agent: &SessionAgent, expected_generation: u64) -> bool {
-    let claimed_epoch = agent
+    enum ProbeClaim {
+        Claimed(u64),
+        /// This generation is superseded; genuinely nothing left for this caller to do, ever.
+        Stale,
+        /// Already resolved (a real reply consumed it) or cancelled by the user's own
+        /// `/advisor`; also genuinely nothing left to claim.
+        Resolved,
+        /// Lost the claim to ANOTHER attempt that is still in flight right now -- it may yet
+        /// fail and roll back, so this is NOT settled.
+        LostToConcurrent,
+    }
+    let claim = agent
         .with_advisor_state(|s| {
-            if !s.probe_armed || s.generation != expected_generation {
-                return None;
+            if s.generation != expected_generation {
+                return ProbeClaim::Stale;
+            }
+            if !s.probe_armed {
+                return if s.awaiting_silent_probe {
+                    ProbeClaim::LostToConcurrent
+                } else {
+                    ProbeClaim::Resolved
+                };
             }
             s.probe_armed = false;
             s.awaiting_silent_probe = true;
             s.probe_epoch = s.probe_epoch.wrapping_add(1);
-            Some(s.probe_epoch)
+            ProbeClaim::Claimed(s.probe_epoch)
         })
         .await;
-    let Some(epoch) = claimed_epoch else {
-        return true; // already claimed by a concurrent attempt, or nothing left under this generation.
+    let epoch = match claim {
+        ProbeClaim::Claimed(epoch) => epoch,
+        ProbeClaim::Stale | ProbeClaim::Resolved => return true,
+        ProbeClaim::LostToConcurrent => return false,
     };
 
     async fn rollback(agent: &SessionAgent, expected_generation: u64, epoch: u64) {
