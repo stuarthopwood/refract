@@ -39,6 +39,8 @@ import {
   clickByLabelScrolled,
   clickByTextScrolled,
   titleSelector,
+  stageContentSelector,
+  expandRow,
   STAGE1_TITLE,
   STAGE2_TITLE,
   STAGE3_TITLE,
@@ -259,6 +261,77 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
   }
 }
 
+/** Issue #989: `apply_async_result_jobs` (`subagent_items.rs`) must scope an async-result job to
+ * the Stage that actually produced it, never to any item sharing the same `job_id`/label string.
+ * Stage 2 and Stage 5 both run a subagent named "Story559" (`stages-941.jsonl`'s own
+ * `msg-ar2`/`msg-ar5`); the job's own wire `id` is just its `label` echoed back, not a
+ * session-unique value, so before the fix Stage 5's LATER async-result (arriving after Stage
+ * 2's own row had already settled) matched Stage 2's already-finished Story559 row too,
+ * overwriting its `result`/`duration_ms` with Stage 5's own data (1800ms/"Implemented the fix
+ * for #559." clobbered to 4300ms/"Polished Story559 follow-up items."). Both Stage rows start
+ * collapsed; expanding each reveals its own Story559 member's one-line result summary
+ * (`extractResultSummary`) and rendered duration (`formatElapsed`) with no need to expand the
+ * member row itself (same mechanism `assertDetailsOnExpand` already uses for Stage 1). */
+async function assertAsyncResultStageScoping(cdp, findings, failures) {
+  const failuresAtStart = failures.length;
+  const expectations = [
+    {
+      stage: STAGE2_TITLE,
+      label: 'Stage 2',
+      ownResult: 'Implemented the fix for #559.',
+      otherResult: 'Polished Story559 follow-up items.',
+      ownDuration: '2s',
+      otherDuration: '4s'
+    },
+    {
+      stage: STAGE5_TITLE,
+      label: 'Stage 5',
+      ownResult: 'Polished Story559 follow-up items.',
+      otherResult: 'Implemented the fix for #559.',
+      ownDuration: '4s',
+      otherDuration: '2s'
+    }
+  ];
+  for (const exp of expectations) {
+    await expandRow(cdp, exp.stage);
+    await cdp
+      .waitFor(`${stageContentSelector(exp.stage)}?.textContent.includes('Story559') ?? false`, {
+        timeoutMs: 10_000,
+        label: `${exp.label} expanded content shows its own Story559 row`
+      })
+      .catch((err) => failures.push(err.message));
+    const contentText = await cdp.evaluate(`${stageContentSelector(exp.stage)}?.textContent ?? ''`);
+    if (!contentText.includes(exp.ownResult)) {
+      failures.push(
+        `[issue #989] ${exp.label}'s own Story559 member row does not show its OWN result summary (${JSON.stringify(exp.ownResult)}): ${JSON.stringify(contentText)}`
+      );
+    } else {
+      findings.push(`[issue #989] ${exp.label}'s own Story559 member row correctly shows its own result summary (${JSON.stringify(exp.ownResult)}).`);
+    }
+    if (contentText.includes(exp.otherResult)) {
+      failures.push(
+        `[issue #989] REGRESSION -- ${exp.label}'s own Story559 member row shows the OTHER Stage's result summary (${JSON.stringify(exp.otherResult)}): a same-named Stage's later async-result clobbered this row.`
+      );
+    }
+    // Gate note: Stage 2's sibling member (Story560, 2000ms) also renders "2s", so a bare
+    // substring match on `ownDuration` alone is not Stage-2-conclusive by itself -- the
+    // `otherDuration` absence check below is what actually exposes the clobber (Stage 2 never
+    // legitimately renders "4s" anywhere in its own content; Stage 5 never legitimately renders
+    // "2s" anywhere in its own content), the result-summary check above is the primary signal.
+    if (!contentText.includes(exp.ownDuration)) {
+      failures.push(`[issue #989] ${exp.label}'s own Story559 member row does not show its OWN duration (${JSON.stringify(exp.ownDuration)}): ${JSON.stringify(contentText)}`);
+    }
+    if (contentText.includes(exp.otherDuration)) {
+      failures.push(
+        `[issue #989] REGRESSION -- ${exp.label}'s own expanded content shows the OTHER Stage's duration (${JSON.stringify(exp.otherDuration)}), which it never legitimately renders on its own: ${JSON.stringify(contentText)}`
+      );
+    }
+  }
+  if (failures.length === failuresAtStart) {
+    findings.push('[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration -- no cross-Stage async-result clobbering.');
+  }
+}
+
 async function main() {
   let shimDir, dataDir, importSourceDir, repoDir, exeDir, launcherDir;
   let child;
@@ -391,6 +464,7 @@ async function main() {
     );
     findings.push('All ten Stages settled (part 1 scaffold, reused unchanged).');
 
+    await assertAsyncResultStageScoping(cdp, findings, failures);
     await clickByLabelScrolled(cdp, 'Show subagents panel');
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel opened' });
     findings.push('Subagents panel opened from the chain row\u2019s own "Show subagents panel" button.');
