@@ -504,8 +504,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
     // sees is exactly what the developer would have gotten pasting the whole block directly.
     const message = substituteChips(draftText, attachments.textChips)
-    // #926 gate round 1 (D1 HIGH): typed text carrying the literal marker could masquerade as a
-    // real attachment once `transcript.rs` parses it back out -- refused, draft stays intact.
+    // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
       toast.error('The message contains a reserved marker line used internally for file attachments. Remove it and try again.')
       return
@@ -543,7 +542,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
       // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
       // developer discovering, after the fact, that a pasted screenshot never reached the model.
-      // #926: a pending file attachment is refused the same way -- no attachment concept here.
       if (attachments.images.length > 0 || attachments.files.length > 0) {
         toast.error("Side questions don't support attachments. Remove them and try again.")
         return
@@ -605,6 +603,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       } catch {
         // `ask` already surfaced the failure via toast; keep the draft so the question is not lost.
       }
+      return
+    }
+    // #926 (D4 HIGH): a slash command with a pending file would append the marker text, which OMP rejects as unsupported-arguments.
+    if (slashInvocation && attachments.files.length > 0) {
+      toast.error("Slash commands can't carry attached files. Remove them and try again.")
       return
     }
     const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
@@ -989,9 +992,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const data = event.clipboardData
     const imageFile = findClipboardImageItem(data)
     const pastedFiles = Array.from(data.files ?? [])
-    // #926 gate round 1 (Code1/Test1 HIGH): a plain clipboard-image paste is the single-image
-    // case with nothing else in `data.files` (FR-005, no cap); any other paste goes through
-    // `pastedFiles` as a whole, so a file alongside an image is never dropped.
+    // #926: a plain clipboard-image paste is the single-image case with nothing else in `data.files` (FR-005, no cap); anything else uses `pastedFiles`.
     if (imageFile != null && pastedFiles.length <= 1) {
       // FR-001: never let any image data reach the textarea's own text value.
       event.preventDefault()
@@ -999,7 +1000,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
 
-    // #926: `attachPastedFiles` owns the cap (FR-039) and the pending-read counter.
     if (pastedFiles.length > 0) {
       event.preventDefault()
       await attachPastedFiles(sessionId, pastedFiles, announceAttachment)
