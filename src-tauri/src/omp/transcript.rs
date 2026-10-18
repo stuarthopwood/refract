@@ -56,7 +56,11 @@ pub enum TranscriptItem {
         text: String,
         at: i64,
         // #926: files/folders attached, parsed by `file_attachment_markers`; empty for none.
-        #[serde(rename = "fileAttachments", default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(
+            rename = "fileAttachments",
+            default,
+            skip_serializing_if = "Vec::is_empty"
+        )]
         file_attachments: Vec<FileAttachmentRef>,
     },
     #[serde(rename_all = "camelCase")]
@@ -1131,7 +1135,11 @@ fn apply_message_snapshot(
             replace_message_items(
                 items,
                 message_id,
-                vec![Arc::new(file_attachment_markers::build_user_item(message_id.to_string(), text, at))],
+                vec![Arc::new(file_attachment_markers::build_user_item(
+                    message_id.to_string(),
+                    text,
+                    at,
+                ))],
             )
         }
         "custom" => {
@@ -1645,7 +1653,9 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                 let parts = content_parts(message);
                 let text = join_text(parts);
                 let at = as_timestamp(message, "timestamp").unwrap_or(0);
-                items.push(Arc::new(file_attachment_markers::build_user_item(message_id, text, at)));
+                items.push(Arc::new(file_attachment_markers::build_user_item(
+                    message_id, text, at,
+                )));
             }
             "custom" => {
                 let custom_type = message

@@ -295,11 +295,10 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
         let Some(app_handle) = app_handle else {
             return Ok(Value::Array(vec![]));
         };
-        let files = tokio::task::spawn_blocking(move || {
-            app_handle.dialog().file().blocking_pick_files()
-        })
-        .await
-        .map_err(|err| IpcError::new("unsupported", err.to_string()))?;
+        let files =
+            tokio::task::spawn_blocking(move || app_handle.dialog().file().blocking_pick_files())
+                .await
+                .map_err(|err| IpcError::new("unsupported", err.to_string()))?;
         let path_strings: Vec<String> = files
             .unwrap_or_default()
             .into_iter()
@@ -315,7 +314,9 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
                 "Too many files picked in this Session already; nothing from this pick was recorded. Try fewer at once.",
             ));
         }
-        Ok(Value::Array(path_strings.into_iter().map(Value::String).collect()))
+        Ok(Value::Array(
+            path_strings.into_iter().map(Value::String).collect(),
+        ))
     })
 }
 

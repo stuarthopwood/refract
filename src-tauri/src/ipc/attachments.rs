@@ -441,7 +441,10 @@ pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) ->
 /// `attachments.*`/`file_attachments.rs` handler that takes a `sessionId` repeats; pulled into
 /// one shared helper instead of each handler re-locking the registry and re-writing the same
 /// not-found mapping.
-pub(super) async fn resolve_session_worktree(state: &AppState, session_id: &str) -> Result<String, IpcError> {
+pub(super) async fn resolve_session_worktree(
+    state: &AppState,
+    session_id: &str,
+) -> Result<String, IpcError> {
     let registry = state.registry.lock().await;
     match registry.get_session(session_id) {
         Some(session) => Ok(session.worktree_path.clone()),
@@ -462,7 +465,10 @@ pub(super) async fn resolve_session_worktree(state: &AppState, session_id: &str)
 /// `Some(buffer)` read up to `metadata.len() + 1` bytes, so the caller can detect the file
 /// growing mid-read by comparing `buffer.len()` against `metadata.len()` ITSELF -- never against
 /// the external `cap`, which a small file growing only slightly would never trip.
-pub(super) async fn read_bounded(real_path: &Path, cap: u64) -> Result<(std::fs::Metadata, Option<Vec<u8>>), IpcError> {
+pub(super) async fn read_bounded(
+    real_path: &Path,
+    cap: u64,
+) -> Result<(std::fs::Metadata, Option<Vec<u8>>), IpcError> {
     let mut file = match fs::File::open(real_path).await {
         Ok(f) => f,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
