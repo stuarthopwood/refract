@@ -183,6 +183,32 @@ export async function getAccessibleNameAndRole(cdp, selectorExpr) {
   return { name: node?.name?.value ?? null, role: node?.role?.value ?? null };
 }
 
+/** `getAccessibleNameAndRole` above reads `nodes[0]`'s own `name`, which is reliable for a
+ * WIDGET (a button with an `aria-label`) but not for a plain text-content `<span>`: Chromium's
+ * AX tree computes "name" on the role the text is naturally exposed through, nested leaves
+ * under the requested node rather than on the node itself -- confirmed live against #560's own
+ * `Low memory (N agents)` span (`verify-tauri-560-helpers.mjs`'s own `axText`, promoted here
+ * since #941 hit the identical issue against a plain Stage-label span). Fetches only the exact
+ * node's own DIRECT children via `Accessibility.getChildAXNodes` (NOT `fetchRelatives: true`,
+ * which also pulls in ancestors up to the document root, so the first hit becomes the document
+ * title instead) and concatenates every child's own name in DOM order (NOT just the first:
+ * JSX with an interpolated expression between two string literals renders as several sibling
+ * text nodes, each its own leaf AX node). */
+export async function axText(cdp, selectorExpr) {
+  await cdp.send('Accessibility.enable');
+  const evalResult = await cdp.send('Runtime.evaluate', { expression: selectorExpr, returnByValue: false });
+  const objectId = evalResult.result?.objectId;
+  if (!objectId) return null;
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { objectId, fetchRelatives: false });
+  const target = nodes?.[0];
+  if (!target) return null;
+  if (target.name?.value) return target.name.value;
+  if (!target.nodeId) return null;
+  const { nodes: children } = await cdp.send('Accessibility.getChildAXNodes', { id: target.nodeId });
+  const names = (children ?? []).map((child) => child.name?.value).filter((value) => value != null);
+  return names.length > 0 ? names.join('') : null;
+}
+
 /** Drives the REAL Profile-menu UI (`window.refract.theme.preview(id)` only moves the title-bar
  * overlay colour, never the renderer's `<html>` class the CSS tokens key off). A real
  * `mouseMoved` hover before the click matches how Radix's own `DropdownMenuSub` actually opens

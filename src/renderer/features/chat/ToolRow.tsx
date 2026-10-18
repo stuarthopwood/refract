@@ -10,7 +10,15 @@ import { COMMAND_STYLE_TOOLS, commandRowText, sanitizeLines } from './formatTool
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
-import { chatRowStatus, SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
+import { cn } from '@/lib/utils'
+import {
+  chatRowStatus,
+  isSubagentSuccessStatus,
+  SUBAGENT_STATUS_LABEL,
+  SUBAGENT_SUCCESS_TEXT_CLASS,
+  SubagentStatusGlyph
+} from '../subagents/subagentStatus'
+import { extractResultSummary } from './stageMeta'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -532,11 +540,23 @@ export function SubagentRow({ item }: SubagentRowProps) {
       {duration}
     </span>
   )
+  // Issue #941 grill item 4: a Stage expanding reveals each member's own one-line result right
+  // here, with no need to ALSO expand this row individually -- `extractResultSummary` (gate
+  // round 1 fix): first line, Markdown markers stripped, capped ~120 chars (a full multi-line
+  // result still needs this row's own expansion, `SubagentBody` below, for the rest).
+  const resultSummary = item.result != null ? extractResultSummary(item.result) : undefined
   return (
     // #565 decision 10: this row is always a `SpineList` member (its only caller,
     // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same
     // label column `ToolCallRow`'s member body does -- one geometry for every Spine member.
-    <CollapsedLine icon={<SubagentStatusGlyph status={status} />} label={item.name} meta={meta} contentClassName={LABEL_COLUMN_CONTENT_CLASS}>
+    <CollapsedLine
+      icon={<SubagentStatusGlyph status={status} />}
+      label={item.name}
+      labelClassName={cn(isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
+      summary={resultSummary}
+      meta={meta}
+      contentClassName={LABEL_COLUMN_CONTENT_CLASS}
+    >
       <SubagentBody item={item} />
     </CollapsedLine>
   )

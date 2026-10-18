@@ -338,6 +338,11 @@ fn scrub_known_divergences(value: &mut Value) {
             // the same pattern `remote.kind` above uses.
             if map.contains_key("changes") && map.contains_key("contextUsage") {
                 map.remove("branch");
+                // Issue #941: `readout`'s own `todoPhases` ("Up next") is the same kind of
+                // brand-new, Rust-only field as `branch` above -- Electron's own frozen
+                // `readout.ts` never named todo phases either, so it never appears on that
+                // shell's side of this diff.
+                map.remove("todoPhases");
             }
             // Issue #937: `sessions.open`'s own response value gained a brand-new, Rust-only
             // `advisorOn` field (Electron never shipped omp's advisor subsystem at all, epic

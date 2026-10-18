@@ -117,7 +117,7 @@ interface TranscriptRowProps {
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
 function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} />
+  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 

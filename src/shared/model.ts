@@ -335,6 +335,7 @@ export interface SessionReadout {
   // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
   todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
+  todoPhases: Array<{ name: string; pendingCount: number }> | null; // Issue #941 "Up next": pending Todo phases (name, outstanding task count); null = no task list or every phase finished (Rust-only field)
 }
 
 /** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */
@@ -373,16 +374,14 @@ export interface SubagentSummary {
    * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
    * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
    * have failed, only its process disappeared.
-   *
-   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, never
-   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` genuinely
-   * CAN outlive it on Windows for a window, so "its process disappeared" is not simply assumed:
+   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, not
+   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` CAN outlive
+   * it on Windows for a window, so "its process disappeared" is not simply assumed:
    * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
-   * process dies (primary defence), and `src/main/process/pidRecords.ts`'s `reapStale()` is the
-   * fallback for the rarer case Refract itself was killed too abruptly even for that -- run from
-   * `src/main/index.ts` at startup, awaited before any Session/`SessionAgent` ever attaches, so by
-   * the time `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for
-   * real, not merely assumed. */
+   * process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * fallback for the rarer case Refract itself was killed too abruptly -- run from
+   * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
+   * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
   status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
@@ -461,6 +460,7 @@ export type TranscriptItem =
       specIndex: number; // this spec's position in the owning call's own `tasks[]` (issue #489 gate finding 1: the correlation key `reconcileSubagentsOnAttach` uses, since `id`'s scheme never matches `SubagentSummary.id`'s)
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
+      context?: string; // Issue #941: the batch `task()` call's own shared `context` (Stage's batch brief, names the Stage, `groupSubagentStages.ts`); absent for a flat call or pre-#941 history
       /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
        * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
        * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
