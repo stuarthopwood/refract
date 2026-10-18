@@ -24,22 +24,31 @@
 //
 // Two Stages used as independent jump targets -- both multi-member, fully finished, and never
 // otherwise touched by this script, so each starts genuinely CLOSED (no failed/cancelled/exited
-// member, issue #1000's multi-Stage auto-open rule): Stage 1 (mouse click) and Stage 3 (keyboard:
+// member, issue #1000's multi-Stage auto-open rule): Stage 4 (mouse click) and Stage 3 (keyboard:
 // focus its own jump button directly, then a real Enter keypress -- native <button> Enter
-// activation needs no special-casing in `jumpToStage` itself). Gate round 1 item 8 (Medium):
-// the transcript is explicitly scrolled to its own end before EACH jump (Stage 1/Stage 3 sit
-// near the top of a ten-Stage turn) and the target row's own off-screen state is asserted as a
-// hard precondition, not assumed; after the jump, `cdp.waitFor` polls for in-viewport (the
-// smooth scroll settles asynchronously) instead of a single immediate read.
+// activation needs no special-casing in `jumpToStage` itself). Stage 1 is deliberately NOT used
+// (gate round 1, falsified live): it runs alone first in this fixture and is observed genuinely
+// running before Stage 2 streams in, so it auto-opens under the single-Stage exception and then
+// STAYS open forever (research.md decision 22) -- it never starts closed for this proof. Gate
+// round 1 item 8 (Medium): the transcript is explicitly scrolled to its own end before EACH jump
+// (Stage 4/Stage 3 sit near the top of a ten-Stage turn) and the target row's own off-screen
+// state is asserted as a hard precondition, not assumed; after the jump, `cdp.waitFor` polls for
+// in-viewport (the smooth scroll settles asynchronously) instead of a single immediate read.
 //
 // Gate round 1 item 9 (Medium): #991 persistence is exercised cheaply by toggling "Show tool
 // calls" off then back on (a real IPC round trip, `window.refract.settings.setTranscriptDisplay`,
-// the same dev-exposed call `verify-557-thought-runs.mjs` already uses) right after Stage 1's own
-// mouse jump -- this is a genuine unmount/remount of Stage 1's own row (gate round 1 item 1's own
-// visibility gate), doubling as the proof that Stage 1's manual-open (set by the jump) survives
+// the same dev-exposed call `verify-557-thought-runs.mjs` already uses) right after Stage 4's own
+// mouse jump -- this is a genuine unmount/remount of Stage 4's own row (gate round 1 item 1's own
+// visibility gate), doubling as the proof that Stage 4's manual-open (set by the jump) survives
 // it, and that Stage 5 (a failed Stage, force-visible regardless of the toggle) never disappears.
 // `prefers-reduced-motion` is NOT emulated by this CDP session, so `jumpToStage`'s own
 // instant-jump branch is recorded in `notExercised`, never silently skipped without comment.
+//
+// Gate round 1 fix (falsified live, this round): the chain row is NEVER clicked open by this
+// script any more -- see `ChainStageLine` section's own comment below for the full story of the
+// bug that `expandByFinder`'s click-if-not-expanded guard caused here (it could toggle an
+// already-auto-open chain row CLOSED on a stale read); this script only ever asserts FR-068's
+// own guaranteed default-open state via `cdp.waitFor`.
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset, per the build-slot guard)
@@ -70,11 +79,11 @@ import {
   buildOmpShim,
   launchBuiltExeWithEnv,
   clickScrolled,
-  expandByFinder,
   titleSelector,
   stageTriggerSelector,
   STAGE1_TITLE,
   STAGE3_TITLE,
+  STAGE4_TITLE,
   STAGE5_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, pressKey } from './verify-tauri-session-list-helpers.mjs';
@@ -87,7 +96,7 @@ const PROMPT_MESSAGE =
 const SHOTS_DIR =
   process.env.REFRACT_1008_SHOTS_DIR || path.join(tmpdir(), `refract-1008-stage-label-jump-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
-  '01-stage1-jumped-open-focused.png',
+  '01-stage4-jumped-open-focused.png',
   '02-stage3-jumped-via-keyboard.png',
   '1008-stage-label-jump-dark.png',
   '1008-stage-label-jump-obsidian.png',
@@ -245,77 +254,95 @@ async function main() {
     );
 
     // ---- Item 2: "Go to Stage N" in the chain row scrolls+opens+focuses the target Stage row,
-    // by mouse click (Stage 1) and by keyboard (Stage 3, a real Enter keypress). Both targets
+    // by mouse click (Stage 4) and by keyboard (Stage 3, a real Enter keypress). Both targets
     // are multi-member, fully finished, never otherwise touched by this script, so each starts
-    // genuinely CLOSED (no failed/cancelled/exited member) -- a clean baseline. The chain row
-    // must be open first for `ChainStageLine`'s own jump buttons to exist in the DOM at all
-    // (Stage 5's permanently-failed member keeps the whole turn "unsettled", so the chain row
-    // should already default open -- `expandByFinder` is a no-op in that case, and a genuine
-    // open-if-needed otherwise). ----
-    await expandByFinder(cdp, CHAIN_TRIGGER);
+    // genuinely CLOSED (no failed/cancelled/exited member) -- a clean baseline. Stage 1 is
+    // deliberately NOT a jump target here (gate round 1, falsified live): it runs alone first in
+    // this fixture and is observed genuinely running before Stage 2 streams in, so it auto-opens
+    // under the single-Stage exception and then STAYS open forever via the upward-only latch
+    // (research.md decision 22) -- it would never start closed for this proof.
+    //
+    // The chain row must already be open for `ChainStageLine`'s own jump buttons to exist in the
+    // DOM at all. Gate round 1 fix (falsified live): NEVER click it open -- Stage 5's
+    // permanently-failed member already keeps the whole turn "unsettled" (FR-068), so it MUST
+    // already be open by the time the turn settles; a click-if-not-expanded guard here risked
+    // reading a stale/transitional `aria-expanded` and TOGGLING AN ALREADY-OPEN row CLOSED
+    // instead (confirmed live: the first run of this script left the chain visibly collapsed in
+    // every screenshot, with every "Go to Stage N" button consequently unreachable -- a bug in
+    // this script's own `expandByFinder` use, not in `SubagentChainRow.tsx`). Asserting the open
+    // state directly, with no click, removes that risk entirely. ----
+    try {
+      await cdp.waitFor(`(${CHAIN_TRIGGER})?.getAttribute('aria-expanded') === 'true'`, {
+        timeoutMs: 15_000,
+        label: "The per-turn Subagents chain row auto-opens (FR-068: Stage 5's permanent failure keeps the turn unsettled)"
+      });
+      findings.push("The per-turn Subagents chain row is open by default (Stage 5's own permanent failure keeps the turn unsettled, FR-068) -- never clicked by this script, so there is no risk of accidentally toggling it closed.");
+    } catch (err) {
+      failures.push(`The per-turn Subagents chain row never auto-opened: ${err.message} -- FR-068 regression (a turn with a failed Stage must default open).`);
+    }
 
-    const stage1TriggerExpr = stageTriggerSelector(STAGE1_TITLE);
-    const stage1BeforeExpanded = await cdp.evaluate(`(${stage1TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
-    if (stage1BeforeExpanded !== 'false') {
-      failures.push(`Stage 1's own row was not closed before the mouse jump proof (aria-expanded was ${JSON.stringify(stage1BeforeExpanded)}, expected "false") -- this script never touches Stage 1 before this point.`);
+    const stage4TriggerExpr = stageTriggerSelector(STAGE4_TITLE);
+    const stage4BeforeExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
+    if (stage4BeforeExpanded !== 'false') {
+      failures.push(`Stage 4's own row was not closed before the mouse jump proof (aria-expanded was ${JSON.stringify(stage4BeforeExpanded)}, expected "false") -- this script never touches Stage 4 before this point.`);
     } else {
-      findings.push('Stage 1 starts genuinely CLOSED (never touched before this point, no failed member) -- a clean baseline for the mouse jump proof.');
+      findings.push('Stage 4 starts genuinely CLOSED (never touched before this point, no failed member, not Stage 1\'s own single-Stage-first exception) -- a clean baseline for the mouse jump proof.');
     }
     await scrollTranscriptToEnd(cdp);
-    const stage1RectBefore = await cdp.evaluate(viewportRectExpr(stage1TriggerExpr));
-    if (rectIsInViewport(stage1RectBefore)) {
-      failures.push(`Stage 1's own row is already in the viewport after scrolling the transcript to its own end (rect ${JSON.stringify(stage1RectBefore)}) -- the off-screen precondition for the mouse jump proof could not be established.`);
+    const stage4RectBefore = await cdp.evaluate(viewportRectExpr(stage4TriggerExpr));
+    if (rectIsInViewport(stage4RectBefore)) {
+      failures.push(`Stage 4's own row is already in the viewport after scrolling the transcript to its own end (rect ${JSON.stringify(stage4RectBefore)}) -- the off-screen precondition for the mouse jump proof could not be established.`);
     } else {
-      findings.push(`Stage 1's own row starts off-screen (rect ${JSON.stringify(stage1RectBefore)}) -- a clean baseline for the mouse jump proof (gate round 1, item 8).`);
+      findings.push(`Stage 4's own row starts off-screen (rect ${JSON.stringify(stage4RectBefore)}) -- a clean baseline for the mouse jump proof (gate round 1, item 8).`);
     }
-    let stage1JumpFound = false;
+    let stage4JumpFound = false;
     try {
-      await cdp.waitFor(`!!(${jumpButtonExpr(STAGE1_TITLE)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 1" button' });
-      stage1JumpFound = true;
-      findings.push('The chain row\'s own "Go to Stage 1" button exists (issue #1008 item 2: the Stage label is now a real button, not a plain span).');
+      await cdp.waitFor(`!!(${jumpButtonExpr(STAGE4_TITLE)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 4" button' });
+      stage4JumpFound = true;
+      findings.push('The chain row\'s own "Go to Stage 4" button exists (issue #1008 item 2: the Stage label is now a real button, not a plain span).');
     } catch (err) {
-      failures.push(`The chain row's own "Go to Stage 1" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
+      failures.push(`The chain row's own "Go to Stage 4" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
-    if (stage1JumpFound) {
-      await clickScrolled(cdp, jumpButtonExpr(STAGE1_TITLE));
-      const stage1AfterExpanded = await cdp.evaluate(`(${stage1TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
-      if (stage1AfterExpanded !== 'true') {
-        failures.push(`Clicking "Go to Stage 1" did not open Stage 1's own row (aria-expanded is ${JSON.stringify(stage1AfterExpanded)}, expected "true").`);
+    if (stage4JumpFound) {
+      await clickScrolled(cdp, jumpButtonExpr(STAGE4_TITLE));
+      const stage4AfterExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
+      if (stage4AfterExpanded !== 'true') {
+        failures.push(`Clicking "Go to Stage 4" did not open Stage 4's own row (aria-expanded is ${JSON.stringify(stage4AfterExpanded)}, expected "true").`);
       } else {
-        findings.push('Clicking "Go to Stage 1" opened Stage 1\'s own row.');
+        findings.push('Clicking "Go to Stage 4" opened Stage 4\'s own row.');
       }
-      const stage1Focused = await cdp.evaluate(`document.activeElement === (${stage1TriggerExpr})`);
-      if (!stage1Focused) {
-        failures.push('Clicking "Go to Stage 1" did not move keyboard focus to Stage 1\'s own trigger.');
+      const stage4Focused = await cdp.evaluate(`document.activeElement === (${stage4TriggerExpr})`);
+      if (!stage4Focused) {
+        failures.push('Clicking "Go to Stage 4" did not move keyboard focus to Stage 4\'s own trigger.');
       } else {
-        findings.push('Clicking "Go to Stage 1" moved keyboard focus to Stage 1\'s own trigger.');
+        findings.push('Clicking "Go to Stage 4" moved keyboard focus to Stage 4\'s own trigger.');
       }
       try {
-        await cdp.waitFor(isInViewportExpr(stage1TriggerExpr), { timeoutMs: 5_000, label: 'Stage 1 row in the viewport after the mouse jump (smooth scroll settles)' });
-        const stage1Rect = await cdp.evaluate(viewportRectExpr(stage1TriggerExpr));
-        findings.push(`Stage 1's own row is in the viewport after the jump (rect ${JSON.stringify(stage1Rect)}).`);
+        await cdp.waitFor(isInViewportExpr(stage4TriggerExpr), { timeoutMs: 5_000, label: 'Stage 4 row in the viewport after the mouse jump (smooth scroll settles)' });
+        const stage4Rect = await cdp.evaluate(viewportRectExpr(stage4TriggerExpr));
+        findings.push(`Stage 4's own row is in the viewport after the jump (rect ${JSON.stringify(stage4Rect)}).`);
       } catch (err) {
-        failures.push(`Stage 1's own row never entered the viewport after the jump: ${err.message}`);
+        failures.push(`Stage 4's own row never entered the viewport after the jump: ${err.message}`);
       }
     }
-    await cdp.screenshot(path.join(SHOTS_DIR, '01-stage1-jumped-open-focused.png'));
+    await cdp.screenshot(path.join(SHOTS_DIR, '01-stage4-jumped-open-focused.png'));
 
-    // ---- Gate round 1 items 1 & 9: toggling "Show tool calls" off genuinely unmounts Stage 1's
+    // ---- Gate round 1 items 1 & 9: toggling "Show tool calls" off genuinely unmounts Stage 4's
     // own row (no bad member -- `rowVisibility` returns 'hidden') and its own jump button
     // disappears; Stage 5 (a failed Stage) stays force-visible regardless. Toggling back on
-    // remounts Stage 1, and its manual-open (set by the jump above) must survive the remount
+    // remounts Stage 4, and its manual-open (set by the jump above) must survive the remount
     // (issue #991 persistence) -- a real IPC round trip, not a store mutation. ----
-    if (stage1JumpFound) {
+    if (stage4JumpFound) {
       const toolCallsOff = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('toolCalls', false)`);
       if (!toolCallsOff || toolCallsOff.ok !== true) {
         failures.push(`settings.setTranscriptDisplay('toolCalls', false) failed: ${JSON.stringify(toolCallsOff)}`);
       } else {
         await sleep(300);
-        const stage1ButtonGoneWhileHidden = await cdp.evaluate(`!(${jumpButtonExpr(STAGE1_TITLE)})`);
-        if (!stage1ButtonGoneWhileHidden) {
-          failures.push('The "Go to Stage 1" button is still present with "Show tool calls" off, even though Stage 1 has no failed/cancelled/exited member -- issue #1008 gate round 1 item 1 regression.');
+        const stage4ButtonGoneWhileHidden = await cdp.evaluate(`!(${jumpButtonExpr(STAGE4_TITLE)})`);
+        if (!stage4ButtonGoneWhileHidden) {
+          failures.push('The "Go to Stage 4" button is still present with "Show tool calls" off, even though Stage 4 has no failed/cancelled/exited member -- issue #1008 gate round 1 item 1 regression.');
         } else {
-          findings.push('The "Go to Stage 1" button disappears with "Show tool calls" off (its own Stage row is genuinely hidden -- issue #1008 gate round 1 item 1 fix confirmed).');
+          findings.push('The "Go to Stage 4" button disappears with "Show tool calls" off (its own Stage row is genuinely hidden -- issue #1008 gate round 1 item 1 fix confirmed).');
         }
         const stage5ButtonStillThereWhileHidden = await cdp.evaluate(`!!(${jumpButtonExpr(STAGE5_TITLE)})`);
         if (!stage5ButtonStillThereWhileHidden) {
@@ -328,16 +355,16 @@ async function main() {
           failures.push(`settings.setTranscriptDisplay('toolCalls', true) failed: ${JSON.stringify(toolCallsOn)}`);
         } else {
           await sleep(300);
-          const stage1ReappearedExpanded = await cdp.evaluate(`(${stage1TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
-          if (stage1ReappearedExpanded !== 'true') {
-            failures.push(`Stage 1's own manual-open did not survive the "Show tool calls" off/on remount (aria-expanded is ${JSON.stringify(stage1ReappearedExpanded)}, expected "true") -- issue #991 persistence regression.`);
+          const stage4ReappearedExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
+          if (stage4ReappearedExpanded !== 'true') {
+            failures.push(`Stage 4's own manual-open did not survive the "Show tool calls" off/on remount (aria-expanded is ${JSON.stringify(stage4ReappearedExpanded)}, expected "true") -- issue #991 persistence regression.`);
           } else {
-            findings.push("Stage 1's own manual-open (set by the earlier jump) survived a genuine unmount/remount cycle (\"Show tool calls\" off then on) -- issue #991 persistence confirmed (issue #1008 gate round 1, item 9).");
+            findings.push("Stage 4's own manual-open (set by the earlier jump) survived a genuine unmount/remount cycle (\"Show tool calls\" off then on) -- issue #991 persistence confirmed (issue #1008 gate round 1, item 9).");
           }
         }
       }
     } else {
-      notExercised.push('The "Show tool calls" visibility-gating and #991 persistence-across-remount proof did not run because the "Go to Stage 1" button was never found.');
+      notExercised.push('The "Show tool calls" visibility-gating and #991 persistence-across-remount proof did not run because the "Go to Stage 4" button was never found.');
     }
 
     const stage3TriggerExpr = stageTriggerSelector(STAGE3_TITLE);
