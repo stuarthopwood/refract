@@ -23,33 +23,52 @@
 // running before settling is not reliably reproducible (the same reason Stage 2/7's own
 // expand-cycle checks in `verify-941-stage-naming-expand-helpers.mjs` accept either boolean).
 //
-// Four things proved, in this order (each needs the state the previous one left, so they run
+// Five things proved, in this order (each needs the state the previous one left, so they run
 // once, not per theme -- a theme pass takes a screenshot only, at the very end):
 //   1. While Stage 2 is genuinely still running (the additive delay window) and this turn
 //      already has two Stages, Stage 2's own trigger is CLOSED (`aria-expanded="false"`) --
-//      MUST fail on `origin/main`: there, `isOpenByDefault` auto-opens any multi-agent Stage
-//      whenever it is running, with no Stage-count exception, so Stage 2 would read "true"
-//      here. Stage 1 (auto-opened earlier while it was this turn's ONLY Stage) stays open
-//      throughout (`aria-expanded="true"`) -- upward-only, unaffected by the turn later
-//      growing past it; this is true on both `origin/main` and the fix (not itself a red/green
-//      discriminator), included to prove "nothing closes itself" holds across the transition.
+//      the CORE discriminator. MUST fail on `origin/main`: there, `isOpenByDefault` auto-opens
+//      any multi-agent Stage whenever it is running, with no Stage-count exception, so Stage 2
+//      would read "true" here. Read from the trigger's own `aria-label`, never the collapsible
+//      content (Radix does not render it while closed -- see `stageIsRunningExpr` below).
+//      Stage 1 (auto-opened earlier while it was this turn's ONLY Stage) stays open throughout
+//      (`aria-expanded="true"`) -- upward-only, unaffected by the turn later growing past it;
+//      true on both `origin/main` and the fix (not itself a red/green discriminator), included
+//      to prove "nothing closes itself" holds across the transition. If this window is ever
+//      missed (the additive delay already elapsed), the run is NOT allowed to claim DONE/exit
+//      0 -- see the NOT-PROVEN verdict at the bottom of `main()`.
 //   2. The per-turn Subagent chain row is already rendered (`stages.length >= 2`) and OPEN
 //      (`isUnsettled`, Stage 2 still running), its own visible summary naming "2 stages" and
 //      the live "Running" word -- the chain row carries the live overview while a Stage itself
-//      stays collapsed, exactly the behaviour #1000 asks for.
-//   3. Once the whole ten-Stage turn settles, Stage 2 (never failed, never manually touched)
-//      stays CLOSED (`aria-expanded="false"`) -- it never auto-opened at all, so there is
-//      nothing to self-close either; Stage 5 (its own FailAgent member failed) is OPEN
-//      (`aria-expanded="true"`) -- the one exception the new rule keeps, auto-opening
-//      regardless of Stage count. MUST fail on `origin/main` for Stage 2 (reads "true": once a
-//      Stage is EVER observed running there, `useStickyDisclosure`'s own upward-only latch
-//      commits it permanently open, which is the exact duplicate-expansion bug #1000 reports).
+//      stays collapsed, exactly the behaviour #1000 asks for. A screenshot is taken
+//      immediately after this point, BEFORE anything below ever touches Stage 2 by hand, so it
+//      genuinely shows the closed-while-running state.
+//   3. Once the whole ten-Stage turn settles: Stage 3 (two agents, Zeta/Omega, both finished,
+//      and NEVER touched anywhere in this script) stays CLOSED (`aria-expanded="false"`) --
+//      the clean "settled and never touched stays closed" proof, on a Stage this run never
+//      manually opens (unlike Stage 2, used below for the manual-open/focus proof instead, so
+//      its own post-settle state is no longer a "never touched" witness). MUST fail on
+//      `origin/main` (reads "true" there: once observed running at all -- even inside the
+//      renderer's own unpaced 50ms patch-batching window, which this fixture cannot
+//      deterministically land Stage 3 inside, so this is a STRUCTURAL guarantee from the code
+//      path, not a timing-dependent repro -- `useStickyDisclosure`'s own upward-only latch
+//      commits it permanently open, the exact duplicate-expansion bug #1000 reports). Stage 5
+//      (its own FailAgent member failed) is OPEN (`aria-expanded="true"`) -- the one exception
+//      the new rule keeps, auto-opening regardless of Stage count.
 //   4. A user's OWN manual expand on Stage 2 (exempted from auto-open by the new rule, but
 //      never exempt from the user's own choice) survives it settling and the rest of the turn
 //      streaming in behind it -- keyboard focus placed inside Stage 2's own content while it is
 //      still genuinely running stays there once settled, never dropping to `<body>` (WCAG
 //      2.4.3, the same guarantee #991 proved for auto-opened Stage 1, now re-proved for a
 //      manually-opened, auto-open-exempted Stage).
+//   5. (Code-level, not independently exercised by this fixture) `StageGroupRow`'s own
+//      `isOpenByDefault` reads `hasBadMember` -- the raw failed/cancelled/exited COUNTS, not
+//      the Stage's own overall `status` -- so a Stage opens the instant any ONE member goes
+//      bad, even while a sibling member is still running, rather than waiting for the whole
+//      Stage to settle (Decided, Skippy, delegated by Stuart, UI architect's suggested fix).
+//      This fixture's own Stage 5 settles both members in a single frame with no live split,
+//      so it cannot discriminate this specific timing on its own; recorded here for the code
+//      review trail, not claimed as a live-proven item.
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check are the only commands that have actually been run against
@@ -84,6 +103,7 @@ import {
   stageTriggerSelector,
   STAGE1_TITLE,
   STAGE2_TITLE,
+  STAGE3_TITLE,
   STAGE5_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
@@ -115,6 +135,18 @@ const THEMES = [
 // The chain row's own label is always the literal string "Subagents" (`SubagentChainRow.tsx`),
 // never duplicated elsewhere -- same constant every `verify-941-*`/`verify-991-*` script shares.
 const CHAIN_TRIGGER = `document.querySelector('[title="Subagents"]')?.closest('[data-slot="collapsible-trigger"]')`;
+
+// Gate round 1 fix (issue #1000, item 1, Critical, code-reviewer/test-reviewer): "is this Stage
+// genuinely running" must be read from the TRIGGER's own `aria-label` (built at
+// `SubagentChainRow.tsx`'s `triggerAriaLabel`, which states the live status word while
+// running), never from the collapsible CONTENT -- Radix does not render `CollapsibleContent`
+// at all while a row is closed, and under this fix Stage 2 stays CLOSED while running (that is
+// the very behaviour under test), so a content-based check could never see it and would
+// silently time out, masking the whole discriminating proof. The trigger itself always
+// renders, open or closed, so this is reliable in both states.
+function stageIsRunningExpr(titleText) {
+  return `((${stageTriggerSelector(titleText)})?.getAttribute('aria-label') ?? '').includes('Running')`;
+}
 
 function story559Stage2TriggerExpr() {
   return `(${stageContentSelector(STAGE2_TITLE)})?.querySelector('[title="Story559"]')?.closest('[data-slot="collapsible-trigger"]')`;
@@ -230,20 +262,23 @@ async function main() {
     // ---- Phase 2: Stage 2 is genuinely running WHILE this turn already has two Stages (the
     // second additive delay window) -- Stage 2 itself stays CLOSED, the chain row is already
     // open and shows the live overview, and Stage 1 (opened earlier) has not closed itself
-    // (issue #1000, FR-086) ----
+    // (issue #1000, FR-086). "Running" is read from the TRIGGER's own `aria-label`
+    // (`stageIsRunningExpr`), never the collapsible content -- Radix does not render content at
+    // all while Stage 2 stays closed, which is exactly the state under test (gate round 1 fix,
+    // item 1, Critical). ----
     let phase2Exercised = true;
     try {
-      await cdp.waitFor(
-        `(() => { const c = (${stageContentSelector(STAGE2_TITLE)}); return !!c && c.textContent.includes('Running'); })()`,
-        { timeoutMs: 15_000, label: 'Stage 2 genuinely running (second additive fixture delay window)' }
-      );
+      await cdp.waitFor(stageIsRunningExpr(STAGE2_TITLE), {
+        timeoutMs: 15_000,
+        label: 'Stage 2 genuinely running (second additive fixture delay window)'
+      });
     } catch (err) {
       phase2Exercised = false;
       notExercised.push(`Stage 2 never showed as genuinely running within the 15s window -- the additive fixture delay may have already elapsed, or the turn settled unusually fast; the defer-auto-open proof (issue #1000) could not run as designed this pass (${err.message}).`);
     }
     if (phase2Exercised) {
       const stage2TriggerWhileRunning = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-      const stillRunning = await cdp.evaluate(`(() => { const c = (${stageContentSelector(STAGE2_TITLE)}); return !!c && c.textContent.includes('Running'); })()`);
+      const stillRunning = await cdp.evaluate(stageIsRunningExpr(STAGE2_TITLE));
       if (!stillRunning) {
         phase2Exercised = false;
         notExercised.push('Stage 2 settled before its own auto-open state could be confirmed while still genuinely running -- the additive 1.5s delay window closed before this check landed; the defer-auto-open proof (issue #1000) did not run as designed this pass.');
@@ -278,12 +313,18 @@ async function main() {
         findings.push("Stage 1 stayed open once this turn grew to two Stages -- #991's own upward-only latch holds regardless of the later Stage-count reclassification, confirming nothing closes itself.");
       }
 
+      // Gate round 1 fix (issue #1000, item 3, Medium): this screenshot is taken HERE, right
+      // after the closed-while-running checks above and BEFORE `expandByFinder` below ever
+      // touches Stage 2 by hand -- previously taken after the manual open, so it could never
+      // actually show the closed state it claims to.
+      await cdp.screenshot(path.join(SHOTS_DIR, '01-stage2-running-chain-open-stage2-closed.png'));
+
       // ---- Manual-open proof: a user's own choice on an auto-open-exempt Stage still opens
       // it, and that choice -- plus keyboard focus placed inside it -- survives Stage 2
       // settling and the remaining Stages streaming in behind it (WCAG 2.4.3). ----
       await expandByFinder(cdp, stageTriggerSelector(STAGE2_TITLE));
       const stage2TriggerAfterManualOpen = await cdp.evaluate(`(${stageTriggerSelector(STAGE2_TITLE)})?.getAttribute('aria-expanded') ?? null`);
-      const stillRunningAfterManualOpen = await cdp.evaluate(`(() => { const c = (${stageContentSelector(STAGE2_TITLE)}); return !!c && c.textContent.includes('Running'); })()`);
+      const stillRunningAfterManualOpen = await cdp.evaluate(stageIsRunningExpr(STAGE2_TITLE));
       if (stage2TriggerAfterManualOpen !== 'true') {
         failures.push(`Manually clicking Stage 2's own trigger did not open it (aria-expanded is ${JSON.stringify(stage2TriggerAfterManualOpen)}, expected "true") -- a user's own choice must still open an auto-open-exempt Stage.`);
       } else if (!stillRunningAfterManualOpen) {
@@ -297,13 +338,21 @@ async function main() {
           findings.push("Keyboard focus placed on Stage 2's own Story559 member row trigger, inside Stage 2's own manually-opened content, while Stage 2 was still genuinely running.");
         }
       }
+      await cdp.screenshot(path.join(SHOTS_DIR, '02-stage2-manually-opened-focus-inside.png'));
+    } else {
+      // Gate round 1 fix (issue #1000, item 3): still capture both named shots even on the
+      // not-exercised path, so `clearKnownOutputFiles`'s own known-file list stays accurate and
+      // a missing file is never mistaken for a tool crash.
+      await cdp.screenshot(path.join(SHOTS_DIR, '01-stage2-running-chain-open-stage2-closed.png'));
+      await cdp.screenshot(path.join(SHOTS_DIR, '02-stage2-manually-opened-focus-inside.png'));
     }
-    await cdp.screenshot(path.join(SHOTS_DIR, '01-stage2-running-chain-open-stage2-closed.png'));
-    await cdp.screenshot(path.join(SHOTS_DIR, '02-stage2-manually-opened-focus-inside.png'));
 
     // ---- Phase 3: once the whole ten-Stage turn settles: Stage 2 (manually opened above)
-    // stays open with focus preserved (never drops to <body>); Stage 5 (its own FailAgent
-    // member failed) is open regardless of Stage count (issue #1000's one kept exception) ----
+    // stays open with focus preserved (never drops to <body>); Stage 3 (two agents, Zeta/
+    // Omega, never touched by this script) stays CLOSED -- the clean "settled and never
+    // touched stays closed" proof, since Stage 2 itself is no longer a "never touched" witness
+    // once manually opened above; Stage 5 (its own FailAgent member failed) is open regardless
+    // of Stage count (issue #1000's one kept exception) ----
     await cdp.waitFor(
       `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && !t.textContent.includes('Running'); })()`,
       { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
@@ -331,6 +380,13 @@ async function main() {
       }
     }
 
+    const stage3Trigger = await cdp.evaluate(`(${stageTriggerSelector(STAGE3_TITLE)})?.getAttribute('aria-expanded') ?? null`);
+    if (stage3Trigger !== 'false') {
+      failures.push(`Stage 3 (two agents, never failed, never manually touched by this script) is not closed once settled (aria-expanded was ${JSON.stringify(stage3Trigger)}, expected "false") -- issue #1000 (FR-086) regression: it never had any failed/cancelled/exited member, so it should never have auto-opened at all, in a multi-Stage turn.`);
+    } else {
+      findings.push('Stage 3 (two agents, never failed, never manually touched) stayed closed through the whole settled turn -- the clean "settled and never touched stays closed" proof, confirming it never auto-opened at all (issue #1000, FR-086).');
+    }
+
     const stage5Trigger = await cdp.evaluate(`(${stageTriggerSelector(STAGE5_TITLE)})?.getAttribute('aria-expanded') ?? null`);
     if (stage5Trigger !== 'true') {
       failures.push(`Stage 5 (its own FailAgent member failed) is not open once settled (aria-expanded was ${JSON.stringify(stage5Trigger)}, expected "true") -- issue #1000's own kept exception (failed/cancelled/exited still auto-open regardless of Stage count) regressed.`);
@@ -352,6 +408,14 @@ async function main() {
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}) -- no colour-dependent assertion in this check, every proof above is structural (aria-expanded, document.activeElement, visible text).`);
     }
 
+    // Gate round 1 fix (issue #1000, item 2, Medium): the defer-auto-open discriminator
+    // (Phase 2's closed-while-running check) is the ONE proof that actually distinguishes this
+    // fix from `origin/main` -- if the additive delay window was missed (`!phase2Exercised`),
+    // this run must NEVER claim DONE/exit 0, since nothing here has genuinely proven the fix;
+    // it gets its own distinct NOT-PROVEN verdict and exit code (2), separate from a real
+    // FAILED (1) or a true DONE (0).
+    const verdict = failures.length > 0 ? 'FAILED' : !phase2Exercised ? 'NOT PROVEN (critical check skipped)' : 'DONE';
+    const exitCode = failures.length > 0 ? 1 : !phase2Exercised ? 2 : 0;
     const report = {
       gitHead: gitHeadSha,
       dirty,
@@ -359,7 +423,8 @@ async function main() {
       findings,
       failures,
       notExercised,
-      exitCode: failures.length > 0 ? 1 : 0
+      verdict,
+      exitCode
     };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     console.log('\n=== verify-1000: FAILURES (always fail the run) ===');
@@ -371,8 +436,8 @@ async function main() {
     if (notExercised.length === 0) console.log('(none)');
     for (const n of notExercised) console.log(`- ${n}`);
     console.log(`\nScreenshots and report.json: ${SHOTS_DIR}`);
-    console.log(`verify-1000: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
-    process.exitCode = failures.length > 0 ? 1 : 0;
+    console.log(`verify-1000: ${verdict}.`);
+    process.exitCode = exitCode;
   } catch (err) {
     try {
       writeFileSync(

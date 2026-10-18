@@ -1019,19 +1019,29 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-086** (new, 2026-10-18, issue #1000, ui-architect-v3 ruling at PR #999's own gate;
   amends FR-067/FR-084's Stage row): Once a turn has two or more Stages (FR-068's own
   `totalStages`, read live -- the turn's own currently-known Stage count, which may still grow),
-  a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is running;
-  only failed, cancelled, or exited still auto-open it, matching the one exception the
-  per-turn Subagent chain row (FR-068) already carries the live running overview for the whole
-  turn once it reaches two Stages, so a turn's running agents are no longer shown expanded
-  twice over (once in the Stage row in place, again in the chain row). A turn that currently
-  has only one Stage (a later Stage has not started streaming yet) is unaffected and keeps
-  FR-067's own existing running auto-open, since no chain row exists yet to carry an overview
-  for it; the instant a second Stage's own first item streams in, every Stage in the turn,
-  including one already auto-opened while running, is reclassified multi-Stage, but FR-084's
-  own upward-only rule means an already-open Stage never closes because of that
-  reclassification. A user's own manual toggle on a Stage this requirement exempts from
-  auto-open still opens and closes it exactly as before (FR-084 unchanged), and once opened
-  that way also never auto-closes.
+  a Stage row (FR-067) MUST NOT auto-open merely because one of its own agents is running.
+  Only a failed, cancelled, or exited MEMBER still auto-opens it, and it MUST do so the instant
+  that member settles, even while a sibling member in the same Stage is still running --
+  waiting for the whole Stage to finish before opening is not sufficient (Decided, Skippy,
+  delegated by Stuart 2026-10-18, UI architect's suggested fix). The per-turn Subagent chain
+  row (FR-068) already carries the live running overview for the whole turn once it reaches
+  two Stages, so a turn's running agents are no longer shown expanded twice over (once in the
+  Stage row in place, again in the chain row). A turn that currently has only one Stage (a
+  later Stage has not started streaming yet) is unaffected and keeps FR-067's own existing
+  running auto-open, since no chain row exists yet to carry an overview for it; the instant a
+  second Stage's own first item streams in, every Stage in the turn, including one already
+  auto-opened while running, is reclassified multi-Stage, but FR-084's own upward-only rule
+  means an already-open Stage never closes because of that reclassification. Concretely: a
+  turn's first Stage always runs alone, so in a genuinely live turn it opens under the
+  single-Stage exception and then stays open for the rest of that mount's life once later
+  Stages arrive (the upward-only latch); a FRESH mount of the same turn (reopened history, a
+  remount) instead renders every Stage already knowing the turn's final Stage count in one
+  single render, so a first Stage that never itself had a failed/cancelled/exited member starts
+  CLOSED there, same as any other untouched Stage in that turn -- this is not a regression, it
+  is the same auto-open condition evaluated once against the turn's own already-known shape,
+  with no earlier single-Stage render to have latched anything from. A user's own manual toggle
+  on a Stage this requirement exempts from auto-open still opens and closes it exactly as
+  before (FR-084 unchanged), and once opened that way also never auto-closes.
 
 ### Key Entities
 

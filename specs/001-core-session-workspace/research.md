@@ -409,26 +409,57 @@ exempt from the USER's own manual toggle either (FR-084 unchanged): a user may s
 hand while it runs, and once open that way, decision 19's own upward-only rule applies exactly
 as it already does to any other row.
 
+**Gate round 1 fix (code-reviewer, Medium; Decided, Skippy, delegated by Stuart 2026-10-18, UI
+architect's suggested fix)**: the condition above must not wait for a Stage's own OVERALL
+`status` to settle before opening it -- `overallStatus` reads `'running'` for as long as ANY
+member is still unsettled, even once a DIFFERENT member in the same Stage has already failed,
+cancelled, or exited, which would silently delay the open until the whole Stage finally
+settles. Fixed: `hasBadMember` reads the raw `counts.failed`/`counts.cancelled`/`counts.exited`
+directly, so a multi-Stage Stage opens the instant any ONE of its own members goes bad, even
+while a sibling is still running.
+
+**Gate round 1 correction (code-reviewer, UI, Medium)**: a fresh mount of an already-settled,
+already-multi-Stage turn (reopened history, or a remount) is a DIFFERENT case from the live
+transition described above -- it renders every Stage in one single pass, already knowing the
+turn's final Stage count, so a first Stage that never itself had a bad member computes
+`isOpenByDefault` under the multi-Stage branch on its one-and-only render and starts CLOSED,
+same as any other untouched Stage in that turn. This is not a regression: there is no earlier
+single-Stage render for such a mount to have latched an auto-open from in the first place --
+the live-transition guarantee above only ever applies to a Stage that was genuinely observed
+running while it was still this turn's only Stage.
+
 **Live check** (`scripts/verify-1000-stage-defer.mjs`): the `stages-941.jsonl` fixture gained a
 SECOND additive `{"__delay__": 1500}`, mirroring Stage 1's own existing one (decision 19/#991),
 inserted after Stage 2's own assistant-message echo and before its `tool_execution_end` -- the
 only window in this fixture where a Stage is genuinely, observably running while the turn
-already has two or more Stages. Proves: Stage 2 stays closed while running at that point (red
-on `origin/main`, where it would auto-open unconditionally); the chain row is already open and
-shows "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does not close itself
-once the turn grows past it; after the whole ten-Stage turn settles, Stage 2 (never failed,
-never manually touched) stays closed (never opened at all, so nothing to self-close), Stage 5
-(its own FailAgent member failed) is open regardless of Stage count (the kept exception), and a
-manual open plus keyboard focus placed inside Stage 2 while running survives both it settling
-and every later Stage streaming in behind it (WCAG 2.4.3, re-proving decision 19's own
-guarantee for a Stage this decision newly exempts from auto-open). This is a pure wall-clock
-pacing addition: no JSON field (status, `durationMs`, `resultText`) changes anywhere in the
-fixture, so every existing content-dependent assertion against it is unaffected -- confirmed by
-re-reading `verify-941-stage-naming-panel-helpers.mjs`'s own Story559 duration-based
-disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms, never confused) and
-`verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check, neither of
-which depends on real-time pacing. `scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1
-`'true'` expand-cycle expectation (decision 19/gate round 3) and
-`scripts/verify-991-stage-focus.mjs`'s own focus-survives-settling phase both still hold
-unchanged: Stage 1's own render during ITS delay window is still single-Stage-so-far (Stage 2's
-new delay runs strictly later in the tape), so it auto-opens exactly as before either way.
+already has two or more Stages. "Running" is read from the Stage's own TRIGGER `aria-label`
+(which always renders, open or closed, and states the live status word), never the collapsible
+CONTENT (Radix does not render it while closed -- Stage 2 staying closed while running is
+exactly the behaviour under test, so a content-based check would time out and silently mask
+the whole proof; gate round 1 fix, Critical). Proves: Stage 2 stays closed while running at
+that point (red on `origin/main`, where it would auto-open unconditionally); the chain row is
+already open and shows "2 stages"/"Running"; Stage 1 (opened earlier, single-Stage-so-far) does
+not close itself once the turn grows past it (a screenshot is taken immediately after this
+point, before anything manually touches Stage 2, gate round 1 fix, Medium); after the whole
+ten-Stage turn settles, Stage 3 (two agents, never failed, never manually touched anywhere in
+this script) stays closed -- the clean "settled and never touched stays closed" proof (gate
+round 1 fix, Medium: Stage 2 itself is used below for the manual-open/focus proof instead, so
+its own post-settle state is no longer a "never touched" witness); Stage 5 (its own FailAgent
+member failed) is open regardless of Stage count (the kept exception); a user's own manual open
+on Stage 2 plus keyboard focus placed inside it while running survives both it settling and
+every later Stage streaming in behind it (WCAG 2.4.3, re-proving decision 19's own guarantee
+for a Stage this decision newly exempts from auto-open). If the additive delay window is ever
+missed, the run records it in `notExercised` and is NOT permitted to report DONE/exit 0 -- a
+distinct NOT-PROVEN verdict and exit code (2) instead (gate round 1 fix, Medium), since nothing
+would have genuinely distinguished the fix from `origin/main` that pass. This is a pure
+wall-clock pacing addition: no JSON field (status, `durationMs`, `resultText`) changes anywhere
+in the fixture, so every existing content-dependent assertion against it is unaffected --
+confirmed by re-reading `verify-941-stage-naming-panel-helpers.mjs`'s own Story559
+duration-based disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms, never
+confused) and `verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure
+check, neither of which depends on real-time pacing.
+`scripts/verify-941-stage-naming-helpers.mjs`'s own Stage 1 `'true'` expand-cycle expectation
+(decision 19/gate round 3) and `scripts/verify-991-stage-focus.mjs`'s own
+focus-survives-settling phase both still hold unchanged: Stage 1's own render during ITS delay
+window is still single-Stage-so-far (Stage 2's new delay runs strictly later in the tape), so
+it auto-opens exactly as before either way.

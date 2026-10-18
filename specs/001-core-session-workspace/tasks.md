@@ -3833,3 +3833,24 @@ turn's running agents were otherwise shown expanded twice over (ui-architect-v3 
   change, no JSON field): `verify-941-stage-naming-panel-helpers.mjs`'s own Story559
   duration-based disambiguation ("2s" from Stage 2's 1800ms, "4s" from Stage 5's 4300ms) and
   `verify-941-part2.mjs`'s own position-scoped `EXPECTED_PANEL_ROWS` structure check.
+- [X] Gate round 1 remediation (code-reviewer, test-reviewer, a11y-auditor; #1007): T293's
+  `isOpenByDefault` now reads a new `hasBadMember` (`counts.failed`/`counts.cancelled`/
+  `counts.exited` directly, not the Stage's own overall `status`), opening a multi-Stage Stage
+  the instant any ONE member goes bad instead of waiting for the whole Stage to settle
+  (Decided, Skippy, delegated by Stuart, UI architect's suggested fix; FR-086 and research.md
+  decision 21 reworded to match, Clarifications wording split into two sentences). T294's
+  `verify-1000-stage-defer.mjs` rewritten: "is Stage 2 running" now reads the always-rendered
+  TRIGGER's own `aria-label`, never the collapsible content (Radix never renders it while
+  closed -- Stage 2 staying closed IS the behaviour under test, so the old content-based wait
+  silently timed out and masked the whole discriminator); the closed-while-running screenshot
+  now taken BEFORE the manual-open step, so it actually shows what it claims; a NEW, genuinely
+  untouched multi-agent Stage (Stage 3) checked closed at full settle, since Stage 2 itself is
+  manually opened later in the same run and is no longer a clean "never touched" witness; a
+  distinct NOT-PROVEN verdict and exit code (2), never DONE/exit 0, when the critical discriminator
+  window is missed. `SubagentChainRow.tsx` gained `aria-live="off"` on the Stage content
+  wrapper (context brief/"Uses:" line), matching `SpineList`/`UpNextList`'s own convention.
+  Stale "Stage 2 has no delay" comments fixed in `verify-941-stage-naming-expand-helpers.mjs`
+  and `verify-991-stage-focus.mjs` (both now state Stage 2 carries its own additive delay too
+  and is deterministically closed, not merely unpaced). Non-build checks re-run clean
+  (`node --check`, `pnpm typecheck`, `pnpm vitest run` 148/148, `check:indent`, `check:file-size`,
+  `check:parity --gate`).
