@@ -24,6 +24,20 @@ export function AppearanceSection() {
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
+  // Issue #554 gate round 2 (H1): tracks which group's dirty flag most recently went
+  // false->true, so the focus-restoration effect below knows which group's checked radio to
+  // focus after a Save/Cancel click (when focus was on THAT button, not a radio) -- without
+  // this both previews committing via one shared Save always focused Theme's own radio, even
+  // when only Chat width had actually been touched.
+  const lastDirtyGroupRef = useRef<'theme' | 'chatWidth' | null>(null)
+  const prevThemeDirtyRef = useRef(false)
+  const prevChatWidthDirtyRef = useRef(false)
+  useEffect(() => {
+    if (themeDirty && !prevThemeDirtyRef.current) lastDirtyGroupRef.current = 'theme'
+    if (chatWidthDirty && !prevChatWidthDirtyRef.current) lastDirtyGroupRef.current = 'chatWidth'
+    prevThemeDirtyRef.current = themeDirty
+    prevChatWidthDirtyRef.current = chatWidthDirty
+  }, [themeDirty, chatWidthDirty])
   // Quality-gate remediation (a11y, round 2): scopes the focus-restoration effect below (and
   // its radio-group query) to THIS section's own DOM subtree, so a future section also titled
   // 'Theme' (spec 008's planned Theme submenu) can never be matched by mistake, and so the
@@ -54,11 +68,22 @@ export function AppearanceSection() {
       const active = document.activeElement
       const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
       if (!activeWasOutside) {
-        const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
-          '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"], [role="radiogroup"][aria-label="Chat width"] [role="radio"][aria-checked="true"]'
-        )
-        if (checkedRadio) checkedRadio.focus()
-        else headingRef.current?.focus()
+        // Issue #554 gate round 2 (H1): if focus is ALREADY on a radio inside this section,
+        // leave it there -- e.g. arrowing back to the saved value inside Chat width (which
+        // flips `chatWidthDirty` back to false on its own, firing this effect) or pressing
+        // Escape while focus sits on a Chat width radio must not relocate focus into Theme just
+        // because Theme happens to be `lastDirtyGroupRef`. Only when focus was NOT already on a
+        // radio (e.g. it was on the Save/Cancel button, which is about to go disabled) does the
+        // group that was actually dirty matter.
+        const focusAlreadyOnRadio = active instanceof HTMLElement && active.getAttribute('role') === 'radio' && (rootRef.current?.contains(active) ?? false)
+        if (!focusAlreadyOnRadio) {
+          const groupLabel = lastDirtyGroupRef.current === 'chatWidth' ? 'chat-width-heading' : 'theme-heading'
+          const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
+            `[role="radiogroup"][aria-labelledby="${groupLabel}"] [role="radio"][aria-checked="true"]`
+          )
+          if (checkedRadio) checkedRadio.focus()
+          else headingRef.current?.focus()
+        }
       }
     }
     wasDirtyRef.current = isDirty
@@ -131,11 +156,16 @@ export function AppearanceSection() {
   return (
     <div ref={rootRef}>
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">Appearance</h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose the colour theme used across the app.</p>
-      <ThemePicker />
-      <h3 className="mt-4 mb-1 text-sm font-medium">Chat width</h3>
-      <p className="mb-2 text-xs text-muted-foreground">Choose how wide the chat transcript reads.</p>
-      <ChatWidthPicker />
+      <p className="mb-4 text-sm text-muted-foreground">Choose how the app looks and reads.</p>
+      {/* Issue #554 gate round 2 (L1): each group now gets its own heading and hint, wired via
+          aria-labelledby/aria-describedby instead of a bare aria-label on the radiogroup -- this
+          intro paragraph above is the shared lead-in for the whole section, not Theme's own. */}
+      <h3 id="theme-heading" className="mb-1 text-sm font-medium">Theme</h3>
+      <p id="theme-hint" className="mb-2 text-xs text-muted-foreground">The colour palette used across the app.</p>
+      <ThemePicker labelledBy="theme-heading" describedBy="theme-hint" />
+      <h3 id="chat-width-heading" className="mt-4 mb-1 text-sm font-medium">Chat width</h3>
+      <p id="chat-width-hint" className="mb-2 text-xs text-muted-foreground">How wide the chat transcript reads.</p>
+      <ChatWidthPicker labelledBy="chat-width-heading" describedBy="chat-width-hint" />
       <div className="mt-4 flex gap-2">
         <Button variant="default" size="sm" onClick={handleSave} disabled={!isDirty}>
           Save

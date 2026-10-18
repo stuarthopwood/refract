@@ -88,4 +88,4 @@ The agenda item 8 decision proposed 40px, pending a measurement against today's 
 
 ## Reading width
 
-Reading width is a Setting, defaulting to full width (#554, decided). Chat text already fills the full width of the transcript column, so the default needs no component change; a narrower reading width is a later Settings addition.
+Reading width is a Setting, defaulting to full width (#554, decided and shipped 2026-10-18). Full keeps the transcript unconstrained, filling the pane; the alternative, Reading column, caps the transcript at 64rem (`Transcript.tsx`'s `MessageScrollerContent`), centred, with a padding ladder (`px-6`/`@min-[40rem]:px-10`/`@min-[48rem]:px-14`/`@min-[64rem]:px-16`) keyed off the chat pane's own width via a container query, not the window -- see `docs/design/product-chat.md`'s own **Chat width** bullet for the full picture (Settings location, keyboard operation, live preview, persistence).

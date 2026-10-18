@@ -641,12 +641,3 @@ export interface FilePreview {
   base64?: string;
   mimeType?: string;
 }
-
-/** `memory:warning` payload (issue #560, spec 001 FR-037; contracts/ipc.md). Moved here (not
- * inline in `shared/ipc.ts`) to keep that file within this build's 600-line cap (issue #806);
- * re-exported from `shared/ipc.ts` so every existing import from there keeps working unchanged. */
-export interface LowMemoryWarning {
-  low: boolean;
-  freeBytes: number;
-  liveAgents: number;
-}

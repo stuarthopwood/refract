@@ -3,6 +3,7 @@
 // renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
+import type { LowMemoryWarning } from './lowMemoryWarning';
 
 import type {
   ApprovalMode,
@@ -12,7 +13,6 @@ import type {
   FilePreview,
   FileTreeNode,
   GitStatusMap,
-  LowMemoryWarning,
   ModelCatalogEntry,
   ModelRoleId,
   PendingRequest,
@@ -228,7 +228,7 @@ export type SlashCommand = SlashCommandDescriptor;
 
 export type ChatAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
 
-export type { LowMemoryWarning } from './model';
+export type { LowMemoryWarning } from './lowMemoryWarning';
 
 export interface SessionStatusEvent {
   sessionId: string;

@@ -3010,8 +3010,11 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
 
 ## Phase 53: Convergence
 
-- [X] T267 [US1] #554 chat reading width setting. Amended spec 001 -- FR-049 (now amended
-  "unless the reading column is chosen" via FR-073) and new FR-073 (the Full/Reading column
+- [X] T267 [US1] #554 chat reading width setting. Amended spec 001 -- FR-049's own closing
+  parenthetical now reads exactly: "(amended 2026-10-18, issue #554: \"the transcript column\"
+  is now whichever width FR-073's Chat width setting chooses, Full or Reading column -- in
+  both, no element may add an even narrower measure of its own inside that column)" -- and new
+  FR-073 (the Full/Reading column
   Settings choice, Save/Cancel live preview, the 64rem cap, no special-cased narrow-window
   breakpoint) -- plus a dated `### Session 2026-10-18 (chat reading width)` Clarifications entry
   recording the ui-architect-v3 roundtable ruling: the existing unconditional `max-w-4xl` on
@@ -3035,8 +3038,11 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   (hand-rolled roving-tabindex radiogroup, two entries); `AppearanceSection.tsx` extended so its
   Save/Cancel row, Escape handler, focus-restoration query and unmount-revert effect all cover
   both pickers. `Transcript.tsx`'s `MessageScrollerContent` className is now conditional on
-  `useActiveChatWidth()`: `'w-full px-4 py-4'` (Full) vs `'mx-auto max-w-[64rem] px-6 sm:px-10
-  md:px-14 lg:px-16'` (Reading column), replacing the old unconditional `max-w-4xl mx-auto`.
+  `useActiveChatWidth()`: `'w-full px-4 py-4'` (Full) vs `'mx-auto max-w-[64rem] px-6
+  @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16'` (Reading column, gate round 2 fix
+  M1 -- the padding ladder is now a Tailwind v4 arbitrary container query keyed off the chat
+  pane's own `[container-type:size]` ancestor, not the window, so a narrow window with a wide
+  pane reads correctly), replacing the old unconditional `max-w-4xl mx-auto`.
   Rust: `ChatWidth` enum (new `src-tauri/src/store/chat_width.rs`, re-exported from
   `store::settings`, the same file-size-slack reasoning as the TS side), `Settings.chat_width`
   field, `SettingsStore::set_chat_width`, and the `settings.setChatWidth` IPC handler
@@ -3046,25 +3052,92 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   the full width..." bullet, `docs/design/product-first-run-and-settings.md`'s "Settings in the
   first build" list (Chat width: shipped, Appearance section, Full/Reading column, Save/Cancel
   live preview), `CONTEXT.md` (a **Chat width** glossary entry), `specs/001-core-session-
-  workspace/data-model.md` (`Settings.chatWidth`) and `contracts/ipc.md`
-  (`settings.setChatWidth`); `docs/PLAN.md`'s UI-refresh row gets an in-flight note for #554.
-  `scripts/verify-554-chat-width.mjs` (new, modelled on `verify-927-928-quiet-composer.mjs` and
-  `verify-tauri-scratch-helpers.mjs`): default Full at 1280/1920px (column fills its viewport,
-  no cap), Reading column via mouse AND via keyboard (Tab/Arrow/Enter) with live preview measured
-  at 1280/1920/2560px before Save (64rem width, centred margins equal), composer width unchanged
-  across both options, no horizontal scroll at 360px, and persistence across a full relaunch of
-  the same built exe against the same scratch `REFRACT_DATA_DIR` -- written but deliberately NOT
-  run, per this prep lane's own NO BUILDS rule (no `cargo`/`tauri`/`ci-local` command starts
-  before Main hands over the shared build slot). `pnpm typecheck`, `pnpm vitest run` (148 tests),
-  `node scripts/check-indent.mjs` (0 odd-indent lines), `node scripts/check-theme-contrast.mjs`
-  (437 of 437 pairs PASS across 3 themes), `node scripts/check-file-size.mjs` (0 cap violations,
-  three pre-existing-baseline files -- `ipc.ts`, `model.ts`, `Transcript.tsx` -- kept at or under
-  their recorded baseline via the `chatWidth.ts`/`transcriptDisplay.ts`/`lowMemoryWarning`-in-
-  `model.ts` extractions above), `node scripts/check-parity.mjs --gate` (99 of 99 requests, 23 of
-  23 events) and `node --check scripts/verify-554-chat-width.mjs` all ran clean. `pnpm build`/
-  `pnpm tauri build`/the new live check itself (deliberately not run, per this prep lane's own
-  NO BUILDS rule) are left for the build lane that picks this PR up.
+  workspace/data-model.md` (`Settings.chatWidth`), `contracts/ipc.md`
+  (`settings.setChatWidth`) and `docs/design/foundations-typography-spacing.md`'s "Reading
+  width" section (now describes the shipped Setting, not the pre-#554 placeholder); `docs/PLAN.md`'s
+  UI-refresh row gets an in-flight note for #554. `scripts/verify-554-chat-width.mjs` (new,
+  modelled on `verify-927-928-quiet-composer.mjs` and `verify-tauri-scratch-helpers.mjs`):
+  default Full at 1280/1920px (column fills its viewport, no cap), Reading column via mouse AND
+  via keyboard (Tab/Arrow/Enter) with live preview measured at 1280/1920/2560px before Save
+  (64rem width, centred margins equal), composer width unchanged across both options, no
+  horizontal scroll at 360px, and persistence across a full relaunch of the same built exe
+  against the same scratch `REFRACT_DATA_DIR`. Run live, under a shared build slot, across
+  several rounds -- not merely written: found and fixed two real bugs along the way (a pid/
+  dataDir ownership collision from clicking the session-list row before the relaunch's own CDP
+  target settled; the relaunch-persistence assertion itself needing to measure at 1920px, the
+  one width where the 64rem cap unambiguously binds, not 1280px where Full and Reading column
+  are indistinguishable). Final run before gate round 2 review: 16/16 PASS, 0 failures, 0
+  `notExercised`, four screenshots and `report.json` captured. `pnpm typecheck`, `pnpm vitest
+  run` (148 tests), `node scripts/check-indent.mjs` (0 odd-indent lines), `node
+  scripts/check-theme-contrast.mjs` (437 of 437 pairs PASS across 3 themes), `node
+  scripts/check-file-size.mjs` (0 cap violations, three pre-existing-baseline files --
+  `ipc.ts`, `model.ts`, `Transcript.tsx` -- kept at or under their recorded baseline via the
+  `chatWidth.ts`/`transcriptDisplay.ts`/`lowMemoryWarning.ts` extractions above),
+  `node scripts/check-parity.mjs --gate` (99 of 99 requests, 23 of 23 events) and `node --check
+  scripts/verify-554-chat-width.mjs` all ran clean.
 
-Opened as draft PR (`feat/554-chat-width`). **Refs #554** for now (not Closes -- no build or live
-check has run yet in this no-build prep lane); switches to **Closes #554** once a build lane runs
-`ci-local` and the new live check green on a real scratch instance.
+- [X] T270 [US1] Gate round 2 remediation (code-reviewer/accessibility-auditor/ui-architect-v3,
+  High/Medium/Low findings, all fixed, no spec amendment needed -- implementation and live-check
+  fixes only). H1 `AppearanceSection.tsx`'s shared Save/Cancel focus-restoration effect always
+  focused Theme's own checked radio after a commit, even when only Chat width had been touched,
+  and separately could yank focus away from a radio the user never left (arrowing back to the
+  saved value, or Escape while focus sat on a radio) -- fixed with a `lastDirtyGroupRef` (tracks
+  which group's dirty flag most recently went false->true, read only when focus was NOT already
+  on a radio) plus a "leave it" guard when focus already sits on a radio inside the section. H2
+  `ChatWidthPicker.tsx` had no visual confirmation of the chosen width before Save (the real
+  transcript is unmounted while Settings is open) -- added a small `aria-hidden` preview tile
+  beside the radiogroup (mock prose bars, modelled on `BrandWatermark`'s own 'preview' variant)
+  that narrows live, driven by `useActiveChatWidth()`, the instant the radio changes. H3 the live
+  check only ever confirmed persistence by re-rendering after a relaunch, never by reading
+  `settings.json` itself -- added a direct on-disk read (`JSON.parse(readFileSync(...))`) of
+  `chatWidth` before the stop/relaunch, same "prove it on disk" pattern `verify-tauri-559.mjs`/
+  `verify-tauri-735.mjs` already use. M1 the Reading column padding ladder
+  (`px-6 sm:px-10 md:px-14 lg:px-16`) was keyed off the WINDOW via Tailwind's ordinary
+  breakpoints, not the chat pane -- a split pane or a narrower sidebar state could reach a
+  breakpoint the pane's own content never actually grew into; replaced with Tailwind v4's
+  arbitrary container-query variants (`@min-[40rem]:px-10 @min-[48rem]:px-14
+  @min-[64rem]:px-16`) against the existing `[container-type:size]` ancestor
+  (`ChatPane.tsx`'s own wrapper, already a query container for the brand watermark). M2 the
+  keyboard Save round trip's own layout assertions measured at 1280px, where the cap cannot bind
+  for EITHER value -- a keyboard Save that silently persisted the wrong `ChatWidth` would have
+  passed unnoticed; moved both assertions to 1920px, and added a Check 3b exercising Escape
+  (Cancel's sibling path) mid-preview: arrow back to "Full", press Escape, confirm the radiogroup
+  reverts to the saved "Reading column" with Save disabled again and the transcript still capped
+  afterward. M3 the composer-width check silently skipped (no failure) when
+  `.bg-composer-background` was not found -- now a hard failure; added a `getComputedStyle(...)
+  .paddingLeft === '64px'` assertion at 1920px confirming M1's top container-query breakpoint
+  actually applies against the pane; removed the script header's stale claim that a "status
+  line" check runs (it never did -- only the composer is checked). M5 `ChatWidthPicker`/
+  `useActiveChatWidth()` shared one source line in `Transcript.tsx`, leaving no slack to touch
+  that file again without a baseline bump -- split onto two lines, and extracted
+  `isConversationStarted` (with its full doc comment) into its own sibling
+  `isConversationStarted.ts`, re-exported from `Transcript.tsx` for `ChatPane.tsx`'s existing
+  import, netting real slack instead of just moving the problem. M6 `LowMemoryWarning` moved out
+  of `model.ts` (issue #806's earlier fix) into its own `src/shared/lowMemoryWarning.ts`,
+  re-exported from `ipc.ts`; `model.ts` now ends with a trailing newline (previously missing).
+  L1 `ThemePicker`'s radiogroup carried a bare `aria-label="Theme"` string duplicating its
+  informal heading text, and Chat width had no heading of its own at all -- both groups now get
+  an explicit `<h3>` plus a hint `<p>` in `AppearanceSection.tsx`, referenced via
+  `aria-labelledby`/`aria-describedby` props threaded into each picker; the section's own intro
+  paragraph reworded to cover both groups, not just Theme. L2 each radio's accessible name used
+  to come from the button's entire text content (name, "Current" badge, and description all
+  concatenated) -- each radio now carries `aria-labelledby` pointing at its name span alone
+  (plus `aria-describedby` at its description span, Chat width only, Theme has none), and the
+  "Current" badge is `aria-hidden` in both pickers (redundant with `aria-checked` for assistive
+  tech). L3 "Full" did not read as the default anywhere accessible -- its description now reads
+  "Default. The transcript fills the pane." L4 Chat width's rows had no leading icon slot,
+  misaligning its labels against Theme's own swatch-led rows -- added a matching
+  `aria-hidden size-4 shrink-0` spacer. `scripts/verify-554-chat-width.mjs` updated to match:
+  `CHAT_WIDTH_RADIOGROUP_FINDER` now selects `[aria-labelledby="chat-width-heading"]` (was
+  `[aria-label="Chat width"]`); a new assertion confirms the H2 preview tile's own bars measure
+  narrower the instant "Reading column" is clicked, before that Save. `pnpm typecheck`, `pnpm
+  vitest run` (148 tests), `node scripts/check-indent.mjs`, `node scripts/check-theme-contrast.mjs`,
+  `node scripts/check-file-size.mjs` (0 cap violations) and `node --check
+  scripts/verify-554-chat-width.mjs` all re-ran clean after these fixes; the live check itself
+  has NOT yet been re-run against a fresh build (no build slot held at the time these fixes
+  landed) -- left for the next build-lane pass.
+
+Opened as draft PR (`feat/554-chat-width`). **Refs #554** for now (not Closes -- gate round 2's
+own fixes above have not yet been confirmed by a fresh live run); switches to **Closes #554**
+once a build lane runs `ci-local` and the live check green, on a build containing T270's fixes,
+on a real scratch instance.
