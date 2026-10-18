@@ -275,14 +275,14 @@ async function main() {
     else findings.push(`history/cleared: transcript region opacity returned to ${historyCleared.value} once startProgress cleared.`);
     await cdp1.screenshot(path.join(SHOTS_DIR, '04b-history-cleared.png'));
 
-    // ---- (3) Split pane: a FRESH real restart (so the notice is visible again), then a real
-    // Ctrl+click on Session A's own row (not a direct store call) moves it into split alongside
-    // Session B; measured narrower width; forced under the narrow breakpoint if this run's own
-    // window did not land there naturally. ----
+    // ---- (3) Split pane: a real Ctrl+click on Session B's OWN row (not A's) brings B in as the
+    // 2nd pane alongside the currently-focused A. Gate-fix (confirmed live, bg_832/bg_833):
+    // split-store.ts's own targetSession treats "Ctrl+click the ALREADY-shown Session" as a
+    // deliberate no-op -- clicking A's own row while A was already shown never opened a split. ----
     await restartAgent(cdp1, sessionA.id);
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
     await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice mounted again for the split-pane test' });
-    await ctrlClickSessionRow(cdp1, sessionA.id);
+    await ctrlClickSessionRow(cdp1, sessionB.id);
     await cdp1.waitFor(`${REGIONS}.length === 2`, { timeoutMs: 15_000, label: 'Split open (real Ctrl+click): two Transcript regions rendered' });
     let splitState = await readNoticeState(cdp1);
     assertCentred(splitState, 'split/waiting', failures);
