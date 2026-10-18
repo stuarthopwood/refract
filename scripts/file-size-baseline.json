@@ -1,5 +1,6 @@
 {
   "scripts/check-theme-contrast.mjs": 792,
+  "scripts/verify-632-grouped-calls.mjs": 673,
   "src-tauri/src/omp/process.rs": 1106,
   "src-tauri/src/omp/transcript.rs": 1809,
   "src/renderer/App.tsx": 734,
