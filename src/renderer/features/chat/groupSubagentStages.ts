@@ -1,7 +1,7 @@
 import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 import type { GroupedTranscriptItem } from './groupToolItems'
-import { computeStageLabel, extractAgentRefs, type StageDependency } from './stageMeta'
+import { computeStageLabel, resolveStageDependencies, type StageDependency } from './stageMeta'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -119,48 +119,11 @@ export function groupSubagentStages(items: GroupedTranscriptItem[]): StageGroupe
     stage.stageIndex = index + 1
     stage.totalStages = stages.length
   })
-  applyDependencies(stages)
+  resolveStageDependencies(
+    stages,
+    (item: SubagentItem) => item.name,
+    (stage) => [stage.context ?? '', ...stage.items.map((item) => item.task)].join('\n')
+  )
 
   return result
-}
-
-/** Issue #941 grill item 5: a Stage's own "Uses:" is real, never a guess -- resolves every
- * `agent://<id>` reference this Stage's own context or tasks make against the agent ids (OMP
- * agent ids are name-based: `shared/model.ts`'s own `SubagentSummary.id` doc comment)
- * STARTED BY AN EARLIER Stage in the same turn, and drops any reference that matches nothing
- * or points at the Stage's own agents or a LATER Stage (not yet started, so never a real
- * dependency). Gate round 1 fix: a name repeated across several earlier Stages (the same agent
- * name reused) now resolves to the LATEST one before the referencing Stage, not the first ever
- * seen -- the most recent prior Stage is the one a later brief is realistically pointing at.
- * Each dependency also carries the matched item's own `toolCallId`/`specIndex` (the same pair
- * `SubagentSummary` correlation already uses elsewhere) so a repeated name across Stages opens
- * the correct one, not whichever the live tracker happens to match by name alone. Mutates
- * `stage.dependencies` in place once every Stage's final `stageIndex` is known. */
-function applyDependencies(stages: StageGroup[]): void {
-  const occurrencesByAgentId = new Map<string, Array<{ stageIndex: number; toolCallId: string; specIndex: number }>>()
-  for (const stage of stages) {
-    for (const item of stage.items) {
-      const occurrences = occurrencesByAgentId.get(item.name) ?? []
-      occurrences.push({ stageIndex: stage.stageIndex, toolCallId: item.toolCallId, specIndex: item.specIndex })
-      occurrencesByAgentId.set(item.name, occurrences)
-    }
-  }
-  for (const stage of stages) {
-    const text = [stage.context ?? '', ...stage.items.map((item) => item.task)].join('\n')
-    const seenAgentIds = new Set<string>()
-    const dependencies: StageDependency[] = []
-    for (const agentId of extractAgentRefs(text)) {
-      const occurrences = occurrencesByAgentId.get(agentId)
-      if (!occurrences || seenAgentIds.has(agentId)) continue
-      let latest: { stageIndex: number; toolCallId: string; specIndex: number } | undefined
-      for (const occurrence of occurrences) {
-        if (occurrence.stageIndex >= stage.stageIndex) continue
-        if (!latest || occurrence.stageIndex > latest.stageIndex) latest = occurrence
-      }
-      if (!latest) continue
-      seenAgentIds.add(agentId)
-      dependencies.push({ agentId, stageIndex: latest.stageIndex, toolCallId: latest.toolCallId, specIndex: latest.specIndex })
-    }
-    stage.dependencies = dependencies
-  }
 }
