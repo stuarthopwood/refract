@@ -22,7 +22,16 @@ import { spawnSync } from 'node:child_process';
 // PKEY_AppUserModel_ID`, `Win32::UI::Shell::IPropertyStore`'s own `define_interface!` GUID), the
 // same source `shell::app_identity.rs`'s own doc comment cites.
 const PS_SCRIPT = `
-Add-Type -AssemblyName System.Drawing
+# Gate round 2 (live-run finding): \`-ReferencedAssemblies 'System.Drawing.dll'\` on the
+# \`Add-Type -TypeDefinition\` call itself -- a separate, earlier \`Add-Type -AssemblyName
+# System.Drawing\` command does NOT make the compiler backing a LATER, independent
+# \`-TypeDefinition\` invocation see that assembly; without this, \`ScreenshotWindow\`'s own
+# Bitmap/Graphics/PixelFormat/ImageFormat references fail to compile (confirmed on both
+# Windows PowerShell 5.1 and PowerShell 7 on this machine), which silently takes the WHOLE
+# class down with it -- including the unrelated \`FindWindowsForPid\`, which is why every
+# call this script ever made looked exactly like "no window found", never like a compile
+# error (PowerShell's own Add-Type failure is a non-terminating error by default, so the
+# script kept running past it with \`[Refract880]\` simply never having been defined).
 Add-Type -TypeDefinition @"
 using System;
 using System.Text;
@@ -139,7 +148,7 @@ public static class Refract880 {
         }
     }
 }
-"@
+"@ -ReferencedAssemblies 'System.Drawing.dll'
 
 $targetPid = __TARGET_PID__
 # Gate round 1 (LOW finding): the screenshot path arrives via an env var, not interpolated into
