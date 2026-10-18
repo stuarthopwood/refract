@@ -38,6 +38,8 @@
 //     is hit before a user message is found is still listed, with its title and an empty preview.
 //   - A Conversation that reaches real end-of-file within the cap with genuinely no user message
 //     anywhere is skipped, unchanged from the existing rule.
+//   - A Conversation whose first `role: 'user'` message is image-only (or otherwise has an empty
+//     or missing `content`) is still listed with an empty preview rather than hidden.
 //   - That a genuinely multi-megabyte Conversation file stays cheap to list: the early `break`
 //     the instant a user message is found, and the hard `take()` cap itself, are read, not
 //     independently measured here -- a live CDP check driving a real multi-MB fixture file would
@@ -118,7 +120,13 @@ async function main() {
       'code path, not by seeding a fixture file with zero user messages here.',
     'A genuinely multi-megabyte Conversation file staying cheap to list is proven by reading ' +
       'read_conversation_file\'s own early-break-on-match and its take()-enforced hard cap, not ' +
-      'by this script constructing a multi-MB fixture on disk.'
+      'by this script constructing a multi-MB fixture on disk.',
+    'A Conversation whose first role:\'user\' message is image-only (or otherwise has an empty ' +
+      'or missing content field) is still listed with an empty preview rather than hidden -- ' +
+      'proven by reading read_conversation_file\'s own conversations.rs:273-278 (any role ' +
+      '\'user\' message sets preview immediately, via content.map(extract_user_text)' +
+      '.unwrap_or_default(), never gated on non-empty text), not by seeding a third fixture ' +
+      'file with an image-only or textless first message here.'
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -198,15 +206,14 @@ async function main() {
         `verify-862: fixture does not reproduce the bug -- prefix is only ${prefixBytes} bytes, not past the old fixed ${OLD_FIXED_WINDOW_BYTES}-byte window`
       );
     }
-    if (prefixBytes >= NEW_HARD_CAP_BYTES) {
+    const userMessageLine = { type: 'message', id: 'm2', parentId: 'cp2', timestamp: '2026-10-18T09:05:01.500Z', message: { role: 'user', content: LONG_PREVIEW } };
+    const totalFileBytes = prefixBytes + Buffer.byteLength(JSON.stringify(userMessageLine) + '\n', 'utf8');
+    if (totalFileBytes >= NEW_HARD_CAP_BYTES) {
       throw new Error(
-        `verify-862: fixture overshoots the fix's own hard cap -- prefix is ${prefixBytes} bytes, at or past the new ${NEW_HARD_CAP_BYTES}-byte cap, so the fix would also miss it`
+        `verify-862: fixture overshoots the fix's own hard cap -- the prelude plus the real user message line is ${totalFileBytes} bytes, at or past the new ${NEW_HARD_CAP_BYTES}-byte cap, so the fix would also miss it`
       );
     }
-    const longFile = writeConversationFile(conversationFileDir, '2026-10-18T09:05:01.000Z', 'sess862b', [
-      ...preludeLines,
-      { type: 'message', id: 'm2', parentId: 'cp2', timestamp: '2026-10-18T09:05:01.500Z', message: { role: 'user', content: LONG_PREVIEW } }
-    ]);
+    const longFile = writeConversationFile(conversationFileDir, '2026-10-18T09:05:01.000Z', 'sess862b', [...preludeLines, userMessageLine]);
     findings.push(
       `Seeded two real Conversation files in ${conversationFileDir}: "${path.basename(normalFile)}" (first user message near the top) and ` +
         `"${path.basename(longFile)}" (first user message ${prefixBytes} bytes in, past the old ${OLD_FIXED_WINDOW_BYTES}-byte window, ` +
