@@ -448,7 +448,17 @@
 - Q: Is the "Up next" list itself a new kind of Stage, or something else entirely? → A: Neither
   a Stage nor a tool: a **Todo phase** is the agent's own planned work (its todo list), distinct
   from a **Stage** (one `task()` batch); the glossary gained both terms (`CONTEXT.md`, PR #942).
-
+- Q: Gate round 2 (code-reviewer/test-reviewer High): FR-079's first draft said "a multi-agent
+  Stage's own header MUST state a name", implying a one-agent Stage keeps the older #563/gate
+  round 2 architect addendum B rule ("renders identically to a bare `SubagentRow`", FR-067) and
+  so never gets a name, green text, a context brief, or "Uses:" at all. Does a one-agent Stage
+  really lose every one of those, or was the wording simply too narrow? → A: Too narrow --
+  amended above (FR-079): a one-agent Stage gets the SAME name/green/brief/"Uses:" treatment as
+  any other Stage (with no `context`, its own name IS the label, since there is only one agent
+  to name; with a `context`, the agent's own name shows alongside the context-derived label as
+  the row's summary). The one piece of the superseded rule that stays true: a one-agent Stage
+  still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
+  of its status.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -760,11 +770,20 @@ The developer types a slash command and finds the ones the agent offers. If a se
   amends FR-047/FR-048's own Subagent chain and Stage rendering): A finished agent or Stage
   (never a tool row or group, FR-061 unchanged) MUST show a green check icon and green name/
   label text, the success token, on the Subagent chain, each Stage row, and the Subagent panel.
-  A multi-agent Stage's own header MUST state a name: the first line of its batch `task()`
-  call's own `context` argument (Markdown heading markers and "Goal:" prefixes stripped,
-  truncated to about 60 characters), else the agents' own shared name prefix, else a bare
-  "Stage N". Expanding a multi-agent Stage MUST additionally show its own full captured context
-  as rendered Markdown (visually capped to about 6 lines) and each member's own one-line result;
+  A Stage's own header MUST state a name, regardless of agent count (gate round 2 fix,
+  amending issue #563/Gate round 2 architect addendum B's "a one-agent Stage renders
+  identically to a bare `SubagentRow`" rule -- see FR-067): the first line of its batch
+  `task()` call's own `context` argument (Markdown heading markers and "Goal:" prefixes
+  stripped, truncated to about 60 characters), else, for a Stage with two or more agents, the
+  agents' own shared name prefix, else, for a Stage with exactly one agent, that agent's own
+  name, else (a multi-agent Stage with no context and no shared prefix) a bare "Stage N". A
+  one-agent Stage whose name came from its own captured `context` MUST additionally show the
+  agent's own name as the row's summary text and in its accessible name; a one-agent Stage
+  MUST NOT auto-expand regardless of status (unchanged from the superseded rule's own "renders
+  collapsed by default" -- only the header content changed, not this). Expanding a Stage with
+  two or more agents MUST additionally show its own full captured context as rendered Markdown
+  (visually capped to about 6 lines, a real expand/collapse control past the cap) and each
+  member's own one-line result;
   a Stage's own "Uses:" line MUST name only real `agent://<id>` references its own context or
   tasks make to an agent an EARLIER Stage in the same turn actually started, grouped by that
   Stage, dropping any reference that matches nothing or points at the Stage's own agents or a
