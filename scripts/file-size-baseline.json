@@ -14,5 +14,5 @@
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 715,
   "src/shared/ipc.ts": 898,
-  "src/shared/model.ts": 643
+  "src/shared/model.ts": 645
 }
