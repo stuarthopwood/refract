@@ -87,7 +87,7 @@ const REASONING_PICKER_FINDER =
   `Array.from(document.querySelectorAll('button')).find((el) => { const l = el.getAttribute('aria-label') || ''; return l.includes(', reasoning') || /^reasoning\\b/i.test(l); })`;
 const CHANGES_CHIP_CONTAINER = `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => /changed/.test(el.textContent))`;
 const DETAILS_CARD_FINDER = `document.querySelector('[data-slot="hover-card-content"]')`;
-const DETAILS_CARD_DIFF_CONTAINER = `${DETAILS_CARD_FINDER}?.querySelector('.text-xs.text-muted-foreground:has(svg)')`;
+const DETAILS_CARD_DIFF_CONTAINER = `Array.from(${DETAILS_CARD_FINDER}?.querySelectorAll('div') ?? []).find((el) => el.className.includes('text-muted-foreground') && /changed|Counting changes|Not available/.test(el.textContent))`;
 const DETAILS_CARD_GAUGE_SVG = `${DETAILS_CARD_FINDER}?.querySelector('svg[data-slot="reasoning-gauge"]')`;
 const PICKER_GAUGE_SVG = `(${REASONING_PICKER_FINDER})?.querySelector('svg[data-slot="reasoning-gauge"]')`;
 
