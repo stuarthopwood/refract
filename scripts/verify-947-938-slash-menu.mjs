@@ -459,6 +459,19 @@ async function main() {
     let elapsedBefore = null;
     try {
       await cdp.waitFor(`(${TURN_TOTAL_FINDER}).length > 0`, { timeoutMs: 30_000, label: 'Turn-total-time line mounted' });
+      // The sentinel turn's own content can appear in the transcript slightly before the
+      // backend's session status actually flips back to idle (real async IPC lag) -- reading
+      // elapsedBefore while the line is still the LIVE, ticking value (component's own
+      // `aria-hidden={running || undefined}` wrapper div still carrying `aria-hidden="true"`)
+      // would legitimately show growth by the next read with NO bug involved at all
+      // (`computeTurnEnd` is a pure function of settled item timestamps, so once genuinely
+      // frozen it can never drift again regardless of when it's read). Wait for the row's own
+      // `aria-hidden` to be gone (true settle, `frozenEndRef` now set) before sampling the
+      // baseline, so only a REAL re-stretch caused by the later command reply can fail this.
+      await cdp.waitFor(
+        `(() => { const rows = (${TURN_TOTAL_FINDER}); const row = rows[rows.length - 1]; return !!row && row.getAttribute('aria-hidden') !== 'true'; })()`,
+        { timeoutMs: 30_000, label: 'Turn-total-time line has genuinely settled (not still live-ticking)' }
+      );
       elapsedBefore = await readLatestTurnTotalText(cdp);
     } catch {
       // fall through: handled by the null check below
