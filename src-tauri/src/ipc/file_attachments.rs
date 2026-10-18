@@ -172,15 +172,16 @@ async fn read_file_attachment(
         }));
     };
     if buffer.len() as u64 > metadata.len() {
-        // Gate round 2 (Code2 HIGH): grew past its OWN stat'd size mid-read (compared against
-        // `metadata.len()` itself, never the external cap, which a slight growth would never
-        // trip) -- sent as a path, same as any other over-cap file, never truncated and inlined
-        // as if it were the whole file.
+        // Gate round 2 (Code2 HIGH, corrected): grew past its OWN stat'd size mid-read --
+        // reports `metadata.len()` (the stat'd size), consistent with the oversized-from-the-
+        // start branch above, never `buffer.len()` (which is bounded by `read_cap =
+        // metadata.len() + 1` and so would misreport a size that only ever differs from the
+        // stat by at most one byte, regardless of how much the file actually grew).
         return Ok(json!({
             "kind": "path",
             "path": path_string,
             "name": name,
-            "byteLength": buffer.len(),
+            "byteLength": metadata.len(),
             "isDirectory": false,
         }));
     }
