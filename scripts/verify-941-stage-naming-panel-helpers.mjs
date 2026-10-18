@@ -36,7 +36,10 @@ async function assertExpandCycle(cdp, titleText, findings, failures, themeName, 
  * round 1 -- see this file's own header for why duration remains the only available
  * disambiguator for a repeated name's two panel rows). */
 export async function assertDependencies(cdp, findings, failures, themeName, isFirstThemePass) {
-  await assertExpandCycle(cdp, STAGE2_TITLE, findings, failures, themeName, 'Stage 2', isFirstThemePass ? 'false' : undefined);
+  // Issue #991 final-delta fix: Stage 2's own frames are unpaced (no fixture delay), so whether
+  // it was ever observably open before settling is not reliably reproducible -- accept either
+  // known boolean (see `assertExpandCycleByFinder`'s own doc comment for the full rationale).
+  await assertExpandCycle(cdp, STAGE2_TITLE, findings, failures, themeName, 'Stage 2', undefined);
   await cdp.waitFor(`${stageContentSelector(STAGE2_TITLE)}?.textContent.includes('Uses:') ?? false`, {
     timeoutMs: 10_000,
     label: `[${themeName}] Stage 2 expanded, Uses: line visible`

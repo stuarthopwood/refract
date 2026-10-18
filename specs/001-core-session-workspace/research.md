@@ -256,3 +256,110 @@ The #917 screenshot's THREE occurrences (not two) are: the user's own prompt bub
 instruction text itself contains the sentinel word once), plus these two real, separate
 assistant replies. Not a duplicate render; `role="log"` announces each of the three rows exactly
 once, as it should. No code change.
+
+## 19. Stage row focus and toggle follow-ups (issue #991, 2026-10-18; renumbered from a
+provisional decision 18 once #938/PR #996 claimed it on `origin/main` first)
+
+**Decision (ui-architect-v3 ruling, posted on issue #991)**: `StageGroupRow`'s own open/close
+sync effect (`SubagentChainRow.tsx`) changes from bidirectional ("sync `open` to
+`isOpenByDefault` whichever way it moves") to upward-only -- a multi-agent Stage still
+auto-opens while running/failed/cancelled/exited, but once open (by auto-open or the user), it
+stays open until the user collapses it themselves. This matches the per-turn Subagent chain
+row's own rule, already decided this way during the #941 gate (2026-10-18, "sync UPWARD only,
+never auto-close -- an untouched row closing itself the instant everything finishes would
+collapse Stage rows the user expanded mid-read and drop their focus"). The "documented design"
+rationale the #941 gate used to defer this (treating the Stage row as a deliberately different,
+always-auto-closing case) does not hold up under re-reading: before #941 the row used an
+uncontrolled `defaultOpen` prop, which Radix reads only once at mount and never re-applies, so a
+Stage settling to green in place never actually auto-closed before #941's own mount-bug fix went
+in (`dc80999`) -- the bidirectional sync was a side effect of that fix, not a separately
+considered original choice. Removing the auto-close resolves two of #991's four items at once:
+the a11y defect (a keyboard user's focus inside the content can no longer be dropped by an
+automatic Radix unmount, since the only remaining way to close the row is the user's own
+activation of its own trigger, which already holds focus at that moment) and the "mouse user
+reading it when it closes" annoyance (there is no longer an automatic close to interrupt either
+kind of user). Follow-up filed, not built here: issue #1000 (Stage rows auto-opening AND the
+chain row both showing every agent once a turn has 2+ Stages; narrows the auto-open condition to
+failed/cancelled/exited only in that case) and issue #1001 (a solo Stage's own body swapping for
+a `SpineList` can still drop focus, pre-existing from #941).
+
+**Decision**: `userToggledRef`/`open`, for both the Stage row and the Subagent chain row, move
+out of a plain `useRef`/`useState` pair into a new `useStageToggleStore`
+(`src/renderer/state/stage-toggle-store.ts`), keyed by session id plus the row's own stable id
+(a Stage's own `group.id`; `chain:<first stage id>` for the chain row, which has no id of its
+own). Non-persisted, in-memory only -- same convention as `alert-dismiss-store.ts`: reset only
+by a full app restart, never written to `settings.json`/disk. This survives the kind of remount
+named in the issue: a session switch, where a different Session's own row set replaces this
+one's through ordinary keyed-list reconciliation (gate round 1/2 correction below has the full,
+corrected mechanism).
+
+**Decision**: `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` (a plain
+`document.querySelector('[title="..."]')`) only ever found the right Stage because a turn's
+Stage rows render earlier in the DOM than the chain row that repeats the same label text in its
+own `ChainStageLine` once open (its default state). Scoped instead to an element whose closest
+ancestor is a real per-position row (`data-slot="message-scroller-item"`,
+`MessageScrollerItem`) -- the chain row renders directly in the turn's own `React.Fragment`,
+with no such ancestor, so this can never match its own duplicate regardless of DOM order.
+
+**Gate round 1 correction (ui-architect-v3/code-reviewer/test-reviewer, unanimous)**: the store
+above was staging both the auto-open latch AND the user's own manual choice together, which
+code-reviewer flagged as unnecessary coupling and ui-architect-v3/test-reviewer confirmed was
+the wrong persistence boundary -- the auto-open latch needs no persistence at all (recomputing
+it fresh on every mount is already correct), so only a deliberate user override belongs in the
+store. Redesigned: `useStageToggleStore` now holds only `bySession: Record<string,
+Record<string, boolean>>` (the manual choice alone, same shape as `draft-store.ts`); the
+auto-open latch moved into a new shared `useStickyDisclosure` hook's own local component state,
+which also folds the two rows' previously-duplicated toggle logic into one place (code-reviewer,
+DRY). The remount description above is also corrected: `<Transcript>`/`ChatPane` carry no
+explicit `key` -- a session switch unmounts a Stage/chain row through ordinary keyed-list
+reconciliation (a different session renders a different row-id set), and `Transcript.tsx`'s own
+sr-only-stub/full-row visibility swap is a second, separate path that can unmount and remount
+the same row id.
+
+**Gate round 1 correction (test-reviewer)**: the selector-scoping fix (`titleSelector`) cannot
+be proven as a red/green regression against this exact fixture, since Stage rows always render
+before the chain row in `Transcript.tsx`'s own DOM order -- even the OLD unscoped selector would
+already resolve correctly here. The live check records this as order-independent hardening
+(proved by a count check confirming the duplicate genuinely exists, plus the ancestor-based
+disambiguation), not a demonstrable fix of an actual failure in this fixture.
+
+**Gate round 1 correction (accessibility-auditor)**: "no more path left that drops focus" (an
+earlier draft's wording) overclaimed -- corrected to "no more AUTO-CLOSE path": a solo Stage's
+own body (`SubagentBody`) still swaps for a `SpineList` the instant a second agent streams into
+the same Stage, which can still unmount whatever was focused inside it (a separate, pre-existing
+defect from #941, filed as its own follow-up by Main as issue #1001, not fixed by this change).
+
+**Gate round 2 correction (code-reviewer)**: an earlier draft of the decision above claimed the
+chain row "fully unmounts whenever a turn's Stage count drops back below 2 (`if (stages.length <
+2) return null`) and later rises again" -- re-read, this is NOT true: returning `null` from a
+component does not unmount it or reset its hooks; React keeps the exact same instance, with
+every hook's own state intact, and simply paints no output for that render. The only genuine
+remount this store/hook pair needs to survive is the session-switch case the gate round 1
+correction above already describes correctly (ordinary keyed-list reconciliation, plus
+`Transcript.tsx`'s own sr-only-stub/full-row visibility swap).
+
+**Gate round 2 fix (code-reviewer, LOW)**: `useStickyDisclosure`'s own `open` value used to read
+`manualOpen ?? latchedAutoOpen` -- since the latch's own `useEffect` only commits
+`setLatchedAutoOpen(true)` on the render AFTER `autoOpen` first turns true (effects run
+post-commit, not during the same render), this showed one stale closed frame the instant a
+Stage started running. Fixed: `manualOpen ?? (latchedAutoOpen || autoOpen)`, ORing in the
+CURRENT `autoOpen` value closes that one-render lag; the effect still matters for holding the
+latch `true` on a LATER render once `autoOpen` has already swung back to `false` again, which
+the OR alone cannot do by itself.
+
+**Decided (Skippy, delegated by Stuart 2026-10-18, gate round 2, UI Lows)**: two edge cases in
+the redesigned toggle, both confirmed as intended behaviour, no code change --
+1. A toggle attempted on the chain row before its own row id exists (`turnKey` undefined only
+   while `stages` is empty) is dropped by design -- this only ever happens while
+   `stages.length < 2`, the same range the chain row itself renders `null` for (which also
+   covers a turn with exactly one Stage, where the row id IS already defined): it falls back to
+   local-only state for that render, never persisted, and there is nothing visible for a user
+   to have toggled in the first place either way.
+2. A user's own manual CLOSE on a Stage is never overridden by a LATER failure on that same
+   Stage (`autoOpen` swinging back to `true`): `open = manualOpen ?? (...)` means a defined
+   `manualOpen` always wins, by design -- the user's choice to keep a Stage collapsed is
+   respected even once it fails. Gate round 3 correction (UI): the failure is NOT surfaced by a
+   toast (none exists for a Stage failure) -- it still surfaces through the CLOSED Stage's own
+   header (its red icon and "N done, M failed" roll-up render regardless of expand state), the
+   per-turn chain row's own roll-up (only when the turn has 2 or more Stages), and the
+   screen-reader-only settle announcement.

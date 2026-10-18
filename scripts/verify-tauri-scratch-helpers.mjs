@@ -9,7 +9,7 @@
 // several of these (written before this split); not touched here, out of scope for #570.
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, rmSync, createWriteStream, copyFileSync, existsSync, statSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -68,7 +68,15 @@ export function citeScreenshots(dir, names) {
  *  make the earlier plain string comparison wrongly refuse (or, worse, wrongly allow) a
  *  legitimate folder -- `realpathSync.native` resolves both sides to the same canonical form
  *  before comparing, and the trailing `.toLowerCase()` is belt-and-braces over Windows' own
- *  case-insensitive filesystem semantics. */
+ *  case-insensitive filesystem semantics.
+ *  Gate round 2 fix (issue #991, item 7, LOW, security-auditor): the parent-directory check
+ *  above never confirmed `resolved` ITSELF is a real directory, not a symlink/junction --
+ *  someone (or something stale) could plant `<prefix>*` as a symlink/junction pointing anywhere,
+ *  and this function would delete files by name INSIDE that target instead of a genuine temp
+ *  subfolder. Refuses outright when `resolved` already exists and is a symlink/junction
+ *  (`lstatSync` reports a Windows directory junction as `isSymbolicLink()` too); the delete loop
+ *  and the recreate below both now operate on `resolved` (the validated, canonical path), never
+ *  the caller's own possibly-relative/trailing-separator `shotDir` string. */
 export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
   const resolved = path.resolve(shotDir);
   let realParent, realTmp;
@@ -81,11 +89,29 @@ export function clearKnownOutputFiles(shotDir, prefix, fileNames) {
   if (realParent !== realTmp || !path.basename(resolved).toLowerCase().startsWith(prefix.toLowerCase())) {
     throw new Error(`refusing to clear ${resolved} -- not a recognized ${prefix}* folder directly under the OS temp dir`);
   }
+  if (existsSync(resolved)) {
+    let stat;
+    try {
+      stat = lstatSync(resolved);
+    } catch {
+      throw new Error(`refusing to clear ${resolved} -- could not stat it to confirm it is a real directory, not a symlink/junction`);
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error(`refusing to clear ${resolved} -- it is itself a symlink/junction, not a real directory (could point anywhere)`);
+    }
+  }
   for (const name of fileNames) {
-    const filePath = path.join(shotDir, name);
+    // Gate round 3 fix (issue #991, LOW, security-auditor): refuses a `fileNames` entry that is
+    // not a bare filename -- `path.basename(name) !== name` catches a path separator, `..`, or
+    // a drive-qualified/absolute segment, any of which could otherwise escape `resolved` via
+    // `path.join` and delete something outside this guarded folder entirely.
+    if (path.basename(name) !== name) {
+      throw new Error(`refusing to clear ${resolved} -- fileNames entry ${JSON.stringify(name)} is not a bare filename`);
+    }
+    const filePath = path.join(resolved, name);
     if (existsSync(filePath)) rmSync(filePath, { force: true });
   }
-  mkdirSync(shotDir, { recursive: true });
+  mkdirSync(resolved, { recursive: true });
 }
 
 export function buildAndCopyExeFresh(destDir, buildOutputDir, repoRoot, { maxAttempts = 3, label = 'verify' } = {}) {

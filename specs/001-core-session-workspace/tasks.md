@@ -3694,3 +3694,92 @@ horizontal overflow, text-overflow "clip") and screenshotted across Dark, Obsidi
 (high contrast). **Refs #938** switches to **Closes #938**: every remaining item (2, 3, 5) is
 now live-proven on this exact head; item 1 and 4 already shipped via #954; item 6 was resolved
 by investigation (research.md decision 18), no code to ship for it.
+
+## Phase 61: Stage row focus and toggle follow-ups (#991, gate follow-ups from #941 part 1, PR #979) [US1]
+
+Renumbered against `origin/main` just before merging (this branch's own convention, matching
+Phase 60's own note above): #938/PR #996 merged first and claimed Phase 60, FR-081 to FR-083,
+and research.md decision 18 -- this phase moved to Phase 61, its own tasks renumbered T288/T289
+to T291/T292, its FR renumbered FR-081 to FR-084, and its own research.md note to decision 19.
+
+**Goal**: fix the three code-level follow-ups the #941 lane's final gate deferred (four-round
+rule, 2026-10-18): a running Stage auto-closing can drop a keyboard user's focus (a11y, WCAG
+2.4.3), a manual Stage/chain-row toggle forgotten on remount, and a selector-scoping gap in
+`scripts/verify-941-stage-naming-helpers.mjs`. The fourth item (a mouse user reading a Stage row
+while it auto-closes) is a reconsideration, not a bug; see research.md decision 19 for the
+ui-architect-v3 ruling that answers it and, as a side effect, item 1 too.
+
+- [X] T291 `SubagentChainRow.tsx`'s `StageGroupRow`: the sync effect changes from bidirectional
+  ("sync `open` to `isOpenByDefault` whichever way it moves") to upward-only -- a Stage still
+  auto-opens while running/failed/cancelled/exited, but never auto-closes once open, matching
+  FR-068's existing rule for the per-turn Subagent chain row (research.md decision 19).
+- [X] New `src/renderer/features/chat/useStickyDisclosure.ts` (shared by both rows, gate round 1
+  fix, code-reviewer DRY) plus `src/renderer/state/stage-toggle-store.ts` (`useStageToggleStore`,
+  non-persisted, `bySession: Record<string, Record<string, boolean>>`, keyed by session id plus
+  a Stage's own `group.id` or `chain:<first stage id>` for the chain row): the hook's own LOCAL
+  state holds the auto-open latch (needs no persistence), the store holds ONLY a user's own
+  manual toggle, surviving a remount (a session switch's own keyed-list reconciliation, or
+  `Transcript.tsx`'s sr-only-stub/full-row swap -- gate round 2 correction: the chain row's own
+  `stages.length < 2` early return does NOT unmount it; `null` keeps the instance and its hooks)
+  (FR-084).
+- [X] `scripts/verify-941-stage-naming-helpers.mjs`'s `titleSelector` scoped to the closest
+  `[data-slot="message-scroller-item"]` ancestor, so it can never match the open per-turn
+  Subagent chain row's own duplicate title text (`ChainStageLine`); `stageContentSelector`/
+  `stageTriggerSelector` gate round 1 fix: `?.closest(...)` (not a bare `.closest(...)`) so a
+  not-yet-rendered row evaluates to `undefined` throughout instead of throwing mid-`waitFor`.
+- [X] T292 New `scripts/verify-991-stage-focus.mjs`, reusing the existing `stages-941.jsonl`
+  fixture with one additive `{"__delay__": 1500}` (no new fixture, AGENTS.md): proves keyboard
+  focus placed inside a genuinely running Stage 1 survives it settling all-success with the row
+  itself staying open; proves `titleSelector`'s scoping (recorded honestly as order-independent
+  hardening, not a red/green regression in this fixture's own DOM order); proves a manual toggle
+  on a solo Stage row and on the chain row both survive a real session-switch remount, while an
+  UNTOUCHED settled Stage (Stage 1) closes instead (proving the store holds only the manual
+  choice). Gate round 1 fixes: a shim-confirmed check (fake-omp debug log's startup line); a
+  real `waitFor` replacing a fixed sleep after the session switch; `clearKnownOutputFiles` plus
+  a post-`stopLauncher` exit confirmation. Written, not run end-to-end (no build slot granted for
+  this sub-task): `node --check` plus a real `import()` load-check on every touched/adjacent
+  script, `pnpm typecheck` and `pnpm vitest run` (148/148) clean, `node scripts/check-indent.mjs`
+  and `node scripts/check-file-size.mjs` clean.
+- [X] Gate round 2 remediation (test-reviewer, code-reviewer, security-auditor, UI Lows): the
+  store/hook stays manual-only (no change needed from round 1's own redesign); `open` now reads
+  `manualOpen ?? (latchedAutoOpen || autoOpen)` (closes a one-render lag); the latch resets
+  during render if its own session+row identity ever changes. The live check's Phase 3 uses
+  Stage 1 (not Stage 2, which can mount already settled -- unpaced frames, dropped for
+  reliability) as the proof that an untouched Stage closes on remount; a missed Running window
+  is caught and recorded in `notExercised` instead of aborting the run; `SHOTS_DIR` regained its
+  default timestamp suffix (now in the same path segment, not a nested folder, so
+  `clearKnownOutputFiles`'s own direct-child-of-`tmpdir()` check still passes). Corrected two
+  stale claims: the chain row's own `stages.length < 2` early return does not unmount it
+  (returning `null` keeps the instance and every hook's state); `defaultOpen`'s own historical
+  comment reworded to the past tense. `clearKnownOutputFiles` (verify-tauri-scratch-helpers.mjs)
+  hardened against a symlink/junction planted at the shots-dir path, and now deletes/recreates
+  under its own validated, canonical path rather than the caller's raw string.
+- [X] Gate round 3 remediation (test-reviewer, code-reviewer, security-auditor, UI): the
+  `{"__delay__": 1500}` plus the upward-only redesign together mean Stage 1 is now
+  deterministically OPEN by the time `verify-941-stage-naming.mjs`'s own expand-cycle assertion
+  for it ever runs -- fixed to expect `'true'`, not `'false'`; Stage 2/Stage 7 (no delay of
+  their own, unpaced frames) now accept either known boolean instead of asserting a specific
+  starting state. `expandByFinder`/`expandRow`/`assertExpandCycleByFinder` extracted to a new
+  `scripts/verify-941-stage-naming-expand-helpers.mjs` (#806 file-size discipline, re-exported
+  from the main helpers file for every existing consumer). The live check's own Stage-1-closes-
+  on-remount proof is now explicitly recorded (in both the header and a `notExercised` entry) as
+  hardening that cannot fail against `origin/main` on its own -- the genuine red there comes from
+  the earlier stays-open/focus-preserved checks and the Stage 6/chain-row manual-toggle proof.
+  Failure-visibility wording corrected throughout (no toast exists for a Stage failure; the
+  visible signal is the closed Stage's own red icon plus "N done, M failed" header, the chain
+  row's own roll-up only when the turn has 2+ Stages, and the screen-reader-only settle
+  announcement). `useStickyDisclosure`'s identity-reset branch now also clears
+  `localManualOpen`, so local-only state genuinely lasts only while an id stays `null`.
+  `clearKnownOutputFiles` refuses any `fileNames` entry that is not a bare filename
+  (`path.basename(name) !== name`), closing a path-traversal gap.
+- [X] All five reviewers PASS (gate round 4). Follow-ups filed, not built here: issue #1000
+  (Stage rows auto-opening AND the chain row both showing every agent once a turn has 2+
+  Stages; narrows the auto-open condition in that case) and issue #1001 (the pre-existing
+  solo-body/SpineList focus-loss path, #941).
+
+Draft PR #999, branch `feat/991-stage-focus`, merged `origin/main` (#938/PR #996, `73c2c87`)
+after the gate, before the build slot: renumbered FR-081 to FR-084, decision 18 to decision 19,
+Phase 60 to Phase 61, T288/T289 to T291/T292 (all above) -- no src/src-tauri conflicts, only the
+four doc files (this one, spec.md, research.md, docs/PLAN.md), all additive. **Refs #991** until
+the live check above is actually run against a real built exe and confirms every acceptance
+item; switches to **Closes #991** once it does.
