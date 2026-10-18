@@ -393,14 +393,14 @@ pub fn run() {
                     // navigation away is a separate hole neither of those closes).
                     .on_navigation(is_allowed_navigation_url)
                     .build()?;
-            // Issue #880 (gate round 1): no explicit `.icon(...)` call here -- it only duplicated
-            // Tauri's own built-in default-icon auto-apply (a no-op either way, neither one ever
-            // reaches the taskbar's own `ICON_BIG` lookup on Windows, see
-            // `shell::app_identity::set_window_icons`'s own doc comment for the full chain of
-            // evidence). The real fix: Windows-only, after the window exists so a real `HWND`
-            // exists to apply it to.
+            // Issue #880 (gate round 1): no explicit `.icon(...)` call -- Tauri's own built-in
+            // default-icon auto-apply already made it a no-op (`shell::app_identity::
+            // set_window_icons`'s own doc comment); `hwnd()` failing is logged, not fatal.
             #[cfg(windows)]
-            shell::app_identity::apply_to_window(window.hwnd()?);
+            match window.hwnd() {
+                Ok(hwnd) => shell::app_identity::apply_to_window(hwnd),
+                Err(err) => log::warn!("refract-tauri: window hwnd unavailable, skipping #880 icon/AUMID: {err}"),
+            }
 
             // Issue #623: reads and applies the saved position/size/maximised state (a
             // one-off, startup-only blocking wait, same justification as the registry/settings
