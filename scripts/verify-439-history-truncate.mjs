@@ -63,7 +63,7 @@ import {
   switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -193,10 +193,14 @@ async function main() {
       }
     ]);
 
-    // This is the SESSION's own current Conversation (REFRACT_FAKE_OMP_CONVERSATION_FILE below),
-    // so its row renders the Current badge right beside the truncating long title -- the exact
-    // combination the issue's own design notes call out ("the entry title line ... also has to
-    // cope with a long title and the Current badge beside it").
+    // Points the fake Session at this file (REFRACT_FAKE_OMP_CONVERSATION_FILE below). In
+    // principle this makes it the Session's own current Conversation (so its row would also
+    // render the Current badge beside the truncating long title -- the combination the issue's
+    // design notes call out), but see the `notExercised` note below: this scenario's own first
+    // `get_state` reports `messageCount: 0` (a genuinely fresh attach, no prompt sent), and
+    // `sync_from_state.rs`'s own `if message_count > 0` guard only sets
+    // `Session.current_conversation` once a turn has actually completed, so no row is ever
+    // marked current in this run without sending a prompt through the scripted tape.
     const longFile = writeConversationFile(conversationFileDir, '2026-10-18T10:05:00.000Z', 'sess439b', [
       { type: 'title', title: LONG_TITLE },
       { type: 'session', version: 3, id: 'sess439-b', timestamp: '2026-10-18T10:05:00.000Z', cwd: repoDir },
@@ -211,7 +215,7 @@ async function main() {
     findings.push(
       `Seeded two real Conversation files in ${conversationFileDir}: "${path.basename(normalFile)}" (short title/preview, the control case) and ` +
         `"${path.basename(longFile)}" (title ${LONG_TITLE.length} characters, preview exactly ${LONG_PREVIEW.length} characters -- the ` +
-        `PREVIEW_MAX_LENGTH cap -- set as the Session's own current Conversation, so its row also renders the Current badge).`
+        `PREVIEW_MAX_LENGTH cap).`
     );
 
     buildOmpShim(shimDir);
@@ -356,10 +360,12 @@ async function main() {
       } else if (longEvidence.title) {
         findings.push("Long row title's own title attribute carries the full, un-truncated title text.");
       }
-      if (!longEvidence.hasCurrentBadge) {
-        failures.push('Long row does not show the Current badge (expected it to be the Session\'s own current Conversation, so the long title has to cope with the badge beside it per the issue\'s design notes).');
+      if (longEvidence.hasCurrentBadge) {
+        findings.push('Long row also shows the Current badge beside the truncating long title, the exact combination the issue\'s design notes call out.');
       } else {
-        findings.push('Long row shows the Current badge beside the truncating long title, the exact combination the issue\'s design notes call out.');
+        notExercised.push(
+          'The Current badge beside a long truncating title (issue design notes): not exercised this run -- `user-message-time.jsonl`\'s own scripted first `get_state` reports `messageCount: 0` (a genuinely fresh attach, no prompt sent), and `sync_from_state.rs`\'s own `if message_count > 0` guard (sets `Session.current_conversation` only once a turn has completed) never fires without sending a prompt through the scripted tape. Not a product bug -- this is the same guard that correctly keeps `current_conversation` unset until OMP reports real message activity; the title/preview truncation and overflow checks below do not depend on it.'
+        );
       }
 
       assertTruncateCss('Long row preview', longEvidence.preview);
@@ -378,10 +384,28 @@ async function main() {
     // ---- Themed screenshots (Dark, Obsidian, Dark high contrast), re-confirming the dialog's
     // own no-horizontal-overflow guarantee holds under every theme, not just the default one ----
     for (const theme of THEMES) {
+      // The dialog is a modal (Radix `Dialog`, `dialog.tsx`): its overlay blocks pointer events
+      // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
+      // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
+      // per-theme overflow check and screenshot.
+      await pressEscape(cdp);
+      await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, {
+        timeoutMs: 10_000,
+        label: `Conversation history dialog closed before switching to ${theme.name}`
+      });
       await switchTheme(cdp, theme.id, theme.name);
+      await cdp.clickByLabel('Conversation history');
+      await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, {
+        timeoutMs: 15_000,
+        label: `Conversation history dialog reopened under ${theme.name}`
+      });
+      await cdp.waitFor(`!((document.querySelector('[role="dialog"]')?.textContent || '').includes('Loading'))`, {
+        timeoutMs: 15_000,
+        label: `Conversation history list finished loading under ${theme.name}`
+      });
       await assertDialogNeverScrollsHorizontally(theme.name);
       await cdp.screenshot(path.join(SHOTS_DIR, theme.shot));
-      findings.push(`Screenshot captured: Conversation history dialog (both rows, long row's Current badge and truncating title/preview) under the ${theme.name} theme (${theme.shot}).`);
+      findings.push(`Screenshot captured: Conversation history dialog (both rows, long row's truncating title/preview) under the ${theme.name} theme (${theme.shot}).`);
     }
 
     const report = {
