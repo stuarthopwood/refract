@@ -3316,3 +3316,32 @@ Phase 54/T272-T274/FR-076 to Phase 56/T279-T281/FR-078 (Phase 55/FR-076-077 rese
 still in flight). Still pending the build slot: `cargo fmt --check`/`cargo test`/`cargo
 clippy`, `pnpm build`, and `node scripts/verify-937-advisor-chip.mjs` live against a real app
 -- every claim about THOSE is code-verified only (static read of the diff), per FR-078.
+
+Build slot granted 2026-10-18, `scripts/ci-local.mjs && scripts/verify-937-advisor-chip.mjs`
+chained (per the `refract-lane-pr-gate` rule): `cargo fmt --check` clean, the Rust unit suite
+passed (727/727 once two genuinely flaky, unrelated git-subprocess tests --
+`git::diff_stat::diff_stat_counts_tracked_edits_and_untracked_files`,
+`git::worktree_validity::invalid_for_a_folder_git_has_never_registered` -- were confirmed
+passing in isolation and re-run clean under the same full-suite load; neither file is touched
+by this branch), the Tauri debug build succeeded, and `verify-937-advisor-chip.mjs` ran live
+against the real built exe and a real `omp` process. Final head `e0c5e15`: **0 failures**
+(`report.json`) -- mouse- and keyboard-driven toggle cycles (busy state, exactly-one
+authoritative "Advisor disabled." reply, AX-tree removal, focus-to-textarea, the "Advisor off"
+announcement), chip geometry (24px row, 14px icon) and order (second-to-last, right before the
+Current time chip, with `current-time` explicitly enabled for the check), no-cost-leak, and a
+live-measured contrast ratio all PASS across Dark/Obsidian/Dark (high contrast). One
+`contract_replay` regression this round's own `advisorOn` field caused against the frozen
+golden trace (`scripts/fixtures/contract-replay/session-scenario.rust-trace.json`) was found
+and fixed (new field added to the golden file and to `scrub_known_divergences`'s Rust-only-
+field allowlist, same pattern as `readout.branch`). A genuine, falsified-against-the-DOM
+harness limitation, not a product bug: the themed hover check's own mouse-away tooltip-close
+assertion never settles (`[role="tooltip"]`'s `data-state` never leaves `delayed-open`/
+`instant-open` across a 3s poll) because CDP's synthetic `mouseMoved` does not reliably
+produce the real `pointerleave` DOM event Radix's open-state tracking needs against this
+Tauri/WebView2 target -- confirmed the pointer genuinely left (`document.elementFromPoint`)
+and that the contrast measurement itself is unaffected (native `:hover` tracking is
+independent of JS event dispatch); recorded honestly as `notExercised`, not asserted as a
+failure it cannot back up. **Still `Refs #937`, not `Closes`**: the silent attach/resume
+probe's own firing (acceptance item 4's "on agent attach" clause) was not independently
+provable without a second across-restart scratch run (tracked on #650), so FR-078's own
+attach-probe guarantee stays code-verified rather than live-proven on that one point.
