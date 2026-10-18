@@ -72,21 +72,30 @@ fn allowed_paths_store() -> &'static Mutex<HashMap<String, HashSet<String>>> {
 }
 
 /// Gate round 2 (D2-rev Sec2 Medium): returns `false` once the cap is reached so the caller can
-/// surface a real error instead of silently dropping the overflow paths on the floor.
+/// surface a real error instead of silently dropping the overflow paths on the floor. Gate round
+/// 3 (Code3 Medium): a path ALREADY on the allow-list (re-picked or re-dropped) is skipped
+/// before the cap is ever tested against it -- `set.insert` on an existing value is already a
+/// no-op, so counting it against the cap used to reject an otherwise-fitting NEW path purely
+/// because a harmless duplicate happened to land after the cap was reached. All-or-nothing: if
+/// the genuinely-new paths would not ALL fit, none of them are inserted -- a partial insert used
+/// to leave some paths silently allow-listed even though the caller's own `Err` response told
+/// the renderer none of this pick succeeded, an invisible state no retry could ever see or fix.
 fn record_allowed_paths(session_id: &str, paths: impl IntoIterator<Item = String>) -> bool {
     let mut store = allowed_paths_store()
         .lock()
         .expect("allowed_paths_store poisoned");
     let set = store.entry(session_id.to_string()).or_default();
-    let mut all_recorded = true;
+    let mut new_paths = Vec::new();
     for path in paths {
-        if set.len() >= MAX_ALLOWED_PATHS_PER_SESSION {
-            all_recorded = false;
-            continue;
+        if !set.contains(&path) && !new_paths.contains(&path) {
+            new_paths.push(path);
         }
-        set.insert(path);
     }
-    all_recorded
+    if set.len() + new_paths.len() > MAX_ALLOWED_PATHS_PER_SESSION {
+        return false;
+    }
+    set.extend(new_paths);
+    true
 }
 
 fn is_allowed_absolute_path(session_id: &str, path: &str) -> bool {
@@ -253,7 +262,11 @@ pub fn attachments_read_file(state: AppState, args: Vec<Value>) -> HandlerFuture
 /// renderer. Gate round 2 (D2-rev Sec2 Medium): validates the Session exists FIRST
 /// (`resolve_session_worktree`), so this map never gains a key for a Session id that was never
 /// real, and surfaces a named error if the per-session cap was hit instead of silently dropping
-/// the overflow.
+/// the overflow. Gate round 3 (Sec3 HIGH): the native dialog is modal and can sit open for an
+/// arbitrarily long time while the user decides -- re-checked AFTER it returns, right before
+/// recording, so a Session archived/deleted during that wait can no longer have paths recorded
+/// against it (the FIRST check above only ever proved the Session was real before the dialog
+/// opened, not that it still is once it closes).
 pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -287,6 +300,10 @@ pub fn attachments_pick_files(state: AppState, args: Vec<Value>) -> HandlerFutur
             .filter_map(|p| p.into_path().ok())
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
+        // Gate round 3 (Sec3 HIGH): see this function's own doc comment above -- the dialog can
+        // stay open indefinitely, so the Session is re-checked here, not trusted from the first
+        // check made before it ever opened.
+        resolve_session_worktree(&state, &session_id).await?;
         if !record_allowed_paths(&session_id, path_strings.iter().cloned()) {
             return Err(invalid_argument(
                 "Too many files picked in this Session already; some of this pick could not be recorded. Try fewer at once.",

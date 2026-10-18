@@ -25,6 +25,15 @@ export function remainingAttachmentSlots(sessionId: string): number {
   return Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
 }
 
+/** Gate round 3 (UI3/Code3 Medium): the one overflow-cap wording string every attach path
+ * shares (drop, picker, paste) -- used to be two independent near-identical copies (this file's
+ * own inline text below, and `attachImage.ts`'s own `attachPastedFiles`) that could drift. */
+export function buildOverflowCapMessage(remainingSlots: number, overflowCount: number): string {
+  return remainingSlots === 0
+    ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
+    : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflowCount} ${overflowCount === 1 ? 'was' : 'were'} skipped.`
+}
+
 /** Runs the attach loop over already-resolved paths and announces/notifies the result, exactly
  * once per drop regardless of which build's listener produced `resolved`. `preFailed` are items
  * whose path could not even be resolved (Electron's `getPathForFile` throw case only); `dropped`
@@ -82,12 +91,7 @@ export async function attachResolvedPaths(
   const overflowCount = dropped - resolved.length - preFailed.length
   const skipped = failedFiles.length + overflowCount
   if (skipped === 0) return
-  const overflowText =
-    overflowCount > 0
-      ? remainingSlots === 0
-        ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
-        : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
-      : null
+  const overflowText = overflowCount > 0 ? buildOverflowCapMessage(remainingSlots, overflowCount) : null
   // Gate round 2 (Code2 Medium, item 10): EVERY failed file is named with its own reason, never
   // folded into a bare count once there is more than one -- a developer attaching several bad
   // files at once used to see only "N files could not be attached," with no way to tell which.

@@ -173,9 +173,15 @@ export async function buildPastedFileAttachment(file: File): Promise<PastedFileA
  * parser already fails SAFE in that case (aborts the whole extraction, falls back to showing the
  * raw text, never misparses), but sanitizing here avoids that degraded fallback entirely for a
  * name carrying either character (neither is valid in an NTFS file/folder name in practice, this
- * app's only supported platform, so this is defence in depth, not a reachable real-world case). */
+ * app's only supported platform, so this is defence in depth, not a reachable real-world case).
+ * Gate round 3 (Code3 Low): a LEADING backtick IS a valid NTFS filename character, and IS
+ * reachable -- `parse_file_header`'s own fence-length count (`take_while(|b| b == '`')`) cannot
+ * tell an inline file's real fence apart from a name that starts with its own backtick (e.g.
+ * `` `rm -rf`.txt `` would make a 3-backtick fence plus that leading backtick read back as a
+ * 4-backtick fence, then fail the exact-name match), degrading to the same safe raw-text
+ * fallback as the other two characters above -- replaced the same way, not just quotes/newlines. */
 function sanitizeNameForMarker(name: string): string {
-  return name.replace(/["\r\n]/g, "'")
+  return name.replace(/["\r\n]/g, "'").replace(/^`/, "'")
 }
 
 export function buildFileAttachmentText(files: readonly PendingFileAttachment[]): string {

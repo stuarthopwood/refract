@@ -34,7 +34,16 @@ export interface AttachmentStripProps {
 export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRemoveFile, containerRef }: AttachmentStripProps) {
   if (images.length === 0 && files.length === 0 && textChips.length === 0) return null
   return (
-    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
+    <div
+      ref={containerRef}
+      role="group"
+      aria-label="Pending attachments"
+      // Gate round 3 (UI3 Medium): `p-1` gives the scroll box's own edges room for the image
+      // Remove button's `-top-1 -right-1` offset (and its own focus ring) -- without it, a chip
+      // in the first row or at the strip's right edge had both clipped by this container's own
+      // `overflow-y-auto` boundary.
+      className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto p-1"
+    >
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal

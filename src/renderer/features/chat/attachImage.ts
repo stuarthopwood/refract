@@ -7,7 +7,7 @@
 // never the other way, so it adds no cycle.
 import { buildImageAttachment, formatByteSize, IMAGE_PATH_EXTENSION_RE } from './attachments'
 import { buildPastedFileAttachment, MAX_INLINE_FILE_BYTES } from './anyFileAttachments'
-import { remainingAttachmentSlots } from './attachDroppedPaths'
+import { buildOverflowCapMessage, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useDraftStore } from '@/state'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
@@ -48,61 +48,89 @@ export async function attachPastedImage(sessionId: string, file: File): Promise<
   await attachImageFile(sessionId, file)
 }
 
-/** #926: the validate-plus-commit sequence for a non-image clipboard-pasted `File` (Explorer
- * "Copy" a file, then Ctrl+V) -- mirrors `attachImageFile` above exactly, but for
- * `buildPastedFileAttachment` (renderer-only, no OS path: Tauri's `File` API exposes none for a
- * pasted file, so a binary/over-cap one has no path to fall back to and is a clear, named error
- * instead of a silent drop). */
-async function attachPastedFile(sessionId: string, file: File): Promise<void> {
-  const result = await buildPastedFileAttachment(file)
-  if (!result.ok) {
-    notify({
-      code: 'invalid-argument',
-      message:
-        result.reason === 'too-large'
-          ? `"${file.name}" is too large to inline (over ${formatByteSize(MAX_INLINE_FILE_BYTES)}) and was pasted with no file path, so it can't be sent as a path reference either; use the Attach button or drag it in instead. Nothing was attached.`
-          : result.reason === 'binary'
-            ? `"${file.name}" is a binary file pasted with no file path, so it can't be sent as a path reference; use the Attach button or drag it in instead. Nothing was attached.`
-            : `"${file.name}" could not be read; nothing was attached.`
-    })
-    return
-  }
-  useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
-  useDraftStore.getState().announceAttachment(sessionId, `"${file.name}" attached as text, ${formatByteSize(result.attachment.byteLength)}.`)
+/** Gate round 3 (UI3/Code3 Medium): the full per-reason wording for a failed pasted IMAGE
+ * within a multi-file paste -- kept detailed (never just "could not be attached"), but returns a
+ * STRING instead of calling `notify` directly so `attachPastedFiles` below can name this file
+ * alongside every other failure in ONE combined toast, instead of one toast per image. */
+function describePastedImageFailureReason(reason: 'too-large' | 'decode-failed'): string {
+  return reason === 'too-large'
+    ? `is too large to attach (over the ${formatByteSize(MAX_IMAGE_INPUT_BYTES)} limit)`
+    : 'could not be read'
 }
 
-/** #926: attaches every non-image FILE from a clipboard paste (Explorer "Copy" a file, then
- * Ctrl+V) in order -- an image-shaped NAME still goes through `attachImageFile` unchanged
- * (#926's own "images still go to omp as images" decision), checked by extension ALONE
- * (`IMAGE_PATH_EXTENSION_RE`, not `looksLikeImagePathToken`, gate round 1 Code1 HIGH: a pasted
- * `File`'s bare `file.name` carries no path separator/drive prefix at all, so the path-SHAPED
- * check always failed it and silently misrouted every pasted image to the general file reader);
- * everything else goes through `attachPastedFile` above, the only possible outcome for a pasted
- * file with no OS path. Gate round 1 (FR-039 Medium, Test1 Medium): shares the per-message cap
- * with pending images (`remainingAttachmentSlots`), and marks every read `pending` so Enter/Send
- * waits for it the same way a path-based read already does. */
+/** Gate round 3 (UI3/Code3 Medium): same reasoning as the image version above, for a failed
+ * pasted non-image FILE (`buildPastedFileAttachment`'s own failure union) -- the detailed
+ * explanation (no OS path, use Attach/drag-drop instead) survives, just per-file and joinable. */
+function describePastedFileFailureReason(reason: 'too-large' | 'binary' | 'read-failed'): string {
+  return reason === 'too-large'
+    ? `is too large to inline (over ${formatByteSize(MAX_INLINE_FILE_BYTES)}) and was pasted with no file path, so it can't be sent as a path reference either; use the Attach button or drag it in instead`
+    : reason === 'binary'
+      ? "is a binary file pasted with no file path, so it can't be sent as a path reference; use the Attach button or drag it in instead"
+      : 'could not be read'
+}
+
+/** #926: attaches every FILE from a clipboard paste (Explorer "Copy" a file, then Ctrl+V) in
+ * order -- an image-shaped NAME attaches as an image (#926's own "images still go to omp as
+ * images" decision), checked by extension ALONE (`IMAGE_PATH_EXTENSION_RE`, not
+ * `looksLikeImagePathToken`, gate round 1 Code1 HIGH: a pasted `File`'s bare `file.name` carries
+ * no path separator/drive prefix at all, so the path-SHAPED check always failed it and silently
+ * misrouted every pasted image to the general file reader); everything else attaches as a file,
+ * the only possible outcome for a pasted file with no OS path. Gate round 1 (FR-039 Medium,
+ * Test1 Medium): shares the per-message cap with pending images (`remainingAttachmentSlots`),
+ * and marks every read `pending` so Enter/Send waits for it the same way a path-based read
+ * already does. Gate round 3 (UI3/Test3 Medium): calls `buildImageAttachment`/
+ * `buildPastedFileAttachment` DIRECTLY instead of going through `attachImageFile`/the former
+ * per-file `attachPastedFile` helper -- those each notify/announce individually, which used to
+ * fire one sr-only announcement AND one toast per file in a multi-file paste; this loop instead
+ * collects every success and failure and reports ONCE after the loop, matching
+ * `attachDroppedPaths.ts`'s own `attachResolvedPaths` (the drop/picker shared core) exactly, and
+ * shares its `buildOverflowCapMessage` wording rather than a second, independent copy. */
 export async function attachPastedFiles(sessionId: string, files: readonly File[]): Promise<void> {
   useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
   try {
     const remainingSlots = remainingAttachmentSlots(sessionId)
     const capped = files.slice(0, remainingSlots)
+    let attachedImages = 0
+    let attachedFiles = 0
+    const failed: { name: string; reason: string }[] = []
     for (const file of capped) {
-      if (IMAGE_PATH_EXTENSION_RE.test(file.name)) await attachImageFile(sessionId, file)
-      else await attachPastedFile(sessionId, file)
+      if (IMAGE_PATH_EXTENSION_RE.test(file.name)) {
+        const result = await buildImageAttachment(file)
+        if (!result.ok) {
+          failed.push({ name: file.name, reason: describePastedImageFailureReason(result.reason) })
+          continue
+        }
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+        attachedImages++
+      } else {
+        const result = await buildPastedFileAttachment(file)
+        if (!result.ok) {
+          failed.push({ name: file.name, reason: describePastedFileFailureReason(result.reason) })
+          continue
+        }
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, files: [...prev.files, result.attachment] }))
+        attachedFiles++
+      }
+    }
+    const attachedCount = attachedImages + attachedFiles
+    if (attachedCount > 0) {
+      const parts = [
+        attachedImages > 0 ? `${attachedImages} image${attachedImages === 1 ? '' : 's'}` : null,
+        attachedFiles > 0 ? `${attachedFiles} file${attachedFiles === 1 ? '' : 's'}` : null
+      ].filter(Boolean)
+      const joined = parts.length > 1 ? `${parts[0]} and ${parts[1]}` : parts[0]
+      useDraftStore.getState().announceAttachment(sessionId, `${joined} attached.`)
     }
     const overflow = files.length - capped.length
-    if (overflow > 0) {
-      // Gate round 2 (Test2 HIGH): a VISIBLE toast, matching `attachDroppedPaths.ts`'s own
-      // overflow notice -- the sr-only live region alone left a sighted developer with no
-      // indication anything was skipped.
-      notify({
-        code: 'invalid-argument',
-        message:
-          remainingSlots === 0
-            ? 'This message already has the maximum of 10 attachments; nothing more was attached.'
-            : `Only ${remainingSlots} more attachment${remainingSlots === 1 ? '' : 's'} could be attached to this message; ${overflow} ${overflow === 1 ? 'was' : 'were'} skipped.`
-      })
-    }
+    if (failed.length === 0 && overflow === 0) return
+    const overflowText = overflow > 0 ? buildOverflowCapMessage(remainingSlots, overflow) : null
+    // Gate round 2 (Test2 HIGH) / round 3 (UI3/Code3 Medium): a VISIBLE toast, not only the
+    // sr-only live region, naming EVERY failed file with its own reason in ONE combined
+    // message -- never one toast per file, and never an absolute "nothing was attached" when
+    // `attachedCount` above is actually positive (each per-file reason only ever describes that
+    // one file's own fate, not the whole paste's).
+    const failureText = failed.length > 0 ? failed.map((f) => `"${f.name}" ${f.reason}.`).join(' ') : null
+    notify({ code: 'invalid-argument', message: [overflowText, failureText].filter(Boolean).join(' ') })
   } finally {
     useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
   }
