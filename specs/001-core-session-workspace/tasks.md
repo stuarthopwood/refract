@@ -3459,11 +3459,10 @@ PR #972 body and this plan row updated with the final-run evidence; still `Refs 
   own result, visible the moment its owning Stage is expanded, with no need to expand the row
   itself too. A multi-agent Stage's own expansion also shows its full batch context as rendered
   Markdown, visually capped to about 6 lines, above its member rows.
-- [ ] T284 [US1] NOT YET BUILT (second PR, reported to Main before starting it): the Subagent
-  panel's own Stage-level tree node (grouping `SubagentSummary[]` by `toolCallId` the same way,
-  through the same `stageMeta.ts`/`StageDependencies.tsx` helpers) and the "Up next" list (from
-  the new `todoPhases` readout field T282 already wired) in the Subagent chain's own expanded
-  body.
+- [X] T284 [US1] The Subagent panel's own Stage-level tree node (grouping `SubagentSummary[]` by
+  `toolCallId` the same way, through the same `stageMeta.ts`/`StageDependencies.tsx` helpers)
+  and the "Up next" list (from the `todoPhases` readout field T282 already wired) in the
+  Subagent chain's own expanded body. Built in Phase 58 below (second PR, as planned here).
 
 This phase covers issue #941's 2026-10-15 grill items 2 to 5 and the Subagent chain/Stage-row
 half of item 7 (terms, item 1, already landed via PR #942's docs-only change); items 6 (Up next)
@@ -3480,3 +3479,47 @@ from Main.
 Opened as draft PR (number recorded once opened) on branch `feat/941-stages`. **Refs #941**
 (items 6 and the Subagent panel half of item 7 are not yet built, and nothing above has been
 live-proven against a real build yet).
+
+## Phase 58: Subagent panel Stage grouping, green state, Up next (#941, part 2 of 2) [US1]
+
+(Provisional numbering: renumbers against `origin/main` just before this merges.)
+
+- [X] T284 (see Phase 57 above, checked off there): `SubagentPanel.tsx`'s `buildSubagentTree`
+  rewritten against a new sibling `groupSubagentPanelStages.ts` (groups `SubagentSummary[]` by
+  `toolCallId` -- the only correlation key that interface carries, confirmed against
+  `src/shared/model.ts`; research.md decision 17), reusing `stageMeta.ts`'s
+  `computeStageLabel`/`stageHeading`/`extractAgentRefs` directly and mirroring
+  `groupSubagentStages.ts`'s own "latest earlier occurrence wins" dependency algorithm against
+  the panel's own field names. A call with exactly one member stays a single flat row; 2+
+  members get a Stage header treeitem with its real members nested one `aria-level` deeper.
+  Green state (`isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`, confirmed absent from
+  the panel before this) applies uniformly to every row. A Stage header's own real "Uses:" line
+  reuses `StageDependencies.tsx`'s `StageUsesLine`, forced into its existing plain-text fallback
+  (`sessionId={null}`) rather than nesting a second interactive control inside a
+  `role="treeitem"`; a solo call's own dependency stays chat-pane-only (documented scope
+  boundary, no header row in the panel to attach one to).
+- [X] New `UpNextList.tsx`, mounted in `Transcript.tsx` right after `SubagentChainRow` for every
+  turn: reads `ReadoutState.todoPhases` (already wired by T282), rendering nothing when
+  null/empty (the backend's own `compute_up_next` already filters to non-empty, live-only
+  state, research.md decision 17) -- gated additionally on `isLastTurn` (`Transcript.tsx`
+  already computes this for `TurnTotalLine`) and `stages.length > 0`, so the CURRENT, session-
+  scoped Todo list is shown once per conversation, not repeated after every past qualifying
+  turn.
+
+This phase covers issue #941's 2026-10-15 grill item 6 (Up next) and the Subagent panel half of
+item 7, completing the story (items 1-7 all built across the two PRs).
+
+`pnpm typecheck`, `pnpm vitest run` (148/148), `node scripts/check-indent.mjs`, `node
+scripts/check-file-size.mjs`, `node scripts/check-parity.mjs --gate`, `node
+scripts/check-drag-regions.mjs`, `node scripts/check-theme-contrast.mjs` all clean on this
+phase's own head. Live-checked via a new `scripts/verify-941-part2.mjs` (reuses part 1's own
+`stages-941.jsonl` fixture, additively extended with a `todoPhases` field on its one `get_state`
+response) across all 3 themes: Stage grouping (header + nested members at the right
+`aria-level`, solo calls stay flat), green state (including Stage 5's own mixed finished/failed
+negative case), the "Up next" list's own exact wording, and a negative check that no panel
+Stage shows a stray "Uses:" line (the fixture's own task names carry no `agent://` reference,
+`SubagentSummary` has no `context` for one to come from otherwise -- the panel's positive
+"Uses:" case is recorded honestly as not exercised, not worth risking part 1's own fixture for).
+
+Opened as a draft PR (number recorded once opened) on branch `feat/941-stages-part2`, stacked
+on part 1's now-merged `feat/941-stages` (PR #979, merged as `d9c88f2`).

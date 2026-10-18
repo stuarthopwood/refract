@@ -156,3 +156,33 @@ from live frames/`SessionAgent.reconcileSubagentsOnAttach` the same direct way `
 **Rationale**: a worktree-root scratch file (`research.md`, written during this story's own
 investigation) made this same claim inaccurately before being deleted; recorded correctly here,
 the one place this repository's own Spec Kit convention keeps durable research notes.
+
+## 17. Subagent panel Stage grouping and "Up next" gating (issue #941 part 2, 2026-10-18)
+
+**Decision (Skippy, delegated by Stuart 2026-10-18)**: the Subagents panel groups its own flat
+`SubagentSummary[]` by `toolCallId` alone (the only correlation key that interface carries --
+no `messageId`/`context`, confirmed against `src/shared/model.ts`), never merging several calls
+that share one assistant message the way the chat pane's own `messageId`-keyed
+`groupSubagentStages.ts` can. A call with exactly one member stays a single flat row (nothing to
+group, unchanged from before part 2); 2+ members get a Stage header row with its real members
+nested one level deeper. The header's own label always uses `computeStageLabel`'s "no context"
+fallback tier (shared name prefix, else a bare "Stage N") -- the panel has no per-call `context`
+to read the first tier from. A Stage header's own real "Uses:" dependencies (resolved the same
+"latest earlier occurrence wins" way `groupSubagentStages.ts`'s `applyDependencies` already
+does, against `id`/`toolCallId`/`specIndex` instead of `name`/`toolCallId`/`specIndex`) render
+via the chat pane's own `StageUsesLine`, forced into its existing plain-text fallback
+(`sessionId={null}`) rather than adding a second, nested interactive control inside a
+`role="treeitem"` the user is already inside. A solo call's own dependency is intentionally not
+shown in the panel (no header row exists there to attach one to); it stays visible in the chat.
+
+**Decision (Skippy, delegated by Stuart 2026-10-18)**: the "Up next" Todo-phase list renders
+once per TURN (not once per Stage), gated on `isLastTurn` (the same boolean `Transcript.tsx`
+already computes for `TurnTotalLine`) -- `ReadoutState.todoPhases` is the agent's own CURRENT
+session-scoped state, not a per-turn snapshot, so showing it after every past turn with a Stage
+would repeat the identical list. Also gated on that turn having at least one Stage
+(`stages.length > 0`): "below the last Stage" has no anchor point in a turn that never ran a
+`task()` call at all. No separate live-vs-reopened-history check is needed in the renderer:
+`compute_up_next` (`src-tauri/src/session/readout_todo.rs`) already filters to only phases with
+at least one non-`completed`/`abandoned` task and returns `null` outright for a reopened
+Conversation (`state_synced` gates it the same way `contextUsage` is gated) -- `todoPhases`
+being non-null on the wire already means "live, and something is still pending."

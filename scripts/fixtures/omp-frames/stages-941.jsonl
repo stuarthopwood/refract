@@ -49,7 +49,7 @@
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
 {"__wait__":["get_state"]}
-{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stages-941\\conversation.json","sessionId":"sess-stages-941-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stages-941\\conversation.json","sessionId":"sess-stages-941-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[{"name":"Ship #941 part 2 follow-ups","pendingCount":2},{"name":"Write the verify-941-part2 live-check","pendingCount":1}]}}
 {"__wait__":["set_ask_dialog"]}
 {"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
 {"__wait__":["get_messages_page","get_messages"]}

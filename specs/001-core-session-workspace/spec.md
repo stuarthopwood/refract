@@ -798,6 +798,11 @@ The developer types a slash command and finds the ones the agent offers. If a se
   > and the Up next list's own UI, are not yet built here -- only the Rust/TS wire data
   > (`context`, `todoPhases`) is in place, unconsumed.
 
+  > Part 2 (issue #941, 2026-10-18): now built -- the Subagent panel groups its own
+  > `SubagentSummary[]` by `toolCallId` (its own only correlation key, research.md decision 17),
+  > shows green state uniformly (header and member rows alike), and the "Up next" list renders
+  > in the chat pane's own Subagent chain body, gated on `isLastTurn` and at least one Stage.
+
 - **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
 
 ### Key Entities
