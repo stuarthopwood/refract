@@ -62,6 +62,7 @@
           "contextUsage": null,
           "pullRequest": null,
           "subagentCount": null,
+          "todoPhases": null,
           "todoProgress": null,
           "turnTime": null
         },

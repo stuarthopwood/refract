@@ -215,6 +215,11 @@ pub fn run() {
         std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     }
 
+    // Issue #880: also as early as possible, before any window exists -- see
+    // `shell::app_identity::set_process_app_user_model_id`'s own doc comment for why it must run
+    // before `tauri::Builder` ever shows a window.
+    shell::app_identity::set_process_app_user_model_id();
+
     let data_dir = data_dir();
     std::fs::create_dir_all(&data_dir).unwrap_or_else(|err| {
         panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}")
@@ -388,6 +393,14 @@ pub fn run() {
                     // navigation away is a separate hole neither of those closes).
                     .on_navigation(is_allowed_navigation_url)
                     .build()?;
+            // Issue #880 (gate round 1): no explicit `.icon(...)` call -- Tauri's own built-in
+            // default-icon auto-apply already made it a no-op (`shell::app_identity::
+            // set_window_icons`'s own doc comment); `hwnd()` failing is logged, not fatal.
+            #[cfg(windows)]
+            match window.hwnd() {
+                Ok(hwnd) => shell::app_identity::apply_to_window(hwnd),
+                Err(err) => log::warn!("refract-tauri: #880 icon/AUMID skipped, no hwnd: {err}"),
+            }
 
             // Issue #623: reads and applies the saved position/size/maximised state (a
             // one-off, startup-only blocking wait, same justification as the registry/settings

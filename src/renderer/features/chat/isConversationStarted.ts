@@ -14,19 +14,16 @@
 // did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
 // real content exists) but are not displayed, replaced by a neutral placeholder instead.
 //
-// Gate-fix (code/a11y/verif High, round 3, Issue #618): exported (was a private inline
-// computation) so `ChatPane.tsx` can read the SAME predicate against the SAME transcript-store
-// items, instead of deciding where the start notice goes from its own, narrower `hasHistory`
-// alone. `hasHistory` (`session.currentConversation !== null`) only flips true at a settle,
-// which left a start that fails or crashes mid-first-turn -- real items already on screen,
-// `recordStartFailure`'s own error notice among them -- with NO notice and NO Keep
-// waiting/Cancel at all on the next Retry/Recover, because the centred placement required
-// `!hasConversationStarted` and the inline placement required `hasHistory`, and neither was
-// true. See `ChatPane.tsx`'s own `conversationStarted`/`showInline` for the fix.
+// Issue #618: exported (was a private inline computation) so a predicate this precise ("a notice
+// counts unless it is the unsolicited startup banner") is defined once. Issue #672: `ChatPane.tsx`
+// no longer reads this directly -- `Transcript.tsx` (this module's only remaining importer) uses
+// it for `hasConversationStarted` (gates whether "Ready…" can show at all) and for `dimTranscript`
+// (whether the Session-start notice overlays dimmed history or empty space); the old
+// `showInline`/`conversationStarted` split in `ChatPane.tsx` this comment used to describe is
+// gone along with the `inline` notice variant it existed for.
 //
 // Split out of `Transcript.tsx` (not inline there, issue #554 gate round 1, M5) to keep that
-// file within this build's 600-line cap with no slack -- re-exported from `Transcript.tsx` so
-// `ChatPane.tsx`'s existing `from './Transcript'` import keeps working unchanged.
+// file within this build's 600-line cap with no slack.
 import { STARTUP_NOTICE_PREFIX, type TranscriptItem } from '../../../shared/model';
 
 export function isConversationStarted(items: readonly TranscriptItem[]): boolean {

@@ -3425,3 +3425,133 @@ busy-window no-op check). All 3 themed screenshots viewed directly again. `pnpm 
 `check:drag-regions`, `check:versions`, `check:omp-schema-drift` all green on this head too.
 PR #972 body and this plan row updated with the final-run evidence; still `Refs #937`, not
 `Closes`, for the same acceptance-item-4 reason as before.
+
+## Phase 57: Stage naming, green finished state, real dependencies (#941, part 1 of 2) [US1]
+
+(Provisional numbering: renumbers against `origin/main` just before this merges.)
+
+- [X] T282 [US1] Rust: `TranscriptItem::Subagent` gains `context: Option<String>` (the batch
+  `task()` call's own shared `context` argument, sibling of `tasks[]` on the wire per
+  `omp/tools/task.md`'s own batch schema `{ context, tasks[] }`), threaded through both
+  construction sites -- the live `tool_execution_start` path (`upsert_subagent_items`'s new
+  `context` parameter) and the message-echo path, split into a new sibling function
+  `subagent_items::build_message_subagent_items` (keeps `transcript.rs` under its own 600-line
+  cap, per the issue's own technical note). `session::readout`'s `TodoPhaseState` gains a `name`
+  field (OMP `todoPhases[].name`, previously parsed then discarded) and a new `todoPhases` wire
+  field on `SessionReadout` -- `Array<{name, pendingCount}>` for every phase with outstanding
+  work, `null` otherwise -- computed in a new sibling module `readout_todo.rs` (same file-size
+  reason). Both are brand-new, Rust-only fields (Electron's own frozen shells never had either):
+  `contract-replay`'s golden trace (`session-scenario.rust-trace.json`) and
+  `scrub_known_divergences` updated the same way #937/PR #972 did for its own `advisorOn` field
+  (merged just before this phase, Phase 56 above).
+- [X] T283 [US1] `groupSubagentStages.ts` computes a Stage's own `label` (the batch context's
+  first line, Markdown heading/"Goal:" stripped, ~60 chars, else the agents' shared name prefix,
+  else `null`) and real `dependencies` (`agent://<id>` references in the Stage's own context/
+  tasks resolved against EARLIER Stages' agent ids only, dropped when unmatched or forward-
+  pointing) via a new sibling `stageMeta.ts`. `statusGlyph.ts` gains a `success-done` glyph key;
+  `subagentStatus.tsx` maps `finished` to it (green icon on every consumer: `SubagentRow`, Stage
+  rows, the chain, the panel) and exports `isSubagentSuccessStatus`/`SUBAGENT_SUCCESS_TEXT_CLASS`
+  for the matching green TEXT half -- tool rows/groups (`toolStatus.tsx`) are untouched.
+  `SubagentChainRow.tsx`'s `StageGroupRow`/`ChainStageLine`/`ChainAgentEntry` and `ToolRow.tsx`'s
+  `SubagentRow` apply the green text and the Stage label; a new `StageDependencies.tsx` renders
+  the "Uses:" line (grouped by the earlier Stage, each id a real button when the live tracker
+  still knows it, else plain text). `SubagentRow` also gains a one-line `summary` of the agent's
+  own result, visible the moment its owning Stage is expanded, with no need to expand the row
+  itself too. A multi-agent Stage's own expansion also shows its full batch context as rendered
+  Markdown, visually capped to about 6 lines, above its member rows.
+- [ ] T284 [US1] NOT YET BUILT (second PR, reported to Main before starting it): the Subagent
+  panel's own Stage-level tree node (grouping `SubagentSummary[]` by `toolCallId` the same way,
+  through the same `stageMeta.ts`/`StageDependencies.tsx` helpers) and the "Up next" list (from
+  the new `todoPhases` readout field T282 already wired) in the Subagent chain's own expanded
+  body.
+
+This phase covers issue #941's 2026-10-15 grill items 2 to 5 and the Subagent chain/Stage-row
+half of item 7 (terms, item 1, already landed via PR #942's docs-only change); items 6 (Up next)
+and the Subagent panel half of item 7 are explicitly deferred to a second PR.
+
+`pnpm typecheck`, `pnpm vitest run` (148/148), `node scripts/check-indent.mjs`, `node
+scripts/check-file-size.mjs`, `node scripts/check-parity.mjs --gate` (100/100 requests, 23/23
+events), `node scripts/check-drag-regions.mjs`, `node scripts/check-theme-contrast.mjs`
+(455/455 pairs) all clean on this phase's own head. The Rust side is CODE-VERIFIED ONLY at
+authoring time (no build slot granted yet): `cargo fmt --check`/`cargo test`/`cargo clippy`/the
+Tauri debug build, and a live check against a real `omp`, are each pending the build slot grant
+from Main.
+
+Opened as draft PR (number recorded once opened) on branch `feat/941-stages`. **Refs #941**
+(items 6 and the Subagent panel half of item 7 are not yet built, and nothing above has been
+live-proven against a real build yet).
+
+## Phase 58: Session start notice, one centred presentation (#672, follow-up to #618) [US1]
+
+- [X] T285 [US1] #672 `SessionStartNotice.tsx`: drop the `variant` prop and the `inline` layout
+  entirely -- one centred presentation for every Session. The joke-stage emoji renders on its own
+  line at `text-[40px]` (`@min-[40rem]:text-5xl`) with a `session-start-emoji-bob` 2.4s loop
+  (new `@keyframes`, `globals.css`, neutralised by the existing global
+  `prefers-reduced-motion` rule); the message renders at `text-xl text-balance text-foreground`
+  (`@min-[40rem]:text-2xl`), no longer muted; the elapsed-seconds counter stays explicit
+  `text-xs text-muted-foreground`. queued/memory-deferred (and the brief pre-pick gap) keep the
+  small `text-base` spinner-plus-text look. `ChatPane.tsx` drops `showInline`, its
+  `isConversationStarted`/`useTranscriptStore` probe, and the second (`inline`) render site, and
+  always passes the one `SessionStartNotice` to `Transcript.tsx`. `Transcript.tsx` dims the
+  transcript behind the notice to `opacity-40 pointer-events-none` (`dimTranscript`, true
+  whenever a notice is showing over a Session that has history or a conversation already under
+  way), restoring full opacity the instant the start ends.
+- [X] T286 [US1] `scripts/verify-672-start-message.mjs` (new): live-checks a brand-new Session's
+  start notice (centred, large, no dimming) and a Session-with-history's start notice (centred,
+  large, transcript dimmed behind it, non-interactive), the computed emoji/message/counter font
+  sizes and colours in a normal-width pane and a split pane, the queued/memory-deferred plain
+  `text-base` state, the message clearing once the agent is ready, one screen-reader
+  announcement, and `prefers-reduced-motion` leaving the emoji static, across Dark, Obsidian, and
+  Dark (high contrast).
+- [X] T287 [US1] #672 gate fixes (code/a11y/UI/test, decided by Main) across three rounds: the
+  dimmed transcript stays fully interactive (`Transcript.tsx` drops `pointer-events-none`, keeps
+  only `opacity-40`; `focus-within:opacity-100` restores full strength for a focused control; no
+  transition, so the dim appears/clears instantly) and a wheel/pointerdown/touch on the notice's
+  own buttons no longer cancels the scroll-landing loop (scoped to `viewport.contains(target)`,
+  the same guard `handleFocusInput` already used). `SessionStartNotice.tsx` gains a `dimmed` prop
+  (via a render function, `startNotice(dimmed)`, not `React.cloneElement`): when dimmed, a soft
+  borderless `bg-background/90 backdrop-blur-sm` panel backs the notice (the same token the
+  file-drop overlay uses) so its text stays readable against the dim; none for a brand-new
+  Session. WCAG 2.4.11: while keyboard focus sits anywhere inside the dimmed history, the overlay
+  (not the inner wrapper -- `peer-focus-within:*` only ever matches a SIBLING of `.peer`, a real
+  bug caught live by Main's own Tailwind-compile analysis) hides via `opacity`/`pointer-events`,
+  never `visibility` (which would make Keep waiting/Cancel untabbable), `transition-opacity
+  duration-150`; the next real Tab (focusing the LAST tabbable element inside the history first,
+  so it is guaranteed to exit) lands on a button and brings it straight back. The overlay wrapper
+  gains `items-center-safe`+`overflow-y-auto`, and the notice's own padding shrinks under
+  `@max-h-[28rem]`, so Keep waiting/Cancel stay reachable on a short pane. The message gets
+  `max-w-[28rem]` (so `text-balance` has something to balance against) and `gap-2`; the emoji's
+  bob runs a fixed 2 iterations (4.8s, under WCAG 2.2.2's 5s threshold). Dead code: the unused
+  `export { isConversationStarted }` (`Transcript.tsx`) removed; stale `inline`/`showInline`
+  comments fixed in `isConversationStarted.ts`, `ChatPane.tsx`, `globals.css`.
+  `scripts/verify-672-start-message.mjs` rewritten across the three rounds to poll opacity with a
+  timeout instead of a single read (including the overlay's own 150ms transition); assert the
+  dimmed history still scrolls on a real wheel dispatch (`elementFromPoint`-confirmed to land
+  inside the transcript and outside the notice, `deltaY:-150` since the transcript already sits
+  scrolled to "end") and reaches full opacity on focus; assert the notice hides on history-focus
+  and a real Tab reveals it; assert the panel's own real computed background/alpha (0.85-0.95)
+  composited over a worst-case `--foreground@40%`-over-`--background` backdrop against
+  message/counter/guidance/button-label colours in every theme, with a self-validating
+  fault-injection step (forcing the panel transparent) that is itself a FAILURE if it cannot
+  prove the check has teeth; actually narrow the split pane and drive a genuinely short window via
+  `Emulation.setDeviceMetricsOverride` (never only measuring whatever width/height the run
+  happens to get), reaching buttons via a real repeated wheel scroll and `elementFromPoint`
+  hit-testing (not rect math), again with a teeth-proving fault injection
+  (`overflow-y:hidden`); write `report.json` even when an early setup step throws. Split into
+  `verify-672-start-message.mjs` + `verify-672-start-message-helpers.mjs` (#806: the round-2
+  additions pushed the single file past the 600-line cap). Harness root cause found 2026-10-18
+  (code review): the live-check never built/PATH-prepended the recorded-frame omp shim, so every
+  run silently launched the real `omp` instead of the fake one -- fixed (`buildOmpShim`/
+  `pathPrepend`, `setupLaunch` now refuses unless the shim's own debug log proves it ran);
+  `prompt`/`extended`/`queued` restored to real live assertions.
+
+`pnpm typecheck`, `pnpm test`, `check:indent`, `check:file-size` clean on every commit in this
+phase; `check:theme-contrast` unaffected (no new colour pair, FR-080).
+
+Renumbered against `origin/main` just before merging (this file's own convention, per the
+`refract-ui-lane-gate-checklist` skill): #941 merged first and kept Phase 57/T282-T284/FR-079;
+this phase moved to Phase 58/T285-T287, and the spec's own new line moved to FR-080 (`spec.md`).
+
+Opened as draft PR #978 (`feat/672-start-message`). **Refs #672** until the live check above
+confirms every acceptance item; switches to **Closes #672** once it does (follow-up to #618,
+already closed).

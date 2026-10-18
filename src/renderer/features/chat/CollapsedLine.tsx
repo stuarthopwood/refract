@@ -22,8 +22,24 @@ export interface CollapsedLineProps {
   summary?: React.ReactNode
   /** Right-aligned status/duration slot. */
   meta?: React.ReactNode
+  /** Gate round 6 fix (issue #941, item 1, MEDIUM): overrides the meta wrapper's own default
+   * `shrink-0` -- gate round 5 changed that shared default to `min-w-0 shrink` directly, which
+   * silently affected EVERY OTHER `CollapsedLine` caller with a `meta` (`ToolRow.tsx`,
+   * `AdvisoryRow.tsx`, `RequestCard.tsx`, ...), not just the Stage/chain rows the fix was meant
+   * for. The shared default is `shrink-0` again; only the Stage row and the chain header opt
+   * into `min-w-0 shrink` via this prop. */
+  metaClassName?: string
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
+  /** Gate round 3 fix (issue #941): the default summary slot is `flex-1 min-w-0` with a 0%
+   * flex-basis -- when the row's OTHER fixed-width content (the label, `meta`) already fills
+   * the available width with no free space left over, a 0%-basis flex-grow item is correctly
+   * assigned exactly 0px, and `truncate`'s own `overflow:hidden` then shows nothing at all (a
+   * one-agent Stage's own agent name, `SubagentChainRow.tsx`'s `soloAgentName`, vanished this
+   * way). Opt-in: `shrink-0 max-w-[40%] truncate` instead, reserving a real minimum share of
+   * the row regardless of the label's own length, at the cost of the summary no longer growing
+   * to fill genuinely empty space the way the default behaviour does for every other caller. */
+  summaryFixedWidth?: boolean
   /** Overrides the label's default `font-medium` with no colour (e.g. a failed call's own
    * label and icon render in the error colour, #570 decision 4; the target stays muted). */
   labelClassName?: string
@@ -85,7 +101,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     label,
     summary,
     meta,
+    metaClassName,
     summaryClassName,
+    summaryFixedWidth,
     labelClassName,
     summaryWrap,
     wrapWhenOpen,
@@ -129,20 +147,45 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
        * it rather than flush against the top. */}
       <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && (
+        // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` moved OUT of this shared
+        // base class -- every other `CollapsedLine` caller (tool rows, advisory rows, notices)
+        // shared this exact span and was silently widened by a floor only the solo-Stage row
+        // needed. Back to `min-w-0` here (still required so `truncate` can ever engage); the
+        // Stage row passes its own `min-w-16` via `labelClassName`
+        // (`SubagentChainRow.tsx`'s `successLabelClass` call site).
         <span className={cn('min-w-0 max-w-full truncate font-medium', labelClassName)} title={typeof label === 'string' ? label : undefined}>
           {label}
         </span>
       )}
       {summary !== undefined ? (
-        <span
-          className={cn(
-            'min-w-0 flex-1',
-            summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
-            summaryClassName ?? 'text-muted-foreground'
+        <>
+          <span
+            className={cn(
+              // Gate round 4 fix (issue #941, P4, HIGH): a fixed-width summary (a solo Stage's
+              // own agent name) was `shrink-0`, so it NEVER gave up width at a narrow pane --
+              // at 380-520px that left meta/chevron hugging it directly once nothing else had
+              // any slack left to give. `min-w-0 shrink` (dropping `shrink-0`) lets it
+              // genuinely shrink below its own content width under real pressure, while
+              // `max-w-[40%]` still caps how much of the row it can claim either way.
+              summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
+              summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+              summaryClassName ?? 'text-muted-foreground'
+            )}
+            title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
+          >
+            {summary}
+          </span>
+          {summaryFixedWidth && (
+            // Gate round 4 fix (issue #941, P4, HIGH): a fixed-width summary claims no free
+            // space of its own (no `flex-1`), so without a genuine flexible spacer after it,
+            // meta/chevron sat directly adjacent to a short summary with nothing between them
+            // to absorb the pane's own slack. Scoped to the fixed-width case only -- the
+            // default summary already IS `flex-1` and already does this job for every other
+            // existing caller, which a second always-on spacer here would otherwise split
+            // growth with and subtly shift.
+            <span className="min-w-0 flex-1" />
           )}
-        >
-          {summary}
-        </span>
+        </>
       ) : (
         // No summary (e.g. a plain member row inside a `SpineList`): a spacer still pushes
         // meta/chevron to the far right so they line up with the header row's own trailing edge
@@ -156,8 +199,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         // the separator's own text -- with the summary's own text ending in no whitespace of its
         // own, that produced a doubled space before the comma ("...+ 2 others , 1 failed"). Nesting
         // the separator INSIDE the meta span (one sibling boundary with the summary, not two)
-        // removes the extra boundary that caused it.
-        <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
+        // removes the extra boundary that caused it. Gate round 6 fix (issue #941, item 1,
+        // MEDIUM): the shared default is `shrink-0` again -- gate round 5's own `min-w-0
+        // shrink` fix for the 240-319px Stage/chain chevron clip was applied directly to this
+        // shared base, silently affecting every OTHER caller's own `meta` (`ToolRow.tsx`,
+        // `AdvisoryRow.tsx`, `RequestCard.tsx`, ...) that never asked for it. `metaClassName`
+        // (opt-in, passed only by the Stage row and the chain header) carries that fix now.
+        <span className={cn('shrink-0 text-xs leading-5 text-muted-foreground tabular-nums', metaClassName)}>
           {/* Gate round 3 (architect M-3/code review): without this, a screen reader runs the
            * summary straight into the meta slot with no separator ("...and 1 more Answered"),
            * which can sound like part of the question's own text rather than a status word. Not

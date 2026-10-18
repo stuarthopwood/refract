@@ -4,6 +4,7 @@
 // `memory.rs` (lane R5, #788) are its sibling per-lane files, declared here so each lane only
 // ever edits its own file.
 
+pub mod app_identity;
 pub mod memory;
 pub mod menu;
 pub mod notifications;

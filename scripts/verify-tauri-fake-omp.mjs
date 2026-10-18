@@ -22,8 +22,14 @@
 // (simulates OMP crashing/exiting unexpectedly); `{"__stderr__": "text"}` writes `text` to this
 // process's own real stderr (not an OMP wire frame) and continues (issue #556: the only way a
 // tape can make `build_start_failure`'s stderr tail non-empty for a fixture that deliberately
-// never emits `ready` at all).
-//
+// never emits `ready` at all). `REFRACT_FAKE_OMP_READY_DELAY_MS` (env var, Session-shaped
+// processes only -- same `--no-session` guard as `REFRACT_FAKE_OMP_SCENARIO` below, so the
+// readiness probe is never slowed by a delay meant for a Session's own start) pauses this process
+// BEFORE its very first frame (normally `ready`) goes out at all, without needing a dedicated
+// fixture -- a live check that needs a genuinely slow start (issue #672: real `waiting`/`prompt`/
+// `extended` `startProgress.kind` timing, past `READY_PROMPT_AFTER_MS`) sets this once per launch
+// instead of adding a new `.jsonl` tape (AGENTS.md: no new fixtures) whose only difference from an
+// existing one would be a hand-picked delay number.
 // Scenario selection: `--no-session` on argv ALWAYS selects `readiness` (the Rust readiness
 // probe's own scratch, non-Session OmpProcess) -- a real app launches that probe and a real
 // Session's own `OmpProcess` as two separate child processes sharing this script's whole
@@ -213,6 +219,14 @@ async function main() {
     await advance();
   }
 
+  // `REFRACT_FAKE_OMP_READY_DELAY_MS`: see the file-header comment above. Applied before the
+  // very first `advance()` (not inside the tape itself), so every existing fixture's own frame
+  // sequence is untouched -- this only shifts WHEN that sequence starts emitting.
+  const readyDelayMs = argv.noSession ? null : parseEnvMs('REFRACT_FAKE_OMP_READY_DELAY_MS');
+  if (readyDelayMs && readyDelayMs > 0) {
+    debugLog(`pid=${process.pid} ready-delay ${readyDelayMs}ms before the first frame`);
+    await new Promise((resolve) => setTimeout(resolve, readyDelayMs));
+  }
   // Frames the tape emits before the first __wait__ (typically just `ready`) go out immediately.
   await advance();
 

@@ -117,7 +117,7 @@ interface TranscriptRowProps {
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
 function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId, hideTime, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} />
+  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
   if (isToolGroup(item)) return <ToolGroupRow group={item} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} />
 
@@ -285,8 +285,6 @@ function TimeGapDivider({ at }: { at: number }) {
   )
 }
 
-export { isConversationStarted } from './isConversationStarted'
-
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
@@ -298,20 +296,13 @@ export function Transcript({
 }: {
   sessionId: string
   // Issue #618: whether this Session has any real history for its CURRENT Conversation thread
-  // (ChatPane.tsx's own `hasHistory`, `session.currentConversation !== null`) -- a real signal,
-  // unlike this component's own items-based `hasConversationStarted` below, which can read empty
-  // for a Session that has real history but is still mid-snapshot-load. Gates whether "Ready…"
-  // can ever show at all: a Session with history never shows it, including while it loads or
-  // while its agent is starting.
+  // (`session.currentConversation !== null`) -- unlike items-based `hasConversationStarted`
+  // below, which can read empty while mid-snapshot-load. Gates whether "Ready…" can ever show.
   hasHistory: boolean
-  // Issue #618 gate-fix (round 3): ChatPane.tsx's own SessionStartNotice, pre-built with this
-  // pane's startProgress and picked random message, rendered here (centred, replacing "Ready…")
-  // for a brand-new Session while its agent is starting. ChatPane now decides WHETHER to pass
-  // this at all (its own `showInline`, reading the identical `isConversationStarted` predicate
-  // against the same store) -- Transcript no longer re-derives that decision, it just renders
-  // whatever it is given. Undefined whenever nothing is starting right now, or whenever ChatPane
-  // chose the inline placement instead.
-  startNotice?: React.ReactNode
+  // Amended #672: ChatPane.tsx's own SessionStartNotice, rendered centred over the empty area
+  // or existing history. This component decides whether to dim the transcript behind it
+  // (`dimTranscript` below) via `startNotice(dimmed)` (a render function).
+  startNotice?: (dimmed: boolean) => React.ReactElement
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
@@ -323,9 +314,10 @@ export function Transcript({
   const chatWidth = useActiveChatWidth()
   const items = transcript.items
   const receivedAt = transcript.receivedAt
-  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment above (module
-  // level) for the full "what counts as started" rule and why it was narrowed this way.
+  // Genuinely-empty detection: see `isConversationStarted`'s own doc comment (module level) for the full rule.
   const hasConversationStarted = isConversationStarted(items)
+  // Issue #672: the history (if any) behind the notice dims to ~40% opacity while a start runs; a genuinely empty Session has nothing to dim.
+  const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = pendingBySession[sessionId] ?? []
 
@@ -699,22 +691,18 @@ export function Transcript({
     let lastAssignedScrollTop = -1
 
     function removeInputListeners() {
-      root.removeEventListener('wheel', handleUserInput)
+      root.removeEventListener('wheel', handleViewportPointerOrWheel)
       root.removeEventListener('keydown', handleKeyInput)
-      root.removeEventListener('pointerdown', handleUserInput)
-      root.removeEventListener('touchstart', handleUserInput)
+      root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
+      root.removeEventListener('touchstart', handleViewportPointerOrWheel)
       root.removeEventListener('focusin', handleFocusInput)
     }
 
     // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear the in-progress flag (so the normal scroll
-    // handler resumes recording immediately), and record wherever they are now. `autoScroll`
-    // only resumes if that position is actually at the end -- a live check (quality-gate cycle
-    // 2, finding 1 re-verification) found that unconditionally clearing it here let the vendored
-    // scroller's own `autoScroll` re-engage while a still-unsettled `content-visibility:auto`
-    // row above was mid-collapse, overwriting a genuine upward wheel scroll caught very early in
-    // the settle window; the same "only unsuppress once actually at the end" rule the normal
-    // completion branch below already follows avoids that regression here too.
+    // over mid-settle: stop re-asserting, clear the in-progress flag, and record wherever they
+    // are now. `autoScroll` only resumes if that position is actually at the end (quality-gate
+    // cycle 2, finding 1): unconditionally clearing it let the vendored scroller's own
+    // `autoScroll` re-engage mid-collapse, overwriting a genuine upward wheel scroll.
     function handleUserInput() {
       if (cancelled || !viewport) return
       cancelled = true
@@ -757,10 +745,16 @@ export function Transcript({
       handleUserInput()
     }
 
-    root.addEventListener('wheel', handleUserInput, { passive: true })
+    // Gate-fix (#672, UI round 1; touchstart round 2): a wheel/pointerdown/touch on the notice's own buttons used to bubble to `root` and cancel this loop -- scoped like `handleFocusInput`.
+    function handleViewportPointerOrWheel(event: Event) {
+      if (!viewport || !(event.target instanceof Node) || !viewport.contains(event.target)) return
+      handleUserInput()
+    }
+
+    root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('keydown', handleKeyInput, { passive: true })
-    root.addEventListener('pointerdown', handleUserInput, { passive: true })
-    root.addEventListener('touchstart', handleUserInput, { passive: true })
+    root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
+    root.addEventListener('touchstart', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('focusin', handleFocusInput, { passive: true })
 
     function step() {
@@ -842,13 +836,14 @@ export function Transcript({
           role="region"
           tabIndex={0}
           aria-label="Transcript"
-          // Quality-gate finding (code review, Low): an inset ring (`ring-inset`, `outline-none`
-          // on the base `focus-visible` ring instead) so the focus indicator this component's own
-          // `role="region" tabIndex={0}` relies on (the focus hand-off above, and plain Tab/click
-          // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
-          // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
-          // bounds would be cut off entirely rather than just visually tight.
-          className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          // Quality-gate finding (code review, Low): `ring-inset` so the focus ring this
+          // `role="region" tabIndex={0}` relies on is never clipped by `overflow-y-auto` +
+          // the root's `overflow-hidden`. `dimTranscript` fades this ~40% (round 1, stays
+          // interactive); `peer` (round 2) lets the sibling overlay hide on focus (WCAG 2.4.11).
+          className={cn(
+            'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            dimTranscript && 'opacity-40 focus-within:opacity-100'
+          )}
         >
           <MessageScrollerContent
             ref={contentRef}
@@ -1004,22 +999,26 @@ export function Transcript({
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        {/* Issue #618 gate-fix (code/verif/a11y High): a sibling of the viewport, OUTSIDE
-            `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
-            `revealedAnnouncement` status span just below already relies on. Nested inside the
-            log, this notice's own sr-only label was being read as a second announcement on top
-            of `announceStart`, each `startProgress.kind` change re-announced it again, and its
-            Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
-            file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
-            this overlays centred over the empty transcript area exactly where "Ready..." would
-            otherwise sit. Gate-fix (round 3): no `hasHistory`/`hasConversationStarted` check
-            here any more -- `ChatPane.tsx` already decided whether this placement applies before
-            ever passing `startNotice` (its own `showInline`), so rendering it whenever given is
-            both simpler and correct; re-adding a second, narrower guard here is exactly what let
-            a Retry-after-failure start render NEITHER notice in round 2. */}
+        {/* Issue #618 gate-fix: sibling of the viewport, OUTSIDE `MessageScrollerContent`'s own
+            `role="log"`; centred over the empty area or the dimmed history (`dimTranscript`).
+            `items-center-safe`+`overflow-y-auto` (round 1) keep Keep waiting/Cancel reachable on
+            a short pane. `peer-focus-within:*` (round 2, corrected round 3: a SIBLING selector,
+            so it belongs here, not the inner wrapper) fades this on focus inside the viewport;
+            the wrapper's own arbitrary-variant selector stops it taking clicks while faded. */}
         {startNotice && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
-            <div className="pointer-events-auto">{startNotice}</div>
+          <div
+            data-start-overlay
+            className={cn(
+              'pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2 transition-opacity duration-150',
+              dimTranscript && 'peer-focus-within:opacity-0'
+            )}
+          >
+            <div
+              data-start-notice-wrapper
+              className={cn('pointer-events-auto', dimTranscript && '[.peer:focus-within~[data-start-overlay]_&]:pointer-events-none')}
+            >
+              {startNotice(dimTranscript)}
+            </div>
           </div>
         )}
         {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE

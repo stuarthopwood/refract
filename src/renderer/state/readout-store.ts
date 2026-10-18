@@ -19,7 +19,8 @@ export const EMPTY_READOUT: SessionReadout = {
   turnTime: null,
   pullRequest: null,
   subagentCount: null,
-  todoProgress: null
+  todoProgress: null,
+  todoPhases: null
 }
 
 interface SessionReadoutEntry {
