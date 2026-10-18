@@ -284,10 +284,18 @@ export async function readSlashMenu(cdp) {
   );
 }
 
-// The slash menu's OWN politely-announced live region (round 2 gate finding M1/L4): the other
-// two `role="status" aria-live="polite"` regions in MessageInput.tsx (attachments, the ghost-
-// text suggestion) both carry their own `id` -- this one does not, which is what tells it apart.
-export const SLASH_ANNOUNCEMENT_FINDER = `Array.from(document.querySelectorAll('[role="status"][aria-live="polite"]')).find((el) => !el.id)`;
+// The slash menu's OWN politely-announced live region (round 2 gate finding M1/L4). Live-check
+// FAILURE FOUND AND FIXED: the first live run's own `.find((el) => !el.id)` (with no tag
+// restriction) grabbed Transcript.tsx's own always-mounted `<span role="status" aria-live=
+// "polite">` region instead (`revealedAnnouncement`/`stageAnnouncement`, also id-less) --
+// Transcript renders BEFORE MessageInput in ChatPane.tsx's own JSX, so its spans always come
+// first in document order, and that text never once changes to "No matching subcommands" no
+// matter how long the wait. Root-caused via static DOM/JSX-order analysis (a script bug, NOT a
+// product one -- the separate on-screen "No matching subcommands" check independently proved the
+// product behaviour correct). Scoped to the `div` tag: the slash announcement is a `<div>`;
+// MessageInput's other two such regions (attachments, ghost-text) are also `<div>`s but both
+// carry their own `id`, so `!el.id` alone still tells this one apart from them.
+export const SLASH_ANNOUNCEMENT_FINDER = `Array.from(document.querySelectorAll('div[role="status"][aria-live="polite"]')).find((el) => !el.id)`;
 
 /** The whole subcommand-step live-check sequence (#938 item 1, FR-073/FR-074, plus round 2 gate
  * findings H and M1): split out of verify-947-938-slash-menu.mjs solely to keep that script under
