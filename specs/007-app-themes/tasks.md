@@ -708,6 +708,18 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
 - [ ] T030 Live-run `scripts/verify-551-presets.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T029).
 
-Both T025–T028 keep `dark`/`dark-high-contrast`/`obsidian` byte-identical to `origin/main` --
-confirmed by `check-theme-contrast.mjs` re-running their own 283 pairs unchanged inside the new
-725-pair total.
+- [X] T031 Fix the #552 known gap (Main's gate addition, 2026-10-18): `--destructive`/
+  `--severity-error`/`--state-stopped` in `.theme-dark-high-contrast` measured only 6.65:1
+  against its own `--muted` hover fill (#570 decision 20), under this theme's own declared 7:1
+  high-contrast text floor. Raised `oklch(0.78 0.17 22)` to `oklch(0.82 0.17 22)` (same
+  hue/chroma); added a dedicated `severity-error`/`muted` pair at `min: 7`, scoped to this theme
+  only, in `scripts/theme-contrast-pairs.mjs`; `docs/design/accessibility.md`'s "Known gap" note
+  updated to "Fixed" (depends on T026).
+  **Done**: `check:theme-contrast` 726/726 pairs across 5 themes PASS (up from 725 -- the one
+  new HC-only pair). `dark`/`obsidian` stay byte-identical; `dark-high-contrast` is the one
+  theme this task deliberately retunes (its own `--destructive` literal only), per #552 owning
+  that token.
+
+T025–T028 keep `dark`/`dark-high-contrast`/`obsidian` byte-identical to `origin/main` except
+T031's own `dark-high-contrast` `--destructive` retune above; confirmed by `check-theme-
+contrast.mjs` re-running their other pairs unchanged inside the new 726-pair total.

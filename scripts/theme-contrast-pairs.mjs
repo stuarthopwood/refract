@@ -160,6 +160,13 @@ export const PAIRS = [
   // rely on an alias that could be split apart later without this file noticing.
   { fg: 'severity-error', bg: 'background', min: 4.5 },
   { fg: 'severity-error', bg: 'muted', min: 4.5 },
+  // #552 fix (Skippy, delegated by Stuart 2026-10-18): Dark (high contrast)'s own declared
+  // design target is 7:1 text, not the ordinary 4.5:1 AA floor every preset above is held to
+  // (`docs/design/accessibility.md`/`foundations-tokens-theming.md` "High contrast preset").
+  // `--muted` is the lightest of this theme's background/card/popover/muted surfaces, so it is
+  // the binding case; scoped to this theme only -- the other presets are not held to a 7:1
+  // floor by their own design.
+  { fg: 'severity-error', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   // #558 gate round 1 (Low): `severity-warning` label/summary text now renders in this role
   // (decision 11) and was previously gated only at the 3:1 non-text floor, passing today purely
   // because it aliases `state-needs-you` (already gated at 4.5) -- the same "check the token
