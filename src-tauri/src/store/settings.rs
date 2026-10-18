@@ -251,7 +251,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 12] = [
+        const KNOWN_FIELDS: [&str; 13] = [
             "version",
             "approvalMode",
             "sessionReadout",
