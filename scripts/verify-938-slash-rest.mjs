@@ -126,8 +126,12 @@ async function measureAdvisorOffNotice(cdp) {
 }
 
 /** Real Backspace keydown/keyup pairs, one per character currently in the composer -- clears a
- * controlled React textarea the way a user would. */
+ * controlled React textarea the way a user would. Clicks the field first (gate round 3, live
+ * finding): a prior `clickByLabel('Send message')` leaves real browser focus on the Send BUTTON
+ * (no `onMouseDown` preventDefault guards it), so raw `Backspace` key events dispatched without
+ * refocusing the textarea first land on the button (a no-op) and the composer never empties. */
 async function clearComposer(cdp) {
+  await cdp.click(`document.querySelector('[aria-label="Message"]')`);
   const current = await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.value ?? ''`);
   for (let i = 0; i < current.length; i++) {
     await pressKey(cdp, 8, 'Backspace', 'Backspace');
