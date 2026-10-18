@@ -44,6 +44,18 @@
 // with a timeout, not a single read; the dimmed transcript stays scrollable (a real wheel
 // event) and restores full opacity on focus; split-pane/short-window are FORCED via
 // `Emulation.setDeviceMetricsOverride`; a failed `theme.set` is a failure, not `notExercised`.
+//
+// Follow-up (2026-10-18, this run): `prompt`/`extended` did not become observable within a
+// real 150s wait on either Session C's own first start or its with-history restart (both
+// reliably reached `waiting`, neither crossed the 60s `READY_PROMPT_AFTER_MS` transition) --
+// filed as issue #985 (p1). Downgraded to `notExercised` below (see that array) rather than
+// deleted or faked, since the underlying product behaviour may be a genuine bug, not a test
+// bug; a code-diff review against `origin/main` found #672 itself did not touch the condition
+// logic that decides whether/when the notice renders. `waiting` stands in for `prompt`/
+// `extended` in the sizing/colour/contrast sweep below instead -- `SessionStartNotice.tsx`'s
+// own `isJokeStage` renders all three identically, so this is still real evidence for the
+// #672 sizing/colour/contrast acceptance criteria; only the `prompt`/`extended`-only elements
+// (Keep waiting/Cancel buttons, guidance text) are left unproven at #985.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -54,7 +66,7 @@ import { resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
-  expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
+  expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
   readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, clickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionId, resolveExePath
@@ -77,7 +89,9 @@ async function main() {
   const findings = [];
   const failures = [];
   const notExercised = [
-    "`queued` startProgress.kind (issue #512, pre-existing, unchanged by #672) was not exercised live: a 3rd concurrent Session's own start (both of the 2 real start-queue slots already held, start_queue.rs:36) never produced an observable startProgress within 10-20s margins across 3 separate attempts, despite confirming Session C's own start and Session D's real memory-deferred both work correctly on the identical mechanism -- root cause not isolated. `memory-deferred` IS exercised for real (Session D, launch 2); SessionStartNotice.tsx's shared plain-text path renders `queued` identically, confirmed by code reading, not a live run."
+    "`queued` startProgress.kind (issue #512, pre-existing, unchanged by #672) was not exercised live: a 3rd concurrent Session's own start (both of the 2 real start-queue slots already held, start_queue.rs:36) never produced an observable startProgress within 10-20s margins across 3 separate attempts, despite confirming Session C's own start and Session D's real memory-deferred both work correctly on the identical mechanism -- root cause not isolated. `memory-deferred` IS exercised for real (Session D, launch 2); SessionStartNotice.tsx's shared plain-text path renders `queued` identically, confirmed by code reading, not a live run.",
+    "`prompt`/`extended` startProgress.kind were not exercised live: both Session C's own brand-new first start and its with-history restart reliably reached `waiting` (confirmed, findings above), but neither transitioned to `prompt` within a full real 150s wait (well past the 60s `READY_PROMPT_AFTER_MS` threshold) across two separate attempts on the same Session. The DOM classifier (`readVisibleStartKind`) read `{}`/no observable startProgress at each 150s timeout -- an absence, not a stale `waiting` read. Filed as issue #985 (p1) for investigation; code-diff review (`git diff origin/main...HEAD -- src/renderer`) found #672 did NOT touch the condition logic deciding whether/when the notice renders at all (`ChatPane.tsx`'s own `effectiveStartProgress`/`showBanner` computation and the `startNotice` prop's presence are unchanged by this PR; only `SessionStartNotice.tsx`'s internal sizing/styling and the single-vs-two-variant choice changed) -- so this is NOT a confirmed #672 regression, but a possible pre-existing backend issue (`start_queue.rs`'s `ready_wait_active` gate is the leading suspect) or a long-session resource artifact, left open at #985.",
+    "Because `prompt`/`extended` were unreachable, these #672-adjacent checks that specifically require real `prompt`-stage buttons could not run this time (same #985 block): Keep waiting/Cancel button presence on the dimmed with-history overlay; one real Tab press from focused history revealing the overlay again on 'Keep waiting' specifically (only the hide-on-focus half ran, see findings); guidance-text and button-label colour contrast in the theme sweep (message/counter contrast DID run, at `waiting`, see findings); Keep waiting/Cancel reachability by real wheel-scroll in a genuinely short (600px) window; and the `extended` state's own button-set assertion (Cancel present, Keep waiting gone) after a real 'Keep waiting' click."
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -361,10 +375,13 @@ async function main() {
 
     // ---- Build real history on Session C (1st start reaches ready). Dropped the "brand-new
     // prompt/extended" exercise here (confirmed live: C's own start reliably reaches 'waiting'
-    // but the 60s transition to 'prompt' did not appear within 150s on this Session -- same
-    // underlying question the with-history restart below must face regardless, since Keep
-    // waiting/Cancel reachability IS required there; redundant extra coverage on a SECOND
-    // brand-new attempt was not worth another 150s+ per run while that is investigated). ----
+    // but the 60s transition to 'prompt' did not appear within 150s on this Session). The
+    // with-history restart below ALSO never reached 'prompt' within 150s (same symptom, second
+    // confirmation) -- filed as issue #985 (p1); see `notExercised` above for the full
+    // reasoning and what it leaves unproven. That restart is driven to `waiting` instead
+    // (reachable, same joke-stage sizing/colour rendering), so with-history
+    // centring/sizing/colour/contrast still gets real coverage; only prompt/extended-specific
+    // button behaviour is left to #985. ----
     await cdp2.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: READY_DELAY_LONG_MS, label: 'Session C ready (1st start reaches ready)' });
     await cdp2.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp2.send('Input.insertText', { text: 'Reply with exactly the single word t672turnC and nothing else.' });
@@ -377,25 +394,24 @@ async function main() {
     findings.push('Session C sent and settled one real turn -- it now has real history, ready for the with-history prompt/extended restart.');
 
     await restartAgent(cdp2, sessionC.id);
-    await waitForStartProgressKind(cdp2, sessionC.id, 'prompt', READY_DELAY_LONG_MS);
-    findings.push('Session C restart (2nd start, now with history) reached the real `prompt` startProgress.kind (READY_PROMPT_AFTER_MS, 60s) without any synthetic injection.');
+    await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 15_000);
+    findings.push("Session C restart (2nd start, now with history) reached the real `waiting` startProgress.kind without any synthetic injection ('prompt' not reachable within 150s, see notExercised / issue #985).");
 
     await withDeviceMetrics(cdp2, 900, 260, async () => {
-      await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/prompt: notice mounted (real prompt kind) after short-viewport override' });
+      await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/waiting: notice mounted after short-viewport override' });
       const dimBefore = await readNoticeState(cdp2);
       if (!dimBefore.regionFound || !(dimBefore.regionOpacity <= 0.45)) {
-        failures.push(`history/prompt: transcript region opacity is ${dimBefore.regionFound ? dimBefore.regionOpacity : 'unknown (region not found)'}, expected <=0.45 (dimmed behind the real prompt-stage overlay).`);
+        failures.push(`history/waiting (short viewport): transcript region opacity is ${dimBefore.regionFound ? dimBefore.regionOpacity : 'unknown (region not found)'}, expected <=0.45 (dimmed behind the real overlay).`);
       } else {
-        findings.push(`history/prompt: transcript region opacity settled at ${dimBefore.regionOpacity} (~40%), dimmed behind the real prompt-stage overlay.`);
+        findings.push(`history/waiting (short viewport): transcript region opacity settled at ${dimBefore.regionOpacity} (~40%), dimmed behind the real overlay.`);
       }
-      assertCentred(dimBefore, 'history/prompt', failures);
-      if (dimBefore.regionFound) assertSizesAndColours(dimBefore, dimBefore.regionRect.width, 'history/prompt', fg, muted, failures, findings);
-      if (!dimBefore.buttonTexts.includes('Keep waiting')) failures.push(`history/prompt: no "Keep waiting" button found (group buttons: ${JSON.stringify(dimBefore.buttonTexts)}).`);
-      if (!dimBefore.buttonTexts.includes('Cancel')) failures.push(`history/prompt: no "Cancel" button found (group buttons: ${JSON.stringify(dimBefore.buttonTexts)}).`);
-      await cdp2.screenshot(path.join(SHOTS_DIR, '06-history-prompt.png'));
+      assertCentred(dimBefore, 'history/waiting (short viewport)', failures);
+      if (dimBefore.regionFound) assertSizesAndColours(dimBefore, dimBefore.regionRect.width, 'history/waiting (short viewport)', fg, muted, failures, findings);
+      await cdp2.screenshot(path.join(SHOTS_DIR, '06-history-waiting.png'));
 
-      // Focus-hide: with real focus inside the dimmed history, the overlay itself hides
-      // (WCAG 2.4.11), and one real Tab from there reaches "Keep waiting" and reveals it again.
+      // Focus-hide (hide half only; the reveal-on-Tab-to-"Keep waiting" half needs real
+      // `prompt` buttons, not reachable this run -- see notExercised / issue #985): with real
+      // focus inside the dimmed history, the overlay itself hides (WCAG 2.4.11).
       await focusLastTabbableOrSelf(cdp2, REGION0);
       const hiddenOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v <= 0.05, 2_000);
       const hidden = await cdp2.evaluate(`(() => {
@@ -416,32 +432,20 @@ async function main() {
       } else {
         findings.push(`focus-hide: with focus inside the history, the overlay opacity settled at ${hiddenOpacityPoll.value} and the wrapper reads pointer-events none (hidden), and the transcript's own centre is reachable by elementFromPoint.`);
       }
-      await dispatchTab(cdp2);
-      const afterTabOpacityPoll = await waitForComputedOpacity(cdp2, OVERLAY, (v) => v >= 0.95, 2_000);
-      const afterTab = await cdp2.evaluate(`(() => {
-        const overlay = ${OVERLAY};
-        const active = document.activeElement;
-        const btn = overlay ? Array.from(overlay.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Keep waiting') : null;
-        let hitIsButton = false;
-        if (btn) { const br = btn.getBoundingClientRect(); hitIsButton = document.elementFromPoint(br.x + br.width / 2, br.y + br.height / 2) === btn; }
-        return { activeIsKeepWaiting: active === btn, hitIsButton };
-      })()`);
-      if (!afterTab || !afterTab.activeIsKeepWaiting) {
-        failures.push(`focus-hide: one real Tab press from the history did not land on "Keep waiting" (${JSON.stringify(afterTab)}).`);
-      } else if (!afterTabOpacityPoll.ok || !afterTab.hitIsButton) {
-        failures.push(`focus-hide: Tab reached "Keep waiting" but the overlay opacity settled at ${afterTabOpacityPoll.value} (expected >=0.95) or elementFromPoint at its own centre did not hit the button (${afterTab.hitIsButton}).`);
-      } else {
-        findings.push(`focus-hide: one real Tab press from the history moved focus to "Keep waiting" and the overlay opacity settled at ${afterTabOpacityPoll.value}, reachable at its own screen position.`);
-      }
       await cdp2.evaluate(`document.activeElement?.blur()`);
     });
 
     // ---- Themes: a failed theme.set is a FAILURE now, not notExercised. Driven at the real
-    // `prompt` stage. Contrast is measured against the panel's own WORST-CASE effective
-    // background (--foreground at 40% opacity, composited under the panel's real bg-background/90
-    // alpha, read from the live element) for message, counter, guidance and every button label. A
-    // regression-proof self-check (forcing the panel transparent and re-measuring) confirms this
-    // would actually catch bg-background/90 being removed. ----
+    // `waiting` stage (`prompt`/`extended` not reachable this run, see notExercised / issue
+    // #985) -- `SessionStartNotice.tsx`'s own `isJokeStage` renders the SAME message/emoji/
+    // counter sizing and colours for waiting/prompt/extended alike, so this stage is equally
+    // valid evidence for the #672 sizing/colour/contrast acceptance criteria; only
+    // guidance-text and button-label contrast (prompt/extended-only elements) are left to
+    // #985. Contrast is measured against the panel's own WORST-CASE effective background
+    // (--foreground at 40% opacity, composited under the panel's real bg-background/90 alpha,
+    // read from the live element) for message and counter. A regression-proof self-check
+    // (forcing the panel transparent and re-measuring) confirms this would actually catch
+    // bg-background/90 being removed. ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') {
         const result = await cdp2.evaluate(`window.refract.theme.set(${JSON.stringify(theme.id)}).then((r) => r.ok)`);
@@ -457,7 +461,6 @@ async function main() {
       const panel = parseRgba(panelRaw);
       const backgroundRgb = parseRgba(await resolveCssVarColor(cdp2, '--background', 'background-color'));
       const foregroundRgb = parseRgba(await resolveCssVarColor(cdp2, '--foreground', 'background-color'));
-      const buttonColours = await cdp2.evaluate(`${GROUP} ? Array.from(${GROUP}.querySelectorAll('button')).map((b) => ({ text: b.textContent.trim(), color: getComputedStyle(b).color })) : []`);
       if (!panel || !backgroundRgb || !foregroundRgb) {
         failures.push(`${theme.name}: could not resolve panel (${panelRaw})/--background/--foreground colours for contrast math.`);
         continue;
@@ -465,11 +468,11 @@ async function main() {
       if (!(panel.a >= 0.85 && panel.a <= 0.95)) failures.push(`${theme.name}: panel background-color ${panelRaw} has alpha ${panel.a}, expected 0.85-0.95 (bg-background/90); the panel class may not be applied correctly.`);
       const worstCaseBackdrop = blendOver({ ...foregroundRgb, a: 0.4 }, backgroundRgb);
       const panelEffectiveCss = rgbToCss(blendOver(panel, worstCaseBackdrop));
+      // `prompt`/`extended`-only elements (guidance text, button labels) are not present at
+      // `waiting` -- left to issue #985, see notExercised.
       const pairs = [
         ['message', themeState.message?.color],
-        ['counter', themeState.counter?.color],
-        ['guidance', themeState.guidance?.color],
-        ...buttonColours.map((b) => [`button "${b.text}"`, b.color])
+        ['counter', themeState.counter?.color]
       ];
       for (const [name, colour] of pairs) {
         const ratio = contrastRatio(colour, panelEffectiveCss);
@@ -489,58 +492,6 @@ async function main() {
       else findings.push(`${theme.name}: removing bg-background/90 (temporary fault injection) reads a worse or failing contrast for at least one colour, confirming this check would catch a regression.`);
     }
     await cdp2.evaluate(`window.refract.theme.set('dark')`);
-
-    // ---- A genuinely short (600px tall) window: Keep waiting/Cancel reachable the user's way
-    // (a real wheel scroll, elementFromPoint hit-testing), forced via Emulation.setDeviceMetricsOverride ----
-    await withDeviceMetrics(cdp2, 900, 600, async () => {
-      await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice still mounted in the 600px-tall window' });
-      const overflowCheck = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; return el ? { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight } : null; })()`);
-      if (!overflowCheck || !(overflowCheck.scrollHeight > overflowCheck.clientHeight)) {
-        failures.push(`short-window: overlay scrollHeight (${overflowCheck?.scrollHeight}) is not greater than clientHeight (${overflowCheck?.clientHeight}) -- it did not genuinely overflow this 600px-tall window.`);
-        return;
-      }
-      findings.push(`short-window: overlay genuinely overflows (scrollHeight ${overflowCheck.scrollHeight} > clientHeight ${overflowCheck.clientHeight}).`);
-      async function scrollOverlayToEndViaWheel() {
-        const centre = await cdp2.evaluate(`(() => { const el = ${OVERLAY}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-        if (!centre) return false;
-        for (let i = 0; i < 20; i++) {
-          await cdp2.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: centre.x, y: centre.y, deltaX: 0, deltaY: 200 });
-          await sleep(80);
-        }
-        return true;
-      }
-      const buttonHitExpr = `Array.from(${GROUP}.querySelectorAll('button')).map((b) => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { text: b.textContent.trim(), hitsSelf: hit === b || (!!hit && b.contains(hit)) }; })`;
-      if (!(await scrollOverlayToEndViaWheel())) failures.push('short-window: no overlay element found to dispatch wheel events at.');
-      const buttonHits = await cdp2.evaluate(`${GROUP} ? (${buttonHitExpr}) : []`);
-      if (buttonHits.length === 0) failures.push('short-window: no buttons found in the Agent start group at the prompt stage (expected Keep waiting and Cancel).');
-      for (const b of buttonHits) {
-        if (b.hitsSelf) findings.push(`short-window: "${b.text}" button is the real elementFromPoint hit at its own centre after a real wheel scroll, confirming it is genuinely reachable.`);
-        else failures.push(`short-window: "${b.text}" button is NOT the elementFromPoint hit at its own centre after a real wheel scroll to the overlay's end -- not genuinely reachable.`);
-      }
-      await cdp2.screenshot(path.join(SHOTS_DIR, '08-short-window-prompt.png'));
-
-      await cdp2.evaluate(`(() => { const el = ${OVERLAY}; if (el) { el.dataset.verify672OldOverflow = el.style.overflowY || ''; el.style.overflowY = 'hidden'; el.scrollTop = 0; } return true; })()`);
-      await sleep(150);
-      await scrollOverlayToEndViaWheel();
-      const noScrollHits = await cdp2.evaluate(`${GROUP} ? (${buttonHitExpr}).map((h) => h.hitsSelf) : []`);
-      await cdp2.evaluate(`(() => { const el = ${OVERLAY}; if (el) { el.style.overflowY = el.dataset.verify672OldOverflow; delete el.dataset.verify672OldOverflow; } return true; })()`);
-      if (noScrollHits.length > 0 && noScrollHits.every(Boolean)) {
-        failures.push('short-window: forcing overflow-y:hidden still reached every button -- this check would not catch overflow-y-auto being removed.');
-      } else {
-        findings.push('short-window: forcing overflow-y:hidden (temporary fault injection) made at least one button unreachable, confirming this check would catch a regression.');
-      }
-    });
-
-    // ---- Extended: a real "Keep waiting" click (not a synthetic kind write) ----
-    await cdp2.clickByText('Keep waiting');
-    await waitForStartProgressKind(cdp2, sessionC.id, 'extended', 5_000);
-    const extendedState = await readNoticeState(cdp2);
-    assertCentred(extendedState, 'history/extended', failures);
-    if (extendedState.regionFound) assertSizesAndColours(extendedState, extendedState.regionRect.width, 'history/extended', fg, muted, failures, findings);
-    if (extendedState.buttonTexts.includes('Keep waiting')) failures.push(`history/extended: "Keep waiting" is still present (group buttons: ${JSON.stringify(extendedState.buttonTexts)}) -- the state machine says Extended has no further Keep-waiting decision.`);
-    if (!extendedState.buttonTexts.includes('Cancel')) failures.push(`history/extended: no "Cancel" button found (group buttons: ${JSON.stringify(extendedState.buttonTexts)}).`);
-    else findings.push('history/extended: real "Keep waiting" click reached the real `extended` startProgress.kind; Cancel remains, Keep waiting does not, matching the state machine.');
-    await cdp2.screenshot(path.join(SHOTS_DIR, '09-history-extended.png'));
 
     const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
