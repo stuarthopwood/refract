@@ -25,14 +25,15 @@
 // set): CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
 // scripts/verify-926-attach-any-file.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmdirSync, createWriteStream } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject, sleep } from './verify-tauri-cdp.mjs';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, citeScreenshots, safeRmSync, requireSharedCargoTarget, switchTheme } from './verify-tauri-scratch-helpers.mjs';
 import { injectDragDropCaptureTrap } from './verify-926-drag-drop-trap.mjs';
+import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -65,31 +66,6 @@ function buildOmpShim(dir) {
   const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
   if (result.status !== 0) throw new Error(`${LOG}: buildOmpShim rustc failed (exit ${result.status}):\n${result.stderr}`);
   return out;
-}
-
-/** Local launcher (not the shared `verify-tauri-scratch-helpers.mjs` one): that shared helper has
- * no `pathPrepend`/`extraEnv` hooks, needed here for the fake-omp shim on `PATH` and its own
- * `REFRACT_FAKE_OMP_*` env vars -- the exact extension `verify-tauri-ask.mjs` already carries. */
-async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${stamp}`);
-  mkdirSync(webview2DataDir, { recursive: true });
-  const pidFile = path.join(path.dirname(exePath), `target-${stamp}.pid`);
-  const env = {
-    ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
-    REFRACT_DATA_DIR: dataDir,
-    ...extraEnv
-  };
-  if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
-  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
-  if (logFile) {
-    const stream = createWriteStream(logFile);
-    child.stdout.pipe(stream, { end: false });
-    child.stderr.pipe(stream, { end: false });
-  }
-  return { child, targetPid };
 }
 
 async function main() {
