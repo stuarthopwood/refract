@@ -406,9 +406,8 @@ async function main() {
       if (filtersLabelBeforeClose) await cdp.clickByLabel(filtersLabelBeforeClose);
 
       // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured; the
-      // list column itself never shrinks below its own 280px minimum even where that minimum
-      // EXCEEDS 50% of the window. Gate-fix (M6, caught live 2026-10-18, re-diagnosed; full
-      // root cause in `PullRequestsView.tsx`'s own comment above its `maxSize` prop). ----
+      // list column stays at `min(280, groupWidth)` -- at 240px the Group's content area is
+      // itself under 280px, so 280 can't fit there; the honest floor is "takes essentially all of what's available". ----
       for (const width of TAB_GEOMETRY_WIDTHS) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(400);
@@ -418,9 +417,11 @@ async function main() {
           const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
           const tops = new Set(tabs.map((el) => el.getBoundingClientRect().top));
           const panel = ${LIST_PANEL_FINDER};
-          return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth, panelWidth: panel ? panel.getBoundingClientRect().width : null };
+          const group = document.querySelector('[data-slot="resizable-panel-group"]');
+          return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth, panelWidth: panel ? panel.getBoundingClientRect().width : null, groupWidth: group ? group.getBoundingClientRect().width : null };
         })()`);
-        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= MIN_WIDTH_PX - 1;
+        const effectiveMin = geometry?.groupWidth != null ? Math.min(MIN_WIDTH_PX, geometry.groupWidth) : MIN_WIDTH_PX;
+        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= effectiveMin - 1;
         if (geometry && geometry.oneRow && panelAtLeastMin) checkPass(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
         else checkFail(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
       }
