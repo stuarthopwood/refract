@@ -1,19 +1,18 @@
 {
-  "scripts/check-theme-contrast.mjs": 792,
+  "scripts/check-theme-contrast.mjs": 743,
   "scripts/verify-632-grouped-calls.mjs": 673,
   "src-tauri/src/omp/process.rs": 1106,
-  "src-tauri/src/omp/transcript.rs": 1809,
-  "src/renderer/App.tsx": 734,
+  "src-tauri/src/omp/transcript.rs": 1805,
+  "src/renderer/App.tsx": 727,
   "src/renderer/features/chat/ChatPane.tsx": 1445,
   "src/renderer/features/chat/Markdown.tsx": 997,
-  "src/renderer/features/chat/MessageInput.tsx": 1632,
-  "src/renderer/features/chat/Transcript.tsx": 1074,
+  "src/renderer/features/chat/MessageInput.tsx": 1631,
+  "src/renderer/features/chat/Transcript.tsx": 1059,
   "src/renderer/features/profile/ManageAccountsDialog.tsx": 720,
   "src/renderer/features/profile/ManageSessionRow.tsx": 662,
   "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 1159,
   "src/renderer/state/file-explorer-store.ts": 601,
   "src/shared/frames.ts": 715,
   "src/shared/ipc.ts": 898,
-  "src/shared/mermaidTheme.ts": 844,
-  "src/shared/model.ts": 656
+  "src/shared/model.ts": 643
 }
