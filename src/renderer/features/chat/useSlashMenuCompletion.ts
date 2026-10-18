@@ -205,11 +205,14 @@ export function useSlashMenuCompletion({
       return 'unhandled'
     // Gate round 1 fix (confirmed live regression, not just a test gap): the subcommand step's
     // own `activeIndex` defaults to 0 -- the ALWAYS-first "Run /<cmd>" row -- regardless of what
-    // the user has typed, and nothing moves it unless they explicitly press an arrow key. Without
-    // this check, typing out a full subcommand name (e.g. "/advisor status") and pressing Tab
-    // still acted on the untouched, still-highlighted "Run /<cmd>" row and SENT the bare command
-    // at once -- exactly the unwanted blind-send #938 exists to prevent, and the opposite of "Tab
-    // still completes" (decided 2026-10-18). An exact, case-insensitive typed match is now found
+    // the user has typed, and nothing moves it unless they explicitly press an arrow key. The
+    // Run row itself correctly sends on Tab too (see `runBare`'s own doc comment above -- that
+    // is its entire purpose, by design, not a bug); the actual bug: without this check, typing
+    // out a full subcommand name (e.g. "/advisor status") and pressing Tab still acted on the
+    // untouched, still-highlighted "Run /<cmd>" row and SENT the bare command at once, instead
+    // of recognising "status" as an exact typed match and completing to it -- the opposite of
+    // "Tab still completes" for THAT match (decided 2026-10-18), and exactly the unwanted
+    // blind-send #938 exists to prevent. An exact, case-insensitive typed match is now found
     // directly in the ranked list and acted on by name, independent of whatever row is currently
     // highlighted: Enter sends it, Tab only completes to it. Round 2 gate finding L2 (decided
     // 2026-10-18): gated to `activeIndex === 0` only -- once the user has explicitly arrowed onto

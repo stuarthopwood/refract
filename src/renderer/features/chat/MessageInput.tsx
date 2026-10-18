@@ -777,7 +777,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         setSlashActiveIndex((index) => Math.max(index - 1, 0))
         return
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing) {
         const outcome = handleSlashMenuKey(event.key, event.shiftKey, slashActiveIndex)
         if (outcome !== 'unhandled') {
           event.preventDefault()
@@ -1299,7 +1299,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {placeholder}
         </span>
       )}
-      <div role="status" aria-live="polite" className="sr-only">
+      <div data-slot="slash-menu-announcement" role="status" aria-live="polite" className="sr-only">
         {slashAnnouncement}
       </div>
       {/* Accessibility remediation (High): announces a chip/image being created or a chip being
@@ -1377,7 +1377,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               activeIndex={clampedSlashActiveIndex}
               {...slashMenuViewProps}
               onSelect={(command, isRunBare) => {
-                const result = handleSlashMenuSelect(command, { runBare: isRunBare }); if (result) void handleSend(result.sendText)
+                const result = handleSlashMenuSelect(command, { runBare: isRunBare })
+                if (result) void handleSend(result.sendText)
               }}
               onActiveIndexChange={setSlashActiveIndex}
             />

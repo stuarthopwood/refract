@@ -204,32 +204,34 @@ interface TurnTotalLineProps {
 // the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
 // all, which is not a real timing and must not be used to compute an elapsed time).
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
-  // Round 2 gate finding (Main, 2026-10-18): the gate round 1 fix (confirmed live: a settled
-  // turn's own shown time jumped 9s -> 14s, `isTurnRunning` reflects the SESSION's own status,
-  // which goes back to 'working' for ANY later send -- including a bare command whose own
-  // `command_output` reply never creates a new `user` item) used a ref written during render
-  // that, once set, NEVER cleared -- so a genuine resumption of the SAME turn (an async subagent
-  // result, an advisor follow-up, a retry after compaction) stayed frozen at the stale value
-  // forever too, under-counting the turn's real total. Settled is now always `computeTurnEnd`
-  // directly (pure and deterministic: a command-output notice is excluded from its own scan, so
-  // it is unaffected by how many times an unrelated command cycles `isTurnRunning` true/false in
-  // between) -- no remembered value needed for that path at all. While still running, the only
-  // open question is whether that is GENUINE new activity for this turn or just an unrelated
-  // command's own processing: `lastSettledEnd` (state, set from an effect -- never written during
-  // render) remembers this turn's own last real settle, and `hasNewerRealActivity` (turnTiming.ts)
-  // checks whether anything real has arrived since then. A bare command's own reply can never
-  // satisfy that (its notice is excluded exactly like `computeTurnEnd` excludes it), so the line
-  // stays on the unchanged settled value for that case; a genuine resumption's first real item
-  // satisfies it immediately (`receivedAt` is set the moment an item first arrives, not only once
-  // it finishes), resuming live `Date.now()` ticking until the next real settle.
+  // Settled is always `computeTurnEnd` (turnTiming.ts): pure/deterministic, so an unrelated
+  // command's own `command_output` reply (excluded from its own scan) can never affect it no
+  // matter how many times it cycles `isTurnRunning` true/false (gate round 1, live-confirmed 9s
+  // -> 14s fix). `lastSettledEnd` (state, set from an effect -- never written during render)
+  // remembers this turn's own last real settle so `hasNewerRealActivity` (turnTiming.ts) can
+  // tell a genuine resumption (an async subagent result, an advisor follow-up, a retry after
+  // compaction) apart from a bare command's own processing, which never satisfies it.
+  //
+  // `undefined` vs `null` (round 3 gate fix, Medium): `undefined` means "never settled yet";
+  // `null` means "settled, but this turn carries no usable timing at all" -- collapsing both
+  // into `undefined` broke on a REMOUNT of an already-settled-but-untimed turn (`react-virtuoso`
+  // windowing it in/out, a session switch resets state to its initial value every time), which
+  // could then tick through an unrelated running command. `null` never ticks and never falls
+  // back to `turn.userItem.at` as a substitute baseline -- there is nothing reliable to tick
+  // FROM. The initial state is computed lazily from the CURRENT props/`settledEnd` so a remount
+  // recovers its correct state on the very first render, not only once an effect gets to run.
   const settledEnd = computeTurnEnd(turn.items, receivedAt)
-  const [lastSettledEnd, setLastSettledEnd] = React.useState<number | undefined>(undefined)
+  const [lastSettledEnd, setLastSettledEnd] = React.useState<number | null | undefined>(() =>
+    isLastTurn && isTurnRunning && settledEnd === undefined ? undefined : (settledEnd ?? null)
+  )
   React.useEffect(() => {
-    if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd)
+    if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd ?? null)
   }, [isLastTurn, isTurnRunning, settledEnd])
   if (!turn.userItem || turn.userItem.at === 0) return null
   const running =
-    isLastTurn && isTurnRunning && (lastSettledEnd === undefined || hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd))
+    lastSettledEnd === null
+      ? false
+      : isLastTurn && isTurnRunning && (lastSettledEnd === undefined || hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd))
   const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
