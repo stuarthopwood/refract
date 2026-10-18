@@ -229,11 +229,12 @@ fixture's own "Story559", Stage 2 then Stage 5) produce two unrelated jobs shari
 (`msg-ar5`) arrives, its "Story559" job matched BOTH Stage 5's own fresh item (correct) AND Stage
 2's already-settled one (wrong), clobbering Stage 2's `result`/`duration_ms` with Stage 5's data
 ("Implemented the fix for #559.", 1800ms -> "Polished Story559 follow-up items.", 4300ms). The
-async-result message carries no `tool_call_id` of its own to scope against (checked against every
-`async-result` frame in `subagents.jsonl`, `subagents-background-turn.jsonl` and
-`stages-941.jsonl`: `details` is always exactly `{ jobs: [{ id, label, status, resultText |
-errorText, durationMs }] }`), so the issue's own suggested "scope to the frame's own
-`tool_call_id`" cannot be built literally.
+async-result message carries no `tool_call_id` of its own to scope against (checked against
+`stages-941.jsonl`, the only one of this repo's omp-frame fixtures that carries any
+`async-result` message at all -- `subagents.jsonl`/`subagents-background-turn.jsonl` have none):
+`details` is always exactly `{ jobs: [{ id, label, status, resultText | errorText,
+durationMs }] }`, so the issue's own suggested "scope to the frame's own `tool_call_id`" cannot
+be built literally.
 
 **Decision (Skippy, delegated by Stuart 2026-10-18)**: scope matching to the item's own
 resolution state instead of a wire field that does not exist. Each job in one async-result frame
@@ -290,7 +291,8 @@ async-result message landing twice, stop it from being applied twice at all. A c
 `items_from_history` already did (applies each stored message once). A custom message is never
 token-streamed, so it never gets a `message_update` at all, and `message_start`/`message_end`
 arrive back to back with no other frame between them for every one of `stages-941.jsonl`'s ten
-async-result messages (e.g. `msg-ar1` at lines 19/20) -- skipping the `message_start`
+async-result messages (e.g. `msg-ar1` at lines 66/67 of the raw fixture file) -- skipping the
+`message_start`
 application leaves no user-visible gap, since nothing it would have rendered differs from what
 `message_end` renders one frame later. Round 1's value-based idempotency no-op check is
 therefore DELETED outright (it is no longer needed, and could itself wrongly no-op a genuinely
@@ -306,9 +308,13 @@ match beats a label-only match; (3) the latest `started_at` wins any remaining t
 against three scenarios:
 
 - **(a) Sequential repro** (Stage 2 batch-errors, no result, picks up `job_id="Story559"` from
-  its own progress, status Error/not-Running, unsettled; Stage 5 later, fresh, Running, label
-  match): tier 1 alone decides it -- Stage 5's key starts `(true, ...)`, Stage 2's starts
-  `(false, ...)`, so Stage 5 wins outright, the other two tiers never consulted.
+  its own progress, status Error/not-Running, unsettled; Stage 5 later, Running -- gate round 3
+  correction: Stage 5's row is ALSO a `job_id` match here, not a label-only one, since its own
+  `apply_batch_task_result` already reads `progress[].id` and sets its `job_id` to `"Story559"`
+  before its own async-result ever applies, exactly like Stage 2 -- the only real difference is
+  Stage 5 is still Running): tier 1 alone decides it -- Stage 5's key starts `(true, ...)`,
+  Stage 2's starts `(false, ...)`, so Stage 5 wins outright regardless of either row's match
+  type, the other two tiers never consulted.
 - **(b) Concurrent trace** (A: Running, already carries this job's own `job_id`; B: Running,
   later `started_at`, label-only match): tier 1 ties (both Running); tier 2 decides it -- A's
   `job_id` match beats B's label-only match, so A wins even though B started later. This is the
@@ -320,10 +326,64 @@ against three scenarios:
   confirms the fixture itself never exercises scenario (a) or (b) directly (both are proven by
   hand-trace only, not by a live run of this fixture -- see `notExercised`).
 
-**Known, accepted limit**: two Stages running the SAME subagent name truly CONCURRENTLY, both
-already carrying a `job_id` (tiers 1 and 2 both tie), can still have their results swapped --
+**Known, accepted limit**: any overlap of two same-name jobs whose own async-result is still
+outstanding, both still Running when the shared-name job arrives (tiers 1 and 2 both tie) --
 tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key, since this
 frame carries no `tool_call_id`/`parentToolCallId` to settle it for certain. Not fixed here;
 the real fix is #712's `parentToolCallId` once that subscription path is wired up. FR-084's
 guarantee is narrowed to sequential Stages accordingly (spec.md Clarifications, gate round 2
 entry, supersedes the gate round 1 entry above).
+
+**Gate round 3 correction (`agent://Main`, Code FAIL, 2026-10-18)**: item 1 required settling,
+from the REAL installed omp binary's own source rather than the fixture, whether omp's RPC
+stream actually guarantees a `message_end` for a custom `async-result` message. Answer: YES,
+unconditionally. Extracted the bundled JS source embedded in the installed `omp.exe` (version
+`18.11.1`, confirmed via `omp --version`; no separate npm/bun-global install exists to read
+source from directly, so the compiled binary's own embedded strings were read instead) and
+found `packages/agent/src/agent-loop.ts`'s own `rt(e, t)` helper -- the ONE place in the entire
+221 MB binary that constructs a `{ type: "message_start", ... }` frame object literal:
+```js
+function rt(e, t) {
+  for (const o of t) {
+    e.push({ type: "message_start", message: o });
+    e.push({ type: "message_end", message: o });
+  }
+}
+```
+Every message this agent loop appends -- including an async-result custom message, built by
+`packages/coding-agent/src/session/async-job-delivery.ts`'s own `bQe(u)` function (`{ role:
+"custom", customType: "async-result", content, display: true, attribution: "agent", details:
+{ jobs: [...] }, timestamp }`, confirmed matching this repo's own fixture/Rust shape field for
+field) and appended the same way as any other message (`e.messages.push(s); t.push(s);
+rt(o, [s])`) -- goes through this exact pair, with no other code path anywhere in the binary
+that pushes a `message_start` without an immediately-following `message_end`. This settles item
+1 in favour of the gate-round-2 design (apply at `message_end` only): it is not merely a
+fixture assumption that happens to match `stages-941.jsonl`'s own synthesized shape (that
+fixture's own header comment says plainly "SYNTHESIZED, not captured live") -- it is the real,
+confirmed behaviour of the shipped omp binary every Refract user actually runs.
+
+**Gate round 3 fix 2 (`agent://Main`, HIGH, Code)**: the same `bQe(u)` builder confirms real omp
+always sets `display: true` on an async-result message. Before this fix, a `message_start` frame
+(its own job application skipped by the gate-round-2 design) fell through every other `custom`
+arm to the plain `display == true` Notice branch, leaving a permanent Notice row (the raw
+job-summary text) that `message_end`'s own `try_apply_async_result` call never replaces or
+removes (nothing tracks the earlier Notice by `message_id` for removal once a later frame for
+the same message applies a *different* kind of update). Fixed by short-circuiting on
+`custom_type == ASYNC_RESULT_CUSTOM_TYPE` before any other `custom` arm (`transcript.rs`): an
+async-result message now never builds a Notice/advisory/agent-message item at ANY frame --
+`message_start`/`message_update` apply nothing and leave the transcript unchanged; `message_end`
+is the only frame that ever applies its jobs.
+
+**Gate round 3 fix 3 (`agent://Main`, LOW, Code, decided)**: tier 2 (`job_id` beats label-only)
+now only applies BETWEEN two rows that are both still Running -- a `job_id` match from a row
+that is itself not running (stale, from an earlier batch failure) must never out-rank a
+label-only match just because it shares this job's `job_id`; among two not-running rows, tier 2
+ties and tier 3 (`started_at`) decides directly. Known-limit sentence above widened accordingly.
+
+**Gate round 3 doc corrections (`agent://Main`, MEDIUM, Test)**: the earlier claim that
+`subagents.jsonl`/`subagents-background-turn.jsonl` were "checked against every async-result
+frame" was wrong -- neither fixture contains any `async-result` message at all; only
+`stages-941.jsonl` does, and only that fixture was ever actually checked. The `msg-ar1`
+`message_start`/`message_end` pair cited above sits at raw file lines 66/67, not 19/20 (the
+earlier citation came from a filtered line array with comment/blank lines stripped, not the real
+file). Trace (a)'s Stage 5 row is corrected above to a `job_id` match, not label-only.

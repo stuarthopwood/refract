@@ -261,17 +261,20 @@ fn safe_stringify(value: &Value) -> String {
 /// 1. a still-**Running** row beats one already ended by its OWN batch result (Error/Cancelled/
 ///    Done without ever getting a real async result) -- a batch-failed earlier Stage must never
 ///    beat a later Stage that is still genuinely running;
-/// 2. a `job_id` match beats a label-only match (the latter only possible when the item's own
-///    `job_id` is still unset) -- when two Stages are BOTH still genuinely running with the SAME
-///    label, the one whose `job_id` this job's own `id` already equals is the correct target,
-///    even if a later-started Stage also matches by label alone;
+/// 2. a `job_id` match beats a label-only match, but ONLY between two rows that are BOTH still
+///    Running (gate round 3 fix, `agent://Main`, LOW, decided) -- a `job_id` match from a row
+///    that is itself NOT running (it merely picked up a stale `job_id` from its own earlier
+///    progress read, same as the batch-failed row tier 1 already excludes from winning) must
+///    never out-rank a label-only match just because it shares this job's `job_id`; among two
+///    rows that are BOTH not running, tier 2 ties and tier 3 decides directly;
 /// 3. the latest `started_at` wins any remaining tie.
 ///
 /// Each job claims at most one item per call. Known limit (not fixed here, tracked on #712):
-/// two Stages running the SAME name concurrently, both already carrying a `job_id` (so BOTH
-/// rank as job_id matches, tier 2 ties), can still swap results -- tier 3's `started_at`
-/// tie-break is a best-effort guess, not a real correlation key (there is no `tool_call_id` on
-/// this frame to settle it for certain). The real fix is #712's `parentToolCallId`.
+/// any overlap of two same-name jobs whose own async-result is still outstanding -- if both
+/// rows are still Running when a job for their shared name arrives (tiers 1 and 2 both tie),
+/// tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key (there is
+/// no `tool_call_id` on this frame to settle it for certain). The real fix is #712's
+/// `parentToolCallId`.
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,
     jobs: &[Value],
@@ -316,9 +319,15 @@ pub(super) fn apply_async_result_jobs(
             || result_text.is_some()
             || schema_data.is_some();
 
-        // Candidate selection, ranked (is_running, matches_job_id, started_at) lexicographically
-        // -- tuple comparison already gives exactly the three-tier priority above, the latest
-        // `started_at` only ever breaking a tie on both higher tiers.
+        // Candidate selection, ranked (is_running, running_job_id_match, started_at)
+        // lexicographically -- tuple comparison already gives the three-tier priority above.
+        // Gate round 3 fix (issue #989, `agent://Main`, LOW, decided): tier 2 is
+        // `is_running && matches_job_id`, NOT bare `matches_job_id` -- a `job_id` match from a
+        // row that is itself NOT still running (a batch-failed/cancelled/done-without-a-real-
+        // result row that merely picked up a stale `job_id` from its own progress read) must
+        // never out-rank a label-only match just because it happens to share this job's
+        // `job_id`; among two rows that are BOTH not running, tier 2 ties (both `false`) and
+        // tier 3's `started_at` decides directly, same as it would with no tier 2 at all.
         let mut best: Option<(bool, bool, i64, usize)> = None;
         for (item_index, item) in items.iter().enumerate() {
             if claimed[item_index] {
@@ -345,11 +354,11 @@ pub(super) fn apply_async_result_jobs(
             }
             let is_running = *status == SubagentStatus::Running;
             let started = started_at.unwrap_or(0);
-            let key = (is_running, matches_job_id, started);
+            let key = (is_running, is_running && matches_job_id, started);
             if best.is_none_or(|(b_running, b_job_id, b_started, _)| {
                 key >= (b_running, b_job_id, b_started)
             }) {
-                best = Some((is_running, matches_job_id, started, item_index));
+                best = Some((key.0, key.1, started, item_index));
             }
         }
         let Some((.., item_index)) = best else {

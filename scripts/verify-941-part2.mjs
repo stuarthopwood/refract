@@ -268,8 +268,12 @@ async function assertUpNextList(cdp, findings, failures, themeName) {
  * session-unique value, so before the fix Stage 5's LATER async-result (arriving after Stage
  * 2's own row had already settled) matched Stage 2's already-finished Story559 row too,
  * overwriting its `result`/`duration_ms` with Stage 5's own data (1800ms/"Implemented the fix
- * for #559." clobbered to 4300ms/"Polished Story559 follow-up items."). Both Stage rows start
- * collapsed; expanding each reveals its own Story559 member's one-line result summary
+ * for #559." clobbered to 4300ms/"Polished Story559 follow-up items."). Stage 2 starts
+ * collapsed; Stage 5 starts EXPANDED by default (`StageGroupRow`'s own `defaultOpen` -- `total
+ * > 1 && (isRunning || status === 'failed' || ...)` -- evaluates true because Stage 5 has a
+ * failed member, FailAgent). `expandRow` is a safe no-op when a row is already open (checks
+ * `aria-expanded` first), so the same call below handles both cases; expanding either reveals
+ * its own Story559 member's one-line result summary
  * (`extractResultSummary`) and rendered duration (`formatElapsed`) with no need to expand the
  * member row itself (same mechanism `assertDetailsOnExpand` already uses for Stage 1).
  *
@@ -341,6 +345,9 @@ async function assertAsyncResultStageScoping(cdp, findings, failures, notExercis
       '[issue #989] Stage 2 and Stage 5 each keep their OWN Story559 result/duration (row-scoped, not whole-Stage text) -- no cross-Stage async-result clobbering.'
     );
   }
+  findings.push(
+    '[issue #989] `stages-941.jsonl` is SYNTHESIZED, not captured live (its own header comment says so) -- the fixture\u2019s own message_start/message_end-arrive-together shape is not what grounds this fix\u2019s design. That is instead confirmed directly from the real installed omp 18.11.1 binary\u2019s own embedded source (`packages/agent/src/agent-loop.ts`\u2019s `rt(e, t)` helper unconditionally pushes a paired `message_start`/`message_end` for every message, with no code path anywhere that pushes one without the other); gate round 3, research.md decision 19.'
+  );
   notExercised.push(
     '[issue #989] Gate round 2: a custom `async-result` message\u2019s jobs are now applied exactly ONCE, on `message_end` only (`transcript.rs`\u2019s `apply_message_snapshot`) -- there is no second application of the same message left to observe at all, so this fixture cannot exercise (and no longer needs to exercise) any double-application behaviour; the design change itself is what prevents it, not a runtime check this script could assert against.',
     '[issue #989] This fixture\u2019s two Story559 rows are never BOTH still unsettled at once (Stage 2 settles via its own real `msg-ar2` well before Stage 5 even starts), so it cannot exercise the gate-round-2 three-tier ranking (still-Running beats batch-ended, job_id beats label-only, latest `started_at` as the final tie-break) when TWO candidates are genuinely unsettled at the same moment -- that ranking is traced by hand only (not executed against a real build) in `subagent_items.rs`\u2019s own doc comment and research.md decision 19\u2019s gate-round-2 correction (a hypothetical Stage 2 batch-failure with no result, racing a genuinely concurrent Stage 5, never part of this committed fixture); adding that second variant here was judged not worth perturbing this fixture\u2019s own already-passing Stage/chain/panel assertions.',

@@ -1128,22 +1128,26 @@ fn apply_message_snapshot(
                 .unwrap_or("");
             let content = message.get("content").and_then(Value::as_str).unwrap_or("");
             let details = message.get("details").cloned().unwrap_or(Value::Null);
-            // Gate round 2 fix (issue #989, decision: Skippy, delegated by Stuart 2026-10-18):
-            // a custom `async-result` message's own `details.jobs[]` is applied ONCE, on
-            // `message_end` only (`streaming == false`) -- `message_start`/`message_update`
-            // both carry `streaming == true` and are skipped here, matching what the history
-            // replay path (`items_from_history`, applies each stored message exactly once)
-            // already does. A `custom` async-result message never carries a `message_update`
-            // at all (it is not token-streamed); `message_start` and `message_end` arrive back
-            // to back with no other frame between them for every one of this fixture's ten
-            // async-result messages (`scripts/fixtures/omp-frames/stages-941.jsonl`, e.g.
-            // `msg-ar1`'s `message_start`/`message_end` pair), so skipping the `message_start`
-            // application leaves no user-visible gap: nothing ever rendered from it that the
-            // `message_end` application does not render identically, one frame later.
-            if !streaming {
-                if let Some(async_result) = try_apply_async_result(&items, custom_type, &details) {
-                    return async_result;
+            // Gate round 3 fix (issue #989, `agent://Main`): short-circuit on the custom type
+            // itself, before any other `custom` arm -- real omp always sets `display: true` on
+            // an async-result message (confirmed from the installed omp binary's own embedded
+            // source, research.md decision 19), so without this short-circuit a `message_start`
+            // frame (job application skipped below) fell through to the plain `display == true`
+            // Notice branch, leaving a permanent Notice row that `message_end`'s own async-
+            // result application never replaces or removes. An `async-result` message therefore
+            // never builds a Notice/advisory/agent-message item at ANY frame; only `message_end`
+            // ever applies its jobs -- grounded in real omp behaviour, not a fixture assumption:
+            // `message_end` is unconditionally guaranteed for every message (research.md
+            // decision 19's gate-round-3 correction cites the exact omp source).
+            if custom_type == ASYNC_RESULT_CUSTOM_TYPE {
+                if !streaming {
+                    if let Some(async_result) =
+                        try_apply_async_result(&items, custom_type, &details)
+                    {
+                        return async_result;
+                    }
                 }
+                return items;
             }
             if let Some(advisory_items) = try_build_advisory_items(message_id, custom_type, content)
             {

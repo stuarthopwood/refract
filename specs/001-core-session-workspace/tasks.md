@@ -3632,8 +3632,8 @@ protected two ways and found a real clippy violation; all addressed below.
   match and a label match (the latter only when the item's own `job_id` is unset) into ONE set
   with no match-type priority, the latest `started_at` winning ties; each job claims at most one
   item per call. No `tool_call_id` scoping was possible: the async-result frame itself carries
-  none (confirmed against every `async-result` message in `subagents.jsonl`,
-  `subagents-background-turn.jsonl` and `stages-941.jsonl`).
+  none (confirmed against `stages-941.jsonl`, the only fixture carrying any `async-result`
+  message at all).
 - [X] T291 [US1] Gate round 1 remediation (`agent://Main`, 3 findings, all addressed):
   **(1, HIGH, Code)** settlement is no longer `result.is_none()` -- a new Rust-only
   `async_settled` flag (`TranscriptItem::Subagent`, `#[serde(skip)]`, no wire/TS change) is set
@@ -3657,7 +3657,9 @@ protected two ways and found a real clippy violation; all addressed below.
   are pooled (no `collapsible_if` surface left).
 - [X] T289 [US1] Live-check coverage added additively to `scripts/verify-941-part2.mjs`
   (reusing the `stages-941.jsonl` fixture already recorded there -- no new fixture): a new
-  `assertAsyncResultStageScoping` expands Stage 2 and Stage 5 (both default-collapsed) and
+  `assertAsyncResultStageScoping` expands Stage 2 (starts collapsed) and Stage 5 (starts
+  EXPANDED by default -- `StageGroupRow`'s own `isOpenByDefault` is true because Stage 5 has a
+  failed member, FailAgent; `expandRow` no-ops safely on an already-open row) and
   reads each one's own Story559 member row's rendered result summary
   (`extractResultSummary`)/duration (`formatElapsed`) straight from `textContent`, asserting
   each Stage keeps its OWN result/duration and never shows the OTHER Stage's (Stage 2:
@@ -3697,7 +3699,7 @@ compile error and two further design gaps; all addressed.
   `items_from_history` already did. A custom message is never token-streamed (no
   `message_update` at all); `message_start`/`message_end` arrive back to back with no frame
   between them for every one of `stages-941.jsonl`'s ten async-result messages (confirmed by
-  reading the raw fixture: `msg-ar1`'s pair sits at lines 19/20), so skipping the
+  reading the raw fixture: `msg-ar1`'s pair sits at raw file lines 66/67), so skipping the
   `message_start` application leaves no user-visible gap. Round 1's value-based idempotency
   no-op check (T288) is deleted outright -- no longer needed, and could itself have wrongly
   no-op'd a genuinely new job that happened to match a settled row's current values.
@@ -3715,10 +3717,10 @@ compile error and two further design gaps; all addressed.
   Stage 2 is excluded entirely at the settlement filter (settled via its own real `msg-ar2`
   before Stage 5 even starts), so Stage 5 is the only candidate and wins trivially, confirming
   the fixture itself never exercises (a) or (b) directly.
-- [X] T297 [US1] **(MEDIUM, Test)** Known, accepted limit recorded: two Stages running the SAME
-  subagent name truly concurrently, both already carrying a `job_id` (tiers 1 and 2 both tie),
-  can still have results swapped by tier 3's best-effort `started_at` guess -- there is no real
-  correlation key on this frame to settle it for certain; the real fix is #712's
+- [X] T297 [US1] **(MEDIUM, Test)** Known, accepted limit recorded: any overlap of two same-name
+  jobs whose own async-result is still outstanding, both still Running (tiers 1 and 2 both
+  tie), can still have results swapped by tier 3's best-effort `started_at` guess -- there is no
+  real correlation key on this frame to settle it for certain; the real fix is #712's
   `parentToolCallId`. FR-084's "MUST only ever resolve the specific item" guarantee is narrowed
   to sequential Stages accordingly; the gate-round-1 Clarifications answer (spec.md, "Session
   2026-10-18 (async-result Stage scoping, issue #989)") is marked SUPERSEDED by a new, separate
@@ -3732,6 +3734,52 @@ compile error and two further design gaps; all addressed.
   `verify-941-part2.mjs`, `docs/PLAN.md`) now says exactly that, replacing "verified"/
   "live repro"/"proven" wording that overclaimed execution which never happened -- nothing is
   proven or live until a real build-slot run.
+
+Gate round 3 (`agent://Main`, Code FAIL): item 1 required settling a fact from the REAL
+installed omp, not the fixture; all 5 items addressed.
+
+- [X] T299 [US1] **Settled from the real omp 18.11.1 binary (`agent://Main` item 1)**: extracted
+  the bundled JS source embedded in the installed `omp.exe` (no separate npm/bun-global install
+  exists; the compiled binary's own embedded strings were read directly) and found
+  `packages/agent/src/agent-loop.ts`'s own `rt(e, t)` helper -- the ONE place in the whole
+  binary that constructs a `message_start` frame -- unconditionally pushes it immediately
+  followed by a `message_end` for the SAME message, with no code path anywhere that constructs
+  one without the other. An async-result message (built by `packages/coding-agent/src/session/
+  async-job-delivery.ts`'s `bQe(u)`, confirmed matching this repo's own fixture/Rust field
+  shape) is appended the same way as any other message, through this exact pair. Settles T295's
+  design (apply at `message_end` only) as grounded in REAL omp behaviour, not merely a fixture
+  assumption -- `stages-941.jsonl`'s own header already says "SYNTHESIZED, not captured live".
+- [X] T300 [US1] **HIGH (Code, `agent://Main` item 2)**: the same `bQe(u)` builder confirms real
+  omp always sets `display: true` on an async-result message. Before this fix, a `message_start`
+  frame (its own job application already skipped by T295) fell through every other `custom` arm
+  to the plain `display == true` Notice branch, leaving a permanent Notice row that
+  `message_end`'s own async-result application never replaces or removes. Fixed by
+  short-circuiting on `custom_type == ASYNC_RESULT_CUSTOM_TYPE` before any other `custom` arm
+  (`transcript.rs`): an async-result message now never builds a Notice/advisory/agent-message
+  item at ANY frame.
+- [X] T301 [US1] **LOW (Code, `agent://Main` item 3, decided)**: tier 2 (`job_id` beats
+  label-only) now applies ONLY between two rows that are both still Running -- a `job_id` match
+  from a row that is itself not running must never out-rank a label-only match just because it
+  shares this job's `job_id`; among two not-running rows, tier 2 ties and tier 3 (`started_at`)
+  decides directly. Known-limit sentence (T297) widened to "any overlap of two same-name jobs
+  whose async-result is still outstanding".
+- [X] T302 [US1] **MEDIUM (Test, `agent://Main` item 4)**: dropped the false claim that
+  `subagents.jsonl`/`subagents-background-turn.jsonl` were checked for async-result messages
+  (neither has any; only `stages-941.jsonl` does). Fixed the `msg-ar1` line citation to the raw
+  file's actual lines 66/67 (the earlier "19/20" came from a filtered, comment-stripped line
+  array, not the real file). Corrected research trace (a): Stage 5's row is a `job_id` match
+  (its own `apply_batch_task_result` already set `job_id` from `progress[].id` before its own
+  async-result applies, exactly like Stage 2), not label-only as originally traced. Recorded
+  that `stages-941.jsonl` is synthesized (its own header says so) and T299's real-omp finding,
+  not the fixture, is what actually grounds the `message_end`-guarantee assumption.
+- [X] T303 [US1] **LOW (Test, `agent://Main` item 5)**: fixed the "Both Stage rows start
+  collapsed" JSDoc claim in `scripts/verify-941-part2.mjs` -- Stage 5 actually starts EXPANDED
+  by default (`StageGroupRow`'s own `isOpenByDefault = total > 1 && (isRunning || status ===
+  'failed' || ...)` evaluates true because Stage 5 has a failed member, FailAgent); `expandRow`
+  is a safe no-op on an already-open row, so behaviour is unaffected, only the doc comment was
+  wrong. Left `verify-941-stage-naming-helpers.mjs`'s `?.closest` fix to #999's branch, not
+  duplicated here, per instruction (it merges first, ahead of this lane's own eventual
+  pre-slot `origin/main` merge).
 
 Opened as draft PR (branch `fix/989-async-stage`); `Closes #989` once the live check above is
 confirmed against a real build. No cargo build run in this lane (no-build prep lane, blocked on
