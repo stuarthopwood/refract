@@ -364,9 +364,15 @@ async function main() {
       throw new Error(`verify-554: relaunch CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
     }
     assertExeUnchanged(exePath, exeHash, 'post-relaunch', 'verify-554');
+    // Refract does NOT auto-reopen the last-viewed Session's chat pane on a cold relaunch (it
+    // shows the session list/Home); the same `[data-session-open]` row-click step every other
+    // relaunch check in this repo already uses (`verify-555-user-message-time.mjs`'s own
+    // precedent) is required here too, only one Session exists in this scratch registry.
+    await cdp.waitFor(`!!document.querySelector('[data-session-open]')`, { timeoutMs: 60_000, label: 'Relaunch: existing session row rendered' });
+    await cdp.click(`document.querySelector('[data-session-open]')`);
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
       timeoutMs: 90_000,
-      label: 'Relaunch: Session reopened from the persisted registry, composer enabled'
+      label: 'Relaunch: Session reattached, composer enabled'
     });
     await setWindowWidth(cdp, 1280);
     const relaunchLayout = await measureLayout(cdp);
