@@ -317,6 +317,51 @@ into the WHOLE program — confirmed to silently change five unrelated files' ow
 avoids the cross-contamination entirely — no IPC round trip either, since `webUtils` itself does no
 main-process work, it only reads a `File` object's own already-resolved path locally.
 
+## 17. File/folder attachments reuse the pending-attachment pipeline; parsed back out of the plain message text for the sent bubble (#926)
+
+**Decision**: a non-image file/folder attachment is appended to the outgoing plain message string
+as its own marked section (`[[refract-attachments]]`), rather than becoming a second OMP-side
+concept alongside `images`. `transcript.rs`'s own `extract_file_attachments` strips that section
+back out at transcript-build time into `TranscriptItem.fileAttachments`, so the sent bubble renders
+chips instead of a raw dump.
+
+**Rationale**: OMP's own `prompt`/`steer` commands carry only `message: string` and
+`images?: ImageContent[]` (Decision 1); adding a third wire field for "files" would need an
+OMP-side change this spec has no access to probe or request. Folding the attachment into the plain
+message text costs nothing on the wire and gives the agent the exact same tool-usable content (a
+fenced block or a path line) a developer would have typed by hand; the only risk (flooding the
+sent bubble with a 256 KB dump) is solved renderer/transcript-side by parsing the marker back out,
+never by changing what OMP itself receives.
+
+**Alternatives considered**: a second typed field alongside `images` (rejected: no such field
+exists on the wire, would need an unverifiable OMP-side change); inlining only the chip's own
+summary, name and size, instead of the real content (rejected: defeats the point -- the agent
+needs the actual file content or a real path to read it with its own tools, per #926's own grill
+decision 2).
+
+## 18. The 256 KB cap and the binary check share one bounded read; the lead-in line and fence length reuse #558's own advisor-note quoting (#926)
+
+**Decision**: `attachments.readFile` opens the file once, reads at most 256 KB + 1 bytes (catching
+a file that grows past the cap mid-read), and sniffs for a NUL byte in only the first 8 KB of
+whatever was already read -- never a second file read or a separate stat-then-read pair. The
+inlined text block is preceded by a fixed lead-in line (`Attached file "<name>" (<n> bytes, inlined
+below):`) and fenced with a backtick run one longer than the longest backtick run already inside
+the file's own content -- the exact technique `Markdown.tsx`'s advisor-note quoting (#558) already
+uses, so the fence can never be closed early by the file's own content.
+
+**Rationale**: a stat-then-read split would let a file grow past the cap between the two calls and
+still be read with no limit; reading inside one bounded call closes that race (mirrors
+`attachments.rs`'s own `read_image_file` guard). Reusing #558's fence-length technique, rather than
+inventing a new one, means `transcript.rs`'s own parser recognises the block's exact shape with no
+new escaping rule to invent or get wrong -- #926's own "Technical notes and risks" section
+explicitly calls out never rendering the block as live Markdown in the bubble, the same inertness
+rule #558 already established.
+
+**Verified**: read `src-tauri/src/ipc/attachments.rs`'s own `read_image_file` (the
+open-handle/bounded-read/grew-mid-read guard already exists there) and `Markdown.tsx`'s
+advisor-note fence-length logic (#558) directly in this session; this spec invents nothing beyond
+composing the two existing patterns for a new content type.
+
 ## Unknowns resolved
 
 No `NEEDS CLARIFICATION` markers remain in the spec. Every OMP wire-level fact this spec's design
@@ -327,4 +372,8 @@ is already satisfied for all of them, so no new probe task is scheduled in tasks
 wire shape itself. The two genuinely new facts this spec itself decides (the chip threshold, Decision
 8; the compact-row/larger-preview-block sizing, Decision 9) are plain product defaults with no
 external source to probe, recorded as Decisions rather than left unresolved, the same way spec 008
-recorded its avatar byte cap.
+recorded its avatar byte cap. #926's own grill answers (the 256 KB inline cap, the NUL/UTF-8 binary
+check) come straight from Stuart's own issue comment, not this research pass; Decisions 17 and 18
+above only record the IMPLEMENTATION choices built on top of those fixed numbers (the marker/parse
+shape, the bounded single read), the same split Decisions 1 to 4 already drew between a Sourced OMP
+fact and a Decision built on it.

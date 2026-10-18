@@ -44,6 +44,7 @@ fn build_items(n: usize) -> Vec<Arc<TranscriptItem>> {
                 id: format!("item-{i}"),
                 text: format!("message number {i}"),
                 at: i as i64,
+                file_attachments: Vec::new(),
             })
         })
         .collect()
@@ -86,6 +87,7 @@ fn measure_diff_transcript() {
             id: format!("item-{changed_index}"),
             text: "changed by a single streaming update".to_string(),
             at: changed_index as i64,
+            file_attachments: Vec::new(),
         });
 
         let (elapsed, ops) = min_of_warmed_runs(&prev, &next);

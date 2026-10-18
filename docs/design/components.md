@@ -113,7 +113,7 @@ The zero-box rule (#556, settled against the AI Studio mock review #549, agenda 
 
 Everything else — tool rows, thinking, notices, subagent rows, agent messages — is an unboxed row separated by spacing, with a **Spine** (a neutral `border-divider` left rule hanging from a group header's own status icon, never coloured or animated, issue #565) or a divider only when grouping is needed. No box inside a box: a nested card loses its own box and uses a soft divider instead.
 
-Stuart's own "Self vs. other layout" rule (2026-10-04, in [product-chat.md](product-chat.md)) makes the user's own message bubble a standing exception: its fill marks authorship, not a card around content. **2026-10-16 delegated addition (Skippy, delegated by Stuart, #556):** it is never nested inside another box, and only Markdown's code-family surfaces (code blocks, inline code, tables, rendered diagrams) render inside it.
+Stuart's own "Self vs. other layout" rule (2026-10-04, in [product-chat.md](product-chat.md)) makes the user's own message bubble a standing exception: its fill marks authorship, not a card around content. **2026-10-16 delegated addition (Skippy, delegated by Stuart, #556):** it is never nested inside another box, and only Markdown's code-family surfaces (code blocks, inline code, tables, rendered diagrams) render inside it. **2026-10-18 delegated addition (Skippy, delegated by Stuart, #926, FR-035):** a file/folder attachment chip is a second written exception -- the sent bubble renders the SAME chip the composer strip already allows (line 112's own "Attachments and chips" bullet), never raw inlined text or a bare path line, so a 256 KB inlined file never floods the transcript.
 
 Attachments and queued-message chips inside the composer area are control affordances, not nested cards, so they keep their box (Stuart, 2026-10-08). Swept 2026-10-16, #556 (full account in PLAN.md's "Zero-box" decision).
 
@@ -173,6 +173,8 @@ Colour only reinforces the icon and the word; it is never the only signal (WCAG 
 | Toast | A transient app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** |
 | Inline text | Form fields | Clears with the field's own validation state. |
 | Transcript notice | Agent-originated news | Stays in the transcript like any other row. |
+
+**Placement** (issue #980, decided Skippy, delegated by Stuart 2026-10-18, `ui-architect-v3` roundtable): `position="bottom-center"`, centred on the window on purpose — that is what clears the permanent full-height right rail (`IconRail.tsx`) and the Session list header, which both only ever sit at the window's left/right edges, never its centre, regardless of which pane is focused or how a split (spec 005) is divided. The protection this needs is vertical: the toast sits above whichever composer is currently tallest, tracked live (`composerHeightVar.ts`, a `ResizeObserver` per mounted composer plus a window-resize listener, published as a CSS custom property) rather than a fixed guess, since a composer's own textarea grows, split panes mount two independently-sized composers at once, and the measurement is each composer's own clearance to the viewport bottom (not just its height), so the status bar sitting below the whole chat workspace is folded in automatically. Below 600px window width, Sonner's own mobile breakpoint takes over positioning (`mobileOffset`), carrying the same live clearance for `bottom` plus a fixed `left`/`right` inset so the now-full-width toast still clears the right rail.
 
 ## Empty states
 

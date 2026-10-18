@@ -3,6 +3,7 @@ import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/compone
 import type { TranscriptItem } from '../../../shared/model'
 import { initials } from '@/lib/initials'
 import { Markdown } from './Markdown'
+import { FileAttachmentChip } from './FileAttachmentChip'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -92,6 +93,17 @@ export function UserMessageRow({ item, userName, hideTime }: UserMessageRowProps
         </MessageAvatar>
         <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
+          {/* #926: the attached files/folders as chips, never the raw inlined text or path
+              line the actual message carries for the agent -- a 256 KB file would otherwise
+              flood the transcript. Parsed server-side out of the plain message text
+              (`transcript.rs`'s own `extract_file_attachments`), so this is restart-safe too. */}
+          {item.fileAttachments && item.fileAttachments.length > 0 && (
+            <div role="group" aria-label="Attached files" className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              {item.fileAttachments.map((file) => (
+                <FileAttachmentChip key={file.id} name={file.name} byteLength={file.byteLength} isDirectory={file.isDirectory} sentAs={file.sentAs} wrap className="max-w-full" />
+              ))}
+            </div>
+          )}
           <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
         </MessageContent>
       </Message>

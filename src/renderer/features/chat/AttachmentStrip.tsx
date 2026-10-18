@@ -11,13 +11,18 @@ import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { TextPreviewModal } from './TextPreviewModal'
-import type { ChipOccurrence, PendingImageAttachment, PendingTextChip } from './attachments'
+import { FileAttachmentChip } from './FileAttachmentChip'
+import type { ChipOccurrence, PendingFileAttachment, PendingImageAttachment, PendingTextChip } from './attachments'
 import { formatByteSize } from './attachments'
 
 export interface AttachmentStripProps {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
+  // #926: files/folders attached via the Attach button, drag-and-drop, or a clipboard file
+  // paste -- rendered between the image thumbnails and the text chips.
+  files: PendingFileAttachment[]
   onRemoveImage: (id: string) => void
+  onRemoveFile: (id: string) => void
   // PR #723 gate round 3 fix (A11y3 HIGH): lets the caller scope a focus/query to THIS
   // composer's own strip specifically -- in split view, two ChatPanes each render their own
   // MessageInput/AttachmentStrip pair, and a `document`-wide query for `[role="group"][aria-
@@ -26,10 +31,19 @@ export interface AttachmentStripProps {
   containerRef?: RefObject<HTMLDivElement | null>
 }
 
-export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef }: AttachmentStripProps) {
-  if (images.length === 0 && textChips.length === 0) return null
+export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRemoveFile, containerRef }: AttachmentStripProps) {
+  if (images.length === 0 && files.length === 0 && textChips.length === 0) return null
   return (
-    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
+    <div
+      ref={containerRef}
+      role="group"
+      aria-label="Pending attachments"
+      // Gate round 3 (UI3 Medium): `p-1` gives the scroll box's own edges room for the image
+      // Remove button's `-top-1 -right-1` offset (and its own focus ring) -- without it, a chip
+      // in the first row or at the strip's right edge had both clipped by this container's own
+      // `overflow-y-auto` boundary.
+      className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto p-1"
+    >
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal
@@ -52,12 +66,47 @@ export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef
             type="button"
             aria-label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
             onClick={() => onRemoveImage(image.id)}
-            className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            // Gate round 4 (UI4 Low): matches `FileAttachmentChip.tsx`'s own Remove button -- a
+            // real 24px target (`size-6`, was `size-4`/16px) and the same INSET focus ring
+            // (`outline-offset-[-2px]`), so it never extends further outside the strip's own
+            // `p-1` buffer than the file chip's already-fixed Remove button does.
+            // Gate round 5 (UI5 Low): `pointer-events-none` while invisible (`opacity-0`) --
+            // the button still sits in the DOM, overlapping the corner of the 40px image
+            // thumbnail, and a 24px (round 4) invisible hit area is more of this thumbnail to
+            // mis-click than the 16px one was; restored once actually visible (hover/focus).
+            className="pointer-events-none absolute -top-1 -right-1 flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
           >
-            <XIcon className="size-2.5" />
+            <XIcon className="size-3" />
           </button>
         </div>
       ))}
+      {(() => {
+        // Gate round 2 (A11y2 Medium): two pending files sharing the exact same name (one from
+        // each of two different picked/dropped folders, say) would otherwise both announce the
+        // identical "Remove a.txt" -- disambiguated with a stable "N of M" position among same-
+        // named files, computed once per render rather than per chip.
+        const nameCounts = new Map<string, number>()
+        for (const file of files) nameCounts.set(file.name, (nameCounts.get(file.name) ?? 0) + 1)
+        const seenSoFar = new Map<string, number>()
+        return files.map((file) => {
+          const total = nameCounts.get(file.name) ?? 1
+          const position = (seenSoFar.get(file.name) ?? 0) + 1
+          seenSoFar.set(file.name, position)
+          const removeLabel = total > 1 ? `${file.name}, ${position} of ${total}` : undefined
+          return (
+            <FileAttachmentChip
+              key={file.id}
+              name={file.name}
+              byteLength={file.byteLength}
+              isDirectory={file.isDirectory}
+              sentAs={file.sentAs}
+              onRemove={() => onRemoveFile(file.id)}
+              removeLabel={removeLabel}
+              className="min-w-0 max-w-full"
+            />
+          )
+        })
+      })()}
       {textChips.map((chip) => (
         <TextPreviewModal
           key={chip.id}
