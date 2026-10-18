@@ -409,6 +409,8 @@ async function main() {
       { timeoutMs: 10_000, label: 'D4: a slash command with a pending file attachment is refused with a named toast' }
     );
     report.push({ step: 'D4: a slash command with a pending file attachment is refused with a named toast', ok: true });
+    const d4NothingSent = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length === 0`);
+    assertEqual(d4NothingSent, true, 'D4: nothing was sent');
     await cdp.evaluate(
       `(() => { const ta = document.querySelector('[aria-label="Message"]'); const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, ''); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`
     );
