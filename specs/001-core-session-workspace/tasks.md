@@ -3023,10 +3023,10 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   positive count takes the new tokens, the leading +/- glyph stays the non-colour cue. Wired
   into the composer status line's `ChangesChip` (`ReadoutChips.tsx`), the Session details card's
   diff line, and the Pull requests Changes tab's aggregate line (`ChangesTab.tsx`). #919 (folded
-  into #925's own scope, closing alongside it): `DiffViewFromPatch` (`DiffView.tsx`) gains
-  required `additions`/`deletions` props, rendering the same coloured stat next to its Copy
-  button -- the per-file `+/-` header `ChangesTab.tsx`'s own `patch === null` fallback already
-  showed in plain text now colours the same way.
+  into #925's own scope): `DiffViewFromPatch` (`DiffView.tsx`) gains required `additions`/
+  `deletions` props, rendering the same coloured stat next to its Copy button -- the per-file
+  `+/-` header `ChangesTab.tsx`'s own `patch === null` fallback already showed in plain text now
+  colours the same way.
 - [X] T269 [US1] #924 `ReasoningGaugeIcon` (`src/renderer/components/ReasoningGaugeIcon.tsx`,
   new): a custom inline SVG reusing lucide's own `gauge` arc geometry, needle drawn at one of 7
   even steps (`off` far left, `medium` upright, `max` far right); `inherit` and an unreported
@@ -3039,8 +3039,17 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   gauge needle's rendered angle at every reasoning level in both the composer picker and the
   Session details card, changing the level through the real UI.
 
-`pnpm typecheck`, `pnpm test` (148/148), `check:indent`, `check:theme-contrast` (457/457),
-`check:file-size` all clean on this phase's own final head.
+Live-checked (`scripts/verify-925-924-polish.mjs`, real `omp`/GitHub data, no prompt sent): the
+composer status line Changes chip and the Session details card diff line both PASS -- zero and
+positive case, all 3 themes, real measured contrast. The Reasoning gauge needle PASSES at all 8
+selectable levels plus the Session details card cross-check. The Pull requests Changes tab/#919
+per-file header is NOT YET CONFIRMED live: `view-store.ts`'s `openChat` pins the view's own
+repository scope to whichever repo a Session is opened in (by design, research.md decision 7),
+which the script did not account for at first -- root-caused via the real on-screen error text,
+fixed (drives the repository Select explicitly), pushed, pending one more run.
 
-Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Closes #919**
-(folded into #925's own scope, implemented alongside it).
+`pnpm typecheck`, `pnpm test` (148/148), `check:indent`, `check:theme-contrast` (457/457),
+`check:file-size` all clean on every commit in this phase.
+
+Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
+(folded into #925's own scope; closes once the Changes tab surface is confirmed live).
