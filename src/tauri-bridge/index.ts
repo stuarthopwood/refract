@@ -224,7 +224,8 @@ const refract: RefractApi = {
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.
-    setWordPredictionEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED, enabled)
+    setWordPredictionEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED, enabled),
+    setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width)
   },
 
   modelRoles: {
