@@ -5,23 +5,28 @@
 // `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
 // by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
-import { useEffect, useState } from 'react'
-import type { MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { MouseEvent, RefObject } from 'react'
 import {
   ClockIcon,
+  EyeIcon,
   FileDiffIcon,
   GaugeIcon,
   GitPullRequestIcon,
   ListTodoIcon,
+  Loader2Icon,
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
+import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DiffStatLine } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
-import { ReadoutChip } from './ReadoutChip'
+import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
 
 // Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
 // 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
@@ -254,5 +259,231 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
         Todo {todoProgress.done}/{todoProgress.total}
       </span>
     </ReadoutChip>
+  )
+}
+
+// Gate round 1 fix (High, #937): `chat.send` resolving while `/advisor off` turns out to fail
+// still leaves a live chip whose repeat clicks must work again -- bounded so a reply that never
+// arrives (a dropped `advisor:update`) cannot leave it stuck "Turning off..." forever either.
+// Gate round 2 fix (Medium): only armed for an IMMEDIATE (not `queued`) send -- a send accepted
+// while a turn is already running legitimately waits past this bound (the turn itself decides
+// how long), so arming it there would reset `turningOff` to false while `/advisor off` is still
+// genuinely pending, letting a second click queue a duplicate.
+const ADVISOR_TURN_OFF_TIMEOUT_MS = 10_000
+// Gate round 4 fix (Medium, decided): a `queued` send has no fixed bound of its own in
+// principle (it waits for the CURRENT turn, however long that takes) -- but a long, generous
+// ceiling still catches the pathological case (the queue entry silently vanishes with no
+// `advisor:update`, no dequeue, nothing) without firing on an ordinary, slow turn the way the
+// tight 10s bound above would. The queue-leaves and status-leaves-Working effects below both
+// restart the TIGHT 10s bound the moment either gives a real, earlier signal that the wait is
+// actually over.
+const ADVISOR_QUEUED_TIMEOUT_MS = 60_000
+
+/** Issue #937 (follow-up to #917/PR #923): a quiet Advisor readout, shown only while omp's
+ * advisor subsystem is on for this Session -- hidden entirely while off (no Settings toggle,
+ * per the issue's own decision); no cost, spend or token figures anywhere in it or its name.
+ * `advisorOn` comes from `session::advisor` (Rust): the authoritative signal is a typed or
+ * chip-sent `/advisor on|off` reply, plus a best-effort silent `/advisor status` probe at
+ * Session attach/resume (see that module's own header for why the probe's own reply is not
+ * trusted the same way). A plain gate component: `AdvisorChipButton` below only ever mounts
+ * while `advisorOn` is true, so it genuinely unmounts (not a render-to-`null` in place) the
+ * instant it turns off -- gate round 1 fix (High): the earlier single-component version kept
+ * rendering `null` from the SAME instance, so React cleared its button ref during the SAME
+ * commit that removed the button, before the `useLayoutEffect` cleanup keyed on `advisorOn`
+ * ever ran, and the focus handoff/announcement below silently never fired. `key={sessionId}`
+ * also gives every Session a fresh mount (a fresh `turningOff` state) rather than reusing one
+ * stuck from a different Session's own in-flight click. */
+export function AdvisorChip({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const advisorOn = useAdvisorStore((s) => s.bySession[sessionId] ?? false)
+  if (!advisorOn) return null
+  return <AdvisorChipButton key={sessionId} sessionId={sessionId} textareaRef={textareaRef} />
+}
+
+function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const [turningOff, setTurningOff] = useState(false)
+  // Gate round 4 fix (Low, decided): a SEPARATE flag from `turningOff` -- true only while the
+  // send is genuinely `queued` (waiting for the current turn), so the label/tooltip can say so
+  // specifically; always cleared together with `turningOff` everywhere below (see
+  // `resetBusy`), so it can never outlive the busy state itself.
+  const [queuedOff, setQueuedOff] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const timeoutRef = useRef<number | undefined>(undefined)
+  // Gate round 3 fix (Medium): mirrors `turningOff` for the unmount cleanup below, which runs
+  // inside a closure captured once at mount (an empty-deps `useLayoutEffect`) -- reading the
+  // state variable there would see its STALE, always-`false` mount-time value, never the
+  // current one at the moment this instance actually unmounts.
+  const turningOffRef = useRef(false)
+  turningOffRef.current = turningOff
+
+  function resetBusy() {
+    setTurningOff(false)
+    setQueuedOff(false)
+  }
+
+  // A REAL unmount now (see `AdvisorChip`'s own comment above): an empty dependency array is
+  // correct here, matching `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx`'s own
+  // identical pattern -- the cleanup fires once, exactly when this button is actually removed
+  // from the DOM, while `buttonRef.current` still points at it (verified there against React
+  // 19.3's own commit order: a deleted subtree's refs are cleared no earlier than this).
+  useLayoutEffect(() => {
+    return () => {
+      window.clearTimeout(timeoutRef.current)
+      // Gate round 4 fix (High, decided): also requires the STORE's own `advisorOn` to have
+      // actually gone false for THIS session -- `turningOffRef` alone cannot tell a real
+      // toggle-off (which this button genuinely drove) apart from this same instance
+      // unmounting for an UNRELATED reason (a Session switch, a split closing) while a send
+      // was still in flight and the advisor is, as far as the store knows, still ON. Read
+      // directly from the store (not a hook) -- a cleanup closure cannot call hooks.
+      const stillOn = useAdvisorStore.getState().bySession[sessionId] ?? false
+      if (turningOffRef.current && !stillOn) {
+        useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
+      }
+      if (buttonRef.current?.contains(document.activeElement)) {
+        textareaRef.current?.focus()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Gate round 3 fix (High, "keep it simple"): watches THIS session's own queue for the exact
+  // moment the queued `/advisor off` text leaves it -- delivered (the normal path, settled by
+  // `advisor:update` already), removed (the user's own "Remove" on the chip), or dropped by an
+  // abort (Stop) -- restarting the TIGHT 10s fallback if `advisor:update` still hasn't arrived
+  // by then (down from the long queued bound), so a queued send whose own turn never finishes
+  // (removed, aborted) cannot leave the chip busy for the FULL long bound with no earlier
+  // reset. Also clears `queuedOff`: once the item has left the queue it is no longer "waiting
+  // for the current turn" in any sense this chip's own label should keep claiming.
+  const queue = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  const wasQueuedRef = useRef(false)
+  useEffect(() => {
+    const stillQueued = queue.followUp.includes('/advisor off') || queue.steering.includes('/advisor off')
+    if (stillQueued) {
+      wasQueuedRef.current = true
+      return
+    }
+    if (!wasQueuedRef.current) return
+    wasQueuedRef.current = false
+    if (turningOffRef.current) {
+      setQueuedOff(false)
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    }
+  }, [queue])
+
+  // Gate round 4 fix (Medium, decided): the OTHER, independent signal that the wait is over --
+  // the Session's own status leaving `working`. Catches the same "queued send now actually
+  // pending" moment as the queue effect above, but does not depend on the queue array itself
+  // having visibly updated yet (that effect and this one are deliberately redundant: whichever
+  // observes it first restarts the tight bound; the other is then a no-op, both idempotent).
+  const sessionStatus = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
+  const wasWorkingRef = useRef(false)
+  useEffect(() => {
+    const wasWorking = wasWorkingRef.current
+    wasWorkingRef.current = sessionStatus === 'working'
+    if (wasWorking && sessionStatus !== 'working' && turningOffRef.current) {
+      setQueuedOff(false)
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    }
+  }, [sessionStatus])
+
+  function handleActivate() {
+    if (turningOff) return
+    setTurningOff(true)
+    // Gate round 1 fix (High): bounded, so a reply that never arrives (a dropped
+    // `advisor:update`, an unexpected process exit) cannot leave the chip stuck "Turning
+    // off..." and unclickable forever -- it simply becomes retryable again.
+    timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_TURN_OFF_TIMEOUT_MS)
+    window.refract.chat
+      .send(sessionId, '/advisor off')
+      .then((result) => {
+        // Gate round 1 fix (High): `chat.send` resolves a `Result`, it does not reject on a
+        // refusal (`unknown-command`, `not-idle`, ...) -- an ordinary `{ ok: false }` refusal
+        // must still reset this, or a refused send leaves the chip stuck busy with no retry.
+        if (!result.ok) {
+          window.clearTimeout(timeoutRef.current)
+          resetBusy()
+          notify(result.error)
+          return
+        }
+        // Gate round 2 fix (Medium): `queued: true` means a turn was already running and
+        // `/advisor off` is now waiting its turn. Gate round 4 fix (Medium, decided): this
+        // callback can resolve AFTER the queue/status effects above have ALREADY observed the
+        // item leave the queue and restarted the tight 10s bound (a real ordering race, the
+        // queue-update event arriving before this promise settles) -- blindly overwriting with
+        // the long queued bound here would clobber that correct, earlier restart. Only acts if
+        // the item is STILL actually in the queue right now (a direct store read, not the
+        // possibly-stale `queue` closed over above).
+        if (result.value.queued) {
+          const live = useQueueStore.getState().bySession[sessionId] ?? EMPTY_QUEUE
+          if (live.followUp.includes('/advisor off') || live.steering.includes('/advisor off')) {
+            setQueuedOff(true)
+            window.clearTimeout(timeoutRef.current)
+            timeoutRef.current = window.setTimeout(resetBusy, ADVISOR_QUEUED_TIMEOUT_MS)
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        // Gate round 2 fix (Medium): the one path the `Result` handling above cannot cover -- a
+        // genuine IPC-layer throw (the channel itself failing), not an ordinary `{ ok: false }`
+        // refusal; left unhandled before, an unresolved rejection with no reset at all. Gate
+        // round 3 fix (Low): routed through the same `notify` as the `ok: false` path above,
+        // not a separate bare `toast.error` call.
+        window.clearTimeout(timeoutRef.current)
+        resetBusy()
+        notify({ code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) })
+      })
+  }
+
+  // Gate round 4 fix (Low, decided): a distinct wording while genuinely queued -- "Turning
+  // off…" alone would otherwise imply an imminent completion throughout a wait that may
+  // legitimately run for as long as the current turn does.
+  const label = queuedOff
+    ? 'Advisor on. Turning off after the current turn…'
+    : turningOff
+      ? 'Advisor on. Turning off…'
+      : 'Advisor on. Turn off'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild aria-describedby={undefined}>
+        <button
+          ref={buttonRef}
+          data-slot="readout-chip"
+          type="button"
+          onClick={handleActivate}
+          aria-label={label}
+          aria-disabled={turningOff}
+          className={cn(
+            READOUT_CHIP_BASE_CLASS,
+            READOUT_CHIP_INTERACTIVE_ADDITIONS,
+            turningOff && COMPOSER_DISABLED_OPACITY_CLASS,
+            turningOff && COMPOSER_DISABLED_HOVER_RESET_CLASS,
+            // Gate round 3 fix (Medium): `COMPOSER_DISABLED_HOVER_RESET_CLASS`'s own
+            // `aria-disabled:hover:text-current` resolves to the INHERITED colour (this status
+            // line's own ambient text colour), not this chip's own resting `muted-foreground`
+            // -- the exact bug `SessionList.tsx`'s own toolbar buttons already found and fixed
+            // (its own doc comment, lines ~34-39) the same way: an explicit, chip-specific
+            // override naming the real resting token, not relying on `currentColor`.
+            turningOff && 'aria-disabled:hover:text-muted-foreground'
+          )}
+        >
+          {/* Gate round 2 fix (Medium, decided): a keyboard user gets no OTHER pending cue once
+              focused (`:focus-visible` already overrides the dimmed opacity, and the tooltip
+              closes the moment focus leaves it on activation) -- a spinning icon is the one cue
+              that still shows either way. Gate round 3 fix: the comment here used to claim this
+              "matches ComposerPickers.tsx exactly" -- it does not: that trigger spins at
+              `size-3` with no `motion-reduce` variant; this one is `size-3.5` (this chip's own
+              icon size, #928) plus `motion-reduce:animate-none` (vestibular-motion sensitivity,
+              not present on that other trigger). Same SPIN APPROACH, deliberately adapted. */}
+          {turningOff ? (
+            <Loader2Icon aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <EyeIcon aria-hidden className="size-3.5" />
+          )}
+          <span aria-hidden>Advisor</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }

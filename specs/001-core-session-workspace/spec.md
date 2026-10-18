@@ -733,6 +733,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
   readout (spec 004) keeps its own plain gauge glyph untouched, since it measures context, not
   reasoning.
 
+- **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
+
 ### Key Entities
 
 - **Repository**: A local git repository registered with Refract; has a path and owns zero or more sessions.

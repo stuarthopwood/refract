@@ -18,7 +18,9 @@
 // no longer adds a lopsided gap above an invisible row) -- never a visible empty bar, since the
 // one guaranteed item (the Approval pill) is gone.
 import { useSettingsStore } from '@/state'
+import type { RefObject } from 'react'
 import {
+  AdvisorChip,
   ChangesChip,
   ContextUsageChip,
   CurrentTimeChip,
@@ -28,7 +30,7 @@ import {
   TurnTimeChip
 } from './readout/ReadoutChips'
 
-export function ComposerStatusLine({ sessionId }: { sessionId: string }) {
+export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
     <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
@@ -38,6 +40,14 @@ export function ComposerStatusLine({ sessionId }: { sessionId: string }) {
       {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
       {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
       {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
+      {/* Gate round 1 decision (D, Skippy, delegated by Stuart 2026-10-18), corrected gate
+          round 3 (D): last in this group, right before the `ml-auto` Current time chip -- a
+          fixed ORDER relative to its siblings, not a fixed POSITION. This row already has no
+          fixed slots: `TurnTimeChip`/`SubagentsChip`/etc. above it already appear and
+          disappear live with real turn/subagent data, shifting every chip after them sideways
+          regardless of where Advisor itself sits -- this placement only fixes where Advisor
+          falls in that same already-shifting row, not a guarantee against the shift itself. */}
+      <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
       {sessionReadout['current-time'] && <CurrentTimeChip className="ml-auto" />}
     </div>
   )

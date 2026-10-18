@@ -82,6 +82,7 @@ pub(crate) async fn build_snapshot(
         // retain their own last-computed value precisely so this snapshot can return it.
         "readout": crate::session::readout::current_readout_value(agent).await,
         "subagents": crate::session::subagents::current_summaries_value(agent).await,
+        "advisorOn": crate::session::advisor::current_advisor_value(agent).await,
     })
 }
 

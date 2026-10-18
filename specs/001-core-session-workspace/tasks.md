@@ -3300,3 +3300,128 @@ root-caused via the real on-screen error text, fixed (drives the repository Sele
 Opened as draft PR #967 (`feat/925-924-polish`). **Refs #925**, **Refs #924**, **Refs #919**
 (folded into #925's own scope; closes once every surface above is confirmed live with the
 gate-round-1 fixes in place).
+
+## Phase 56: Convergence
+
+- [X] T279 [US1] #937 Advisor chip -- Rust lane. New `session::advisor` (issue #784's
+  pre-declared-lane pattern, alongside `model`/`readout`/`side_chat`/`start_queue`/
+  `subagents`/`termination`): its own `State` held in `AgentState` via `with_advisor_state`
+  (`agent/mod.rs`'s `with_lane_state!` macro), its own `on_frame`/`on_launch` hooks called
+  from `agent/frame.rs`/`agent/launch.rs` the same way every sibling lane already is. State
+  source decided narrower than the issue's own proposal (Decided, Skippy, delegated by Stuart
+  2026-10-18, recorded on issue #937): `omp://rpc.md` exposes no `get_state` field and no
+  dedicated event for the advisor's on/off boolean, so only `/advisor on`'s ("Advisor
+  enabled.") and `/advisor off`'s ("Advisor disabled.") own reply text, both proven stable
+  by #917's `scripts/verify-917-advisor-command.mjs`, are trusted without reservation;
+  `/advisor status`'s own reply is not (#917's own evidence showed it replying `Advisor
+  "default" is running.` immediately after an explicit `/advisor off`), so a silent
+  attach/resume probe (`consume_if_silent_probe`, a pre-dispatch veto added to `agent/
+  frame.rs`'s own `"command_output"` arm so its reply never reaches the transcript --
+  issue #937's own accessibility requirement) trusts only an unambiguous "Advisor is
+  enabled"/"Advisor is disabled" substring, leaving every other wording (including that
+  exact "is running." text) unknown -- chip hidden, never a wrong "on" state. A typed or
+  chip-sent `/advisor on`/`/advisor off` is never suppressed; `session::advisor::on_frame`
+  only piggy-backs on the same frame `apply_transcript_frame` already rendered. New
+  `advisor:update` event (`events.rs`), `advisorOn` on `SessionSnapshot`
+  (`ipc/conversations.rs`'s `build_snapshot`, `current_advisor_value`). **Code-verified
+  only**: no build slot has been granted for this sub-task, so none of this has been compiled,
+  `cargo test`ed, or run against a real `omp` yet -- see FR-078.
+
+- [X] T280 [US1] #937 Advisor chip -- frontend. New `AdvisorChip` (`ReadoutChips.tsx`, built on
+  the shared `ReadoutChip` baseline), rendered unconditionally (no Settings toggle) as the
+  first item of `ComposerStatusLine.tsx`; icon `EyeIcon`, visible text "Advisor", accessible
+  name "Advisor on. Turn off" (busy: "Advisor on. Turning off…"), hidden (renders `null`)
+  while off. Clicking sends `/advisor off` via `window.refract.chat.send`, ignoring repeat
+  clicks while in flight. New per-session `advisor-store.ts` (Zustand, mirrors `readout-
+  store.ts`'s per-session shape), seeded from `SessionSnapshot.advisorOn` (`applySnapshot.ts`)
+  and kept live by the new `advisor:update` IPC event (`shared/ipc.ts`, `tauri-bridge/
+  index.ts`). `ReadoutChip.tsx` gained an optional `buttonRef?: Ref<HTMLButtonElement>` prop
+  (backward-compatible, threaded onto the `onActivate` `<button>` only); a
+  `useLayoutEffect` keyed on `advisorOn` reads that ref in its own cleanup (the same focus-
+  handoff-on-unmount-equivalent pattern `RequestCard.tsx`'s `ResolvedRequestSummary`/
+  `AskCard.tsx` already use) to move focus to the message textarea and announce "Advisor
+  off" through `MessageInput.tsx`'s existing shared `useDraftStore.getState()
+  .announceAttachment` live region, only when the chip's own button held focus right before
+  the transition -- never for a plain typed `/advisor off`, which already has its own visible
+  transcript notice. **Code-verified only**: `pnpm typecheck`/`pnpm build` have not been run
+  (no build slot for this sub-task yet) -- see FR-078.
+
+- [X] T281 [US1] #937 Docs and live-check script. Amended `CONTEXT.md`'s **Advisor** entry (the
+  readout is part of what "Advisor" means, not a separate term), `docs/design/product-
+  chat.md` (new Advisor readout bullet), `docs/PLAN.md` (2026-10-18 status-update), and this
+  spec (new FR-078, renumbered from a provisional FR-076 once #954 landed FR-074/FR-075 and
+  #967 claimed FR-076/FR-077). New `scripts/verify-937-advisor-chip.mjs`
+  (modelled on `verify-917-advisor-command.mjs`/`verify-927-928-quiet-composer.mjs`'s own
+  scratch-launch/CDP pattern): AX-tree accessible-name assertions for both on/off states and
+  both busy wordings, a geometry comparison against a neighbouring status-line chip (24px row
+  height, 14px icon), a mouse-click run and a separate keyboard-only run (Tab, Enter) each
+  asserting the send, the busy no-op, the settled `/advisor status` confirmation, the chip
+  leaving the AX tree, focus landing on the message textarea, and the "Advisor off"
+  announcement, plus Dark/Obsidian/Dark (high contrast) screenshots of the chip ON. `node
+  --check` confirmed it parses. **Not yet run**: no build slot has been granted for this
+  sub-task, so this script has never executed against a real built app -- its own
+  `notExercised` list additionally discloses that it cannot itself prove the silent attach-
+  probe's own transcript suppression without a second scratch run across an app restart.
+
+Not yet opened against a build at the time these three tasks were built (delegated
+sub-tasks, no build slot granted): `pnpm typecheck` and `pnpm vitest run` have since passed
+clean on the full worktree, and `pnpm check:indent`/`check:ui-text`'s source-only parts,
+`check:theme-contrast`, `check:file-size`, and `check:parity --gate` all pass too
+(`check:ui-text`'s bundle-scan half needs a built `out/` and is deferred with the rest).
+Opened as draft PR #972 (`Refs #937` until the live check runs). Merged `origin/main` to pick
+up #954 (FR-074/FR-075, Phase 54, T272-T274) and renumbered this phase from a provisional
+Phase 54/T272-T274/FR-076 to Phase 56/T279-T281/FR-078 (Phase 55/FR-076-077 reserved for #967,
+still in flight). Still pending the build slot: `cargo fmt --check`/`cargo test`/`cargo
+clippy`, `pnpm build`, and `node scripts/verify-937-advisor-chip.mjs` live against a real app
+-- every claim about THOSE is code-verified only (static read of the diff), per FR-078.
+
+Build slot granted 2026-10-18, `scripts/ci-local.mjs && scripts/verify-937-advisor-chip.mjs`
+chained (per the `refract-lane-pr-gate` rule): `cargo fmt --check` clean, the Rust unit suite
+passed (727/727 once two genuinely flaky, unrelated git-subprocess tests --
+`git::diff_stat::diff_stat_counts_tracked_edits_and_untracked_files`,
+`git::worktree_validity::invalid_for_a_folder_git_has_never_registered` -- were confirmed
+passing in isolation and re-run clean under the same full-suite load; neither file is touched
+by this branch), the Tauri debug build succeeded, and `verify-937-advisor-chip.mjs` ran live
+against the real built exe and a real `omp` process. Final head `e0c5e15`: **0 failures**
+(`report.json`) -- mouse- and keyboard-driven toggle cycles (busy state, exactly-one
+authoritative "Advisor disabled." reply, AX-tree removal, focus-to-textarea, the "Advisor off"
+announcement), chip geometry (24px row, 14px icon) and order (second-to-last, right before the
+Current time chip, with `current-time` explicitly enabled for the check), no-cost-leak, and a
+live-measured contrast ratio all PASS across Dark/Obsidian/Dark (high contrast). One
+`contract_replay` regression this round's own `advisorOn` field caused against the frozen
+golden trace (`scripts/fixtures/contract-replay/session-scenario.rust-trace.json`) was found
+and fixed (new field added to the golden file and to `scrub_known_divergences`'s Rust-only-
+field allowlist, same pattern as `readout.branch`). A genuine, falsified-against-the-DOM
+harness limitation, not a product bug: the themed hover check's own mouse-away tooltip-close
+assertion never settles (`[role="tooltip"]`'s `data-state` never leaves `delayed-open`/
+`instant-open` across a 3s poll) because CDP's synthetic `mouseMoved` does not reliably
+produce the real `pointerleave` DOM event Radix's open-state tracking needs against this
+Tauri/WebView2 target -- confirmed the pointer genuinely left (`document.elementFromPoint`)
+and that the contrast measurement itself is unaffected (native `:hover` tracking is
+independent of JS event dispatch); recorded honestly as `notExercised`, not asserted as a
+failure it cannot back up. **Still `Refs #937`, not `Closes`**: the silent attach/resume
+probe's own firing (acceptance item 4's "on agent attach" clause) was not independently
+provable without a second across-restart scratch run (tracked on #650), so FR-078's own
+attach-probe guarantee stays code-verified rather than live-proven on that one point.
+
+Merged `origin/main` twice more (`0b63b00`: #967 diff-stat colour/reasoning gauge, 3-file
+conflict resolved keeping both sides, no semantic gap -- #967 touches zero Rust/IPC/shared-
+schema code; `06af543`: #953 PR filters/resizable column, clean auto-merge, no conflicts, no
+gap) and re-ran the full chain on the resulting head. One build-infrastructure issue hit and
+fixed (not a code regression): the shared `CARGO_TARGET_DIR` carried a stale `refract-tauri`
+build-script cache from a different worktree's own prior build, producing a linker error
+(`LNK1327`) that referenced that OTHER worktree's own `windows-app-manifest.xml` path even
+though the file exists correctly at the same relative path in this one. Fixed with a scoped
+`cargo clean -p refract-tauri` (only this one package's cached artifacts in the shared target
+dir, not a wipe of the whole directory) before rebuilding clean. **Final confirmed run, head
+`06af543`** (clean tree, `dirty: false`): `cargo fmt --check`, the full Rust unit suite, and
+the Tauri debug build all passed; `verify-937-advisor-chip.mjs` reports **0 failures**
+(`report.json`), reproducing every finding from the first live run (toggle cycles, geometry,
+order, no-cost-leak, contrast across all 3 themes) with the same `notExercised` disclosures
+(the silent attach-probe's own firing, the tooltip mouse-away harness limitation, the indirect
+busy-window no-op check). All 3 themed screenshots viewed directly again. `pnpm typecheck`,
+`pnpm vitest run` (148/148), `check:indent`, `check:theme-contrast` (455/455),
+`check:file-size`, `check:parity --gate` (24/24 events, 100/100 requests),
+`check:drag-regions`, `check:versions`, `check:omp-schema-drift` all green on this head too.
+PR #972 body and this plan row updated with the final-run evidence; still `Refs #937`, not
+`Closes`, for the same acceptance-item-4 reason as before.

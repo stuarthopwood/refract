@@ -100,9 +100,7 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    // D1/D2 (#572): `set_ask_dialog` result; in-memory only. Gate round 2 (security Low):
-    // purely INFORMATIONAL -- the fallback decision uses `send_set_ask_dialog`'s own return
-    // value directly (`launch.rs`); nothing reads this field back.
+    // D1/D2 (#572): `set_ask_dialog` result, in-memory only (gate round 2, security Low) -- `send_set_ask_dialog`'s own return value drives the fallback (`launch.rs`); nothing else reads this field.
     #[allow(dead_code)]
     ask_dialog_enabled: bool,
     // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
@@ -110,6 +108,7 @@ struct AgentState {
     stop_requested: bool,
     shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
+    advisor: crate::session::advisor::State,
     #[allow(dead_code)]
     model: crate::session::model::State,
     #[allow(dead_code)]
@@ -203,6 +202,7 @@ impl SessionAgent {
                 turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
+                advisor: Default::default(),
                 model: Default::default(),
                 readout: Default::default(),
                 subagents: Default::default(),
@@ -574,6 +574,7 @@ impl SessionAgent {
     // named `async fn`, callable exactly as before; `with_termination_state` is already in real
     // use by `session::termination`, the rest stay `#[allow(dead_code)]` until their own lane
     // lands, same as before this macro existed).
+    with_lane_state!(with_advisor_state, advisor, crate::session::advisor::State);
     with_lane_state!(with_model_state, model, crate::session::model::State);
     with_lane_state!(with_readout_state, readout, crate::session::readout::State);
     with_lane_state!(
