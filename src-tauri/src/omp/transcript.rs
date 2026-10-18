@@ -32,6 +32,10 @@ use subagent_items::{
     apply_async_result_jobs, apply_batch_task_result, jobs_from_details, read_task_specs,
     subagent_name, task_text, try_apply_async_result, upsert_subagent_items,
 };
+mod notice_prefixes;
+use notice_prefixes::{
+    COMMAND_OUTPUT_NOTICE_PREFIX, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX,
+};
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -242,14 +246,6 @@ const SUBAGENT_NAME_LENGTH: usize = 60;
 /// Tool names the agent calls for its own bookkeeping (T086, FR-052): a call to one of these
 /// never becomes a `tool` item (`src/shared/model.ts` `HIDDEN_TOOLS`).
 const HIDDEN_TOOLS: &[&str] = &["todo"];
-
-/// `id` prefix for the `notice` a hidden tool's failure becomes (T086, FR-052;
-/// `HIDDEN_TOOL_NOTICE_PREFIX`).
-const HIDDEN_TOOL_NOTICE_PREFIX: &str = "hidden-tool-error:";
-
-/// `id` prefix for a `notice` built from a `command_output`/`notice` frame that arrived before
-/// the user had taken any action in this agent process (`STARTUP_NOTICE_PREFIX`).
-const STARTUP_NOTICE_PREFIX: &str = "startup-notice:";
 
 const ASYNC_RESULT_CUSTOM_TYPE: &str = "async-result";
 const ADVISORY_CUSTOM_TYPE: &str = "advisor";
@@ -1457,7 +1453,7 @@ fn apply_frame_items(
             }
             let mut items = items;
             let id = if has_user_acted {
-                format!("notice-{}", items.len())
+                format!("{COMMAND_OUTPUT_NOTICE_PREFIX}{}", items.len())
             } else {
                 format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
             };

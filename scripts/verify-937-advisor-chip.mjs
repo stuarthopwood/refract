@@ -138,7 +138,7 @@ async function main() {
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
     const absentAtStart = !(await advisorChipPresent(cdp));
-    if (absentAtStart) findings.push('Advisor chip absent at Session start (advisor off by default), as FR-076 requires.');
+    if (absentAtStart) findings.push('Advisor chip absent at Session start (advisor off by default), as FR-078 requires.');
     else failures.push('Advisor chip was ALREADY present at Session start, with no `/advisor on` yet sent -- a real failure.');
 
     // ---- Mouse-driven cycle (item 2-4 of the issue's own brief) ----

@@ -3173,7 +3173,79 @@ follow-ups above are the only remaining changes, none touching code or the live-
 
 ## Phase 54: Convergence
 
-- [X] T272 [US1] #937 Advisor chip -- Rust lane. New `session::advisor` (issue #784's
+- [X] T272 [US7] Issue #947 (Decided, Skippy, delegated by Stuart; away mode, 2026-10-16): fuzzy
+  slash-command search. Added `src/shared/slashCommandSearch.ts` (`rankSlashCommands`, pure, no
+  DOM): every listed command -- built-ins, project/user `file` commands, and `skill:<name>`
+  entries alike -- is ranked exact/prefix/word-start (after `-`, `_`, `:` or a space)/substring/
+  subsequence (fzy-style), ties keeping the input order; a skill's own `skill:` prefix is tried
+  both with and without it, so `/rev` finds `skill:code-review` and `/skill` lists every skill
+  via an ordinary prefix match; a command's description is searched too, but a description-only
+  match always ranks below a name match. `SlashMenu.tsx`'s old prefix-only `filterSlashCommands`
+  is replaced by `rankSlashMenuCommands` (wrapping the new scorer); matched name characters
+  render in `<b>` inside the option's own single text node (`renderMatchedName`), so the
+  accessible name is never split into separate announcements. `MessageInput.tsx` gained a
+  debounced (500ms), `useClearedAnnouncement`-backed result-count announcement mirroring
+  `SessionList.tsx`'s own search announcement (re-reading live draft text and commands at fire
+  time, never the render-time closure, so the debounce timer does not depend on a fresh array
+  identity every keystroke). Per FR-074.
+- [X] T273 [US7] Issue #938 items 1 and 4 (gate follow-ups from PR #923/#917): slash subcommand
+  step, and a command reply no longer stretching the previous turn's own time. `SlashMenu.tsx`
+  gained `parseSlashMenuState` (replacing the old bare `parseSlashQuery`): one space after a
+  RECOGNISED command with verified subcommands (`command.subcommands`, already pruned to the
+  verified set) parses as that command's own subcommand step instead of closing the menu, its
+  own query being whatever follows the space; a second space closes it, same as any other
+  command. `orderSubcommandsForEmptyQuery` puts `status` first with nothing typed yet (every
+  other subcommand keeps its existing order); a typed query ranks via the same T272 scorer, and
+  the synthetic "Run /<cmd>" row shows only on an empty query (gate round 2 finding H) so a
+  partial match never blind-fires the bare command. `MessageInput.tsx`'s `completeSlashCommand`
+  (choosing a top-level command) now only ever leaves the box reading `/name ` -- the composer
+  text re-parsing as the subcommand step is what advances the menu, with no separate step state;
+  a new `completeSubcommand` completes the full `/name subcommand ` invocation, and
+  `handleSlashMenuSelect` routes Enter/Tab/mousedown to whichever one the current parsed step
+  calls for. Separately, `command_output` frames now get a distinct `command-output:` id prefix
+  (`COMMAND_OUTPUT_NOTICE_PREFIX`, added to `src/shared/commandOutputNotice.ts` and
+  `src-tauri/src/omp/transcript/notice_prefixes.rs`, consumed by `apply_frame_items`, replacing
+  the generic `notice-N` id that frame type used to share with a plain `notice` frame); `turnTiming.ts`'s
+  `computeTurnEnd` skips any notice carrying that prefix entirely (neither its `receivedAt`
+  arrival time nor any `itemEndTime` counts), so a reply that arrives after its turn has already
+  settled no longer stretches that turn's own shown elapsed time -- and (gate round 3 Medium fix)
+  `TurnTotalLine`'s own remembered settle state distinguishes "never settled" from "settled, no
+  usable timing" (a lazy `useState` initialiser, not a ref written during render), so a genuine
+  resumption of the same turn (an async subagent result, an advisor follow-up, a retry after
+  compaction) resumes live-ticking instead of staying stuck at a stale value forever, and a
+  component remount (virtualised windowing, a session switch) can no longer make a settled,
+  untimed turn tick through an unrelated running command. The reply itself still renders
+  normally; only the turn-time MATH excludes it. The other #938 items (refusal-text wording
+  naming the allowed subcommands, short-notice wrapping, a Settings mention, and the suspected
+  duplicate render) are out of scope for this story and remain open on the issue. Per FR-075
+  and the FR-046 amendment.
+- [X] T274 [US7] Update the docs: amended `specs/001-core-session-workspace/spec.md` with new
+  FR-074 and FR-075 (renumbered from a provisional FR-073/FR-074 once #966/#554 landed the real
+  FR-073 on `origin/main` first), an amendment to FR-046, and two dated `### Session 2026-10-17`
+  Clarifications entries recording both decision records; `docs/design/product-chat.md`'s "Slash
+  commands" bullet gained a Fuzzy ranking and a Subcommand step sentence; `docs/PLAN.md`'s "Late
+  2026-10-16 additions" row records both issues as built, with #938 noting only items 1 and 4 are
+  covered (the rest stay open on the issue).
+
+This phase was written retroactively after the implementation above, the same reasoning Phase 48
+(#917) used: no prior `/speckit.plan`/`/speckit.tasks` pass covered either issue. Opened as draft
+PR #954 (`feat/947-slash-search`), **Closes #947, Refs #938** (items 1 and 4 only -- #938's other
+items stay open on the issue): `pnpm typecheck`/`pnpm vitest run` (148/148)/`node
+scripts/check-indent.mjs`/`node scripts/check-file-size.mjs` all green on the final pushed head.
+Live-checked under Main's own build slot across several gate rounds (`ci-local.mjs`'s `cargo
+fmt --check`/`cargo test`/`cargo clippy`/Tauri debug build, chained into
+`scripts/verify-947-938-slash-menu.mjs`): three earlier runs each found and fixed one genuine
+test-script bug (an unscoped `aria-hidden` empty-state selector; a turn-time baseline sampling
+race; an announcement live-region selector colliding with `Transcript.tsx`'s own always-mounted
+regions, closed off for good with a `data-slot="slash-menu-announcement"` target), never a
+product regression. Final run at commit `ee64bf0`: **31 findings, 0 failures, 0 notExercised**,
+`report.json`'s `gitHead` matches the pushed head, `dirty: false`, `exeSha256` confirmed
+unchanged through the copy; all 11 screenshots viewed. `git diff --numstat origin/main --
+specs/001-core-session-workspace/tasks.md` confirmed 0 deletions before this phase was appended.
+
+## Phase 56: Convergence
+
+- [X] T279 [US1] #937 Advisor chip -- Rust lane. New `session::advisor` (issue #784's
   pre-declared-lane pattern, alongside `model`/`readout`/`side_chat`/`start_queue`/
   `subagents`/`termination`): its own `State` held in `AgentState` via `with_advisor_state`
   (`agent/mod.rs`'s `with_lane_state!` macro), its own `on_frame`/`on_launch` hooks called
@@ -3195,9 +3267,9 @@ follow-ups above are the only remaining changes, none touching code or the live-
   `advisor:update` event (`events.rs`), `advisorOn` on `SessionSnapshot`
   (`ipc/conversations.rs`'s `build_snapshot`, `current_advisor_value`). **Code-verified
   only**: no build slot has been granted for this sub-task, so none of this has been compiled,
-  `cargo test`ed, or run against a real `omp` yet -- see FR-076.
+  `cargo test`ed, or run against a real `omp` yet -- see FR-078.
 
-- [X] T273 [US1] #937 Advisor chip -- frontend. New `AdvisorChip` (`ReadoutChips.tsx`, built on
+- [X] T280 [US1] #937 Advisor chip -- frontend. New `AdvisorChip` (`ReadoutChips.tsx`, built on
   the shared `ReadoutChip` baseline), rendered unconditionally (no Settings toggle) as the
   first item of `ComposerStatusLine.tsx`; icon `EyeIcon`, visible text "Advisor", accessible
   name "Advisor on. Turn off" (busy: "Advisor on. Turning off…"), hidden (renders `null`)
@@ -3214,12 +3286,13 @@ follow-ups above are the only remaining changes, none touching code or the live-
   .announceAttachment` live region, only when the chip's own button held focus right before
   the transition -- never for a plain typed `/advisor off`, which already has its own visible
   transcript notice. **Code-verified only**: `pnpm typecheck`/`pnpm build` have not been run
-  (no build slot for this sub-task yet) -- see FR-076.
+  (no build slot for this sub-task yet) -- see FR-078.
 
-- [X] T274 [US1] #937 Docs and live-check script. Amended `CONTEXT.md`'s **Advisor** entry (the
+- [X] T281 [US1] #937 Docs and live-check script. Amended `CONTEXT.md`'s **Advisor** entry (the
   readout is part of what "Advisor" means, not a separate term), `docs/design/product-
-  chat.md` (new Advisor readout bullet), `docs/PLAN.md` (2026-10-18 status-update
-  paragraph), and this spec (new FR-076). New `scripts/verify-937-advisor-chip.mjs`
+  chat.md` (new Advisor readout bullet), `docs/PLAN.md` (2026-10-18 status-update), and this
+  spec (new FR-078, renumbered from a provisional FR-076 once #954 landed FR-074/FR-075 and
+  #967 claimed FR-076/FR-077). New `scripts/verify-937-advisor-chip.mjs`
   (modelled on `verify-917-advisor-command.mjs`/`verify-927-928-quiet-composer.mjs`'s own
   scratch-launch/CDP pattern): AX-tree accessible-name assertions for both on/off states and
   both busy wordings, a geometry comparison against a neighbouring status-line chip (24px row
@@ -3232,11 +3305,14 @@ follow-ups above are the only remaining changes, none touching code or the live-
   `notExercised` list additionally discloses that it cannot itself prove the silent attach-
   probe's own transcript suppression without a second scratch run across an app restart.
 
-Not yet opened as a PR at the time these three tasks were built (delegated sub-tasks, no build
-slot granted): `pnpm typecheck` and `pnpm vitest run` have since passed clean on the full
-worktree, and `pnpm check:indent`/`check:ui-text`'s source-only parts, `check:theme-contrast`,
-`check:file-size`, and `check:parity --gate` all pass too (`check:ui-text`'s bundle-scan half
-needs a built `out/` and is deferred with the rest). Still pending the build slot: `cargo
-fmt --check`/`cargo test`/`cargo clippy`, `pnpm build`, and `node scripts/verify-937-advisor-chip.mjs`
-live against a real app -- every claim about THOSE is code-verified only (static read of the
-diff), per FR-076.
+Not yet opened against a build at the time these three tasks were built (delegated
+sub-tasks, no build slot granted): `pnpm typecheck` and `pnpm vitest run` have since passed
+clean on the full worktree, and `pnpm check:indent`/`check:ui-text`'s source-only parts,
+`check:theme-contrast`, `check:file-size`, and `check:parity --gate` all pass too
+(`check:ui-text`'s bundle-scan half needs a built `out/` and is deferred with the rest).
+Opened as draft PR #972 (`Refs #937` until the live check runs). Merged `origin/main` to pick
+up #954 (FR-074/FR-075, Phase 54, T272-T274) and renumbered this phase from a provisional
+Phase 54/T272-T274/FR-076 to Phase 56/T279-T281/FR-078 (Phase 55/FR-076-077 reserved for #967,
+still in flight). Still pending the build slot: `cargo fmt --check`/`cargo test`/`cargo
+clippy`, `pnpm build`, and `node scripts/verify-937-advisor-chip.mjs` live against a real app
+-- every claim about THOSE is code-verified only (static read of the diff), per FR-078.

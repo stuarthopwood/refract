@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
@@ -74,33 +75,6 @@ function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): To
     if (candidate.kind === 'tool' && candidate.tool === 'ask') return candidate
   }
   return undefined
-}
-
-/** Every item's own best end-time estimate, read from whichever kind-specific timing field it
- * has (T076): absent for a kind with none at all (`assistant-text`, `notice`, `request`), which
- * is exactly why `receivedAt` (live arrival time) is tried first by the caller. */
-function itemEndTime(item: TranscriptItem): number | undefined {
-  if (item.kind === 'tool' || item.kind === 'subagent') {
-    return item.startedAt != null && item.durationMs != null ? item.startedAt + item.durationMs : undefined
-  }
-  if (item.kind === 'thinking') return item.endedAt
-  if (item.kind === 'user' || item.kind === 'agent-message') return item.at
-  return undefined
-}
-
-// Excludes the turn's own leading `user` item: its `at` always exists (even a sentinel `0` for a
-// history entry with no usable timestamp, FR-046), so including it would make `computeTurnEnd`
-// return a defined value for every turn and defeat the "omitted when no item carries usable
-// timing" rule below -- a reopened Conversation with no real timing would show "0s" instead of
-// nothing.
-function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
-  let maxEnd: number | undefined
-  for (const item of turnItems) {
-    if (item.kind === 'user') continue
-    const end = receivedAt[item.id] ?? itemEndTime(item)
-    if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
-  }
-  return maxEnd
 }
 
 interface Turn {
@@ -231,9 +205,44 @@ interface TurnTotalLineProps {
 // the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
 // all, which is not a real timing and must not be used to compute an elapsed time).
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
+  // Settled is always `computeTurnEnd` (turnTiming.ts): pure/deterministic, so an unrelated
+  // command's own `command_output` reply (excluded from its own scan) can never affect it no
+  // matter how many times it cycles `isTurnRunning` true/false (gate round 1, live-confirmed 9s
+  // -> 14s fix). `lastSettledEnd` (state, set from an effect -- never written during render)
+  // remembers this turn's own last real settle so `hasNewerRealActivity` (turnTiming.ts) can
+  // tell a genuine resumption (an async subagent result, an advisor follow-up, a retry after
+  // compaction) apart from a bare command's own processing, which never satisfies it.
+  //
+  // `undefined` vs `null` (round 3 gate fix, Medium): `undefined` means "never settled yet";
+  // `null` means "no settle BASELINE yet" (never a permanent block -- round 4 fix M1 below).
+  // Round 4 gate fix (Main, 2026-10-18, decided: accept the rare remount-during-a-command
+  // flicker rather than a frozen clock -- add to #938): H1 -- the lazy initialiser used to seed
+  // `lastSettledEnd` from `settledEnd` whenever `settledEnd` was already defined, EVEN WHILE
+  // still genuinely running (a remount mid-turn, `react-virtuoso` windowing or a session switch,
+  // can see an already-partially-timed turn) -- that wrongly treated the turn's OWN current
+  // state as its "baseline", so nothing could ever look "newer" than itself and the clock froze
+  // on that value until a later item arrived. The initialiser now ignores `settledEnd` entirely
+  // while `isLastTurn && isTurnRunning`: always `undefined` (ticks live via `Date.now()`
+  // immediately) in that case, only seeding from `settledEnd` once genuinely not running. M1 --
+  // `null` must not block ticking forever either: once `settledEnd` itself later becomes defined
+  // (a genuine resumption's first real item appears) while `lastSettledEnd` is still `null`,
+  // there is no prior real baseline to compare against, so ANY defined `settledEnd` is itself the
+  // signal to resume ticking (a bare command's own reply can still never trigger this: its
+  // notice is excluded from `computeTurnEnd` exactly as before, so `settledEnd` stays `undefined`
+  // for a genuinely untimed turn regardless of how many unrelated commands run against it).
+  const settledEnd = computeTurnEnd(turn.items, receivedAt)
+  const [lastSettledEnd, setLastSettledEnd] = React.useState<number | null | undefined>(() =>
+    isLastTurn && isTurnRunning ? undefined : (settledEnd ?? null)
+  )
+  React.useEffect(() => {
+    if (!(isLastTurn && isTurnRunning)) setLastSettledEnd(settledEnd ?? null)
+  }, [isLastTurn, isTurnRunning, settledEnd])
   if (!turn.userItem || turn.userItem.at === 0) return null
-  const running = isLastTurn && isTurnRunning
-  const end = running ? Date.now() : computeTurnEnd(turn.items, receivedAt)
+  const running =
+    isLastTurn &&
+    isTurnRunning &&
+    (lastSettledEnd === undefined || (lastSettledEnd === null ? settledEnd !== undefined : hasNewerRealActivity(turn.items, receivedAt, lastSettledEnd)))
+  const end = running ? Date.now() : settledEnd
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
   const elapsed = formatElapsed(elapsedMs)

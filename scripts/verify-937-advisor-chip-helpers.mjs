@@ -127,7 +127,7 @@ export async function activeElementIsMessageBox(cdp) {
  * Advisor chip renders as the FIRST child of `ComposerStatusLine.tsx`, directly after the
  * textarea/Send/Stop group in DOM order, so a small cap is enough; a larger one would hide a
  * real regression (the chip moved, or stopped rendering, far enough away that "eventually
- * reachable" would no longer mean "where FR-076 says it sits"). */
+ * reachable" would no longer mean "where FR-078 says it sits"). */
 export async function tabToAdvisorChip(cdp, pressTab, { stepCap = 8 } = {}) {
   for (let i = 0; i < stepCap; i++) {
     await pressTab(cdp);
