@@ -172,17 +172,13 @@ export async function waitForStartProgressKind(cdp, sessionId, kind, timeoutMs =
   throw new Error(`waitForStartProgressKind(${sessionId}, ${kind}): timed out after ${timeoutMs}ms, last read was ${JSON.stringify(last)}`);
 }
 
-/** Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2) on a Session row's
- *  own open button (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and exact
- *  modifier combination `onClick`'s own `event.ctrlKey` branch checks, which calls the real
- *  `openInSplit(session.id)` -- not a direct store call (same production path a user's own
- *  Ctrl+click takes). */
-export async function ctrlClickSessionRow(cdp, sessionId) {
-  // Gate-fix (confirmed live, bg_832): a bare `getBoundingClientRect()` here can be stale if
-  // the Session list scrolled since the row was last visible (e.g. creating Session B, or the
-  // list re-ordering after a restart) -- the dispatched click then lands wherever that point
-  // now is, not the intended row, and the split silently never opens. Scrolls the row into view
-  // first and confirms (`elementFromPoint`) the click point genuinely hits it before dispatching.
+/** Shared by `ctrlClickSessionRow`/`clickSessionRow`: scrolls a Session row (`data-session-open`,
+ *  SessionRow.tsx) into view and confirms (`elementFromPoint`) the computed click point
+ *  genuinely hits it before dispatching -- a bare `getBoundingClientRect()` can be stale if the
+ *  Session list scrolled since the row was last visible (gate-fix, confirmed live, bg_832/
+ *  bg_840: the dispatched click then lands wherever that point now is, not the intended row,
+ *  and whatever the click was supposed to do silently never happens). */
+async function clickSessionRowCore(cdp, sessionId, modifiers, label) {
   const rect = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
     if (!el) return null;
@@ -192,10 +188,24 @@ export async function ctrlClickSessionRow(cdp, sessionId) {
     const hit = document.elementFromPoint(x, y);
     return { x, y, hitsSelf: hit === el || (!!hit && el.contains(hit)) };
   })()`);
-  if (!rect) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
-  if (!rect.hitsSelf) throw new Error(`ctrlClickSessionRow(${sessionId}): elementFromPoint at (${rect.x}, ${rect.y}) after scrollIntoView did not hit the row -- something else is covering it.`);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers: 2 });
+  if (!rect) throw new Error(`${label}(${sessionId}): no [data-session-open] row found.`);
+  if (!rect.hitsSelf) throw new Error(`${label}(${sessionId}): elementFromPoint at (${rect.x}, ${rect.y}) after scrollIntoView did not hit the row -- something else is covering it.`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1, modifiers });
+}
+
+/** Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2) on a Session row's
+ *  own open button -- the exact modifier combination `onClick`'s own `event.ctrlKey` branch
+ *  checks, which calls the real `openInSplit(session.id)` -- not a direct store call. */
+export async function ctrlClickSessionRow(cdp, sessionId) {
+  return clickSessionRowCore(cdp, sessionId, 2, 'ctrlClickSessionRow');
+}
+
+/** A real plain click (no modifier) on a Session row's own open button -- the exact production
+ *  path `onClick`'s `replaceFocused(session.id)` branch takes (re-focusing a Session after
+ *  something else, e.g. creating another Session, replaced it in the single pane). */
+export async function clickSessionRow(cdp, sessionId) {
+  return clickSessionRowCore(cdp, sessionId, 0, 'clickSessionRow');
 }
 
 /** A real `stopAgent` + `recover` round trip (`window.refract.sessions.*`, the same bridge

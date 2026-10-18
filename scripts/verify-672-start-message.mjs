@@ -56,7 +56,7 @@ import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
   waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
-  readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, restartAgent, assertFocusedPlainStageNotice,
+  readVisibleStartKind, waitForStartProgressKind, ctrlClickSessionRow, clickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionId, resolveExePath
 } from './verify-672-start-message-helpers.mjs';
 
@@ -218,7 +218,7 @@ async function main() {
     // Re-focus Session A (a real plain click, not Ctrl): creating B above focused B instead
     // (sessions-store.ts's own `create` calls `replaceFocused` on every create), and every
     // check below needs A's own notice mounted again.
-    await cdp1.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionA.id)}]')`);
+    await clickSessionRow(cdp1, sessionA.id);
     await cdp1.waitFor(`${REGIONS}.length >= 1`, { timeoutMs: 10_000, label: 'Session A refocused after creating Session B' });
 
     // ---- (2) Session with history, real restart: centred, dimmed ~40%, stays interactive ----
@@ -344,7 +344,7 @@ async function main() {
     else findings.push("memory-deferred: Session D's start cancelled (real cancelStart) after asserting, freeing its slot before Session C's own later restart.");
 
     // Re-focus Session C (a real plain click, not Ctrl) so GROUP/REGIONS scope back to it.
-    await cdp2.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionC.id)}]')`);
+    await clickSessionRow(cdp2, sessionC.id);
     await cdp2.waitFor(`${REGIONS}.length >= 1 && ${GROUP}`, { timeoutMs: 10_000, label: 'Session C refocused after the memory-deferred check' });
 
     // ---- Brand-new prompt/extended: Session C's own 1st start naturally crosses the real 60s
