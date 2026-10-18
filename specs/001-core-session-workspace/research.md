@@ -549,3 +549,75 @@ carries `"display":true` on every one of its ten async-result messages (both `me
 Transcript for `NoticeRow`'s own `sr-only` level marker ("Info:"), since every async-result
 message's own `content` is `""` in this fixture and a bare substring match would never fire
 regardless of the bug -- the row's existence, not its text, is the only reliable signal.
+
+## 21. Conversation preview/title bounded-read cap (issue #862, 2026-10-18; renumbered from a
+provisional decision 22 once #1003 claimed decision 20 on `origin/main` first)
+
+**Problem**: `conversations.rs`'s `read_preview_window` read a single fixed `PREVIEW_SCAN_BYTES
+= 8 * 1024` byte buffer and looked for the first `role: 'user'` message only inside it; finding
+none, `read_conversation_file` returned `None` and `list_conversations` silently skipped the
+whole file. OMP's own prelude between the session header and the first user message -- a
+`model_change`, `thinking_level_change`, and `service_tier_change` entry, then (newly) a
+`memory_recall` `custom` entry (about 8.6 KB observed) plus `eager-todo-prelude`/
+`eager-task-prelude` `custom_message` entries -- pushed real-world first user messages to about
+11 KB, well past that window, so an increasingly common Conversation vanished from the history
+list entirely with no error.
+
+**Alternatives considered**: (a) raise the fixed window's size -- rejected, since any fixed size
+can still be exceeded by a future OMP prelude entry (this is the second time the assumption has
+broken; `docs/spike/FINDINGS.md` item 11 originally recorded "within the first 8 KB" as an
+observed fact, not a documented OMP guarantee). (b) read the whole file -- rejected, the issue's
+own acceptance criteria require staying cheap for the 14+ MB files already observed in the wild.
+
+**Decision**: `read_conversation_file` reads through a `tokio::io::AsyncReadExt::take(
+PREVIEW_SCAN_HARD_CAP_BYTES)`-limited handle (a hard cap on bytes actually read from disk, not
+merely a byte count checked between complete lines -- gate round 1 correction below), streaming
+complete JSONL lines (`AsyncBufReadExt::read_until(b'\n', ...)` into one reused buffer, never a
+fixed-size byte buffer a record can be cut off mid-way through) up to
+`PREVIEW_SCAN_HARD_CAP_BYTES = 64 * 1024` -- about 5x the ~11 KB observed real-world overhead,
+generous headroom for OMP adding further prelude entries, while still at most 0.45% of the
+14.3 MB file `docs/spike/FINDINGS.md` item 11 originally measured. Reading stops the instant the
+first `role: 'user'` message is found (not merely once the cap is reached), so the common case --
+a first message well inside the cap -- is cheaper than the old code's own fixed read, not just no
+worse. The title read needs no separate window: OMP physically fixes it at a 256-byte slot that
+is always the file's first line (`omp://session.md` "File Format"), always well inside the 64 KiB
+cap regardless of where the cap lands, so the same single streaming pass reads it for free.
+
+**Decision**: a Conversation whose cap is hit before a user message is found is still listed
+(title read as above, `preview: None` turned into an empty string at the IPC boundary) rather
+than hidden -- reaching the cap proves nothing about whether a user message exists further into
+the file, so treating it as "no user message" would reintroduce a silent-hide bug under a
+different trigger (an unusually large but genuine prelude). Only a Conversation that reaches
+real end-of-file within the cap without ever finding a user message is skipped, unchanged from
+the existing data-model.md rule ("files with zero user messages are not listed").
+
+**Scope decision**: Electron's identical `src/main/conversations.ts` bug is not fixed -- the
+issue's own acceptance criteria scope the fix to the Rust build only, since Electron is already
+being retired (epic #797, R13).
+
+**Gate round 1 correction (code-reviewer/test-reviewer, PR #1006, HIGH)**: the first draft read
+complete lines with a plain `BufReader::read_line` over the raw file handle and only checked an
+own-tracked byte counter AFTER each complete line finished, which is not actually a hard cap --
+one sufficiently long single line (unrelated to this issue's own filler, but possible in
+principle) could still be read in full regardless of the cap. Fixed: the file handle itself is
+wrapped in `AsyncReadExt::take(PREVIEW_SCAN_HARD_CAP_BYTES)` before the `BufReader`, so not one
+byte past the cap is ever read from disk by any underlying read call, whatever a single line's
+own length; `read_until(b'\n', &mut buf)` reuses one buffer (`.clear()` per line) rather than
+allocating a fresh `String` per line. A piece that does not end in `\n` (the `take` limit cut it
+short, or the real file itself ends mid-line with no closing newline) is never parsed as a whole
+record, matching the original design's own "never parse a line that was cut off mid-record" rule
+exactly, just enforced at the read layer instead of after the fact. Lines (including the title
+line) are parsed from raw bytes (`serde_json::from_slice`), not a lossy/validated `String`
+conversion first -- invalid UTF-8 in one line simply fails to parse there, same as any other
+malformed line, and is skipped rather than aborting the whole scan (no `?` operator sits between
+a read and a parse anywhere in the function).
+
+**Gate round 1 correction (code-reviewer, PR #1006, LOW)**: the first draft's "found a user
+message" check additionally required non-empty extracted text (`if !text.is_empty() { preview =
+Some(...) }`), so a `role: 'user'` message with no text content (image-only, or an empty/missing
+`content`) left `preview` at `None` and the scan kept looking for a LATER message with non-empty
+text; if none existed before the cap or real end-of-file, the Conversation was hidden -- the same
+class of bug FR-086 exists to fix, reintroduced under a different trigger. Decided (Skippy,
+delegated by Stuart 2026-10-18, gate round 1): any `role: 'user'` message counts as found, full
+stop; `preview` becomes `Some(String::new())` when its own text is empty, and the scan never
+continues past it. FR-086 and its own Clarifications entry updated to state this explicitly.
