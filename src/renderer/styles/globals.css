@@ -75,6 +75,8 @@
   --color-severity-warning-bg: var(--severity-warning-bg);
   --color-severity-error-bg: var(--severity-error-bg);
   --color-severity-info-bg: var(--severity-info-bg);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed: var(--diff-removed);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -330,6 +332,16 @@
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
+  /* #925: diff-stat "+A -D" colouring (composer status line, Session details card, PR Changes
+   * tab and its own per-file header #919, and the chat transcript's own expanded DiffView
+   * header, gate round 1 M1) -- aliases the SAME `--state-working`/`--destructive` values
+   * DiffView.tsx/diff-view.css already colour the diff gutter/stat with (#630), not a second,
+   * independently-tunable hue (#550 "do not create a second set") -- the coloured counts
+   * always match the diff view's own insert/delete tint. A zero count renders
+   * `text-muted-foreground` at the call site instead of either of these (`DiffStatCounts`,
+   * `sessionDisplay.tsx`). */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): each `-bg` is the
    * same severity hue as `color-mix(in oklab, …)`, 12% opaque mixed into transparent, and is
    * checked two ways by `scripts/check-theme-contrast.mjs`: the severity colour read as text
@@ -430,6 +442,9 @@
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
+  /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark/HC (see `.theme-dark`'s own comment for the floor/verification
    * method, the three checked surfaces, and why 12%) -- this preset's own binding case, and the
@@ -690,6 +705,9 @@
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: oklch(0.82 0.13 220);
+  /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
+  --diff-added: var(--state-working);
+  --diff-removed: var(--destructive);
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark (see `.theme-dark`'s own comment for the floor/verification
    * method and the three checked surfaces) -- this preset's margins are the widest of the three

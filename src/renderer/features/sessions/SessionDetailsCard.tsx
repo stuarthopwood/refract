@@ -1,13 +1,14 @@
 import { cloneElement, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GaugeIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
+import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatDiffStat, formatDiffStatAccessible, formatRelativeTime } from './sessionDisplay'
+import { DiffStatLine, StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
 /** The session details card (T069/T070): wraps the row's open button (`children`, passed through
@@ -118,7 +119,7 @@ export function SessionDetailsCard({
               </span>
               {formatThinkingLevelLabel(session) && (
                 <span className="flex shrink-0 items-center gap-1.5">
-                  <GaugeIcon aria-hidden className="size-3.5 shrink-0" />
+                  <ReasoningGaugeIcon level={session.lastThinkingLevel} className="size-3.5 shrink-0" />
                   <span>
                     <span className="sr-only">Thinking level: </span>
                     {formatThinkingLevelLabel(session)}
@@ -131,15 +132,17 @@ export function SessionDetailsCard({
               {/* Gate round 5 fix (Flow LOW): this line had no `sr-only` full-figure pairing at
                   all, unlike the status line's identical `ChangesChip`, which carries one
                   (`formatDiffStatAccessible`, shared from `sessionDisplay.tsx` precisely so
-                  this card and the status line can never phrase the same stat two ways). */}
+                  this card and the status line can never phrase the same stat two ways). Issue
+                  #925: both now render through the shared `DiffStatLine`, so the figure is
+                  coloured (and paired with its sr-only text) exactly the same way in both
+                  places. */}
               {worktreeMissing || diffStatResult === 'loading' || diffStatResult === null ? (
                 <span className="truncate">
                   {worktreeMissing ? 'Not available' : diffStatResult === 'loading' ? 'Counting changes…' : 'Not available'}
                 </span>
               ) : (
                 <span className="truncate">
-                  <span className="sr-only">{formatDiffStatAccessible(diffStatResult)}</span>
-                  <span aria-hidden>{formatDiffStat(diffStatResult)}</span>
+                  <DiffStatLine stat={diffStatResult} />
                 </span>
               )}
             </div>

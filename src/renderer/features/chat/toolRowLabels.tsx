@@ -48,7 +48,7 @@ function cachedDiffStat(edit: NonNullable<ToolItem['edit']>): { added: number; r
 }
 
 // #632 section 3's "muted result" column, for one call's own row (solo or nested `ToolCallRow`):
-// an `edit` call's own "+N −M" line stat (`diffStat`, grounded in the same old/new text
+// an `edit` call's own "+N -M" line stat (`diffStat`, grounded in the same old/new text
 // `DiffView`'s expanded body already diffs, #630) joined with duration. `grep`/`glob`/`find`/
 // `read`/`write` get no stat: no documented, fixture-backed OMP output shape to probe first
 // (the issue's own rule is "no count rather than a wrong one"). Gated on `status === 'done'`
@@ -59,7 +59,7 @@ export function editStatForItem(item: ToolItem): { added: number; removed: numbe
 // Gate round 1 (Main, D2): the sr-only "N lines added, M removed" text used to carry inline but
 // was never announced -- an explicit `aria-label` (both `ToolCallRow`'s and the solo
 // `ToolGroupRow`'s own trigger) makes a browser ignore every child. Callers fold this into their
-// own aria-label array; the visual "+N −M" here stays `aria-hidden`.
+// own aria-label array; the visual "+N -M" here stays `aria-hidden`.
 export function diffStatAriaText(stat: { added: number; removed: number } | undefined): string | undefined {
   if (!stat) return undefined
   return `${stat.added} ${stat.added === 1 ? 'line' : 'lines'} added, ${stat.removed} ${stat.removed === 1 ? 'line' : 'lines'} removed`
@@ -72,7 +72,11 @@ export function callMeta(item: ToolItem): React.ReactNode | undefined {
   return joinMetaParts([
     stat ? (
       <span aria-hidden="true" className="tabular-nums">
-        +{stat.added} −{stat.removed}
+        {/* Gate round 2 (Low, Main): ASCII "-", not the Unicode minus sign (U+2212) this used
+         * to draw -- #925's own shared `DiffStatCounts` settled on the ASCII glyph everywhere a
+         * change count shows (`sessionDisplay.tsx`'s own header comment), and this tool-row
+         * stat is the one remaining change count that still drew the Unicode one. */}
+        +{stat.added} -{stat.removed}
       </span>
     ) : undefined,
     duration
