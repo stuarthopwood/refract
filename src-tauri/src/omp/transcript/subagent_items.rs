@@ -113,6 +113,7 @@ pub(super) fn upsert_subagent_items(
                 result: None,
                 job_id: None,
                 message_id: String::new(),
+                async_settled: false,
             })),
         }
     }
@@ -231,93 +232,181 @@ fn safe_stringify(value: &Value) -> String {
 /// `tool_execution_end` by `id` instead -- both key names are matched here, falling back to
 /// `label === name` for a subagent that never got a `progress` entry at all. Port of
 /// `applyAsyncResultJobs`.
+///
+/// Issue #989: the `async-result` custom message carries no `tool_call_id` of its own (unlike
+/// the richer `parentToolCallId` the subagent_lifecycle/progress/snapshot RPC payloads DO carry,
+/// `rpc-wire.schema.json`, #712's not-yet-wired-up subscription path, research.md section 16) --
+/// this function only ever sees `details.jobs[]`, where a job's own `id`/`jobId` is just its
+/// `label` echoed back verbatim, a FIXTURE-OBSERVED assumption (`job id == label`), not a
+/// documented wire guarantee. Reusing that same string across two unrelated Stages running a
+/// same-named subagent (fixture `scripts/fixtures/omp-frames/stages-941.jsonl`, "Story559" in
+/// Stage 2 then Stage 5) is therefore possible and must not let a later Stage's job clobber an
+/// earlier, already-settled Stage's row.
+///
+/// Gate round 2 (issue #989): the caller (`apply_message_snapshot`, `transcript.rs`) now applies
+/// a custom `async-result` message's jobs exactly ONCE, on `message_end` only -- so this
+/// function no longer needs to defend against the SAME message landing twice; there is no
+/// value-based duplicate check here any more (round 1 had one; it was removed because it could
+/// also wrongly no-op a genuinely NEW job that happened to already match a settled row's
+/// current status/result/duration).
+///
+/// A row only becomes **settled** (permanently excluded from matching) once a job carrying REAL
+/// data (`resultText`/`errorText`/`schema.data`) resolves it -- a job with none of those (the
+/// `wait` tool's bare completion shape, e.g. `subagents-background-turn.jsonl`'s "gamma" job)
+/// only ever gets the label-echo fallback below, which never settles a row: a later, genuinely
+/// real job sharing that `job_id` still applies.
+///
+/// Among still-unsettled items, candidates are ranked by THREE tiers, each only a tie-break for
+/// the one before it (gate round 2, Code reviewer Q1):
+/// 1. a still-**Running** row beats one already ended by its OWN batch result (Error/Cancelled/
+///    Done without ever getting a real async result) -- a batch-failed earlier Stage must never
+///    beat a later Stage that is still genuinely running;
+/// 2. a `job_id` match beats a label-only match, but ONLY between two rows that are BOTH still
+///    Running (gate round 3 fix, `agent://Main`, LOW, decided) -- a `job_id` match from a row
+///    that is itself NOT running (it merely picked up a stale `job_id` from its own earlier
+///    progress read, same as the batch-failed row tier 1 already excludes from winning) must
+///    never out-rank a label-only match just because it shares this job's `job_id`; among two
+///    rows that are BOTH not running, tier 2 ties and tier 3 decides directly;
+/// 3. the latest `started_at` wins any remaining tie.
+///
+/// Each job claims at most one item per call. Known limit (not fixed here, tracked on #712):
+/// any overlap of two same-name jobs whose own async-result is still outstanding -- if both
+/// rows are still Running when a job for their shared name arrives (tiers 1 and 2 both tie),
+/// tier 3's `started_at` tie-break is a best-effort guess, not a real correlation key (there is
+/// no `tool_call_id` on this frame to settle it for certain). Tier 1 itself can also swap a
+/// result the OTHER way (gate round 4, `agent://Main`): row A already ended its own batch call
+/// but is still unsettled (genuinely owed its own real async-result, not yet delivered), row B
+/// is a later, same-named Stage still Running -- a job meant for A can still land on B instead,
+/// since tier 1 always prefers the Running row regardless of which row the job actually
+/// belongs to; A then never settles. The real fix for both shapes of this limit is #712's
+/// `parentToolCallId`.
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,
     jobs: &[Value],
 ) -> Vec<Arc<TranscriptItem>> {
-    items
-        .into_iter()
-        .map(|mut item| {
-            let TranscriptItem::Subagent { name, job_id, .. } = item.as_ref() else {
-                return item;
-            };
-            let job_id_of = |j: &Value| -> Option<String> {
-                j.get("jobId")
-                    .and_then(Value::as_str)
-                    .or_else(|| j.get("id").and_then(Value::as_str))
-                    .map(String::from)
-            };
-            let by_job_id = jobs
-                .iter()
-                .find(|j| job_id_of(j).as_deref() == job_id.as_deref() && job_id.is_some());
-            let by_label = if job_id.is_none() {
-                jobs.iter()
-                    .find(|j| j.get("label").and_then(Value::as_str) == Some(name.as_str()))
-            } else {
-                None
-            };
-            let job = match by_job_id.or(by_label) {
-                Some(j) => j,
-                None => return item,
-            };
-            let job_status = job.get("status").and_then(Value::as_str);
-            if matches!(job_status, Some("pending") | Some("running")) {
-                return item;
+    let job_id_of = |j: &Value| -> Option<String> {
+        j.get("jobId")
+            .and_then(Value::as_str)
+            .or_else(|| j.get("id").and_then(Value::as_str))
+            .map(String::from)
+    };
+
+    let mut items = items;
+    let mut claimed = vec![false; items.len()];
+    for job in jobs {
+        let job_status = job.get("status").and_then(Value::as_str);
+        if matches!(job_status, Some("pending") | Some("running")) {
+            continue;
+        }
+        let jid = job_id_of(job);
+        let label = job.get("label").and_then(Value::as_str);
+        // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
+        // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: `'failed'`/
+        // `'error'` map to `error`; `'cancelled'`/`'aborted'` get their own `Cancelled`
+        // status (decision 15, #563).
+        let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
+        let failed = matches!(job_status, Some("failed") | Some("error"));
+        let new_status = if is_cancelled {
+            SubagentStatus::Cancelled
+        } else if failed {
+            SubagentStatus::Error
+        } else {
+            SubagentStatus::Done
+        };
+        let error_text = job.get("errorText").and_then(Value::as_str);
+        let result_text = job.get("resultText").and_then(Value::as_str);
+        let schema_data = job.get("schema").and_then(|s| s.get("data"));
+        let new_duration = job
+            .get("durationMs")
+            .and_then(Value::as_f64)
+            .map(|f| f as i64);
+        let has_real_result = ((failed || is_cancelled) && error_text.is_some())
+            || result_text.is_some()
+            || schema_data.is_some();
+
+        // Candidate selection, ranked (is_running, running_job_id_match, started_at)
+        // lexicographically -- tuple comparison already gives the three-tier priority above.
+        // Gate round 3 fix (issue #989, `agent://Main`, LOW, decided): tier 2 is
+        // `is_running && matches_job_id`, NOT bare `matches_job_id` -- a `job_id` match from a
+        // row that is itself NOT still running (a batch-failed/cancelled/done-without-a-real-
+        // result row that merely picked up a stale `job_id` from its own progress read) must
+        // never out-rank a label-only match just because it happens to share this job's
+        // `job_id`; among two rows that are BOTH not running, tier 2 ties (both `false`) and
+        // tier 3's `started_at` decides directly, same as it would with no tier 2 at all.
+        let mut best: Option<(bool, bool, i64, usize)> = None;
+        for (item_index, item) in items.iter().enumerate() {
+            if claimed[item_index] {
+                continue;
             }
-            // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
-            // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: `'failed'`/
-            // `'error'` map to `error`; `'cancelled'`/`'aborted'` get their own `Cancelled`
-            // status (decision 15, #563).
-            let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
-            let failed = matches!(job_status, Some("failed") | Some("error"));
-            let error_text = job.get("errorText").and_then(Value::as_str);
-            let result_text = job.get("resultText").and_then(Value::as_str);
-            let schema_data = job.get("schema").and_then(|s| s.get("data"));
-            let label = job.get("label").and_then(Value::as_str);
-            let new_job_id = job_id_of(job);
-            let new_duration = job
-                .get("durationMs")
-                .and_then(Value::as_f64)
-                .map(|f| f as i64);
-            // `Arc::make_mut` clones the value only when another reference is still outstanding,
-            // so an untouched (`return item` above) or no-op subagent row never pays a copy.
-            if let TranscriptItem::Subagent {
-                status,
-                duration_ms,
-                result,
+            let TranscriptItem::Subagent {
+                name,
                 job_id,
+                async_settled,
+                status,
+                started_at,
                 ..
-            } = Arc::make_mut(&mut item)
-            {
-                let new_result = if (failed || is_cancelled) && error_text.is_some() {
-                    error_text.map(String::from)
-                } else if let Some(r) = result_text {
-                    Some(r.to_string())
-                } else if let Some(data) = schema_data {
-                    Some(safe_stringify(data))
-                } else if let Some(l) = label {
-                    Some(l.to_string())
-                } else {
-                    result.clone()
-                };
-                *status = if is_cancelled {
-                    SubagentStatus::Cancelled
-                } else if failed {
-                    SubagentStatus::Error
-                } else {
-                    SubagentStatus::Done
-                };
-                *result = new_result;
-                if let Some(d) = new_duration {
-                    *duration_ms = Some(d);
-                }
-                if let Some(jid) = new_job_id {
-                    *job_id = Some(jid);
-                }
+            } = item.as_ref()
+            else {
+                continue;
+            };
+            if *async_settled {
+                continue;
             }
-            item
-        })
-        .collect()
+            let matches_job_id = job_id.is_some() && job_id.as_deref() == jid.as_deref();
+            let matches_label = job_id.is_none() && label == Some(name.as_str());
+            if !matches_job_id && !matches_label {
+                continue;
+            }
+            let is_running = *status == SubagentStatus::Running;
+            let started = started_at.unwrap_or(0);
+            let key = (is_running, is_running && matches_job_id, started);
+            if best.is_none_or(|(b_running, b_job_id, b_started, _)| {
+                key >= (b_running, b_job_id, b_started)
+            }) {
+                best = Some((key.0, key.1, started, item_index));
+            }
+        }
+        let Some((.., item_index)) = best else {
+            continue;
+        };
+        claimed[item_index] = true;
+
+        // `Arc::make_mut` clones the value only when another reference is still outstanding, so
+        // a row with no chosen target above never pays a copy.
+        if let TranscriptItem::Subagent {
+            status,
+            duration_ms,
+            result,
+            job_id,
+            async_settled,
+            ..
+        } = Arc::make_mut(&mut items[item_index])
+        {
+            let new_result = if (failed || is_cancelled) && error_text.is_some() {
+                error_text.map(String::from)
+            } else if let Some(r) = result_text {
+                Some(r.to_string())
+            } else if let Some(data) = schema_data {
+                Some(safe_stringify(data))
+            } else if let Some(l) = label {
+                Some(l.to_string())
+            } else {
+                result.clone()
+            };
+            *status = new_status;
+            *result = new_result;
+            if let Some(d) = new_duration {
+                *duration_ms = Some(d);
+            }
+            if let Some(jid_val) = jid {
+                *job_id = Some(jid_val);
+            }
+            if has_real_result {
+                *async_settled = true;
+            }
+        }
+    }
+    items
 }
 
 /// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool
@@ -381,6 +470,7 @@ pub(super) fn build_message_subagent_items(
                 duration_ms,
                 result: sub_result,
                 job_id,
+                async_settled,
                 ..
             }) => result.push(TranscriptItem::Subagent {
                 id: id.clone(),
@@ -395,6 +485,7 @@ pub(super) fn build_message_subagent_items(
                 result: sub_result.clone(),
                 job_id: job_id.clone(),
                 message_id: message_id.to_string(),
+                async_settled: *async_settled,
             }),
             _ => result.push(TranscriptItem::Subagent {
                 id: sub_id,
@@ -409,6 +500,7 @@ pub(super) fn build_message_subagent_items(
                 result: None,
                 job_id: None,
                 message_id: message_id.to_string(),
+                async_settled: false,
             }),
         }
     }

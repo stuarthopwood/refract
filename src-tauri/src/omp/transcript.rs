@@ -139,6 +139,15 @@ pub enum TranscriptItem {
         /// back (`upsert_subagent_items`'s own doc comment), self-correcting once that lands.
         #[serde(default)]
         message_id: String,
+        /// Never serialized (Rust-only bookkeeping, no TS/wire counterpart): set once a REAL
+        /// async-result job (one carrying `resultText`/`errorText`/`schema.data`, never the
+        /// bare label-echo fallback, gate round 1 item 2, issue #989) has resolved this row.
+        /// `apply_async_result_jobs` never re-matches a settled row to a later job sharing its
+        /// `job_id`/label, no matter which Stage that later job belongs to; an UNsettled row
+        /// (fresh, or only ever given the label-echo fallback) stays open to a later real
+        /// match. Defaults `false` on every construction/deserialize path.
+        #[serde(skip)]
+        async_settled: bool,
     },
     #[serde(rename = "agent-message")]
     AgentMessage {
@@ -1119,8 +1128,27 @@ fn apply_message_snapshot(
                 .unwrap_or("");
             let content = message.get("content").and_then(Value::as_str).unwrap_or("");
             let details = message.get("details").cloned().unwrap_or(Value::Null);
-            if let Some(async_result) = try_apply_async_result(&items, custom_type, &details) {
-                return async_result;
+            // Gate round 3 fix (issue #989, `agent://Main`): short-circuit on the custom type
+            // itself, before any other `custom` arm -- real omp always sets `display: true` on
+            // an async-result message (research.md decision 19), so without this short-circuit
+            // a `message_start` frame (job application skipped below) fell through to the plain
+            // `display == true` Notice branch, leaving a permanent Notice row that `message_end`
+            // never replaces or removes. On this LIVE path only, an `async-result` message
+            // therefore never builds a Notice/advisory/agent-message item at any frame --
+            // `message_end` is the only frame that ever applies its jobs, unconditionally
+            // guaranteed for every message (research.md decision 19's gate-round-3 correction).
+            // The HISTORY replay path (`items_from_history`) keeps its own, unchanged
+            // fallthrough: a stored async-result message with no `details.jobs` at all still
+            // falls through to the same checks this live arm now skips.
+            if custom_type == ASYNC_RESULT_CUSTOM_TYPE {
+                if !streaming {
+                    if let Some(async_result) =
+                        try_apply_async_result(&items, custom_type, &details)
+                    {
+                        return async_result;
+                    }
+                }
+                return items;
             }
             if let Some(advisory_items) = try_build_advisory_items(message_id, custom_type, content)
             {

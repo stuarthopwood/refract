@@ -195,9 +195,9 @@ fn extract_user_text(content: &Value) -> String {
 /// entries -- pushed that first user message to about 11 KB in the wild, past the old fixed
 /// 8 KB window (`PREVIEW_SCAN_BYTES`), so the Conversation was silently skipped. Reading through
 /// a `take`-limited handle means not one byte past the cap is ever read from disk, not just that
-/// parsing stops there; a line (including the title line) is only ever parsed once its own
-/// trailing `\n` has actually been read, so a record cut short by the cap is never fed to the
-/// JSON parser.
+/// parsing stops there; a line (including the title line) is parsed once its own trailing `\n`
+/// has actually been read, or when it is genuinely the file's own last line within the cap (no
+/// trailing newline at real end-of-file); a record cut short by the cap itself is never parsed.
 ///
 /// Returns `None` only when real end-of-file is reached within the cap without ever finding a
 /// user message (data-model.md: "files with zero user messages are not listed"). Returns
@@ -206,20 +206,20 @@ fn extract_user_text(content: &Value) -> String {
 /// cap proves nothing about whether a user message exists further in the file. A `role: 'user'`
 /// message with no text content (an image-only message, or one with an empty/missing `content`)
 /// still counts as "found" -- `preview` becomes `Some(String::new())` rather than leaving the
-/// scan to continue past it looking for a later, text-bearing message; FR-087's rule is "never
+/// scan to continue past it looking for a later, text-bearing message; FR-086's rule is "never
 /// hide a row", not "find the first message with non-empty text".
 async fn read_conversation_file(
     file: &std::path::Path,
 ) -> std::io::Result<Option<(String, Option<String>)>> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
     let handle = tokio::fs::File::open(file).await?;
-    // Gate round 2: `take`'s own limit already bounds every read, so no extra `BufReader`
-    // capacity on top of it is needed (a 64 KiB upfront allocation would be wasted I/O/memory for
-    // every call, `BufReader::new`'s small default is enough). One byte of budget PAST the
-    // intended cap is the sentinel that tells a file whose real size is EXACTLY
-    // `PREVIEW_SCAN_HARD_CAP_BYTES` apart from one that genuinely holds more: only
-    // `bytes_read_total > PREVIEW_SCAN_HARD_CAP_BYTES` (strictly past the cap, i.e. the sentinel
-    // byte was actually consumed) counts as a cap hit below.
+    // `take`'s own limit already bounds every read, so no extra `BufReader` capacity on top of
+    // it is needed (a 64 KiB upfront allocation would be wasted I/O/memory for every call,
+    // `BufReader::new`'s small default is enough). One byte of budget PAST the intended cap is
+    // the sentinel that tells a file whose real size is EXACTLY `PREVIEW_SCAN_HARD_CAP_BYTES`
+    // apart from one that genuinely holds more: only `bytes_read_total >
+    // PREVIEW_SCAN_HARD_CAP_BYTES` (strictly past the cap, i.e. the sentinel byte was actually
+    // consumed) counts as a cap hit below.
     let limited = handle.take(PREVIEW_SCAN_HARD_CAP_BYTES as u64 + 1);
     let mut reader = BufReader::new(limited);
     let mut title = String::new();

@@ -126,9 +126,9 @@ async function main() {
       'by this script constructing a multi-MB fixture on disk.',
     'A Conversation whose first role:\'user\' message is image-only (or otherwise has an empty ' +
       'or missing content field) is still listed with an empty preview rather than hidden -- ' +
-      'proven by reading read_conversation_file\'s own conversations.rs:273-278 (any role ' +
-      '\'user\' message sets preview immediately, via content.map(extract_user_text)' +
-      '.unwrap_or_default(), never gated on non-empty text), not by seeding a third fixture ' +
+      'proven by reading read_conversation_file\'s own role:"user" match arm (conversations.rs): ' +
+      'any such message sets preview immediately, via content.map(extract_user_text)' +
+      '.unwrap_or_default(), never gated on non-empty text, not by seeding a third fixture ' +
       'file with an image-only or textless first message here.'
   ];
   let exeHash = null;
