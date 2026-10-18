@@ -225,8 +225,18 @@ function sleep(ms) {
  * IsWindowVisible can see the native window" across the two separate OS message-pump/process
  * boundaries involved, so the very first check can race a real, already-correct window that
  * just has not been observed yet. Re-throws immediately on any error OTHER than "no visible
- * top-level window found for pid" (a real failure must never be swallowed behind a retry loop). */
-export async function waitForWindowIconState(pid, screenshotPath, { timeoutMs = 20_000, intervalMs = 500 } = {}) {
+ * top-level window found for pid" (a real failure must never be swallowed behind a retry loop).
+ *
+ * `timeoutMs` default raised to 60s (live-run finding, round 2): every manually reproduced
+ * variant of this exact launch (Job Object launcher, remote-debugging port, copied exe at the
+ * matching path, Node's own `windowsHide` spawn) found the window within single-digit seconds
+ * when re-launching an ALREADY-RUN-BEFORE binary -- the one difference a real pipeline run has
+ * that no manual repro did is launching a binary `cargo build`/`pnpm tauri build` just produced
+ * FRESH (never executed before), which Windows Defender's own first-run behavioural scan can
+ * delay noticeably before the process gets far enough to create its window, especially right
+ * after a heavy build. Matches this same script's own `waitForCdpTarget(port, { timeoutMs:
+ * 60_000 })` precedent rather than inventing a shorter budget. */
+export async function waitForWindowIconState(pid, screenshotPath, { timeoutMs = 60_000, intervalMs = 500 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lastErr;
   while (Date.now() < deadline) {
