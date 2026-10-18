@@ -1,6 +1,6 @@
 //! Issue #938 item 4: the `notice`-id prefix constants were previously declared inline in
-//! transcript.rs; grouping all three together here keeps that file under the 600-line
-//! file-size cap (scripts/check-file-size.mjs).
+//! transcript.rs; grouped together here instead (split out per scripts/check-file-size.mjs's
+//! cap on that file, not this one).
 
 /// `id` prefix for the `notice` a hidden tool's failure becomes (T086, FR-052;
 /// `HIDDEN_TOOL_NOTICE_PREFIX`).

@@ -3039,9 +3039,10 @@ confirmed live on a real scratch instance across gate rounds 1 and 2.
   full `/name subcommand ` invocation, and `handleSlashMenuSelect` routes Enter/Tab/mousedown to
   whichever one the current parsed step calls for. Separately, `command_output` frames now get
   a distinct `command-output:` id prefix (`COMMAND_OUTPUT_NOTICE_PREFIX`, added to
-  `src/shared/model.ts` and `src-tauri/src/omp/transcript.rs`'s `apply_frame_items`, replacing
-  the generic `notice-N` id that frame type used to share with a plain `notice` frame) instead
-  of the generic `notice-N` id; `Transcript.tsx`'s `computeTurnEnd` skips any notice carrying
+  `src/shared/commandOutputNotice.ts` and `src-tauri/src/omp/transcript/notice_prefixes.rs`,
+  consumed by `apply_frame_items`, replacing the generic `notice-N` id that frame type used to
+  share with a plain `notice` frame) instead of the generic `notice-N` id; `turnTiming.ts`'s
+  `computeTurnEnd` skips any notice carrying
   that prefix entirely (neither its `receivedAt` arrival time nor any `itemEndTime` counts), so
   a reply that arrives after its turn has already settled no longer stretches that turn's own
   shown elapsed time. The reply itself still renders normally; only the turn-time MATH excludes
