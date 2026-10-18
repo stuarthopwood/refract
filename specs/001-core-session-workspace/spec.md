@@ -797,8 +797,35 @@ The developer types a slash command and finds the ones the agent offers. If a se
   > Deferred to part 2 (issue #941): the Subagent panel's own green state and Stage grouping,
   > and the Up next list's own UI, are not yet built here -- only the Rust/TS wire data
   > (`context`, `todoPhases`) is in place, unconsumed.
-
 - **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
+- **FR-080** (new, 2026-10-18, issue #672, follow-up to #618: "I like the *Summoning your agent*
+  message, but can it be placed centrally in the chat window, and made larger"; renumbered from a
+  provisional FR-079 once #941 claimed FR-079 on `origin/main` first): The Session
+  start notice MUST use one centred presentation for every Session, not only a brand-new one --
+  centred horizontally and vertically in the transcript viewport. For a Session that already has
+  history, the transcript behind the notice MUST dim to about 40% opacity while the notice
+  shows, returning to full opacity the instant the start ends or whenever keyboard focus moves
+  into the history; the dimmed transcript MUST stay fully interactive throughout (scrollable,
+  selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
+  its own text stays readable against the dim. While keyboard focus is inside that dimmed
+  history, the notice itself MUST hide (not merely dim) so its panel never sits on top of a
+  focused control, reappearing the instant focus leaves the history (for example, by reaching
+  Keep waiting or Cancel). A brand-new Session's placement is unchanged (centred over the
+  otherwise-empty area, no backing panel needed). The randomly-picked joke
+  message and its leading emoji (unchanged pool and once-per-start
+  pick) MUST render at about `text-2xl` (24px) and `text-5xl` (48px) respectively, in the normal
+  foreground colour, the emoji on its own line above the text, with the elapsed-seconds counter
+  small and quiet after the text; on a narrow pane the sizes drop to about `text-xl` (20px) and
+  40px so a long message wraps to two lines without clipping instead of overflowing. The queued
+  and memory-deferred stages keep their plain truthful text and small spinner, shown at the same
+  centred position but at normal size (`text-base`). Keep waiting and Cancel (#512) stay
+  reachable, centred under the message with the existing guidance sentence, never pushed off
+  screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on,
+  running a fixed 2 iterations then stopping, under WCAG 2.2.2's 5-second threshold) MUST be
+  disabled under
+  `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
+  static label and the two existing start/stop announcements are ever announced to screen
+  readers.
 
 ### Key Entities
 
