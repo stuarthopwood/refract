@@ -31,7 +31,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, launchViaJobObject, sleep } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, citeScreenshots, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, citeScreenshots, safeRmSync, requireSharedCargoTarget, switchTheme } from './verify-tauri-scratch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -43,10 +43,14 @@ const SHOTS_DIR =
 // #926 grill decision 3: matches `file_attachments.rs`'s own `MAX_INLINE_FILE_BYTES`.
 const MAX_INLINE_FILE_BYTES = 262_144;
 
+// Gate round 1 (Test1 Medium): `name` is the exact Profile-menu Theme submenu item text
+// `switchTheme` below clicks -- `window.refract.theme.preview(id)` only moves the title-bar
+// overlay colour, never the renderer's own `<html>` class the CSS tokens key off (its own doc
+// comment), so a real menu-driven switch is required to prove each theme's screenshot is real.
 const THEMES = [
   { id: 'dark', name: 'Dark' },
   { id: 'obsidian', name: 'Obsidian' },
-  { id: 'dark-high-contrast', name: 'Dark high contrast' }
+  { id: 'dark-high-contrast', name: 'Dark (high contrast)' }
 ];
 
 function spawnSync_(cmd, args) {
@@ -260,7 +264,7 @@ async function main() {
     assertEqual(bubbleText.includes(overBoundaryResult.value.path), false, "bubble never shows a path-only attachment's raw path line");
 
     for (const theme of THEMES) {
-      await cdp.evaluate(`window.refract.theme.preview(${JSON.stringify(theme.id)})`);
+      await switchTheme(cdp, theme.id, theme.name);
       await sleep(300);
       await cdp.screenshot(path.join(SHOTS_DIR, `bubble-${theme.id}.png`));
     }
