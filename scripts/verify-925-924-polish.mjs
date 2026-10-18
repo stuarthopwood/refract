@@ -463,8 +463,13 @@ async function main() {
           await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
           await cdp.waitFor(`!!(${AGGREGATE_CONTAINER})`, { timeoutMs: 15_000, label: `PR row ${i} Changes tab aggregate rendered` });
           const probe = await readDiffStatSpans(cdp, AGGREGATE_CONTAINER);
-          const probeAdded = probe ? parseInt(probe.added.text.replace(/[^\d-]/g, ''), 10) : 0;
-          const probeRemoved = probe ? parseInt(probe.removed.text.replace(/[^\d-]/g, ''), 10) : 0;
+          // The removed span's own text is literally "-N" (`DiffStatCounts`'s `-{removedText}`
+          // glyph, not a numeric sign) -- stripping only non-digits (never the digit-adjacent
+          // `-`) keeps that glyph out of the parse, so `probeRemoved` is N's real magnitude, not
+          // `-N` (a prior version of this line kept the `-` and silently parsed every real
+          // deletion count as negative, so the `> 0` check below could never pass).
+          const probeAdded = probe ? parseInt(probe.added.text.replace(/\D/g, ''), 10) : 0;
+          const probeRemoved = probe ? parseInt(probe.removed.text.replace(/\D/g, ''), 10) : 0;
           if (probeAdded > 0 && probeRemoved > 0) {
             findings.push(`Pull requests: row ${i} (of ${scanLimit} scanned) has both additions and deletions (+${probeAdded} -${probeRemoved}) -- chosen to genuinely exercise the red branch on real PR data.`);
             break;
