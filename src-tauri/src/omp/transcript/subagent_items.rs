@@ -231,93 +231,137 @@ fn safe_stringify(value: &Value) -> String {
 /// `tool_execution_end` by `id` instead -- both key names are matched here, falling back to
 /// `label === name` for a subagent that never got a `progress` entry at all. Port of
 /// `applyAsyncResultJobs`.
+///
+/// Issue #989: the omp wire format never stamps a `tool_call_id` on the async-result frame
+/// itself, and a job's own `id`/`jobId` is just its `label` echoed back -- not a value unique
+/// across the whole session -- so when two Stages run a same-named subagent (fixture
+/// `scripts/fixtures/omp-frames/stages-941.jsonl`), their two unrelated jobs carry the IDENTICAL
+/// `id`/`label` string. Matching is therefore scoped to items that have not already been
+/// resolved by an earlier async-result (`result.is_none()`): once a row's `result` is filled in
+/// here, it is settled and a later job sharing its label/id belongs to a different Stage's run
+/// of the same name, never to this row again. Each job claims at most one item per call (so two
+/// jobs in one frame can never both land on the same row); if several still-unresolved items
+/// race for the same job (two Stages genuinely running concurrently), the most recently started
+/// one wins, matching the issue's documented fallback ("prefer the latest unfinished entry with
+/// that label").
 pub(super) fn apply_async_result_jobs(
     items: Vec<Arc<TranscriptItem>>,
     jobs: &[Value],
 ) -> Vec<Arc<TranscriptItem>> {
-    items
-        .into_iter()
-        .map(|mut item| {
-            let TranscriptItem::Subagent { name, job_id, .. } = item.as_ref() else {
-                return item;
-            };
-            let job_id_of = |j: &Value| -> Option<String> {
-                j.get("jobId")
-                    .and_then(Value::as_str)
-                    .or_else(|| j.get("id").and_then(Value::as_str))
-                    .map(String::from)
-            };
-            let by_job_id = jobs
-                .iter()
-                .find(|j| job_id_of(j).as_deref() == job_id.as_deref() && job_id.is_some());
-            let by_label = if job_id.is_none() {
-                jobs.iter()
-                    .find(|j| j.get("label").and_then(Value::as_str) == Some(name.as_str()))
-            } else {
-                None
-            };
-            let job = match by_job_id.or(by_label) {
-                Some(j) => j,
-                None => return item,
-            };
-            let job_status = job.get("status").and_then(Value::as_str);
-            if matches!(job_status, Some("pending") | Some("running")) {
-                return item;
+    let job_id_of = |j: &Value| -> Option<String> {
+        j.get("jobId")
+            .and_then(Value::as_str)
+            .or_else(|| j.get("id").and_then(Value::as_str))
+            .map(String::from)
+    };
+
+    // Pass 1: decide which item (if any) each job resolves, without mutating anything yet, so
+    // an earlier job in this same batch can't make a later job in the SAME batch see a
+    // half-updated `result` and wrongly treat its own rightful target as already resolved.
+    let mut claimed = vec![false; items.len()];
+    let mut targets: Vec<Option<usize>> = vec![None; jobs.len()];
+    for (job_index, job) in jobs.iter().enumerate() {
+        let jid = job_id_of(job);
+        let label = job.get("label").and_then(Value::as_str);
+        let mut by_job_id: Option<(usize, i64)> = None;
+        let mut by_label: Option<(usize, i64)> = None;
+        for (item_index, item) in items.iter().enumerate() {
+            if claimed[item_index] {
+                continue;
             }
-            // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
-            // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: `'failed'`/
-            // `'error'` map to `error`; `'cancelled'`/`'aborted'` get their own `Cancelled`
-            // status (decision 15, #563).
-            let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
-            let failed = matches!(job_status, Some("failed") | Some("error"));
-            let error_text = job.get("errorText").and_then(Value::as_str);
-            let result_text = job.get("resultText").and_then(Value::as_str);
-            let schema_data = job.get("schema").and_then(|s| s.get("data"));
-            let label = job.get("label").and_then(Value::as_str);
-            let new_job_id = job_id_of(job);
-            let new_duration = job
-                .get("durationMs")
-                .and_then(Value::as_f64)
-                .map(|f| f as i64);
-            // `Arc::make_mut` clones the value only when another reference is still outstanding,
-            // so an untouched (`return item` above) or no-op subagent row never pays a copy.
-            if let TranscriptItem::Subagent {
-                status,
-                duration_ms,
-                result,
+            let TranscriptItem::Subagent {
+                name,
                 job_id,
+                result,
+                started_at,
                 ..
-            } = Arc::make_mut(&mut item)
-            {
-                let new_result = if (failed || is_cancelled) && error_text.is_some() {
-                    error_text.map(String::from)
-                } else if let Some(r) = result_text {
-                    Some(r.to_string())
-                } else if let Some(data) = schema_data {
-                    Some(safe_stringify(data))
-                } else if let Some(l) = label {
-                    Some(l.to_string())
-                } else {
-                    result.clone()
-                };
-                *status = if is_cancelled {
-                    SubagentStatus::Cancelled
-                } else if failed {
-                    SubagentStatus::Error
-                } else {
-                    SubagentStatus::Done
-                };
-                *result = new_result;
-                if let Some(d) = new_duration {
-                    *duration_ms = Some(d);
+            } = item.as_ref()
+            else {
+                continue;
+            };
+            if result.is_some() {
+                continue;
+            }
+            let started = started_at.unwrap_or(0);
+            if job_id.is_some() && job_id.as_deref() == jid.as_deref() {
+                if by_job_id.map_or(true, |(_, best)| started >= best) {
+                    by_job_id = Some((item_index, started));
                 }
-                if let Some(jid) = new_job_id {
-                    *job_id = Some(jid);
+            } else if job_id.is_none() && label == Some(name.as_str()) {
+                if by_label.map_or(true, |(_, best)| started >= best) {
+                    by_label = Some((item_index, started));
                 }
             }
-            item
-        })
-        .collect()
+        }
+        if let Some((idx, _)) = by_job_id.or(by_label) {
+            claimed[idx] = true;
+            targets[job_index] = Some(idx);
+        }
+    }
+
+    // Pass 2: apply each job's update to its resolved target only.
+    let mut items = items;
+    for (job_index, job) in jobs.iter().enumerate() {
+        let Some(item_index) = targets[job_index] else {
+            continue;
+        };
+        let job_status = job.get("status").and_then(Value::as_str);
+        if matches!(job_status, Some("pending") | Some("running")) {
+            continue;
+        }
+        // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
+        // (direct binary inspection, 2026-10-03), plus `'error'`/`'aborted'`: `'failed'`/
+        // `'error'` map to `error`; `'cancelled'`/`'aborted'` get their own `Cancelled`
+        // status (decision 15, #563).
+        let is_cancelled = matches!(job_status, Some("cancelled") | Some("aborted"));
+        let failed = matches!(job_status, Some("failed") | Some("error"));
+        let error_text = job.get("errorText").and_then(Value::as_str);
+        let result_text = job.get("resultText").and_then(Value::as_str);
+        let schema_data = job.get("schema").and_then(|s| s.get("data"));
+        let label = job.get("label").and_then(Value::as_str);
+        let new_job_id = job_id_of(job);
+        let new_duration = job
+            .get("durationMs")
+            .and_then(Value::as_f64)
+            .map(|f| f as i64);
+        // `Arc::make_mut` clones the value only when another reference is still outstanding,
+        // so an untouched (no target chosen above) subagent row never pays a copy.
+        if let TranscriptItem::Subagent {
+            status,
+            duration_ms,
+            result,
+            job_id,
+            ..
+        } = Arc::make_mut(&mut items[item_index])
+        {
+            let new_result = if (failed || is_cancelled) && error_text.is_some() {
+                error_text.map(String::from)
+            } else if let Some(r) = result_text {
+                Some(r.to_string())
+            } else if let Some(data) = schema_data {
+                Some(safe_stringify(data))
+            } else if let Some(l) = label {
+                Some(l.to_string())
+            } else {
+                result.clone()
+            };
+            *status = if is_cancelled {
+                SubagentStatus::Cancelled
+            } else if failed {
+                SubagentStatus::Error
+            } else {
+                SubagentStatus::Done
+            };
+            *result = new_result;
+            if let Some(d) = new_duration {
+                *duration_ms = Some(d);
+            }
+            if let Some(jid) = new_job_id {
+                *job_id = Some(jid);
+            }
+        }
+    }
+    items
 }
 
 /// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool
