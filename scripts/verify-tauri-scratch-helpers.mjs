@@ -238,10 +238,31 @@ export async function axText(cdp, selectorExpr) {
 /** Drives the REAL Profile-menu UI (`window.refract.theme.preview(id)` only moves the title-bar
  * overlay colour, never the renderer's `<html>` class the CSS tokens key off). A real
  * `mouseMoved` hover before the click matches how Radix's own `DropdownMenuSub` actually opens
- * (pointer-enter, not just a bare click). */
+ * (pointer-enter, not just a bare click).
+ *
+ * Gate fix (issue #1000's gate, root cause traced live): a REPEAT call in the same session
+ * could time out finding the Theme submenu trigger, or even the dropdown menu itself, because
+ * the PREVIOUS call's own Radix closing animation was still in flight when this call's own
+ * profile-button click fired (most visible switching to a theme that is already current, e.g.
+ * re-selecting Dark, where the menu's own close transition is the only thing happening) -- the
+ * stale, still-mounted `[role="menu"]` either ate the new click's hit target or satisfied the
+ * old "is a menu present" check before the NEW menu had actually opened. Fixed with two
+ * precise waits: every menu fully CLOSED (`data-state` never lingers mid-animation on a
+ * genuinely closed element) before the click, then a genuinely OPEN menu (`data-state="open"`,
+ * not just ANY `[role="menu"]`, which could still be the stale one) containing the Theme item
+ * before proceeding. Shared by every verify script that imports it (`verify-1000-stage-
+ * defer.mjs`, `verify-551-presets.mjs`, `verify-557-thought-runs.mjs`, `verify-558-blocker-
+ * callout.mjs`, `verify-570-tool-colours.mjs`, `verify-925-924-polish.mjs`, `verify-926-attach-
+ * any-file.mjs`, `verify-927-928-quiet-composer.mjs`, `verify-937-advisor-chip.mjs`,
+ * `verify-938-slash-rest.mjs`, `verify-941-part2.mjs`, `verify-941-stage-naming.mjs`, `verify-
+ * 980-toast-send.mjs`, `verify-991-stage-focus.mjs`, `verify-tauri-569.mjs`). */
 export async function switchTheme(cdp, themeId, themeName) {
+  await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Every menu closed before switching theme' });
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
+  await cdp.waitFor(
+    `!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Theme'))`,
+    { timeoutMs: 10_000, label: 'Profile dropdown menu open (containing Theme)' }
+  );
   const themeTriggerFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim().startsWith('Theme'))`;
   await cdp.waitFor(`!!(${themeTriggerFinder})`, { timeoutMs: 10_000, label: 'Theme submenu trigger visible' });
   const rect = await cdp.evaluate(`(() => { const el = ${themeTriggerFinder}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);

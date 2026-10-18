@@ -2,7 +2,8 @@
 // Split out of `verify-941-part2.mjs` (#806 600-line file-size discipline, issue #1000's gate-B
 // fix pushed the main script over the 600-line cap): the #989 async-result Stage-scoping
 // assertion, self-contained (only needs `cdp` plus the shared Stage title/selector/expand
-// helpers), so it moves here unchanged.
+// helpers), so it moves here unchanged apart from the added `export` keyword and the FR-087
+// renumbering (both already applied to its source before this extraction, not introduced by it).
 
 import { stageContentSelector, expandRow, STAGE2_TITLE, STAGE5_TITLE } from './verify-941-stage-naming-helpers.mjs';
 
@@ -80,7 +81,7 @@ export async function assertAsyncResultStageScoping(cdp, findings, failures, not
         .catch(() => false);
     }
     if (!rowFound) {
-      failures.push(`${exp.label}'s own Story559 member row never rendered after 3 attempts (10s each) -- expand click may have raced the Transcript's own virtualized scroll window, or a genuine regression.`);
+      failures.push(`[issue #989] ${exp.label}'s own Story559 member row never rendered after 3 attempts (10s each) -- expand click may have raced the Transcript's own virtualized scroll window, or a genuine regression.`);
       continue;
     }
     const rowText = await cdp.evaluate(`(${rowSelector})?.textContent ?? ''`);

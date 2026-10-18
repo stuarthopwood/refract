@@ -397,17 +397,22 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel opened' });
     findings.push('Subagents panel opened from the chain row\u2019s own "Show subagents panel" button.');
 
-    // Robustness fix (observed live, 2026-10-18, same symptom as issue #1000's own theme loop):
-    // a REPEAT `switchTheme` call in the same session occasionally fails to find the already-
-    // open profile menu's own "Theme" submenu trigger (Radix's own dropdown-close/reopen
-    // animation racing the next click) -- the Dark pass above already proves the panel
-    // structure/Up-next assertions in full, so a flaky repeat switch for a LATER theme's own
-    // re-check must never crash the whole verdict; it is recorded as a genuine skip instead.
+    // Robustness fix (issue #1000 gate, round 2): a REPEAT `switchTheme` call could time out
+    // finding the already-open profile menu's own "Theme" submenu trigger before its root cause
+    // was fixed directly in `switchTheme` itself (`verify-tauri-scratch-helpers.mjs`). Dark is
+    // THEMES[0] and runs FIRST here with no prior pass to fall back on, so its own switch or
+    // assertion failure is a genuine, hard failure -- never a silent skip that would let this
+    // whole run report DONE/0 having proven nothing. Only a LATER theme (index > 0, reached only
+    // after Dark's own pass has already proven the real panel structure/Up-next shape at least
+    // once) can ever degrade to a recorded `notExercised` skip for that theme's own re-check
+    // (`assertPanelStructure` reads real CSS custom properties like `--severity-success` per
+    // theme, so a later theme's own pass is still a genuine, not merely redundant, re-check).
     for (const [themeIndex, theme] of THEMES.entries()) {
       try {
         await switchTheme(cdp, theme.id, theme.name);
       } catch (err) {
-        notExercised.push(`Could not re-run the panel structure/Up-next assertions under the ${theme.name} theme (already proven under Dark above): ${err.message}`);
+        if (themeIndex === 0) throw err;
+        notExercised.push(`Could not re-run the panel structure/Up-next assertions under the ${theme.name} theme (Dark's own earlier pass already proved the real structure once): ${err.message}`);
         continue;
       }
       await assertPanelStructure(cdp, findings, failures, theme.name);

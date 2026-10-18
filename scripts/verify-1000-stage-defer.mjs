@@ -447,19 +447,8 @@ async function main() {
       findings.push("Stage 1 stayed open through the whole ten-Stage turn settling -- #991's own upward-only latch holds for the entire turn's own lifetime, confirming nothing closes itself.");
     }
 
-    // Robustness fix (observed live, 2026-10-18): a REPEAT `switchTheme` call in the same
-    // session occasionally fails to find the already-open profile menu's own "Theme" submenu
-    // trigger (Radix's own dropdown-close/reopen animation racing the next click) -- this loop
-    // takes purely decorative screenshots with no colour-dependent assertion (every real proof
-    // above is structural: aria-expanded, document.activeElement, visible text), so a flaky
-    // repeat switch must never crash the whole verdict over a missing screenshot.
     for (const theme of THEMES) {
-      try {
-        await switchTheme(cdp, theme.id, theme.name);
-      } catch (err) {
-        notExercised.push(`Could not capture a screenshot under the ${theme.name} theme (decorative only, no colour-dependent assertion in this script): ${err.message}`);
-        continue;
-      }
+      await switchTheme(cdp, theme.id, theme.name);
       const shotName = `1000-stage-defer-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}) -- no colour-dependent assertion in this check, every proof above is structural (aria-expanded, document.activeElement, visible text).`);
