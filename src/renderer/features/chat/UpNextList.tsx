@@ -3,10 +3,12 @@
 // task count), shown only while at least one phase still has outstanding work.
 // `ReadoutState.todoPhases` (`src/shared/model.ts`) already carries ONLY the filtered, non-empty
 // case on the wire: `compute_up_next` (`src-tauri/src/session/readout_todo.rs`) drops any phase
-// with zero pending tasks and returns `null` outright once every phase would be empty, and is
-// `None`/never re-populated for a reopened Conversation ("live state only", that same file's own
-// comment) -- so this component needs no separate live-vs-history check of its own: `todoPhases`
-// being non-null and non-empty already means "live, and something is still pending."
+// with zero pending tasks and returns `null` outright once every phase would be empty. Gate
+// round 3 fix (item 6, LOW, wrong claim): switching Conversation does NOT leave this field
+// permanently `null` -- it is cleared on the switch, then repopulated by that NEW Conversation's
+// own first `get_state` response (research.md decision 17) -- so this component needs no
+// separate live-vs-history check of its own: `todoPhases` being non-null and non-empty already
+// means "live, and something is still pending."
 //
 // Rendered once per TURN (not per Stage): `sessionId`-scoped readout state is the agent's own
 // CURRENT todo list, not a per-turn snapshot, so showing it after every past turn with a Stage
@@ -26,7 +28,12 @@ export function UpNextList({ sessionId, stagesCount, isLastTurn }: { sessionId: 
   const headingId = useId()
   if (!isLastTurn || stagesCount === 0 || !todoPhases || todoPhases.length === 0) return null
   return (
-    <div className="mt-6 px-2 text-xs text-muted-foreground">
+    // Gate round 3 fix (issue #941 part 2, item 4, MEDIUM): explicit `aria-live="off"` -- this
+    // renders inside `Transcript.tsx`'s own `role="log"` region, whose implicit live-region
+    // default (`aria-relevant="additions text"`, unset here) would otherwise queue every
+    // re-render of this muted hint (the pending counts tick down as the agent works through its
+    // todo list) as its own log-addition announcement; a passive status hint is not worth that.
+    <div aria-live="off" className="mt-6 px-2 text-xs text-muted-foreground">
       <span id={headingId} className="font-medium">
         Up next
       </span>

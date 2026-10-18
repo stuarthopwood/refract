@@ -442,10 +442,10 @@
   rendered Markdown (capped to about 6 lines) and each member's own one-line result; a Stage's
   own "Uses:" names only real `agent://<id>` references its context or tasks make to an agent an
   EARLIER Stage in the same turn actually started (dropped when unmatched or pointing forward).
-  Below the last Stage, a muted "Up next" list shows the agent's own pending Todo phases (OMP
-  `get_state().todoPhases`, name and outstanding task count), live state only -- never shown for
-  a reopened Conversation. Applies to the Subagent chain, each Stage row, and the Subagent panel
-  tree.
+  Below the Subagent chain, a muted "Up next" list shows the agent's own pending Todo phases
+  (OMP `get_state().todoPhases`, name and outstanding task count), live state only -- never shown
+  for a reopened Conversation. Renders once per turn in the chat transcript only (a sibling of
+  the Subagent chain row); never inside the Subagent panel tree.
 - Q: Is the "Up next" list itself a new kind of Stage, or something else entirely? → A: Neither
   a Stage nor a tool: a **Todo phase** is the agent's own planned work (its todo list), distinct
   from a **Stage** (one `task()` batch); the glossary gained both terms (`CONTEXT.md`, PR #942).
@@ -789,10 +789,11 @@ The developer types a slash command and finds the ones the agent offers. If a se
   a Stage's own "Uses:" line MUST name only real `agent://<id>` references its own context or
   tasks make to an agent an EARLIER Stage in the same turn actually started, grouped by that
   Stage, dropping any reference that matches nothing or points at the Stage's own agents or a
-  later Stage. Below the last Stage, Refract MUST show a muted "Up next" list of the agent's own
-  pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count) whenever
-  at least one phase has outstanding work; hidden entirely when there is no todo list, every
-  phase is finished, or the Conversation is reopened history (live state only).
+  later Stage. Below the Subagent chain, Refract MUST show a muted "Up next" list of the agent's
+  own pending Todo phases (OMP `get_state().todoPhases`, name and outstanding task count)
+  whenever at least one phase has outstanding work, rendered once per turn in the chat
+  transcript only (never inside the Subagent panel tree); hidden entirely when there is no todo
+  list, every phase is finished, or the Conversation is reopened history (live state only).
 
   > Deferred to part 2 (issue #941): the Subagent panel's own green state and Stage grouping,
   > and the Up next list's own UI, are not yet built here -- only the Rust/TS wire data

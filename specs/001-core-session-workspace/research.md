@@ -208,3 +208,10 @@ own first `get_state` response can repopulate it, so the renderer can never obse
 Conversation's own stale phases through this field -- an extra `state_synced` check on
 `compute_up_next` itself would be redundant, not a fix. Left uncommented in Rust; this note is
 the correction.
+
+**Note (gate round 3)**: a panel Stage header never collapses -- `SubagentPanel.tsx`'s own
+`aria-expanded={row.node.isStage ? true : undefined}` is always the literal `true`, with no
+toggle control and no `aria-selected` either (a header has no single subagent id to select or
+collapse); its real members are always rendered nested beneath it. `ArrowRight` on a header row
+moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
+"collapse" action anywhere in this tree.

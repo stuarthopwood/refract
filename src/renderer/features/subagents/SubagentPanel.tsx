@@ -35,7 +35,14 @@ import { NoticeRow } from '../chat/NoticeRow'
 import { stageRollupText } from '../chat/stageMeta'
 import { overallStatus } from '../chat/SubagentChainRow'
 import { groupSubagentsIntoPanelStages } from './groupSubagentPanelStages'
-import { isSubagentSuccessStatus, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusIcon, summarizeSubagentStatuses } from './subagentStatus'
+import {
+  isSubagentSuccessStatus,
+  SUBAGENT_STATUS_LABEL,
+  SUBAGENT_SUCCESS_TEXT_CLASS,
+  SubagentStatusGlyph,
+  SubagentStatusIcon,
+  summarizeSubagentStatuses
+} from './subagentStatus'
 
 interface SubagentTreeNode {
   id: string
@@ -119,7 +126,15 @@ export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNod
       isStage: true,
       rollupText,
       usesText,
-      ariaLabel: `${label}, ${rollupText}`
+      // Gate round 3 fix (issue #941 part 2, item 2/3, MEDIUM): the accessible name states the
+      // status word whenever `status !== 'finished'` -- the SAME rule `SubagentChainRow`'s own
+      // `triggerAriaLabel` uses for the whole chain (`SubagentChainRow.tsx`, exported function,
+      // its own local `triggerAriaLabel` const), covering running AND failed/cancelled/exited,
+      // not only running (`StageGroupRow`'s own per-Stage `triggerAriaLabel` is narrower:
+      // `isRunning` only -- the chain's own rule is the one asked for here). Also states the
+      // Uses text when present, so a screen reader hears the real dependency without a second
+      // `aria-describedby` reference.
+      ariaLabel: `${label}, ${rollupText}${aggregateStatus !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[aggregateStatus]}` : ''}${usesText ? `, ${usesText}` : ''}`
     }
   })
 }
@@ -396,8 +411,18 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
                   )}
                   <span className="flex w-full items-center gap-2">
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      <SubagentStatusIcon status={row.node.status} />
+                    {/* Gate round 3 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's own
+                        icon slot is now a FIXED `w-4` box with NO visible status word
+                        (`SubagentStatusGlyph`, matching `CollapsedLine`'s own `size-4` icon slot,
+                        #565 decision 7) -- the previous `SubagentStatusIcon` here showed the
+                        status word inline for a running/failed/etc. row, so the slot's own width
+                        (and therefore where the label column starts) varied by status-text
+                        length, throwing the Uses line's own fixed `pl-6` indent below out of
+                        alignment. A member/solo row keeps `SubagentStatusIcon` (visible word)
+                        unchanged -- nothing renders beneath it needing a stable column to align
+                        against. */}
+                    <span className={row.node.isStage ? 'flex h-5 w-4 shrink-0 items-center justify-center' : 'flex shrink-0 items-center gap-1.5'}>
+                      {row.node.isStage ? <SubagentStatusGlyph status={row.node.status} /> : <SubagentStatusIcon status={row.node.status} />}
                     </span>
                     {/* Issue #941: a finished agent/Stage row (never a tool row) gets green
                         name/label text alongside its icon's own `STATUS_GLYPH` colour -- applies
@@ -418,10 +443,18 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     </span>
                     {/* Gate round 1 fix (issue #941 part 2, item 6, MEDIUM): a Stage header's own
                         "N done"/"N done, M failed" roll-up, `aria-hidden` since it is ALSO
-                        folded into the row's own `aria-label` above (never announced twice). */}
+                        folded into the row's own `aria-label` above (never announced twice).
+                        Gate round 3 fix (item 1, MEDIUM): the status word the icon slot no
+                        longer shows visibly moves in HERE instead, appended only while running --
+                        a settled Stage's own "N done"/"N done, M failed" wording already states
+                        failed/cancelled/exited, the same rule `StageGroupRow`'s own `meta` slot
+                        uses (`SubagentChainRow.tsx`). Gate round 3 fix (item 6, LOW): `min-w-0
+                        shrink truncate`, not `shrink-0` -- this optional trailing slot must give
+                        up width before the label does, matching every other one in this tree. */}
                     {row.node.isStage && row.node.rollupText && (
-                      <span aria-hidden className="shrink-0 text-xs text-muted-foreground">
+                      <span aria-hidden className="min-w-0 shrink truncate text-xs text-muted-foreground">
                         {row.node.rollupText}
+                        {row.node.status === 'running' ? ` \u00b7 ${SUBAGENT_STATUS_LABEL.running}` : ''}
                       </span>
                     )}
                     {!row.node.isStage && row.node.status !== 'running' && row.node.durationMs != null && (
@@ -429,9 +462,13 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     )}
                   </span>
                   {/* Gate round 1 fix (issue #941 part 2, item 3 decision): plain text, names
-                      only, no "(Stage N)" suffix (see file header) -- indented to the label
-                      column (the icon slot's own `gap-1.5` width, matching the label text
-                      start above, not flush against the row's own left edge). */}
+                      only, no "(Stage N)" suffix (see file header). Gate round 3 fix (item 1,
+                      MEDIUM, wrong comment): indented to the label column, which is the Stage
+                      header's own FIXED icon slot width (`w-4`, 16px) plus this row's own
+                      `gap-2` (8px) = 24px, `pl-6` -- not the "icon slot's own `gap-1.5` width"
+                      this comment previously (and wrongly) claimed; that gap only ever applies
+                      BETWEEN two children of the icon wrapper, and the wrapper has always held
+                      exactly one. */}
                   {row.node.isStage && row.node.usesText && (
                     <span className="pl-6 text-xs text-muted-foreground">{row.node.usesText}</span>
                   )}

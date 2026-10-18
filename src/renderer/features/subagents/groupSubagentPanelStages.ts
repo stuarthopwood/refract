@@ -8,22 +8,21 @@
 // already applies, just never reaching the first context-derived tier here).
 //
 // Gate round 1 fix (issue #941 part 2, item 1, CRITICAL): `SubagentSummary.id` is
-// `${toolCallId}:${nameOrTask}` (`subagents.rs::handle_task_start`, `base_id` built from both),
-// NEVER the bare agent name alone -- the previous version keyed the label/occurrence lookup on
-// `item.id`, so EVERY label/dependency computation below silently used the wrong string. Both
-// now use `item.nameOrTask` (the real agent name whenever OMP gave this subagent a distinct
-// `name`, confirmed true for every task in this story's own fixture -- the model.ts doc comment
-// this filed claimed otherwise from is itself corrected, see that file).
+// `${toolCallId}:${nameOrTask}` plus a `:N` suffix when two members of one call share an
+// identical name (`subagents.rs::handle_task_start`, `base_id`/occurrence logic built from
+// both), NEVER the bare agent name alone -- the previous version keyed the label/occurrence
+// lookup on `item.id`, so EVERY label/dependency computation below silently used the wrong
+// string. Both now use `item.nameOrTask` (the real agent name whenever OMP gave this subagent a
+// distinct `name`, confirmed true for every task in this story's own fixture -- the model.ts
+// doc comment this filed claimed otherwise from is itself corrected, see that file).
 import type { SubagentSummary } from '../../../shared/model'
 import { computeStageLabel, resolveStageDependencies, type StageDependency } from '../chat/stageMeta'
 
 export type { StageDependency } from '../chat/stageMeta'
 
 export interface PanelStageGroup {
-  kind: 'panel-stage-group'
   /** `stage:<toolCallId>`, this Stage's own React list key. */
   key: string
-  toolCallId: string
   items: SubagentSummary[]
   /** 1-based position among this Session's own Stages, in start order (Session-wide, not
    * turn-scoped -- the panel's own flat `subagents` list already spans every turn). Internal
@@ -32,7 +31,6 @@ export interface PanelStageGroup {
    * toolCallId-keyed numbering disagrees with the chat's own per-turn numbering for the SAME
    * underlying Stage. */
   stageIndex: number
-  totalStages: number
   /** Always the "no context" fallback tier (`computeStageLabel(undefined, names)`): the panel
    * has no per-call `context` to read (see header comment). `null` when fewer than 2 names
    * share a meaningful prefix -- the caller falls back to "N agents" (gate round 1 decision). */
@@ -56,12 +54,9 @@ export function groupSubagentsIntoPanelStages(summaries: SubagentSummary[]): Pan
       run.map((item) => item.nameOrTask)
     )
     stages.push({
-      kind: 'panel-stage-group',
       key: `stage:${run[0]!.toolCallId}`,
-      toolCallId: run[0]!.toolCallId,
       items: run,
       stageIndex: 0,
-      totalStages: 0,
       label,
       dependencies: []
     })
@@ -78,7 +73,6 @@ export function groupSubagentsIntoPanelStages(summaries: SubagentSummary[]): Pan
 
   stages.forEach((stage, index) => {
     stage.stageIndex = index + 1
-    stage.totalStages = stages.length
   })
   resolveStageDependencies(
     stages,

@@ -108,6 +108,7 @@ const EXPECTED_PANEL_ROWS = [
  * name a title-based lookup could not tell apart. Also confirms `aria-expanded`/`aria-selected`
  * presence (item 5) and a Stage header's own accessible name states its roll-up too (item 6). */
 async function assertPanelStructure(cdp, findings, failures, themeName) {
+  const failuresAtStart = failures.length;
   const expectedColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
   const rows = await cdp.evaluate(`
     Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]')).map((el) => {
@@ -159,7 +160,7 @@ async function assertPanelStructure(cdp, findings, failures, themeName) {
       failures.push(`${where}: unexpectedly contains a "Uses:" line (none of this fixture's own task names carry an agent:// reference -- SubagentSummary has no context field for one to come from): ${JSON.stringify(row.rowText.slice(row.rowText.indexOf('Uses:') - 20, row.rowText.indexOf('Uses:') + 60))}`);
     }
   }
-  if (failures.length === 0) {
+  if (failures.length === failuresAtStart) {
     findings.push(`[${themeName}] The panel's own tree matches the expected shape exactly across all ${rows.length} rows: Stage headers (never "Stage N", dropped per the ui-architect-v3 ruling) with their real members nested beneath, solo calls staying flat, green state correct including Stage 5's own mixed finished/failed negative case, aria-expanded/aria-selected correctly present/absent, no stray "Uses:" text.`);
   }
 }
@@ -167,25 +168,70 @@ async function assertPanelStructure(cdp, findings, failures, themeName) {
 /** Issue #941 (FR-079's "Up next"): the agent's own pending Todo phases, below the Subagent
  * chain, in the CHAT pane (not the panel) -- `stages-941.jsonl`'s own `get_state` response now
  * carries two, both still pending (its own raw `tasks[].status` shape, the one
- * `parse_todo_phases` actually reads -- gate round 1 fix, item 9, CRITICAL). */
+ * `parse_todo_phases` actually reads -- gate round 1 fix, item 9, CRITICAL). Gate round 3 fix
+ * (item 5, MEDIUM): the previous version matched a substring against the WHOLE transcript's own
+ * `textContent` -- a check that could not actually FAIL (a coincidental match anywhere in
+ * hundreds of chars of surrounding transcript text would still pass even if the real list were
+ * broken, mis-ordered, or missing). Now reads the real `ul[aria-labelledby]`'s own `li` children
+ * directly: the `<ul>` is located VIA its own `aria-labelledby` heading (proving the real
+ * label/list relationship the a11y gate fix added, not just that "Up next" text exists
+ * somewhere), each `<li>`'s exact `textContent` is compared, and the whole wrapper is checked to
+ * come AFTER the chain row's own "Show subagents panel" button in document order (proving "below
+ * the Subagent chain", not merely present anywhere in the transcript). */
 async function assertUpNextList(cdp, findings, failures, themeName) {
-  const text = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.textContent ?? ''`);
-  if (!text.includes('Up next')) {
-    failures.push(`[${themeName}] The transcript does not show an "Up next" heading despite the fixture's own get_state carrying two pending Todo phases.`);
+  const failuresAtStart = failures.length;
+  const result = await cdp.evaluate(`
+    (() => {
+      const transcript = document.querySelector('[aria-label="Transcript"]');
+      if (!transcript) return { transcriptFound: false };
+      const heading = Array.from(transcript.querySelectorAll('span[id]')).find((el) => el.textContent.trim() === 'Up next');
+      if (!heading) return { transcriptFound: true, headingFound: false };
+      const wrapper = heading.parentElement;
+      const ul = wrapper ? wrapper.querySelector('ul[aria-labelledby="' + heading.id + '"]') : null;
+      if (!ul || ul.parentElement !== wrapper) return { transcriptFound: true, headingFound: true, ulFound: false };
+      const items = Array.from(ul.children).filter((el) => el.tagName === 'LI').map((li) => li.textContent);
+      const chainButton = Array.from(transcript.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === 'Show subagents panel');
+      const afterChain = chainButton ? !!(chainButton.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
+      return { transcriptFound: true, headingFound: true, ulFound: true, items, afterChain, ariaLive: wrapper.getAttribute('aria-live') };
+    })()
+  `);
+  if (!result.transcriptFound) {
+    failures.push(`[${themeName}] No [aria-label="Transcript"] element found at all.`);
     return;
   }
-  findings.push(`[${themeName}] The transcript shows the "Up next" heading below the Subagent chain.`);
-  for (const [name, count] of [
+  if (!result.headingFound) {
+    failures.push(`[${themeName}] No "Up next" heading span found despite the fixture's own get_state carrying two pending Todo phases.`);
+    return;
+  }
+  if (!result.ulFound) {
+    failures.push(`[${themeName}] The "Up next" heading exists but no sibling ul[aria-labelledby] pointing at its own id was found -- the list/label relationship is broken.`);
+    return;
+  }
+  findings.push(`[${themeName}] The "Up next" heading and its own aria-labelledby ul[...] relationship both exist.`);
+  if (result.afterChain === false) {
+    failures.push(`[${themeName}] The "Up next" wrapper does NOT come after the chain row's own "Show subagents panel" button in document order -- it is not rendered below the Subagent chain.`);
+  } else if (result.afterChain === true) {
+    findings.push(`[${themeName}] The "Up next" wrapper comes after the Subagent chain row in document order (below it, as required).`);
+  }
+  if (result.ariaLive !== 'off') {
+    failures.push(`[${themeName}] The "Up next" wrapper's own aria-live is ${JSON.stringify(result.ariaLive)}, expected "off" (it renders inside role="log" and must not queue its own updates as log additions).`);
+  }
+  const expected = [
     ['Ship #941 part 2 follow-ups', 2],
     ['Write the verify-941-part2 live-check', 1]
-  ]) {
     // Gate round 1 fix (issue #941 part 2, item 8, LOW): singular "1 task", plural otherwise.
-    const expectedPhrase = `${name} \u00b7 ${count} task${count === 1 ? '' : 's'}`;
-    if (!text.includes(expectedPhrase)) {
-      failures.push(`[${themeName}] "Up next" does not show the exact "${expectedPhrase}" entry (got transcript text containing: ${JSON.stringify(text.slice(text.indexOf('Up next'), text.indexOf('Up next') + 200))}).`);
-    } else {
-      findings.push(`[${themeName}] "Up next" shows the exact "${expectedPhrase}" entry.`);
-    }
+  ].map(([name, count]) => `${name} \u00b7 ${count} task${count === 1 ? '' : 's'}`);
+  if (result.items.length !== expected.length) {
+    failures.push(`[${themeName}] "Up next" has ${result.items.length} <li> item(s), expected exactly ${expected.length}.`);
+  } else {
+    expected.forEach((expectedText, index) => {
+      if (result.items[index] !== expectedText) {
+        failures.push(`[${themeName}] "Up next" item ${index}'s exact textContent is ${JSON.stringify(result.items[index])}, expected ${JSON.stringify(expectedText)}.`);
+      }
+    });
+  }
+  if (failures.length === failuresAtStart) {
+    findings.push(`[${themeName}] "Up next" shows exactly the ${expected.length} expected entries (singular/plural wording correct), in order, below the Subagent chain.`);
   }
 }
 

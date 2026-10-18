@@ -9,10 +9,11 @@ import type { SubagentRowStatus } from '../subagents/subagentStatus'
  * earlier Stage in the same turn (issue #941 grill item 5): "Uses: G923Code, G923Arch (Stage
  * 1)". `agentId` is the referenced agent's own `name` (OMP agent ids are name-based; each
  * caller's own `nameOf` passed to `resolveStageDependencies` below supplies the real one --
- * `SubagentSummary.id` is `${toolCallId}:${nameOrTask}`, gate-fix, NEVER the bare name alone).
- * `toolCallId`/`specIndex` (gate round 1 fix) are the matched item's own pair -- the same
- * correlation key `ChainAgentEntry`/`SubagentSummary` already use -- so a name repeated across
- * two Stages resolves to the exact matched agent, not an ambiguous name-only lookup. */
+ * `SubagentSummary.id` is `${toolCallId}:${nameOrTask}`, plus a `:N` suffix when two members of
+ * one call share an identical name, gate-fix, NEVER the bare name alone). `toolCallId`/
+ * `specIndex` (gate round 1 fix) are the matched item's own pair -- the same correlation key
+ * `ChainAgentEntry`/`SubagentSummary` already use -- so a name repeated across two Stages
+ * resolves to the exact matched agent, not an ambiguous name-only lookup. */
 export interface StageDependency {
   agentId: string
   stageIndex: number
@@ -140,12 +141,12 @@ export function extractResultSummary(result: string): string | undefined {
  * and `groupSubagentPanelStages.ts` (the panel's own `PanelStageGroup[]`) call ONE shared
  * implementation instead of two independent copies. `nameOf` resolves an item's own real agent
  * identity (the chat passes `item => item.name`; the panel passes `item => item.nameOrTask` --
- * NEVER `item => item.id`, which is `${toolCallId}:${nameOrTask}`, gate-fix, not a bare name).
- * `textOf` receives the WHOLE stage (not a per-item string) so each caller's own closure reads
- * whatever text source it has -- the chat's own batch `context` plus every item's `task`; the
- * panel's own items' `nameOrTask` alone (it has no `context`). Mutates `stage.dependencies` in
- * place once every Stage's final `stageIndex` is known, matching the pre-extraction behaviour
- * exactly. */
+ * NEVER `item => item.id`, which is `${toolCallId}:${nameOrTask}` plus a `:N` suffix when two
+ * members of one call share an identical name, gate-fix, not a bare name). `textOf` receives
+ * the WHOLE stage (not a per-item string) so each caller's own closure reads whatever text
+ * source it has -- the chat's own batch `context` plus every item's `task`; the panel's own
+ * items' `nameOrTask` alone (it has no `context`). Mutates `stage.dependencies` in place once
+ * every Stage's final `stageIndex` is known, matching the pre-extraction behaviour exactly. */
 export function resolveStageDependencies<
   Item extends { toolCallId: string; specIndex: number },
   Stage extends { stageIndex: number; items: Item[]; dependencies: StageDependency[] }

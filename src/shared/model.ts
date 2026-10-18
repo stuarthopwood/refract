@@ -346,9 +346,9 @@ export interface ContextUsage {
 }
 
 /** Spec 004 FR-007, FR-017 to FR-020: one row in the Subagents panel and the source the
- * Subagents chip's count is computed from. `id` is `${toolCallId}:${nameOrTask}`
- * (`subagents.rs::handle_task_start`'s own `base_id`), never the bare agent name alone
- * (gate-fix, issue #941 part 2, item 1, CRITICAL -- this comment previously claimed otherwise). */
+ * Subagents chip's count is computed from. `id` is `${toolCallId}:${nameOrTask}`, plus a `:N`
+ * suffix when two members of one call share an identical name (`subagents.rs::handle_task_start`'s
+ * `base_id`/occurrence logic) -- never the bare agent name alone. */
 export interface SubagentSummary {
   id: string;
   /** The owning `task()` call's own `toolCallId` (spec 004 remediation, HIGH): a turn with 2+

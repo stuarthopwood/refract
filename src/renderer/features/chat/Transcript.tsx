@@ -585,11 +585,11 @@ export function Transcript({
     loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
     setRevealedAnnouncement(loadEarlierAnnouncement(hiddenCount))
     // Quality-gate fix (a11y, cycle 3, 2026-10-08): `MessageScrollerContent` renders
-    // `role="log"` by default (an implicit polite live region with `aria-relevant="additions"`),
-    // so revealing up to hundreds of hidden turns at once would otherwise queue the WHOLE
-    // revealed history as log-addition announcements, burying the one message that actually
-    // matters. Suppressed for this one reveal only; the layout effect below clears it again
-    // once the new turns have committed.
+    // `role="log"` by default -- an implicit polite live region whose real ARIA default is
+    // `aria-relevant="additions text"`, not merely "additions" -- so revealing up to hundreds
+    // of hidden turns at once would otherwise queue the WHOLE revealed history as log-addition
+    // announcements, burying the one message that actually matters. Suppressed for this one
+    // reveal only; the layout effect below clears it again once the new turns have committed.
     setSuppressLogAnnouncements(true)
     setRevealedEarlier(true)
   }
@@ -854,12 +854,12 @@ export function Transcript({
           <MessageScrollerContent
             ref={contentRef}
             className={cn('w-full px-4 py-4', chatWidth === 'reading-column' && 'mx-auto max-w-[64rem] px-6 @min-[40rem]:px-10 @min-[48rem]:px-14 @min-[64rem]:px-16')}
-            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
-            // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
-            // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of
-            // hidden turns at once never queues the whole revealed history as log-addition
-            // announcements. `undefined` (the log's own default) the rest of the time, so
-            // ordinary streamed turns are still announced as they always were.
+            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default (an
+            // implicit polite live region; its ARIA default is `aria-relevant="additions text"`, not
+            // merely "additions") -- `off` for the one frame window `handleLoadEarlier`'s reveal
+            // needs, so revealing up to hundreds of hidden turns at once never queues the whole
+            // revealed history as log-addition announcements. `undefined` (the log's own default)
+            // otherwise, so ordinary streamed turns are still announced as before.
             aria-live={suppressLogAnnouncements ? 'off' : undefined}
           >
             {/* Issue #618 gate-fix (code/verif High): "Ready..." is now ALSO gated on
