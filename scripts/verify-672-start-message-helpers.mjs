@@ -6,7 +6,7 @@
 // are the one exception to "nothing here owns process lifecycle" -- moved here from the main
 // script purely to clear the 600-line cap a second time; they still own launch/cleanup exactly
 // as before.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -435,7 +435,7 @@ export function resolveExePath(exeDir, buildOutputDir, repoRoot, label) {
 /** One scratch Tauri launch: readiness screen through "scratch repository added". Everything
  *  after this (which Sessions get created, in what order) is the caller's own job -- the two
  *  launches below need different session choreography, not just different env vars. */
-export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
+export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv, pathPrepend) {
   // Item 5 gate-fix (LOW, test delta on c5756d7): the `try` now covers every mkdtemp call and
   // the launch itself too, not just the steps after it -- a throw from any of THOSE used to
   // leak whatever had already been created (the failed attempt's own scratch folders, or a
@@ -464,6 +464,7 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
       REFRACT_FAKE_OMP_NODE: process.execPath,
       REFRACT_FAKE_OMP_DEBUG_LOG: path.join(launchDir, 'fake-omp-invocations.log')
     };
+    if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
     const launched = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: launchDir, env });
     child = launched.child;
     const targetPid = launched.targetPid;
@@ -485,6 +486,22 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv) {
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add repository', { inDialog: true });
     await cdp.waitFor(`!!document.querySelector('[data-quick-create-session]')`, { timeoutMs: 30_000, label: `${launchLabel}: Scratch repository added, quick-create button visible` });
+
+    // Gate-fix (2026-10-18, issue #985 root cause): confirm the fake-omp shim actually ran,
+    // not the real omp.exe resolved from an un-prepended system PATH -- every live run before
+    // this fix silently launched the real one (ready in 1-2s, explaining the 0s elapsedMs
+    // placeholder reads, no real prompt/extended transition, and the vanishing notice
+    // regardless of REFRACT_FAKE_OMP_READY_DELAY_MS). The fake-omp script's own debug log
+    // writes its first line (`pid=... argv=... cwd=...`) before anything else; its mere
+    // existence with that prefix proves the shim, not the real binary, was spawned.
+    const debugLogPath = env.REFRACT_FAKE_OMP_DEBUG_LOG;
+    if (!existsSync(debugLogPath)) {
+      throw new Error(`${launchLabel}: fake-omp debug log ${debugLogPath} does not exist -- the real omp.exe was spawned instead of the shim (PATH shim missing or not prepended).`);
+    }
+    const debugLogFirstLine = readFileSync(debugLogPath, 'utf8').split('\n')[0];
+    if (!debugLogFirstLine.startsWith('pid=')) {
+      throw new Error(`${launchLabel}: fake-omp debug log ${debugLogPath} exists but its first line ("${debugLogFirstLine}") does not match the expected marker -- not confirmed as the shim.`);
+    }
 
     return { cdp, child, dataDir, importSourceDir, repoDir, launchDir };
   } catch (err) {
