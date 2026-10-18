@@ -355,11 +355,11 @@ async function main() {
 
     const sessionC = await quickCreateSessionId(cdp2, 'long/C (2nd start, brand-new prompt/extended + history)');
     findings.push(`Session C created (id ${sessionC.id}), brand-new, with both real slots free (C1 and D both cancelled above).`);
+    // Diagnostic (bg_847): confirms C's own real start begins before expecting 'prompt' 60s later.
+    const cWaitingProgress = await waitForStartProgressKind(cdp2, sessionC.id, 'waiting', 15_000);
+    findings.push(`Session C's own real start reached 'waiting' (${JSON.stringify(cWaitingProgress)}) after C1/D were cancelled.`);
 
-    // ---- Brand-new prompt/extended: Session C's own 1st start naturally crosses the real 60s
-    // prompt threshold before it ever reaches ready -- exercised here, before any history
-    // exists, so centring/sizing/button-presence is proven on a genuinely brand-new Session
-    // too, not only the with-history restart later. ----
+    // ---- Brand-new prompt/extended: C's 1st start crosses the real 60s prompt threshold before ready -- sizing/buttons proven on a brand-new Session. ----
     await waitForStartProgressKind(cdp2, sessionC.id, 'prompt', READY_DELAY_LONG_MS);
     await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'brand-new/prompt: notice mounted (real prompt kind, 1st start)' });
     const bnPromptOpacity = await waitForRegionOpacity(cdp2, (v) => v > 0.95, 2_000);
