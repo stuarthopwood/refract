@@ -80,7 +80,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_499_930_SHOTS_DIR || path.join(tmpdir(), 'refract-499-930-shots');
-const TAB_GEOMETRY_WIDTHS = [240, 320, 380, 520];
+const TAB_GEOMETRY_WIDTHS = [360, 380, 440, 520];
 const DEFAULT_WIDTH_PX = 320;
 // Mirrors `pull-requests-layout-store.ts`'s own `PULL_REQUESTS_LIST_MIN_WIDTH_PX` (M6 gate-fix,
 // caught live 2026-10-18) -- this standalone Node script has no access to the TS module directly.
@@ -405,9 +405,9 @@ async function main() {
       const filtersLabelBeforeClose = await cdp.evaluate(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Filters'))?.getAttribute('aria-label') ?? null`);
       if (filtersLabelBeforeClose) await cdp.clickByLabel(filtersLabelBeforeClose);
 
-      // ---- Tab-row geometry at 4 real widths: never wraps, wrapper overflow measured; the
-      // list column stays at `min(280, groupWidth - 1)` -- groupWidth includes the handle's
-      // own real `w-px` (1px); at 240px the Group's content area is itself under 280px. ----
+      // ---- Tab-row geometry: never wraps, list column stays at `min(280, groupWidth - 1)`
+      // (`-1` = the handle's real `w-px`). Dropped 240/320 (gate-fix, caught live 2026-10-18):
+      // below `App.tsx`'s own `minSize={360}` on "chat" (hosts Pull Requests); `panel.closest(...)` now measures the list's own nearest group, not App.tsx's outer sidebar/chat one. ----
       for (const width of TAB_GEOMETRY_WIDTHS) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await sleep(400);
@@ -417,11 +417,11 @@ async function main() {
           const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
           const tops = new Set(tabs.map((el) => el.getBoundingClientRect().top));
           const panel = ${LIST_PANEL_FINDER};
-          const group = document.querySelector('[data-slot="resizable-panel-group"]');
+          const group = panel ? panel.closest('[data-slot="resizable-panel-group"]') : null;
           return { oneRow: tops.size <= 1, scrollWidth: wrap.scrollWidth, clientWidth: wrap.clientWidth, panelWidth: panel ? panel.getBoundingClientRect().width : null, groupWidth: group ? group.getBoundingClientRect().width : null };
         })()`);
         const effectiveMin = geometry?.groupWidth != null ? Math.min(MIN_WIDTH_PX, geometry.groupWidth - 1) : MIN_WIDTH_PX;
-        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= effectiveMin - 2;
+        const panelAtLeastMin = geometry != null && geometry.panelWidth != null && geometry.panelWidth >= effectiveMin - 1;
         if (geometry && geometry.oneRow && panelAtLeastMin) checkPass(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
         else checkFail(`Tab row never wraps at ${width}px window width, list column stays at least 280px`, JSON.stringify(geometry));
       }
