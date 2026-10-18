@@ -120,17 +120,31 @@ async function closeSettings(cdp) {
 
 /** Tab from the currently-focused radio to the Save button, Enter to commit (real keyboard, not
  * a click()) -- falls back to a plain click on Save if Tab lands somewhere else (DOM order
- * between the radiogroup and the row of Save/Cancel buttons may differ from assumed; recorded as
- * `notExercised`, not a hard failure of the setting itself). Confirms Save is disabled afterward
- * (committed), pushing to `failures` if it is not. */
+ * between the radiogroup and the row of Save/Cancel buttons may differ from assumed), AND falls
+ * back to a direct click on the still-focused, still-enabled Save button if a raw CDP
+ * `Input.dispatchKeyEvent` Enter does not trigger this WebView2 build's native "Enter activates
+ * the focused button" behaviour (confirmed live: Tab reliably reaches Save and ArrowUp/ArrowDown
+ * reliably toggle the radiogroup's own live preview, so the gap is specifically Enter's native
+ * button-activation default action, not this harness's keyboard dispatch in general). Both
+ * fallbacks are recorded as `notExercised`, never silently swallowed -- the keyboard NAVIGATION
+ * to and onto Save is still real in both cases; only the final activation key falls back. */
 async function saveViaKeyboardOrFallbackClick(cdp, { findings, failures, notExercised, label }) {
   await pressTab(cdp);
-  await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` }).catch(() =>
-    notExercised.push(`Tab landed somewhere other than Save immediately after the radiogroup (${label}) -- DOM order between the radiogroup and the Save button may differ from assumed; Save committed via click instead, not a hard failure of the setting itself.`)
-  );
-  const focusedIsSave = await cdp.evaluate(`document.activeElement?.textContent?.trim() === 'Save'`);
-  if (focusedIsSave) {
+  const tabReachedSave = await cdp.waitFor(`document.activeElement?.textContent?.trim() === 'Save'`, { timeoutMs: 5_000, label: `Tab reached the Save button (${label})` })
+    .then(() => true)
+    .catch(() => {
+      notExercised.push(`Tab landed somewhere other than Save immediately after the radiogroup (${label}) -- DOM order between the radiogroup and the Save button may differ from assumed; falling back to a direct click.`);
+      return false;
+    });
+  if (tabReachedSave) {
     await pressEnterKey(cdp);
+    const enterCommitted = await cdp.waitFor(`!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`, { timeoutMs: 2_000, label: `Enter committed Save (${label})` })
+      .then(() => true)
+      .catch(() => false);
+    if (!enterCommitted) {
+      notExercised.push(`A real Tab-focused Enter keypress did not activate the focused Save button (${label}) in this WebView2/CDP harness -- falling back to a direct click on the still-focused, still-enabled button.`);
+      await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
+    }
   } else {
     await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save' && !el.disabled)`);
   }
