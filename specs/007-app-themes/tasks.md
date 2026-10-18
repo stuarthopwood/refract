@@ -707,8 +707,25 @@ existing `ThemeId`/`.theme-*` block/`MERMAID_THEME_VARIABLES` entry is removed o
   **Done, NOT run**: this is a no-build prep lane (held for the build slot); syntax-checked only
   (`node --check`, clean). Live run and its evidence are this story's own remaining step once the
   build slot opens.
-- [ ] T030 Live-run `scripts/verify-551-presets.mjs` once the build slot opens; record the
+- [X] T030 Live-run `scripts/verify-551-presets.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T029).
+  **Done**: `report.json` gitHead `8f1d43a` matches the pushed head, `dirty: false`,
+  `exitCode: 0` -- **0 failures, 0 notExercised**. Both new presets confirmed live via two
+  different real switch paths (Settings > Appearance preview+Save for Nordic Frost, Profile
+  menu Theme submenu for Cyber Amber), persistence across a full stop-and-relaunch, real
+  rendered-surface contrast (Send button, session-row text), and the real OKLab checks: Nordic
+  Frost accent-vs-info 60.2 degrees apart (hue 194.8 vs 255.0); Cyber Amber accent-vs-info 160.2
+  degrees (hue 39.9 vs 200.1), accent-vs-warning 34.0 degrees (>=30, hue 39.9 vs 73.8),
+  accent-vs-error swatch contrast 1.54:1 (>=1.5). Dark (high contrast) real hover-at-7:1 for all
+  three red tokens measured 7.26:1 each -- confirmed from source (`globals.css`) this is correct,
+  not a residual helper bug: `--destructive`/`--state-stopped`/`--pr-closed` are deliberately the
+  same literal `oklch(0.82 0.17 22)` value in this theme (#570's "literal copies, not var
+  aliases" rule), so an identical measured ratio against the same backdrop is the expected,
+  correct result. All 10 screenshots viewed (both presets' composer/Settings/dialog/relaunch,
+  Dark HC's code+Mermaid turn, the open Theme submenu). `ci-local.mjs`'s one failure
+  (`git::diff_stat::tests::diff_stat_counts_tracked_edits_and_untracked_files`) confirmed the
+  known #970 order-dependent flake -- passes alone (`cargo test --lib` that one test in
+  isolation: 1 passed).
 
 - [X] T031 Fix the #552 known gap (Main's gate addition, 2026-10-18): `--destructive`/
   `--severity-error`/`--state-stopped` in `.theme-dark-high-contrast` measured only 6.65:1
