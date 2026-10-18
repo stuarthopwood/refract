@@ -133,7 +133,7 @@ export function SessionStartNotice({
       )}
       {showControls && (
         <>
-          <p className="text-sm text-muted-foreground">
+          <p data-start-guidance className="text-sm text-muted-foreground">
             {startProgress.kind === 'prompt'
               ? 'Still starting. Keep waiting, or cancel?'
               : startProgress.kind === 'extended'

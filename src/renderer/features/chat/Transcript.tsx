@@ -1031,7 +1031,7 @@ export function Transcript({
             keep Keep waiting/Cancel reachable on a short pane; `cloneElement` passes `dimmed`
             so the notice decides whether to show its own backing panel. */}
         {startNotice && (
-          <div className="pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2">
+          <div data-start-overlay className="pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2">
             <div className="pointer-events-auto">{React.cloneElement(startNotice, { dimmed: dimTranscript })}</div>
           </div>
         )}
