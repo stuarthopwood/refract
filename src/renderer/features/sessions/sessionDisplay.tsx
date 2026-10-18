@@ -264,7 +264,12 @@ export function DiffStatCounts({
     <span className="tabular-nums whitespace-nowrap">
       {accessibleLabel && (
         <span className="sr-only">
-          {added} addition{added === 1 ? '' : 's'} {removed} deletion{removed === 1 ? '' : 's'}
+          {/* Gate round 2 (Low, Main): matches `formatDiffStatAccessible`'s own phrasing below
+           * (comma between the two clauses, `FULL_NUMBER_FORMAT` for both figures) -- this and
+           * that function must never phrase the same stat two different ways for assistive
+           * tech, the same rule the file's own header comment already states for the VISIBLE
+           * figures. */}
+          {FULL_NUMBER_FORMAT.format(added)} addition{added === 1 ? '' : 's'}, {FULL_NUMBER_FORMAT.format(removed)} deletion{removed === 1 ? '' : 's'}
         </span>
       )}
       <span aria-hidden={accessibleLabel} className={added > 0 ? 'text-diff-added' : 'text-muted-foreground'}>

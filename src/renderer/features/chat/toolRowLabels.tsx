@@ -72,7 +72,11 @@ export function callMeta(item: ToolItem): React.ReactNode | undefined {
   return joinMetaParts([
     stat ? (
       <span aria-hidden="true" className="tabular-nums">
-        +{stat.added} −{stat.removed}
+        {/* Gate round 2 (Low, Main): ASCII "-", not the Unicode minus sign (U+2212) this used
+         * to draw -- #925's own shared `DiffStatCounts` settled on the ASCII glyph everywhere a
+         * change count shows (`sessionDisplay.tsx`'s own header comment), and this tool-row
+         * stat is the one remaining change count that still drew the Unicode one. */}
+        +{stat.added} -{stat.removed}
       </span>
     ) : undefined,
     duration

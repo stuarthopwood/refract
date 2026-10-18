@@ -132,6 +132,11 @@ for the tokens themselves); a count of exactly zero stays `--muted-foreground` i
 direction, so a `-0` never reads as an error. The leading +/- glyph is the non-colour cue (WCAG
 1.4.1) in every case, unchanged by which colour (if any) the figure takes.
 
+A tool call's own edit stat (`ToolRow.tsx`/`toolRowLabels.tsx`'s `callMeta`, e.g. "bash +4 -2")
+is explicitly OUT of this rule: issue #570 decision 1/3 ("success/done stays neutral on tool
+rows") already governs it and this issue's own grill confirmed it is not reopened -- it keeps
+`tabular-nums` with no colour class regardless of sign.
+
 ## Chips and pills
 
 Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.

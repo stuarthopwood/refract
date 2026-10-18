@@ -333,10 +333,11 @@
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
   /* #925: diff-stat "+A -D" colouring (composer status line, Session details card, PR Changes
-   * tab, and its own per-file header, #919) -- aliases the SAME `--state-working`/
-   * `--destructive` values DiffView.tsx/diff-view.css already colour the diff gutter/stat with
-   * (#630), not a second, independently-tunable hue (#550 "do not create a second set") -- the
-   * coloured counts always match the diff view's own insert/delete tint. A zero count renders
+   * tab and its own per-file header #919, and the chat transcript's own expanded DiffView
+   * header, gate round 1 M1) -- aliases the SAME `--state-working`/`--destructive` values
+   * DiffView.tsx/diff-view.css already colour the diff gutter/stat with (#630), not a second,
+   * independently-tunable hue (#550 "do not create a second set") -- the coloured counts
+   * always match the diff view's own insert/delete tint. A zero count renders
    * `text-muted-foreground` at the call site instead of either of these (`DiffStatCounts`,
    * `sessionDisplay.tsx`). */
   --diff-added: var(--state-working);

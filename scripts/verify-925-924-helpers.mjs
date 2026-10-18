@@ -6,6 +6,8 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { parseComputedColorToEntry, measuredContrastRatio } from './contrast-math.mjs';
+import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -112,13 +114,24 @@ export async function readGaugeNeedleAngle(cdp, svgFinderExpr) {
  * second `-N`) under the element `containerExpr` resolves to -- their own text, class list
  * (asserting the EXACT colour class the zero/positive rule picks, not merely a plausible colour)
  * and computed `color`, plus the nearest real rendered background behind them (walking up
- * `parentElement` for the first non-transparent `background-color`, the same technique the real
- * browser cascade uses -- #927's own composer box made `--composer-background` transparent in
- * two of three themes specifically so the chat background paints through, so a naive "read this
- * one ancestor's background" guess would silently measure the wrong backdrop in those themes).
- * `null` if the container or its own `.tabular-nums` counts wrapper is not found. */
+ * `parentElement` for the first OPAQUE `background-color`, the same technique the real browser
+ * cascade uses -- #927's own composer box made `--composer-background` transparent in two of
+ * three themes specifically so the chat background paints through, so a naive "read this one
+ * ancestor's background" guess would silently measure the wrong backdrop in those themes).
+ * `null` if the container or its own `.tabular-nums` counts wrapper is not found.
+ *
+ * Gate round 2 fix (High, Main): the opacity walk used to parse ONLY `rgb()`/`rgba()` via a
+ * hand-rolled regex, so it fell straight through to `document.body` on Dark and Dark (high
+ * contrast) -- both report their own backgrounds as `oklch()` (Chromium's native serialisation
+ * for any colour declared via the `oklch()`/`oklab()` CSS functions, which every `--background`/
+ * `--muted`/`--popover` token in this codebase is), which the old regex never matched at all.
+ * The browser-side walk below now only COLLECTS every ancestor's raw `backgroundColor` string
+ * (plus `document.body`'s own as the final fallback); the actual opacity test runs in Node
+ * through `parseComputedColorToEntry` (`contrast-math.mjs`), the SAME parser `measuredContrastRatio`
+ * already uses for the colour values themselves -- one shared colour grammar, not two (a second,
+ * rgb()-only copy here could silently drift from the real one again). */
 export async function readDiffStatSpans(cdp, containerExpr) {
-  return cdp.evaluate(`(() => {
+  const raw = await cdp.evaluate(`(() => {
     const container = ${containerExpr};
     if (!container) return null;
     const counts = container.querySelector('.tabular-nums');
@@ -128,28 +141,107 @@ export async function readDiffStatSpans(cdp, containerExpr) {
     // resolves to exactly the two VISIBLE +N/-N spans, whether or not that prop is set.
     const spans = Array.from(counts.querySelectorAll(':scope > span')).filter((span) => !span.className.includes('sr-only'));
     if (spans.length !== 2) return null;
-    function effectiveBackground(el) {
-      let node = el;
-      while (node) {
-        const bg = getComputedStyle(node).backgroundColor;
-        const match = bg.match(/^rgba?\\(\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*(?:,\\s*([\\d.]+)\\s*)?\\)$/);
-        // Gate round 1 fix (L4): a PARTIALLY transparent background (alpha strictly between 0
-        // and 1) is not the real opaque backdrop either -- the true rendered colour still
-        // depends on whatever is further beneath it. Only alpha === 1 (an explicit '1', or no
-        // alpha channel at all, which rgba()/getComputedStyle always report as fully opaque)
-        // counts as "found"; anything else keeps walking up.
-        const alpha = match && match[1] !== undefined ? parseFloat(match[1]) : 1;
-        if (match && alpha === 1) return bg;
-        node = node.parentElement;
-      }
-      return getComputedStyle(document.body).backgroundColor;
+    const backgrounds = [];
+    let node = counts;
+    while (node) {
+      backgrounds.push(getComputedStyle(node).backgroundColor);
+      node = node.parentElement;
     }
+    backgrounds.push(getComputedStyle(document.body).backgroundColor);
     return {
       added: { text: spans[0].textContent.trim(), className: spans[0].className, color: getComputedStyle(spans[0]).color },
       removed: { text: spans[1].textContent.trim(), className: spans[1].className, color: getComputedStyle(spans[1]).color },
-      background: effectiveBackground(counts)
+      backgrounds
     };
   })()`);
+  if (!raw) return null;
+  // Gate round 1 fix (L4): a PARTIALLY transparent background (alpha strictly between 0 and 1)
+  // is not the real opaque backdrop either -- the true rendered colour still depends on
+  // whatever is further beneath it. Only `alpha === 1` counts as "found"; anything else keeps
+  // walking up (`document.body`'s own entry, always pushed last above, is the final fallback).
+  const opaque = raw.backgrounds.find((bg) => parseComputedColorToEntry(bg)?.alpha === 1);
+  return { added: raw.added, removed: raw.removed, background: opaque ?? raw.backgrounds[raw.backgrounds.length - 1] };
+}
+
+/** Issue #925: asserts one `DiffStatCounts` pair's own class/colour rule against the real
+ * numbers parsed out of its own text -- never trusting the app to have applied the rule
+ * correctly, deriving the expectation independently from `+N`/`-N` text each time.
+ *
+ * Gate round 1 fix (H2): `requireBothPositive` (the chip/card non-zero call sites, where this
+ * script itself controls the edit and so KNOWS both should be positive) turns "removed happened
+ * to read zero" into a hard failure instead of a silent, semantically-true-but-wrong "zero stays
+ * muted" pass -- the whole point of that edit is to exercise BOTH the green and the red branch,
+ * and a script bug that only ever produced an addition must not pass as if it had. The PR
+ * surfaces (real GitHub data, not scripted) leave this off: a real PR's own deletions count is
+ * outside this script's control.
+ *
+ * Gate round 2 fix (Low, Main): parses with `\D` (strip every non-digit), not `[^\d-]` (strip
+ * every non-digit-or-minus) -- the removed span's own text is literally "-N" (`DiffStatCounts`'s
+ * `-{removedText}` glyph, not a numeric sign), so the old pattern kept that glyph and parsed
+ * every real removed count as negative (harmless here, since both branches below only ever
+ * compare against `=== 0`/`> 0` through `requireBothPositive`, but the same bug silently broke
+ * the PR row scan's own `probeRemoved`, which this script's `\D` fix already matches).
+ *
+ * Gate round 2 (Medium, Main): `tokenColors` (when supplied, `resolveDiffTokenColors`'s own
+ * `{ added, removed, muted }`, resolved through a REAL probe element per theme) asserts the
+ * span's own COMPUTED colour too, not only its class name -- a class name alone cannot catch a
+ * Tailwind build that silently stripped or mis-mapped the utility (exactly the #928 bug this
+ * same PLAN.md row already found once, in `tailwind-merge`), the stricter version of #570's own
+ * "check the token actually rendered" rule. */
+export function assertDiffStatSpans(label, spans, findings, failures, { requireBothPositive = false, tokenColors = null } = {}) {
+  if (!spans) {
+    failures.push(`${label}: DiffStatCounts spans not found.`);
+    return;
+  }
+  const addedN = parseInt(spans.added.text.replace(/\D/g, ''), 10);
+  const removedN = parseInt(spans.removed.text.replace(/\D/g, ''), 10);
+  if (requireBothPositive && (addedN === 0 || removedN === 0)) {
+    failures.push(`${label}: expected BOTH added and removed strictly positive (this edit controls the diff) to exercise both the green and the red branch -- got "+${addedN} -${removedN}".`);
+  }
+  for (const [name, entry, n, expectedClass, expectedTokenColor] of [
+    ['added', spans.added, addedN, 'text-diff-added', tokenColors?.added],
+    ['removed', spans.removed, removedN, 'text-diff-removed', tokenColors?.removed]
+  ]) {
+    const expectMuted = n === 0;
+    const hasExpectedClass = entry.className.includes(expectedClass);
+    const hasMutedClass = entry.className.includes('text-muted-foreground');
+    if (expectMuted) {
+      if (hasMutedClass && !hasExpectedClass) findings.push(`${label}: ${name} "${entry.text}" is zero, stays text-muted-foreground, as #925 decides.`);
+      else failures.push(`${label}: ${name} "${entry.text}" is zero but class is "${entry.className}" -- expected text-muted-foreground, never ${expectedClass}.`);
+      if (tokenColors) {
+        if (entry.color === tokenColors.muted) findings.push(`${label}: ${name} computed colour ${entry.color} matches --muted-foreground, as a zero count decides.`);
+        else failures.push(`${label}: ${name} computed colour ${entry.color} does not match --muted-foreground's own resolved value (${tokenColors.muted}).`);
+      }
+    } else {
+      if (hasExpectedClass && !hasMutedClass) findings.push(`${label}: ${name} "${entry.text}" is positive, takes ${expectedClass}, as #925 decides.`);
+      else failures.push(`${label}: ${name} "${entry.text}" is positive but class is "${entry.className}" -- expected ${expectedClass}.`);
+      if (tokenColors) {
+        if (entry.color === expectedTokenColor && entry.color !== tokenColors.muted) findings.push(`${label}: ${name} computed colour ${entry.color} matches --diff-${name}'s own resolved value and differs from --muted-foreground.`);
+        else failures.push(`${label}: ${name} computed colour ${entry.color} does not match --diff-${name}'s own resolved value (${expectedTokenColor}), or equals --muted-foreground.`);
+      }
+    }
+    const ratio = measuredContrastRatio(entry.color, spans.background);
+    if (ratio === null) failures.push(`${label}: could not parse ${name} colour (${entry.color}) or backdrop (${spans.background}) for a measured contrast ratio.`);
+    else if (ratio < 4.5) failures.push(`${label}: ${name} measures ${ratio.toFixed(2)}:1 against its own rendered backdrop (${entry.color} on ${spans.background}), below the 4.5:1 WCAG AA text floor.`);
+    else findings.push(`${label}: ${name} measures ${ratio.toFixed(2)}:1 against its own rendered backdrop (${entry.color} on ${spans.background}), clears 4.5:1.`);
+  }
+}
+
+/** Issue #925 gate round 2 (Medium, Main): resolves `--diff-added`/`--diff-removed`/
+ * `--muted-foreground` through a REAL probe element's own `getComputedStyle()`
+ * (`resolveCssVarColor`, `verify-tauri-cdp.mjs`) -- the SAME technique #927's own gate already
+ * established for `--composer-focus`/`--ring` -- so `assertDiffStatSpans` can compare a span's
+ * own computed colour against the token's resolved value, never a hardcoded literal that could
+ * drift from a `color-mix()`/`var()` chain only the browser's cascade can finish computing.
+ * Resolved once per theme (the three colours never change mid-theme), reused across every
+ * surface checked under that theme. */
+export async function resolveDiffTokenColors(cdp) {
+  const [added, removed, muted] = await Promise.all([
+    resolveCssVarColor(cdp, '--diff-added', 'color'),
+    resolveCssVarColor(cdp, '--diff-removed', 'color'),
+    resolveCssVarColor(cdp, '--muted-foreground', 'color')
+  ]);
+  return { added, removed, muted };
 }
 
 /** Issue #924: drives the REAL composer Reasoning picker (click trigger, click the

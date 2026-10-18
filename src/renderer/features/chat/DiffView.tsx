@@ -198,11 +198,12 @@ interface DiffViewFromPatchProps {
   patch: string
   /** Issue #919: the pull request's own per-file additions/deletions (`ChangedFile.additions`/
    * `.deletions`), rendered next to the Copy button -- the mock's own per-file +/- acceptance
-   * criterion from #568, never delivered until now. Real, visible text (not `aria-hidden`,
-   * matching the header's own plain-text path next to it); issue #925 colours it the same way
-   * `DiffStatCounts` colours every other change count in the app. `ChangesTab.tsx` is this
-   * component's only caller and always has both figures on hand, so they are required, not
-   * optional. */
+   * criterion from #568, never delivered until now. Issue #925 colours it the same way
+   * `DiffStatCounts` colours every other change count in the app, visually `aria-hidden` and
+   * paired with its own `sr-only` "N additions M deletions" phrase (`DiffStatCounts`'s own
+   * `accessibleLabel` prop, gate round 1 L1) -- not real plain accessible text itself, the
+   * header's own path next to it is. `ChangesTab.tsx` is this component's only caller and
+   * always has both figures on hand, so they are required, not optional. */
   additions: number
   deletions: number
 }

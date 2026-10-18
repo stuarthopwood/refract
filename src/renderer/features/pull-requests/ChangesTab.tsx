@@ -45,30 +45,20 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
       )}
       {files.map((file) => (
         <div key={file.path} className="flex flex-col gap-1">
-          {file.patch === null && (
-            <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-              <span>This file's diff is too large to show in full.</span>
-              <a
-                href={`${url}/files`}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="flex shrink-0 items-center gap-1 underline underline-offset-2"
-              >
-                Open in browser
-                <ExternalLinkIcon aria-hidden className="size-3" />
-              </a>
-            </div>
-          )}
           {file.patch !== null ? (
             <DiffViewFromPatch path={file.path} patch={file.patch} additions={file.additions} deletions={file.deletions} />
           ) : (
-            // Gate round 1 (M4, Decided, Skippy, delegated by Stuart 2026-10-18, posted on
-            // #925): the same bg-muted header shape `DiffViewFromPatch`'s real diff uses --
-            // path left, the per-file stat and Open in browser right -- instead of the path
-            // alone with the stat relegated to a second plain-text line below.
+            // Gate round 2 (M4 follow-up, Decided, Skippy, delegated by Stuart 2026-10-18,
+            // posted on #925): the earlier cut rendered this file's "too large" message TWICE --
+            // a standalone banner above this block plus a second "Diff not shown." line inside
+            // it, each with its own "Open in browser" link. One block now: the header's own
+            // link is the only one, the "too large" text replaces the old placeholder line.
             <div className="overflow-hidden rounded-md border border-border">
-              {/* drag-regions-allow: renders inside PullRequestDetail's Changes tab, well below PullRequestsView's own h-10 drag-region strip, so it never touches App.tsx's strip despite the coincidental border-b shape -- same pattern as DiffView.tsx's identical bg-muted header above. */}
-              <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+              {/* drag-regions-allow: renders inside PullRequestDetail's Changes tab, well below PullRequestsView's own h-10 drag-region strip, so it never touches App.tsx's strip despite the coincidental border-b shape -- same pattern as the identical bg-muted header in DiffView.tsx. */}
+              <div
+                data-slot="diff-fallback-header"
+                className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground"
+              >
                 <span className="min-w-0 truncate" title={file.path}>
                   {file.path}
                 </span>
@@ -78,14 +68,14 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
                     href={`${url}/files`}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="flex shrink-0 items-center gap-1 underline underline-offset-2"
+                    className="flex h-6 shrink-0 items-center gap-1 -my-1 font-sans underline underline-offset-2"
                   >
                     Open in browser
                     <ExternalLinkIcon aria-hidden className="size-3" />
                   </a>
                 </span>
               </div>
-              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Diff not shown.</div>
+              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">This file's diff is too large to show in full.</div>
             </div>
           )}
         </div>

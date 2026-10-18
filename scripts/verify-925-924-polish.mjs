@@ -69,9 +69,10 @@ import {
   needleAngleDeg,
   readGaugeNeedleAngle,
   readDiffStatSpans,
-  selectReasoningLevel
+  selectReasoningLevel,
+  assertDiffStatSpans,
+  resolveDiffTokenColors
 } from './verify-925-924-helpers.mjs';
-import { measuredContrastRatio } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -176,48 +177,6 @@ async function screenshotCrop(cdp, finderExpr, outPath, scale = 2) {
   return true;
 }
 
-/** Issue #925: asserts one `DiffStatCounts` pair's own class/colour rule against the real
- * numbers parsed out of its own text -- never trusting the app to have applied the rule
- * correctly, deriving the expectation independently from `+N`/`-N` text each time.
- *
- * Gate round 1 fix (H2): `requireBothPositive` (the chip/card non-zero call sites, where this
- * script itself controls the edit and so KNOWS both should be positive) turns "removed happened
- * to read zero" into a hard failure instead of a silent, semantically-true-but-wrong "zero stays
- * muted" pass -- the whole point of that edit is to exercise BOTH the green and the red branch,
- * and a script bug that only ever produced an addition must not pass as if it had. The PR
- * surfaces (real GitHub data, not scripted) leave this off: a real PR's own deletions count is
- * outside this script's control. */
-function assertDiffStatSpans(label, spans, findings, failures, { requireBothPositive = false } = {}) {
-  if (!spans) {
-    failures.push(`${label}: DiffStatCounts spans not found.`);
-    return;
-  }
-  const addedN = parseInt(spans.added.text.replace(/[^\d-]/g, ''), 10);
-  const removedN = parseInt(spans.removed.text.replace(/[^\d-]/g, ''), 10);
-  if (requireBothPositive && (addedN === 0 || removedN === 0)) {
-    failures.push(`${label}: expected BOTH added and removed strictly positive (this edit controls the diff) to exercise both the green and the red branch -- got "+${addedN} -${removedN}".`);
-  }
-  for (const [name, entry, n, expectedClass] of [
-    ['added', spans.added, addedN, 'text-diff-added'],
-    ['removed', spans.removed, removedN, 'text-diff-removed']
-  ]) {
-    const expectMuted = n === 0;
-    const hasExpectedClass = entry.className.includes(expectedClass);
-    const hasMutedClass = entry.className.includes('text-muted-foreground');
-    if (expectMuted) {
-      if (hasMutedClass && !hasExpectedClass) findings.push(`${label}: ${name} "${entry.text}" is zero, stays text-muted-foreground, as #925 decides.`);
-      else failures.push(`${label}: ${name} "${entry.text}" is zero but class is "${entry.className}" -- expected text-muted-foreground, never ${expectedClass}.`);
-    } else {
-      if (hasExpectedClass && !hasMutedClass) findings.push(`${label}: ${name} "${entry.text}" is positive, takes ${expectedClass}, as #925 decides.`);
-      else failures.push(`${label}: ${name} "${entry.text}" is positive but class is "${entry.className}" -- expected ${expectedClass}.`);
-    }
-    const ratio = measuredContrastRatio(entry.color, spans.background);
-    if (ratio === null) failures.push(`${label}: could not parse ${name} colour (${entry.color}) or backdrop (${spans.background}) for a measured contrast ratio.`);
-    else if (ratio < 4.5) failures.push(`${label}: ${name} measures ${ratio.toFixed(2)}:1 against its own rendered backdrop (${entry.color} on ${spans.background}), below the 4.5:1 WCAG AA text floor.`);
-    else findings.push(`${label}: ${name} measures ${ratio.toFixed(2)}:1 against its own rendered backdrop (${entry.color} on ${spans.background}), clears 4.5:1.`);
-  }
-}
-
 async function main() {
   let dataDir, importSourceDir, repoDir, githubCloneParent, githubClone, exeDir, launcherDir;
   let child;
@@ -266,6 +225,10 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green (real omp --version + get_state round trip)' }
     );
     findings.push('Readiness green against the REAL ambient omp install, scratch data dir.');
+    // Gate round 2 (Medium, Main): resolved once here -- the app launches on Dark by default,
+    // before any explicit `switchTheme` call, so the zero-case assertions just below need their
+    // own Dark-theme token colours too, not only the per-theme loop further down.
+    let currentTokenColors = await resolveDiffTokenColors(cdp);
 
     // ---- Project 1: the GitHub clone, added FIRST so it is `repositories[0]` --
     // `PullRequestsView.tsx:16`'s own default-scope rule (`viewRepositoryId ?? repositories[0]?.id`)
@@ -289,7 +252,7 @@ async function main() {
     // differ, already proven identical by `check-theme-contrast.mjs`'s own token-name pairs). ----
     await cdp.waitFor(`!!(${CHANGES_CHIP_CONTAINER})`, { timeoutMs: 25_000, label: 'Changes chip rendered (zero case)' });
     const zeroChip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
-    assertDiffStatSpans('Composer status line Changes chip (zero, before edit)', zeroChip, findings, failures);
+    assertDiffStatSpans('Composer status line Changes chip (zero, before edit)', zeroChip, findings, failures, { tokenColors: currentTokenColors });
 
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 }); // settle any stray hover first
@@ -306,7 +269,7 @@ async function main() {
     const worktreePath = await cdp.evaluate(`${DETAILS_CARD_FINDER}?.querySelector('p')?.textContent.trim() ?? null`);
     if (!worktreePath) throw new Error('verify-925-924: could not read the Session details card\'s own worktree path text.');
     const zeroCard = await readDiffStatSpans(cdp, DETAILS_CARD_DIFF_CONTAINER);
-    assertDiffStatSpans('Session details card diff line (zero, before edit)', zeroCard, findings, failures);
+    assertDiffStatSpans('Session details card diff line (zero, before edit)', zeroCard, findings, failures, { tokenColors: currentTokenColors });
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-00-details-card-zero.png'));
 
     // ---- edit the tracked file inside the REAL worktree, then a real, local, token-free
@@ -337,8 +300,9 @@ async function main() {
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       await sleep(200);
+      currentTokenColors = await resolveDiffTokenColors(cdp);
       const chip = await readDiffStatSpans(cdp, CHANGES_CHIP_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures, { requireBothPositive: true });
+      assertDiffStatSpans(`${theme.name}: composer status line Changes chip (non-zero)`, chip, findings, failures, { requireBothPositive: true, tokenColors: currentTokenColors });
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-01-changes-chip.png`));
 
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
@@ -352,7 +316,7 @@ async function main() {
         { timeoutMs: 15_000, label: `${theme.name}: details card diff line settled (+3 -1)` }
       );
       const card = await readDiffStatSpans(cdp, DETAILS_CARD_DIFF_CONTAINER);
-      assertDiffStatSpans(`${theme.name}: Session details card diff line (non-zero)`, card, findings, failures, { requireBothPositive: true });
+      assertDiffStatSpans(`${theme.name}: Session details card diff line (non-zero)`, card, findings, failures, { requireBothPositive: true, tokenColors: currentTokenColors });
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-02-details-card.png`));
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
     }
@@ -373,18 +337,34 @@ async function main() {
       const settledLevel = settledLabel && Object.prototype.hasOwnProperty.call(LABEL_TO_LEVEL, settledLabel) ? LABEL_TO_LEVEL[settledLabel] : null;
       const expectedAngle = needleAngleDeg(settledLevel === 'inherit' ? null : settledLevel);
       const actualAngle = await readGaugeNeedleAngle(cdp, PICKER_GAUGE_SVG);
-      if (actualAngle === null) {
+      // Gate round 1 (L3): a 2x crop of just the needle icon -- visual evidence a reviewer can
+      // actually judge the needle's own position from, rather than only the numeric angle
+      // assertion below. Gate round 2 (Medium, Main): every one of the 7 NAMED levels now gets
+      // its own crop (#924's own scope is "every selectable level"), not only three samples --
+      // "Default" is skipped (it requests `inherit`, not a named step, so there is no distinct
+      // needle position to show beyond whichever named level it settles on, already captured).
+      if (levelLabel !== 'Default') {
+        await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${levelLabel.toLowerCase().replace(/\s+/g, '-')}.png`));
+      }
+      // Gate round 2 (Medium, Main): when OMP settles the request on a DIFFERENT named level
+      // (seen live: requesting "Minimal" settled on "Low"), the REQUESTED level's own needle
+      // position is never actually confirmed this run -- recording a PASS for "Minimal" here
+      // would really only be re-confirming "Low" a second time under the wrong name. Recorded
+      // honestly as `notExercised` (Refs #924: the requested level's own position stays
+      // unconfirmed until a run where OMP accepts it verbatim), separately from the genuine
+      // angle check on whatever level it DID settle on.
+      if (settledLabel !== levelLabel) {
+        const angleNote =
+          actualAngle === null
+            ? ''
+            : ` (the settled "${settledLabel}" needle itself reads ${actualAngle.toFixed(2)}deg, ${Math.abs(angleDiffDeg(actualAngle, expectedAngle)) <= 0.5 ? 'matching' : 'NOT matching'} the formula's own ${expectedAngle.toFixed(2)}deg for "${settledLabel}").`;
+        notExercised.push(`Requested "${levelLabel}" (Refs #924): OMP settled on "${settledLabel}" instead -- the "${levelLabel}" needle position is not genuinely confirmed this run${angleNote}`);
+      } else if (actualAngle === null) {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", but the gauge needle's own <path> could not be read.`);
       } else if (Math.abs(angleDiffDeg(actualAngle, expectedAngle)) > 0.5) {
         failures.push(`Requested "${levelLabel}": picker settled to "${settledLabel}" -- needle angle is ${actualAngle.toFixed(2)}deg, expected ${expectedAngle.toFixed(2)}deg (the 7-step formula's own angle for this settled level, mod 360).`);
       } else {
         findings.push(`Requested "${levelLabel}": picker settled to "${settledLabel}", needle angle ${actualAngle.toFixed(2)}deg matches the formula's own ${expectedAngle.toFixed(2)}deg (mod 360).`);
-      }
-      // Gate round 1 (L3): a 2x crop of just the needle icon at three representative levels --
-      // visual evidence a reviewer can actually judge the needle's own position from, rather
-      // than only the numeric angle assertion above.
-      if (['Off', 'Medium', 'Max'].includes(levelLabel)) {
-        await screenshotCrop(cdp, PICKER_GAUGE_SVG, path.join(SHOTS_DIR, `dark-gauge-2x-${levelLabel.toLowerCase().replace(/\s+/g, '-')}.png`));
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, 'dark-03-reasoning-picker-max.png'));
@@ -458,8 +438,26 @@ async function main() {
         const rowCount = await cdp.evaluate(`document.querySelectorAll('.divide-y button').length`);
         const scanLimit = Math.min(rowCount, 5);
         for (let i = 0; i < scanLimit; i++) {
+          // Gate round 2 (Low, Main): `h2.line-clamp-2` alone is a STALE-match hazard --
+          // `PullRequestDetail` (`PullRequestsView.tsx`) carries no `key={number}`, so it is
+          // reconciled IN PLACE across a row switch, never remounted; the previous row's own
+          // heading (and Changes tab content below it) already satisfies "an h2 exists" the
+          // instant this click fires, well before the new PR's own fetch resolves. Reads this
+          // row's own `#<number>` off its visible text BEFORE clicking (the same `#N` suffix
+          // both the row and `detail.number` render, confirmed live in `PullRequestRow.tsx`/
+          // `PullRequestDetail.tsx`), then waits for the heading to contain THAT number, not
+          // merely "a heading exists" -- `detail` is one atomic React state object, so once the
+          // heading shows the right number every other field read from it (additions,
+          // deletions, changedFilesCount, and so the aggregate line below) is from the SAME
+          // fetch, never a stale leftover from the row this replaced.
+          const rowText = await cdp.evaluate(`document.querySelectorAll('.divide-y button')[${i}]?.textContent ?? ''`);
+          const prNumberMatch = rowText.match(/#(\d+)/);
+          const prNumber = prNumberMatch ? prNumberMatch[1] : null;
           await cdp.click(`document.querySelectorAll('.divide-y button')[${i}]`);
-          await cdp.waitFor(`!!document.querySelector('h2.line-clamp-2')`, { timeoutMs: 20_000, label: `PR row ${i} detail title rendered` });
+          await cdp.waitFor(
+            `(() => { const h = document.querySelector('h2.line-clamp-2'); return !!h && ${JSON.stringify(prNumber)} !== null && h.textContent.includes('#' + ${JSON.stringify(prNumber)}); })()`,
+            { timeoutMs: 20_000, label: `PR row ${i} detail title rendered for #${prNumber}` }
+          );
           await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => /^Changes \\(\\d+ files?\\)$/.test(el.textContent.trim()))`);
           await cdp.waitFor(`!!(${AGGREGATE_CONTAINER})`, { timeoutMs: 15_000, label: `PR row ${i} Changes tab aggregate rendered` });
           const probe = await readDiffStatSpans(cdp, AGGREGATE_CONTAINER);
@@ -481,19 +479,27 @@ async function main() {
         // #919: a per-file diff header, whichever of the two real render paths this run's first
         // PR's first file happens to take -- a real `DiffViewFromPatch` header (`.diff-view`'s
         // own first child, `bg-muted`), or, for a too-large-to-show file, the plain fallback
-        // block ChangesTab.tsx already had (also coloured by this same change).
-        const PER_FILE_CONTAINER =
-          `document.querySelector('.diff-view')?.firstElementChild ?? document.querySelector('.rounded-md.border.border-border')?.lastElementChild`;
+        // block's own header (`ChangesTab.tsx`'s `data-slot="diff-fallback-header"`, also
+        // coloured by this same change). Gate round 2 fix (Medium, Main): the old fallback
+        // selector (`.rounded-md.border.border-border` first-match, `.lastElementChild`) could
+        // never find it -- that class combination ALSO matches the "Only N of M files shown"
+        // banner above it (when rendered, `document.querySelector` returns THAT one first, not
+        // the fallback's own wrapper), and even when it did match the fallback wrapper,
+        // `.lastElementChild` is the body text div, not the header. A stable `data-slot`
+        // (`ChangesTab.tsx`'s own convention, matching `reasoning-gauge`/`readout-chip`/
+        // `hover-card-content` elsewhere in this app) replaces the fragile class guess.
+        const PER_FILE_CONTAINER = `document.querySelector('.diff-view')?.firstElementChild ?? document.querySelector('[data-slot="diff-fallback-header"]')`;
         for (const theme of THEMES) {
           await switchTheme(cdp, theme.id, theme.name);
           await sleep(200);
+          currentTokenColors = await resolveDiffTokenColors(cdp);
           const aggregate = await readDiffStatSpans(cdp, AGGREGATE_CONTAINER);
-          assertDiffStatSpans(`${theme.name}: Pull requests Changes tab aggregate line`, aggregate, findings, failures);
+          assertDiffStatSpans(`${theme.name}: Pull requests Changes tab aggregate line`, aggregate, findings, failures, { tokenColors: currentTokenColors });
           const perFile = await readDiffStatSpans(cdp, PER_FILE_CONTAINER);
           if (!perFile) {
             notExercised.push(`${theme.name}: per-file diff header (#919) -- neither a .diff-view header nor a too-large fallback block was found for this PR's first file this run.`);
           } else {
-            assertDiffStatSpans(`${theme.name}: Pull requests Changes tab per-file diff header (#919)`, perFile, findings, failures);
+            assertDiffStatSpans(`${theme.name}: Pull requests Changes tab per-file diff header (#919)`, perFile, findings, failures, { tokenColors: currentTokenColors });
           }
           await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-05-changes-tab.png`));
         }
