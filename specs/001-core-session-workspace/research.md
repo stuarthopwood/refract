@@ -215,3 +215,37 @@ toggle control and no `aria-selected` either (a header has no single subagent id
 collapse); its real members are always rendered nested beneath it. `ArrowRight` on a header row
 moves focus into its first member (same file, `handleRowKeyDown`); there is no corresponding
 "collapse" action anywhere in this tree.
+
+## 19. Async-result job matching must be Stage-scoped, not bare job_id/label (issue #989, 2026-10-18)
+
+Filed by the #941 lane from PR #979: `apply_async_result_jobs` (`subagent_items.rs`) matched an
+async-result frame's `details.jobs[]` entries against EVERY `subagent` item built so far in the
+whole turn, keyed only by the bare `job_id`/`label` string, with no scoping to the `tool_call_id`
+that actually issued the call. A job's own wire `id` is just its `label` echoed back verbatim --
+never a session-unique value -- so two Stages running a same-named subagent (the `stages-941.jsonl`
+fixture's own "Story559", Stage 2 then Stage 5) produce two unrelated jobs sharing the identical
+`id`/`label` string. Stage 2's own Story559 item resolves its `job_id` as soon as Stage 2's own
+`apply_batch_task_result` reads its `progress[].id`; when Stage 5's own LATER async-result
+(`msg-ar5`) arrives, its "Story559" job matched BOTH Stage 5's own fresh item (correct) AND Stage
+2's already-settled one (wrong), clobbering Stage 2's `result`/`duration_ms` with Stage 5's data
+("Implemented the fix for #559.", 1800ms -> "Polished Story559 follow-up items.", 4300ms). The
+async-result message carries no `tool_call_id` of its own to scope against (checked against every
+`async-result` frame in `subagents.jsonl`, `subagents-background-turn.jsonl` and
+`stages-941.jsonl`: `details` is always exactly `{ jobs: [{ id, label, status, resultText |
+errorText, durationMs }] }`), so the issue's own suggested "scope to the frame's own
+`tool_call_id`" cannot be built literally.
+
+**Decision (Skippy, delegated by Stuart 2026-10-18)**: scope matching to the item's own
+resolution state instead of a wire field that does not exist. An item whose `result` is already
+`Some` was resolved by an earlier async-result and MUST NOT be matched again by a later job
+sharing its `job_id`/label, no matter which Stage that later job belongs to -- this is what
+actually stops the clobber, since Stage 2's row has already had its `result` filled in by its own
+`msg-ar2` well before `msg-ar5` arrives. Among still-unresolved (`result.is_none()`) items, a
+`job_id` match is tried first, falling back to a label match only when the item's own `job_id` is
+still unset; if several unresolved items genuinely race for the same label/job_id (two Stages
+truly running concurrently, not merely sequential in this fixture), the item with the latest
+`started_at` wins -- the issue's own documented fallback ("prefer the latest unfinished entry
+with that label"). Each job in one async-result frame claims at most one item, so two jobs in the
+same frame can never resolve onto the same row. No omp/wire-format change requested: there is no
+`tool_call_id` on this frame to ask omp to add scoping against, and the resolution-state scoping
+above is sufficient and Rust-side only.

@@ -3612,3 +3612,39 @@ Stage shows a stray "Uses:" line (the fixture's own task names carry no `agent:/
 Opened as draft PR #993 on branch `feat/941-stages-part2`, stacked on part 1's now-merged
 `feat/941-stages` (PR #979, merged as `d9c88f2`). **Refs #941** until the live check above
 confirms every acceptance item; switches to **Closes #941** once it does.
+
+## Phase 61: Async-result job matching scoped to unresolved Stage items (#989) [US1]
+
+Filed 2026-10-18 by the #941 lane from PR #979: `apply_async_result_jobs`
+(`subagent_items.rs`) matched an async-result job against EVERY `subagent` item in the whole
+turn by bare `job_id`/`label`, with no `tool_call_id` scoping, so a repeated subagent name
+across Stages (fixture `stages-941.jsonl`'s own "Story559", Stage 2 then Stage 5) let Stage 5's
+later async-result clobber Stage 2's already-settled `result`/`duration_ms` (research.md
+decision 19, FR-084).
+
+- [X] T288 [US1] `apply_async_result_jobs` (`subagent_items.rs`) rewritten as a two-pass match:
+  pass 1 decides, for every job in the frame, which item (if any) it resolves -- scoped to
+  items whose `result` is still `None` (a `Some` result means an earlier async-result already
+  settled that row; it is never touched again), job_id match tried before label match, each
+  item claimed by at most one job this call, ties among several still-unresolved same-label
+  items broken by the latest `started_at` (the issue's own documented fallback) -- without
+  mutating anything; pass 2 applies each job's status/result/duration/job_id update only to its
+  resolved target. No `tool_call_id` scoping was possible: the async-result frame itself carries
+  none (confirmed against every `async-result` message in `subagents.jsonl`,
+  `subagents-background-turn.jsonl` and `stages-941.jsonl`).
+- [X] T289 [US1] Live-check coverage added additively to `scripts/verify-941-part2.mjs`
+  (reusing the `stages-941.jsonl` fixture already recorded there -- no new fixture): a new
+  `assertAsyncResultStageScoping` expands Stage 2 and Stage 5 (both default-collapsed) and
+  reads each one's own Story559 member row's rendered result summary
+  (`extractResultSummary`)/duration (`formatElapsed`) straight from `textContent`, asserting
+  each Stage keeps its OWN result/duration and never shows the OTHER Stage's (Stage 2:
+  "Implemented the fix for #559.", 1800ms -> "2s"; Stage 5: "Polished Story559 follow-up
+  items.", 4300ms -> "4s"). `node --check`ed; not run (no-build prep lane, blocked on the build
+  slot).
+- [X] T290 [US1] Docs: FR-084 added to this spec (`### Session 2026-10-18 (async-result Stage
+  scoping, issue #989)` Clarifications entry plus the FR itself), research.md decision 19, and
+  this Phase 61.
+
+Opened as draft PR (branch `fix/989-async-stage`); `Closes #989` once the live check above is
+confirmed against a real build. No cargo build run in this lane (no-build prep lane, blocked on
+the build slot).

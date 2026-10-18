@@ -461,6 +461,31 @@
   still never auto-expands by itself (FR-067's own "renders collapsed by default"), independent
   of its status.
 
+### Session 2026-10-18 (async-result Stage scoping, issue #989)
+
+- Q: Issue #989 (filed by the #941 lane from PR #979, 2026-10-18): `apply_async_result_jobs`
+  (`subagent_items.rs`) matches an async-result frame's `details.jobs[]` entries against EVERY
+  `subagent` item in the whole turn by bare `job_id`/`label` string, with no scoping to the
+  owning `tool_call_id` at all -- so when two Stages run a same-named subagent (fixture
+  `stages-941.jsonl`'s own "Story559" in both Stage 2 and Stage 5), a job whose own wire `id` is
+  just its `label` echoed back (never a session-unique value) can match an unrelated, already-
+  settled earlier Stage's row, overwriting its `status`/`duration_ms`/`result`/`job_id`. The
+  frame itself carries no `tool_call_id` to scope against directly (confirmed against every
+  `async-result` message in both the pre-existing `subagents*.jsonl` fixtures and
+  `stages-941.jsonl`: `details` is only ever `{ jobs: [{ id, label, status, resultText |
+  errorText, durationMs }] }`). What is the narrowest correct match key? → A: Scope to the
+  item's own resolution state, not a wire field that does not exist: an item whose `result` is
+  already set was resolved by an earlier async-result and MUST never be touched again by a
+  later one sharing its `job_id`/label, regardless of which Stage that later job belongs to;
+  among still-unresolved items (`result.is_none()`) a job_id match is tried first, falling back
+  to a label match, and if several unresolved items still race for the same job (two Stages
+  genuinely running concurrently) the most recently started one wins -- the issue's own
+  documented fallback ("prefer the latest unfinished entry with that label"). Each job claims at
+  most one item per call so two jobs in one frame can never land on the same row. Decided
+  (Skippy, delegated by Stuart 2026-10-18): matching stays a pure Rust-side scoping fix
+  (`apply_async_result_jobs`); no wire-format/omp change requested, since no `tool_call_id` is
+  available there to request.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -834,6 +859,16 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
+- **FR-084** (new, 2026-10-18, issue #989, filed by the #941 lane from PR #979): A subagent's
+  async-result frame (`details.jobs[]`) MUST only ever resolve the specific `subagent` item that
+  issued the matching tool call, never an unrelated item from a different Stage that happens to
+  share the same subagent `name`/job `label`/`id` string. Concretely: once an item's own
+  `result` has been set by an earlier async-result, it MUST be treated as settled and MUST NOT
+  be matched or overwritten by any later job sharing its `job_id` or label; matching against a
+  job_id takes priority over a label match, both scoped to items not yet resolved this way; if
+  more than one still-unresolved item shares the same label/job_id (two Stages racing
+  concurrently), the one with the latest `started_at` MUST be chosen; a single job entry MUST
+  resolve at most one item per async-result frame.
 
 ### Key Entities
 
