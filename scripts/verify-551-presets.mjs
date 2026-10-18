@@ -10,8 +10,10 @@
 // includes Dark (high contrast) (gate round 1 item 14): reads its own red severity colour live
 // on a real hovered session row at the theme's declared 7:1 target, sends one real prompt that
 // asks for a fenced code block and a small Mermaid diagram and screenshots the rendered result
-// per preset, screenshots the open Profile menu Theme submenu, and ends by switching back to
-// Dark and confirming it.
+// (this pass only, not Nordic Frost/Cyber Amber -- gate round 2 item 4 corrected this wording;
+// sending the turn once, under Dark high contrast, is this script's one spend of real model
+// tokens, not repeated per preset), screenshots the open Profile menu Theme submenu, and ends
+// by switching back to Dark and confirming it.
 //
 // Drives a REAL `omp` (ambient signed-in profile), scratch cwd/worktree/`REFRACT_DATA_DIR` --
 // never touches Stuart's real Session list. One turn is sent per the code-block/Mermaid check
@@ -27,7 +29,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep, resolveCssVarColor } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
 import {
   gitHead,
   buildLauncher,
@@ -41,6 +43,7 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { pressEscape } from './verify-tauri-session-list-helpers.mjs';
 import { measuredContrastRatio, parseComputedColorToEntry } from './contrast-math.mjs';
+import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor } from './verify-551-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -55,68 +58,11 @@ const NEW_THEMES = [
   { id: 'cyber-amber', name: 'Cyber Amber', switchVia: 'profile-menu' }
 ];
 
-// ---- Item 12: real OKLab hue/lightness distance, not string inequality --------------------
-
-/** Linear sRGB -> OKLab, the published inverse of `contrast-math.mjs`'s own `oklabToLinearSrgb`
- * (same matrices, Bjorn Ottosson). Local to this script: a reverse conversion only a live-check
- * that must classify a REAL rendered colour's hue/lightness needs, not a general contrast
- * primitive every other script shares. */
-function linearSrgbToOklab([r, g, b]) {
-  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
-  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
-  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
-  const l_ = Math.cbrt(l);
-  const m_ = Math.cbrt(m);
-  const s_ = Math.cbrt(s);
-  return {
-    L: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
-    a: 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
-    b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
-  };
-}
-
-function oklabHueDegrees({ a, b }) {
-  const deg = (Math.atan2(b, a) * 180) / Math.PI;
-  return deg < 0 ? deg + 360 : deg;
-}
-
-function hueDistanceDegrees(h1, h2) {
-  const diff = Math.abs(h1 - h2) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
-
-/** Real hue/lightness-distance check between two parsed colour strings (from a REAL
- * `getComputedStyle()` read), replacing a naive `colorA === colorB` string-inequality check
- * (gate round 1, item 12) -- two distinct hex strings can still be perceptually indistinguishable
- * (near-identical hue and lightness), and a naive equality check cannot tell them apart. */
-function describeHueLightness(rawColor) {
-  const entry = parseComputedColorToEntry(rawColor);
-  if (!entry) return null;
-  const { L, a, b } = linearSrgbToOklab(entry.linear);
-  return { L, hue: oklabHueDegrees({ a, b }), raw: rawColor };
-}
-
-// ---- Item 10: a missing CSS custom property must fail loudly, not silently resolve via
-// inheritance/initial-value fallback (`var(--missing)` is invalid-at-computed-value-time, which
-// most properties resolve to their OWN initial/inherited value, not an error) ------------------
-
-/** Reads the custom property's own raw cascaded value directly off `<html>` -- empty/missing
- * means the token itself was never declared for the active theme, independent of whatever a
- * probe element's `var(--name)` reference silently falls back to. */
-async function cssVarRawValue(cdp, varName) {
-  const raw = await cdp.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('${varName}').trim()`);
-  return raw;
-}
-
-/** Resolves a token's REAL computed colour only after confirming the custom property itself is
- * actually declared -- throws (a real failure, not a silent pass) if it is missing. */
-async function requireResolvedCssVarColor(cdp, varName, property = 'color') {
-  const raw = await cssVarRawValue(cdp, varName);
-  if (!raw) {
-    throw new Error(`verify-551: CSS custom property ${varName} is empty/missing on <html> for the active theme -- a var() probe would have silently fallen back to an inherited/initial colour instead of failing.`);
-  }
-  return resolveCssVarColor(cdp, varName, property);
-}
+// Items 10/12 (missing-token guard, real OKLab hue/lightness distance): `linearSrgbToOklab`/
+// `oklabHueDegrees`/`hueDistanceDegrees`/`describeHueLightness`/`cssVarRawValue`/
+// `requireResolvedCssVarColor` all live in `./verify-551-helpers.mjs` now (#806 ratchet --
+// gate round 2's fixes pushed this file past its own 600-line soft cap; pure-logic,
+// behaviour-preserving extraction, imported above).
 
 // ---- Item 11: real rendered surfaces, not hidden probes --------------------------------------
 
@@ -125,14 +71,18 @@ const SEND_BUTTON_FINDER = `document.querySelector('button[aria-label="Send mess
 
 /** Reads a handful of REAL, currently-rendered surfaces (never a hidden probe element) and their
  * REAL backdrops, returning raw `getComputedStyle()` colour strings for `measuredContrastRatio`
- * to parse via `contrast-math.mjs` (gate round 1, item 11). Call only once the session list and
- * composer are known-mounted; a dialog-specific pair is read separately while that dialog is
- * open. */
+ * to parse via `contrast-math.mjs` (gate round 1, item 11; selectors corrected gate round 2,
+ * item 5 -- `[data-session-row-title]`/`[data-sidebar]` never existed in the real DOM:
+ * `SessionRow.tsx`'s title text is a bare `.text-sidebar-foreground` span, and its real
+ * rendered backdrop is the nearest ancestor `<div>` (skipping the intervening `<span>`/
+ * `<button>`, neither of which paint a fill) -- the row's own outer flex div, which carries
+ * `bg-sidebar-accent`/`hover:bg-sidebar-accent`). Call only once the session list and composer
+ * are known-mounted; a dialog-specific pair is read separately while that dialog is open. */
 async function readRealSurfaceColours(cdp) {
   return cdp.evaluate(`(() => {
     const row = ${SESSION_ROW_FINDER};
-    const sidebar = row ? row.closest('[data-sidebar]') ?? row.parentElement : null;
-    const rowTitle = row ? row.querySelector('[data-session-row-title]') ?? row : null;
+    const rowTitle = row ? row.querySelector('.text-sidebar-foreground') : null;
+    const sidebar = rowTitle ? rowTitle.closest('div') : null;
     const send = ${SEND_BUTTON_FINDER};
     return {
       sessionRowText: rowTitle ? getComputedStyle(rowTitle).color : null,
@@ -144,14 +94,18 @@ async function readRealSurfaceColours(cdp) {
   })()`);
 }
 
-/** The Keyboard shortcuts dialog's own real border against its own real (popover) background --
- * a genuine dialog surface, not a synthetic probe. Call only while the dialog is open. */
+/** The Keyboard shortcuts dialog's own real backdrop. Gate round 2 item 6 found
+ * `DialogContent` (`components/ui/dialog.tsx`) draws its edge as `ring-1 ring-foreground/10` --
+ * a box-shadow-based ring, not a CSS `border` -- so `border-color`/`border-style` are never
+ * actually set and reading them does not correspond to anything visually rendered. Reported as
+ * informational only below (never a pass/fail gate) rather than asserting a floor against a
+ * property this component doesn't use. */
 async function readRealDialogBorder(cdp) {
   return cdp.evaluate(`(() => {
     const dialog = document.querySelector('[role="dialog"]');
     if (!dialog) return null;
     const cs = getComputedStyle(dialog);
-    return { borderColor: cs.borderColor, background: cs.backgroundColor };
+    return { borderColor: cs.borderColor, boxShadow: cs.boxShadow, background: cs.backgroundColor };
   })()`);
 }
 
@@ -346,9 +300,10 @@ async function main() {
         if (!dialogSurfaces) {
           failures.push(`${theme.name}: dialog border/background could not be read.`);
         } else {
-          const borderRatio = measuredContrastRatio(dialogSurfaces.borderColor, dialogSurfaces.background);
-          if (borderRatio === null) notExercised.push(`${theme.name}: dialog border is transparent/unparseable against its own background (${dialogSurfaces.borderColor} on ${dialogSurfaces.background}) -- this preset's dialogs may render borderless by design, not a failure on its own.`);
-          else findings.push(`${theme.name}: real Keyboard shortcuts dialog border measures ${borderRatio.toFixed(2)}:1 against its own real popover background.`);
+          // Informational only (gate round 2 item 6): this component's real edge is a
+          // box-shadow ring (`ring-foreground/10`), not a CSS border -- `borderColor` never
+          // corresponds to anything rendered, so no pass/fail floor is asserted against it.
+          findings.push(`${theme.name}: real Keyboard shortcuts dialog -- background ${dialogSurfaces.background}, box-shadow ${dialogSurfaces.boxShadow} (its real edge; informational only, this component has no CSS border to gate on).`);
         }
         const dialogShot = `${theme.id}-02-keyboard-shortcuts-dialog.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, dialogShot));
@@ -372,25 +327,20 @@ async function main() {
           else findings.push(`${theme.name}: --accent-text (hue ${accentHL.hue.toFixed(1)}) and --severity-info (hue ${infoHL.hue.toFixed(1)}) are ${hueDist.toFixed(1)} degrees apart, a real distinct hue.`);
         }
 
-        // Cyber Amber only: accent vs error must ALSO clear a real lightness-ratio separation
-        // (gate round 1 item 6's own fix, re-verified live here rather than only statically).
+        // Cyber Amber only: accent vs error must ALSO clear the decided swatch-contrast
+        // separation (gate round 1 item 6's own fix, re-verified live here; item 1 of gate
+        // round 2 corrected this from an OKLab lightness-ratio gate, which the real measured
+        // values -- 1.15:1 -- would have failed even though the decision itself specified
+        // swatch contrast >= 1.5:1, the figure actually measured and decided on).
         if (theme.id === 'cyber-amber') {
           const errorRaw = await requireResolvedCssVarColor(cdp, '--severity-error', 'color');
-          const errorHL = describeHueLightness(errorRaw);
-          if (!errorHL) {
-            failures.push(`${theme.name}: could not parse --severity-error (${errorRaw}) for a real OKLab read.`);
+          const swatchRatio = measuredContrastRatio(accentRaw, errorRaw);
+          if (swatchRatio === null) {
+            failures.push(`${theme.name}: could not parse --accent-text (${accentRaw}) or --severity-error (${errorRaw}) for a measured swatch contrast ratio.`);
+          } else if (swatchRatio < 1.5) {
+            failures.push(`${theme.name}: --accent-text (${accentRaw}) and --severity-error (${errorRaw}) measure only ${swatchRatio.toFixed(2)}:1 apart (swatch contrast) -- below the 1.5:1 the gate round 1 retune decided.`);
           } else {
-            const errorEntry = parseComputedColorToEntry(errorRaw);
-            const accentEntry = parseComputedColorToEntry(accentRaw);
-            const swatchRatio = measuredContrastRatio(accentRaw, errorRaw);
-            const lRatio = Math.max(accentHL.L, errorHL.L) / Math.min(accentHL.L, errorHL.L);
-            if (swatchRatio === null || lRatio < 1.3) {
-              failures.push(`${theme.name}: --accent-text (L ${accentHL.L.toFixed(3)}) and --severity-error (L ${errorHL.L.toFixed(3)}) measure only ${lRatio.toFixed(2)}:1 apart in lightness (swatch contrast ${swatchRatio?.toFixed(2) ?? 'n/a'}:1) -- too close, the gate round 1 defect this preset's own retune was meant to fix.`);
-            } else {
-              findings.push(`${theme.name}: --accent-text and --severity-error measure ${lRatio.toFixed(2)}:1 apart in lightness (swatch contrast ${swatchRatio.toFixed(2)}:1), a real distinguishable pair.`);
-            }
-            void errorEntry;
-            void accentEntry;
+            findings.push(`${theme.name}: --accent-text and --severity-error measure ${swatchRatio.toFixed(2)}:1 apart (swatch contrast), clearing the decided 1.5:1 separation.`);
           }
         }
       } catch (err) {
@@ -434,6 +384,14 @@ async function main() {
       }
       assertExeUnchanged(exePath, exeHash, `post-relaunch-${theme.id}`, 'verify-551');
 
+      // Gate round 2 item 3: reading `document.documentElement.className` immediately after
+      // the CDP socket connects can race the document's own parse -- the class can briefly
+      // read empty even when the bootstrap script has already run. Wait for the document to be
+      // past `loading` AND for a non-empty class before trusting the read.
+      await cdp.waitFor(`document.readyState !== 'loading' && document.documentElement.className.length > 0`, {
+        timeoutMs: 15_000,
+        label: 'Relaunch: document ready, <html> class non-empty'
+      });
       const classAtFirstObservableFrame = await cdp.evaluate(`document.documentElement.className`);
       if (!classAtFirstObservableFrame.includes(`theme-${theme.id}`)) {
         failures.push(`${theme.name}: relaunch <html> class is "${classAtFirstObservableFrame}", expected it to already include "theme-${theme.id}" at the first observable frame -- no flash of another preset.`);
@@ -465,11 +423,17 @@ async function main() {
         findings.push(`Dark (high contrast): real <html> class confirmed (${hcClass}).`);
       }
 
-      // Real hover: a genuine mouseMoved over the session row, then read the row's own computed
-      // colour for whatever element currently renders the severity-error/destructive role
-      // (a Terminated/stopped row's status text, if present; otherwise the row's own hover fill
-      // vs muted-foreground is read as the closest real-row proxy and the exact-7:1 destructive
-      // text claim is recorded as not independently exercised, honestly, rather than guessed).
+      // Real hover: a genuine mouseMoved over the session row, then read the REAL hover fill
+      // (gate round 2, item 2: `[data-session-open]` -- the button itself -- has a transparent
+      // own background; the fill actually painted on hover/selected is `bg-sidebar-accent` on
+      // its parent `<div>`, SessionRow.tsx:193-198. Reading the button's own background
+      // silently parses as opaque black and can never fail this check -- read the parent
+      // instead and fail outright if its own alpha is 0, rather than let a transparent read
+      // through as a false opaque black). `--severity-error`/`--state-stopped`/`--pr-closed`
+      // are three separate literal duplicates in this theme (#570's own "literal copies, not
+      // var aliases" rule) that happened to share one value before this story's own fix -- all
+      // three are checked against the SAME real backdrop here so a future value split would be
+      // caught, not just the one this story directly retuned.
       const rowRect = await cdp.evaluate(`(() => {
         const row = ${SESSION_ROW_FINDER};
         if (!row) return null;
@@ -481,19 +445,28 @@ async function main() {
       } else {
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
         await sleep(150);
-        const hoverColours = await cdp.evaluate(`(() => {
+        const hoverBackground = await cdp.evaluate(`(() => {
           const row = ${SESSION_ROW_FINDER};
-          const cs = getComputedStyle(row);
-          return { color: cs.color, background: cs.backgroundColor };
+          const backdrop = row ? row.parentElement : null;
+          return backdrop ? getComputedStyle(backdrop).backgroundColor : null;
         })()`);
-        const errorRaw = await requireResolvedCssVarColor(cdp, '--severity-error', 'color');
-        const errorOnHoverRatio = measuredContrastRatio(errorRaw, hoverColours.background);
-        if (errorOnHoverRatio === null) {
-          notExercised.push(`Dark (high contrast): could not parse the real hovered row background (${hoverColours.background}) against --severity-error for a measured ratio -- the row may not be the element that actually carries the hover fill.`);
-        } else if (errorOnHoverRatio < 7) {
-          failures.push(`Dark (high contrast): --severity-error on the real hovered session-row background measures ${errorOnHoverRatio.toFixed(2)}:1, below this theme's own declared 7:1 high-contrast target.`);
+        const backdropEntry = hoverBackground ? parseComputedColorToEntry(hoverBackground) : null;
+        if (!hoverBackground || !backdropEntry) {
+          failures.push(`Dark (high contrast): could not read the real hovered row's parent backdrop (${hoverBackground}).`);
+        } else if (backdropEntry.alpha === 0) {
+          failures.push(`Dark (high contrast): the real hovered row backdrop (${hoverBackground}) is fully transparent -- this is not the element that actually paints the hover fill; the check cannot trust a transparent read as if it were opaque.`);
         } else {
-          findings.push(`Dark (high contrast): --severity-error on the real hovered session-row background measures ${errorOnHoverRatio.toFixed(2)}:1 (>=7:1).`);
+          for (const [label, varName] of [['--severity-error', '--severity-error'], ['--state-stopped', '--state-stopped'], ['--pr-closed', '--pr-closed']]) {
+            const redRaw = await requireResolvedCssVarColor(cdp, varName, 'color');
+            const redOnHoverRatio = measuredContrastRatio(redRaw, hoverBackground);
+            if (redOnHoverRatio === null) {
+              failures.push(`Dark (high contrast): could not parse ${label} (${redRaw}) against the real hovered row backdrop (${hoverBackground}) for a measured ratio.`);
+            } else if (redOnHoverRatio < 7) {
+              failures.push(`Dark (high contrast): ${label} on the real hovered row backdrop measures ${redOnHoverRatio.toFixed(2)}:1, below this theme's own declared 7:1 high-contrast target.`);
+            } else {
+              findings.push(`Dark (high contrast): ${label} on the real hovered row backdrop measures ${redOnHoverRatio.toFixed(2)}:1 (>=7:1).`);
+            }
+          }
         }
       }
 
