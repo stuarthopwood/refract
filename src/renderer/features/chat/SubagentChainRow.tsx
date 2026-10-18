@@ -20,6 +20,7 @@ import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
+import { jumpToStage, stageRowDomId } from './stageJump'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading, extractContextLabel, stageRollupText } from './stageMeta'
@@ -33,6 +34,7 @@ import {
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
   SubagentStatusIcon,
+  subagentStatusTextClass,
   summarizeSubagentStatuses,
   type SubagentRowStatus
 } from '../subagents/subagentStatus'
@@ -120,11 +122,9 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   const status = overallStatus(counts)
   const isRunning = status === 'running'
   const total = group.items.length
-  // Issue #941 grill item 2: a finished agent or Stage gets green icon AND text (the one
-  // exception to "done is neutral" -- tool rows/groups are untouched, `toolStatus.tsx`'s own
-  // module). The icon already gets its colour from `STATUS_GLYPH` via `SubagentStatusGlyph`;
-  // this is the matching text-colour half, applied to the label below.
-  const successLabelClass = isSubagentSuccessStatus(status) ? SUBAGENT_SUCCESS_TEXT_CLASS : undefined
+  // Issue #941/#1008: the Stage label's own text-colour half (`subagentStatus.tsx`'s
+  // `subagentStatusTextClass`), alongside the icon colour `STATUS_GLYPH` already supplies.
+  const labelColorClass = subagentStatusTextClass(status)
 
   // #563 remediation (L4/decision 19, #565 decision 26) fade-in: a member row that mounts WHILE
   // this Stage is live (running) fades in; one present at a settled/history mount never does.
@@ -264,13 +264,14 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
 
   return (
     <CollapsedLine
+      id={stageRowDomId(group.id)}
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
       // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` lives HERE now, not in
       // `CollapsedLine`'s own shared base class -- every other caller (tool rows, advisory
       // rows, notices) shares that same label span and was silently widened by a floor only
       // this Stage row needed.
-      labelClassName={cn('min-w-16', successLabelClass)}
+      labelClassName={cn('min-w-16', labelColorClass)}
       summary={soloAgentName}
       summaryFixedWidth={soloAgentName !== undefined}
       meta={meta}
@@ -398,12 +399,14 @@ function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: st
       aria-label={`${stageHeading(stage.stageIndex, stage.label, true)}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
     >
-      <span
-        className={cn('min-w-0 max-w-full truncate font-medium', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
-        title={stageLabel}
+      <button
+        type="button" title={stageLabel}
+        className={cn('min-w-0 max-w-full truncate rounded px-1 -mx-1 font-medium hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring', subagentStatusTextClass(status))}
+        aria-label={`Go to Stage ${stage.stageIndex}`} // Issue #1008 item 2: jumps to+opens+focuses this Stage's own row (`jumpToStage`); distinct from the group's own full label above.
+        onClick={() => jumpToStage(sessionId, stage.id)}
       >
         {stageLabel}
-      </span>
+      </button>
       {durationMs != null && (
         <span aria-hidden="true" className="shrink-0 tabular-nums text-xs text-muted-foreground">
           {formatElapsed(durationMs)}

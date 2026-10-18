@@ -49,6 +49,30 @@ export function isSubagentSuccessStatus(status: SubagentRowStatus): boolean {
  * `--severity-success` token, so the two never read as two different greens. */
 export const SUBAGENT_SUCCESS_TEXT_CLASS = 'text-severity-success'
 
+/** Issue #1008 item 1: true for the one status whose icon AND owning Stage label both switch to
+ * the error token -- derived from the same `GLYPH_KEY_BY_STATUS` map `isSubagentSuccessStatus`
+ * reads, so the two colour questions never drift apart. `ToolRow.tsx`'s own failed-call label
+ * already applies `text-severity-error` this same way (`item.status === 'error'`); callers here
+ * apply `SUBAGENT_ERROR_TEXT_CLASS` when this is true, alongside the icon colour `STATUS_GLYPH`
+ * already supplies. */
+export function isSubagentFailedStatus(status: SubagentRowStatus): boolean {
+  return GLYPH_KEY_BY_STATUS[status] === 'error'
+}
+
+/** The Tailwind class issue #1008's "failed Stage label" fix applies to a failed Stage's own
+ * label, the same `--severity-error` token `ToolRow.tsx`'s own failed-call label already uses. */
+export const SUBAGENT_ERROR_TEXT_CLASS = 'text-severity-error'
+
+/** Issue #1008: the Stage label's own text-colour half (`StageGroupRow`'s label,
+ * `ChainStageLine`'s jump button -- `SubagentChainRow.tsx`), green when finished, red when
+ * failed, `undefined` for every other state -- the one call both sites share so the two text
+ * colours (and the running/cancelled/exited "stay neutral" default) can never drift apart. */
+export function subagentStatusTextClass(status: SubagentRowStatus): string | undefined {
+  if (isSubagentSuccessStatus(status)) return SUBAGENT_SUCCESS_TEXT_CLASS
+  if (isSubagentFailedStatus(status)) return SUBAGENT_ERROR_TEXT_CLASS
+  return undefined
+}
+
 /** The icon-only markup shared by `SubagentStatusIcon` and `SubagentStatusGlyph` below: a
  * distinct icon per state, never colour alone (WCAG 2.1 AA): spinner, check, cross, stop
  * (cancelled), unplug (exited). */

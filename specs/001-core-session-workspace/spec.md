@@ -827,6 +827,21 @@
   same way -- the group meta slot's "N stopped" count, and `ToolCallDialog.tsx`'s own small
   "View full call" header. No new visible-label surface was added or is needed.
 
+### Session 2026-10-18 (Stage label colour and jump-to-Stage, #1008)
+
+- Q: Issue #1008 (ui-architect-v3 gate on PR #1007/#1000): a finished Stage's own label gets
+  green text (FR-079) but a failed Stage's own label stays default colour, only its icon
+  turning red -- `ToolRow.tsx` already applies `text-severity-error` to a failed tool row's
+  label the same way. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): apply
+  `text-severity-error` to a failed Stage's own label exactly the same way, on both the
+  in-place Stage row and the per-turn chain row's own terse per-Stage summary line.
+- Q: The chain row's own "Stage N" text (`ChainStageLine`) has no way to jump to the Stage row
+  it describes. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): make it a real,
+  keyboard-reachable button ("Go to Stage N") that scrolls that Stage's own row into view,
+  opens it (through the same persisted manual-open path FR-084/#991 already reads, so a jump
+  counts as the user's own deliberate open), and moves keyboard focus to that Stage row's own
+  trigger.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1336,6 +1351,19 @@ The developer types a slash command and finds the ones the agent offers. If a se
   own "Cancelled" wording are unchanged (both have sources other than the user's own Stop
   click, confirmed by code: `map_progress_status`'s own direct OMP-wire-string mapping, and an
   `ask` call cancelled by the process/Conversation ending with no answer, respectively).
+- **FR-089** (new, 2026-10-18, issue #1008, ui-architect-v3 gate on PR #1007/#1000; amends
+  FR-079, FR-068): A failed Stage (one or more member settled `failed`) MUST show the same
+  error-coloured label text a failed tool call already shows (FR-061's own `text-severity-error`
+  rule), on both the in-place Stage row (FR-067) and the per-turn Subagent chain row's own
+  terse per-Stage summary line (FR-068) -- amending FR-079's green-only rule, which covered
+  only the finished case and left a failed Stage's own label the default colour, standing out
+  less than a finished Stage's when both are expanded. Each Stage's own "Stage N" text in the
+  chain row (FR-068) MUST additionally be a real, keyboard-reachable button with the accessible
+  name "Go to Stage N": activating it (click or Enter) MUST scroll that Stage's own row into
+  view, open it through the same persisted manual-open mechanism FR-084/#991's upward-only
+  disclosure already reads (so a jump counts as the user's own deliberate open, surviving
+  exactly as a manual toggle already does), and move keyboard focus to that Stage row's own
+  trigger.
 
 ### Key Entities
 

@@ -721,3 +721,66 @@ check, neither of which depends on real-time pacing.
 focus-survives-settling phase both still hold unchanged: Stage 1's own render during ITS delay
 window is still single-Stage-so-far (Stage 2's new delay runs strictly later in the tape), so
 it auto-opens exactly as before either way.
+
+## 23. Stage label colour and jump-to-Stage from the chain row (issue #1008, 2026-10-18)
+
+**Problem**: `StageGroupRow`'s own label and `ChainStageLine`'s terse per-Stage summary line
+apply `SUBAGENT_SUCCESS_TEXT_CLASS` (green) to a finished Stage's label (decision 11/FR-079),
+but leave a failed Stage's own label the default muted colour -- only its icon
+(`SubagentStatusGlyph`) turns red. With both a finished and a failed Stage open side by side,
+the finished one reads as more significant than the failed one, the opposite of what matters.
+`ToolRow.tsx` already solved the identical problem for a failed tool call's own label
+(`labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}`, FR-061).
+Separately, `ChainStageLine` renders each Stage's own name as a plain, non-interactive `<span>`
+-- with ten Stages in a turn (issue #941's own fixture), finding the one the chain row's own
+summary line describes means scrolling the whole transcript by hand.
+
+**Decision** (Skippy, delegated by Stuart 2026-10-18, both items pre-decided on the issue from
+a ui-architect-v3 gate finding at PR #1007/#1000): (1) a new shared
+`subagentStatus.tsx#subagentStatusTextClass(status)` resolves to `SUBAGENT_SUCCESS_TEXT_CLASS`
+when finished, `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`, the same token `ToolRow.tsx`
+already uses) when failed, and `undefined` otherwise (running/cancelled/exited stay neutral) --
+one call, read by both `StageGroupRow`'s own label and `ChainStageLine`'s button, so the two
+surfaces can never colour a Stage differently. (2) `ChainStageLine`'s "Stage N" text becomes a
+real `<button>` with the accessible name "Go to Stage N" (`jumpToStage`, split out to a new
+`stageJump.ts` module to keep `SubagentChainRow.tsx` under the #806 600-line cap): it forces the
+target Stage's own manual-open state through `useStageToggleStore.setManualOpen` directly --
+the SAME persisted store `useStickyDisclosure` already reads for a user's own toggle (decision
+19/FR-084/#991), so a jump counts as a genuine manual open, not a second, ad-hoc "opened by a
+jump" flag a remount could forget -- then looks the target row up by a new, stable DOM id
+(`stageRowDomId`, a new `id` prop threaded through `CollapsedLine` onto whichever element
+already receives focus: the plain row `div` with no `children`, or the `CollapsibleTrigger`
+button with them) and calls `scrollIntoView`/`.focus()` on it. `ChainStageLine` is a SIBLING of
+the Stage row it targets, never its parent, so there is no React ref to use; the shared DOM id
+is the one mechanism available that does not require threading new props down through
+`Transcript.tsx`'s own render loop. No virtualizer removes the target row from the DOM
+regardless of scroll position to defeat this -- `message-scroller.tsx`'s own
+`content-visibility:auto` only skips paint/layout work off-screen (confirmed: this codebase has
+no windowing-library virtualizer at all), so a plain `document.getElementById` lookup at click
+time is synchronous and reliable; the target Stage is guaranteed already mounted, since it
+renders earlier in the SAME turn as the chain row itself (decision 5: the chain row is always
+appended at the very end of its own turn). `prefers-reduced-motion` drops the smooth scroll to
+`'auto'`, matching `SideChatPanel.tsx`'s own existing convention.
+
+**Live check** (`scripts/verify-1008-stage-label-jump.mjs`, modelled on
+`scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+`verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` colour-measurement
+pattern): reuses the SAME `stages-941.jsonl` fixture every `verify-941-*`/`verify-991-*`/
+`verify-1000-*` script already shares (AGENTS.md: no new fixtures) -- it already carries a
+genuinely failed Stage (Stage 5, one `FailAgent` member) among ten Stages, so "2+ Stages where
+one fails" needs no fixture change. Measures Stage 5's own label against the theme's resolved
+`--severity-error` (the one red/green discriminator for item 1: reads the default/muted colour
+on `origin/main`) and Stage 1's own label against the same token (a regression guard: a done
+Stage must never match it). Proves the jump on two independent, never-otherwise-touched,
+multi-member, fully-finished Stages (so each starts genuinely closed, FR-089's own no-bad-
+member rule) -- Stage 1 by a mouse click, Stage 3 by keyboard (focus the button directly, then
+a real Enter keypress, proving native `<button>` activation needs no special-casing): each
+proof asserts the target row's own trigger is open (`aria-expanded="true"`), holds keyboard
+focus (`document.activeElement`), and sits inside the window's own viewport
+(`getBoundingClientRect`). The jump button's own existence (`button[aria-label="Go to Stage
+N"]`) is itself the second red/green discriminator: `origin/main` never renders one at all
+(`ChainStageLine`'s "Stage N" text stays a plain span there), so the lookup fails outright.
+Screenshots in all 3 themes. **Written, not run end-to-end**: no build slot granted for this
+sub-task -- `node --check` plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset,
+stopping at the shared build-slot guard before touching cargo) are the only commands actually
+run against this file.

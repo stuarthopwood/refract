@@ -4243,3 +4243,57 @@ the existing screenshot loop, not only under the default theme. **(9, Low)**
 `finalize_live_items`'s own stale doc comment fixed; a stopped hidden bookkeeping call (e.g.
 `todo`) no longer posts a red failure notice; the no-matching-`tool_execution_start` end-frame
 branch now also respects `turn_abort_requested`.
+
+## Phase 66: Stage label colour and jump-to-Stage from the chain row (#1008, FR-089) [US1]
+
+**Goal**: a failed Stage's own label reads `text-severity-error`, the same way a failed tool
+call's own label already does; the chain row's own "Stage N" text becomes a real button that
+scrolls to, opens, and focuses the Stage row it describes -- both items pre-decided on the
+issue (ui-architect-v3 gate on PR #1007/#1000).
+
+- [X] T318 `src/renderer/features/subagents/subagentStatus.tsx`: new `isSubagentFailedStatus`
+  (mirrors `isSubagentSuccessStatus`), `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`), and
+  the shared `subagentStatusTextClass(status)` combinator (green when finished, the new error
+  class when failed, `undefined` otherwise) both `StageGroupRow` and `ChainStageLine` read, so
+  the two surfaces can never colour a Stage differently.
+- [X] T319 `src/renderer/features/chat/CollapsedLine.tsx`: new optional `id` prop threaded onto
+  whichever element already receives focus (the plain row `div` with no `children`, or the
+  `CollapsibleTrigger` button with them) -- a stable DOM id a sibling component (the chain row)
+  can look a Stage row up by, since there is no React ref across sibling subtrees.
+- [X] T320 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own
+  `labelClassName` reads `subagentStatusTextClass(status)` (replacing the success-only
+  ternary), tagged with the new `id={stageRowDomId(group.id)}`; `ChainStageLine`'s "Stage N"
+  `<span>` becomes a `<button>` (accessible name "Go to Stage N", same colour class) calling
+  the new `jumpToStage(sessionId, stage.id)` on click. Split `stageRowDomId`/`jumpToStage` out
+  to a new `src/renderer/features/chat/stageJump.ts` module (keeps `SubagentChainRow.tsx` under
+  the #806 600-line cap): `jumpToStage` forces the target's manual-open state through
+  `useStageToggleStore.setManualOpen` directly (the same store `useStickyDisclosure` already
+  reads, decision 19/FR-084/#991), then `document.getElementById`/`scrollIntoView`/`.focus()`s
+  the row found by its new DOM id, dropping to `'auto'` scroll under
+  `prefers-reduced-motion` (matching `SideChatPanel.tsx`'s own convention).
+- [X] T321 New `scripts/verify-1008-stage-label-jump.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` pattern. Reuses the
+  SAME `stages-941.jsonl` fixture (AGENTS.md: no new fixtures needed -- it already carries a
+  genuinely failed Stage, Stage 5's own `FailAgent`, among ten Stages). Measures Stage 5's own
+  label against the theme's resolved `--severity-error` (red/green discriminator 1: reads the
+  default colour on `origin/main`) and Stage 1's own label against the same token (a done-Stage
+  regression guard). Proves the jump on Stage 1 (mouse click) and Stage 3 (keyboard: focus the
+  button directly, then a real Enter keypress) -- both multi-member, fully finished, never
+  otherwise touched, so each starts genuinely closed: asserts the target row opens
+  (`aria-expanded`), holds `document.activeElement`, and sits inside the viewport
+  (`getBoundingClientRect`). The jump button's own existence
+  (`button[aria-label="Go to Stage N"]`) is red/green discriminator 2 -- `origin/main` never
+  renders one (`ChainStageLine`'s text stays a plain span there). Screenshots in all 3 themes.
+  **Written, not run end-to-end**: no build slot granted for this sub-task -- `node --check`
+  plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping at the shared
+  build-slot guard) are the only commands actually run against this file.
+
+**Spec**: `spec.md` gains FR-089 (amends FR-079, FR-068) and a dated Clarifications section
+recording both decisions, Decided/Skippy/delegated-by-Stuart per this story's own away-mode
+convention; `research.md` gains decision 23 with the full rationale.
+
+**Non-build checks**: `pnpm typecheck`, `pnpm run check:indent`, `pnpm run check:file-size`
+(SubagentChainRow.tsx trimmed to exactly 600 lines after the split, still under the #806 cap),
+`pnpm run check:parity -- --gate`, `pnpm exec vitest run` (148/148 existing tests, no new tests
+per the prototyping-phase rule) all clean.
