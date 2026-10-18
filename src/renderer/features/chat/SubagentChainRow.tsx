@@ -22,7 +22,8 @@ import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
-import { stageHeading } from './stageMeta'
+import { stageHeading, extractContextLabel } from './stageMeta'
+import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
 import {
   chatRowStatus,
@@ -148,37 +149,67 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
   const summaryText = isRunning ? stageRunningSummary(counts, total) : stageSettleSummary(group)
-  // Issue #941 grill item 3 (gate round 1 fix): a muted, tabular-nums start time (clock time,
-  // the same `toLocaleTimeString` pattern `UserMessageRow.tsx` already uses).
   const startTimeText =
     startedAt != null ? new Date(startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : undefined
-  // #563 remediation (H1): `icon=` is a `CollapsedLine` icon slot, so the status word stays
-  // sr-only there (`SubagentStatusGlyph`) and is rendered visibly HERE instead, in `meta` --
-  // gate round 1 fix (item 4): the roll-up counts moved from `summary` into `meta` too (both
-  // `whitespace-nowrap`, never character-wrapped), so the flexible `summary` slot disappears and
-  // the Stage's own label gets first claim on the row's width, truncating before anything here
-  // does. `aria-hidden`: `triggerAriaLabel` below restates everything shown here on its own.
+  // Gate round 2 fix (item 1): a SOLO Stage with a captured `context` still shows the context
+  // label as its header (unchanged); its one agent's own name, no longer stated anywhere once
+  // `summary` moved into `meta` in round 1, comes back here specifically for this one case, as
+  // `CollapsedLine`'s own `summary` slot (round 1's "counts moved out of summary" fix only ever
+  // concerned the roll-up counts, not this). A solo Stage with NO context already gets the
+  // agent's name AS its label (`stageMeta.ts`'s own `computeStageLabel` fix), so showing it a
+  // second time here would be redundant -- gated on the context tier genuinely having produced
+  // the label, not merely on `total === 1`.
+  const soloContextLabel = total === 1 && group.context ? extractContextLabel(group.context) : null
+  const soloAgentName = soloContextLabel ? group.items[0]!.name : undefined
+  // Gate round 2 fix (item 5): `joinMetaParts` (the shared `· `/sr-only-comma separator every
+  // other meta slot in this codebase already uses) instead of plain string concatenation; the
+  // bare status word now shows ONLY while running (the settled "N done"/"N done, M failed"
+  // wording already states failed/cancelled/exited, so repeating the word there is redundant);
+  // "started" is now part of the VISIBLE text, not only the accessible name; the start time
+  // hides first in a narrow Chat pane (a container query against the chat pane's own
+  // `[container-type:size]` ancestor, #554's same mechanism) so the Stage's own label -- never
+  // this -- is what gives up space first.
   const meta = (
     <span aria-hidden="true" className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
-      <span>{summaryText}</span>
-      {status !== 'finished' && <span>{SUBAGENT_STATUS_LABEL[status]}</span>}
-      {durationMs != null && <span className="tabular-nums">{formatElapsed(durationMs)}</span>}
-      {startTimeText != null && <span className="tabular-nums">{startTimeText}</span>}
+      {joinMetaParts([
+        <span key="summary">{summaryText}</span>,
+        isRunning ? <span key="status">{SUBAGENT_STATUS_LABEL[status]}</span> : undefined,
+        durationMs != null ? (
+          <span key="duration" className="tabular-nums">
+            {formatElapsed(durationMs)}
+          </span>
+        ) : undefined,
+        startTimeText != null ? (
+          <span key="start" className="tabular-nums @max-[380px]:hidden">{`started ${startTimeText}`}</span>
+        ) : undefined
+      ])}
     </span>
   )
   const stageLabel = stageHeading(group.stageIndex, group.label)
-  // Issue #941 grill item 6 (gate round 1 fix): the accessible name starts with the VISIBLE
-  // label (`stageHeading`'s speech form: a comma, never the "·" glyph, so it is never read
-  // aloud), then the stage count, then the same roll-up/status/duration/start-time `meta` shows.
-  const triggerAriaLabel = `${stageHeading(group.stageIndex, group.label, true)}, stage ${group.stageIndex} of ${group.totalStages}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}${startTimeText != null ? `, started ${startTimeText}` : ''}`
+  // Gate round 2 fix (item 8): no repeated "Stage N" -- `stageHeading`'s own speech form already
+  // states it once ("Stage 3, label"), so the stage-count clause here is just "of M", not a
+  // second "stage N of M". Gate round 1's item 1 fix (the name in the accessible name) applies
+  // here too: `soloAgentName` is appended when present.
+  const triggerAriaLabel = `${stageHeading(group.stageIndex, group.label, true)}, of ${group.totalStages}${soloAgentName ? `, ${soloAgentName}` : ''}, ${summaryText}${isRunning ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}${startTimeText != null ? `, started ${startTimeText}` : ''}`
+  // Gate round 2 fix (item 4): the label-column indent (`pl-8 pr-2`) is passed to the brief/
+  // Uses line explicitly -- a one-agent Stage's `CollapsibleContent` already carries `pl-8` via
+  // its own `contentClassName` below, so they take `pr-2` alone there (no second `pl-8` on top
+  // of the one the parent already applies); a multi-agent Stage's own `ml-4 pt-1` supplies no
+  // indent at all, so they take the full `pl-8 pr-2` themselves.
+  const columnClassName = total > 1 ? cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2') : 'pr-2'
 
   return (
     <CollapsedLine
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
       labelClassName={successLabelClass}
+      summary={soloAgentName}
       meta={meta}
-      defaultOpen={isRunning || status === 'failed' || status === 'cancelled' || status === 'exited'}
+      // Gate round 2 fix (item 1): a solo Stage never auto-expands (the architect M9 rule round
+      // 1 accidentally dropped by unifying the two paths) -- FR-067's "renders collapsed by
+      // default" stays true for the one-agent case specifically; a multi-agent Stage keeps its
+      // existing running/failed/cancelled/exited auto-open.
+      defaultOpen={total > 1 && (isRunning || status === 'failed' || status === 'cancelled' || status === 'exited')}
       triggerAriaLabel={triggerAriaLabel}
       // #565 decision 8: a multi-agent Stage's own `SpineList` needs its `ml-4`/`pt-1`; a
       // one-agent Stage's single `SubagentBody` instead starts at the ordinary label column
@@ -188,8 +219,8 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
       {/* Issue #941 grill item 4: the Stage's own full batch context, rendered Markdown, with a
           real expand/collapse control past about 6 lines (`StageContextBrief`); absent when no
           item in the run captured a `context` (a flat call, or history from before #941). */}
-      {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} />}
-      <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} />
+      {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
+      <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
       {total > 1 ? (
         <SpineList gap="member">
           {group.items.map((item) => (
@@ -269,7 +300,7 @@ function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: st
       role="group"
       // Gate round 1 fix (item 6): the speech form swaps "·" for a comma so it is never read
       // aloud as a literal glyph.
-      aria-label={`${stageHeading(stage.stageIndex, stage.label, true)}, ${summaryText}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
+      aria-label={`${stageHeading(stage.stageIndex, stage.label, true)}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
     >
       <span
@@ -288,7 +319,7 @@ function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: st
           <ChainAgentEntry key={item.id} item={item} sessionId={sessionId} />
         ))}
       </div>
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} />
+      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="basis-full" />
     </div>
   )
 }

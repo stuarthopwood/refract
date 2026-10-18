@@ -8,7 +8,6 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
-import { LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import type { StageDependency } from './groupSubagentStages'
 import { mutedLinkClassName } from './Markdown'
 
@@ -32,14 +31,25 @@ function groupByStage(dependencies: StageDependency[]): Array<{ stageIndex: numb
  * fix: a repeated agent name across Stages must open the one `applyDependencies` actually
  * resolved to, never whichever same-named row the tracker happens to match first), else plain
  * text (decision 7's own "unbuilt actions are hidden, not disabled" pattern). Renders nothing
- * when `dependencies` is empty (the common case: most Stages have none). */
-export function StageUsesLine({ dependencies, sessionId }: { dependencies: StageDependency[]; sessionId: string | null }) {
+ * when `dependencies` is empty (the common case: most Stages have none). Gate round 2 fix (item
+ * 4): the label-column indent is the CALLER's own choice (`className`), never hardcoded here --
+ * a one-agent Stage's `CollapsibleContent` already supplies it, `ChainStageLine`'s own terse row
+ * needs none at all (`basis-full` instead, item 6). */
+export function StageUsesLine({
+  dependencies,
+  sessionId,
+  className
+}: {
+  dependencies: StageDependency[]
+  sessionId: string | null
+  className?: string
+}) {
   // Rules of Hooks: the store read runs unconditionally, before the empty-list early return.
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : []))
   if (dependencies.length === 0) return null
   const groups = groupByStage(dependencies)
   return (
-    <div className={cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2 flex flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground')}>
+    <div className={cn(className, 'flex flex-wrap items-baseline gap-x-1 text-xs text-muted-foreground')}>
       <span className="shrink-0">Uses:</span>
       {groups.map((group, groupIndex) => (
         <span key={group.stageIndex}>
@@ -51,7 +61,7 @@ export function StageUsesLine({ dependencies, sessionId }: { dependencies: Stage
                   <button
                     type="button"
                     className={mutedLinkClassName}
-                    aria-label={`Open ${dep.agentId} in Subagents panel`}
+                    aria-label={`${dep.agentId}, open in Subagents panel`}
                     onClick={(event) =>
                       openHostedPanel('subagents', sessionId, { selectSubagentId: match.id, opener: event.currentTarget })
                     }

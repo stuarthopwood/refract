@@ -72,12 +72,16 @@ export function sharedNamePrefix(names: string[]): string | null {
 }
 
 /** The three-tier Stage label (issue #941 grill item 3): the batch context's own first line,
- * else the agents' shared name prefix, else `null` (renderer then shows a bare "Stage N"). */
+ * else the agents' shared name prefix (or, gate round 2 fix, item 1: a SOLO Stage's own one
+ * agent name -- a one-agent Stage still gets "the Stage treatment", never a bare "Stage N"
+ * just because there is no "shared" prefix to compute with only one name), else `null` (a
+ * multi-agent Stage with no context and no shared prefix shows a bare "Stage N"). */
 export function computeStageLabel(context: string | undefined, names: string[]): string | null {
   if (context) {
     const contextLabel = extractContextLabel(context)
     if (contextLabel) return contextLabel
   }
+  if (names.length === 1) return names[0] ?? null
   return sharedNamePrefix(names)
 }
 
@@ -107,16 +111,24 @@ export function extractAgentRefs(text: string): string[] {
 }
 
 const RESULT_SUMMARY_MAX_CHARS = 120
-const MARKDOWN_MARKER_RE = /[#*_`]+/g
+// Gate round 2 fix (item 7): anchored at the START of the line only (`^`) -- the un-anchored,
+// global original stripped a marker character ANYWHERE in the line, corrupting an inline
+// `snake_case` identifier (every `_` removed) or a mid-sentence `*`/backtick. A trailing
+// marker (e.g. the closing `**` of "**Bold**") is accepted as a smaller cosmetic artifact.
+const LEADING_MARKDOWN_MARKER_RE = /^[#*_`]+\s*/
 
 /** An agent's own one-line result preview (issue #941 grill item 7), shown the moment its
- * owning Stage is expanded, with no need to expand the member row itself: the first non-empty
- * line, common inline Markdown markers stripped (plain preview text, not rendered Markdown),
- * truncated to about 120 characters. `undefined` for an empty/whitespace-only result. */
+ * owning Stage is expanded, with no need to expand the member row itself: the first NON-EMPTY
+ * line (gate round 2 fix: a blank first line no longer blanks the whole preview, it scans
+ * forward the same way `extractContextLabel` already does), its own leading Markdown marker
+ * stripped, truncated to about 120 characters. `undefined` when every line is blank. */
 export function extractResultSummary(result: string): string | undefined {
-  const firstLine = (result.split('\n')[0] ?? '').trim()
-  if (firstLine.length === 0) return undefined
-  const stripped = firstLine.replace(MARKDOWN_MARKER_RE, '').trim()
-  if (stripped.length === 0) return undefined
-  return stripped.length <= RESULT_SUMMARY_MAX_CHARS ? stripped : `${stripped.slice(0, RESULT_SUMMARY_MAX_CHARS).trimEnd()}\u2026`
+  for (const rawLine of result.split('\n')) {
+    const line = rawLine.trim()
+    if (line.length === 0) continue
+    const stripped = line.replace(LEADING_MARKDOWN_MARKER_RE, '').trim()
+    if (stripped.length === 0) continue
+    return stripped.length <= RESULT_SUMMARY_MAX_CHARS ? stripped : `${stripped.slice(0, RESULT_SUMMARY_MAX_CHARS).trimEnd()}\u2026`
+  }
+  return undefined
 }
