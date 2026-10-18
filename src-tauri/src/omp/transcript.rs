@@ -30,13 +30,11 @@ use super::diff::{finalize_live_transcript, merge_history_with_live, SubagentFin
 mod subagent_items;
 use subagent_items::{
     apply_async_result_jobs, apply_batch_task_result, build_message_subagent_items,
-    jobs_from_details, read_batch_context, read_task_specs, try_apply_async_result,
-    upsert_subagent_items,
+    hidden_tool_failure_notice, jobs_from_details, read_batch_context, read_task_specs,
+    try_apply_async_result, upsert_subagent_items,
 };
 mod notice_prefixes;
-use notice_prefixes::{
-    COMMAND_OUTPUT_NOTICE_PREFIX, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX,
-};
+use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
 mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
 
@@ -859,19 +857,6 @@ fn try_build_advisory_items(
     }])
 }
 
-fn hidden_tool_failure_notice(tool_call_id: &str, tool_name: &str, output: &str) -> TranscriptItem {
-    let text = if output.is_empty() {
-        format!("{tool_name} failed.")
-    } else {
-        output.to_string()
-    };
-    TranscriptItem::Notice {
-        id: format!("{HIDDEN_TOOL_NOTICE_PREFIX}{tool_call_id}"),
-        level: NoticeLevel::Error,
-        text,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Assistant message content parts -> items (port of `buildAssistantItems`, lines 514-604)
 // ---------------------------------------------------------------------------
@@ -1260,7 +1245,8 @@ fn apply_tool_execution_start(
 
 fn apply_tool_execution_end(
     items: Vec<Arc<TranscriptItem>>,
-    frame: &Value, turn_abort_requested: bool,
+    frame: &Value,
+    turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = frame
         .get("toolCallId")
@@ -1285,7 +1271,6 @@ fn apply_tool_execution_end(
     let result_details = result.get("details").cloned();
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
-        // Issue #911 (gate-fix): a Stop-cut-short hidden call (e.g. `todo`) posts no notice either.
         if !is_error || turn_abort_requested {
             return items;
         }
@@ -1330,13 +1315,17 @@ fn apply_tool_execution_end(
         matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
     if !has_existing {
+        let status = match (is_error, turn_abort_requested) {
+            (false, _) => ToolStatus::Done,
+            (true, true) => ToolStatus::Cancelled,
+            (true, false) => ToolStatus::Error,
+        };
         items.push(Arc::new(TranscriptItem::Tool {
             id: format!("tool-exec:{tool_call_id}"),
             tool_call_id,
             tool: tool_name,
             target: String::new(),
-            // Issue #911 (gate-fix): no tracked start for this id, but still "cut short, not failed".
-            status: if !is_error { ToolStatus::Done } else if turn_abort_requested { ToolStatus::Cancelled } else { ToolStatus::Error },
+            status,
             started_at: Some(now_ms()),
             duration_ms: Some(0),
             args: Value::Null,
@@ -1399,7 +1388,6 @@ fn apply_prompt_result_notice(
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
-                // Issue #911 (gate-fix): matches the Stop button's own word, not OMP's "aborted".
                 text: "Turn stopped.".to_string(),
             }));
             items
@@ -1419,7 +1407,8 @@ fn apply_prompt_result_notice(
 fn apply_frame_items(
     items: Vec<Arc<TranscriptItem>>,
     frame: &Value,
-    has_user_acted: bool, turn_abort_requested: bool,
+    has_user_acted: bool,
+    turn_abort_requested: bool,
 ) -> Vec<Arc<TranscriptItem>> {
     let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
     match frame_type {

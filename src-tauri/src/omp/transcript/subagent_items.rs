@@ -11,9 +11,31 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use super::notice_prefixes::HIDDEN_TOOL_NOTICE_PREFIX;
 use super::{
-    now_ms, SubagentStatus, TranscriptItem, ASYNC_RESULT_CUSTOM_TYPE, SUBAGENT_NAME_LENGTH,
+    now_ms, NoticeLevel, SubagentStatus, TranscriptItem, ASYNC_RESULT_CUSTOM_TYPE,
+    SUBAGENT_NAME_LENGTH,
 };
+
+/// Issue #911 (gate-fix, file-size): moved verbatim from the parent `transcript` module (same
+/// #899 gate round 2 precedent this file's own header cites) so `transcript.rs` stays at its
+/// own file-size baseline while this story's own `ToolStatus::Cancelled` addition lands.
+pub(super) fn hidden_tool_failure_notice(
+    tool_call_id: &str,
+    tool_name: &str,
+    output: &str,
+) -> TranscriptItem {
+    let text = if output.is_empty() {
+        format!("{tool_name} failed.")
+    } else {
+        output.to_string()
+    };
+    TranscriptItem::Notice {
+        id: format!("{HIDDEN_TOOL_NOTICE_PREFIX}{tool_call_id}"),
+        level: NoticeLevel::Error,
+        text,
+    }
+}
 
 /// Reads `args.tasks[]` defensively (port of `readTaskSpecs`): a malformed or absent array means
 /// the caller falls back to rendering the call as a plain `tool` item instead of silently

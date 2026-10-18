@@ -310,7 +310,14 @@ impl SessionAgent {
         code: Option<i32>,
         requested: bool,
     ) -> (bool, bool, bool, u64) {
-        let (is_current, stop_requested, was_already_stopped, epoch_at_exit, exited_pid, turn_abort_requested) = {
+        let (
+            is_current,
+            stop_requested,
+            was_already_stopped,
+            epoch_at_exit,
+            exited_pid,
+            turn_abort_requested,
+        ) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             let was_already_stopped = state.status == SessionStatus::Stopped;

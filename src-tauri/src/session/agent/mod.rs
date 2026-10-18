@@ -425,7 +425,9 @@ impl SessionAgent {
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
-        state.transcript.apply_frame(frame, state.turn_abort_requested);
+        state
+            .transcript
+            .apply_frame(frame, state.turn_abort_requested);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
         // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own
