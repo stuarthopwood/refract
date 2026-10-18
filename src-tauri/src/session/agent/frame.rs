@@ -70,14 +70,13 @@ impl SessionAgent {
             "message_start" | "message_update" | "message_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
-            // Issue #937: a silent `/advisor status` probe's own reply must never reach the
-            // transcript (it is consumed and parsed instead, see `session::advisor`'s own
-            // header for why `apply_transcript_frame` is bypassed here instead of suppressed
-            // after the fact) -- every OTHER `command_output` (a typed or chip-sent
-            // `/advisor on|off`, `/usage show`, `/session info`, ...) still renders exactly as
-            // before.
+            // Issue #937, gate round 1 fix: `session::advisor`'s own `handle_command_output`
+            // decides in one pass whether this frame is a silent probe reply to swallow (never
+            // reaching the transcript) or an authoritative `/advisor on|off` toggle to track on
+            // the way to rendering normally -- every OTHER `command_output` (`/usage show`,
+            // `/session info`, ...) renders exactly as before #937.
             "command_output" => {
-                if !crate::session::advisor::consume_if_silent_probe(self, &frame).await {
+                if !crate::session::advisor::handle_command_output(self, &frame).await {
                     self.apply_transcript_frame(&frame).await;
                 }
             }
@@ -108,7 +107,6 @@ impl SessionAgent {
         // only and this match above never changes shape again for that lane's sake. Each
         // `on_frame` is a no-op today (cheap, allocation-free); `frame` is shared by reference so
         // no lane clones it just to decline the frame.
-        crate::session::advisor::on_frame(self, frame_type, &frame).await;
         crate::session::model::on_frame(self, frame_type, &frame).await;
         crate::session::readout::on_frame(self, frame_type, &frame).await;
         crate::session::side_chat::on_frame(self, frame_type, &frame).await;

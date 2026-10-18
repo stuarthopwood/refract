@@ -429,8 +429,9 @@ export const IPC_EVENTS = {
   UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
-/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42).
- * Kept out of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
+/** Spec 007 "Bootstrap": the app's one synchronous IPC channel (`ipcRenderer.sendSync`/`ipcMain.on`),
+ * called once from `main.tsx` before React mounts (FR-012/SC-003, research.md decision 4). Kept out
+ * of `IPC_REQUESTS` (async invoke/handle) and `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
 export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 
 // ---------------------------------------------------------------------------

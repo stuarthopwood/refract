@@ -17,12 +17,15 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useAdvisorStore, useDraftStore, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
+import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDiffStat, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
-import { ReadoutChip } from './ReadoutChip'
+import { COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
 
 // Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
 // 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
@@ -257,59 +260,90 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
   )
 }
 
+// Gate round 1 fix (High, #937): `chat.send` resolving while `/advisor off` turns out to fail
+// still leaves a live chip whose repeat clicks must work again -- bounded so a reply that never
+// arrives (a dropped `advisor:update`) cannot leave it stuck "Turning off..." forever either.
+const ADVISOR_TURN_OFF_TIMEOUT_MS = 10_000
+
 /** Issue #937 (follow-up to #917/PR #923): a quiet Advisor readout, shown only while omp's
  * advisor subsystem is on for this Session -- hidden entirely while off (no Settings toggle,
  * per the issue's own decision); no cost, spend or token figures anywhere in it or its name.
  * `advisorOn` comes from `session::advisor` (Rust): the authoritative signal is a typed or
  * chip-sent `/advisor on|off` reply, plus a best-effort silent `/advisor status` probe at
  * Session attach/resume (see that module's own header for why the probe's own reply is not
- * trusted the same way).
- *
- * Activating it (click, or Enter/Space since it is a real button) sends `/advisor off` through
- * the same forwarded-command path a typed `/advisor off` already uses (`chat.send`,
- * `src-tauri/src/ipc/chat.rs`); while that request is in flight it shows a busy accessible name
- * and ignores repeat clicks. This component is always rendered by `ComposerStatusLine` (no
- * settings gate) and returns `null` while off, so it never truly unmounts -- the
- * `useLayoutEffect` below is keyed on `advisorOn` itself (not an empty array) so its cleanup
- * fires exactly when the chip's own button is about to be removed from the DOM (true on an
- * actual unmount too), at which point the ref it reads is still the pre-removal one (the same
- * ordering `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx` already rely on, verified
- * there against React 19.3's own commit order). Moves focus to the message box and announces
- * "Advisor off" through `MessageInput.tsx`'s existing shared attachment live region
- * (`useDraftStore`'s `announceAttachment`, the nearest always-mounted polite region in the
- * composer -- the chip itself cannot announce its own disappearance, since it is gone from the
- * DOM in the same render) ONLY when focus was actually on this chip's own button beforehand --
- * never stealing focus from something else the user moved to, and never double-announcing a
- * plain typed `/advisor off`, which already has its own visible transcript notice. */
+ * trusted the same way). A plain gate component: `AdvisorChipButton` below only ever mounts
+ * while `advisorOn` is true, so it genuinely unmounts (not a render-to-`null` in place) the
+ * instant it turns off -- gate round 1 fix (High): the earlier single-component version kept
+ * rendering `null` from the SAME instance, so React cleared its button ref during the SAME
+ * commit that removed the button, before the `useLayoutEffect` cleanup keyed on `advisorOn`
+ * ever ran, and the focus handoff/announcement below silently never fired. `key={sessionId}`
+ * also gives every Session a fresh mount (a fresh `turningOff` state) rather than reusing one
+ * stuck from a different Session's own in-flight click. */
 export function AdvisorChip({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const advisorOn = useAdvisorStore((s) => s.bySession[sessionId] ?? false)
+  if (!advisorOn) return null
+  return <AdvisorChipButton key={sessionId} sessionId={sessionId} textareaRef={textareaRef} />
+}
+
+function AdvisorChipButton({ sessionId, textareaRef }: { sessionId: string; textareaRef: RefObject<HTMLTextAreaElement | null> }) {
   const [turningOff, setTurningOff] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const timeoutRef = useRef<number | undefined>(undefined)
 
+  // A REAL unmount now (see `AdvisorChip`'s own comment above): an empty dependency array is
+  // correct here, matching `RequestCard.tsx`'s `ResolvedRequestSummary`/`AskCard.tsx`'s own
+  // identical pattern -- the cleanup fires once, exactly when this button is actually removed
+  // from the DOM, while `buttonRef.current` still points at it (verified there against React
+  // 19.3's own commit order: a deleted subtree's refs are cleared no earlier than this).
   useLayoutEffect(() => {
     return () => {
+      window.clearTimeout(timeoutRef.current)
       if (!buttonRef.current?.contains(document.activeElement)) return
       textareaRef.current?.focus()
       useDraftStore.getState().announceAttachment(sessionId, 'Advisor off')
     }
-  }, [advisorOn, sessionId, textareaRef])
-
-  if (!advisorOn) return null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleActivate() {
     if (turningOff) return
     setTurningOff(true)
-    window.refract.chat.send(sessionId, '/advisor off').catch(() => setTurningOff(false))
+    // Gate round 1 fix (High): bounded, so a reply that never arrives (a dropped
+    // `advisor:update`, an unexpected process exit) cannot leave the chip stuck "Turning
+    // off..." and unclickable forever -- it simply becomes retryable again.
+    timeoutRef.current = window.setTimeout(() => setTurningOff(false), ADVISOR_TURN_OFF_TIMEOUT_MS)
+    void window.refract.chat.send(sessionId, '/advisor off').then((result) => {
+      // Gate round 1 fix (High): `chat.send` resolves a `Result`, it does not reject on a
+      // refusal (`unknown-command`, `not-idle`, ...) -- the old `.catch` only ever reset this
+      // on a genuine IPC-layer throw, never on an ordinary `{ ok: false }` refusal, so a
+      // refused send left the chip stuck busy with no way to retry.
+      if (!result.ok) {
+        window.clearTimeout(timeoutRef.current)
+        setTurningOff(false)
+        notify(result.error)
+      }
+    })
   }
 
+  const label = turningOff ? 'Advisor on. Turning off…' : 'Advisor on. Turn off'
   return (
-    <ReadoutChip
-      icon={EyeIcon}
-      buttonRef={buttonRef}
-      onActivate={handleActivate}
-      accessibleName={turningOff ? 'Advisor on. Turning off…' : 'Advisor on. Turn off'}
-    >
-      <span aria-hidden>Advisor</span>
-    </ReadoutChip>
+    <Tooltip>
+      <TooltipTrigger asChild aria-describedby={undefined}>
+        <button
+          ref={buttonRef}
+          data-slot="readout-chip"
+          type="button"
+          onClick={handleActivate}
+          aria-label={label}
+          aria-busy={turningOff}
+          aria-disabled={turningOff}
+          className={cn(READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, turningOff && COMPOSER_DISABLED_OPACITY_CLASS)}
+        >
+          <EyeIcon aria-hidden className="size-3.5" />
+          <span aria-hidden>Advisor</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }

@@ -34,13 +34,18 @@ export function ComposerStatusLine({ sessionId, textareaRef }: { sessionId: stri
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   return (
     <div data-slot="composer-status-line" className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 empty:hidden tabular-nums">
-      <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
       {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
       {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
       {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
       {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
       {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
+      {/* Gate round 1 decision (D, Skippy, delegated by Stuart 2026-10-18): last in this
+          group, right before the `ml-auto` Current time chip -- its own appearing/
+          disappearing (unlike every settings-gated chip above, which only ever changes with a
+          Settings round-trip) must never shift the position of a chip someone might already be
+          mid-click on. */}
+      <AdvisorChip sessionId={sessionId} textareaRef={textareaRef} />
       {sessionReadout['current-time'] && <CurrentTimeChip className="ml-auto" />}
     </div>
   )

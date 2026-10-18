@@ -36,13 +36,16 @@ import {
   launchBuiltExe,
   safeRmSync,
   requireSharedCargoTarget,
-  switchTheme
+  switchTheme,
+  getAccessibleNameAndRole
 } from './verify-tauri-scratch-helpers.mjs';
+import { measuredContrastRatio } from './contrast-math.mjs';
 import { pressTab } from './verify-tauri-session-list-helpers.mjs';
 import {
   readAdvisorChipGeometry,
   readOtherChipGeometry,
   advisorChipPresent,
+  assertNoProbeLeak,
   runAdvisorToggleCycle,
   sendSlashCommand
 } from './verify-937-advisor-chip-helpers.mjs';
@@ -137,12 +140,32 @@ async function main() {
     });
     findings.push('Session created; REAL omp process attached (ambient signed-in profile, scratch cwd/worktree).');
 
+    // Gate round 1 fix (Medium, item 15, decided): a profile whose own omp config already
+    // carries `advisor.enabled: true` legitimately shows the chip from the FIRST attach (issue
+    // #937's own body: "Profiles with advisor.enabled: true in omp config show the chip from
+    // the start") -- this is not automatically a bug, so an initial presence branches on a
+    // real `/advisor status` instead of failing outright; only a status reply that then
+    // contradicts the presence (claims disabled while the chip shows on) is a real failure.
     const absentAtStart = !(await advisorChipPresent(cdp));
-    if (absentAtStart) findings.push('Advisor chip absent at Session start (advisor off by default), as FR-078 requires.');
-    else failures.push('Advisor chip was ALREADY present at Session start, with no `/advisor on` yet sent -- a real failure.');
+    if (absentAtStart) {
+      findings.push('Advisor chip absent at Session start (advisor off by default), as FR-078 requires.');
+    } else {
+      const startStatusReply = await sendSlashCommand(cdp, '/advisor status', /advisor/i).catch((err) => `<no reply: ${err.message}>`);
+      if (/\bdisabled\b/i.test(startStatusReply) && !/\benabled\b/i.test(startStatusReply)) {
+        failures.push(`Advisor chip was present at Session start, but "/advisor status" reports disabled -- contradicts the chip's own state: ${JSON.stringify(startStatusReply)}`);
+      } else {
+        findings.push(`Advisor chip present at Session start; this profile's own omp config appears to default the advisor on. "/advisor status": ${JSON.stringify(startStatusReply)}`);
+      }
+    }
 
     // ---- Mouse-driven cycle (item 2-4 of the issue's own brief) ----
     await runAdvisorToggleCycle(cdp, { mode: 'mouse', pressTab, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
+
+    // ---- Gate round 1 fix (High, item 14): this Session's own `on_launch` just ran its
+    // silent attach probe (if the omp build lists `advisor` and the Session settled idle in
+    // time) with the first real cycle above now long complete -- plenty of time for any reply
+    // to have arrived and, if `agent/frame.rs`'s own veto failed, leaked ----
+    await assertNoProbeLeak(cdp, findings, failures, 'After the first mouse cycle');
 
     // ---- Keyboard-only cycle, a FRESH `/advisor on` (item 5: never the same run as mouse) ----
     await runAdvisorToggleCycle(cdp, { mode: 'keyboard', pressTab, pressEnterKey, shotsDir: SHOTS_DIR, findings, failures });
@@ -175,6 +198,11 @@ async function main() {
         failures.push(`Advisor chip disappeared after switching to the ${theme.name} theme (a theme switch must never toggle it).`);
         continue;
       }
+      // Gate round 1 fix (Medium, item 15): full AX name (never `textContent`, per the UI gate
+      // checklist's own rule), visible text, tooltip text, and never a digit/`$`/"Spend" in any
+      // of them -- plus a real, live-measured contrast ratio against this theme's own resolved
+      // background colour, reusing `contrast-math.mjs` exactly like `check-theme-contrast.mjs`.
+      await assertAdvisorChipNameTooltipAndContrast(cdp, theme.name, findings, failures);
       const shotName = `advisor-chip-on-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured: Advisor chip ON under the ${theme.name} theme (${shotName}).`);
@@ -184,7 +212,7 @@ async function main() {
     await cdp.click(`Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor')`).catch(() => {});
 
     notExercised.push(
-      'The silent `/advisor status` attach/resume probe\'s own suppression from the transcript (issue #937\'s own accessibility requirement, `consume_if_silent_probe` in `agent/frame.rs`) was NOT independently proven here -- this run never restarted the app to re-attach to an existing Session, the one path that fires the silent probe (`on_launch`). Proving it needs a second scratch run: stop this Session\'s agent, relaunch the exe against the SAME `dataDir`, and confirm no new notice mounts in the transcript across the resume while the chip\'s own state still seeds correctly from `SessionSnapshot.advisorOn`.'
+      'Verification backlog #650: the silent `/advisor status` attach/resume probe\'s own suppression from the transcript (issue #937\'s own accessibility requirement, `handle_command_output` in `session::advisor`, called from `agent/frame.rs`) was NOT independently proven here -- this run never restarted the app to re-attach to an existing Session, the one path that fires the silent probe (`on_launch`). Proving it needs a second scratch run: stop this Session\'s agent, relaunch the exe against the SAME `dataDir`, and confirm no new notice mounts in the transcript across the resume while the chip\'s own state still seeds correctly from `SessionSnapshot.advisorOn`.'
     );
     notExercised.push(
       'The busy-window "a repeat click/activation is a no-op" assertion is indirect (the accessible name staying at the busy wording) -- this script cannot directly observe whether `window.refract.chat.send` was actually called a second time or silently skipped by the component\'s own `turningOff` guard, short of instrumenting the IPC bridge itself.'
@@ -241,6 +269,90 @@ async function sendAdvisorOnForGeometryPhase(cdp, findings, failures) {
     findings.push('Final "/advisor on" (for the geometry/screenshot phase) produced the authoritative enable reply.');
   } catch (err) {
     failures.push(`Final "/advisor on" (geometry/screenshot phase) failed: ${err.message}`);
+  }
+}
+
+const ADVISOR_CHIP_SELECTOR =
+  `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Advisor')`;
+// No digit, `$`, or the word "Spend" anywhere in the accessible name, the visible text, or the
+// tooltip -- issue #937's own "no cost shown" requirement, checked structurally rather than
+// against one fixed string, so a future wording change still gets caught if it reintroduces a
+// figure.
+const NO_COST_LEAK_PATTERN = /\d|\$|Spend/;
+
+/** Gate round 1 fix (Medium, item 15): the FULL accessible name (via CDP
+ * `Accessibility.getPartialAXTree`, never `textContent` -- the UI gate checklist's own rule),
+ * the visible text, and a REAL hover-revealed tooltip, none of which may ever contain a digit,
+ * `$`, or "Spend"; plus a live-measured WCAG contrast ratio of the chip's own resolved text
+ * colour against its nearest opaque ancestor background, reusing `contrast-math.mjs` exactly
+ * like `check-theme-contrast.mjs` already does for every other status-line pairing. */
+async function assertAdvisorChipNameTooltipAndContrast(cdp, themeName, findings, failures) {
+  const { name } = await getAccessibleNameAndRole(cdp, ADVISOR_CHIP_SELECTOR);
+  if (name !== 'Advisor on. Turn off') {
+    failures.push(`[${themeName}] Advisor chip accessible name was ${JSON.stringify(name)}, expected exactly "Advisor on. Turn off".`);
+  } else {
+    findings.push(`[${themeName}] Advisor chip accessible name is exactly "Advisor on. Turn off".`);
+  }
+  const visibleText = await cdp.evaluate(`(${ADVISOR_CHIP_SELECTOR})?.querySelector('span[aria-hidden]')?.textContent ?? null`);
+  if (visibleText !== 'Advisor') {
+    failures.push(`[${themeName}] Advisor chip visible text was ${JSON.stringify(visibleText)}, expected exactly "Advisor".`);
+  } else {
+    findings.push(`[${themeName}] Advisor chip visible text is exactly "Advisor".`);
+  }
+
+  // A real hover (mouseMoved, not a scripted focus/state toggle) over the chip's own centre,
+  // matching `switchTheme`'s own established hover-before-interact pattern in this same repo.
+  const rect = await cdp.evaluate(`(() => { const el = ${ADVISOR_CHIP_SELECTOR}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
+  let tooltipText = null;
+  try {
+    await cdp.waitFor(`!!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `[${themeName}] Advisor chip tooltip opened on hover` });
+    tooltipText = await cdp.evaluate(`document.querySelector('[role="tooltip"]')?.textContent ?? null`);
+  } catch (err) {
+    failures.push(`[${themeName}] ${err.message}`);
+  }
+  if (tooltipText !== null) {
+    if (tooltipText !== 'Advisor on. Turn off') {
+      failures.push(`[${themeName}] Advisor chip tooltip text was ${JSON.stringify(tooltipText)}, expected exactly "Advisor on. Turn off".`);
+    } else {
+      findings.push(`[${themeName}] Advisor chip tooltip text is exactly "Advisor on. Turn off" on hover.`);
+    }
+  }
+
+  for (const [label, value] of [
+    ['accessible name', name],
+    ['visible text', visibleText],
+    ['tooltip text', tooltipText]
+  ]) {
+    if (value && NO_COST_LEAK_PATTERN.test(value)) {
+      failures.push(`[${themeName}] Advisor chip's ${label} contains a digit, "$", or "Spend" (no cost must ever show): ${JSON.stringify(value)}`);
+    }
+  }
+
+  const styles = await cdp.evaluate(`(() => {
+    const el = ${ADVISOR_CHIP_SELECTOR};
+    if (!el) return null;
+    const color = getComputedStyle(el).color;
+    let bgEl = el.parentElement;
+    let background = null;
+    while (bgEl) {
+      const bg = getComputedStyle(bgEl).backgroundColor;
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') { background = bg; break; }
+      bgEl = bgEl.parentElement;
+    }
+    return { color, background: background ?? getComputedStyle(document.body).backgroundColor };
+  })()`);
+  if (!styles) {
+    failures.push(`[${themeName}] could not read the Advisor chip's own computed style for a contrast measurement.`);
+  } else {
+    const ratio = measuredContrastRatio(styles.color, styles.background);
+    if (ratio === null) {
+      failures.push(`[${themeName}] could not parse the Advisor chip's own colour/background for a contrast measurement: ${JSON.stringify(styles)}`);
+    } else if (ratio < 4.5) {
+      failures.push(`[${themeName}] Advisor chip contrast ${ratio.toFixed(2)}:1 is under the required 4.5:1 (${JSON.stringify(styles)}).`);
+    } else {
+      findings.push(`[${themeName}] Advisor chip contrast ${ratio.toFixed(2)}:1 PASS (>= 4.5:1, ${JSON.stringify(styles)}).`);
+    }
   }
 }
 

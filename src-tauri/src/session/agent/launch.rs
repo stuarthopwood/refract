@@ -444,6 +444,7 @@ impl SessionAgent {
                         // lane R5) bump `readout`'s `pr_poll_generation` a second time, which
                         // would silently kill the NEWER life's own PR-poll timer.
                         if is_current {
+                            crate::session::advisor::on_exit(&agent).await;
                             crate::session::readout::on_exit(&agent, code, requested).await;
                             crate::session::subagents::on_exit(
                                 &agent,

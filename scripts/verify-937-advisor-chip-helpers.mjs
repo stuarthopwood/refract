@@ -23,6 +23,32 @@ async function allNoticeTexts(cdp) {
   return cdp.evaluate(`(${NOTICE_FINDER}).map((row) => (row.querySelector(':scope > span.min-w-0.flex-1')?.textContent ?? '').trim())`);
 }
 
+/** Gate round 1 fix (High, item 14): proves the silent attach/resume probe's own reply, IF the
+ * probe fired for this brand-new Session's own `on_launch` (`session::advisor`'s own header),
+ * never leaked into the visible transcript as anything other than the expected `/advisor on`
+ * reply itself -- a status-reply-shaped notice (`Advisor is ...`, `Advisor "..."`, any `Spend`
+ * figure) would mean `agent/frame.rs`'s own pre-dispatch veto failed to consume it. Also checks
+ * the probe was never echoed as a literal user-authored message bubble (the probe is sent via
+ * `request_rpc`, never through `chat.send`'s own transcript-mutating path -- defensive,
+ * belt-and-braces, not expected to ever actually find one). */
+export async function assertNoProbeLeak(cdp, findings, failures, label) {
+  const texts = await allNoticeTexts(cdp);
+  const leaked = texts.filter((t) => /Advisor (is |")|Spend/.test(t));
+  if (leaked.length > 0) {
+    failures.push(
+      `${label}: a status-reply-shaped notice leaked into the transcript (the silent probe's own reply must never render): ${JSON.stringify(leaked)}`
+    );
+  } else {
+    findings.push(`${label}: no leaked status-reply-shaped notice found (the silent attach probe, if it ran, never surfaced).`);
+  }
+  const echoed = await cdp.evaluate(`(${TRANSCRIPT})?.textContent?.includes('/advisor status') ?? false`);
+  if (echoed) {
+    failures.push(`${label}: the literal text "/advisor status" was found in the transcript -- the silent probe must never be echoed as a user message.`);
+  } else {
+    findings.push(`${label}: the silent probe's own command text was never echoed anywhere in the transcript.`);
+  }
+}
+
 async function clearComposer(cdp) {
   const current = await cdp.evaluate(`${MESSAGE_FINDER}?.value ?? ''`);
   for (let i = 0; i < current.length; i++) {
@@ -106,13 +132,29 @@ export async function readLiveRegionText(cdp) {
   return cdp.evaluate(`(${LIVE_REGION_FINDER})?.textContent ?? null`);
 }
 
-/** Polls the live region until its text contains `expectedSubstring`, or returns false at
- * timeout (a real, asserted failure at the call site -- never silently skipped). */
-export async function waitForLiveRegionText(cdp, expectedSubstring, { timeoutMs = 10_000 } = {}) {
+/** Gate round 1 fix (High, item 13): tags whatever span currently occupies the live region (if
+ * any) with a marker attribute BEFORE a cycle activates the chip -- `useDraftStore`'s own
+ * `attachmentAnnouncement.seq` gives each real announcement a fresh DOM node (`key={seq}`), so
+ * the marker is never carried over onto a genuinely NEW announcement, only onto a stale one
+ * left over from an earlier cycle or an unrelated attachment event. */
+export async function markLiveRegionSeen(cdp) {
+  await cdp.evaluate(
+    `(() => { const el = (${LIVE_REGION_FINDER})?.firstElementChild; if (el) el.setAttribute('data-937-seen', '1'); return true; })()`
+  );
+}
+
+/** Polls for a NEW (unmarked by `markLiveRegionSeen`) live-region span containing
+ * `expectedSubstring`, or returns false at timeout -- gate round 1 fix (High, item 13): the
+ * plain "does the CURRENT text contain it" check this replaces could pass on a stale span left
+ * over from an earlier cycle's own announcement, never proving THIS cycle actually announced
+ * anything. */
+export async function waitForFreshLiveRegionText(cdp, expectedSubstring, { timeoutMs = 10_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const text = await readLiveRegionText(cdp);
-    if (text && text.includes(expectedSubstring)) return true;
+    const matched = await cdp.evaluate(
+      `(() => { const el = (${LIVE_REGION_FINDER})?.firstElementChild; return !!(el && !el.hasAttribute('data-937-seen') && (el.textContent ?? '').includes(${JSON.stringify(expectedSubstring)})); })()`
+    );
+    if (matched) return true;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   return false;
@@ -124,10 +166,10 @@ export async function activeElementIsMessageBox(cdp) {
 
 /** Walks a real keyboard Tab chain from the message textarea until an element whose
  * `aria-label` starts with "Advisor on." is focused, or throws after `stepCap` tabs -- the
- * Advisor chip renders as the FIRST child of `ComposerStatusLine.tsx`, directly after the
- * textarea/Send/Stop group in DOM order, so a small cap is enough; a larger one would hide a
- * real regression (the chip moved, or stopped rendering, far enough away that "eventually
- * reachable" would no longer mean "where FR-078 says it sits"). */
+ * Advisor chip renders LAST in `ComposerStatusLine.tsx`'s own left group (gate round 1
+ * decision, right before the `ml-auto` Current time chip), so a small cap still reaches it from
+ * the message textarea; a larger cap would hide a real regression (the chip moved, or stopped
+ * rendering, far enough away that "eventually reachable" no longer means "where FR-078 sits"). */
 export async function tabToAdvisorChip(cdp, pressTab, { stepCap = 8 } = {}) {
   for (let i = 0; i < stepCap; i++) {
     await pressTab(cdp);
@@ -150,11 +192,23 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressTab, pressEnterKey
   await sendSlashCommand(cdp, '/advisor on', /Advisor enabled\./);
   findings.push(`${tag} "/advisor on" produced the authoritative enable reply.`);
 
-  const onName = await cdp.evaluate(`(${ADVISOR_CHIP_FINDER}) ? 'present' : 'absent'`);
-  if (onName !== 'present') {
-    failures.push(`${tag} Advisor chip did not appear after "/advisor on".`);
+  // Gate round 1 fix (Medium, item 15): `cdp.waitFor`, not a single immediate `evaluate` -- the
+  // notice above renders straight from the `command_output` frame, while the chip's own
+  // `advisor:update` IPC event (store update, then a re-render) can trail it by a tick or two;
+  // an immediate check can spuriously fail on a real, working chip that just hasn't painted yet.
+  try {
+    await cdp.waitFor(`!!(${ADVISOR_CHIP_FINDER})`, { timeoutMs: 5_000, label: `${tag} Advisor chip appeared after "/advisor on"` });
+  } catch (err) {
+    failures.push(`${tag} ${err.message}`);
     return;
   }
+
+  // Gate round 1 fix (High, item 13): both scoped to what THIS activation produces, never what
+  // an earlier cycle (mouse, then keyboard) already left behind -- a bare "does any notice/any
+  // live-region text ever say this" check would pass on the OTHER cycle's own leftovers even if
+  // THIS cycle's own toggle silently did nothing.
+  const noticeCountBeforeActivate = (await allNoticeTexts(cdp)).length;
+  await markLiveRegionSeen(cdp);
 
   if (mode === 'mouse') {
     await cdp.click(ADVISOR_CHIP_FINDER);
@@ -193,26 +247,36 @@ export async function runAdvisorToggleCycle(cdp, { mode, pressTab, pressEnterKey
     failures.push(`${tag} ${err.message}`);
   }
 
-  const noticesAfter = await allNoticeTexts(cdp);
-  if (noticesAfter.some((t) => /Advisor disabled\./.test(t))) {
-    findings.push(`${tag} authoritative "Advisor disabled." reply confirmed in the transcript.`);
+  // Gate round 1 fix (High, item 13): sliced from `noticeCountBeforeActivate`, so a REAL leftover
+  // "Advisor disabled." from an earlier cycle can never count toward THIS cycle's own result,
+  // and exactly one (not merely "at least one") is required -- more than one would mean either a
+  // duplicate send or an unexpected extra reply, neither of which is the expected shape.
+  const noticesSinceActivate = (await allNoticeTexts(cdp)).slice(noticeCountBeforeActivate);
+  const newDisabledNotices = noticesSinceActivate.filter((t) => /Advisor disabled\./.test(t));
+  if (newDisabledNotices.length === 1) {
+    findings.push(`${tag} exactly one NEW authoritative "Advisor disabled." reply confirmed (not a leftover from an earlier cycle).`);
   } else {
-    failures.push(`${tag} no "Advisor disabled." notice found in the transcript after the toggle-off.`);
+    failures.push(`${tag} expected exactly one NEW "Advisor disabled." notice since this cycle's own activation, found ${newDisabledNotices.length}.`);
   }
 
-  // Supplementary only (per `session::advisor`'s own documented ambiguity): logs the real
-  // literal wording, never asserts it says "disabled" -- the authoritative check above already
-  // covers the real pass/fail.
-  const statusReply = await sendSlashCommand(cdp, '/advisor status', /advisor/i).catch((err) => `<no reply: ${err.message}>`);
-  findings.push(`${tag} supplementary "/advisor status" reply (wording not asserted, see this file's own header): ${JSON.stringify(statusReply)}`);
-
+  // Gate round 1 fix (Critical, item 12): BOTH checked here, straight after the chip leaves the
+  // AX tree -- BEFORE the supplementary `/advisor status` probe below, which itself clicks the
+  // message box to type. Checking focus/the live region AFTER that probe could never fail
+  // regardless of whether the real focus handoff worked at all.
   const focusOk = await activeElementIsMessageBox(cdp);
   if (focusOk) findings.push(`${tag} focus landed on the message textarea after the chip's own toggle-off.`);
   else failures.push(`${tag} focus did NOT land on the message textarea after the chip's own toggle-off.`);
 
-  const announced = await waitForLiveRegionText(cdp, 'Advisor off');
-  if (announced) findings.push(`${tag} "Advisor off" was announced through the composer's shared attachment live region.`);
-  else failures.push(`${tag} "Advisor off" was never observed in the composer's shared attachment live region within the timeout.`);
+  const announced = await waitForFreshLiveRegionText(cdp, 'Advisor off');
+  if (announced) findings.push(`${tag} a NEW "Advisor off" announcement was observed in the composer's shared attachment live region.`);
+  else failures.push(`${tag} no NEW "Advisor off" announcement was observed in the composer's shared attachment live region within the timeout.`);
+
+  // Supplementary only (per `session::advisor`'s own documented ambiguity): logs the real
+  // literal wording, never asserts it says "disabled" -- the authoritative check above already
+  // covers the real pass/fail. Runs LAST (see the comment above): it clicks the message box
+  // itself, so it must never run before the focus/live-region checks above.
+  const statusReply = await sendSlashCommand(cdp, '/advisor status', /advisor/i).catch((err) => `<no reply: ${err.message}>`);
+  findings.push(`${tag} supplementary "/advisor status" reply (wording not asserted, see this file's own header): ${JSON.stringify(statusReply)}`);
 
   await cdp.screenshot(path.join(shotsDir, `${mode}-cycle-after-toggle-off.png`));
 }
