@@ -19,7 +19,7 @@ import {
 import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
-import { formatDiffStat, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
+import { DiffStatLine } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
 import { ReadoutChip } from './ReadoutChip'
 
@@ -34,11 +34,13 @@ import { ReadoutChip } from './ReadoutChip'
 const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
- * formatter, issue #437), matching the Session details card's `formatDiffStat` exactly -- both
- * now go through the same function, so neither can show the figure a different way; "Not
- * available" for the `'not-available'` literal; hidden (`null`) otherwise. The full figures
- * reach assistive technology through a real `sr-only` span next to the `aria-hidden` abbreviated
- * visual text (gate round 4, #437 LOW), the same pairing `ContextUsageChip` below already uses. */
+ * formatter, issue #437), matching the Session details card's own diff line exactly -- both now
+ * render through the shared `DiffStatLine` (`sessionDisplay.tsx`), so neither can show or colour
+ * the figure a different way; "Not available" for the `'not-available'` literal; hidden (`null`)
+ * otherwise. Issue #925: `+A`/`-D` take the diff view's own green/red hue when positive, muted
+ * when zero (never a red "-0"); `DiffStatLine` itself pairs the aria-hidden coloured visual text
+ * with a real `sr-only` span (gate round 4, #437 LOW), the same pairing `ContextUsageChip` below
+ * already uses. */
 export function ChangesChip({ sessionId }: { sessionId: string }) {
   const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
   if (changes === null) return null
@@ -51,8 +53,7 @@ export function ChangesChip({ sessionId }: { sessionId: string }) {
   }
   return (
     <ReadoutChip icon={FileDiffIcon}>
-      <span className="sr-only">{formatDiffStatAccessible(changes)}</span>
-      <span aria-hidden>{formatDiffStat(changes)}</span>
+      <DiffStatLine stat={changes} />
     </ReadoutChip>
   )
 }
