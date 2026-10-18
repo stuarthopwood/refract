@@ -68,15 +68,25 @@ export function AppearanceSection() {
       const active = document.activeElement
       const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
       if (!activeWasOutside) {
-        // Issue #554 gate round 2 (H1): if focus is ALREADY on a radio inside this section,
-        // leave it there -- e.g. arrowing back to the saved value inside Chat width (which
-        // flips `chatWidthDirty` back to false on its own, firing this effect) or pressing
-        // Escape while focus sits on a Chat width radio must not relocate focus into Theme just
-        // because Theme happens to be `lastDirtyGroupRef`. Only when focus was NOT already on a
-        // radio (e.g. it was on the Save/Cancel button, which is about to go disabled) does the
-        // group that was actually dirty matter.
-        const focusAlreadyOnRadio = active instanceof HTMLElement && active.getAttribute('role') === 'radio' && (rootRef.current?.contains(active) ?? false)
-        if (!focusAlreadyOnRadio) {
+        // Issue #554 gate round 2 (H1, corrected after a live-check falsification): "leave it
+        // alone" must key on the focused radio STILL being the CHECKED one after the revert --
+        // not merely on focus sitting on any radio. Arrowing back to the saved value flips
+        // `chatWidthDirty` false on its own, and the radio focus never left IS the one that
+        // becomes checked again, so this correctly leaves it alone. But Escape (or Cancel) away
+        // from a DIFFERENT previewed value leaves focus on a radio whose `aria-checked` just
+        // flipped to false (the roving-tabindex pattern drops its `tabIndex` to -1 too, but a
+        // DOM element never auto-blurs just because its own tabIndex changed) -- a real bug a
+        // live check caught: focus stayed on the now-unchecked, now off-roving-tabindex "Full"
+        // radio instead of moving to the newly-checked "Reading column" one. Checking
+        // `aria-checked === 'true'` on the focused element itself (not merely its role) covers
+        // both cases correctly, and also the Save/Cancel-button case below (focus there is on a
+        // button, never a radio, so this is false there too).
+        const activeIsCheckedRadio =
+          active instanceof HTMLElement &&
+          active.getAttribute('role') === 'radio' &&
+          active.getAttribute('aria-checked') === 'true' &&
+          (rootRef.current?.contains(active) ?? false)
+        if (!activeIsCheckedRadio) {
           const groupLabel = lastDirtyGroupRef.current === 'chatWidth' ? 'chat-width-heading' : 'theme-heading'
           const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
             `[role="radiogroup"][aria-labelledby="${groupLabel}"] [role="radio"][aria-checked="true"]`
