@@ -737,30 +737,77 @@ summary line describes means scrolling the whole transcript by hand.
 
 **Decision** (Skippy, delegated by Stuart 2026-10-18, both items pre-decided on the issue from
 a ui-architect-v3 gate finding at PR #1007/#1000): (1) a new shared
-`subagentStatus.tsx#subagentStatusTextClass(status)` resolves to `SUBAGENT_SUCCESS_TEXT_CLASS`
-when finished, `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`, the same token `ToolRow.tsx`
-already uses) when failed, and `undefined` otherwise (running/cancelled/exited stay neutral) --
-one call, read by both `StageGroupRow`'s own label and `ChainStageLine`'s button, so the two
+`subagentStatus.tsx#subagentStatusTextClass(counts)` resolves to `SUBAGENT_ERROR_TEXT_CLASS`
+(`text-severity-error`, the same token `ToolRow.tsx` already uses) the instant ANY member has
+settled `failed` (gate round 1 fix, item 5: reads the raw roll-up `counts.failed` directly,
+never the Stage's own overall running/failed/cancelled/exited priority order, which would
+otherwise keep the whole Stage "running" -- and the label the default colour -- for as long as
+any sibling member stays unsettled), `SUBAGENT_SUCCESS_TEXT_CLASS` only once every member has
+genuinely finished, and `undefined` otherwise (running/cancelled/exited stay neutral) -- one
+call, read by both `StageGroupRow`'s own label and `ChainStageLine`'s button, so the two
 surfaces can never colour a Stage differently. (2) `ChainStageLine`'s "Stage N" text becomes a
-real `<button>` with the accessible name "Go to Stage N" (`jumpToStage`, split out to a new
-`stageJump.ts` module to keep `SubagentChainRow.tsx` under the #806 600-line cap): it forces the
-target Stage's own manual-open state through `useStageToggleStore.setManualOpen` directly --
-the SAME persisted store `useStickyDisclosure` already reads for a user's own toggle (decision
-19/FR-084/#991), so a jump counts as a genuine manual open, not a second, ad-hoc "opened by a
-jump" flag a remount could forget -- then looks the target row up by a new, stable DOM id
-(`stageRowDomId`, a new `id` prop threaded through `CollapsedLine` onto whichever element
-already receives focus: the plain row `div` with no `children`, or the `CollapsibleTrigger`
-button with them) and calls `scrollIntoView`/`.focus()` on it. `ChainStageLine` is a SIBLING of
-the Stage row it targets, never its parent, so there is no React ref to use; the shared DOM id
-is the one mechanism available that does not require threading new props down through
-`Transcript.tsx`'s own render loop. No virtualizer removes the target row from the DOM
-regardless of scroll position to defeat this -- `message-scroller.tsx`'s own
+real `<button>` with the accessible name "Go to Stage N" plus the Stage's own label when one
+exists (gate round 1 fix, item 6: the bare number alone did not distinguish two unopened Stages
+for a screen reader user) -- `jumpToStage`, split out to a new `stageJump.ts` module to keep
+`SubagentChainRow.tsx` under the #806 600-line cap. The button renders ONLY while its own Stage
+row is currently `rowVisibility(stage, transcriptDisplay) === 'visible'` (gate round 1 fix, item
+1, High: "Show tool calls" off drops a settled, problem-free Stage's own row entirely --
+`transcriptRowVisibility.ts`'s existing `'hidden'` outcome, not merely an `'sr-only'` stub --
+leaving nothing for `jumpToStage` to find; a hidden Stage keeps the original, non-interactive
+label text instead); `jumpToStage` itself still defensively no-ops `setManualOpen` when the row
+is not found, so a jump can never persist a manual-open flag for a Stage nothing can currently
+show. On activation, `jumpToStage` forces the target Stage's own manual-open state through
+`useStageToggleStore.setManualOpen` directly -- the SAME persisted store `useStickyDisclosure`
+already reads for a user's own toggle (decision 19/FR-084/#991), so a jump counts as a genuine
+manual open, not a second, ad-hoc "opened by a jump" flag a remount could forget -- then looks
+the target row up by a new, stable DOM id (`stageRowDomId`, scoped by `sessionId` too, gate
+round 1 fix, item 4: a split pane can show two different Sessions at once, each its own
+Transcript tree, so a bare `group.id` alone risked a duplicate DOM id across them; a new `id`
+prop threaded through `CollapsedLine` onto whichever element already receives focus -- the plain
+row `div` with no `children`, or the `CollapsibleTrigger` button with them). `ChainStageLine` is
+a SIBLING of the Stage row it targets, never its parent, so there is no React ref to use; the
+shared DOM id is the one mechanism available that does not require threading new props down
+through `Transcript.tsx`'s own render loop. No virtualizer removes a VISIBLE target row from the
+DOM regardless of scroll position to defeat this -- `message-scroller.tsx`'s own
 `content-visibility:auto` only skips paint/layout work off-screen (confirmed: this codebase has
-no windowing-library virtualizer at all), so a plain `document.getElementById` lookup at click
-time is synchronous and reliable; the target Stage is guaranteed already mounted, since it
-renders earlier in the SAME turn as the chain row itself (decision 5: the chain row is always
-appended at the very end of its own turn). `prefers-reduced-motion` drops the smooth scroll to
-`'auto'`, matching `SideChatPanel.tsx`'s own existing convention.
+no windowing-library virtualizer at all) -- but the row is only guaranteed to EXIST at all while
+its own `rowVisibility` reads `'visible'` (corrected from this decision's own first draft, which
+over-claimed "guaranteed already mounted" unconditionally; gate round 1 item 1 is precisely the
+case where that is false). Scrolling (gate round 1 fix, item 2, Medium) touches ONLY the
+transcript's own scroll viewport (`[aria-label="Transcript"]`, found via `row.closest(...)`),
+computing the row's position relative to it and calling `viewport.scrollTo({ top, behavior })`
+directly -- never a bare `scrollIntoView`, which walks up and scrolls EVERY scrollable ancestor
+it finds, a real hazard in a split-pane layout where a sibling pane's own scroller could move
+too. The row lands a small margin below the viewport's own top edge (Decided: aligned to the
+top, not centred -- matching how a reader's eye naturally starts reading a newly-revealed row
+from its own header down). `row.focus({ preventScroll: true })` (the same pattern
+`Transcript.tsx`'s own focus-restoration effects use) stops the browser's own native
+focus-scrolling from fighting the scroll already placed. `prefers-reduced-motion` drops the
+smooth scroll to `'auto'`, matching `SideChatPanel.tsx`'s own existing convention -- not
+independently exercised by the live check (no reduced-motion CDP emulation set up for this
+script; recorded in its own `notExercised`).
+
+**Gate round 1 remediation** (Main, 2026-10-18; code review only, no build slot yet -- see
+`tasks.md` Phase 66 for the full per-item record): items 1/2/4/5/6 above are the product/design
+decisions this round added; items 3 (Low, UI: `cursor-pointer`/`hover:underline` plus `py-0.5`
+to match `ChainAgentEntry`'s own 28px button height -- a non-colour affordance cue), 7 (High,
+Test: colour checks re-resolve `--severity-error`/`--severity-success` INSIDE the live check's
+own per-theme loop, after each `switchTheme`, rather than once under the default theme only;
+also measures the chain row's own "Go to Stage 5" button text, not only the in-place label), 8
+(Medium, Test: the live check now scrolls the transcript to its own end before each jump and
+hard-asserts the target row starts off-screen, then `cdp.waitFor`s the in-viewport condition
+after the jump instead of a single immediate read, since the smooth scroll settles
+asynchronously), and 9 (Medium, Test: #991 persistence across Stage 1's remount is exercised
+cheaply by toggling "Show tool calls" off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip right after Stage 1's own jump --
+doubling as item 1's own visibility-gating proof, since that toggle is exactly what makes Stage
+1's row disappear and reappear) are script/implementation fixes with no further product
+decision needed. `ChainStageLine`/`ChainAgentEntry` were ALSO split out of `SubagentChainRow.tsx`
+into a new `ChainStageLine.tsx` during this round, purely to stay under the #806 600-line cap
+once the above fixes landed (a circular import back to `SubagentChainRow.tsx` for
+`overallStatus`/`stageSettleSummary`/`stageRunningSummary`/`stageTimeRange`/`SubagentItem` is
+safe here: every binding crossing the cycle is a hoisted `function`/`type` declaration, never
+evaluated at either module's own top level).
 
 **Live check** (`scripts/verify-1008-stage-label-jump.mjs`, modelled on
 `scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
@@ -769,18 +816,25 @@ pattern): reuses the SAME `stages-941.jsonl` fixture every `verify-941-*`/`verif
 `verify-1000-*` script already shares (AGENTS.md: no new fixtures) -- it already carries a
 genuinely failed Stage (Stage 5, one `FailAgent` member) among ten Stages, so "2+ Stages where
 one fails" needs no fixture change. Measures Stage 5's own label against the theme's resolved
-`--severity-error` (the one red/green discriminator for item 1: reads the default/muted colour
-on `origin/main`) and Stage 1's own label against the same token (a regression guard: a done
-Stage must never match it). Proves the jump on two independent, never-otherwise-touched,
-multi-member, fully-finished Stages (so each starts genuinely closed, FR-089's own no-bad-
-member rule) -- Stage 1 by a mouse click, Stage 3 by keyboard (focus the button directly, then
-a real Enter keypress, proving native `<button>` activation needs no special-casing): each
-proof asserts the target row's own trigger is open (`aria-expanded="true"`), holds keyboard
-focus (`document.activeElement`), and sits inside the window's own viewport
-(`getBoundingClientRect`). The jump button's own existence (`button[aria-label="Go to Stage
-N"]`) is itself the second red/green discriminator: `origin/main` never renders one at all
+`--severity-error` and Stage 1's own label against `--severity-success` (gate round 1 fix, item
+7: re-resolved INSIDE the per-theme loop, after each `switchTheme`, plus the chain row's own
+"Go to Stage 5" button text, not only the in-place label). Proves the jump on two independent,
+never-otherwise-touched, multi-member, fully-finished Stages (so each starts genuinely closed,
+FR-089's own no-bad-member rule) -- Stage 1 by a mouse click, Stage 3 by keyboard (focus the
+button directly, then a real Enter keypress). Gate round 1 fix (item 8): before each jump, the
+transcript is scrolled to its own end and the target row's own off-screen state is hard-asserted
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport (the smooth scroll settles asynchronously) before the open/`activeElement`
+checks. Gate round 1 fix (item 9): right after Stage 1's own mouse jump, "Show tool calls" is
+toggled off then back on via the real `window.refract.settings.setTranscriptDisplay` IPC round
+trip -- Stage 1's own "Go to Stage 1" button must disappear while hidden (item 1's own
+visibility gate), Stage 5's own button must stay (force-visible, failed member), and Stage 1's
+manual-open must survive the remount once restored (#991 persistence). The jump button's own
+existence (its full accessible name, `button[aria-label="Go to Stage N, <label>"]`, gate round 1
+item 6) is a red/green discriminator in its own right: `origin/main` never renders one at all
 (`ChainStageLine`'s "Stage N" text stays a plain span there), so the lookup fails outright.
-Screenshots in all 3 themes. **Written, not run end-to-end**: no build slot granted for this
+Screenshots in all 3 themes. `prefers-reduced-motion` is recorded in `notExercised` (no CDP
+emulation set up for it). **Written, not run end-to-end**: no build slot granted for this
 sub-task -- `node --check` plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset,
 stopping at the shared build-slot guard before touching cargo) are the only commands actually
 run against this file.

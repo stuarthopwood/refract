@@ -1351,19 +1351,31 @@ The developer types a slash command and finds the ones the agent offers. If a se
   own "Cancelled" wording are unchanged (both have sources other than the user's own Stop
   click, confirmed by code: `map_progress_status`'s own direct OMP-wire-string mapping, and an
   `ask` call cancelled by the process/Conversation ending with no answer, respectively).
-- **FR-089** (new, 2026-10-18, issue #1008, ui-architect-v3 gate on PR #1007/#1000; amends
-  FR-079, FR-068): A failed Stage (one or more member settled `failed`) MUST show the same
-  error-coloured label text a failed tool call already shows (FR-061's own `text-severity-error`
-  rule), on both the in-place Stage row (FR-067) and the per-turn Subagent chain row's own
-  terse per-Stage summary line (FR-068) -- amending FR-079's green-only rule, which covered
-  only the finished case and left a failed Stage's own label the default colour, standing out
-  less than a finished Stage's when both are expanded. Each Stage's own "Stage N" text in the
-  chain row (FR-068) MUST additionally be a real, keyboard-reachable button with the accessible
-  name "Go to Stage N": activating it (click or Enter) MUST scroll that Stage's own row into
-  view, open it through the same persisted manual-open mechanism FR-084/#991's upward-only
-  disclosure already reads (so a jump counts as the user's own deliberate open, surviving
-  exactly as a manual toggle already does), and move keyboard focus to that Stage row's own
-  trigger.
+- **FR-089** (new, 2026-10-18, issue #1008, ui-architect-v3 gate on PR #1007/#1000; gate round 1
+  remediation 2026-10-18, Main; amends FR-079, FR-068): A Stage with ANY member settled `failed`
+  MUST show the same error-coloured label text a failed tool call already shows (FR-061's own
+  `text-severity-error` rule) -- even while a sibling member is still running (never derived
+  from the Stage's own overall running/failed/cancelled/exited priority order, which would
+  otherwise delay the red label until the whole Stage settles) -- on both the in-place Stage row
+  (FR-067) and the per-turn Subagent chain row's own terse per-Stage summary line (FR-068),
+  amending FR-079's green-only rule, which covered only the finished case and left a failed
+  Stage's own label the default colour. Each Stage's own "Stage N" text in the chain row
+  (FR-068) MUST additionally be a real, keyboard-reachable button with the accessible name "Go
+  to Stage N" (plus its own label when one was computed, e.g. "Go to Stage 5, Finish the
+  remaining Story559 polish and run the fail probe.") -- gate round 1 fix (item 6): the bare
+  "Go to Stage N" form alone did not distinguish two Stages a screen reader user has not yet
+  opened either one of. This button MUST render only while its own Stage row is currently
+  `'visible'` under the existing "Show tool calls"/"Show thinking" view filters (FR-008's own
+  `rowVisibility`) -- gate round 1 fix (item 1, High): "Show tool calls" off can drop a settled,
+  problem-free Stage's own row entirely, leaving nothing to jump to; a hidden Stage's own label
+  stays the original, non-interactive text instead. Activating the button (click or Enter) MUST
+  scroll ONLY the transcript's own scroll viewport (never any other scrollable ancestor) so that
+  Stage's own row lands near the viewport's own top edge (a small margin below it, never
+  centred -- gate round 1 decision, item 2), open it through the same persisted manual-open
+  mechanism FR-084/#991's upward-only disclosure already reads (so a jump counts as the user's
+  own deliberate open, surviving exactly as a manual toggle already does, including across an
+  unmount/remount the view filters above can themselves cause), and move keyboard focus to that
+  Stage row's own trigger without re-triggering the browser's own native focus-scroll.
 
 ### Key Entities
 

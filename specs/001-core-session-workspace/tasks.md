@@ -4293,7 +4293,53 @@ issue (ui-architect-v3 gate on PR #1007/#1000).
 recording both decisions, Decided/Skippy/delegated-by-Stuart per this story's own away-mode
 convention; `research.md` gains decision 23 with the full rationale.
 
-**Non-build checks**: `pnpm typecheck`, `pnpm run check:indent`, `pnpm run check:file-size`
-(SubagentChainRow.tsx trimmed to exactly 600 lines after the split, still under the #806 cap),
-`pnpm run check:parity -- --gate`, `pnpm exec vitest run` (148/148 existing tests, no new tests
-per the prototyping-phase rule) all clean.
+**Gate round 1 remediation** (Main, 2026-10-18; Sec/Code/A11y PASS, Test/UI FAIL -- all 9 items
+addressed, no build slot used): **(1, High, UI, Decided)** the "Go to Stage N" button now
+renders only while its own Stage row reads `rowVisibility(stage, transcriptDisplay) ===
+'visible'` (`ChainStageLine.tsx`) -- "Show tool calls" off can drop a settled, problem-free
+Stage's own row entirely (not merely an `'sr-only'` stub), leaving nothing for `jumpToStage` to
+find; a hidden Stage falls back to its original plain-text label, and `jumpToStage` itself
+defensively no-ops `setManualOpen` when the row lookup comes back empty. **(2, Medium, UI,
+Decided: top-aligned, not centred)** `jumpToStage` (`stageJump.ts`) now scrolls ONLY the
+transcript's own `[aria-label="Transcript"]` viewport (found via `row.closest(...)`, its
+position relative to the row computed by rect maths, `viewport.scrollTo({ top, behavior })`),
+never a bare `scrollIntoView` that would walk up every scrollable ancestor (a real hazard in a
+split pane); `row.focus({ preventScroll: true })` stops the browser's own native focus-scroll
+fighting it. **(3, Medium, UI, Decided)** the button gained `cursor-pointer`, `hover:underline`,
+a `title` of "Go to {stage heading}", and `py-0.5` to match `ChainAgentEntry`'s own 28px button
+height. **(4, Medium, UI, Decided: scope by sessionId)** `stageRowDomId` now takes `sessionId`
+too -- a split pane showing two Sessions at once could otherwise produce a duplicate DOM id
+across their two Transcript trees, a real HTML violation, not merely an ambiguous lookup. **(5,
+Medium, UI)** `subagentStatusTextClass` now takes the roll-up `counts` directly (not a single
+derived `status`): a Stage with any member settled `failed` is red immediately, even while a
+sibling member is still running, matching FR-089's own "any member failed" wording exactly
+(previously derived from `overallStatus`, whose running-first priority order delayed the red
+label until the whole Stage settled). **(6, Low, all, Decided)** the button's own `aria-label`
+is now "Go to {full stage heading, speech form}" (e.g. "Go to Stage 5, Finish the remaining
+Story559 polish and run the fail probe."), not a bare "Go to Stage N" that never distinguished
+two unopened Stages for a screen reader user. **(7, High, Test)**
+`scripts/verify-1008-stage-label-jump.mjs`'s colour checks moved INSIDE the per-theme loop,
+re-resolving `--severity-error`/`--severity-success` after each `switchTheme` (previously
+resolved once, under the default theme only), and now also measure the chain row's own "Go to
+Stage 5" button text, not only the in-place label. **(8, Medium, Test)** before each jump, the
+script scrolls the transcript to its own end and hard-asserts the target row starts off-screen
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport instead of a single immediate read, since the now-smooth scroll settles
+asynchronously. **(9, Medium, Test)** #991 persistence across a remount is now exercised: right
+after Stage 1's own mouse jump, "Show tool calls" is toggled off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip (the same dev-exposed call
+`verify-557-thought-runs.mjs` already uses) -- doubling as item 1's own visibility-gating proof
+(Stage 1's button must disappear while hidden, Stage 5's must stay, force-visible) and
+confirming Stage 1's manual-open survives the remount once restored. `prefers-reduced-motion` is
+recorded in the script's own `notExercised` (no CDP emulation set up for it), never silently
+skipped without comment. `ChainStageLine`/`ChainAgentEntry` were also split out of
+`SubagentChainRow.tsx` into a new `ChainStageLine.tsx` during this round, purely to stay under
+the #806 600-line cap once the above fixes landed (safe circular import back to
+`SubagentChainRow.tsx` for hoisted `function`/`type` exports only).
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm run
+check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
+`ChainStageLine.tsx` well under the cap, no baseline bump), `pnpm run check:parity -- --gate`,
+`pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
+`node --check` plus a real `import()` load-check on the rewritten live-check script
+(`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.

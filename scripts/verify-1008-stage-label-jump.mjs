@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1008 (UI polish: Stage rows -- failed Stage label colour and jump to
 // Stage from the chain row). Both items already Decided (Skippy, delegated by Stuart
-// 2026-10-18) on the issue.
+// 2026-10-18) on the issue; gate round 1 remediation (Main, 2026-10-18) added items 6-9 below,
+// decisions recorded in `research.md` decision 23 and `spec.md` FR-089.
 //
 // Item 1: a failed Stage's own label now gets `text-severity-error` the same way a failed tool
 // row's label already does (`ToolRow.tsx` :209/:405) -- `SubagentChainRow.tsx`'s `StageGroupRow`
-// and `ChainStageLine` both read the new shared `subagentStatus.tsx`'s `subagentStatusTextClass`.
-// Item 2: each "Stage N" label in the chain row (`ChainStageLine`) is now a real `<button>`
-// ("Go to Stage N") that scrolls its own Stage row into view, opens it through the SAME
-// persisted path `useStickyDisclosure` reads (`useStageToggleStore`, issue #991 -- so a jump
-// counts as the user's own manual open), and moves focus to the Stage's own trigger
-// (`SubagentChainRow.tsx`'s `jumpToStage`, split out to `stageJump.ts` for the #806 file-size cap).
+// and `ChainStageLine.tsx`'s own `ChainStageLine` both read the shared `subagentStatusTextClass`.
+// Item 2: each "Stage N" label in the chain row (`ChainStageLine`) is a real `<button>` ("Go to
+// Stage N, <label>") that scrolls its own Stage row into view (the transcript's own scroll
+// viewport only, top-aligned), opens it through the SAME persisted path `useStickyDisclosure`
+// reads (`useStageToggleStore`, issue #991 -- so a jump counts as the user's own manual open),
+// and moves focus to the Stage's own trigger (`stageJump.ts`'s `jumpToStage`). Gate round 1 item
+// 1 (High): the button only renders while its own Stage row is genuinely `'visible'`
+// (`transcriptRowVisibility.ts`) -- "Show tool calls" off can drop a settled, problem-free Stage
+// entirely, leaving no row to jump to.
 //
 // Reuses the recorded-frame fake `omp` harness and the SAME `stages-941.jsonl` fixture (scenario
 // `stages-941`) every `verify-941-*`/`verify-991-*`/`verify-1000-*` script already shares
@@ -20,25 +24,38 @@
 //
 // Two Stages used as independent jump targets -- both multi-member, fully finished, and never
 // otherwise touched by this script, so each starts genuinely CLOSED (no failed/cancelled/exited
-// member, issue #1000's multi-Stage auto-open rule) and off-screen (the chain row renders at the
-// very END of a ten-Stage turn, these Stages render near the top): Stage 1 (mouse click) and
-// Stage 3 (keyboard: focus its own jump button directly, then a real Enter keypress -- native
-// <button> Enter activation needs no special-casing in `jumpToStage` itself).
+// member, issue #1000's multi-Stage auto-open rule): Stage 1 (mouse click) and Stage 3 (keyboard:
+// focus its own jump button directly, then a real Enter keypress -- native <button> Enter
+// activation needs no special-casing in `jumpToStage` itself). Gate round 1 item 8 (Medium):
+// the transcript is explicitly scrolled to its own end before EACH jump (Stage 1/Stage 3 sit
+// near the top of a ten-Stage turn) and the target row's own off-screen state is asserted as a
+// hard precondition, not assumed; after the jump, `cdp.waitFor` polls for in-viewport (the
+// smooth scroll settles asynchronously) instead of a single immediate read.
+//
+// Gate round 1 item 9 (Medium): #991 persistence is exercised cheaply by toggling "Show tool
+// calls" off then back on (a real IPC round trip, `window.refract.settings.setTranscriptDisplay`,
+// the same dev-exposed call `verify-557-thought-runs.mjs` already uses) right after Stage 1's own
+// mouse jump -- this is a genuine unmount/remount of Stage 1's own row (gate round 1 item 1's own
+// visibility gate), doubling as the proof that Stage 1's manual-open (set by the jump) survives
+// it, and that Stage 5 (a failed Stage, force-visible regardless of the toggle) never disappears.
+// `prefers-reduced-motion` is NOT emulated by this CDP session, so `jumpToStage`'s own
+// instant-jump branch is recorded in `notExercised`, never silently skipped without comment.
 //
 // WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- `node --check`
 // plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset, per the build-slot guard)
 // are the only commands that have actually been run against this file. Every DOM/class-name
 // selector reused here (`stageTriggerSelector`, `titleSelector`, the chain row's own
 // `[title="Subagents"]` trigger finder) was already grep-verified by the `verify-941-*`/
-// `verify-1000-*` scripts that share them; the one new finder expression (`jumpButtonExpr`, the
-// chain row's own "Go to Stage N" button by its accessible name) is built the same way.
+// `verify-1000-*` scripts that share them; the new finder expressions (`jumpButtonExpr`, the
+// chain row's own "Go to Stage N, <label>" button by its full accessible name; `isInViewportExpr`)
+// are built the same, already-proven way.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, getProcessExecutablePath, resolveCssVarColor } from './verify-tauri-cdp.mjs';
+import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, getProcessExecutablePath, resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
 import {
   gitHead,
   buildLauncher,
@@ -91,11 +108,14 @@ const THEMES = [
 // script shares.
 const CHAIN_TRIGGER = `document.querySelector('[title="Subagents"]')?.closest('[data-slot="collapsible-trigger"]')`;
 
-// Issue #1008 item 2: the new "Go to Stage N" jump button, found by its own accessible name
-// (`aria-label`, `SubagentChainRow.tsx`'s `ChainStageLine`) -- never found at all on
-// `origin/main`, where this label is still a plain, non-interactive `<span>`.
-function jumpButtonExpr(stageNumber) {
-  return `document.querySelector('[aria-label="Transcript"] button[aria-label="Go to Stage ${stageNumber}"]')`;
+// Issue #1008 item 2/gate round 1 item 6: the jump button's own accessible name is "Go to
+// <speech heading>" (`ChainStageLine.tsx`'s own `speechHeading`, `stageHeading(...,  true)`) --
+// the SAME visible "·" form every `STAGE*_TITLE` constant already carries, with "·" swapped for
+// ", " (the identical transform `stageHeading`'s own `forSpeech` branch applies). Never found at
+// all on `origin/main`, where this label is still a plain, non-interactive `<span>`.
+function jumpButtonExpr(titleText) {
+  const ariaLabel = `Go to ${titleText.replace(' \u00b7 ', ', ')}`;
+  return `document.querySelector('[aria-label="Transcript"] button[aria-label="${ariaLabel}"]')`;
 }
 
 /** Bounds-based "is this genuinely in the viewport" proof: a real, positive on-screen extent
@@ -108,6 +128,21 @@ function viewportRectExpr(triggerExpr) {
 
 function rectIsInViewport(rect) {
   return !!rect && rect.height > 0 && rect.bottom > 0 && rect.top < rect.viewportHeight;
+}
+
+// Gate round 1 item 8: a single boolean expression for `cdp.waitFor` to poll -- the jump's own
+// smooth scroll (`stageJump.ts`) settles asynchronously, so a one-shot `evaluate` right after the
+// click could read a mid-transition rect.
+function isInViewportExpr(triggerExpr) {
+  return `(() => { const el = (${triggerExpr}); if (!el) return false; const r = el.getBoundingClientRect(); return r.height > 0 && r.bottom > 0 && r.top < window.innerHeight; })()`;
+}
+
+// Gate round 1 item 8: scrolls ONLY the transcript's own viewport to its own end -- Stage 1/
+// Stage 3 sit near the top of this ten-Stage turn, so from the end this is a hard, reproducible
+// off-screen baseline for each jump's own "before" assertion, not an assumption about where the
+// app happens to leave the scroll position after a turn settles.
+function scrollTranscriptToEnd(cdp) {
+  return cdp.evaluate(`(() => { const v = document.querySelector('[aria-label="Transcript"]'); if (v) v.scrollTop = v.scrollHeight; })()`);
 }
 
 async function main() {
@@ -209,26 +244,6 @@ async function main() {
       { timeoutMs: 30_000, label: 'All ten Stages and the plain tool row settled' }
     );
 
-    // ---- Item 1: a failed Stage's own label matches the resolved --severity-error token; a
-    // done Stage's own label does not. Read straight off the always-mounted trigger's own label
-    // SPAN (never inside `CollapsibleContent`, so no expand is needed here), the same selector
-    // `verify-941-stage-naming-helpers.mjs`'s own `assertGreenFinished` already uses for the
-    // green half of this exact rule. ----
-    const expectedErrorColor = await resolveCssVarColor(cdp, '--severity-error', 'color');
-    const labelColorExpr = (titleText) => `(() => { const el = (${titleSelector(titleText)}); return el ? getComputedStyle(el).color : null; })()`;
-    const stage5LabelColor = await cdp.evaluate(labelColorExpr(STAGE5_TITLE));
-    if (stage5LabelColor !== expectedErrorColor) {
-      failures.push(`Stage 5's own label (one FailAgent member failed) is ${JSON.stringify(stage5LabelColor)}, expected the theme's resolved --severity-error (${JSON.stringify(expectedErrorColor)}) -- issue #1008 item 1 regression.`);
-    } else {
-      findings.push(`Stage 5's own label (failed) resolves to --severity-error (${expectedErrorColor}), matching ToolRow.tsx's own failed-call label (issue #1008 item 1).`);
-    }
-    const stage1LabelColor = await cdp.evaluate(labelColorExpr(STAGE1_TITLE));
-    if (stage1LabelColor === expectedErrorColor) {
-      failures.push(`Stage 1's own label (fully finished, no failed member) is ${JSON.stringify(stage1LabelColor)}, the SAME as the theme's resolved --severity-error -- a done Stage must never read as failed.`);
-    } else {
-      findings.push(`Stage 1's own label (fully finished) does NOT resolve to --severity-error (is ${JSON.stringify(stage1LabelColor)}, error is ${expectedErrorColor}) -- a done Stage stays its own colour, never the failed one.`);
-    }
-
     // ---- Item 2: "Go to Stage N" in the chain row scrolls+opens+focuses the target Stage row,
     // by mouse click (Stage 1) and by keyboard (Stage 3, a real Enter keypress). Both targets
     // are multi-member, fully finished, never otherwise touched by this script, so each starts
@@ -246,16 +261,23 @@ async function main() {
     } else {
       findings.push('Stage 1 starts genuinely CLOSED (never touched before this point, no failed member) -- a clean baseline for the mouse jump proof.');
     }
+    await scrollTranscriptToEnd(cdp);
+    const stage1RectBefore = await cdp.evaluate(viewportRectExpr(stage1TriggerExpr));
+    if (rectIsInViewport(stage1RectBefore)) {
+      failures.push(`Stage 1's own row is already in the viewport after scrolling the transcript to its own end (rect ${JSON.stringify(stage1RectBefore)}) -- the off-screen precondition for the mouse jump proof could not be established.`);
+    } else {
+      findings.push(`Stage 1's own row starts off-screen (rect ${JSON.stringify(stage1RectBefore)}) -- a clean baseline for the mouse jump proof (gate round 1, item 8).`);
+    }
     let stage1JumpFound = false;
     try {
-      await cdp.waitFor(`!!(${jumpButtonExpr(1)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 1" button' });
+      await cdp.waitFor(`!!(${jumpButtonExpr(STAGE1_TITLE)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 1" button' });
       stage1JumpFound = true;
       findings.push('The chain row\'s own "Go to Stage 1" button exists (issue #1008 item 2: the Stage label is now a real button, not a plain span).');
     } catch (err) {
       failures.push(`The chain row's own "Go to Stage 1" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
     if (stage1JumpFound) {
-      await clickScrolled(cdp, jumpButtonExpr(1));
+      await clickScrolled(cdp, jumpButtonExpr(STAGE1_TITLE));
       const stage1AfterExpanded = await cdp.evaluate(`(${stage1TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
       if (stage1AfterExpanded !== 'true') {
         failures.push(`Clicking "Go to Stage 1" did not open Stage 1's own row (aria-expanded is ${JSON.stringify(stage1AfterExpanded)}, expected "true").`);
@@ -268,14 +290,55 @@ async function main() {
       } else {
         findings.push('Clicking "Go to Stage 1" moved keyboard focus to Stage 1\'s own trigger.');
       }
-      const stage1Rect = await cdp.evaluate(viewportRectExpr(stage1TriggerExpr));
-      if (!rectIsInViewport(stage1Rect)) {
-        failures.push(`Stage 1's own row is not in the viewport after the jump (rect ${JSON.stringify(stage1Rect)}).`);
-      } else {
+      try {
+        await cdp.waitFor(isInViewportExpr(stage1TriggerExpr), { timeoutMs: 5_000, label: 'Stage 1 row in the viewport after the mouse jump (smooth scroll settles)' });
+        const stage1Rect = await cdp.evaluate(viewportRectExpr(stage1TriggerExpr));
         findings.push(`Stage 1's own row is in the viewport after the jump (rect ${JSON.stringify(stage1Rect)}).`);
+      } catch (err) {
+        failures.push(`Stage 1's own row never entered the viewport after the jump: ${err.message}`);
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-stage1-jumped-open-focused.png'));
+
+    // ---- Gate round 1 items 1 & 9: toggling "Show tool calls" off genuinely unmounts Stage 1's
+    // own row (no bad member -- `rowVisibility` returns 'hidden') and its own jump button
+    // disappears; Stage 5 (a failed Stage) stays force-visible regardless. Toggling back on
+    // remounts Stage 1, and its manual-open (set by the jump above) must survive the remount
+    // (issue #991 persistence) -- a real IPC round trip, not a store mutation. ----
+    if (stage1JumpFound) {
+      const toolCallsOff = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('toolCalls', false)`);
+      if (!toolCallsOff || toolCallsOff.ok !== true) {
+        failures.push(`settings.setTranscriptDisplay('toolCalls', false) failed: ${JSON.stringify(toolCallsOff)}`);
+      } else {
+        await sleep(300);
+        const stage1ButtonGoneWhileHidden = await cdp.evaluate(`!(${jumpButtonExpr(STAGE1_TITLE)})`);
+        if (!stage1ButtonGoneWhileHidden) {
+          failures.push('The "Go to Stage 1" button is still present with "Show tool calls" off, even though Stage 1 has no failed/cancelled/exited member -- issue #1008 gate round 1 item 1 regression.');
+        } else {
+          findings.push('The "Go to Stage 1" button disappears with "Show tool calls" off (its own Stage row is genuinely hidden -- issue #1008 gate round 1 item 1 fix confirmed).');
+        }
+        const stage5ButtonStillThereWhileHidden = await cdp.evaluate(`!!(${jumpButtonExpr(STAGE5_TITLE)})`);
+        if (!stage5ButtonStillThereWhileHidden) {
+          failures.push('The "Go to Stage 5" button disappeared with "Show tool calls" off, even though Stage 5 has a failed member and must stay force-visible.');
+        } else {
+          findings.push('The "Go to Stage 5" button stays present with "Show tool calls" off (Stage 5 has a failed member, force-visible regardless of the toggle).');
+        }
+        const toolCallsOn = await cdp.evaluate(`window.refract.settings.setTranscriptDisplay('toolCalls', true)`);
+        if (!toolCallsOn || toolCallsOn.ok !== true) {
+          failures.push(`settings.setTranscriptDisplay('toolCalls', true) failed: ${JSON.stringify(toolCallsOn)}`);
+        } else {
+          await sleep(300);
+          const stage1ReappearedExpanded = await cdp.evaluate(`(${stage1TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
+          if (stage1ReappearedExpanded !== 'true') {
+            failures.push(`Stage 1's own manual-open did not survive the "Show tool calls" off/on remount (aria-expanded is ${JSON.stringify(stage1ReappearedExpanded)}, expected "true") -- issue #991 persistence regression.`);
+          } else {
+            findings.push("Stage 1's own manual-open (set by the earlier jump) survived a genuine unmount/remount cycle (\"Show tool calls\" off then on) -- issue #991 persistence confirmed (issue #1008 gate round 1, item 9).");
+          }
+        }
+      }
+    } else {
+      notExercised.push('The "Show tool calls" visibility-gating and #991 persistence-across-remount proof did not run because the "Go to Stage 1" button was never found.');
+    }
 
     const stage3TriggerExpr = stageTriggerSelector(STAGE3_TITLE);
     const stage3BeforeExpanded = await cdp.evaluate(`(${stage3TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
@@ -284,9 +347,16 @@ async function main() {
     } else {
       findings.push('Stage 3 starts genuinely CLOSED (never touched before this point, no failed member) -- a clean baseline for the keyboard jump proof.');
     }
+    await scrollTranscriptToEnd(cdp);
+    const stage3RectBefore = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
+    if (rectIsInViewport(stage3RectBefore)) {
+      failures.push(`Stage 3's own row is already in the viewport after scrolling the transcript to its own end (rect ${JSON.stringify(stage3RectBefore)}) -- the off-screen precondition for the keyboard jump proof could not be established.`);
+    } else {
+      findings.push(`Stage 3's own row starts off-screen (rect ${JSON.stringify(stage3RectBefore)}) -- a clean baseline for the keyboard jump proof (gate round 1, item 8).`);
+    }
     let stage3JumpFound = false;
     try {
-      await cdp.waitFor(`!!(${jumpButtonExpr(3)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 3" button' });
+      await cdp.waitFor(`!!(${jumpButtonExpr(STAGE3_TITLE)})`, { timeoutMs: 10_000, label: 'The chain row\'s own "Go to Stage 3" button' });
       stage3JumpFound = true;
       findings.push('The chain row\'s own "Go to Stage 3" button exists.');
     } catch (err) {
@@ -297,9 +367,9 @@ async function main() {
       // directly (proving it is keyboard-reachable), then a REAL Enter keypress -- a native
       // `<button>` needs no special key handling to activate on Enter, so this also proves
       // `jumpToStage` was wired through `onClick`, not a click-only handler.
-      await cdp.evaluate(`(() => { const el = (${jumpButtonExpr(3)}); if (el) el.scrollIntoView({ block: 'center' }); })()`);
-      await cdp.evaluate(`(${jumpButtonExpr(3)})?.focus()`);
-      const stage3ButtonFocused = await cdp.evaluate(`document.activeElement === (${jumpButtonExpr(3)})`);
+      await cdp.evaluate(`(() => { const el = (${jumpButtonExpr(STAGE3_TITLE)}); if (el) el.scrollIntoView({ block: 'center' }); })()`);
+      await cdp.evaluate(`(${jumpButtonExpr(STAGE3_TITLE)})?.focus()`);
+      const stage3ButtonFocused = await cdp.evaluate(`document.activeElement === (${jumpButtonExpr(STAGE3_TITLE)})`);
       if (!stage3ButtonFocused) {
         failures.push('Could not place keyboard focus on the "Go to Stage 3" button itself before pressing Enter.');
       } else {
@@ -317,22 +387,50 @@ async function main() {
         } else {
           findings.push('Pressing Enter on "Go to Stage 3" moved keyboard focus to Stage 3\'s own trigger.');
         }
-        const stage3Rect = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
-        if (!rectIsInViewport(stage3Rect)) {
-          failures.push(`Stage 3's own row is not in the viewport after the keyboard jump (rect ${JSON.stringify(stage3Rect)}).`);
-        } else {
+        try {
+          await cdp.waitFor(isInViewportExpr(stage3TriggerExpr), { timeoutMs: 5_000, label: 'Stage 3 row in the viewport after the keyboard jump (smooth scroll settles)' });
+          const stage3Rect = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
           findings.push(`Stage 3's own row is in the viewport after the keyboard jump (rect ${JSON.stringify(stage3Rect)}).`);
+        } catch (err) {
+          failures.push(`Stage 3's own row never entered the viewport after the keyboard jump: ${err.message}`);
         }
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-stage3-jumped-via-keyboard.png'));
 
+    // ---- Item 1/gate round 1 item 7: re-resolve --severity-error/--severity-success INSIDE the
+    // theme loop, after each switchTheme -- a theme preset's own resolved value is never assumed
+    // to carry over from an earlier pass. Checks both the in-place Stage label (StageGroupRow)
+    // and the chain row's own "Go to Stage 5" button text, in all 3 themes. ----
+    const labelColorExpr = (titleText) => `(() => { const el = (${titleSelector(titleText)}); return el ? getComputedStyle(el).color : null; })()`;
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
+      const expectedErrorColor = await resolveCssVarColor(cdp, '--severity-error', 'color');
+      const expectedSuccessColor = await resolveCssVarColor(cdp, '--severity-success', 'color');
+      const stage5LabelColor = await cdp.evaluate(labelColorExpr(STAGE5_TITLE));
+      if (stage5LabelColor !== expectedErrorColor) {
+        failures.push(`[${theme.name}] Stage 5's own label (one FailAgent member failed) is ${JSON.stringify(stage5LabelColor)}, expected the theme's resolved --severity-error (${JSON.stringify(expectedErrorColor)}) -- issue #1008 item 1 regression.`);
+      } else {
+        findings.push(`[${theme.name}] Stage 5's own label (failed) resolves to --severity-error (${expectedErrorColor}).`);
+      }
+      const stage1LabelColor = await cdp.evaluate(labelColorExpr(STAGE1_TITLE));
+      if (stage1LabelColor !== expectedSuccessColor) {
+        failures.push(`[${theme.name}] Stage 1's own label (fully finished) is ${JSON.stringify(stage1LabelColor)}, expected the theme's resolved --severity-success (${JSON.stringify(expectedSuccessColor)}).`);
+      } else {
+        findings.push(`[${theme.name}] Stage 1's own label (fully finished) resolves to --severity-success (${expectedSuccessColor}).`);
+      }
+      const chainStage5ButtonColor = await cdp.evaluate(`(() => { const el = (${jumpButtonExpr(STAGE5_TITLE)}); return el ? getComputedStyle(el).color : null; })()`);
+      if (chainStage5ButtonColor !== expectedErrorColor) {
+        failures.push(`[${theme.name}] The chain row's own "Go to Stage 5" button text is ${JSON.stringify(chainStage5ButtonColor)}, expected --severity-error (${JSON.stringify(expectedErrorColor)}).`);
+      } else {
+        findings.push(`[${theme.name}] The chain row's own "Go to Stage 5" button text resolves to --severity-error.`);
+      }
       const shotName = `1008-stage-label-jump-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}).`);
     }
+
+    notExercised.push("prefers-reduced-motion is not emulated by this CDP session, so jumpToStage's own instant-jump branch (vs the smooth scroll exercised above) is never exercised by this script.");
 
     const verdict = failures.length > 0 ? 'FAILED' : 'DONE';
     const exitCode = failures.length > 0 ? 1 : 0;
