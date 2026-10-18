@@ -285,8 +285,6 @@ function TimeGapDivider({ at }: { at: number }) {
   )
 }
 
-export { isConversationStarted } from './isConversationStarted'
-
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
@@ -306,12 +304,11 @@ export function Transcript({
   hasHistory: boolean
   // Issue #618 gate-fix (round 3), amended #672: ChatPane.tsx's own SessionStartNotice,
   // pre-built with this pane's startProgress and picked random message, rendered here --
-  // centred, replacing "Ready…" for a brand-new Session, or overlaid (dimmed) on top of
-  // existing history for a Session that has any -- while its agent is starting. ChatPane
-  // decides WHETHER to pass this at all; this component only decides whether to dim the
-  // transcript behind it (`dimTranscript` below), using its own `hasHistory` prop and
-  // `hasConversationStarted`. Undefined whenever nothing is starting right now.
-  startNotice?: React.ReactNode
+  // centred, replacing "Ready…" for a brand-new Session, or overlaid on existing history for a
+  // Session that has any. This component decides whether to dim the transcript behind it
+  // (`dimTranscript` below) and clones the element with that decision (`dimmed`) so the notice
+  // can back itself with a readable panel. Undefined whenever nothing is starting right now.
+  startNotice?: React.ReactElement<{ dimmed?: boolean }>
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
@@ -327,8 +324,8 @@ export function Transcript({
   // level) for the full "what counts as started" rule and why it was narrowed this way.
   const hasConversationStarted = isConversationStarted(items)
   // Issue #672: the history (if any) behind the centred start notice dims to about 40% opacity
-  // and goes non-interactive while a start is in progress, so it reads clearly as "not the live
-  // conversation" without hiding it outright; a genuinely empty Session has nothing to dim.
+  // while a start is in progress (gate-fix UI round 1: never non-interactive); a genuinely
+  // empty Session has nothing to dim.
   const dimTranscript = Boolean(startNotice) && (hasHistory || hasConversationStarted)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = pendingBySession[sessionId] ?? []
@@ -703,9 +700,9 @@ export function Transcript({
     let lastAssignedScrollTop = -1
 
     function removeInputListeners() {
-      root.removeEventListener('wheel', handleUserInput)
+      root.removeEventListener('wheel', handleViewportPointerOrWheel)
       root.removeEventListener('keydown', handleKeyInput)
-      root.removeEventListener('pointerdown', handleUserInput)
+      root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
       root.removeEventListener('touchstart', handleUserInput)
       root.removeEventListener('focusin', handleFocusInput)
     }
@@ -761,9 +758,17 @@ export function Transcript({
       handleUserInput()
     }
 
-    root.addEventListener('wheel', handleUserInput, { passive: true })
+    // Gate-fix (UI round 1, issue #672): a wheel/pointerdown on the start notice's own buttons
+    // (overlaid on `viewport` below) used to bubble to `root` and cancel this landing loop --
+    // scoped the same way `handleFocusInput` already is.
+    function handleViewportPointerOrWheel(event: Event) {
+      if (!viewport || !(event.target instanceof Node) || !viewport.contains(event.target)) return
+      handleUserInput()
+    }
+
+    root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('keydown', handleKeyInput, { passive: true })
-    root.addEventListener('pointerdown', handleUserInput, { passive: true })
+    root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
     root.addEventListener('touchstart', handleUserInput, { passive: true })
     root.addEventListener('focusin', handleFocusInput, { passive: true })
 
@@ -852,12 +857,12 @@ export function Transcript({
           // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
           // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
           // bounds would be cut off entirely rather than just visually tight. Issue #672:
-          // `dimTranscript` fades this to about 40% opacity and turns off pointer interaction
-          // while the centred start notice overlays it, so the history underneath reads clearly
-          // as not the live conversation without disappearing outright.
+          // `dimTranscript` fades this to ~40% opacity behind the start notice (gate-fix UI/A11y
+          // round 1: stays interactive, no `pointer-events-none`; `focus-within:opacity-100`
+          // restores full strength for a focused control; no transition, so it never mid-fades).
           className={cn(
-            'outline-none transition-opacity duration-300 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-            dimTranscript && 'pointer-events-none opacity-40'
+            'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            dimTranscript && 'opacity-40 focus-within:opacity-100'
           )}
         >
           <MessageScrollerContent
@@ -1015,22 +1020,19 @@ export function Transcript({
           </MessageScrollerContent>
         </MessageScrollerViewport>
         {/* Issue #618 gate-fix (code/verif/a11y High), amended #672: a sibling of the viewport,
-            OUTSIDE `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
-            `revealedAnnouncement` status span just below already relies on. Nested inside the
-            log, this notice's own sr-only label was being read as a second announcement on top
-            of `announceStart`, each `startProgress.kind` change re-announced it again, and its
-            Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
-            file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
-            this overlays centred over the transcript area -- the empty area where "Ready..."
-            would otherwise sit for a brand-new Session, or the dimmed history above
-            (`dimTranscript`) for a Session that has one. No `hasHistory`/`hasConversationStarted`
-            check here any more -- `ChatPane.tsx` already decided whether this placement applies
-            before ever passing `startNotice`, so rendering it whenever given is both simpler and
-            correct; re-adding a second, narrower guard here is exactly what let a
-            Retry-after-failure start render NEITHER notice in a round-3 regression. */}
+            OUTSIDE `MessageScrollerContent`'s own `role="log"` -- its sr-only label was being
+            read as a second announcement on top of `announceStart`, and its Keep waiting/Cancel
+            buttons were focusable controls inside a live log. `MessageScroller`'s root is
+            `relative` (components/ui/message-scroller.tsx), so this overlays centred over the
+            transcript area -- the empty area where "Ready..." would otherwise sit for a
+            brand-new Session, or the dimmed history above (`dimTranscript`) for one that has
+            any; `ChatPane.tsx` already decided whether this placement applies before ever
+            passing `startNotice`. Gate-fix (UI round 1): `items-center-safe`+`overflow-y-auto`
+            keep Keep waiting/Cancel reachable on a short pane; `cloneElement` passes `dimmed`
+            so the notice decides whether to show its own backing panel. */}
         {startNotice && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
-            <div className="pointer-events-auto">{startNotice}</div>
+          <div className="pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2">
+            <div className="pointer-events-auto">{React.cloneElement(startNotice, { dimmed: dimTranscript })}</div>
           </div>
         )}
         {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE

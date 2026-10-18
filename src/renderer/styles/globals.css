@@ -789,9 +789,10 @@
 }
 
 /* Issue #672 (Stuart, 2026-10-11, follow-up to #618): a slow bob on the Session start notice's
- * emoji, once the pane is wide enough to show the large #672 sizing (`SessionStartNotice.tsx`)
- * -- the global `prefers-reduced-motion` rule above already collapses this to its 0% frame (no
- * motion), the same way it neutralises the agent spinner below. */
+ * emoji (`SessionStartNotice.tsx`), in every sizing regime -- gate-fix (A11y round 1, WCAG
+ * 2.2.2): the class applying this keyframe runs it exactly 3 times, not forever, so it always
+ * stops on its own. The global `prefers-reduced-motion` rule above already collapses this to its
+ * 0% frame (no motion) regardless, the same way it neutralises the agent spinner below. */
 @keyframes session-start-emoji-bob {
   0%, 100% {
     transform: translateY(0);

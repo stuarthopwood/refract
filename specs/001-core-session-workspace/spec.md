@@ -736,10 +736,13 @@ The developer types a slash command and finds the ones the agent offers. If a se
   message, but can it be placed centrally in the chat window, and made larger"): The Session
   start notice MUST use one centred presentation for every Session, not only a brand-new one --
   centred horizontally and vertically in the transcript viewport. For a Session that already has
-  history, the transcript behind the notice MUST dim to about 40% opacity and become
-  non-interactive while the notice shows, returning to full opacity and interactive the instant
-  the start ends; a brand-new Session's placement is unchanged (centred over the otherwise-empty
-  area). The randomly-picked joke message and its leading emoji (unchanged pool and once-per-start
+  history, the transcript behind the notice MUST dim to about 40% opacity while the notice
+  shows, returning to full opacity the instant the start ends or whenever keyboard focus moves
+  into the history; the dimmed transcript MUST stay fully interactive throughout (scrollable,
+  selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
+  its own text stays readable against the dim. A brand-new Session's placement is unchanged
+  (centred over the otherwise-empty area, no backing panel needed). The randomly-picked joke
+  message and its leading emoji (unchanged pool and once-per-start
   pick) MUST render at about `text-2xl` (24px) and `text-5xl` (48px) respectively, in the normal
   foreground colour, the emoji on its own line above the text, with the elapsed-seconds counter
   small and quiet after the text; on a narrow pane the sizes drop to about `text-xl` (20px) and
@@ -747,8 +750,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
   and memory-deferred stages keep their plain truthful text and small spinner, shown at the same
   centred position but at normal size (`text-base`). Keep waiting and Cancel (#512) stay
   reachable, centred under the message with the existing guidance sentence, never pushed off
-  screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on)
-  MUST be disabled under `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
+  screen on a short window. An optional slow bob on the emoji (about a 2.4s loop, default on,
+  running a fixed 3 iterations then stopping, per WCAG 2.2.2) MUST be disabled under
+  `prefers-reduced-motion`. The joke and emoji stay `aria-hidden`; only the
   static label and the two existing start/stop announcements are ever announced to screen
   readers.
 

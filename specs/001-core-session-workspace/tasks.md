@@ -3323,6 +3323,27 @@ gate-round-1 fixes in place).
   `text-base` state, the message clearing once the agent is ready, one screen-reader
   announcement, and `prefers-reduced-motion` leaving the emoji static, across Dark, Obsidian, and
   Dark (high contrast).
+- [X] T281 [US1] #672 gate round 1 fixes (code/a11y/UI/test, decided by Main): the dimmed
+  transcript stays fully interactive (`Transcript.tsx` drops `pointer-events-none`, keeps only
+  `opacity-40`; `focus-within:opacity-100` restores full strength for a focused control; no
+  transition, so the dim appears/clears instantly) and a wheel/pointerdown on the notice's own
+  buttons no longer cancels the scroll-landing loop (scoped to `viewport.contains(target)`, the
+  same guard `handleFocusInput` already used). `SessionStartNotice.tsx` gains a `dimmed` prop
+  (set by `Transcript.tsx` via `React.cloneElement`, never by `ChatPane.tsx`): when dimmed, a
+  soft borderless `bg-background/90 backdrop-blur-sm` panel backs the notice (the same token the
+  file-drop overlay uses) so its text stays readable against the dim; none for a brand-new
+  Session. The overlay wrapper gains `items-center-safe`+`overflow-y-auto`, and the notice's own
+  padding shrinks under `@max-h-[28rem]`, so Keep waiting/Cancel stay reachable on a short pane.
+  The message gets `max-w-[28rem]` (so `text-balance` has something to balance against) and
+  `gap-2`; the emoji's bob runs a fixed 3 iterations (WCAG 2.2.2), not forever. Dead code: the
+  unused `export { isConversationStarted }` (`Transcript.tsx`) removed; stale
+  `inline`/`showInline` comments fixed in `isConversationStarted.ts`, `ChatPane.tsx`,
+  `globals.css`. `scripts/verify-672-start-message.mjs` updated to poll opacity with a timeout
+  instead of a single read, assert the dimmed history still scrolls on wheel and reaches full
+  opacity on focus, assert the panel's own contrast in every theme, actually narrow the split
+  pane and drive a short window via `Emulation.setDeviceMetricsOverride` rather than only
+  measuring whatever width/height the run happens to get, and write `report.json` even when an
+  early setup step throws.
 
 `pnpm typecheck`, `pnpm test`, `check:indent`, `check:file-size` clean on every commit in this
 phase; `check:theme-contrast` unaffected (no new colour pair, FR-078).

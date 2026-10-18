@@ -200,8 +200,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // X" for a Session that was not starting at all. `status === 'stopped'` is only true for a
   // cold start; `canAutoStartSession` also skips it for a stopped Session `open()` will not
   // actually auto-start (a real failure banner is about to show instead, once the snapshot
-  // resolves). Every notice (centred, inline) and the starting-message pick effect below read
-  // this instead of the raw `startProgress`; the announcement effect below deliberately does NOT
+  // resolves). The one notice (issue #672: there was a separate inline variant, now gone) and
+  // the starting-message pick effect below read this instead of the raw `startProgress`; the
+  // announcement effect below deliberately does NOT
   // read this -- see its own comment for why.
   const effectiveStartProgress: SessionStartProgress | undefined =
     startProgress ??
