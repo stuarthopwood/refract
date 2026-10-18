@@ -181,7 +181,14 @@ export function findDescriptionOnlyProbe(commands) {
  * rather than trusting an arbitrary string happens to be unused. `null` if every candidate tried
  * happens to match something in this particular install. */
 export function findNoMatchNeedle(commands) {
-  const candidates = ['zqx', 'qxj', 'vqz', 'jqx', 'xzq', 'qzv', 'wqx', 'zjv', 'kqx', 'vjz'];
+  // Gate round 1 (live failure, "/qxj" DID match something): a 3-letter needle has a real chance
+  // of accidentally SUBSEQUENCE-matching a command's own ALIAS -- invisible to this script, since
+  // aliases are never rendered in the DOM, so `bestNameTier`'s own name/alias guard above can only
+  // ever check `command.name` (plus a skill's stripped form), never an alias it cannot see at all.
+  // Longer, rarer 4-letter needles make an accidental subsequence collision exponentially less
+  // likely (still not provably impossible without alias visibility, hence `notExercised`, never a
+  // false "safe", if every candidate here happens to collide in a given real install).
+  const candidates = ['zqxj', 'vqzx', 'jqxz', 'xzqv', 'qzvj', 'wqxz', 'zjvq', 'kqxj', 'vjzq', 'xqzj'];
   for (const needle of candidates) {
     if (bestNameTier(needle, commands) !== null) continue;
     const anyDescriptionMatch = commands.some((c) => c.description && scoreAgainstTarget(needle, c.description) !== null);
