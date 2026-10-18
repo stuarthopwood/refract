@@ -36,7 +36,6 @@ import {
 } from '../subagents/subagentStatus'
 
 import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
-export { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
 
 // "N running", "N failed", "N cancelled", "N exited" joined by commas, each only when non-zero
 // (decisions 5/15): cancelled is always its own word, never folded into "failed". Used by
