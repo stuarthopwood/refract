@@ -34,7 +34,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, citeScreenshots, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
-import { readWindowIconState } from './verify-880-taskbar-icon-helpers.mjs';
+import { waitForWindowIconState } from './verify-880-taskbar-icon-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -112,7 +112,7 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted (window has painted real content)' });
 
     const screenshotPath = path.join(SHOTS_DIR, 'window.png');
-    const windowState = readWindowIconState(launched.targetPid, screenshotPath);
+    const windowState = await waitForWindowIconState(launched.targetPid, screenshotPath);
     report.push({ step: 'native window state read via Win32 (WM_GETICON/GetClassLongPtr/SHGetPropertyStoreForWindow)', ok: true, windowState });
 
     assertTruthy(windowState.hwnd, 'a visible top-level window exists for the launched pid');

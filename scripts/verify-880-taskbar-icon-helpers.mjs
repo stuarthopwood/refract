@@ -212,3 +212,31 @@ export function readWindowIconState(pid, screenshotPath) {
   }
   return parsed;
 }
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Polls `readWindowIconState` until it finds the window, instead of a single fixed-timing call
+ * (gate round 3 fix, live-run finding): CDP's own `Runtime.evaluate` can observe the renderer's
+ * DOM (so `cdp.waitFor('[data-readiness-primary]')` resolves) over WebView2's remote-debugging
+ * port independent of whether the HOST window has actually been marked visible at the OS level
+ * yet -- there is no ordering guarantee between "the renderer painted" and "EnumWindows/
+ * IsWindowVisible can see the native window" across the two separate OS message-pump/process
+ * boundaries involved, so the very first check can race a real, already-correct window that
+ * just has not been observed yet. Re-throws immediately on any error OTHER than "no visible
+ * top-level window found for pid" (a real failure must never be swallowed behind a retry loop). */
+export async function waitForWindowIconState(pid, screenshotPath, { timeoutMs = 20_000, intervalMs = 500 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr;
+  while (Date.now() < deadline) {
+    try {
+      return readWindowIconState(pid, screenshotPath);
+    } catch (err) {
+      lastErr = err;
+      if (!String(err.message).includes('no visible top-level window found for pid')) throw err;
+    }
+    await sleep(intervalMs);
+  }
+  throw new Error(`waitForWindowIconState: timed out after ${timeoutMs}ms waiting for a visible top-level window for pid ${pid}: ${lastErr}`);
+}
