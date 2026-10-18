@@ -225,6 +225,7 @@ const refract: RefractApi = {
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.
     setWordPredictionEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED, enabled),
+    setPullRequestsListWidth: (widthPx) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH, widthPx),
     setChatWidth: (width) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CHAT_WIDTH, width)
   },
 
@@ -257,7 +258,7 @@ const refract: RefractApi = {
   },
 
   pullRequests: {
-    list: (repositoryId, tab, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, query),
+    list: (repositoryId, tab, state, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, state, query),
     detail: (repositoryId, number) => request<PullRequestDetail>(IPC_REQUESTS.PULL_REQUESTS_DETAIL, repositoryId, number),
     comment: (repositoryId, number, body) =>
       request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_COMMENT, repositoryId, number, body),

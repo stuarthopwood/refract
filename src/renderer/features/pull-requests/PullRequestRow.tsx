@@ -56,6 +56,14 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
+      // Gate-fix (round 3, script): a stable, intentional hook for the live-check driver --
+      // replaces brittle class-based row/state scraping (`.divide-y > button`, a text-content
+      // read of an inner span sharing classes with its own parent) with real data, never parsed
+      // display text or container styling an unrelated refactor could silently break.
+      data-pr-row
+      data-pr-number={pullRequest.number}
+      data-pr-author={pullRequest.author.login}
+      data-pr-state={pullRequest.state}
       className="relative flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {selected && (

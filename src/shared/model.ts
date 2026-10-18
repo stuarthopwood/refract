@@ -116,7 +116,7 @@ export interface Settings {
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   detectImagePathsOnPaste: boolean; // #514: turn off path-based image-attach detection entirely; default true, immediate-apply, no migration.
   wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
-  sessionListCollapse: SessionListCollapse; // #735: per-Repository/Archived collapse state; `session-list-store.ts` is the sole writer.
+  sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; // #735/#930: per-Repository/Archived collapse state and the one resizable Pull requests list width; both single-writer (`session-list-store.ts`, `pull-requests-layout-store.ts`).
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; } // #735 data-model.md: diff-from-default only (absent id = open, archivedOpen default false); #638 reordering can't disturb an id-keyed collapse.
 export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false });

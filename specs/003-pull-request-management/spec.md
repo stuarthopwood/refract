@@ -164,31 +164,54 @@ from the Overview `Timeline` tab, not just from the consensus count.
   (amended 2026-10-16, gate round 2: the original wording said "hidden while loading", which
   would have wrongly hidden an already-known count during every refresh).
 
+### Session 2026-10-16 (#499 filter redesign, #930 resizable column)
+
+Both issues' own decision records (not an interactive grill): recorded here to converge the spec,
+not re-litigated.
+
+- Decided (#499, 2026-10-16): inactive Filter tabs are ghost (no fill, no border), the active tab
+  gets a subtle background plus a non-colour shape cue (an underline bar, matching
+  `PanelTabBar.tsx`'s own established fix for the identical WCAG 1.4.11 contrast problem flagged
+  on this same issue by #568's gate round 1). One row that scrolls sideways with a soft fade at
+  the clipped edge, never wraps; the active tab scrolls into view. A ghost Filters button (funnel
+  icon) and the ghost Refresh icon sit pinned at the row's right end and never scroll. Filters
+  toggles a section holding the search field and the State control (Open, Closed incl. Merged,
+  All -- the 2026-10-07 decision); closing the section never resets either. The first tab is
+  renamed from "Open" to "All" (every pull request in the Project, narrowed by the separately
+  selected State, default Open); the Project selector and column-width questions are out of
+  scope here (#930).
+- Decided (#930, 2026-10-16): the Pull requests list column becomes resizable (the shared
+  `ResizablePanel`/`ResizableHandle` every other pane uses), 280px up to half the view, default
+  320px remembered across restarts (one width for every Project). The header's Project selector
+  shrinks and truncates to the column's own current width instead of the whole window's.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse pull requests (Priority: P1)
 
 A developer opens the "Pull requests" entry in the left nav for a repository already added to
 Refract. The main area switches to a list of that repository's pull requests, starting on the
-"Open" tab. The developer switches between tabs (Open, Authored by me, Assigned to me, Involves
-me, Review requested) to find the ones that matter to them, and can ask the list to refresh.
+"All" tab narrowed to the Open state. The developer switches between Filter tabs (All, Authored
+by me, Assigned to me, Involves me, Review requested) and the separate State control (Open,
+Closed, All) to find the ones that matter to them, and can ask the list to refresh.
 
 **Why this priority**: Without a list there is nothing to read or act on. This is the entry point
 for every other story.
 
 **Independent Test**: With a repository that has a GitHub remote and at least one open pull
-request, select "Pull requests" in the left nav, confirm the Open tab is shown with that pull
+request, select "Pull requests" in the left nav, confirm the All tab is shown with that pull
 request listed, switch tabs, and refresh the list.
 
 **Acceptance Scenarios**:
 
 1. **Given** a repository with a GitHub remote is selected and has open pull requests, **When**
    the developer selects "Pull requests" in the left nav, **Then** the list shows every open pull
-   request for that repository, the "Open" tab is active by default, and the view shows when the
-   list was last updated.
-2. **Given** the pull request list is open, **When** the developer selects a different filter tab
-   (for example "Review requested"), **Then** the list shows only pull requests matching that
-   tab, and pull requests that no longer match are removed from view.
+   request for that repository, the "All" tab is active by default with the State control
+   defaulting to Open, and the view shows when the list was last updated.
+2. **Given** the pull request list is open, **When** the developer selects a different Filter tab
+   (for example "Review requested") or State option (for example Closed), **Then** the list shows
+   only pull requests matching that tab and state, and pull requests that no longer match are
+   removed from view.
 3. **Given** the pull request list is open, **When** the developer asks it to refresh, **Then**
    the rows and the "last updated" indicator both reflect the current state of the pull requests
    on GitHub.
@@ -330,11 +353,15 @@ creation rules from spec 001.
   area to a pull request list and detail view scoped to the currently selected repository.
 - **FR-002**: The view MUST require the selected repository to have a GitHub remote; when it does
   not, the view MUST say so instead of showing a list.
-- **FR-003**: The list MUST offer the filter tabs Open, Authored by me, Assigned to me, Involves
-  me, and Review requested, defaulting to Open, and switching tabs MUST re-filter the list to
-  match the chosen tab.
-- **FR-004**: The list MUST offer a way to narrow the current tab's results further (for example
-  by matching text against title or label).
+- **FR-003**: The list MUST offer the Filter tabs All, Authored by me, Assigned to me, Involves
+  me, and Review requested, defaulting to All, in one non-wrapping row that scrolls sideways when
+  too narrow for the column, with the active tab scrolled into view; switching tabs MUST re-filter
+  the list to match the chosen tab (issue #499, 2026-10-16 decision).
+- **FR-004**: The list MUST offer a way to narrow the current tab's results further (matching text
+  against title or label) and a State control (Open, Closed, All -- Closed includes Merged, as on
+  github.com) that narrows whichever tab is active, independent of it; both live behind a Filters
+  disclosure that keeps applying while closed, with an accessible indicator when either is set to
+  a non-default value (issue #499, 2026-10-16 decision).
 - **FR-005**: Each row MUST show the pull request's title, number, check status, repository, time
   since it was last updated, and author, with check status conveyed by an icon or text, never by
   color alone.
@@ -419,6 +446,18 @@ creation rules from spec 001.
   on screen, never flicker to hidden while that refresh runs. The count MUST be refreshed only on
   app start, a default-repository change, window focus (throttled), an active-account change, and
   the view's own explicit refresh -- and MUST NOT be refreshed on a timer.
+- **FR-033**: The Filters disclosure's accessible indicator MUST name the number of active
+  filters (for example "Filters, 1 active") whenever the applied query is non-empty or the State
+  control is not at its default (Open), and MUST never rely on colour alone (issue #499).
+- **FR-034**: The list column MUST be resizable by a drag handle (280px to half the view, default
+  320px), remembered across restarts as one width for every Project; the handle MUST be
+  keyboard-operable (arrow keys resize it while focused) and a double-click on the handle MUST
+  reset it to the default (issue #930; amended 2026-10-18, Decided (Skippy, delegated by Stuart
+  2026-10-18): the issue's own decision record never asked for a keyboard-equivalent RESET, only
+  for arrow-key RESIZING as the handle's keyboard alternative to dragging -- `react-resizable-
+  panels` has no built-in reset key either; double-click stays the sole reset affordance).
+- **FR-035**: The Project selector in the header MUST shrink and truncate to the list column's
+  own current width, not only to the window's unrelated minimum width (issue #930).
 
 ### Key Entities
 

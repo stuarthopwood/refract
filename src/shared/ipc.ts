@@ -32,12 +32,8 @@ import type {
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor, SupportedImageMimeType } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type {
-  ChangedFile,
-  FilterTab,
-  MergeMethod,
-  PullRequestDetail,
-  PullRequestSummary,
-  ReviewVerdict
+  ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
+  PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
@@ -363,6 +359,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
+  SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -721,6 +718,7 @@ export interface RefractApi extends UpdatesApi {
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
+    setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
@@ -772,8 +770,8 @@ export interface RefractApi extends UpdatesApi {
   // only surface pull-request data crosses the renderer/main boundary through.
   pullRequests: {
     /** FR-001 to FR-006: called on open and on every explicit refresh, never polled automatically
-     * (FR-028). `query` is the FR-004 narrowing filter. */
-    list(repositoryId: string, tab: FilterTab, query?: string): Promise<Result<PullRequestListResult>>;
+     * (FR-028). `state` is issue #499's State control; `query` is the FR-004 narrowing filter. */
+    list(repositoryId: string, tab: FilterTab, state: PullRequestStateFilter, query?: string): Promise<Result<PullRequestListResult>>;
     /** FR-007 to FR-011: called on open and again by the renderer's own polling loop while
      * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
     detail(repositoryId: string, number: number): Promise<Result<PullRequestDetail>>;

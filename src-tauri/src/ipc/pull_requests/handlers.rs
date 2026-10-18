@@ -24,19 +24,42 @@ use super::{
     STALE_ERROR, STALE_ERROR_DIALOG, STALE_ERROR_DIALOG_MOVED,
 };
 
+/// Issue #499 (2026-10-16 decision): the State control narrowing whichever Filter tab is
+/// active; `Closed` includes Merged (decided 2026-10-07).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PullRequestStateFilter {
+    Open,
+    Closed,
+    All,
+}
+
+fn parse_state_filter(value: &str) -> Option<PullRequestStateFilter> {
+    match value {
+        "open" => Some(PullRequestStateFilter::Open),
+        "closed" => Some(PullRequestStateFilter::Closed),
+        "all" => Some(PullRequestStateFilter::All),
+        _ => None,
+    }
+}
+
 pub(super) fn pull_requests_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.list expects (repositoryId, tab, query?)")
-        })?;
+        const USAGE: &str = "pullRequests.list expects (repositoryId, tab, state, query?)";
+        let repository_id = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid_argument(USAGE))?;
         let tab = args
             .get(1)
             .and_then(Value::as_str)
             .and_then(parse_filter_tab)
-            .ok_or_else(|| {
-                invalid_argument("pullRequests.list expects (repositoryId, tab, query?)")
-            })?;
-        let query = match args.get(2) {
+            .ok_or_else(|| invalid_argument(USAGE))?;
+        let state_filter = args
+            .get(2)
+            .and_then(Value::as_str)
+            .and_then(parse_state_filter)
+            .ok_or_else(|| invalid_argument(USAGE))?;
+        let query = match args.get(3) {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) => Some(s.as_str()),
             Some(_) => {
@@ -46,7 +69,7 @@ pub(super) fn pull_requests_list(state: AppState, args: Vec<Value>) -> HandlerFu
             }
         };
         let (repo_path, repo_label) = repo_path_for(&state, repository_id).await?;
-        let items = list_pull_requests(&repo_path, &repo_label, tab, query)
+        let items = list_pull_requests(&repo_path, &repo_label, tab, state_filter, query)
             .await
             .map_err(map_gh_error)?;
         let result = PullRequestListResult {
@@ -486,4 +509,28 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         state.session_manager.notify_list_changed();
         Ok(serde_json::to_value(session).expect("Session is always JSON-serialisable"))
     })
+}
+
+#[cfg(test)]
+mod state_filter_tests {
+    use super::*;
+
+    #[test]
+    fn parse_state_filter_accepts_every_valid_literal() {
+        assert_eq!(
+            parse_state_filter("open"),
+            Some(PullRequestStateFilter::Open)
+        );
+        assert_eq!(
+            parse_state_filter("closed"),
+            Some(PullRequestStateFilter::Closed)
+        );
+        assert_eq!(parse_state_filter("all"), Some(PullRequestStateFilter::All));
+    }
+
+    #[test]
+    fn parse_state_filter_rejects_unknown_and_empty() {
+        assert_eq!(parse_state_filter("bogus"), None);
+        assert_eq!(parse_state_filter(""), None);
+    }
 }
