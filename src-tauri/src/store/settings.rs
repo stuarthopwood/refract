@@ -4,7 +4,6 @@
 // faithful port (T015's own "Settings CRUD" scope) so a later slice's IPC registration is a
 // one-line `dispatcher.register(...)` away, not a second pass over this file.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -21,13 +20,10 @@ pub enum ApprovalMode {
     Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ThemeId {
-    Dark,
-    DarkHighContrast,
-    Obsidian,
-}
+// `ThemeId` extracted to `theme_id.rs` (issue #551 gate round 1, #806 ratchet -- see that
+// file's own header comment): re-exported here so every existing caller keeps importing it
+// from `crate::store::settings::ThemeId`, unchanged.
+pub use super::theme_id::ThemeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionReadout {
@@ -101,6 +97,7 @@ pub struct Settings {
     /// groups and the cross-repository Archived group, the renderer's `session-list-store.ts`
     /// the sole writer (never raw/lazy-correction tracked -- see `set_session_list_collapse`).
     pub session_list_collapse: SessionListCollapse,
+    pub pull_requests_list_width_px: i64,
     /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
     /// main-process features are frozen, epic #797), so this field has no TypeScript
     /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
@@ -120,91 +117,16 @@ pub struct Settings {
     pub extra: Map<String, Value>,
 }
 
-/// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
-/// or from a future/older build) is reset to `None` rather than trusted, the same lazy-correction
-/// pattern `settings.ts`'s own `isValidSplitLayout` uses. Rejects a JSON array explicitly (`typeof
-/// [] === 'object'` in JS let one slip through the old, weaker check) since `serde_json::Value`
-/// distinguishes `Array` from `Object` directly.
-fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
-    let object = value.as_object()?;
-    let session_ids = object.get("sessionIds")?.as_array()?;
-    if session_ids.len() != 2 {
-        return None;
-    }
-    let first = session_ids[0].as_str()?;
-    let second = session_ids[1].as_str()?;
-    if first == second {
-        return None;
-    }
-    let divider_percent = object.get("dividerPercent")?.as_f64()?;
-    if !divider_percent.is_finite() || !(0.0..=100.0).contains(&divider_percent) {
-        return None;
-    }
-    let focused_index = match object.get("focusedIndex")?.as_i64()? {
-        0 => 0u8,
-        1 => 1u8,
-        _ => return None,
-    };
-    Some(SplitLayout {
-        session_ids: [first.to_string(), second.to_string()],
-        divider_percent,
-        focused_index,
-    })
-}
-
-/// #735 data-model.md: a present-but-malformed `sessionListCollapse` resets to the default
-/// (`{ collapsedRepositoryIds: [], archivedOpen: false }`), the same lazy-correction pattern
-/// `parse_split_layout` uses. De-duplicates `collapsedRepositoryIds` (a hand-edited file could
-/// repeat an id).
-fn default_session_list_collapse() -> SessionListCollapse {
-    SessionListCollapse {
-        collapsed_repository_ids: Vec::new(),
-        archived_open: false,
-    }
-}
-
-/// Gate round 2 fix (Low, security-auditor + code-reviewer): shared de-dupe-and-cap pass for
-/// `collapsedRepositoryIds`, used by both the disk parser above and the IPC setter
-/// (`ipc/settings.rs::parse_session_list_collapse_arg`) so the two can never drift apart again.
-/// Caps at 1,000 ids (far more than any real profile's Repository count) and 256 bytes per id
-/// (well over any real Repository id's length), a floor under a hand-edited `settings.json` or
-/// a renderer bug, not a real workflow. Duplicate ids are REMOVED, never rejected
-/// (contracts/ipc.md), the same lazy-correction pattern the rest of this file already uses. A
-/// `HashSet` membership check replaces the previous `Vec::iter().any()` scan (O(n) instead of
-/// O(n^2)). Returns `None` once either cap is exceeded or an element is not a string -- the IPC
-/// caller turns that into `invalid-argument`; the disk loader's own caller resets to the
-/// default, exactly like any other malformed field here.
-pub(crate) const SESSION_LIST_COLLAPSE_MAX_IDS: usize = 1000;
-pub(crate) const SESSION_LIST_COLLAPSE_MAX_ID_BYTES: usize = 256;
-
-pub(crate) fn sanitize_collapsed_repository_ids(ids_value: &[Value]) -> Option<Vec<String>> {
-    if ids_value.len() > SESSION_LIST_COLLAPSE_MAX_IDS {
-        return None;
-    }
-    let mut seen: HashSet<&str> = HashSet::with_capacity(ids_value.len());
-    let mut collapsed_repository_ids: Vec<String> = Vec::with_capacity(ids_value.len());
-    for id in ids_value {
-        let id = id.as_str()?;
-        if id.len() > SESSION_LIST_COLLAPSE_MAX_ID_BYTES {
-            return None;
-        }
-        if seen.insert(id) {
-            collapsed_repository_ids.push(id.to_string());
-        }
-    }
-    Some(collapsed_repository_ids)
-}
-
-fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
-    let object = value.as_object()?;
-    let ids_value = object.get("collapsedRepositoryIds")?.as_array()?;
-    let collapsed_repository_ids = sanitize_collapsed_repository_ids(ids_value)?;
-    let archived_open = object.get("archivedOpen")?.as_bool()?;
-    Some(SessionListCollapse {
-        collapsed_repository_ids,
-        archived_open,
-    })
-}
+// Lazy-correction parsers and clamps (issue #806, keeps this file under the 600-line cap): see
+// `settings_parse.rs` for `parse_split_layout`/`default_session_list_collapse`/
+// `parse_session_list_collapse`/`clamp_pull_requests_list_width_px`'s own doc comments.
+#[path = "settings_parse.rs"]
+mod settings_parse;
+pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
+use settings_parse::{
+    clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
+    parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
+};
 
 pub struct SettingsStore {
     file: PathBuf,
@@ -319,8 +241,14 @@ impl SettingsStore {
             }
             _ => default_session_list_collapse(),
         };
+        // #930: one width for every Project; clamped rather than trusted.
+        let pull_requests_list_width_px = object
+            .get("pullRequestsListWidthPx")
+            .and_then(Value::as_i64)
+            .map(clamp_pull_requests_list_width_px)
+            .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 12] = [
+        const KNOWN_FIELDS: [&str; 13] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -333,6 +261,7 @@ impl SettingsStore {
             "detectImagePathsOnPaste",
             "wordPredictionEnabled",
             "sessionListCollapse",
+            "pullRequestsListWidthPx",
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -353,6 +282,7 @@ impl SettingsStore {
             detect_image_paths_on_paste,
             word_prediction_enabled,
             session_list_collapse,
+            pull_requests_list_width_px,
             extra,
         };
 
@@ -421,11 +351,13 @@ impl SettingsStore {
             "sessionListCollapse".to_string(),
             json!(self.data.session_list_collapse),
         );
-        // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `data.extra` excludes all eleven
-        // of them), so a renderer feature's own not-yet-ported setting survives every save. Also
-        // now the same field `settings.get`/`settings:changed` flatten into the wire shape (see
-        // `Settings::extra`'s own doc comment).
+        map.insert(
+            "pullRequestsListWidthPx".to_string(),
+            json!(self.data.pull_requests_list_width_px),
+        );
+        // Re-inserts every key captured at `open()` with no slot here, verbatim (never overwrites
+        // a known key; `data.extra` excludes all twelve), so an unported setting survives every
+        // save, and `settings.get`/`settings:changed` flatten it onto the wire too.
         for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
         }
@@ -587,6 +519,18 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             session_list_collapse: value,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setPullRequestsListWidth(px)` (#930): plain-replace shape, as `set_split` uses.
+    pub async fn set_pull_requests_list_width_px(
+        &mut self,
+        width_px: i64,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            pull_requests_list_width_px: clamp_pull_requests_list_width_px(width_px),
             ..self.data.clone()
         };
         self.persist_whole(next).await

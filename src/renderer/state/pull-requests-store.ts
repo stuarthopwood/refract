@@ -5,11 +5,19 @@
 // is selected, none of which any other spec needs.
 import { create } from 'zustand'
 import type { IpcError, PullRequestListResult, Result } from '../../shared/ipc'
-import type { FilterTab, PullRequestSummary } from '../../shared/github'
+import type { FilterTab, PullRequestStateFilter, PullRequestSummary } from '../../shared/github'
 
 export interface PullRequestsRepoState {
   tab: FilterTab
+  /** Issue #499 (2026-10-16 decision): the State control, independent of `tab`; default `'open'`. */
+  state: PullRequestStateFilter
   query: string
+  /** Gate-fix (H3, caught live 2026-10-18): the Filters disclosure's own "N active"/dot must
+   *  count what was actually SENT to the last `refresh()` call, never the raw, still-typed
+   *  `query` above -- a developer mid-keystroke (before Enter) saw "Filters, 1 active" and a
+   *  dot for a filter that had not actually narrowed anything yet. Set by `refresh()` itself,
+   *  from the query it is about to fetch with; `setQuery` never touches this directly. */
+  appliedQuery: string
   items: PullRequestSummary[]
   fetchedAt: string | null
   loading: boolean
@@ -18,7 +26,7 @@ export interface PullRequestsRepoState {
 }
 
 function emptyRepoState(): PullRequestsRepoState {
-  return { tab: 'open', query: '', items: [], fetchedAt: null, loading: false, error: null, selectedNumber: null }
+  return { tab: 'all', state: 'open', query: '', appliedQuery: '', items: [], fetchedAt: null, loading: false, error: null, selectedNumber: null }
 }
 
 // Stable reference for a repository with no store entry yet, so `stateFor` never returns a fresh
@@ -51,7 +59,14 @@ interface PullRequestsState {
   byRepository: Record<string, PullRequestsRepoState>
   stateFor(repositoryId: string): PullRequestsRepoState
   setTab(repositoryId: string, tab: FilterTab): void
+  /** Issue #499 (2026-10-16 decision): the State control, re-fetching like `setTab`. */
+  setState(repositoryId: string, state: PullRequestStateFilter): void
   setQuery(repositoryId: string, query: string): void
+  /** Gate-fix (M5, caught live 2026-10-18): the "No pull requests match these filters." empty
+   *  state's own "Clear filters" button -- resets both the query and the State control to their
+   *  defaults and refetches, the same shape `ManageSessionsScreen.tsx`'s own `handleClearFilters`
+   *  uses for its own "Clear filters" button. */
+  clearFilters(repositoryId: string): void
   selectPullRequest(repositoryId: string, number: number | null): void
   refresh(repositoryId: string): Promise<void>
   activeCountByRepository: Record<string, PullRequestsActiveCount>
@@ -100,8 +115,23 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     set({ byRepository: patch(get().byRepository, repositoryId, { tab, selectedNumber: null }) })
     void get().refresh(repositoryId)
   },
+  setState: (repositoryId, state) => {
+    set({ byRepository: patch(get().byRepository, repositoryId, { state, selectedNumber: null }) })
+    void get().refresh(repositoryId)
+  },
   setQuery: (repositoryId, query) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { query }) })
+    // Gate-fix (H3, caught live 2026-10-18): clearing the box to empty refetches immediately
+    // rather than leaving the (still-filtered) rows showing until an Enter that will never
+    // come -- Enter still drives every OTHER narrowing edit, this is the one exception.
+    // Gate-fix (L5, caught live round 2 2026-10-18): only when the FETCHED query
+    // (`appliedQuery`) was actually non-empty -- typing then backspacing to empty without ever
+    // pressing Enter has nothing applied to undo, so it must not force a redundant refetch.
+    if (query === '' && get().stateFor(repositoryId).appliedQuery !== '') void get().refresh(repositoryId)
+  },
+  clearFilters: (repositoryId) => {
+    set({ byRepository: patch(get().byRepository, repositoryId, { query: '', state: 'open', selectedNumber: null }) })
+    void get().refresh(repositoryId)
   },
   selectPullRequest: (repositoryId, number) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { selectedNumber: number }) })
@@ -113,19 +143,26 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // newer one that already landed -- `refresh` had no request-sequencing token at all before.
     refreshSequence[repositoryId] = (refreshSequence[repositoryId] ?? 0) + 1
     const sequence = refreshSequence[repositoryId]
-    set({ byRepository: patch(get().byRepository, repositoryId, { loading: true, error: null }) })
-    const result = await window.refract.pullRequests.list(repositoryId, before.tab, before.query || undefined)
+    set({ byRepository: patch(get().byRepository, repositoryId, { loading: true, error: null, appliedQuery: before.query }) })
+    const result = await window.refract.pullRequests.list(repositoryId, before.tab, before.state, before.query || undefined)
     if (refreshSequence[repositoryId] !== sequence) return
     if (!result.ok) {
       set({ byRepository: patch(get().byRepository, repositoryId, { loading: false, error: result.error }) })
       return
     }
+    // Gate-fix (round 3, Low): a selected PR that fell out of the newly-fetched items (a filter
+    // change, or the PR itself closing/merging away from the active tab) used to stay "selected"
+    // forever, with `PullRequestDetail` fetching a PR no longer even listed. Reads the CURRENT
+    // `selectedNumber` at apply time (not the pre-fetch `before` snapshot), since a separate
+    // `selectPullRequest` call could have changed it while this fetch was in flight.
+    const currentSelected = get().stateFor(repositoryId).selectedNumber
     set({
       byRepository: patch(get().byRepository, repositoryId, {
         loading: false,
         error: null,
         items: result.value.items,
-        fetchedAt: result.value.fetchedAt
+        fetchedAt: result.value.fetchedAt,
+        selectedNumber: currentSelected !== null && result.value.items.some((pr) => pr.number === currentSelected) ? currentSelected : null
       })
     })
   },
@@ -138,14 +175,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       activeCountByRepository: patchActiveCount(get().activeCountByRepository, repositoryId, { loading: true })
     })
     // Issue #569 decision 1: `involves` already covers author/assignee/mentioned/review-requested
-    // in one search; `search_pull_requests` (gh_pull_requests.rs) applies no state filter of its
-    // own, so `is:open` is required here to count only open pull requests.
+    // in one search; the dedicated State control (issue #499) now does what an `is:open`
+    // free-text query qualifier used to fake here, so only open pull requests count.
     // Gate round 2 fix (L2): a rejected IPC call (never expected to throw, but the bridge is not
     // guaranteed not to) used to leave `loading: true` stuck forever, which also silently
     // disabled the window-focus refresh and the mount effect (both skip while already loading).
     let result: Result<PullRequestListResult>
     try {
-      result = await window.refract.pullRequests.list(repositoryId, 'involves', 'is:open')
+      result = await window.refract.pullRequests.list(repositoryId, 'involves', 'open')
     } catch {
       if (activeCountSequence[repositoryId] !== sequence) return
       set({

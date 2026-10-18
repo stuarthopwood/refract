@@ -33,12 +33,8 @@ import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } 
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
 import type {
-  ChangedFile,
-  FilterTab,
-  MergeMethod,
-  PullRequestDetail,
-  PullRequestSummary,
-  ReviewVerdict
+  ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
+  PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
@@ -212,6 +208,7 @@ export interface SessionSnapshot {
   // back) shows the real current list instead of an empty one -- subsequent changes still arrive
   // via `subagents:update`, this is only the seed `sessions.open`/`recover` itself must not drop.
   subagents: SubagentSummary[];
+  advisorOn: boolean; // issue #937: initial Advisor-chip on/off state; subsequent changes via advisor:update
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
@@ -358,6 +355,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
+  SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
@@ -409,6 +407,7 @@ export const IPC_EVENTS = {
   MEMORY_WARNING: 'memory:warning',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
+  ADVISOR_UPDATE: 'advisor:update',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
@@ -422,12 +421,9 @@ export const IPC_EVENTS = {
   UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
-/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
- * `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a
- * synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React
- * mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept out
- * of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and
- * out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
+/** Spec 007 contracts/ipc.md "Bootstrap": the one channel that is not `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync`/`ipcMain.on`
+ * pair, called once from `main.tsx` before React mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept
+ * out of `IPC_REQUESTS` (async `invoke`/`handle` there) and `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
 export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 
 // ---------------------------------------------------------------------------
@@ -694,6 +690,7 @@ export interface RefractApi extends UpdatesApi {
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
+    setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
@@ -745,8 +742,8 @@ export interface RefractApi extends UpdatesApi {
   // only surface pull-request data crosses the renderer/main boundary through.
   pullRequests: {
     /** FR-001 to FR-006: called on open and on every explicit refresh, never polled automatically
-     * (FR-028). `query` is the FR-004 narrowing filter. */
-    list(repositoryId: string, tab: FilterTab, query?: string): Promise<Result<PullRequestListResult>>;
+     * (FR-028). `state` is issue #499's State control; `query` is the FR-004 narrowing filter. */
+    list(repositoryId: string, tab: FilterTab, state: PullRequestStateFilter, query?: string): Promise<Result<PullRequestListResult>>;
     /** FR-007 to FR-011: called on open and again by the renderer's own polling loop while
      * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
     detail(repositoryId: string, number: number): Promise<Result<PullRequestDetail>>;
@@ -827,6 +824,7 @@ export interface RefractApi extends UpdatesApi {
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
+  onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
   /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an

@@ -179,6 +179,17 @@ impl SessionAgent {
         if let Some(pid) = proc.pid() {
             crate::process::pid_records::record_process(pid, &self.session_id).await;
         }
+        // Issue #937, gate round 3 fix (Critical): moved here, BEFORE the frame listener
+        // subscribes below -- `available_commands_update` arrives once near startup, and the
+        // OLD location (the per-life reset block further down, after `attach_and_verify`/
+        // `fetch_all_messages`) ran AFTER the listener had already started, so it could (and,
+        // live, likely would) silently wipe a list that frame had ALREADY populated for THIS
+        // life, leaving every OMP slash command (`/advisor` included) permanently
+        // `UnknownCommand` for the rest of the life. Clears a PREVIOUS life's stale list before
+        // anything can observe it, never a list this life's own frame just wrote.
+        {
+            self.state.lock().await.commands = Vec::new();
+        }
         // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
         // listener before any frame -- including ones the ready-wait itself observes -- can
         // possibly be produced, the same guarantee `OmpProcess.ts` gets from attaching
@@ -319,6 +330,7 @@ impl SessionAgent {
         }
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
+        crate::session::advisor::on_launch(self).await;
         self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
@@ -443,6 +455,7 @@ impl SessionAgent {
                         // lane R5) bump `readout`'s `pr_poll_generation` a second time, which
                         // would silently kill the NEWER life's own PR-poll timer.
                         if is_current {
+                            crate::session::advisor::on_exit(&agent).await;
                             crate::session::readout::on_exit(&agent, code, requested).await;
                             crate::session::subagents::on_exit(
                                 &agent,

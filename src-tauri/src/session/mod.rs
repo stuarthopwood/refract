@@ -8,6 +8,7 @@
 // Rust files"): each owns a no-op `on_frame` extension point `agent::frame`'s own `handle_frame`
 // calls, so a lane adds behaviour inside its own file only.
 
+pub mod advisor;
 pub mod agent;
 pub mod manager;
 pub mod model;

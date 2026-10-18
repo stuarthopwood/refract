@@ -1318,7 +1318,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
           2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
           own bottom row below (spec 001 FR-065) instead of as this row's guaranteed first item. */}
-      <ComposerStatusLine sessionId={sessionId} />
+      <ComposerStatusLine sessionId={sessionId} textareaRef={textareaRef} />
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
       <AttachmentStrip

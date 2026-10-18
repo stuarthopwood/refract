@@ -13,10 +13,12 @@ import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
+import { useAdvisorStore } from './advisor-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
+import { usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
@@ -111,6 +113,9 @@ export function initStores(): void {
   })
   window.refract.onSubagentsUpdate(({ sessionId, subagents }) => {
     useReadoutStore.getState().applySubagents(sessionId, subagents)
+  })
+  window.refract.onAdvisorUpdate(({ sessionId, advisorOn }) => {
+    useAdvisorStore.getState().applyAdvisorOn(sessionId, advisorOn)
   })
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
@@ -342,6 +347,7 @@ export function initStores(): void {
     // against the shared `DEFAULT_SETTINGS` fallback (and still flips `restored` true) even
     // when `settings.get` itself failed.
     useSessionListStore.getState().restore(settingsLoad.value.sessionListCollapse)
+    usePullRequestsLayoutStore.getState().restoreFromSettings(settingsLoad.value.pullRequestsListWidthPx)
     resolveRestored()
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either

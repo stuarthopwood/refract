@@ -262,10 +262,10 @@ side panel and confirm both show the same theme.
 
 ## Assumptions
 
-- The built-in theme list is all-dark presets: the existing single dark theme as one named
-  preset, plus at least one additional preset including a dedicated high-contrast dark variant.
-  The exact count and names of presets beyond that are undecided and should be confirmed with
-  Stuart (same open-question pattern as the original "Presets only" decision).
+- The built-in theme list is all-dark presets. **Decided (additive, per issue #458's "a further
+  dark preset adds a key, never removes" rule):** `dark` (default), `dark-high-contrast`,
+  `obsidian` (#550), `nordic-frost` and `cyber-amber` (#551) -- five built-in presets as of
+  #551, no further preset count or name left open for this spec.
 - There is no colour editor, and no import or export of themes, per Stuart's "Presets only"
   answer; both are candidates for a later spec, not this one.
 - The UI font and code font settings named in backlog issue #4 stay with that issue; this spec

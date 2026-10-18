@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
+import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX } from './pull-requests-layout-store'
 import { notify } from './notify'
 import { useChatScrollStore } from './scroll-store'
 
@@ -29,7 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
   detectImagePathsOnPaste: true,
-  sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE
+  sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE,
+  pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
   // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
   // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
   // value as enabled, so this client-only placeholder never flickers ghost text off for

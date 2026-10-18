@@ -54,6 +54,7 @@
     "response": {
       "ok": true,
       "value": {
+        "advisorOn": false,
         "conversations": [],
         "readout": {
           "branch": null,

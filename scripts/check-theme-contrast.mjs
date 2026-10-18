@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows } from './theme-contrast-pairs.mjs'
+import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows } from './theme-contrast-pairs.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -695,15 +695,11 @@ for (const [themeId, props] of Object.entries(themes)) {
   }
 }
 
-// Issue #559 decision 28 (gate round 3 correction) and issue #610 (hyperlinks): both composited
-// checks live in `theme-contrast-pairs.mjs` now (`searchFieldContrastRows`/
-// `userBubbleLinkContrastRows`), not inline here, to keep this file at its own #806 baseline.
-for (const row of searchFieldContrastRows(themes)) {
-  checkedCount++
-  if (!row.pass) failCount++
-  rows.push(row)
-}
-for (const row of userBubbleLinkContrastRows(themes)) {
+// Issue #559 decision 28 (gate round 3 correction), issue #610 (hyperlinks) and #551 gate round
+// 1 item 9 (sidebar-border hover fill, informational only -- see that function's own comment):
+// all three composited checks live in `theme-contrast-pairs.mjs`, not inline here, to keep this
+// file at its own #806 baseline; merged into one loop for the same reason.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes)]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)
