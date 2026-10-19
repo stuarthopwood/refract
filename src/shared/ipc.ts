@@ -276,12 +276,15 @@ export interface MergeInput {
   expectedHeadSha: string;
 }
 
-/** `sessions.deleteLeftoverSummary` (issue #891): a background filesystem walk of the worktree,
- * separate from `deleteCheck`'s git-based uncommitted/unpushed stats, that can take real time
- * against a large worktree. Lists generated folders (e.g. `node_modules`) by name with a
- * combined file count, and other files by path, capped with `moreCount` once there are too many
- * to list individually. */
+/** `sessions.deleteLeftoverSummary` (issue #891): a background `git status --ignored` read of
+ * the worktree (gate round 1: not a raw filesystem walk -- tracked files and `.git` are never
+ * listed), separate from `deleteCheck`'s own uncommitted/unpushed stats. Lists generated
+ * folders (e.g. `node_modules`) by name with a combined file count, and other files by path,
+ * capped with `moreCount` once there are too many to list individually. `rootName` (gate round,
+ * M3) is the worktree folder's own basename, so the renderer can lead each displayed path with
+ * which Session it belongs to. */
 export interface LeftoverSummary {
+  rootName: string;
   generatedFolders: { name: string; fileCount: number }[];
   otherFiles: string[];
   moreCount: number;

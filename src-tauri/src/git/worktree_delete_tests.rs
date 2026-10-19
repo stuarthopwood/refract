@@ -116,11 +116,16 @@ async fn remove_session_worktree_refuses_a_symlink_at_the_worktree_path() {
 /// `assert_within_worktrees_root` reports `Inside` -- it is purely lexical, never resolving the
 /// junction) can still redirect a trailing path component to somewhere OUTSIDE the root
 /// entirely. `remove_session_worktree` must never let that redirect destroy content living at
-/// the junction's real target: with a marker file planted there, the existing "not empty"
-/// orphan-folder refusal (the folder's one real entry is `marker.txt`, never `.git` alone)
-/// already closes this -- this test locks that behaviour in rather than trusting it by
-/// inspection. Skips gracefully outside CI, fails outright in CI (same convention as every
-/// other junction test in this crate).
+/// the junction's real target: with a marker file planted there, `fs::remove_tree`'s own
+/// containment check now closes this (issue #891 gate round: the removed "not empty"
+/// orphan-folder refusal this comment used to cite no longer exists at all --
+/// `remove_orphaned_worktree_folder` removes a non-empty folder unconditionally via
+/// `remove_tree` today). `remove_tree` canonicalizes `path` ONCE (resolving every reparse point
+/// along it, including this junction) and refuses unless that canonical form is a strict
+/// descendant of the canonical worktrees root -- the junction's real target resolves somewhere
+/// else entirely, so this refuses before `std::fs::remove_dir_all` is ever called. This test
+/// locks that behaviour in rather than trusting it by inspection. Skips gracefully outside CI,
+/// fails outright in CI (same convention as every other junction test in this crate).
 #[tokio::test]
 async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_inside_the_root() {
     let repo = init_repo().await;
@@ -174,9 +179,12 @@ async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_insi
 /// new single entry point instead: `remove_session_worktree`'s own doc comment calls this out
 /// explicitly as one of the three shapes a "registered" worktree can be in today (a live
 /// checkout, hand-emptied with files left behind, or folder missing entirely), all handled by
-/// the one `is_worktree_registered` branch, never a dedicated helper of its own any more.
+/// the one `worktree_registration_state` branch, never a dedicated helper of its own any more.
+/// Renamed (L1): the old name described a now-gone PREDICATE's own return value; this
+/// one test still checks exactly one scenario end to end -- both the folder AND the admin
+/// entry are gone afterward.
 #[tokio::test]
-async fn is_registered_but_hand_emptied_true_only_when_git_entry_is_gone() {
+async fn remove_session_worktree_deletes_a_hand_emptied_registered_worktree_and_its_admin_entry() {
     let repo = init_repo().await;
     let added = add_worktree_with_generated_name(&repo, "main")
         .await

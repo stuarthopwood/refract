@@ -87,14 +87,19 @@ pub struct GeneratedFolderEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeftoverSummary {
+    /// Issue #891 gate round (M3): the worktree folder's own basename, so the renderer can lead
+    /// each displayed path with "the Session folder name" rather than a bare worktree-relative
+    /// path with no indication of which Session it belongs to.
+    pub root_name: String,
     pub generated_folders: Vec<GeneratedFolderEntry>,
     pub other_files: Vec<String>,
     pub more_count: u64,
 }
 
 impl LeftoverSummary {
-    fn empty() -> Self {
+    fn empty(root_name: String) -> Self {
         Self {
+            root_name,
             generated_folders: Vec::new(),
             other_files: Vec::new(),
             more_count: 0,
@@ -141,6 +146,10 @@ fn count_files(dir: &Path, cancel: &AtomicBool) -> u64 {
 /// generated-folder bucket's real files on disk (`git status` reports only that the directory
 /// itself is untracked/ignored, never a file count).
 fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> LeftoverSummary {
+    let root_name = worktree_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let mut generated: BTreeMap<String, u64> = BTreeMap::new();
     let mut other_files = Vec::new();
     let mut more_count = 0u64;
@@ -177,6 +186,7 @@ fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> 
     }
 
     LeftoverSummary {
+        root_name,
         generated_folders: generated
             .into_iter()
             .map(|(name, file_count)| GeneratedFolderEntry { name, file_count })
@@ -202,8 +212,12 @@ static IN_FLIGHT: LazyLock<Mutex<HashMap<String, RegistryEntry>>> =
 /// duration so `cancel_and_wait` can stop it early. An empty summary for a worktree folder that
 /// is not actually there (nothing to report).
 pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) -> LeftoverSummary {
+    let root_name = worktree_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
-        return LeftoverSummary::empty();
+        return LeftoverSummary::empty(root_name);
     }
 
     let cancel = Arc::new(AtomicBool::new(false));
@@ -229,13 +243,13 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
     .await;
 
     let summary = if raw.code != 0 {
-        LeftoverSummary::empty()
+        LeftoverSummary::empty(root_name)
     } else {
         let path = worktree_path.to_path_buf();
         let cancel_for_count = cancel.clone();
         tokio::task::spawn_blocking(move || build_summary(&path, &raw.stdout, &cancel_for_count))
             .await
-            .unwrap_or_else(|_| LeftoverSummary::empty())
+            .unwrap_or_else(|_| LeftoverSummary::empty(root_name))
     };
 
     {

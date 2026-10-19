@@ -4,7 +4,7 @@
 // live check needs, reading registry.json directly, and driving the real Delete dialog over CDP
 // (no existing helper covers this dialog -- #891 is the first live check of it).
 
-import { mkdirSync, writeFileSync, chmodSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -14,6 +14,27 @@ function assert(cond, message) {
 
 export function readRegistry(dataDir) {
   return JSON.parse(readFileSync(path.join(dataDir, 'registry.json'), 'utf8'));
+}
+
+/** Counts every real file under `dir` recursively (plain synchronous Node `fs` -- the worktree
+ * trees scenarios (c)/(d) use for this are tiny). Issue #891 gate round (T2): the live check's
+ * own before/after snapshot proving a refused Delete changed nothing on disk. Never follows a
+ * symlink, matching the production remover's own rule. */
+export function countFilesRecursive(dir) {
+  let count = 0;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) count += countFilesRecursive(full);
+    else count++;
+  }
+  return count;
 }
 
 export function sessionByName(dataDir, name) {

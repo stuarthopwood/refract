@@ -43,6 +43,7 @@ import {
   populateFullWorktree,
   populateOrphanWorktree,
   populateLargeGeneratedTree,
+  countFilesRecursive,
   spawnCwdHolder,
   spawnFileHolder,
   killSpawned,
@@ -181,6 +182,11 @@ async function main() {
     const nameC = await newSession('c');
     const sessionC = sessionByName(dataDir, nameC);
     mkdirSync(sessionC.worktreePath, { recursive: true });
+    // Issue #891 gate round (T2): snapshot BEFORE clicking Delete so the refusal's own "nothing
+    // was touched" claim is actually proven, not assumed.
+    const sentinelC = path.join(sessionC.worktreePath, 'sentinel.txt');
+    writeFileSync(sentinelC, 'untouched');
+    const cFileCountBefore = countFilesRecursive(sessionC.worktreePath);
     const cmdHolder = spawnCwdHolder(sessionC.worktreePath);
     spawned.push(cmdHolder);
     await new Promise((r) => setTimeout(r, 300)); // let Windows finish establishing the child's own cwd
@@ -189,10 +195,22 @@ async function main() {
     await clickDeleteButton(cdp);
     const errC = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '02-dialog-refusal-cwd-holder.png'));
+    const cFileCountAfter = countFilesRecursive(sessionC.worktreePath);
     const cRefusedCorrectly =
-      !!errC && errC.toLowerCase().includes('close it') && (await isSessionListed(cdp, nameC)) && existsSync(sessionC.worktreePath);
-    if (cRefusedCorrectly) ok('(c) cmd.exe cwd-holder refuses Delete with the in-use message; Session stays listed; nothing deleted');
-    else fail('(c) cmd.exe cwd-holder refuses Delete', new Error(`error=${JSON.stringify(errC)} listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
+      !!errC &&
+      errC.toLowerCase().includes('close it') &&
+      (await isSessionListed(cdp, nameC)) &&
+      existsSync(sessionC.worktreePath) &&
+      existsSync(sentinelC) &&
+      cFileCountAfter === cFileCountBefore;
+    if (cRefusedCorrectly) ok('(c) cmd.exe cwd-holder refuses Delete with the in-use message; Session stays listed; the sentinel file and file count are unchanged');
+    else
+      fail(
+        '(c) cmd.exe cwd-holder refuses Delete',
+        new Error(
+          `error=${JSON.stringify(errC)} listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)} sentinelExists=${existsSync(sentinelC)} fileCountBefore=${cFileCountBefore} fileCountAfter=${cFileCountAfter}`
+        )
+      );
     // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a refused Delete must leave
     // (or restart) the Session's own agent running -- checked by its REAL status, not merely
     // that the row still exists.
@@ -216,6 +234,12 @@ async function main() {
     mkdirSync(sessionD.worktreePath, { recursive: true });
     const heldFile = path.join(sessionD.worktreePath, 'held.txt');
     writeFileSync(heldFile, 'held open by a spawned process');
+    // Issue #891 gate round (T2): a SEPARATE sentinel, distinct from the held file itself, plus
+    // a before/after file-count snapshot -- the refusal's own "nothing was touched" claim must
+    // be proven, not assumed.
+    const sentinelD = path.join(sessionD.worktreePath, 'sentinel.txt');
+    writeFileSync(sentinelD, 'untouched');
+    const dFileCountBefore = countFilesRecursive(sessionD.worktreePath);
     const fileHolder = spawnFileHolder(heldFile);
     spawned.push(fileHolder);
     await new Promise((r) => setTimeout(r, 500));
@@ -224,9 +248,23 @@ async function main() {
     await clickDeleteButton(cdp);
     const errD = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '03-dialog-refusal-named-holder.png'));
-    const dNamed = !!errD && /powershell/i.test(errD) && /process \d+/i.test(errD);
-    if (dNamed) ok(`(d) spawned file-holder is named in the refusal: ${errD}`);
-    else fail('(d) spawned file-holder is named in the refusal', new Error(`error=${JSON.stringify(errD)}`));
+    const dFileCountAfter = countFilesRecursive(sessionD.worktreePath);
+    const dPidMatch = errD ? errD.match(/process (\d+)/i) : null;
+    const dPidMatchesHolder = !!dPidMatch && Number(dPidMatch[1]) === fileHolder.pid;
+    const dNamed =
+      !!errD &&
+      /powershell/i.test(errD) &&
+      dPidMatchesHolder &&
+      existsSync(sentinelD) &&
+      dFileCountAfter === dFileCountBefore;
+    if (dNamed) ok(`(d) spawned file-holder is named in the refusal with its own real pid (${fileHolder.pid}); sentinel and file count unchanged: ${errD}`);
+    else
+      fail(
+        '(d) spawned file-holder is named in the refusal',
+        new Error(
+          `error=${JSON.stringify(errD)} expectedPid=${fileHolder.pid} matchedPid=${dPidMatch ? dPidMatch[1] : null} sentinelExists=${existsSync(sentinelD)} fileCountBefore=${dFileCountBefore} fileCountAfter=${dFileCountAfter}`
+        )
+      );
     await killSpawned(fileHolder);
     await clickDeleteButton(cdp);
     const outcomeD = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
