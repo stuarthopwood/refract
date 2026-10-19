@@ -13,9 +13,13 @@ const NOTICE_ICON = {
 } as const satisfies Record<NoticeLevel, unknown>
 
 const NOTICE_CLASS = {
+  // Issue #997: these used to alias `--state-needs-you`/`--destructive` directly -- the same
+  // VALUES as `--severity-warning`/`--severity-error` in every theme (see `globals.css`), but
+  // the wrong NAME: a notice's colour is a severity, not a session state, and `ToolRow.tsx`/
+  // `subagentStatus.tsx` already use the `text-severity-*` tokens for the identical colour.
   info: 'text-muted-foreground',
-  warning: 'text-state-needs-you',
-  error: 'text-destructive'
+  warning: 'text-severity-warning',
+  error: 'text-severity-error'
 } as const satisfies Record<NoticeLevel, string>
 
 // Non-colour cue for severity (DESIGN.md: "including for screen readers"): the icon alone is
