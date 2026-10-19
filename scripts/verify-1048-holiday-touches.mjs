@@ -46,6 +46,7 @@ import {
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { processTreeCpuSeconds, settleForScreenshot, dispatchNeutralPointerdown, dispatchShiftKeyTap } from './verify-1048-holiday-touches-helpers.mjs';
+import { runOffSeasonBaseline, runInvalidDateOverrideCheck } from './verify-1048-holiday-touches-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -477,12 +478,12 @@ async function main() {
   await safeRmSync(launcherDir, LOG);
   await safeRmSync(shimDir, LOG);
 
-  // ---- Off-season override baseline: a SEPARATE fresh launch, no date override matching
-  // today's real date, so this is deterministic regardless of which day this script runs on.
-  // Gate round 1 fix (Medium, item 8): report.json is now written ONCE, after this baseline
-  // completes, not before it (the baseline's own results used to be silently dropped since the
-  // file was already closed by the time this ran). ----
-  await runOffSeasonBaseline(head, dirty, report, notExercised);
+  // ---- Off-season override baseline, and the invalid-date-round-trip proof (item 11, decided
+  // by Main: live, not a new Rust test) -- both SEPARATE fresh launches. Gate round 1 fix
+  // (Medium, item 8): report.json is now written ONCE, after both complete, not before (the
+  // baseline's own results used to be silently dropped since the file was already closed). ----
+  await runOffSeasonBaseline({ repoRoot: REPO_ROOT, buildOutputDir: BUILD_OUTPUT_DIR, shotsDir: SHOTS_DIR, dateOverride: OFF_SEASON_DATE_OVERRIDE, hallowenIconClass: HALLOWEEN_ICON_CLASS, emptyLine: HALLOWEEN_EMPTY_LINE, report });
+  await runInvalidDateOverrideCheck({ repoRoot: REPO_ROOT, buildOutputDir: BUILD_OUTPUT_DIR, report });
 
   writeReport(head, dirty, report, notExercised);
   console.log(`${LOG}: done; evidence in ${SHOTS_DIR}`);
@@ -494,103 +495,6 @@ function writeReport(head, dirty, report, notExercised) {
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty, failures, notExercised, results: report }, null, 2));
   } catch (writeErr) {
     console.error(`${LOG}: failed to write report.json: ${writeErr}`);
-  }
-}
-
-async function runOffSeasonBaseline(head, dirty, report, notExercised) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-data-'));
-  const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-import-'));
-  const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-repo-'));
-  const repoDir = makeScratchRepo(repoDirBase, 'verify-1048-holiday-touches-baseline');
-  const worktreesRootForCleanup = path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
-  const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-exe-'));
-  const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-launcher-'));
-  const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-shim-'));
-  let child;
-  let cdp;
-  try {
-    buildOmpShim(shimDir);
-    const launcherExe = buildLauncher(launcherDir);
-    const exeInfo = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: `${LOG}-baseline` });
-    const port = await getFreePort();
-    const launched = await launchBuiltExe(launcherExe, exeInfo.dest, {
-      port,
-      dataDir,
-      pathPrepend: shimDir,
-      logFile: path.join(exeDir, 'app.log'),
-      extraEnv: {
-        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
-        REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
-        REFRACT_FAKE_OMP_NODE: process.execPath,
-        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log'),
-        REFRACT_FAKE_OMP_SCENARIO: 'session',
-        REFRACT_DATE_OVERRIDE: OFF_SEASON_DATE_OVERRIDE
-      }
-    });
-    child = launched.child;
-    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
-    cdp = await CdpSession.connect(wsUrl);
-    if (!isTargetOwningPort(port, launched.targetPid)) {
-      throw new Error(`${LOG}: baseline CDP target on port ${port} is not owned by the process this run launched`);
-    }
-    const overridesResult = await cdp.evaluate(`window.refract.debug.getOverrides()`);
-    const overridesMatch = overridesResult.ok === true && overridesResult.value.date === OFF_SEASON_DATE_OVERRIDE;
-    report.push({ step: 'Off-season override baseline: debug.getOverrides() reports the REFRACT_DATE_OVERRIDE env var verbatim', ok: overridesMatch, actual: overridesResult });
-    if (!overridesMatch) throw new Error(`FAIL: off-season baseline debug.getOverrides() mismatch: ${JSON.stringify(overridesResult)}`);
-    console.log(`${LOG}: PASS off-season override baseline: debug.getOverrides() reports the REFRACT_DATE_OVERRIDE env var verbatim`);
-
-    // Past Readiness and a repository added (REAL UI flow, same as the main run), so the
-    // sidebar and the real empty chat pane are both genuinely mounted -- without this, the
-    // absence check below would trivially pass on the Readiness screen alone, which never
-    // mounts SessionList/the chat area regardless of the date override working or not.
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'off-season baseline: Readiness screen mounted' });
-    await cdp.waitFor(
-      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
-      { timeoutMs: 60_000, label: 'off-season baseline: Readiness green (fake omp)' }
-    );
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'off-season baseline: Add repository dialog open' });
-    await cdp.click(`document.querySelector('[role="dialog"] input')`);
-    await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
-    await cdp.waitFor(
-      `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
-      { timeoutMs: 30_000, label: 'off-season baseline: scratch repository added' }
-    );
-    await cdp.waitFor(`!!document.querySelector('[data-chat-empty-state]')`, { timeoutMs: 15_000, label: 'off-season baseline: real empty chat pane mounted' });
-
-    const noHoliday = await cdp.evaluate(`(() => {
-      const watermark = document.querySelector('.watermark-mark-holiday');
-      const sidebarAccessory = document.querySelector('.drag-region svg.${HALLOWEEN_ICON_CLASS}');
-      const ambientLoop = document.querySelector('.holiday-ambient-loop');
-      const emptyPaneText = document.querySelector('[data-chat-empty-state]')?.textContent ?? '';
-      return {
-        watermarkPresent: !!watermark,
-        sidebarAccessoryPresent: !!sidebarAccessory,
-        ambientLoopPresent: !!ambientLoop,
-        emptyPaneHasHolidayLine: emptyPaneText.includes('${HALLOWEEN_EMPTY_LINE}')
-      };
-    })()`);
-    const ok = !noHoliday.watermarkPresent && !noHoliday.sidebarAccessoryPresent && !noHoliday.ambientLoopPresent && !noHoliday.emptyPaneHasHolidayLine;
-    report.push({ step: 'Off-season override baseline (outside every window): nothing holiday-related renders anywhere, including the real empty chat pane', ok, actual: noHoliday });
-    if (!ok) throw new Error(`FAIL: off-season baseline still shows holiday content: ${JSON.stringify(noHoliday)}`);
-    console.log(`${LOG}: PASS off-season override baseline: nothing holiday-related renders anywhere`);
-    await settleForScreenshot(cdp);
-    await cdp.screenshot(path.join(SHOTS_DIR, 'baseline-no-override.png'));
-    report.push({ step: 'off-season override baseline screenshot', ok: true, screenshots: citeScreenshots(SHOTS_DIR, ['baseline-no-override.png']) });
-  } catch (err) {
-    report.push({ step: 'off-season override baseline crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
-    throw err;
-  } finally {
-    if (cdp) cdp.close();
-    if (child) await stopLauncher(child).catch(() => {});
-    await safeRmSync(dataDir, LOG);
-    await safeRmSync(importSourceDir, LOG);
-    await safeRmSync(repoDirBase, LOG);
-    await safeRmSync(worktreesRootForCleanup, LOG);
-    await safeRmSync(exeDir, LOG);
-    await safeRmSync(launcherDir, LOG);
-    await safeRmSync(shimDir, LOG);
   }
 }
 

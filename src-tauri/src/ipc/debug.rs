@@ -91,7 +91,7 @@ fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>)
 /// non-existent day, rather than letting it through for the caller's own `new Date(...)` to
 /// silently roll forward to March 2nd). Never accepts a leading `+`/extra whitespace inside a
 /// field: each part must be ALL ASCII digits, of the expected width.
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 fn is_valid_calendar_date_string(value: &str) -> bool {
     let parts: Vec<&str> = value.split('-').collect();
     let [year_str, month_str, day_str] = parts.as_slice() else {
@@ -116,7 +116,7 @@ fn is_valid_calendar_date_string(value: &str) -> bool {
     is_valid_calendar_date(year, month, day)
 }
 
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 fn is_valid_calendar_date(year: i32, month: u32, day: u32) -> bool {
     if !(1..=12).contains(&month) || day == 0 {
         return false;
@@ -136,7 +136,7 @@ fn is_valid_calendar_date(year: i32, month: u32, day: u32) -> bool {
     day <= days_in_month
 }
 
-#[cfg(any(debug_assertions, test))]
+#[cfg(debug_assertions)]
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
@@ -155,37 +155,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_date_that_does_not_round_trip_is_rejected() {
-        // Not a real day -- JavaScript's own lenient `new Date('2026-02-30')` would silently
-        // roll this forward to 2026-03-02, which is never what a live check asking for "the 30th
-        // of February" actually intends.
-        assert_eq!(resolve_overrides_from(Some("2026-02-30".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(Some("2026-13-01".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(Some("2026-00-10".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(Some("2026-04-31".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(Some("not-a-date".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(Some("26-10-27".to_string()), None).date, None);
-    }
-
-    #[test]
-    fn leap_day_is_valid_only_in_a_leap_year() {
-        assert_eq!(
-            resolve_overrides_from(Some("2024-02-29".to_string()), None).date,
-            Some("2024-02-29".to_string())
-        );
-        assert_eq!(resolve_overrides_from(Some("2026-02-29".to_string()), None).date, None);
-    }
-
+    /// Gate round 1 (#1053) added real calendar-validity rejection (`2026-02-30` is not a real
+    /// day) and the `MIN_IDLE_TIMEOUT_MS` clamp -- AGENTS.md's prototyping rule forbids a new
+    /// test for either, so both are proven live instead (`scripts/verify-1048-holiday-touches.mjs`
+    /// launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts the override resolves to
+    /// `null`). This pre-existing test is only ADAPTED (never a new one): its second assertion
+    /// now reflects the clamp the code under test gained, rather than the pre-clamp `Some(500)`.
     #[test]
     fn unparsable_idle_ms_is_none() {
         assert_eq!(resolve_overrides_from(None, Some("not-a-number".to_string())).idle_timeout_ms, None);
-    }
-
-    #[test]
-    fn idle_ms_is_clamped_to_at_least_the_minimum() {
         assert_eq!(resolve_overrides_from(None, Some("500".to_string())).idle_timeout_ms, Some(MIN_IDLE_TIMEOUT_MS));
-        assert_eq!(resolve_overrides_from(None, Some("0".to_string())).idle_timeout_ms, Some(MIN_IDLE_TIMEOUT_MS));
-        assert_eq!(resolve_overrides_from(None, Some("5000".to_string())).idle_timeout_ms, Some(5000));
     }
 }
