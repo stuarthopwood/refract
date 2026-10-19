@@ -33,8 +33,12 @@ Hide a **Session** from the main list while keeping its **Worktree** and **Conve
 _Avoid_: Close, remove (ambiguous with delete)
 
 **Delete**:
-Permanently remove a **Session**, its **Worktree**, and its **Conversations**, only after a confirmation that names what will be lost (uncommitted changes, unpushed commits).
+Permanently remove a **Session**, its **Worktree**, and its **Conversations**. A manual Delete asks first, naming what will be lost (uncommitted changes, unpushed commits); **Session cleanup** deletes without asking, but only Sessions it archived itself and that pass the same safety checks (issue #476).
 _Avoid_: Remove, discard
+
+**Session cleanup**:
+The automatic housekeeping in Settings > Sessions: it **Archives** a **Session** whose pull request has merged once it has been inactive for a chosen number of days, and, if a delete period is chosen, later **Deletes** the Sessions it archived. It never touches a Session archived by hand (issue #476).
+_Avoid_: Auto-cleanup, garbage collection, reaping
 
 **Group header**:
 The collapsible header above one Project's Sessions in the session list, shared by the Archived group.
