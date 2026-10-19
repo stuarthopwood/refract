@@ -359,7 +359,12 @@ async function main() {
     } else {
       findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
     }
-    await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+    // Gate fix: blur BEFORE Escape (the original version here) left the dialog's own
+    // `[role="dialog"]` in the DOM forever -- every OTHER working `pressEscape` call-site in
+    // this codebase (verify-tauri-735.mjs etc.) presses Escape FIRST, while a real element is
+    // still focused, and only blurs afterward if at all; a programmatic blur right beforehand
+    // left nothing focused for the synthetic key event to reach. Closing the per-theme loop's
+    // own first `pressEscape(cdp)` below now does the real dismissal; nothing to blur here.
 
     // ---- Dialog-level: no horizontal overflow, re-measured in every theme below ----
     async function assertDialogNeverScrollsHorizontally(themeName) {
