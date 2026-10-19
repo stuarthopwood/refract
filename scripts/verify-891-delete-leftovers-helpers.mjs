@@ -322,6 +322,12 @@ export async function waitForDialogSettled(cdp, { timeoutMs = 30_000 } = {}) {
   );
 }
 
+/** The dialog's own `role="alert"` paragraph -- '' while no error (it stays mounted, `sr-only`,
+ * per `DeleteDialog.tsx`'s own convention). */
+export async function readDialogError(cdp, { timeoutMs = 15_000 } = {}) {
+  return cdp.waitFor(`document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent || null`, { timeoutMs, label: 'dialog error text' });
+}
+
 /** Polls until `sessions.list()` reports anything other than `'stopped'` (or `null`, not
  * listed) for the Session named `name` -- Rust's own `SessionAgent::status()`, not a DOM/CSS
  * guess (a `StateIcon` glyph is `aria-hidden`, and its colour class is an implementation
