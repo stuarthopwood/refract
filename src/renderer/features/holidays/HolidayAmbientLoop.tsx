@@ -33,6 +33,7 @@ export function HolidayAmbientLoop() {
   const idleTimeoutMs = useHolidayStore((s) => s.idleTimeoutMs)
   const [paused, setPaused] = useState(() => document.hidden || !document.hasFocus())
   const idleTimerRef = useRef<number | undefined>(undefined)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const active = holidayTouches === 'full' && holiday !== null && HOLIDAY_CONTENT[holiday].hasAmbientLoop
 
@@ -122,10 +123,71 @@ export function HolidayAmbientLoop() {
     }
   }, [active, idleTimeoutMs])
 
+  // Gate round 2 fix (High, item 1 fallback): stepped CSS timing alone (26s cycle, `steps(26)`)
+  // still measured about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget
+  // 1.0s/60s) -- three elements animating continuously for the whole window, even at ~4 ticks/s,
+  // still adds up. Switched to occasional flights instead: the bats sit STATIC (no CSS animation
+  // at all, see `globals.css`) almost all the time, and one randomly-chosen bat flies for about
+  // 7s via a single `Element.animate()` call every 60-120s (randomised) -- `document
+  // .getAnimations()` is empty between flights (no `.persist()` call, so the browser
+  // auto-removes the finished Animation), and `will-change: transform` is set only for that
+  // one flight's own duration, never ambiently. Gated on `!paused` (the SAME state the
+  // pause-rule effect above already computes for hidden/unfocused/idle/dialog-open) and on
+  // `prefers-reduced-motion` directly -- a hidden `display:none` ancestor does not stop a
+  // running Web Animations API animation from consuming CPU in the background, so this must
+  // check the media query itself, not rely on the CSS layer merely being invisible.
+  useEffect(() => {
+    if (!active || paused) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    let cancelled = false
+    let flightTimer: number | undefined
+    let currentAnimation: Animation | undefined
+
+    function scheduleNextFlight() {
+      const delayMs = 60_000 + Math.random() * 60_000
+      flightTimer = window.setTimeout(runFlight, delayMs)
+    }
+
+    function runFlight() {
+      const bats = containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat')
+      if (!bats || bats.length === 0) {
+        scheduleNextFlight()
+        return
+      }
+      const bat = bats[Math.floor(Math.random() * bats.length)]
+      if (!bat) {
+        scheduleNextFlight()
+        return
+      }
+      bat.style.willChange = 'transform'
+      const animation = bat.animate(
+        [{ transform: 'translate(0px, 0px)' }, { transform: 'translate(60px, -24px)', offset: 0.5 }, { transform: 'translate(120px, 6px)' }],
+        { duration: 7_000, easing: 'ease-in-out', fill: 'none' }
+      )
+      currentAnimation = animation
+      animation.onfinish = () => {
+        bat.style.willChange = ''
+        currentAnimation = undefined
+        if (!cancelled) scheduleNextFlight()
+      }
+      animation.oncancel = () => {
+        bat.style.willChange = ''
+        currentAnimation = undefined
+      }
+    }
+
+    scheduleNextFlight()
+    return () => {
+      cancelled = true
+      window.clearTimeout(flightTimer)
+      currentAnimation?.cancel()
+    }
+  }, [active, paused])
+
   if (!active || !holiday) return null
 
   return (
-    <div aria-hidden className={cn('holiday-ambient-loop -z-10', `holiday-ambient-loop--${holiday}`)} data-paused={paused || undefined}>
+    <div aria-hidden ref={containerRef} className={cn('holiday-ambient-loop -z-10', `holiday-ambient-loop--${holiday}`)} data-paused={paused || undefined}>
       {holiday === 'halloween' && (
         <>
           <BatSilhouette />

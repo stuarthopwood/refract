@@ -1093,48 +1093,35 @@
  * composer's input area" (the composer is a separate sibling outside that container) without
  * any manual z-index/pointer-events bookkeeping beyond what the watermark already set up.
  * `aria-hidden` (set by the component itself); `data-paused` (set by the component's own
- * pause-rule effect -- window hidden/unfocused, 60s idle; JS-driven since none of those three
- * conditions are expressible in plain CSS) freezes the animation the same way
- * `prefers-reduced-motion`/forced-colors already do below -- one rule shape covers every exit
- * path. */
+ * pause-rule effect -- window hidden/unfocused, 60s idle, modal dialog open) gates the JS-driven
+ * flight scheduling in `HolidayAmbientLoop.tsx` itself (no CSS `animation-play-state` rule left
+ * to pause -- see the bat rule below), the same way `prefers-reduced-motion`/forced-colors
+ * already do below for the whole layer. */
 .holiday-ambient-loop {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
-.holiday-ambient-loop[data-paused] .holiday-ambient-loop-bat {
-  animation-play-state: paused;
-}
 
-/* Halloween: 3 drifting bat silhouettes (grill decision 2's own "pick the calmer one" -- a
- * slow diagonal drift reads calmer than a flicker, and never needs tuning around WCAG 2.3.1's
- * 3-flashes-per-second ceiling the way an opacity flicker would). Single colour
- * (`--muted-foreground`, the same token the watermark itself uses), very low CONSTANT opacity,
- * animating `transform` only. Gate round 2 fix (High, item 1): a smooth `ease-in-out` curve
- * forces the compositor to produce a fresh interpolated frame on every vsync tick for the whole
- * cycle -- the ui-architect review's own repro measured this at about 7s of CPU per minute,
- * frame PRODUCTION, not paint. `steps(26)` on this rule's shared `animation` shorthand applies
- * per keyframe segment (4 segments here), so it ticks about 4 times a second instead of every
- * frame -- the compositor can hold one static transform between ticks. The opacity keyframes
- * are dropped entirely (a constant value never needs re-evaluating), and the drift distances are
- * now plain `px` (not `cqw`/`cqh`): a fixed small drift reads the same regardless of container
- * size, and this no longer depends on the watermark's own `[container-type:size]` ancestor. */
+/* Halloween: 3 bat silhouettes, almost always STATIC. Gate round 2 fix (High, item 1 fallback):
+ * a continuous CSS animation here, even `steps(26)`-timed at about 4 ticks/s, still measured
+ * about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget 1.0s/60s) --
+ * three elements animating for the WHOLE window, however cheaply each tick costs, adds up over
+ * a sustained 60s. Switched to occasional flights instead (the ui-architect review's own
+ * fallback): one randomly-chosen bat flies for about 7s every 60-120s via a single
+ * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
+ * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
+ * time. Single colour (`--muted-foreground`, the same token the watermark itself uses), very
+ * low constant opacity. */
 .holiday-ambient-loop-bat {
   position: absolute;
   color: var(--muted-foreground);
   opacity: 0.1;
-  animation: holiday-bat-drift 26s steps(26) infinite;
 }
 .holiday-ambient-loop-bat:nth-child(1) { top: 12%; left: 8%; }
-.holiday-ambient-loop-bat:nth-child(2) { top: 32%; left: 55%; animation-delay: -9s; animation-duration: 31s; }
-.holiday-ambient-loop-bat:nth-child(3) { top: 58%; left: 22%; animation-delay: -18s; animation-duration: 23s; }
-@keyframes holiday-bat-drift {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(24px, -10px); }
-  50% { transform: translate(8px, 18px); }
-  75% { transform: translate(-16px, 4px); }
-}
+.holiday-ambient-loop-bat:nth-child(2) { top: 32%; left: 55%; }
+.holiday-ambient-loop-bat:nth-child(3) { top: 58%; left: 22%; }
 
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .holiday-ambient-loop {
