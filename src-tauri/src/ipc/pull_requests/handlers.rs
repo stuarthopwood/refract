@@ -491,6 +491,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             current_turn_subagents: None,
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,
+            pinned_model: false,
         };
 
         if let Err(err) = state

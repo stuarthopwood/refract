@@ -106,11 +106,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatModelLabel } from '@/lib/modelDisplay'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { ROLE_FALLBACK_LABEL } from '../settings/ModelRolesSection'
+import { friendlyProviderLabel, ROLE_LABEL } from '@/lib/modelRoles'
 import {
   PICKER_OPTION_ACTIVE_CLASS,
   PICKER_OPTION_CLASS,
@@ -130,10 +130,11 @@ const ROLE_FALLBACK: Partial<Record<string, string>> = ROLE_FALLBACK_LABEL
 export function ModelPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
-  // Gate round 1 fix (MEDIUM): a friendly display name (`entry.name ?? session.lastModel.name`)
-  // is not code-shaped data -- monospace is reserved for a raw `provider/id` fallback, which is
-  // the only case this trigger label actually needs it (no catalog `name` was ever reported).
-  const modelFullLabel = formatModelLabel(session ?? {})
+  // Gate round 1 fix (MEDIUM): a friendly display name is not code-shaped data -- monospace is
+  // reserved for a raw `provider/id` fallback. Gate round 1 fix (LOW #11): the Tooltip's
+  // provider now reads through the shared `friendlyProviderLabel` map (`modelRoles.ts`), not
+  // OMP's raw provider id (`SessionDetailsCard.tsx` already does the same).
+  const modelFullLabel = session?.lastModel ? `${friendlyProviderLabel(session.lastModel.provider)}/${session.lastModel.name?.trim() || session.lastModel.id}` : null
   const modelLabelIsRaw = Boolean(session?.lastModel && !session.lastModel.name)
   // Gate round 5 fix (Layout/Flow/Visual Medium #3): the VISIBLE trigger text is the bare model
   // name (or raw id, the same `modelLabelIsRaw` case), never `provider/name` -- the full form
@@ -426,14 +427,13 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   // parenthetically here, and in full in the Tooltip below, rather than disappearing once the
   // visible text dropped to the bare name. Gate round 6 fix (`agent://G564Code` Medium): the
   // ", model" suffix is now dropped when no model is known at all -- "Model not known yet, model"
-  // read oddly stacked. The parenthetical itself now also reads from `pendingLabel` while
-  // pending (gate round 6, `agent://Arch877` Layout N5/Flow L-N2): the NEW value's own
-  // provider/role id, never the stale previous model's provider.
+  // read oddly stacked. The parenthetical reads from `pendingLabel` while pending (round 6,
+  // `agent://Arch877` L-N2), through the same `friendlyProviderLabel` map as the Tooltip (#11).
   const noModelKnown = pendingLabel === null && modelNameOnly === null
   const providerParenthetical = pendingLabel
-    ? (pendingLabel.provider ? ` (${pendingLabel.provider})` : '')
+    ? (pendingLabel.provider ? ` (${friendlyProviderLabel(pendingLabel.provider)})` : '')
     : session?.lastModel?.provider
-      ? ` (${session.lastModel.provider})`
+      ? ` (${friendlyProviderLabel(session.lastModel.provider)})`
       : ''
   const ariaLabel = `${triggerLabel}${noModelKnown ? '' : ', model'}${providerParenthetical}${disabledReason ? `. ${disabledReason}` : pendingLabel ? '. Applying…' : ''}`
   const tooltipContent = disabledReason ?? (pendingLabel ? 'Applying…' : (modelFullLabel ?? 'Model not known yet'))
@@ -453,7 +453,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
               // disabled reason when not) -- suppressed so a screen reader never says either
               // twice; the Tooltip itself still shows visually on hover and keyboard focus.
               aria-describedby={undefined}
-              className={cn(PICKER_TRIGGER_CLASS, 'max-w-72')}
+              className={cn(PICKER_TRIGGER_CLASS, 'max-w-72 min-w-0 shrink')}
             >
               {pendingLabel !== null ? (
                 <Loader2Icon aria-hidden className="size-3 animate-spin" />
@@ -557,7 +557,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
                       className={cn(PICKER_OPTION_CLASS, active && PICKER_OPTION_ACTIVE_CLASS, rowDisabled && 'cursor-not-allowed opacity-60')}
                     >
                       <span className="min-w-0 flex-1 truncate">
-                        {role.role} <span className={cn('text-xs text-muted-foreground', friendly.raw && 'font-code')}>{friendly.text}</span>
+                        {(ROLE_LABEL as Partial<Record<string, string>>)[role.role] ?? role.role} <span className={cn('text-xs text-muted-foreground', friendly.raw && 'font-code')}>{friendly.text}</span>
                         {/* Gate round 2 fix (LOW): a listbox may have only one `aria-selected`
                             item -- the Models group below carries that role for the current
                             model, so the current role is sr-only text instead. */}

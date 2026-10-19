@@ -24,7 +24,7 @@ import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
 import { useSlashMenuCompletion } from './useSlashMenuCompletion'
 import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
-import { AttachButton, ModelPicker, ReasoningPicker } from './ComposerPickers'
+import { AttachButton, ReasoningPicker, RoleAndModelPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
@@ -1614,14 +1614,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then Model/Reasoning
-            pickers (FR-064, replacing the old read-only CpuIcon/GaugeIcon line), then Attach.
-            Gate round 5 (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus
-            outline off the box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt
-            (round 6 fixed the triggers' own `gap-1.5` to `gap-2`, dropping a fictional "exception" claim). */}
-        <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
+        {/* Composer bottom row (#564, spec 001 FR-065): Approval pill, then role chip + Model
+            picker wrapped as one unit (`RoleAndModelPicker`, gate round 1 HIGH #7: wrap together,
+            never split across two lines), Reasoning picker (FR-064), then Attach. Gate round 5
+            (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus outline off the
+            box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt (round 6 fixed
+            the triggers' own `gap-1.5` to `gap-2`). */}
+        <div data-composer-row className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
-          <ModelPicker sessionId={sessionId} />
+          <RoleAndModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
           <AttachButton sessionId={sessionId} disabled={disabled} />
         </div>

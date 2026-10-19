@@ -4496,3 +4496,103 @@ pair for `CodeBlock`'s own focus ring), `node --check` on both edited scripts --
 **Live Tauri verify: DONE** (see T329 above, re-run at head `9b7afa8` after gate round 1
 remediation); `ci-local.mjs` all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0
 failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build) at head `9b7afa8`.
+
+## Phase 69: Convergence -- composer role chip, pin persistence, fallback signal, provider line (#741, FR-091)
+
+**Written retroactively** (code landed before this phase; `/speckit.converge`'s own append-only
+contract applied here reflects reality rather than driving it). Real commits: `1daa6e57` on
+`feat/741-role-chip` (`stuarthopwood/refract`, PR #1037) carries every item below; this phase's
+own doc/spec edits (`spec.md` FR-091, this file, `docs/PLAN.md`) land in later commits on the
+same branch/PR, cited by sha where the report below gives one.
+
+- [X] T330 `src-tauri/src/store/registry.rs`: `Session.pinned_model: bool` (`#[serde(default)]`,
+  an old `registry.json` reads `false`) and `SessionPatch.pinned_model: Option<bool>`, applied in
+  `update_session`. Every `registry::Session` literal across the Rust tree (`ipc/
+  sessions_lifecycle.rs`, `ipc/pull_requests/handlers.rs`, `session/manager.rs` and its test
+  helper, `session/side_chat.test.rs`, `session/termination.test.rs`, `session/agent/
+  launch_support.test.rs`, `store/registry_tests.rs`, `ipc/sessions_lifecycle_tests.rs`) updated.
+- [X] T331 `src-tauri/src/session/model/model_support.rs`: `ensure_pin_seeded` (lazily folds the
+  registry's persisted `pinned_model` into in-memory `State.pinned` on the first
+  `current_selection` call per Session per run) and `persist_pinned` (writes it back on every
+  `set_model`/`cycle_model`/`handle_switch_text` pin and `apply_role_now` un-pin, best-effort,
+  `session_list_changed` emitted on success). Called from `model.rs`'s `current_selection` and
+  all three pin/un-pin sites.
+- [X] T332 `src-tauri/src/session/model/model_support.rs`: `model_change_role` maps a
+  `model_change` entry's `resolvedModelIsFallback: true` to the reserved `"fallback"` role,
+  overriding `role`; `maybe_invalidate_role_cache` clears the cached role on OMP's own
+  `model_changed`/`retry_fallback_succeeded` frames (`model.rs`'s `on_frame`), so a live fallback
+  refreshes the chip without a restart. `model.rs`'s `current_selection` early-return additionally
+  lets a freshly-cached `"fallback"` outrank a stale `pinned` flag (a Session OMP has since moved
+  off a hand-picked model no longer reads Custom).
+- [X] T333 FINDINGS item 61 + `docs/spike/fallback-probe-741.mjs`: an isolated, credential-less,
+  zero-real-token probe attempting to force `resolvedModelIsFallback: true` live. Inconclusive in
+  90s against a connection-refused model (no fallback frame, no second `model_change` entry, no
+  `prompt_result` at all in that window). T332 ships code-verified against the documented field
+  per the issue's own decision 2 fallback clause; forcing/confirming the transition live is #650.
+- [X] T334 `src/renderer/lib/modelRoles.ts` (new): role labels (reused from
+  `ModelRolesSection.tsx`'s now-exported `CHAT_ROLE_DESCRIPTORS`), provisional per-role lucide
+  icons, the `"fallback"`/`"custom"` sentinels and their tooltips, a friendly provider map
+  (`friendlyProviderLabel`), and `roleChipDisplay()` (pinned -> Custom; `currentRole` -> its
+  label/icon/tooltip or nothing at all for an unrecognised value).
+- [X] T335 `src/renderer/features/chat/ComposerPickers.tsx`: `RoleChip` (text plus icon, no
+  colour, `aria-disabled` ghost button with an `sr-only` "Role: " prefix and a Tooltip, no click
+  handler pending #766); mounted in `MessageInput.tsx`'s bottom row immediately before
+  `ModelPicker`.
+- [X] T336 `src/renderer/lib/modelDisplay.ts`: `formatModelLabel` is now name-only (was
+  `provider/name`); `src/renderer/features/sessions/SessionDetailsCard.tsx` gets a muted "via
+  {provider}" second line (`friendlyProviderLabel`); `ModelPicker.tsx` (its one other caller, at
+  its 600-line cap, unchanged tooltip scope) migrated to build its own `provider/name` string
+  locally instead of through the now-renamed helper.
+- [X] T337 Docs: `specs/001-core-session-workspace/spec.md` FR-091 (new), acceptance scenario 6
+  (User Story 5) amended for the role chip and the provider line, two new Edge Cases (pin
+  survives a restart; fallback outranks a stale pin), and a dated `### Session 2026-10-19
+  (Composer role chip, pin persistence, fallback signal, #741)` Clarifications entry recording
+  `issuecomment-6266024041`'s four decisions. This Convergence phase. `docs/PLAN.md`'s #741 row.
+- [X] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs` + `verify-741-role-chip-
+  helpers.mjs`, five launches, a fake-omp tape): chip text and icon for a role Session; muted-text
+  contrast >= 4.5:1 and a real keyboard path (Tab/focus-visible/Tooltip/Escape/Shift+Tab) on the
+  chip; real-geometry truncation (not a guessed selector); Custom after a hand-pick AND after a
+  restart with the same `REFRACT_DATA_DIR` (pin persisted, found by session id not index); a
+  mid-session fallback WHILE PINNED (an autonomous `retry_fallback_succeeded` frame, the pin
+  itself never cleared); no chip for an unrecognised role (asserted only after `sessions.list()`
+  reports the seeded role) AND for an empty conversation file (`currentRole: null`); Fallback
+  from a tape entry carrying `resolvedModelIsFallback: true` (tape-proven, since T333 could not
+  force it live; the real-OMP probe is #650), its own accessible name asserted too; the details
+  card's name and "via ..." line; the role chip and Model picker wrapping together at 380px/520px
+  chat widths; accessible names via the AX tree; strip screenshots in all five theme presets.
+  Gate round 1 fixes (Main's five-reviewer gate on this Convergence): `model.rs`/`model_support.rs`
+  fallback-outranks-a-pin made reachable (a `role_needs_reprobe`/`role_generation` pair forces a
+  re-probe even while pinned, generation-guarded against a race with a second invalidation), the
+  pin-seeding race closed (every pin/un-pin writer also sets `pinned_seeded`; `persist_pinned`
+  reads back from state and skips a no-op write), `ComposerPickers.tsx`'s `RoleChip` contrast and
+  AX-name fixes (an explicit `aria-label`, not a visible-text-plus-sr-only-span join, which
+  measured an extra space live), `RoleAndModelPicker` (narrow-width wrap-together),
+  `modelRoles.ts` icon swap and the `CUSTOM_ROLE` string-forgery guard, `ModelPicker.tsx`'s
+  `friendlyProviderLabel`/`ROLE_LABEL` reuse, `SessionDetailsCard.tsx`'s tighter model/provider
+  grouping. **Real product bug found live and fixed**: `maybe_invalidate_role_cache` updated
+  Rust-side role/pin state correctly but never emitted `session_list_changed` -- the renderer's
+  own Sessions store is purely event-driven (`init-stores.ts`'s `onSessionListChanged`, no
+  polling timer), so a live fallback's new role sat correct in Rust state but invisible to the
+  chip until this fix.
+
+**FINAL LIVE-VERIFIED PASS, clean HEAD `871b89bb`**: full chained `ci-local.mjs && verify-741-
+role-chip.mjs` -- `ci-local.mjs` all 11 non-build steps PASS, `cargo fmt --check`/`cargo test`
+PASS; `verify-741-role-chip.mjs`: **0 failures, 0 notExercised** across all five launches.
+Screenshots viewed: the chip at full muted-text strength in all five theme presets (`01-chip-
+default-*.png`), the composer row right after the real keyboard Tab/Shift+Tab path (focus ring
+visible on the Ask pill after Shift+Tab, `06-composer-row.png`), the Session details card's real
+hover-triggered "via GitHub Copilot" line (`06-details-card.png`), the hand-pick-to-Custom and
+restart-persisted-Custom chips (`02`/`03`), the mid-session Fallback-while-pinned transition with
+no restart (`07-chip-fallback-while-pinned.png`), the standalone tape-proven Fallback chip with
+its exact composed Tooltip text (`04-chip-fallback.png`), both no-chip cases (`05`/`10`), and the
+role chip + Model picker sharing one row at 380px and 520px (`08`/`09`). Three fix rounds against
+this exact build before it passed clean (this file's own trailer, immediately below, keeps the
+non-build-only citation from before the build slot was granted, for the record).
+
+**Non-build checks** (re-run at head `1daa6e57`, before gate round 1): `pnpm tsc --noEmit -p
+tsconfig.web.json` clean; `node scripts/check-indent.mjs` (0 odd-indent lines); `node
+scripts/check-file-size.mjs` (0 cap violations, no baseline raised -- `model.rs`/`manager.rs`/
+`ModelPicker.tsx`/`MessageInput.tsx` all brought back to/under cap by splitting pin/fallback
+helpers into `model_support.rs` and condensing comments); targeted `vitest run` on `model-roles-
+store.test.ts`, `modelRoleSuffix.test.ts`, `sessions-store.test.ts` (28/28 passed; no new
+renderer tests, per the prototyping-phase rule).

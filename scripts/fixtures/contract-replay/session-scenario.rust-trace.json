@@ -38,6 +38,7 @@
         "lastActivityAt": "<TIMESTAMP>",
         "lastMessageCount": null,
         "name": "<BRANCH_NAME>",
+        "pinnedModel": false,
         "repositoryId": "<REPO_ID>",
         "sessionDir": null,
         "worktreePath": "<WORKTREE_PATH>"
