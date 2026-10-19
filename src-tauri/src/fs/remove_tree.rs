@@ -59,8 +59,9 @@ impl std::fmt::Display for RemoveTreeError {
 const LONG_PATH_THRESHOLD: usize = 260;
 
 /// `\\?\`-prefixes `p` when it is long enough to need it. Every path this module builds is
-/// already fully-qualified and backslash-separated (joined onto an already-canonical root), the
-/// one requirement `\\?\` verbatim paths have.
+/// already fully-qualified and backslash-separated -- but NOT necessarily `..`-free: callers
+/// are responsible for canonicalizing the ROOT path once before building any child paths from
+/// it (`remove_tree`'s own doc comment explains why this function itself must never do that).
 fn long_path(p: &Path) -> PathBuf {
     let s = p.to_string_lossy();
     if s.len() < LONG_PATH_THRESHOLD || s.starts_with(r"\\?\") {
@@ -202,12 +203,37 @@ pub async fn remove_tree(path: &Path, boundary_root: &Path) -> Result<(), Remove
     if path_key == root_key || !path_key.starts_with(&prefix) {
         return Err(RemoveTreeError::OutsideBoundary);
     }
-    remove_contents(path.to_path_buf()).await?;
-    clear_readonly(path).await;
-    tokio::fs::remove_dir(long_path(path))
+    // Issue #891: canonicalize ONCE here (never inside `long_path`, which must never risk
+    // following a reparse point on every call -- confirmed `canonical_comparable_path`'s own
+    // `dunce::canonicalize` call resolves symlinks/junctions to their real target, which would
+    // be exactly wrong for `remove_link`'s own target or `remove_contents`'s own TOCTOU
+    // re-check) so every child path `remove_contents` builds via `.join()` from this point on
+    // is already absolute and free of any `..`/`.` component. A lexical `..` survives into a
+    // `\\?\` verbatim prefix completely unresolved (Windows does not parse one specially
+    // inside a verbatim path the way it does an ordinary one), which made `long_path`'s own
+    // naive string-prefixing produce a syntactically invalid path the moment a deep enough
+    // child actually needed the prefix (`ERROR_INVALID_NAME`, confirmed live against this
+    // issue's own 260+-character test fixture, built under `worktrees_root()`'s own lexical
+    // `repo/../pinion-worktrees/<name>` join). `path` is guaranteed to be a real, non-link
+    // directory by the time this is reached (`remove_session_worktree` already refuses a
+    // symlink AT the worktree path itself before ever calling this), so canonicalizing it here,
+    // once, can never silently redirect onto a different target the way canonicalizing on
+    // every deeper call could have. Falls back to the original `path` if canonicalization
+    // fails for some reason; the first `tokio::fs::symlink_metadata` inside `remove_contents`
+    // surfaces that failure properly either way.
+    let owned = path.to_path_buf();
+    let canonical_path = tokio::task::spawn_blocking(move || dunce::canonicalize(&owned))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_else(|| path.to_path_buf());
+
+    remove_contents(canonical_path.clone()).await?;
+    clear_readonly(&canonical_path).await;
+    tokio::fs::remove_dir(long_path(&canonical_path))
         .await
         .map_err(|source| RemoveTreeError::Io {
-            path: path.to_path_buf(),
+            path: canonical_path.clone(),
             source,
         })
 }
