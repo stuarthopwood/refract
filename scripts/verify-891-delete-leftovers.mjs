@@ -80,13 +80,15 @@ async function main() {
   const repoName = path.basename(repoDir);
   const dataDir = path.join(SCRATCH_ROOT, 'data');
   mkdirSync(dataDir, { recursive: true });
+  const importSourceDir = path.join(SCRATCH_ROOT, 'import-unused');
+  mkdirSync(importSourceDir, { recursive: true });
   const canaryDir = path.join(SCRATCH_ROOT, 'canary-outside-worktree');
   const port = await getFreePort();
 
   const { child, targetPid } = await launchBuiltExe(launcherExe, exePath, {
     port,
     dataDir,
-    importSourceDir: path.join(SCRATCH_ROOT, 'import-unused'),
+    importSourceDir,
     logFile: path.join(SCRATCH_ROOT, 'app.log')
   });
 
@@ -97,6 +99,13 @@ async function main() {
     cdp = await CdpSession.connect(wsUrl);
     assertExeMatchesProcess(targetPid, exePath, hash);
 
+    // The Readiness screen's own omp/GitHub checks can genuinely take up to a minute on a
+    // brand-new scratch profile (established wait shape, verify-tauri-559/560/567.mjs).
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+    await cdp.waitFor(
+      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+      { timeoutMs: 60_000, label: 'Readiness green' }
+    );
     await addRepository(cdp, repoDir);
 
     const seenIds = [];
