@@ -262,7 +262,13 @@ mod imp {
             let mut needed: u32 = 0;
             let mut capacity: u32 = 0;
             let mut reboot_reasons: u32 = 0;
-            let first = RmGetList(session_handle, &mut needed, &mut capacity, None, &mut reboot_reasons);
+            let first = RmGetList(
+                session_handle,
+                &mut needed,
+                &mut capacity,
+                None,
+                &mut reboot_reasons,
+            );
             if first != ERROR_SUCCESS && first != ERROR_MORE_DATA {
                 return Vec::new();
             }
@@ -270,7 +276,8 @@ mod imp {
                 return Vec::new();
             }
 
-            let mut buffer: Vec<RM_PROCESS_INFO> = vec![RM_PROCESS_INFO::default(); needed as usize];
+            let mut buffer: Vec<RM_PROCESS_INFO> =
+                vec![RM_PROCESS_INFO::default(); needed as usize];
             let mut written = needed;
             let second = RmGetList(
                 session_handle,

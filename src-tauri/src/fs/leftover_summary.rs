@@ -181,4 +181,3 @@ pub async fn compute_leftover_summary(worktree_path: &Path) -> LeftoverSummary {
         more_count: 0,
     })
 }
-

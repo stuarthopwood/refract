@@ -46,7 +46,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sessions.archive", sessions_archive);
     d.register("sessions.restore", sessions_restore);
     d.register("sessions.deleteCheck", sessions_delete_check);
-    d.register("sessions.deleteLeftoverSummary", sessions_delete_leftover_summary);
+    d.register(
+        "sessions.deleteLeftoverSummary",
+        sessions_delete_leftover_summary,
+    );
     d.register("sessions.delete", sessions_delete);
     d.register("sessions.recreateWorktree", sessions_recreate_worktree);
     d.register("sessions.diffStat", sessions_diff_stat);

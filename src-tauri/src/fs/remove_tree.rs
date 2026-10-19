@@ -118,7 +118,9 @@ async fn remove_link(p: &Path, is_dir: bool) -> std::io::Result<()> {
 /// "re-check the reparse attribute right before each descent" decision): a TOCTOU window where
 /// something swapped a real directory for a junction between being listed by its PARENT and
 /// being opened here would otherwise let this function follow it.
-fn remove_contents(dir: PathBuf) -> Pin<Box<dyn Future<Output = Result<(), RemoveTreeError>> + Send>> {
+fn remove_contents(
+    dir: PathBuf,
+) -> Pin<Box<dyn Future<Output = Result<(), RemoveTreeError>> + Send>> {
     Box::pin(async move {
         let meta = tokio::fs::symlink_metadata(long_path(&dir))
             .await
@@ -131,22 +133,29 @@ fn remove_contents(dir: PathBuf) -> Pin<Box<dyn Future<Output = Result<(), Remov
             // nothing to remove here (the caller removes the link, not this function).
             return Ok(());
         }
-        let mut entries =
-            tokio::fs::read_dir(long_path(&dir))
+        let mut entries = tokio::fs::read_dir(long_path(&dir))
+            .await
+            .map_err(|source| RemoveTreeError::Io {
+                path: dir.clone(),
+                source,
+            })?;
+        while let Some(entry) =
+            entries
+                .next_entry()
                 .await
                 .map_err(|source| RemoveTreeError::Io {
                     path: dir.clone(),
                     source,
-                })?;
-        while let Some(entry) = entries.next_entry().await.map_err(|source| RemoveTreeError::Io {
-            path: dir.clone(),
-            source,
-        })? {
+                })?
+        {
             let child = dir.join(entry.file_name());
-            let child_meta = entry.metadata().await.map_err(|source| RemoveTreeError::Io {
-                path: child.clone(),
-                source,
-            })?;
+            let child_meta = entry
+                .metadata()
+                .await
+                .map_err(|source| RemoveTreeError::Io {
+                    path: child.clone(),
+                    source,
+                })?;
             if child_meta.file_type().is_symlink() {
                 remove_link(&child, is_directory_attribute(&child_meta))
                     .await
