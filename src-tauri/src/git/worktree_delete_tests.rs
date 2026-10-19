@@ -167,6 +167,36 @@ async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_insi
     );
 }
 
+/// Adapted (issue #891 unified the registered removal path; the old
+/// `is_registered_but_hand_emptied` helper this test originally exercised directly is gone) to
+/// run the same scenario -- a registered worktree whose OWN `.git` gitdir-pointer file was
+/// hand-removed, leaving real files behind but no pointer back to the repository -- through the
+/// new single entry point instead: `remove_session_worktree`'s own doc comment calls this out
+/// explicitly as one of the three shapes a "registered" worktree can be in today (a live
+/// checkout, hand-emptied with files left behind, or folder missing entirely), all handled by
+/// the one `is_worktree_registered` branch, never a dedicated helper of its own any more.
+#[tokio::test]
+async fn is_registered_but_hand_emptied_true_only_when_git_entry_is_gone() {
+    let repo = init_repo().await;
+    let added = add_worktree_with_generated_name(&repo, "main")
+        .await
+        .expect("create worktree");
+    tokio::fs::remove_file(added.worktree_path.join(".git"))
+        .await
+        .unwrap();
+
+    let result = remove_session_worktree(&repo, &added.worktree_path, "irrelevant", false).await;
+    assert!(result.is_ok(), "{result:?}");
+    assert!(
+        tokio::fs::metadata(&added.worktree_path).await.is_err(),
+        "the hand-emptied worktree's own folder must be gone"
+    );
+    assert!(
+        !is_worktree_registered(&repo, &added.worktree_path).await,
+        "its admin entry must be gone too -- `git worktree list --porcelain` must no longer list it"
+    );
+}
+
 /// A `..` built into the path, lexically resolving one level ABOVE the real worktrees root --
 /// never silently treated as `Inside` just because the on-the-wire string starts with the
 /// root's own path.
