@@ -78,7 +78,6 @@ import {
 import {
   buildOmpShim,
   launchBuiltExeWithEnv,
-  clickScrolled,
   titleSelector,
   stageTriggerSelector,
   STAGE1_TITLE,
@@ -139,19 +138,23 @@ function rectIsInViewport(rect) {
   return !!rect && rect.height > 0 && rect.bottom > 0 && rect.top < rect.viewportHeight;
 }
 
-// Gate round 2 (falsified live, head 1390fdd): `cdp.waitFor(isInViewportExpr(...))` polled this
-// same `getBoundingClientRect()` test every 250ms for the full 10s timeout and NEVER once saw
-// Stage 4's own row satisfy it after the MOUSE jump -- yet the screenshot taken immediately
-// afterward (same run) shows that row sitting plainly in view, open and focused. The keyboard
-// jump (Stage 3) never showed this split. The one structural difference: `clickScrolled` (mouse
-// path only) first does its own instant/smooth `scrollIntoView` on the chain's button BEFORE
-// `jumpToStage`'s own smooth scroll fires -- two scroll animations in quick succession across a
-// `content-visibility:auto` transcript (`message-scroller.tsx`), where skipped items resize from
-// estimated to real height as they re-enter rendering. A single rect read right after the click
-// can race that reflow. Replaced the bounds-only predicate with a real `elementFromPoint` hit
-// test at the row's own centre -- this is the same proof a screenshot gives (an actual pixel
-// resolves to this row), checked once after a generous fixed settle delay instead of polling a
-// geometry comparison that can read stale mid-reflow.
+// Gate round 2 (falsified live, root-caused via ancestor-chain + elementFromPoint diagnostics,
+// head 988479c): `cdp.waitFor(isInViewportExpr(...))` polled a bounds-only
+// `getBoundingClientRect()` test and NEVER saw Stage 4's own row satisfy it after the MOUSE jump,
+// while the keyboard jump (Stage 3) always did. A screenshot taken right after looked like Stage
+// 4's row was in view -- it wasn't: `document.elementFromPoint` at that exact pixel resolved to
+// the CHAIN row's OWN "Go to Stage 4" button (same label text, rendered inline in the
+// always-open chain body), not Stage 4's real `StageGroupRow` elsewhere in the transcript. The
+// real cause: `clickScrolled` (`verify-941-stage-naming-helpers.mjs`) does its own
+// `el.scrollIntoView({block:'center'})` on the chain's button BEFORE dispatching the click --
+// redundant here, since `scrollTranscriptToEnd` already puts that button on screen -- and this
+// extra scroll animation was clobbering `jumpToStage`'s OWN smooth `scrollTo`, leaving the
+// viewport pinned at (or snapping back to) the transcript's max scroll instead of Stage 4's real
+// row. The keyboard path never calls `clickScrolled`, so it never raced this. Fixed by clicking
+// the "Go to Stage 4" button directly (`cdp.click`, no pre-click scrollIntoView) since it is
+// already on screen after `scrollTranscriptToEnd`. `viewportHitTestExpr` stays as the proof
+// mechanism for both jumps: a fixed settle delay, then one `elementFromPoint` hit test at the
+// row's own centre -- the same kind of proof a screenshot gives, but asserted, not eyeballed.
 function viewportHitTestExpr(triggerExpr) {
   return `(() => {
     const el = (${triggerExpr});
@@ -329,7 +332,10 @@ async function main() {
       failures.push(`The chain row's own "Go to Stage 4" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
     if (stage4JumpFound) {
-      await clickScrolled(cdp, jumpButtonExpr(STAGE4_TITLE));
+      // Direct click, no pre-click `scrollIntoView` (gate round 2: `clickScrolled`'s own
+      // instant/smooth scrollIntoView-of-the-button clobbered `jumpToStage`'s own scroll --
+      // redundant anyway, since `scrollTranscriptToEnd` above already put this button on screen).
+      await cdp.click(jumpButtonExpr(STAGE4_TITLE));
       const stage4AfterExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
       if (stage4AfterExpanded !== 'true') {
         failures.push(`Clicking "Go to Stage 4" did not open Stage 4's own row (aria-expanded is ${JSON.stringify(stage4AfterExpanded)}, expected "true").`);
