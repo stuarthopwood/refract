@@ -259,25 +259,27 @@ export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
 
 /** `cdp.clickByText(text, { inDialog: true })` scopes to `[role="dialog"]`, which a Radix
  * AlertDialog never carries (it is `[role="alertdialog"]`) -- clicks the AlertDialog's own
- * "Delete"/"Deleting…" button directly instead of going through that shared helper. Waits for
- * the button's own `aria-disabled` to clear first: it stays `true` (Tailwind's own
- * `aria-disabled:pointer-events-none`, `DeleteDialog.tsx`'s `aria-disabled={loading ||
- * deleting}`) until the SEPARATE `sessions.deleteCheck` git-status call resolves, which is not
- * the same wait as `waitForLeftoverSummary`'s own leftover-walk completion -- against a real,
- * large worktree the git-status scan can still be in flight after the (much cheaper)
- * leftover-walk has already finished. A real OS-level click dispatched at the button's own
- * coordinates while `pointer-events: none` is still set is silently swallowed: no exception,
- * no renderer console output, nothing -- `handleDelete` is simply never called, which is
- * exactly the "dialog hangs forever" symptom this fixes (confirmed live: an `aria-disabled`
- * read at the exact moment of a premature click came back `"true"`). */
+ * "Delete"/"Retry"/"Deleting…" button directly instead of going through that shared helper.
+ * Matches "Delete" OR "Retry" (issue #891 gate round 1 item 2: the button relabels to Retry
+ * after any refusal -- a bug this exact helper hit live the first time scenario (c) retried
+ * after its cwd-holder refusal, hardcoded to "Delete" only and timing out forever once the
+ * button had already relabelled). Waits for the button's own `aria-disabled` to clear first: it
+ * stays `true` (Tailwind's own `aria-disabled:pointer-events-none`, `DeleteDialog.tsx`'s
+ * `aria-disabled={loading || deleting}`) until the SEPARATE `sessions.deleteCheck` git-status
+ * call resolves, which is not the same wait as `waitForLeftoverSummary`'s own leftover-walk
+ * completion -- against a real, large worktree the git-status scan can still be in flight after
+ * the (much cheaper) leftover-walk has already finished. A real OS-level click dispatched at the
+ * button's own coordinates while `pointer-events: none` is still set is silently swallowed: no
+ * exception, no renderer console output, nothing -- `handleDelete` is simply never called,
+ * which is exactly the "dialog hangs forever" symptom this fixes (confirmed live: an
+ * `aria-disabled` read at the exact moment of a premature click came back `"true"`). */
 export async function clickDeleteButton(cdp) {
-  await cdp.waitFor(
-    `(() => { const b = Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete'); return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`,
-    { timeoutMs: 30_000, label: 'Delete button enabled (deleteCheck resolved)' }
-  );
-  await cdp.click(
-    `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete')`
-  );
+  const findButton = `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete' || el.textContent.trim() === 'Retry')`;
+  await cdp.waitFor(`(() => { const b = ${findButton}; return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`, {
+    timeoutMs: 30_000,
+    label: 'Delete/Retry button enabled (deleteCheck resolved)'
+  });
+  await cdp.click(findButton);
 }
 
 /** The dialog's own `role="alert"` paragraph -- '' while no error (it stays mounted, `sr-only`,
