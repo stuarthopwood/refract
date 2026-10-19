@@ -13,6 +13,23 @@
 
 export type HolidayId = 'halloween' | 'bonfire-night' | 'christmas' | 'new-year' | 'star-wars-day' | 'pi-day';
 
+/** Decided (Skippy, delegated by Stuart 2026-10-19, gate round 1 on PR #1053): only a holiday
+ * that has been live-verified end to end is switched on in production. Every window below still
+ * participates in the pure calendar (adding a verified holiday later is a one-line change here,
+ * never a calendar change), but `activeHoliday` never returns one this table does not mark
+ * `true` -- Bonfire Night, Christmas, New Year, Star Wars Day and Pi Day stay off until their
+ * own follow-up live-verifies them (PLAN.md, specs/017-holiday-touches/tasks.md Phase 6). A
+ * static, exhaustive lookup table (every `HolidayId` present), not a `Set` -- no runtime
+ * insertion, no iteration order needed. */
+export const VERIFIED_HOLIDAYS: Record<HolidayId, boolean> = {
+  halloween: true,
+  'bonfire-night': false,
+  christmas: false,
+  'new-year': false,
+  'star-wars-day': false,
+  'pi-day': false
+};
+
 interface MonthDay {
   month: number; // 1-12
   day: number; // 1-31
@@ -20,7 +37,6 @@ interface MonthDay {
 
 interface HolidayWindow {
   id: HolidayId;
-  name: string;
   start: MonthDay;
   end: MonthDay;
 }
@@ -29,12 +45,12 @@ interface HolidayWindow {
  * calendar year than its `end` (1 Jan) -- the one wrapping-over-year-boundary window -- every
  * other window's `start` sorts before its `end` within the same year. */
 export const HOLIDAY_WINDOWS: readonly HolidayWindow[] = [
-  { id: 'halloween', name: 'Halloween', start: { month: 10, day: 24 }, end: { month: 10, day: 31 } },
-  { id: 'bonfire-night', name: 'Bonfire Night', start: { month: 11, day: 1 }, end: { month: 11, day: 5 } },
-  { id: 'christmas', name: 'Christmas', start: { month: 12, day: 1 }, end: { month: 12, day: 26 } },
-  { id: 'new-year', name: 'New Year', start: { month: 12, day: 31 }, end: { month: 1, day: 1 } },
-  { id: 'star-wars-day', name: 'Star Wars Day', start: { month: 5, day: 4 }, end: { month: 5, day: 4 } },
-  { id: 'pi-day', name: 'Pi Day', start: { month: 3, day: 14 }, end: { month: 3, day: 14 } }
+  { id: 'halloween', start: { month: 10, day: 24 }, end: { month: 10, day: 31 } },
+  { id: 'bonfire-night', start: { month: 11, day: 1 }, end: { month: 11, day: 5 } },
+  { id: 'christmas', start: { month: 12, day: 1 }, end: { month: 12, day: 26 } },
+  { id: 'new-year', start: { month: 12, day: 31 }, end: { month: 1, day: 1 } },
+  { id: 'star-wars-day', start: { month: 5, day: 4 }, end: { month: 5, day: 4 } },
+  { id: 'pi-day', start: { month: 3, day: 14 }, end: { month: 3, day: 14 } }
 ];
 
 function monthDayToOrdinal(value: MonthDay): number {
@@ -53,33 +69,39 @@ function monthDayToOrdinal(value: MonthDay): number {
  * (grill decision 4's own proposal) measures this, not the raw calendar distance between two
  * windows that do not actually overlap. Wrapping windows (`end` earlier in the year than
  * `start`, i.e. New Year) add 365 before subtracting so the length comes out positive. */
-function windowLengthDays(window: HolidayWindow): number {
-  const startOrdinal = monthDayToOrdinal(window.start);
-  const endOrdinal = monthDayToOrdinal(window.end);
+function windowLengthDays(win: HolidayWindow): number {
+  const startOrdinal = monthDayToOrdinal(win.start);
+  const endOrdinal = monthDayToOrdinal(win.end);
   const span = endOrdinal >= startOrdinal ? endOrdinal - startOrdinal : endOrdinal + 365 - startOrdinal;
   return span + 1;
 }
 
-function isWithinWindow(ordinal: number, window: HolidayWindow): boolean {
-  const startOrdinal = monthDayToOrdinal(window.start);
-  const endOrdinal = monthDayToOrdinal(window.end);
+function isWithinWindow(ordinal: number, win: HolidayWindow): boolean {
+  const startOrdinal = monthDayToOrdinal(win.start);
+  const endOrdinal = monthDayToOrdinal(win.end);
   if (endOrdinal >= startOrdinal) return ordinal >= startOrdinal && ordinal <= endOrdinal;
   // Wrapping window (New Year): "inside" means on-or-after start OR on-or-before end.
   return ordinal >= startOrdinal || ordinal <= endOrdinal;
 }
 
-/** The one active holiday for `date`'s local day, or `null` outside every window. None of the
- * six windows above actually overlap today (each sits in its own disjoint stretch of the
- * calendar), so "shorter window wins" never fires in practice yet -- it exists defensively, for
- * whichever holiday is added next to a month that already has one (grill decision 4's own
- * wording: "If windows ever overlap ... shorter window wins"). A tie in length falls back to
- * declaration order in `HOLIDAY_WINDOWS` (deterministic, never Math.random). */
+/** The one active, VERIFIED holiday for `date`'s local day, or `null` outside every window (or
+ * inside one that is not yet in `VERIFIED_HOLIDAYS`). None of the six windows above actually
+ * overlap today (each sits in its own disjoint stretch of the calendar), so "shorter window
+ * wins" never fires in practice yet -- it exists defensively, for whichever holiday is added
+ * next to a month that already has one (grill decision 4's own wording: "If windows ever overlap
+ * ... shorter window wins"). A tie in length falls back to declaration order in
+ * `HOLIDAY_WINDOWS` (deterministic, never Math.random). The verified-only filter is applied
+ * AFTER picking the best window (never narrows the calendar itself to only verified windows),
+ * so an unverified holiday still correctly "wins" the overlap arbitration against a verified one
+ * if it is genuinely shorter -- it simply then resolves to `null` rather than silently handing
+ * the day to the verified runner-up. */
 export function activeHoliday(date: Date): HolidayId | null {
   const ordinal = monthDayToOrdinal({ month: date.getMonth() + 1, day: date.getDate() });
   let best: HolidayWindow | null = null;
-  for (const window of HOLIDAY_WINDOWS) {
-    if (!isWithinWindow(ordinal, window)) continue;
-    if (!best || windowLengthDays(window) < windowLengthDays(best)) best = window;
+  for (const candidate of HOLIDAY_WINDOWS) {
+    if (!isWithinWindow(ordinal, candidate)) continue;
+    if (!best || windowLengthDays(candidate) < windowLengthDays(best)) best = candidate;
   }
-  return best?.id ?? null;
+  if (!best || !VERIFIED_HOLIDAYS[best.id]) return null;
+  return best.id;
 }

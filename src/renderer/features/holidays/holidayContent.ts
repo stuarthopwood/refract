@@ -9,9 +9,6 @@ import type { LucideIcon } from 'lucide-react'
 import type { HolidayId } from '../../../shared/holidays'
 
 export interface HolidayContent {
-  id: HolidayId
-  /** Shown nowhere on screen; only in comments/dev tooling. */
-  name: string
   /** The glyph reused, unchanged, across the watermark, the sidebar accessory and the spinner
    * (decision 1's three icon-shaped placements) -- one icon per holiday, not three. Rendered
    * directly as a themed React icon (`color`/`stroke` set to a theme token at the call site),
@@ -28,16 +25,19 @@ export interface HolidayContent {
    * guidance text -- `aria-hidden`, since it carries no information the sr-only description
    * does not already carry. */
   emptyStateLine: string
-  /** `true` for the four holidays the issue's own "Ambient loops" section names an effect for
-   * (snow/pumpkin-flicker/sparks); Star Wars Day and Pi Day get static artwork only -- the issue
-   * never names an effect for either. */
+  /** `true` only once this holiday's own ambient effect is BUILT. Decided (gate round 1, PR
+   * #1053): independent of `shared/holidays.ts::VERIFIED_HOLIDAYS` (that gate decides whether
+   * the holiday shows at all; this one decides whether it has a loop once it does) -- today only
+   * Halloween's effect (drifting bats, `HolidayAmbientLoop.tsx`) exists, so every other entry is
+   * `false` even for the three the issue's own "Ambient loops" section names an effect for
+   * (Bonfire Night, Christmas, New Year: sparks/snow/sparks, not yet built -- tracked as
+   * follow-up, specs/017-holiday-touches/tasks.md Phase 6). Star Wars Day and Pi Day are `false`
+   * by design, not just "not yet": the issue never names an effect for either. */
   hasAmbientLoop: boolean
 }
 
 export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
   halloween: {
-    id: 'halloween',
-    name: 'Halloween',
     icon: Ghost,
     emoji: '🎃',
     startingMessages: ['Conjuring the agent from beyond…', "Trick-or-treating for the agent's tokens…"],
@@ -45,35 +45,27 @@ export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
     hasAmbientLoop: true
   },
   'bonfire-night': {
-    id: 'bonfire-night',
-    name: 'Bonfire Night',
     icon: Flame,
     emoji: '🎇',
     startingMessages: ["Lighting the agent's fuse…", "Setting off the agent's sparks…"],
     emptyStateLine: '🎇 Quiet here -- save the sparks for later.',
-    hasAmbientLoop: true
+    hasAmbientLoop: false
   },
   christmas: {
-    id: 'christmas',
-    name: 'Christmas',
     icon: TreePine,
     emoji: '🎄',
     startingMessages: ["Wrapping up the agent's presents…", 'Sleighing the agent into gear…'],
     emptyStateLine: '🎄 Nothing under this tree yet.',
-    hasAmbientLoop: true
+    hasAmbientLoop: false
   },
   'new-year': {
-    id: 'new-year',
-    name: 'New Year',
     icon: PartyPopper,
     emoji: '🎉',
     startingMessages: ["Counting down to the agent's liftoff…", "Popping the agent's cork…"],
     emptyStateLine: '🎉 A fresh, empty start to the year.',
-    hasAmbientLoop: true
+    hasAmbientLoop: false
   },
   'star-wars-day': {
-    id: 'star-wars-day',
-    name: 'Star Wars Day',
     icon: Swords,
     emoji: '⚔️',
     startingMessages: ['May the agent be with you…', 'Jumping the agent to lightspeed…'],
@@ -81,8 +73,6 @@ export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
     hasAmbientLoop: false
   },
   'pi-day': {
-    id: 'pi-day',
-    name: 'Pi Day',
     icon: Pi,
     emoji: '🥧',
     startingMessages: ['Calculating the agent to a few more decimal places…', "Baking the agent's pie…"],

@@ -35,7 +35,7 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
-import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
+import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'; import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -275,8 +275,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       emoji: [...STARTING_MESSAGE_EMOJI, ...holidayEntry.startingMessages.map(() => holidayEntry.emoji)]
     }
   }, [holidayEntry])
-  const startingMessageText = startingMessageIndex !== undefined ? startingMessagePool.messages[startingMessageIndex] : undefined
-  const startingMessageEmoji = startingMessageIndex !== undefined ? startingMessagePool.emoji[startingMessageIndex] : undefined
+  // Gate round 1 fix (Low): a holiday-pool index toggled mid-start back to the base-only pool can land past its length -- `?? STARTING_MESSAGES[0]` falls back instead of rendering undefined.
+  const startingMessageText = startingMessageIndex !== undefined ? (startingMessagePool.messages[startingMessageIndex] ?? STARTING_MESSAGES[0]) : undefined
+  const startingMessageEmoji = startingMessageIndex !== undefined ? (startingMessagePool.emoji[startingMessageIndex] ?? STARTING_MESSAGE_EMOJI[0]) : undefined
   // Gate-fixes a11y finding: focuses the Cancel button once Keep waiting dismisses the prompt
   // (the Keep waiting button itself unmounts, since it only renders in the 'prompt' stage).
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
@@ -804,12 +805,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           </EmptyMedia>
           <EmptyTitle>No Session selected</EmptyTitle>
           <EmptyDescription>Select a Session or create one.</EmptyDescription>
-          {/* Issue #1048 (Holiday touches): purely decorative, aria-hidden -- never replaces EmptyDescription. */}
-          {holidayEntry && (
-            <p aria-hidden className="mt-1 text-xs text-muted-foreground">
-              {holidayEntry.emptyStateLine}
-            </p>
-          )}
+          <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
         </EmptyHeader>
       </Empty>
     )

@@ -26,7 +26,7 @@ import {
 } from '@/state'
 import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
-import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
+import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'; import { HolidayAmbientLoop } from '@/features/holidays/HolidayAmbientLoop'; import { HolidayEmptyStateLine } from '@/features/holidays/HolidayEmptyStateLine'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
@@ -548,10 +548,10 @@ export function App() {
                     role="region"
                     aria-label="Chat"
                     tabIndex={-1}
-                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
+                    className="relative isolate flex flex-col h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
                   >
-                    <BrandWatermark variant="live" />
-                    Select a Session or create one.
+                    <BrandWatermark variant="live" /><HolidayAmbientLoop />
+                    <span>Select a Session or create one.</span><HolidayEmptyStateLine className="text-xs" />
                   </div>
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane

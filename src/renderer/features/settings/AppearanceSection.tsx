@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
-import { useChatWidthStore, useSettingsStore, useThemeStore } from '@/state'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
+import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 
@@ -25,6 +26,8 @@ export function AppearanceSection() {
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
   const setHolidayTouches = useSettingsStore((state) => state.setHolidayTouches)
+  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
   // Issue #554 gate round 2 (H1): tracks which group's dirty flag most recently went
@@ -199,7 +202,9 @@ export function AppearanceSection() {
             announces the title as the name and the description separately, once, as a hint. */}
         <div className="flex flex-col gap-0.5">
           <label htmlFor="watermark-toggle" className="text-sm font-medium">Background watermark</label>
-          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">A faint Refract mark shown in the corner of the chat area.</span>
+          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
+            {holidayEntry ? 'A faint mark shown in the corner of the chat area -- a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
+          </span>
         </div>
         <Switch
           id="watermark-toggle"
