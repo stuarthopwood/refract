@@ -53,10 +53,10 @@ pub fn debug_get_overrides(_state: AppState, _args: Vec<Value>) -> HandlerFuture
 fn resolve_overrides() -> DebugOverrides {
     #[cfg(debug_assertions)]
     {
-        return resolve_overrides_from(
+        resolve_overrides_from(
             std::env::var("REFRACT_DATE_OVERRIDE").ok(),
             std::env::var("REFRACT_HOLIDAY_IDLE_MS").ok(),
-        );
+        )
     }
     #[cfg(not(debug_assertions))]
     DebugOverrides {
