@@ -78,7 +78,7 @@ import {
   switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, pressEscape } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -359,12 +359,13 @@ async function main() {
     } else {
       findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
     }
-    // Gate fix: blur BEFORE Escape (the original version here) left the dialog's own
-    // `[role="dialog"]` in the DOM forever -- every OTHER working `pressEscape` call-site in
-    // this codebase (verify-tauri-735.mjs etc.) presses Escape FIRST, while a real element is
-    // still focused, and only blurs afterward if at all; a programmatic blur right beforehand
-    // left nothing focused for the synthetic key event to reach. Closing the per-theme loop's
-    // own first `pressEscape(cdp)` below now does the real dismissal; nothing to blur here.
+    // Live-run finding (not a #1012 scope item, but a pre-existing gap this script's first ever
+    // execution surfaced -- this script was "WRITTEN, NOT RUN" before this fix): a synthetic
+    // CDP `Input.dispatchKeyEvent` Escape never closed this dialog in this build regardless of
+    // what held keyboard focus beforehand (confirmed with and without a prior blur) -- root
+    // cause not conclusively isolated. The per-theme loop below dismisses the dialog with a
+    // real click on its own visible Close button (`DialogPrimitive.Close`, `dialog.tsx`)
+    // instead, which is unambiguous and does not depend on whatever this Escape-handling gap is.
 
     // ---- Dialog-level: no horizontal overflow, re-measured in every theme below ----
     async function assertDialogNeverScrollsHorizontally(themeName) {
@@ -467,7 +468,7 @@ async function main() {
       // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
       // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
       // per-theme overflow/truncation checks and screenshot.
-      await pressEscape(cdp);
+      await cdp.clickByText('Close', { inDialog: true });
       await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 10_000,
         label: `Conversation history dialog closed before switching to ${theme.name}`
