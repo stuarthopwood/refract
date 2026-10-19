@@ -165,7 +165,7 @@ field whose bottom bar shows the mode, model, and agent.
 - Q: What do `done`/`total` count, now that a task can be `blocked` or `abandoned` as well as
   `pending`/`in_progress`/`completed`? → A: `done` counts `completed` tasks; `total` excludes
   `abandoned` tasks entirely (neither open nor done); a `blocked` task counts as open (toward
-  `total`, never `done`). One shared pure derive (`readout/todoDerive.ts`) computes this so the
+  `total`, never `done`). One shared pure derive (`src/renderer/features/chat/readout/todoDerive.ts`) computes this so the
   readout, the panel, and the future card (slice b) never disagree.
 - Q: Is the live mid-turn todo shape (`tool_execution_end`'s own `result.details.phases` for the
   `todo` tool) verified on the supported OMP version before the panel relies on it, per the

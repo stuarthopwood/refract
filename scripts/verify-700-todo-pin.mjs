@@ -269,6 +269,12 @@ async function main() {
       assertTrue(!overflow, `No horizontal scrollbar at ${width}px`);
       const noClip = await cdp.evaluate(`(() => { const panel = ${PANEL_SELECTOR}; if (!panel) return null; return Array.from(panel.querySelectorAll('li')).every((li) => { const span = li.querySelector('span.block.break-words'); return !span || getComputedStyle(span).overflow !== 'hidden'; }); })()`);
       assertTrue(noClip === true, `Task text has no clipping overflow at ${width}px`, noClip);
+      // The Session A row's own hover card (`SessionDetailsCard.tsx`) can still be open from the
+      // earlier session-switch click above; move the pointer to a neutral spot over the
+      // transcript (far from the sidebar) and wait for it to actually close before this
+      // screenshot, rather than capturing it as a stray overlay.
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 50 });
+      await cdp.waitFor(`!document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: `[${width}px] stray session hover card closed before screenshot` }).catch(() => {});
       await cdp.screenshot(path.join(SHOTS_DIR, `${width}px.png`));
       const scrollAfter = await readTranscriptScrollTop(cdp);
       assertEqual(scrollAfter, scrollBefore, `Transcript scroll position unchanged at ${width}px (no jump from the panel's own presence)`);
