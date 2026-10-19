@@ -211,3 +211,7 @@ pub async fn remove_tree(path: &Path, boundary_root: &Path) -> Result<(), Remove
             source,
         })
 }
+
+#[cfg(test)]
+#[path = "remove_tree_tests.rs"]
+mod tests;
