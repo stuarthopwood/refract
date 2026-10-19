@@ -388,6 +388,14 @@ pub(super) fn model_change_role(value: &Value) -> String {
 /// `current_selection` re-reads the Session file fresh on its next call, picking up the new
 /// entry (and `resolvedModelIsFallback`, `model_change_role` above) instead of returning a stale
 /// cached role forever. Called from `model.rs`'s own `on_frame` for every frame.
+///
+/// Gate round 1 fix (round 2, real bug found live): the renderer's own Sessions store is
+/// EVENT-driven, never polled (`init-stores.ts`'s `onSessionListChanged` is the only thing that
+/// calls `sessions-store.ts`'s own `refresh()`) -- every OTHER mutation path here already emits
+/// `session_list_changed` itself (`persist_pinned`), but this autonomous path never did, so a
+/// live fallback's own role change sat correctly updated in Rust state forever, invisible to the
+/// chip, until some UNRELATED event happened to trigger a refresh. Emitting it here is what
+/// actually makes "a live fallback refreshes the chip without a restart" true.
 pub(super) async fn maybe_invalidate_role_cache(agent: &SessionAgent, frame_type: &str) {
     if frame_type != "model_changed" && frame_type != "retry_fallback_succeeded" {
         return;
@@ -405,6 +413,7 @@ pub(super) async fn maybe_invalidate_role_cache(agent: &SessionAgent, frame_type
             s.role_generation = s.role_generation.wrapping_add(1);
         })
         .await;
+    agent.events().emit_session_list_changed();
 }
 
 /// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`

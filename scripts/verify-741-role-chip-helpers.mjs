@@ -228,9 +228,12 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
       // ellipsis-truncated). Measure the span that actually carries \`truncate\` instead.
       const modelSpan = modelButton ? modelButton.querySelector('span.truncate') : null;
       // Round 2 fix: the configured thinkingLevel in this tape is "medium" (-> "Medium"), not
-      // "Default" -- the old "Default" search never matched anything, so reasoningButton was
-      // always null and this whole check was silently vacuous before it was asserted on.
-      const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Medium') && (b.getAttribute('aria-label') || '').toLowerCase().includes('reasoning') === false && b !== modelButton);
+      // "Default" -- the old "Default" search never matched anything. Round 3 fix: the old
+      // \`.toLowerCase().includes('reasoning') === false\` guard was backwards -- the REAL
+      // Reasoning trigger's own aria-label literally ends ", reasoning" by design
+      // (\`ComposerPickers.tsx\`'s own WCAG 2.5.3 fix), so that guard excluded the one button it
+      // was meant to find. Matching on the level text plus "not the model button" is enough.
+      const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Medium') && b !== modelButton);
       const attachButton = buttons.find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes('attach'));
       const fullyInside = (el) => {
         if (!el) return false;
