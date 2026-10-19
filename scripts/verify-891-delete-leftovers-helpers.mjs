@@ -191,8 +191,13 @@ export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
   );
 }
 
+/** `cdp.clickByText(text, { inDialog: true })` scopes to `[role="dialog"]`, which a Radix
+ * AlertDialog never carries (it is `[role="alertdialog"]`) -- clicks the AlertDialog's own
+ * "Delete"/"Deleting…" button directly instead of going through that shared helper. */
 export async function clickDeleteButton(cdp) {
-  await cdp.clickByText('Delete', { inDialog: true });
+  await cdp.click(
+    `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete')`
+  );
 }
 
 /** The dialog's own `role="alert"` paragraph -- '' while no error (it stays mounted, `sr-only`,
