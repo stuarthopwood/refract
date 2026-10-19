@@ -237,6 +237,7 @@ fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> 
             .collect(),
         other_files,
         more_count,
+        unavailable: false,
     }
 }
 
