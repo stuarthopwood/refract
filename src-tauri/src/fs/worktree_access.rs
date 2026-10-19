@@ -26,7 +26,9 @@ static LOCKS: LazyLock<Mutex<HashMap<String, Arc<RwLock<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn lock_for(session_id: &str) -> Arc<RwLock<()>> {
-    let mut locks = LOCKS.lock().expect("worktree access lock registry poisoned");
+    let mut locks = LOCKS
+        .lock()
+        .expect("worktree access lock registry poisoned");
     // Opportunistic cleanup: an entry nobody else holds a clone of (only this map's own `Arc`)
     // is safe to drop, so this map never accumulates one lock per Session ever created over a
     // long-running app.

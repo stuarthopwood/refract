@@ -136,7 +136,10 @@ const REMOVE_RETRY_ATTEMPTS: u32 = 10;
 const REMOVE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 fn is_retryable_remove_error(err: &std::io::Error) -> bool {
-    matches!(err.raw_os_error(), Some(32) | Some(33) | Some(5) | Some(145))
+    matches!(
+        err.raw_os_error(),
+        Some(32) | Some(33) | Some(5) | Some(145)
+    )
 }
 
 fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
