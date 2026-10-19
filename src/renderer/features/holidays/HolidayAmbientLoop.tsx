@@ -109,7 +109,16 @@ export function HolidayAmbientLoop() {
     window.addEventListener('focus', handleActivity)
     document.addEventListener('visibilitychange', handleVisibility)
     const dialogObserver = new MutationObserver(handleDialogMutation)
-    dialogObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-closed', 'role'] })
+    // Gate round 2 fix (High, item 2 regression found during the budget rerun): `subtree: true`
+    // + `attributes: true` reacted to EVERY DOM mutation anywhere in the whole app (session
+    // list updates, timestamp ticks, transcript churn), not just a dialog opening -- that
+    // observer callback cost alone measured 0.156s/60s above Artwork-only while genuinely idle
+    // (budget 0.1s/60s), once the flights fallback had already brought the ACTIVE cost to
+    // near-zero. Radix's `Dialog.Portal`/`AlertDialog.Portal`/`Sheet.Portal` all default to
+    // `document.body` as their container, so a dialog opening or finally unmounting is a
+    // `childList` change on body's own DIRECT children -- `childList: true` alone (no
+    // `subtree`, no `attributes`) catches both without reacting to anything else in the app.
+    dialogObserver.observe(document.body, { childList: true })
     return () => {
       window.clearTimeout(idleTimerRef.current)
       window.removeEventListener('pointerdown', handleActivity)
