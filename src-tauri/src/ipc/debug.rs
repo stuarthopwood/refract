@@ -62,7 +62,9 @@ fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>)
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string);
-    let idle_timeout_ms = raw_idle_ms.as_deref().and_then(|v| v.trim().parse::<u64>().ok());
+    let idle_timeout_ms = raw_idle_ms
+        .as_deref()
+        .and_then(|v| v.trim().parse::<u64>().ok());
     DebugOverrides {
         date,
         idle_timeout_ms,
@@ -75,7 +77,10 @@ mod tests {
 
     #[test]
     fn blank_and_whitespace_date_is_none() {
-        assert_eq!(resolve_overrides_from(Some("  ".to_string()), None).date, None);
+        assert_eq!(
+            resolve_overrides_from(Some("  ".to_string()), None).date,
+            None
+        );
         assert_eq!(resolve_overrides_from(None, None).date, None);
         assert_eq!(
             resolve_overrides_from(Some("2026-10-27".to_string()), None).date,
@@ -85,7 +90,13 @@ mod tests {
 
     #[test]
     fn unparsable_idle_ms_is_none() {
-        assert_eq!(resolve_overrides_from(None, Some("not-a-number".to_string())).idle_timeout_ms, None);
-        assert_eq!(resolve_overrides_from(None, Some("500".to_string())).idle_timeout_ms, Some(500));
+        assert_eq!(
+            resolve_overrides_from(None, Some("not-a-number".to_string())).idle_timeout_ms,
+            None
+        );
+        assert_eq!(
+            resolve_overrides_from(None, Some("500".to_string())).idle_timeout_ms,
+            Some(500)
+        );
     }
 }

@@ -14,7 +14,9 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout};
+use crate::store::settings::{
+    ApprovalMode, ChatWidth, HolidayTouches, SessionListCollapse, SplitLayout,
+};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 

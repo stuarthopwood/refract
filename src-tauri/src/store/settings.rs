@@ -345,7 +345,10 @@ impl SettingsStore {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
-        map.insert("holidayTouches".to_string(), json!(self.data.holiday_touches));
+        map.insert(
+            "holidayTouches".to_string(),
+            json!(self.data.holiday_touches),
+        );
         map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
@@ -466,7 +469,10 @@ impl SettingsStore {
 
     /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
     /// above uses -- no raw/lazy-correction tracking needed.
-    pub async fn set_holiday_touches(&mut self, value: HolidayTouches) -> std::io::Result<Settings> {
+    pub async fn set_holiday_touches(
+        &mut self,
+        value: HolidayTouches,
+    ) -> std::io::Result<Settings> {
         let next = Settings {
             holiday_touches: value,
             ..self.data.clone()
