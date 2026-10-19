@@ -181,7 +181,7 @@ async function main() {
     await openDeleteDialogFor(cdp, nameC, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
-    const errC = await readDialogError(cdp);
+    const errC = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '02-dialog-refusal-cwd-holder.png'));
     const cRefusedCorrectly =
       !!errC && errC.toLowerCase().includes('close it') && (await isSessionListed(cdp, nameC)) && existsSync(sessionC.worktreePath);
@@ -207,7 +207,7 @@ async function main() {
     await openDeleteDialogFor(cdp, nameD, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
-    const errD = await readDialogError(cdp);
+    const errD = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '03-dialog-refusal-named-holder.png'));
     const dNamed = !!errD && /powershell/i.test(errD) && /process \d+/i.test(errD);
     if (dNamed) ok(`(d) spawned file-holder is named in the refusal: ${errD}`);
