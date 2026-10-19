@@ -227,7 +227,11 @@ async function main() {
     // running while the panel already shows the live blocked state ----
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running (Stop control present) while the blocked state is already shown live, well before settle');
 
-    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 15_000, label: 'Abandoned task strike-through appears live, mid-turn' });
+    // Gate round 2 fix (self-caught live-check timeout): 15s left only 7s of margin over the
+    // tape's own scripted 8s delay -- too tight once real launch/render latency is added (the
+    // same reasoning `verify-741-role-chip-helpers.mjs`'s own comment gives for its 3s-delay/45s
+    // budget). 20s gives a real, comfortable margin without being excessive.
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 20_000, label: 'Abandoned task strike-through appears live, mid-turn' });
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
@@ -246,7 +250,9 @@ async function main() {
 
     // ---- A SECOND current-task change (todo-8: Implement feature done, Clean up starts) lands
     // after the user's own scroll -- the list must NOT auto-follow it (E4's own "stops" half). ----
-    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Clean up')`, { timeoutMs: 15_000, label: 'The second current-task change (Clean up) lands live' });
+    // Gate round 2 fix (self-caught live-check timeout): same reasoning as the abandoned-status
+    // wait above -- this also spans a full scripted 8s delay (todo-7 -> todo-8).
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Clean up')`, { timeoutMs: 20_000, label: 'The second current-task change (Clean up) lands live' });
     await sleep(300);
     const scrollTopAfterSecondChange = await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').scrollTop`);
     assertEqual(scrollTopAfterSecondChange, scrollTopAfterUserScroll, 'E4: the list did NOT auto-scroll back to the new current task after a real user scroll (follow genuinely stopped)');
