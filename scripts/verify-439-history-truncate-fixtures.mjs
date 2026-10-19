@@ -237,10 +237,10 @@ export async function assertRowTruncation(cdp, findings, failures, themeName) {
     } else if (longEvidence.title) {
       findings.push(`[${themeName}] Long row title genuinely clips visually (scrollWidth ${longEvidence.title.scrollWidth} > clientWidth ${longEvidence.title.clientWidth}), proving the ellipsis is actually doing work, not just styled.`);
     }
-    if (longEvidence.title && longEvidence.title.title !== LONG_TITLE) {
-      failures.push(`[${themeName}] Long row title's own title attribute is ${JSON.stringify(longEvidence.title.title)}, expected the full title ${JSON.stringify(LONG_TITLE)} -- the full text must stay available even when visually clipped.`);
+    if (longEvidence.title && longEvidence.title.title !== null) {
+      failures.push(`[${themeName}] Long row title's own native title attribute is ${JSON.stringify(longEvidence.title.title)}, expected null -- issue #1012 item 3/gate round 2 removed it (redundant now the focus-visible Tooltip carries the full text, checked separately below); a value here means it leaked back in.`);
     } else if (longEvidence.title) {
-      findings.push(`[${themeName}] Long row title's own title attribute carries the full, un-truncated title text.`);
+      findings.push(`[${themeName}] Long row title has no native title attribute (removed, issue #1012 item 3/gate round 2 -- WCAG 1.4.13); the full, un-truncated text is proven available instead via the keyboard-focus Tooltip check below.`);
     }
     if (!longEvidence.hasCurrentBadge) {
       failures.push(`[${themeName}] Long row does not show the Current badge beside the truncating long title -- expected once Session.current_conversation is set.`);
@@ -254,10 +254,10 @@ export async function assertRowTruncation(cdp, findings, failures, themeName) {
     } else if (longEvidence.preview) {
       findings.push(`[${themeName}] Long row preview (exactly ${PREVIEW_MAX_LENGTH} characters, PREVIEW_MAX_LENGTH) genuinely clips visually (scrollWidth ${longEvidence.preview.scrollWidth} > clientWidth ${longEvidence.preview.clientWidth}).`);
     }
-    if (longEvidence.preview && longEvidence.preview.title !== LONG_PREVIEW) {
-      failures.push(`[${themeName}] Long row preview's own title attribute is ${JSON.stringify(longEvidence.preview.title)}, expected the full preview ${JSON.stringify(LONG_PREVIEW)}.`);
+    if (longEvidence.preview && longEvidence.preview.title !== null) {
+      failures.push(`[${themeName}] Long row preview's own native title attribute is ${JSON.stringify(longEvidence.preview.title)}, expected null -- issue #1012 item 3/gate round 2 removed it.`);
     } else if (longEvidence.preview) {
-      findings.push(`[${themeName}] Long row preview's own title attribute carries the full, un-truncated 120-character preview text.`);
+      findings.push(`[${themeName}] Long row preview has no native title attribute (removed, issue #1012 item 3/gate round 2); the full, un-truncated text is proven available instead via the keyboard-focus Tooltip check below.`);
     }
   }
 }
