@@ -19,6 +19,11 @@ use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
 use super::worktree_validity::{
     canonical_comparable_path, comparable_path, worktree_registration_state, RegistrationState,
 };
+// Only `worktree_delete_tests.rs`'s own `use super::*;` needs this directly any more --
+// `remove_session_worktree` itself uses `worktree_registration_state` exclusively (issue #891
+// gate S4). Gated so a non-test build never sees it as an unused import.
+#[cfg(test)]
+use super::worktree_validity::is_worktree_registered;
 use super::worktrees::{branch_exists, worktrees_root};
 
 /// Issue #891 trimmed this to only the two reasons still reachable: both `remove_orphaned_
