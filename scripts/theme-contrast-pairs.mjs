@@ -211,6 +211,10 @@ export const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
+  // Issue #975 gate round 1 (Main, Low): `CodeBlock`'s own scrollable/body region
+  // (`Markdown.tsx`, `focus-visible:ring-2 focus-visible:ring-ring`) sits directly on `--card`
+  // -- this issue's own new code-block background -- and was never checked against it before.
+  { fg: 'ring', bg: 'card', min: 3 },
   // Gate round 4 (#564 follow-up): the Approval mode pill's `focus-visible:outline-ring` used to
   // render its opaque focus outline directly on `--composer-background`. #927 (quiet composer)
   // replaced that token with `--composer-focus` (muted in Dark/Obsidian, an exact `--ring` alias
@@ -447,12 +451,27 @@ export function sidebarBorderContrastRows(themes) {
 // theme's own default text colour (`.fg`, what an UNstyled token actually renders, per Shiki's
 // own `codeToHast` source) -- against that preset's own resolved `--card`, at the 4.5:1 floor
 // the #975 decision comment set (not the 3:1 non-text floor `PAIRS` uses elsewhere: a code
-// token is real body text, same as `muted-foreground`/`card` above). A tokenColour entry that
-// carries its OWN `settings.background` (e.g. `github-dark`'s `carriage-return`/`markup.
-// ignored`/`markup.untracked` scopes) is excluded: it always renders on that literal paired
-// background, which this issue's neutralisation never touches (only the theme's single ROOT
-// background is replaced, keyed on its own resolved hex, `Markdown.tsx`'s own `colorReplacements`
-// call) -- its contrast is unaffected by this change and was never broken by it.
+// token is real body text, same as `muted-foreground`/`card` above).
+//
+// Gate round 1 fix (Main, Code4 Medium): a tokenColour entry carrying its OWN `settings.
+// background` is excluded ONLY when every one of its scope names is CONFIRMED unreachable --
+// scanned all 346 bundled Shiki language grammars' own JSON for a rule producing `markup.
+// ignored`/`markup.untracked` (the only self-backgrounded scopes `github-dark`/`github-dark-
+// default`/`github-dark-high-contrast` ship): zero matches anywhere, including `diff`, the one
+// bundled language whose own scope names plausibly suggested a hit -- so no fence this app can
+// ever highlight (`lang` loads whichever bundled Shiki language id an agent-authored fence
+// names) can produce either scope. The previous cut's own claim ("it always renders on that
+// literal paired background") was wrong for a THIRD self-backgrounded scope, `carriage-return`:
+// the bundled `mdx` grammar's own hard-line-break rule (two or more trailing spaces) genuinely
+// stacks it onto a token's own scope list, so an `mdx`-tagged fence CAN reach it -- confirmed
+// live against `bundledLanguages.mdx`, not assumed. `carriage-return` is deliberately NOT in
+// the confirmed-unreachable set below: it stays in the loop, measured against `--card` like any
+// other token (its real backdrop when it fires is its own literal paired background, a separate
+// concern this issue's neutralisation never touches, but there is no way to prove it unreachable
+// the way the other two are, and its own foreground clears comfortably against every preset's
+// `--card` regardless). The scope-less root-default entry (the theme's own overall `foreground`/
+// `background` pair, redundant with the `.fg` entry already seeded below) stays skipped too.
+const SELF_BACKGROUND_SCOPES_CONFIRMED_UNREACHABLE = new Set(['markup.ignored', 'markup.untracked'])
 function hexToLinearSrgb(hex) {
   let h = hex.slice(1)
   if (h.length === 3) h = [...h].map((c) => c + c).join('')
@@ -474,8 +493,10 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
     colours.set(resolved.fg.toLowerCase(), '(default text)')
     for (const entry of resolved.settings) {
       const fg = entry.settings?.foreground
-      if (!fg || entry.settings?.background) continue
-      const scope = Array.isArray(entry.scope) ? entry.scope.join(', ') : (entry.scope ?? '(default text)')
+      if (!fg) continue
+      const scopeNames = Array.isArray(entry.scope) ? entry.scope : entry.scope ? [entry.scope] : []
+      if (entry.settings?.background && (scopeNames.length === 0 || scopeNames.every((s) => SELF_BACKGROUND_SCOPES_CONFIRMED_UNREACHABLE.has(s)))) continue
+      const scope = scopeNames.length > 0 ? scopeNames.join(', ') : '(default text)'
       if (!colours.has(fg.toLowerCase())) colours.set(fg.toLowerCase(), scope)
     }
     tokenColoursByTheme.set(syntaxTheme, colours)

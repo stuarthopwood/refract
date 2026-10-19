@@ -8,11 +8,13 @@
 // and body share one literal background, that it equals the theme's own live-resolved `--card`
 // (read off a throwaway probe element carrying the same `bg-card` Tailwind class, never a
 // hand-copied hex), and that the rendered comment token (the binding case per research.md
-// decision 25: the lowest-margin colour in every built-in `syntaxTheme`) clears 4.5:1 against
-// that same background, measured live, not recomputed from CSS source. Screenshots every preset
-// (Dark, Obsidian, Nordic Frost, Cyber Amber, Dark (high contrast)); Cyber Amber is the headline
-// shot (research.md decision 25/issue #975's own motivating case -- the colour-family clash
-// between a warm header and a cool `github-dark` body was most visible there).
+// decision 25: the lowest-margin colour across the four `github-dark-default` presets -- Dark,
+// Obsidian, Nordic Frost, Cyber Amber; Dark high contrast's own `github-dark-high-contrast`
+// comment colour clears with far more margin) clears 4.5:1 against that same background,
+// measured live, not recomputed from CSS source. Screenshots every preset (Dark, Obsidian,
+// Nordic Frost, Cyber Amber, Dark (high contrast)); Cyber Amber is the headline shot (research.md
+// decision 25/issue #975's own motivating case -- the colour-family clash between a warm header
+// and a cool `github-dark` body was most visible there).
 //
 // Drives a fake `omp` (REFRACT_FAKE_OMP_SCENARIO=code-surface-975), scratch cwd/worktree/
 // REFRACT_DATA_DIR -- never touches Stuart's real Session list or spends a real model turn.
@@ -20,9 +22,6 @@
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
 // scripts/verify-975-code-surface.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
 // the same convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs` script documents).
-//
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task yet -- this script has
-// never executed against a real built app. `node --check` is the only command run against it.
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -66,11 +65,23 @@ const SHOT_NAMES = [...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fak
 
 const COMMENT_TEXT = 'a short comment line';
 
-/** Reads the code block's own header/body computed backgrounds, the header's language label,
- * and a live-resolved `--card` probe (a throwaway `div.bg-card`, never a hand-copied hex), plus
- * the comment token's own computed colour. `.not-prose` is the one wrapper `CodeBlock` renders
- * (`Markdown.tsx`); this fixture's assistant reply carries exactly one fenced block, so exactly
- * one match is expected -- more than one, or none, is itself a failure the caller reports. */
+/** Reads the code block's own header/body/`<pre>` computed backgrounds, the header's language
+ * label, a live-resolved `--card` probe (a throwaway `div.bg-card`, never a hand-copied hex),
+ * and the comment token's own computed colour. `.not-prose` is the one wrapper `CodeBlock`
+ * renders (`Markdown.tsx`); this fixture's assistant reply carries exactly one fenced block, so
+ * exactly one match is expected -- more than one, or none, is itself a failure the caller
+ * reports.
+ *
+ * Gate round 1 fix (Main, Code1 High): the comment token's own LEAF span is `span.line > span`
+ * with no child `<span>` (Shiki wraps each styled run in its own span, nested directly under
+ * the line wrapper, never deeper) -- the OUTER `span.line` wrapper also carries the comment text
+ * in its own `textContent` (this fixture's comment is the only token on its line) but has no
+ * inline colour of its own, so `querySelectorAll('span').find(...)` previously matched that
+ * outer wrapper FIRST (document order: ancestor before descendant) and read the `<pre>`'s own
+ * INHERITED default foreground instead of the comment's real, dimmer colour. Also reads the raw
+ * `<pre>`'s own computed `background-color`/`color` so the caller can hard-fail if Shiki's own
+ * background was never actually neutralised (gate round 1, Code2 High) and cross-check the
+ * comment span's colour genuinely differs from the `<pre>`'s inherited default. */
 async function readCodeSurfaceEvidence(cdp) {
   return cdp.evaluate(`(() => {
     const wrappers = Array.from(document.querySelectorAll('.not-prose'));
@@ -81,7 +92,12 @@ async function readCodeSurfaceEvidence(cdp) {
     const body = bodyRow ? bodyRow.children[bodyRow.children.length - 1] : null;
     if (!header || !body) return { wrapperCount: wrappers.length, headerFound: !!header, bodyFound: !!body };
     const label = header.querySelector('span.truncate');
-    const commentSpan = Array.from(body.querySelectorAll('span')).find((s) => s.textContent.includes(${JSON.stringify(COMMENT_TEXT)}));
+    const pre = body.querySelector('pre');
+    const commentSpan = pre
+      ? Array.from(pre.querySelectorAll('span.line > span')).find(
+          (s) => s.children.length === 0 && s.textContent.trimStart().startsWith('//')
+        )
+      : null;
     const probe = document.createElement('div');
     probe.className = 'bg-card';
     probe.style.position = 'fixed';
@@ -95,6 +111,9 @@ async function readCodeSurfaceEvidence(cdp) {
       bodyFound: true,
       headerBg: getComputedStyle(header).backgroundColor,
       bodyBg: getComputedStyle(body).backgroundColor,
+      preFound: !!pre,
+      preBg: pre ? getComputedStyle(pre).backgroundColor : null,
+      preColor: pre ? getComputedStyle(pre).color : null,
       cardProbe,
       label: label ? label.textContent.trim() : null,
       commentColor: commentSpan ? getComputedStyle(commentSpan).color : null
@@ -222,10 +241,24 @@ async function main() {
         if (evidence.headerBg !== evidence.cardProbe || evidence.bodyBg !== evidence.cardProbe) {
           failures.push(`${theme.name}: code block background (header ${evidence.headerBg}, body ${evidence.bodyBg}) does not equal this theme's own live-resolved --card (${evidence.cardProbe}).`);
         } else {
-          findings.push(`${theme.name}: code block background equals this theme's own live-resolved --card (${evidence.cardProbe}), confirming Shiki's own bundled background is neutralised, not merely absent.`);
+          findings.push(`${theme.name}: code block background equals this theme's own live-resolved --card (${evidence.cardProbe}).`);
+        }
+        // Gate round 1 fix (Main, Code2 High): the previous check above only read the WRAPPER
+        // div, which carries `bg-card` itself regardless of whether Shiki's own neutralisation
+        // actually worked -- a hard, separate check that the raw `<pre>` Shiki injected is
+        // itself transparent is the only way to prove the neutralisation, not just the div's
+        // own class.
+        if (!evidence.preFound) {
+          failures.push(`${theme.name}: Shiki's own <pre> element not found inside the body.`);
+        } else if (evidence.preBg !== 'rgba(0, 0, 0, 0)') {
+          failures.push(`${theme.name}: Shiki's own <pre> background is "${evidence.preBg}", expected transparent ("rgba(0, 0, 0, 0)") -- colorReplacements did not actually neutralise it.`);
+        } else {
+          findings.push(`${theme.name}: Shiki's own <pre> background is transparent, confirming colorReplacements neutralised it (not merely absent from the wrapper div's own bg-card).`);
         }
         if (!evidence.commentColor) {
           failures.push(`${theme.name}: comment token span ("${COMMENT_TEXT}") not found in the rendered code block.`);
+        } else if (evidence.commentColor === evidence.preColor) {
+          failures.push(`${theme.name}: comment token's computed colour (${evidence.commentColor}) equals the <pre>'s own inherited default colour -- the leaf token span was not actually selected (gate round 1 regression guard).`);
         } else {
           const ratio = measuredContrastRatio(evidence.commentColor, evidence.cardProbe);
           if (ratio === null) {
@@ -233,7 +266,7 @@ async function main() {
           } else if (ratio < 4.5) {
             failures.push(`${theme.name}: comment token measures ${ratio.toFixed(2)}:1 against the live code-block background, below the 4.5:1 floor (research.md decision 25).`);
           } else {
-            findings.push(`${theme.name}: comment token (the binding, lowest-margin colour per decision 25) measures ${ratio.toFixed(2)}:1 against the live code-block background (>=4.5:1).`);
+            findings.push(`${theme.name}: comment token (${evidence.commentColor}, distinct from the <pre>'s own inherited ${evidence.preColor}) measures ${ratio.toFixed(2)}:1 against the live code-block background (>=4.5:1).`);
           }
         }
       }
