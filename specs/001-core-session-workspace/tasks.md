@@ -4343,3 +4343,52 @@ check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
 `pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
 `node --check` plus a real `import()` load-check on the rewritten live-check script
 (`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.
+
+## Phase 67: One-agent to two-agent Stage focus-loss follow-up (#1001, FR-090) [US1]
+
+**Goal**: a keyboard-focused solo Stage's own Prompt/Result code block never drops focus to
+`<body>` the instant a second agent streams into the same Stage and the content swaps from a
+bare `SubagentBody` to a `SpineList` -- pre-decided on the issue (accessibility auditor finding
+at PR #999's own gate, Decided/Skippy/delegated-by-Stuart 2026-10-18/2026-10-19).
+
+- [X] T322 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow` gains
+  `memberContentRef` (a stable wrapper around the solo-body-or-`SpineList` slot, never
+  unmounting itself across the transition), `triggerRef` (forwarded onto the Stage's own
+  `CollapsedLine`), `focusWasInsideRef` (kept current by a plain `focusin`/`focusout` listener
+  on `memberContentRef`, since a focused node's removal blurs it to `<body>` synchronously --
+  there is no later point at which the just-removed element can be asked whether it held
+  focus), and `prevTotalRef`. A `useLayoutEffect` keyed on `total` moves focus to `triggerRef`
+  the instant a 1-to-2-member transition is observed with `focusWasInsideRef.current` true and
+  `document.activeElement` already fallen to `<body>`/`null`. Structural no-remount alternative
+  (pre-wrapping the solo body in the same `SpineList`/`SpineItem` shape) considered and
+  rejected: see FR-090/spec.md Clarifications for the full rationale.
+- [X] T323 New fixture `scripts/fixtures/omp-frames/stages-1001.jsonl` (a new fixture was
+  required: every existing `stages-941.jsonl` Stage declares its full member count upfront in
+  one `task()` call's own `tasks[]`, so none of them ever grows after first render). One Stage
+  whose two members arrive as two SEPARATE `task()` calls sharing one assistant message id --
+  the documented mechanism (`transcript.rs`/`subagent_items.rs`) by which a Stage genuinely
+  grows `total` from 1 to 2 in place. The first call's own shared batch `context` is the only
+  one either member ever carries, so the Stage's own header label stays stable across the
+  transition (`computeStageLabel`'s tier-1 rule), giving the live check one stable title
+  selector throughout.
+- [X] T324 New `scripts/verify-1001-stage-focus-join.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`/`verify-991-stage-focus.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors. Places keyboard focus on the solo member's
+  own Prompt code block, then samples `document.activeElement` on every animation frame (not
+  Node-side polling, so no CDP round-trip jitter can narrow the window) across the whole join --
+  THE red/green discriminator: zero sampled frames may ever read `document.activeElement ===
+  document.body`. Also confirms focus lands specifically on the Stage's own trigger once
+  settled (the fix's own stated remedy, not merely "somewhere other than body"). Per-theme
+  screenshots only (no colour-dependent assertion), matching `verify-991-stage-focus.mjs`'s own
+  theme-loop rationale. **Written, not run end-to-end**: no build slot granted for this
+  sub-task -- `node --check` plus a real `import()` load-check (`CARGO_TARGET_DIR` unset,
+  stopping at the shared build-slot guard) are the only commands actually run against this file.
+
+**Spec**: `spec.md` gains FR-090 (amends FR-067) and a dated Clarifications section recording
+the no-remount-vs-fallback structural decision, Decided/Skippy/delegated-by-Stuart per this
+story's own away-mode convention.
+
+**Non-build checks**: `pnpm typecheck`, `pnpm vitest run` (148/148, no new tests per the
+prototyping-phase rule), `pnpm run check:indent`, `pnpm run check:file-size` (no baseline
+change), `node --check` on the new script, plus a real `import()` load-check (fails only at the
+shared `CARGO_TARGET_DIR` build-slot guard, confirming every import resolves) -- all clean.

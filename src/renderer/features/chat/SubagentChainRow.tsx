@@ -124,13 +124,72 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // (by auto-open or the user), it never auto-closes again -- only the user's own toggle can
   // close it. This fixes item 4 and, as a side effect, the AUTO-CLOSE-driven slice of item 1's
   // a11y defect (WCAG 2.4.3): the only way this row closes now is the user's own activation of
-  // its own trigger, which already holds focus. A SEPARATE, pre-existing focus-loss path is NOT
-  // fixed here and stays open on the issue (Main, gate round 1): a solo Stage's own body
-  // (`SubagentBody`) swaps for a `SpineList` the instant a second agent streams into the same
-  // Stage, unmounting whatever was focused inside it. A manual toggle survives this row's own
-  // remount (a session switch, or `Transcript.tsx`'s sr-only-stub/full-row visibility swap),
-  // keyed by session + this Stage's own `group.id`.
+  // its own trigger, which already holds focus. A SEPARATE, pre-existing focus-loss path --
+  // flagged here in gate round 1 -- is a solo Stage's own body (`SubagentBody`) swapping for a
+  // `SpineList` the instant a second agent streams into the same Stage, unmounting whatever was
+  // focused inside it (fixed below, issue #1001). A manual toggle
+  // survives this row's own remount (a session switch, or `Transcript.tsx`'s sr-only-stub/
+  // full-row visibility swap), keyed by session + this Stage's own `group.id`.
   const { open, onOpenChange } = useStickyDisclosure(sessionId, group.id, isOpenByDefault)
+
+  // Issue #1001 (WCAG 2.4.3), the "SEPARATE, pre-existing focus-loss path" the comment above
+  // flags: a solo Stage's own `SubagentBody` unmounts the instant a second agent streams into
+  // the same Stage (this row's own `total > 1` branch below swaps it for a `SpineList`) --
+  // whatever was focused inside it (its own Prompt/Result code block, `ToolRow.tsx`'s
+  // `CodeBlock`) is removed from the document along with it. Removing a focused node blurs it
+  // to `<body>` SYNCHRONOUSLY in every real browser -- there is no later point at which the
+  // just-removed element can be asked whether it held focus, so `focusWasInsideRef` below is
+  // kept current the whole time via a plain `focusin`/`focusout` listener on
+  // `memberContentRef` (the one wrapper that survives the swap, the SubagentBody-or-SpineList
+  // slot itself below), independent of React's own render cycle. Once the transition is
+  // observed (`prevTotalRef` was 1, `total` is now more than 1) and focus genuinely fell to
+  // `<body>`, it is moved to this Stage's OWN trigger (`triggerRef`, this row's `CollapsedLine`
+  // below) -- the one element guaranteed to survive every member-count transition, the same
+  // remedy `Transcript.tsx`'s own "Scroll to end" button/viewport pair already uses for an
+  // analogous removed-while-focused control. Structural alternative considered and rejected
+  // (Decided, Skippy, delegated by Stuart 2026-10-19): pre-wrapping the solo body in the same
+  // `SpineList`/`SpineItem` shape a joining second member would need keeps `SubagentBody` itself
+  // mounted (no redirect needed at all), but it either draws the Spine's own rail/indent for
+  // every solo Stage (a permanent, unrelated visual regression) or leaves the FIRST member
+  // looking different from every later one forever (no `SubagentRow` chrome, unlike #563's own
+  // "never switch element type between solo and multi members" rule intends) -- the structure
+  // does not allow it cleanly, so this falls through to the decision's own stated fallback.
+  const memberContentRef = React.useRef<HTMLDivElement>(null)
+  const triggerRef = React.useRef<HTMLElement>(null)
+  const focusWasInsideRef = React.useRef(false)
+  const prevTotalRef = React.useRef(total)
+
+  React.useEffect(() => {
+    const el = memberContentRef.current
+    if (!el) return
+    const handleFocusIn = () => {
+      focusWasInsideRef.current = true
+    }
+    const handleFocusOut = (event: FocusEvent) => {
+      // A focusout landing on `<body>` (or nowhere) is the symptom itself -- the node that just
+      // got removed, not a legitimate move elsewhere -- so the flag is left set for the layout
+      // effect below to still catch it; anything else is a real, intentional focus change away.
+      const next = (event.relatedTarget as Node | null) ?? document.activeElement
+      if (next === document.body || next === null) return
+      focusWasInsideRef.current = false
+    }
+    el.addEventListener('focusin', handleFocusIn)
+    el.addEventListener('focusout', handleFocusOut)
+    return () => {
+      el.removeEventListener('focusin', handleFocusIn)
+      el.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
+
+  React.useLayoutEffect(() => {
+    const prevTotal = prevTotalRef.current
+    prevTotalRef.current = total
+    if (prevTotal !== 1 || total <= 1 || !focusWasInsideRef.current) return
+    focusWasInsideRef.current = false
+    if (document.activeElement === document.body || document.activeElement === null) {
+      triggerRef.current?.focus({ preventScroll: true })
+    }
+  }, [total])
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
@@ -207,6 +266,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
 
   return (
     <CollapsedLine
+      ref={triggerRef}
       id={stageRowDomId(sessionId, group.id)}
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
@@ -252,17 +312,23 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             no item in the run captured a `context` (a flat call, or history from before #941). */}
         {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
         <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
-        {total > 1 ? (
-          <SpineList gap="member">
-            {group.items.map((item) => (
-              <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                <SubagentRow item={item} />
-              </SpineItem>
-            ))}
-          </SpineList>
-        ) : (
-          <SubagentBody item={group.items[0]!} />
-        )}
+        {/* Issue #1001: a stable wrapper scoped to ONLY the member content that actually swaps
+            element type on a 1-to-2 members transition -- never the context brief/Uses line
+            above, which do not unmount on it -- so the focus-tracking effect above never
+            redirects focus away from one of THOSE while they stay mounted. */}
+        <div ref={memberContentRef}>
+          {total > 1 ? (
+            <SpineList gap="member">
+              {group.items.map((item) => (
+                <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+                  <SubagentRow item={item} />
+                </SpineItem>
+              ))}
+            </SpineList>
+          ) : (
+            <SubagentBody item={group.items[0]!} />
+          )}
+        </div>
       </div>
     </CollapsedLine>
   )

@@ -842,6 +842,30 @@
   counts as the user's own deliberate open), and moves keyboard focus to that Stage row's own
   trigger.
 
+### Session 2026-10-19 (One-agent to two-agent Stage focus-loss, #1001)
+
+- Q: Issue #1001 (found by the accessibility auditor at PR #999's own gate, filed 2026-10-18,
+  pre-existing since #941): a one-agent Stage renders a bare `SubagentBody`; the instant a
+  second agent streams into the same Stage, the content swaps to a `SpineList` of
+  `SubagentRow`s, unmounting whatever was focused inside the first member's own Prompt/Result
+  code block, which the browser then drops to `<body>` (WCAG 2.4.3). Decided (Skippy, delegated
+  by Stuart 2026-10-18): keep the one-agent body mounted as the first spine entry (no remount)
+  if the structure allows; otherwise move focus to the Stage trigger when focused content is
+  removed. Which did the structure allow? → A: Decided (Skippy, delegated by Stuart 2026-10-19):
+  the no-remount path does not allow it cleanly -- pre-wrapping the solo body in the same
+  `SpineList`/`SpineItem` shape a joining second member would need either draws the Spine's own
+  rail/indent for every solo Stage (a permanent, unrelated visual regression, since today's solo
+  Stage deliberately renders with no Spine chrome at all) or leaves the FIRST member looking
+  different from every later one forever (no `SubagentRow` header/chevron, contradicting FR-067's
+  own "never switch element type between solo and multi members" rule from #563). The fallback
+  is implemented instead: the Stage's own content wrapper tracks whether focus sits inside it via
+  a plain `focusin`/`focusout` listener (removing a focused node blurs it to `<body>`
+  synchronously in every real browser, so there is no later point at which the just-removed
+  element can be asked whether it held focus); the instant the one-to-two-member transition is
+  observed with focus known to have been inside, focus moves to the Stage's own trigger --
+  mirroring `Transcript.tsx`'s own established "move focus to a still-mounted anchor" remedy for
+  an analogous removed-while-focused control (its "Scroll to end" button going `inert`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1376,6 +1400,20 @@ The developer types a slash command and finds the ones the agent offers. If a se
   own deliberate open, surviving exactly as a manual toggle already does, including across an
   unmount/remount the view filters above can themselves cause), and move keyboard focus to that
   Stage row's own trigger without re-triggering the browser's own native focus-scroll.
+- **FR-090** (new, 2026-10-19, issue #1001, found by the accessibility auditor at PR #999's own
+  gate; amends FR-067): A Stage row (FR-067) that gains a second member while keyboard focus
+  sits inside its own one-agent content MUST NOT drop that focus to `<body>` once the content
+  swaps from a bare member body to the multi-member Spine list (WCAG 2.4.3). Decided (Skippy,
+  delegated by Stuart 2026-10-18, then 2026-10-19, Clarifications above): the Stage's own
+  trigger is the fallback focus target when the removed content held focus -- the issue's own
+  preferred no-remount alternative (pre-wrapping a one-agent Stage's body in the same Spine-list
+  shape a joining second member would need) was considered and rejected: it either draws the
+  Spine's own rail/indent for every one-agent Stage (a permanent, unrelated visual regression)
+  or leaves the first member looking different from every later one forever, contradicting this
+  same requirement's own "never switch element type between solo and multi members" rule. Focus
+  MUST be moved synchronously (no externally observable frame where `document.activeElement` is
+  `<body>`) the instant the transition is observed with focus known to have been inside the
+  removed content.
 
 ### Key Entities
 

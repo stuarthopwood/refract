@@ -838,3 +838,71 @@ emulation set up for it). **Written, not run end-to-end**: no build slot granted
 sub-task -- `node --check` plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset,
 stopping at the shared build-slot guard before touching cargo) are the only commands actually
 run against this file.
+
+## 24. One-agent to two-agent Stage focus-loss follow-up (issue #1001, 2026-10-18/2026-10-19)
+
+**Problem**: `StageGroupRow` (`SubagentChainRow.tsx`) renders a one-agent Stage's content as a
+bare `SubagentBody` (no `SpineList`, no per-member `CollapsedLine` wrapper -- #563's own "never
+switch element type between solo and multi members" rule keeps a solo Stage's own presentation
+simpler than a multi-member one). The instant a second agent streams into the SAME Stage (the
+documented mechanism: two separate `task()` calls echoed back inside one assistant message,
+`transcript.rs`/`subagent_items.rs`), `total` crosses from 1 to 2 and the content swaps to a
+`SpineList` of `SubagentRow`s. React reconciles this as a genuine unmount: the position's own
+element type changed (`SubagentBody` directly vs. `SpineList` wrapping it), so whatever DOM node
+was focused inside the old `SubagentBody` (its own Prompt/Result `CodeBlock`, `Markdown.tsx`) is
+removed from the document along with it. Removing a focused node blurs it to `<body>`
+SYNCHRONOUSLY in every real browser (well-established, the root cause of this whole bug class) --
+there is no later point, not even the very next microtask, at which the just-removed element can
+be asked whether it held focus; any fix must either prevent the removal outright, or react to it
+within the SAME synchronous commit, before the browser paints or any other code runs.
+
+**Decision** (Skippy, delegated by Stuart, decided on the issue 2026-10-18; the no-remount-vs-
+fallback choice itself decided 2026-10-19 once the structure was actually inspected): implement
+the issue's own named fallback -- move focus to the Stage's own trigger (its `CollapsedLine`,
+forwarded via a new `ref`) the instant the transition is observed with focus known to have been
+inside the removed content. `StageGroupRow` gains: a `memberContentRef` wrapping ONLY the
+solo-body-or-`SpineList` slot (never the context brief/Uses line siblings, which do not unmount
+on this transition, and never itself unmounting across it -- the one stable anchor the fix
+attaches to); a plain `focusin`/`focusout` listener on that wrapper keeping `focusWasInsideRef`
+current continuously, independent of React's own render cycle (`focusout` is NOT relied on to
+catch the removal itself -- browsers do not reliably bubble it for a node mid-removal, the same
+reason this bug class exists in the first place -- only `focusin`, from ordinary prior
+interaction, which is reliable); a `prevTotalRef` to detect the exact 1-to-2 transition; and a
+`useLayoutEffect` keyed on `total` that, on that exact transition, with focus known to have been
+inside and `document.activeElement` already `<body>`/`null`, calls `triggerRef.current.focus()`.
+This mirrors `Transcript.tsx`'s own already-shipped "Scroll to end" button/viewport pair (an
+`inert`-going button, same underlying hazard): move focus to a still-mounted anchor rather than
+try to prevent the browser's own native focus-loss-on-removal behaviour.
+
+**Structural alternative considered and rejected**: pre-wrapping the solo body in the same
+`SpineList`/`SpineItem` shape a joining second member would need (so `SubagentBody` for the
+first member is never actually removed -- its position in the tree would already match what a
+multi-member Stage's own first `SpineItem` needs, so growing to 2 members would only ever APPEND
+a sibling, never swap the first entry's own type). Rejected because it forces an unpalatable
+choice between two regressions: (a) wrapping the solo body in `SpineList`/`SpineItem` even while
+alone draws that component's own visible rail/`ml-4` indent for EVERY one-agent Stage, a
+permanent visual change unrelated to this bug (today's solo Stage deliberately renders with none
+of that chrome); or (b) if the first member is instead kept bare (no `SubagentRow` wrapper) even
+once the Stage becomes multi-member, to avoid (a), it then looks permanently different from
+every later-joining member (no header/icon/chevron of its own), contradicting the same
+"never switch element type between solo and multi members" intent #563 established FR-067 on.
+Neither option is available without a user-visible regression the issue never asked for, so the
+fallback above is correct, not merely expedient.
+
+**Live check** (`scripts/verify-1001-stage-focus-join.mjs`, a new fixture
+`scripts/fixtures/omp-frames/stages-1001.jsonl` -- every existing `stages-941.jsonl` Stage
+declares its full member count upfront in one `task()` call's own `tasks[]`, so none of them
+ever grows after first render; a new fixture was required). Keyboard focus is placed on the
+solo member's own Prompt code block, then `document.activeElement` is sampled on every animation
+frame (in-page `requestAnimationFrame`, not Node-side polling, so no CDP round-trip jitter can
+narrow the sampled window) across the whole join, from well before the second `task()` call
+starts to well after it settles -- zero sampled frames may ever read `document.activeElement ===
+document.body`, THE red/green discriminator (this MUST fail on `origin/main`, where nothing
+redirects focus on this transition and nothing else in the fixture ever moves it again
+afterward). Also confirms focus lands specifically on the Stage's own trigger once settled (the
+fix's own stated remedy, not merely "somewhere other than body"). Per-theme screenshots only, no
+colour-dependent assertion, matching `verify-991-stage-focus.mjs`'s/`verify-1000-stage-defer.mjs`'s
+own theme-loop rationale. **Written, not run end-to-end**: no build slot granted for this
+sub-task -- `node --check` plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping
+at the shared build-slot guard before touching cargo) are the only commands actually run against
+this file.

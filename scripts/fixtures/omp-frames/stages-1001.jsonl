@@ -1,0 +1,75 @@
+// SYNTHESIZED, not captured live: issue #1001 (focus drops to <body> when a one-agent Stage
+// gains a second agent while focus is inside it). One user prompt, one agent turn, ONE Stage
+// whose own two members arrive as TWO SEPARATE `task()` tool calls sharing the SAME owning
+// assistant message id ("msg-a1") -- the documented mechanism (`transcript.rs`'s own
+// `build_assistant_items`/`subagent_items.rs`'s `build_message_subagent_items`) by which a
+// Stage genuinely GROWS from one member to two without ever starting a new Stage: a Stage is
+// keyed on the owning assistant message's id (`groupSubagentStages.ts`), not on tool-call
+// adjacency, so two `task()` calls echoed back inside the SAME message snapshot group into one
+// Stage regardless of how far apart in wall-clock time their own `tool_execution_start`/`_end`
+// pairs land. The first call ("solo-task", one job, "SoloFocus") is fully echoed and settled
+// FIRST, rendering a genuine one-agent Stage (`StageGroupRow`'s own `total === 1` branch, a bare
+// `SubagentBody`, no `SpineList`) for the ~3s `__delay__` below -- long enough for a live check
+// to expand it and place keyboard focus inside its own Prompt code block. The second call
+// ("join-task", one job, "JoinsLater") then starts and is echoed back inside a SECOND
+// `message_start`/`message_end` pair reusing the SAME "msg-a1" id, its content now carrying
+// BOTH toolCalls -- `build_assistant_items` rebuilds every subagent item for that message id
+// from scratch on every snapshot, matching existing rows by their own stable
+// `subagent:<tool_call_id>:<index>` id (`subagent_items.rs`'s `build_message_subagent_items`),
+// so "SoloFocus" keeps its already-settled status/result while "JoinsLater" is created fresh --
+// the live, in-place transition from `total === 1` to `total === 2` this issue is about.
+// `solo-task`'s own shared batch `context` is set (and left unset on `join-task`) specifically
+// so the Stage's own header label (`computeStageLabel`'s tier-1 "context's own first line" rule)
+// stays IDENTICAL before and after the join (`groupSubagentStages.ts` dedupes/joins every
+// member's own context into one set, so "join-task" contributing none never changes it) -- the
+// one stable selector handle `scripts/verify-1001-stage-focus-join.mjs` needs to find the SAME
+// Stage row across the whole transition, mirroring `verify-941-stage-naming-helpers.mjs`'s own
+// `title`-attribute selector convention. `group.id` (`stage:<first-member-id>`) and this row's
+// own DOM `id` (`stageRowDomId`) are ALSO stable across the transition for the same reason
+// (keyed on the run's first item, which never changes) -- not relied on directly here only
+// because the title selector already covers it.
+//
+// Every boilerplate frame (ready/negotiate_protocol/get_state/set_ask_dialog/get_messages_page/
+// prompt ack) is copied verbatim from `stages-941.jsonl`'s own header, the same shared
+// conventions every `verify-941-*`/`verify-991-*`/`verify-1000-*` fixture already follows
+// (`scripts/fixtures/omp-frames/README.md`'s own "every fixture's second step" notes).
+//
+// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- hand-built
+// directly from the documented wire contract and `subagent_items.rs`'s own matching rules (read
+// in full while authoring this file), not yet replayed against a real built exe.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stages-1001\\conversation.json","sessionId":"sess-stages-1001-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[]}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"solo-task","toolName":"task","args":{"context":"Verify focus survives a mid-flight join (issue #1001).","tasks":[{"name":"SoloFocus","task":"Investigate whether this Stage keeps its own focus when a sibling streams in."}]},"intent":"Running the solo focus probe"}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"context":"Verify focus survives a mid-flight join (issue #1001).","tasks":[{"name":"SoloFocus","task":"Investigate whether this Stage keeps its own focus when a sibling streams in."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"context":"Verify focus survives a mid-flight join (issue #1001).","tasks":[{"name":"SoloFocus","task":"Investigate whether this Stage keeps its own focus when a sibling streams in."}]}}],"timestamp":0}}
+{"__delay__":400}
+{"type":"tool_execution_end","toolCallId":"solo-task","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"SoloFocus","status":"finished","task":"Investigate whether this Stage keeps its own focus when a sibling streams in.","durationMs":350}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"SoloFocus","label":"SoloFocus","status":"completed","resultText":"Investigation complete; nothing else to report.","durationMs":350}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"SoloFocus","label":"SoloFocus","status":"completed","resultText":"Investigation complete; nothing else to report.","durationMs":350}]},"timestamp":0}}
+{"__delay__":3000}
+{"type":"tool_execution_start","toolCallId":"join-task","toolName":"task","args":{"tasks":[{"name":"JoinsLater","task":"Confirm the join did not disturb anything already focused."}]},"intent":"Running the joining probe"}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"context":"Verify focus survives a mid-flight join (issue #1001).","tasks":[{"name":"SoloFocus","task":"Investigate whether this Stage keeps its own focus when a sibling streams in."}]}},{"type":"toolCall","id":"join-task","name":"task","arguments":{"tasks":[{"name":"JoinsLater","task":"Confirm the join did not disturb anything already focused."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"context":"Verify focus survives a mid-flight join (issue #1001).","tasks":[{"name":"SoloFocus","task":"Investigate whether this Stage keeps its own focus when a sibling streams in."}]}},{"type":"toolCall","id":"join-task","name":"task","arguments":{"tasks":[{"name":"JoinsLater","task":"Confirm the join did not disturb anything already focused."}]}}],"timestamp":0}}
+{"__delay__":1500}
+{"type":"tool_execution_end","toolCallId":"join-task","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"JoinsLater","status":"finished","task":"Confirm the join did not disturb anything already focused.","durationMs":300}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"JoinsLater","label":"JoinsLater","status":"completed","resultText":"Confirmed: nothing was disturbed.","durationMs":300}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"JoinsLater","label":"JoinsLater","status":"completed","resultText":"Confirmed: nothing was disturbed.","durationMs":300}]},"timestamp":0}}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a2","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Solo joined by a second agent; nothing else to report."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"text","text":"Solo joined by a second agent; nothing else to report."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
