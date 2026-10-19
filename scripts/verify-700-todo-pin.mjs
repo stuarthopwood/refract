@@ -32,7 +32,6 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
-import { pressKey } from './verify-tauri-session-list-helpers.mjs';
 import { measuredContrastRatio } from './contrast-math.mjs';
 import {
   TODO_PILL_SELECTOR,
@@ -78,10 +77,14 @@ async function focusAndPress(cdp, finderExpr, vk, key, code) {
   // WebView2's own CDP endpoint only delivers real `Input.dispatchKeyEvent`s to a JS-focused
   // element once focus EMULATION is explicitly on (`verify-tauri-569.mjs`'s own keyboard-only
   // profile-menu precedent) -- a scratch, offscreen launch has no real OS window focus of its
-  // own otherwise.
+  // own otherwise. `text`/`unmodifiedText` on the keyDown (the shared `pressKey` helper omits
+  // both) are what actually make Chromium run a focused `<button>`'s own default Enter/Space
+  // activation -- the exact fields `CdpSession.pressEnter()` already carries for its own proven
+  // Enter path; `key`/`code` alone (what bare `pressKey` sends) is not enough.
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await cdp.evaluate(`(${finderExpr}).focus()`);
-  await pressKey(cdp, vk, key, code);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: vk, key, code, text: key === 'Enter' ? '\r' : ' ', unmodifiedText: key === 'Enter' ? '\r' : ' ' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: vk, key, code });
 }
 
 async function setWidth(cdp, width) {
