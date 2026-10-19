@@ -1620,7 +1620,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             (Layout/Visual LOW): `pb-2 gap-2` (was `pb-1 gap-1.5`) keeps the focus outline off the
             box's own bottom border; `px-2.5`/`py-1.5` stay a wider off-grid debt (round 6 fixed
             the triggers' own `gap-1.5` to `gap-2`). */}
-        <div className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
+        <div data-composer-row className="flex flex-wrap items-center gap-2 px-2.5 pb-2">
           <ApprovalModePill sessionId={sessionId} />
           <RoleAndModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />

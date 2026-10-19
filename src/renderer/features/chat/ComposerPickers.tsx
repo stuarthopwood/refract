@@ -92,7 +92,7 @@ export function RoleChip({ sessionId }: { sessionId: string }) {
           type="button"
           aria-disabled="true"
           aria-label={`${label}, role`}
-          className={cn(PICKER_TRIGGER_CLASS, 'max-w-24 min-w-0 shrink aria-disabled:opacity-100 aria-disabled:cursor-default')}
+          className={cn(PICKER_TRIGGER_CLASS, 'max-w-28 aria-disabled:opacity-100 aria-disabled:cursor-default')}
         >
           <Icon aria-hidden className="size-3" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -108,9 +108,19 @@ export function RoleChip({ sessionId }: { sessionId: string }) {
  * (`MessageInput.tsx`), the chip could wrap onto its own line while the picker stranded alone on
  * the next, or vice versa. `min-w-0 max-w-full` lets this pair shrink inside the row instead of
  * forcing it wider than available space; `ModelPicker`'s own trigger also gained `min-w-0 shrink`
- * so IT can give up width inside this pair before the pair itself overflows. Lives here, not
- * inline in `MessageInput.tsx` (already at its own 1632-line baseline with no headroom) or
- * `ModelPicker.tsx` (at its 600-line cap).
+ * so IT (and only it) can give up width inside this pair before the pair itself overflows.
+ *
+ * Gate round 2 fix (HIGH #2): the chip's OWN className used to carry `min-w-0 shrink` too,
+ * overriding `PICKER_TRIGGER_CLASS`'s own `shrink-0` via `cn`'s tailwind-merge -- at a narrow
+ * width the chip shrank alongside the Model picker instead of keeping its own natural size,
+ * measured live collapsing all the way down to a single truncated glyph ("D."). The chip now
+ * keeps `shrink-0` (dropped from its own className), so ONLY the Model picker ever gives up
+ * width; the chip's inner `truncate` span and its own `max-w-28` (`max-w-24` measured live as
+ * just barely clipping "Fallback", the longest role label) are the chip's sole truncation
+ * guards, reached only if its own text somehow still overflows that cap.
+ *
+ * Lives here, not inline in `MessageInput.tsx` (already at its own 1632-line baseline with no
+ * headroom) or `ModelPicker.tsx` (at its 600-line cap).
  */
 export function RoleAndModelPicker({ sessionId }: { sessionId: string }) {
   return (

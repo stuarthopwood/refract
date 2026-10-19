@@ -69,7 +69,9 @@ import {
   THEMES,
   DEFAULT_MODEL_CHANGE_LINE,
   FALLBACK_MODEL_CHANGE_LINE,
-  UNKNOWN_ROLE_MODEL_CHANGE_LINE
+  UNKNOWN_ROLE_MODEL_CHANGE_LINE,
+  SIXTY_CHAR_MODEL_ID,
+  MODEL_TRIGGER_FOUND_EXPR
 } from './verify-741-role-chip-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -274,7 +276,7 @@ async function main() {
       failures.push(`Fallback-scenario chip text was ${JSON.stringify(fallbackChipText)}, expected "Fallback".`);
     }
     if (fallbackAx.name === 'Fallback, role') {
-      findings.push('Fallback chip accessible name is "Fallback, role" (visible text first, sr-only ", role" suffix confirmed via the AX tree).');
+      findings.push('Fallback chip accessible name is "Fallback, role" (an explicit aria-label, not a sr-only span, confirmed via the AX tree).');
     } else {
       failures.push(`Fallback chip accessible name was ${JSON.stringify(fallbackAx.name)}, expected "Fallback, role".`);
     }
@@ -334,10 +336,16 @@ async function main() {
     // Gate round 1 fix (HIGH #3b): a real wait for `sessions.list()` to report the SEEDED
     // unrecognised `currentRole` (proving the Rust side actually read it off disk), not a fixed
     // sleep standing in for that real signal before asserting absence.
+    // Gate round 2 fix (MEDIUM #7): ALSO wait for `lastModel.id` to be the expected post-
+    // `get_state` model id, and for the Model picker trigger to actually show its name in the
+    // DOM -- the role-only wait above could pass before the renderer's OWN Sessions store had
+    // received the `get_state` snapshot at all, letting "no chip" pass vacuously (nothing in
+    // the composer rendered yet) rather than for the genuine reason (an unrecognised role).
     await cdp4.waitFor(
-      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole === 'a-role-no-chat-role-map-recognises')`,
-      { timeoutMs: 15_000, label: 'sessions.list() reports the seeded unrecognised currentRole' }
+      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole === 'a-role-no-chat-role-map-recognises' && r.value[0]?.lastModel?.id === ${JSON.stringify(SIXTY_CHAR_MODEL_ID)})`,
+      { timeoutMs: 15_000, label: 'sessions.list() reports the seeded unrecognised currentRole and the post-get_state lastModel id' }
     );
+    await cdp4.waitFor(MODEL_TRIGGER_FOUND_EXPR, { timeoutMs: 15_000, label: 'Model picker trigger shows the post-get_state model name' });
     const noChipFound = await cdp4.evaluate(`!(${ROLE_CHIP_FINDER})`);
     if (noChipFound) {
       findings.push('No role chip renders at all for a Session whose latest model_change entry carries an unrecognised role string -- never a guess.');
@@ -386,10 +394,14 @@ async function main() {
     if (!isTargetOwningPort(port5, launched5.targetPid)) throw new Error(`verify-741: CDP target on port ${port5} is not owned by this run's own process`);
 
     await openScratchSession(cdp5, repoDir5);
+    // Gate round 1 fix (HIGH #3b): a real wait, not a fixed sleep, same rationale as launch 4.
+    // Gate round 2 fix (MEDIUM #7): ALSO wait for `lastModel.id` and the Model picker trigger
+    // (same rationale as launch 4's own identical fix).
     await cdp5.waitFor(
-      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole == null)`,
-      { timeoutMs: 15_000, label: 'sessions.list() reports currentRole: null for an empty conversation file' }
+      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole == null && r.value[0]?.lastModel?.id === ${JSON.stringify(SIXTY_CHAR_MODEL_ID)})`,
+      { timeoutMs: 15_000, label: 'sessions.list() reports currentRole: null and the post-get_state lastModel id for an empty conversation file' }
     );
+    await cdp5.waitFor(MODEL_TRIGGER_FOUND_EXPR, { timeoutMs: 15_000, label: 'Model picker trigger shows the post-get_state model name' });
     const noChipFoundEmpty = await cdp5.evaluate(`!(${ROLE_CHIP_FINDER})`);
     if (noChipFoundEmpty) {
       findings.push('No role chip renders for a Session whose conversation file has no model_change entry at all -- currentRole reads null, never a guess.');

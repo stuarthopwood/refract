@@ -9,7 +9,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getAccessibleNameAndRole, switchTheme } from './verify-tauri-scratch-helpers.mjs';
 import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
-import { parseComputedColorToEntry, compositeOverLinear, resolvedLinear, relativeLuminance, contrastRatio } from './contrast-math.mjs';
+import { parseComputedColorToEntry, compositeOverLinear, resolvedLinear, relativeLuminance, contrastRatio, clamp01 } from './contrast-math.mjs';
 
 /** Gate round 1 fix (HIGH #1): the chip's own text colour (`getComputedStyle(chip).color`) is
  * measured against its REAL effective background, not an assumed opaque one -- the chip itself
@@ -18,8 +18,16 @@ import { parseComputedColorToEntry, compositeOverLinear, resolvedLinear, relativ
  * itself carry alpha per #927 "quiet composer"). `bgLayersOuterToInner` is the chip's own
  * ancestor chain's `background-color`, `<html>` first: each layer is composited over everything
  * BELOW it (the running `base`) in order, skipping fully transparent layers, so the final `base`
- * is the one true backdrop colour actually behind the chip's own text. */
-export function resolveEffectiveTextContrast(fgRaw, bgLayersOuterToInner) {
+ * is the one true backdrop colour actually behind the chip's own text.
+ *
+ * Gate round 2 fix (HIGH #3): `fgOpacity` folds in CSS `opacity` (the element's own, times every
+ * ancestor's, up to the painted background) into the foreground's EFFECTIVE alpha -- the chip's
+ * own text colour alpha channel alone was never dimmed by `opacity-60`, since `opacity` is a
+ * separate compositing step applied to the whole subtree, not a colour-channel property.
+ * `MessageInput.tsx`'s own disabled-row wrapper (`disabled && 'opacity-60'`) dims the WHOLE
+ * composer row independently of the chip's own `aria-disabled:opacity-100` -- a contrast probe
+ * that never multiplied this in could read a genuinely dimmed chip as if it were fully opaque. */
+export function resolveEffectiveTextContrast(fgRaw, bgLayersOuterToInner, fgOpacity = 1) {
   let base = null;
   for (const raw of bgLayersOuterToInner) {
     const entry = parseComputedColorToEntry(raw);
@@ -29,7 +37,8 @@ export function resolveEffectiveTextContrast(fgRaw, bgLayersOuterToInner) {
   if (!base) return null;
   const fgEntry = parseComputedColorToEntry(fgRaw);
   if (!fgEntry) return null;
-  const fgLinear = resolvedLinear(fgEntry, base);
+  const effectiveAlpha = clamp01(fgEntry.alpha * fgOpacity);
+  const fgLinear = resolvedLinear({ ...fgEntry, alpha: effectiveAlpha }, base);
   return contrastRatio(relativeLuminance(fgLinear), relativeLuminance(base.linear));
 }
 
@@ -127,6 +136,77 @@ export async function readRoleChip(cdp) {
   return cdp.evaluate(ROLE_CHIP_LABEL_EXPR);
 }
 
+/** Gate round 2 fix (HIGH #3): shared contrast-measurement probe (chip's own text colour against
+ * its REAL effective background, folding every ancestor's CSS `opacity` into the foreground's
+ * alpha) -- used by the per-theme measurement loop AND the in-run sensitivity self-check, so
+ * both exercise the exact same measurement path. */
+export async function measureChipContrast(cdp) {
+  const probe = await cdp.evaluate(`
+    (() => {
+      const chip = ${ROLE_CHIP_FINDER};
+      if (!chip) return null;
+      const fg = getComputedStyle(chip).color;
+      const bgLayers = [];
+      let opacity = 1;
+      let el = chip;
+      while (el) {
+        opacity *= parseFloat(getComputedStyle(el).opacity) || 1;
+        bgLayers.push(getComputedStyle(el).backgroundColor);
+        el = el.parentElement;
+      }
+      bgLayers.reverse();
+      return { fg, bgLayers, opacity };
+    })()
+  `);
+  return probe ? resolveEffectiveTextContrast(probe.fg, probe.bgLayers, probe.opacity) : null;
+}
+
+/** Gate round 2 fix (HIGH #2/#4): the composer bottom row's own `data-composer-row` marker
+ * (`MessageInput.tsx`), the model/reasoning/attach triggers found WITHIN it, and the role chip's
+ * own truncating span -- one shared probe used both at full width and inside the narrow-width
+ * (380/520px) loop, so "fully inside the row" is always measured against the REAL composer row,
+ * never `document.body` (there is no `data-slot="card"` ancestor around the composer at all, so
+ * the old `.closest('[data-slot="card"]') || document.body` fallback silently always took the
+ * `document.body` branch, making every "fully inside" assertion vacuous). Throws if the row
+ * cannot be found at all, rather than silently falling back to a container that can never
+ * meaningfully overflow. */
+export const COMPOSER_GEOMETRY_EXPR = `
+  (() => {
+    const row = document.querySelector('[data-composer-row]');
+    if (!row) throw new Error('data-composer-row not found -- the composer bottom row selector is broken');
+    const rowRect = row.getBoundingClientRect();
+    const chip = ${ROLE_CHIP_FINDER};
+    const buttons = Array.from(row.querySelectorAll('button'));
+    const modelButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'));
+    const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Medium') && b !== modelButton);
+    const attachButton = buttons.find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes('attach'));
+    const modelSpan = modelButton ? modelButton.querySelector('span.truncate') : null;
+    const chipLabelSpan = chip ? chip.querySelector('span.truncate') : null;
+    const fullyInside = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.left >= rowRect.left - 1 && r.right <= rowRect.right + 1 && r.top >= rowRect.top - 1 && r.bottom <= rowRect.bottom + 1;
+    };
+    return {
+      chipTop: chip ? Math.round(chip.getBoundingClientRect().top) : null,
+      modelTop: modelButton ? Math.round(modelButton.getBoundingClientRect().top) : null,
+      modelTruncated: modelSpan ? modelSpan.scrollWidth > modelSpan.clientWidth : null,
+      chipLabelNotClipped: chipLabelSpan ? chipLabelSpan.scrollWidth <= chipLabelSpan.clientWidth : null,
+      chipVisibleText: chip ? chip.textContent.trim() : null,
+      reasoningNotTruncated: reasoningButton ? reasoningButton.scrollWidth <= reasoningButton.clientWidth : null,
+      reasoningFullyInside: fullyInside(reasoningButton),
+      attachFullyInside: fullyInside(attachButton)
+    };
+  })()
+`;
+
+/** Gate round 2 fix (MEDIUM #7): waited for by launches 4/5 before asserting "no chip" -- proves
+ * the renderer's OWN Sessions store (not just Rust state) actually received the post-`get_state`
+ * model snapshot, so a no-chip assertion that only passed because nothing had rendered YET can no
+ * longer pass vacuously. */
+export const SIXTY_CHAR_MODEL_ID = 'claude-fable-5-the-sixty-plus-character-example-model-name';
+export const MODEL_TRIGGER_FOUND_EXPR = `!!Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'))`;
+
 /** Launch 1's full check body (Default chip through the mid-session fallback-while-pinned
  * transition) -- see `verify-741-role-chip.mjs`'s own header comment for the full launch list.
  * `findings`/`failures`/`notExercised` are mutated in place. */
@@ -140,39 +220,13 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
   }
   const chipAx = await getAccessibleNameAndRole(cdp1, `(${ROLE_CHIP_FINDER})`);
   if (chipAx.name === 'Default, role') {
-    findings.push('Role chip accessible name is "Default, role" (visible text first, sr-only ", role" suffix confirmed via the AX tree).');
+    findings.push('Role chip accessible name is "Default, role" (an explicit aria-label, not a sr-only span, confirmed via the AX tree).');
   } else {
     failures.push(`Role chip accessible name was ${JSON.stringify(chipAx.name)}, expected "Default, role".`);
   }
   const chipIconFound = await cdp1.evaluate(`!!(${ROLE_CHIP_FINDER}).querySelector('svg[aria-hidden]')`);
   if (chipIconFound) findings.push('Role chip renders an aria-hidden icon beside its text.');
   else failures.push('Role chip has no aria-hidden <svg> icon.');
-
-  // Gate round 1 fix (HIGH #1): muted text contrast at FULL strength (`aria-disabled:
-  // opacity-100`, never the default disabled dim) -- measured against the chip's own REAL
-  // effective background (its whole ancestor chain, alpha-composited), never an assumed
-  // opaque one. Dark theme at this point in the run (the default).
-  const chipContrastProbe = await cdp1.evaluate(`
-    (() => {
-      const chip = ${ROLE_CHIP_FINDER};
-      if (!chip) return null;
-      const fg = getComputedStyle(chip).color;
-      const bgLayers = [];
-      let el = chip;
-      while (el) {
-        bgLayers.push(getComputedStyle(el).backgroundColor);
-        el = el.parentElement;
-      }
-      bgLayers.reverse();
-      return { fg, bgLayers };
-    })()
-  `);
-  const chipContrastRatio = chipContrastProbe ? resolveEffectiveTextContrast(chipContrastProbe.fg, chipContrastProbe.bgLayers) : null;
-  if (chipContrastRatio !== null && chipContrastRatio >= 4.5) {
-    findings.push(`Role chip text contrast is ${chipContrastRatio.toFixed(2)}:1 against its real effective background (Dark theme, >= 4.5:1 required).`);
-  } else {
-    failures.push(`Role chip text contrast was ${chipContrastRatio === null ? 'unmeasurable' : chipContrastRatio.toFixed(2) + ':1'}, expected >= 4.5:1 (Dark theme).`);
-  }
 
   // Gate round 1 fix (LOW #13c): a REAL keyboard path, not a JS `.focus()` call -- Tab from
   // the message box (a known, stable starting point) until focus lands on the chip (bounded,
@@ -215,53 +269,33 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
   // the Reasoning (effort) trigger must keep its OWN natural width (never shrunk/truncated)
   // AND stay fully inside the composer row's own bounding rect; Attach must stay fully inside
   // the row too (not merely "found in the DOM", the old check's own vacuous `attachVisible`).
-  const truncationProbe = await cdp1.evaluate(`
-    (() => {
-      const row = document.querySelector('[aria-label="Message"]')?.closest('[data-slot="card"]') || document.body;
-      const rowRect = row.getBoundingClientRect();
-      const buttons = Array.from(row.querySelectorAll('button'));
-      const modelButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'));
-      // Round 2 fix: the TRUNCATE class (overflow:hidden) lives on the inner <span>, not the
-      // button -- an element with its own overflow:hidden becomes its own scroll container, so
-      // its CHILD's overflow never "leaks" into the BUTTON's own scrollWidth (confirmed live:
-      // the button's scrollWidth measured equal to its clientWidth even while visibly
-      // ellipsis-truncated). Measure the span that actually carries \`truncate\` instead.
-      const modelSpan = modelButton ? modelButton.querySelector('span.truncate') : null;
-      // Round 2 fix: the configured thinkingLevel in this tape is "medium" (-> "Medium"), not
-      // "Default" -- the old "Default" search never matched anything. Round 3 fix: the old
-      // \`.toLowerCase().includes('reasoning') === false\` guard was backwards -- the REAL
-      // Reasoning trigger's own aria-label literally ends ", reasoning" by design
-      // (\`ComposerPickers.tsx\`'s own WCAG 2.5.3 fix), so that guard excluded the one button it
-      // was meant to find. Matching on the level text plus "not the model button" is enough.
-      const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Medium') && b !== modelButton);
-      const attachButton = buttons.find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes('attach'));
-      const fullyInside = (el) => {
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.left >= rowRect.left - 1 && r.right <= rowRect.right + 1 && r.top >= rowRect.top - 1 && r.bottom <= rowRect.bottom + 1;
-      };
-      return {
-        modelTruncated: modelSpan ? modelSpan.scrollWidth > modelSpan.clientWidth : null,
-        reasoningNotTruncated: reasoningButton ? reasoningButton.scrollWidth <= reasoningButton.clientWidth : null,
-        reasoningFullyInside: fullyInside(reasoningButton),
-        attachFullyInside: fullyInside(attachButton)
-      };
-    })()
-  `);
-  if (truncationProbe.modelTruncated === true) {
+  // Gate round 2 fix (HIGH #4): the row used to resolve via `.closest('[data-slot="card"]') ||
+  // document.body` -- there is no `data-slot="card"` ancestor around the composer at all, so
+  // that selector always silently fell back to `document.body`, making every "fully inside"
+  // assertion below vacuous (body is always big enough). `COMPOSER_GEOMETRY_EXPR` measures
+  // against the real `[data-composer-row]` marker (`MessageInput.tsx`) instead, and throws
+  // (caught below, turned into a failure) if that marker cannot be found at all.
+  let geometryProbe;
+  try {
+    geometryProbe = await cdp1.evaluate(COMPOSER_GEOMETRY_EXPR);
+  } catch (err) {
+    failures.push(`Composer row geometry probe failed: ${err.message}`);
+    geometryProbe = null;
+  }
+  if (geometryProbe?.modelTruncated === true) {
     findings.push('The 60-character-plus model name truncates (real geometry: scrollWidth > clientWidth on the Model picker trigger\'s own truncating span).');
   } else {
-    failures.push(`Model trigger truncation check: modelTruncated=${truncationProbe.modelTruncated}, expected true.`);
+    failures.push(`Model trigger truncation check: modelTruncated=${geometryProbe?.modelTruncated}, expected true.`);
   }
-  if (truncationProbe.reasoningNotTruncated === true && truncationProbe.reasoningFullyInside === true) {
+  if (geometryProbe?.reasoningNotTruncated === true && geometryProbe?.reasoningFullyInside === true) {
     findings.push('The Reasoning (effort) trigger keeps its own natural width (never shrunk/truncated) and stays fully inside the composer row.');
   } else {
-    failures.push(`Reasoning trigger geometry check: reasoningNotTruncated=${truncationProbe.reasoningNotTruncated}, reasoningFullyInside=${truncationProbe.reasoningFullyInside}, expected both true.`);
+    failures.push(`Reasoning trigger geometry check: reasoningNotTruncated=${geometryProbe?.reasoningNotTruncated}, reasoningFullyInside=${geometryProbe?.reasoningFullyInside}, expected both true.`);
   }
-  if (truncationProbe.attachFullyInside === true) {
+  if (geometryProbe?.attachFullyInside === true) {
     findings.push('A 60-character-plus model name does not push the Attach button out of the composer row (real geometry: fully inside the row\'s own bounding rect).');
   } else {
-    failures.push(`Attach button geometry check: attachFullyInside=${truncationProbe.attachFullyInside}, expected true.`);
+    failures.push(`Attach button geometry check: attachFullyInside=${geometryProbe?.attachFullyInside}, expected true.`);
   }
 
   await cdp1.screenshot(path.join(SHOTS_DIR, '06-composer-row.png'));
@@ -299,8 +333,39 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
     // pointer still sits over the last-clicked menu item -- a stray closing menu or hover
     // Tooltip could otherwise land in the screenshot.
     await cdp1.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: `Theme menu closed after switching to ${theme.name}` });
+    // Gate round 2 fix (LOW #9): `switchTheme` clicks `[data-profile-name-button]`, leaving it
+    // both focused AND hovered -- Radix keeps that button's own Tooltip ("Stuart Hopwood", the
+    // account name) open on focus alone, so a mere pointer move to a neutral spot never closes
+    // it (the identical root cause `verify-937-advisor-chip.mjs`'s own fix already documents).
+    // Clicking a neutral, always-present element (the message box, never the chip) blurs the
+    // profile button instead, then an explicit wait confirms no Tooltip is left open at all
+    // before the screenshot, rather than a fixed delay standing in for that real signal.
+    await cdp1.click(`document.querySelector('[aria-label="Message"]')`).catch(() => {});
     await cdp1.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
-    await new Promise((r) => setTimeout(r, 300));
+    await cdp1.waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `[${theme.name}] stray profile-menu tooltip closed before screenshot` }).catch((err) => failures.push(err.message));
+    // Gate round 2 fix (HIGH #3): contrast measured in ALL FIVE themes (not Dark only), each
+    // through the shared `measureChipContrast` probe (folds every ancestor's CSS `opacity` into
+    // the foreground's effective alpha).
+    const themeContrastRatio = await measureChipContrast(cdp1);
+    if (themeContrastRatio !== null && themeContrastRatio >= 4.5) {
+      findings.push(`Role chip text contrast is ${themeContrastRatio.toFixed(2)}:1 against its real effective background under the ${theme.name} theme (>= 4.5:1 required).`);
+    } else {
+      failures.push(`Role chip text contrast under the ${theme.name} theme was ${themeContrastRatio === null ? 'unmeasurable' : themeContrastRatio.toFixed(2) + ':1'}, expected >= 4.5:1.`);
+    }
+    if (theme === THEMES[0]) {
+      // Gate round 2 fix (HIGH #3): an in-run sensitivity self-check -- forces the chip's own
+      // inline `opacity` to 0.6 via CDP and re-measures, proving the probe actually REACTS to a
+      // genuinely dimmed chip (rather than, say, always returning a number >= 4.5 regardless of
+      // opacity due to a mistake in the compositing math), then removes the override.
+      await cdp1.evaluate(`(${ROLE_CHIP_FINDER}).style.opacity = '0.6'`);
+      const dimmedRatio = await measureChipContrast(cdp1);
+      await cdp1.evaluate(`(${ROLE_CHIP_FINDER}).style.opacity = ''`);
+      if (dimmedRatio !== null && dimmedRatio < 4.5) {
+        findings.push(`Contrast probe sensitivity self-check: forcing the chip's own inline opacity to 0.6 drops the measured ratio to ${dimmedRatio.toFixed(2)}:1 (< 4.5, confirms the probe reacts to opacity).`);
+      } else {
+        failures.push(`Contrast probe sensitivity self-check failed: forcing opacity:0.6 measured ${dimmedRatio === null ? 'unmeasurable' : dimmedRatio.toFixed(2) + ':1'}, expected < 4.5:1.`);
+      }
+    }
     const shotName = `01-chip-default-${theme.id}.png`;
     await cdp1.screenshot(path.join(SHOTS_DIR, shotName));
     findings.push(`Screenshot captured: composer strip with the Default role chip under the ${theme.name} theme (${shotName}).`);
@@ -312,21 +377,34 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
   for (const width of [380, 520]) {
     await setWindowWidth(cdp1, width);
     await cdp1.waitFor(`!!(${ROLE_CHIP_FINDER})`, { timeoutMs: 10_000, label: `Role chip still rendered at ${width}px` });
-    const pairGeometry = await cdp1.evaluate(`
-      (() => {
-        const chip = ${ROLE_CHIP_FINDER};
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const modelButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'));
-        if (!chip || !modelButton) return null;
-        const chipRect = chip.getBoundingClientRect();
-        const modelRect = modelButton.getBoundingClientRect();
-        return { chipTop: Math.round(chipRect.top), modelTop: Math.round(modelRect.top) };
-      })()
-    `);
+    // Gate round 2 fix (HIGH #2/#4): the shared `COMPOSER_GEOMETRY_EXPR` probe (real composer
+    // row, never `document.body`) also runs at these narrow widths now, not only at full width.
+    let pairGeometry;
+    try {
+      pairGeometry = await cdp1.evaluate(COMPOSER_GEOMETRY_EXPR);
+    } catch (err) {
+      failures.push(`[${width}px] Composer row geometry probe failed: ${err.message}`);
+      pairGeometry = null;
+    }
     if (pairGeometry && pairGeometry.chipTop === pairGeometry.modelTop) {
       findings.push(`At ${width}px, the role chip and Model picker share the same row (wrapped together, top=${pairGeometry.chipTop}).`);
     } else {
       failures.push(`At ${width}px, the role chip and Model picker did NOT share the same row: ${JSON.stringify(pairGeometry)}.`);
+    }
+    // Gate round 2 fix (HIGH #2): the chip's own label span must render in full at this width
+    // (never clipped, now that it keeps `shrink-0`) and the visible text must equal the full
+    // label captured earlier -- not merely "a span exists".
+    if (pairGeometry?.chipLabelNotClipped === true && pairGeometry?.chipVisibleText === defaultChipText) {
+      findings.push(`At ${width}px, the role chip's own label renders in full (scrollWidth <= clientWidth) and the visible text equals the full label "${defaultChipText}".`);
+    } else {
+      failures.push(`At ${width}px, the role chip's label is clipped or incomplete: chipLabelNotClipped=${pairGeometry?.chipLabelNotClipped}, chipVisibleText=${JSON.stringify(pairGeometry?.chipVisibleText)}, expected "${defaultChipText}".`);
+    }
+    // Gate round 2 fix (HIGH #4): the containment checks (Reasoning/Attach fully inside the
+    // real composer row) now also run at these narrow widths, not only at full width.
+    if (pairGeometry?.reasoningFullyInside === true && pairGeometry?.attachFullyInside === true) {
+      findings.push(`At ${width}px, the Reasoning and Attach triggers both stay fully inside the composer row's own bounding rect.`);
+    } else {
+      failures.push(`At ${width}px, containment check failed: reasoningFullyInside=${pairGeometry?.reasoningFullyInside}, attachFullyInside=${pairGeometry?.attachFullyInside}, expected both true.`);
     }
     const shotFile = width === 380 ? '08-narrow-380.png' : '09-narrow-520.png';
     await cdp1.screenshot(path.join(SHOTS_DIR, shotFile));
