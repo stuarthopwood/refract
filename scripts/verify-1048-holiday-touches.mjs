@@ -328,8 +328,11 @@ async function main() {
     await cdp.evaluate(`window.dispatchEvent(new Event('focus')); document.dispatchEvent(new PointerEvent('pointerdown'))`);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: 5_000, label: 'Ambient loop resumes on the next input after an idle pause' });
 
-    // ---- Spinner: approve the fixture's one tool call, then read the spinner DURING the
+    // ---- Spinner: send the one real message this fixture's tape waits on (`session.jsonl`'s
+    // own `__wait__: ["prompt"]`), approve its one tool call, then read the spinner DURING the
     // streaming delay that follows (the one real "working" window this scenario holds open). ----
+    await cdp.typeIntoByLabel('Message', 'trigger the scripted turn');
+    await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'Approval card rendered' });
     await cdp.clickByText('Approve');
     const spinnerSelector = `Array.from(document.querySelectorAll('.agent-spinner-holiday'))[0]`;
