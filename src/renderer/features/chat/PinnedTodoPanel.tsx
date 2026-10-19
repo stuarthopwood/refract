@@ -118,15 +118,47 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
 
   // Gate round 1 fix (Main P3, the #900 focus-intent pattern, `useFocusSearchOnStrandedUnmount.ts`
   // precedent): Unpin and the plan vanishing both unmount whichever button/row currently holds
-  // focus inside this panel, which would otherwise strand it on `<body>`. A `useLayoutEffect`
-  // cleanup keyed on `active` fires exactly on the true -> false edge (both causes collapse to
-  // the SAME transition, since `active` already requires `pinned && hasTodoPlan`); refs are still
-  // attached at that point (passive-effect cleanups would already see `null`/`<body>`). Deferred
-  // one rAF so the commit settles first, then `isFocusStranded` guards against stealing focus
-  // from anywhere it validly already moved to in that same frame.
+  // focus inside this panel, which would otherwise strand it on `<body>`.
+  //
+  // Gate round 2 fix (self-caught live-check failure: P3's own assertion failed, "actual false"):
+  // the precedent hook's cleanup fires on a REAL fiber deletion (`useFocusSearchOnStrandedUnmount`
+  // is called by a component -- `SessionRow`/`RepositoryGroup` -- that is itself removed from the
+  // tree), where React still has the deleted subtree's refs attached when it runs each deleted
+  // fiber's own effect cleanup. THIS component never unmounts itself (`ChatPane.tsx` always
+  // renders it); only its OWN internal `<section>` conditionally disappears, so this effect's
+  // cleanup instead fires via the ordinary "dependency changed" path, which React runs for the
+  // WHOLE commit only AFTER every mutation (including detaching the just-removed `<section>`'s
+  // own ref, and the browser resetting `document.activeElement` to `<body>`) has already
+  // happened -- `rootRef.current` is already null and `document.activeElement` is already
+  // `<body>` by the time this runs, so the old `rootRef.current?.contains(document.activeElement)`
+  // guard could never be true and silently skipped the restore on every real Unpin click.
+  // `focusWasInsideRef` instead tracks the answer continuously via `focusin`/`focusout` on the
+  // section while it exists, so the cleanup reads a snapshot from BEFORE the removal, never a
+  // live query of state the removal itself already erased.
+  const focusWasInsideRef = useRef(false)
+  const sectionMounted = pinned && hasTodoPlan(todoTree)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const update = () => {
+      focusWasInsideRef.current = root.contains(document.activeElement)
+    }
+    update()
+    root.addEventListener('focusin', update)
+    root.addEventListener('focusout', update)
+    return () => {
+      root.removeEventListener('focusin', update)
+      root.removeEventListener('focusout', update)
+    }
+  }, [sectionMounted])
+
+  // A `useLayoutEffect` cleanup keyed on `active` fires exactly on the true -> false edge (both
+  // causes above collapse to the SAME transition, since `active` already requires `pinned &&
+  // hasTodoPlan`). Deferred one rAF so the commit settles first, then `isFocusStranded` guards
+  // against stealing focus from anywhere it validly already moved to in that same frame.
   useLayoutEffect(() => {
     return () => {
-      if (!rootRef.current?.contains(document.activeElement)) return
+      if (!focusWasInsideRef.current) return
       requestAnimationFrame(() => {
         if (!isFocusStranded(document.activeElement, null)) return
         const pill = document.querySelector(`[aria-controls="todo-panel-${sessionId}"]`)
