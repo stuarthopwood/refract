@@ -17,6 +17,7 @@ import type {
   FilePreview,
   FileTreeNode,
   GitStatusMap,
+  LeftoverSummary,
   LowMemoryWarning,
   MergeInput,
   PullRequestListResult,
@@ -138,6 +139,8 @@ const refract: RefractApi = {
         IPC_REQUESTS.SESSIONS_DELETE_CHECK,
         id
       ),
+    deleteLeftoverSummary: (id) =>
+      request<LeftoverSummary>(IPC_REQUESTS.SESSIONS_DELETE_LEFTOVER_SUMMARY, id),
     delete: (id, options) => request<void>(IPC_REQUESTS.SESSIONS_DELETE, id, options),
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),

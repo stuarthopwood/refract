@@ -167,21 +167,69 @@ async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_insi
     );
 }
 
+/// Issue #891: a registered worktree whose `.git` pointer was deleted by hand, with real files
+/// left behind, used to refuse outright (`RegisteredNotEmpty`). It now deletes completely --
+/// `remove_session_worktree`'s unified registered path no longer branches on this shape at all.
 #[tokio::test]
-async fn is_registered_but_hand_emptied_true_only_when_git_entry_is_gone() {
+async fn remove_session_worktree_removes_a_registered_worktree_with_a_hand_emptied_git_pointer() {
     let repo = init_repo().await;
     let added = add_worktree_with_generated_name(&repo, "main")
         .await
         .expect("create worktree");
-    assert!(!is_registered_but_hand_emptied(&added.worktree_path)
-        .await
-        .unwrap());
     tokio::fs::remove_file(added.worktree_path.join(".git"))
         .await
         .unwrap();
-    assert!(is_registered_but_hand_emptied(&added.worktree_path)
+    tokio::fs::write(added.worktree_path.join("leftover.txt"), b"x")
         .await
-        .unwrap());
+        .unwrap();
+    remove_session_worktree(&repo, &added.worktree_path, &added.branch, true)
+        .await
+        .expect("remove despite the missing .git pointer");
+    assert!(tokio::fs::metadata(&added.worktree_path).await.is_err());
+}
+
+/// Issue #891's own core fix: a registered worktree full of generated files (the pnpm/
+/// `node_modules`-shaped case `git worktree remove --force` used to be unable to finish on
+/// Windows) deletes completely via `fs::remove_tree`, never shelling out to `git worktree
+/// remove` at all.
+#[tokio::test]
+async fn remove_session_worktree_removes_a_registered_worktree_full_of_generated_files() {
+    let repo = init_repo().await;
+    let added = add_worktree_with_generated_name(&repo, "main")
+        .await
+        .expect("create worktree");
+    tokio::fs::create_dir_all(added.worktree_path.join("node_modules/pkg/sub"))
+        .await
+        .unwrap();
+    for i in 0..25 {
+        tokio::fs::write(
+            added.worktree_path.join(format!("node_modules/pkg/file-{i}.js")),
+            b"x",
+        )
+        .await
+        .unwrap();
+    }
+    remove_session_worktree(&repo, &added.worktree_path, &added.branch, true)
+        .await
+        .expect("remove a registered worktree full of generated files");
+    assert!(tokio::fs::metadata(&added.worktree_path).await.is_err());
+    assert!(!branch_exists(&repo, &added.branch).await);
+}
+
+/// Issue #891's git metadata contract: a registered worktree whose folder is entirely missing
+/// (git still lists it; nothing is left on disk) must still have its admin entry (and branch)
+/// cleaned up, never dead-ending on `git worktree remove --force`'s own missing-folder error.
+#[tokio::test]
+async fn remove_session_worktree_cleans_up_a_registered_worktree_whose_folder_is_entirely_missing() {
+    let repo = init_repo().await;
+    let added = add_worktree_with_generated_name(&repo, "main")
+        .await
+        .expect("create worktree");
+    tokio::fs::remove_dir_all(&added.worktree_path).await.unwrap();
+    remove_session_worktree(&repo, &added.worktree_path, &added.branch, true)
+        .await
+        .expect("remove a registered worktree with no folder left on disk");
+    assert!(!branch_exists(&repo, &added.branch).await);
 }
 
 /// A `..` built into the path, lexically resolving one level ABOVE the real worktrees root --

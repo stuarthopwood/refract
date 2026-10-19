@@ -21,6 +21,12 @@ interface DeleteCheck {
   hasUpstream: boolean
 }
 
+interface LeftoverSummary {
+  generatedFolders: { name: string; fileCount: number }[]
+  otherFiles: string[]
+  moreCount: number
+}
+
 export interface DeleteDialogProps {
   session: { id: string; name: string }
   open: boolean
@@ -30,6 +36,11 @@ export interface DeleteDialogProps {
    * in normal use, where every real caller leaves it unset and the dialog always calls
    * `deleteCheck`. */
   check?: DeleteCheck
+  /** Overrides the `sessions.deleteLeftoverSummary` call with a fixed result. Used only to
+   * render this dialog in isolation for verification screenshots, without a running main
+   * process; harmless in normal use, where every real caller leaves it unset and the dialog
+   * always calls `deleteLeftoverSummary`. */
+  leftoverSummary?: LeftoverSummary
   onDeleted?(): void
   /** Called after the dialog finishes closing without deleting (Cancel, Escape, or
    * Cancel-after-error), so the caller can move focus off whatever element the dialog is about
@@ -39,11 +50,21 @@ export interface DeleteDialogProps {
    * `<body>`. */
   onCancelled?(): void
 }
-export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, onCancelled }: DeleteDialogProps) {
+export function DeleteDialog({
+  session,
+  open,
+  onOpenChange,
+  check,
+  leftoverSummary: leftoverSummaryOverride,
+  onDeleted,
+  onCancelled
+}: DeleteDialogProps) {
 
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [result, setResult] = useState<DeleteCheck | null>(check ?? null)
+  const [leftoverLoading, setLeftoverLoading] = useState(false)
+  const [leftoverSummary, setLeftoverSummary] = useState<LeftoverSummary | null>(leftoverSummaryOverride ?? null)
   const [error, setError] = useState<string | null>(null)
   const deletedRef = useRef(false)
   // Live, not closure-captured: handleDelete's own `session` is fixed to whatever it was
@@ -62,26 +83,44 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
     deletedRef.current = false
     setDeleting(false)
     setError(null)
+    let cancelled = false
+
     if (check) {
       setResult(check)
-      return
+    } else {
+      setResult(null)
+      setLoading(true)
+      void window.refract.sessions.deleteCheck(session.id).then((response) => {
+        if (cancelled) return
+        setLoading(false)
+        if (!response.ok) {
+          setError(response.error.message)
+          return
+        }
+        setResult(response.value)
+      })
     }
-    setResult(null)
-    setLoading(true)
-    let cancelled = false
-    void window.refract.sessions.deleteCheck(session.id).then((response) => {
-      if (cancelled) return
-      setLoading(false)
-      if (!response.ok) {
-        setError(response.error.message)
-        return
-      }
-      setResult(response.value)
-    })
+
+    // Issue #891: a SEPARATE background walk from `deleteCheck` above -- it can take real time
+    // against a large worktree, never gates Delete, and a failure here is purely informational
+    // (never reuses the destructive `error` state).
+    if (leftoverSummaryOverride) {
+      setLeftoverSummary(leftoverSummaryOverride)
+    } else {
+      setLeftoverSummary(null)
+      setLeftoverLoading(true)
+      void window.refract.sessions.deleteLeftoverSummary(session.id).then((response) => {
+        if (cancelled) return
+        setLeftoverLoading(false)
+        if (!response.ok) return
+        setLeftoverSummary(response.value)
+      })
+    }
+
     return () => {
       cancelled = true
     }
-  }, [open, session.id, check])
+  }, [open, session.id, check, leftoverSummaryOverride])
 
   async function handleDelete(): Promise<void> {
     // Capture which Session this call is actually deleting: `session` is a prop that can
@@ -141,6 +180,20 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
               </li>
             )}
             {!result.hasUpstream && <li>This branch has no upstream</li>}
+          </ul>
+        )}
+        {leftoverLoading && <p className="text-sm text-muted-foreground">Checking files…</p>}
+        {leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0) && (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {leftoverSummary.generatedFolders.map((folder) => (
+              <li key={folder.name}>
+                {folder.name} ({folder.fileCount} file{folder.fileCount === 1 ? '' : 's'})
+              </li>
+            ))}
+            {leftoverSummary.otherFiles.map((path) => (
+              <li key={path}>{path}</li>
+            ))}
+            {leftoverSummary.moreCount > 0 && <li>and {leftoverSummary.moreCount} more</li>}
           </ul>
         )}
         <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>

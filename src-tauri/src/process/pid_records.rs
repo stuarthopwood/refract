@@ -133,6 +133,29 @@ pub(crate) async fn remove_process_records_for_session(session_id: &str) {
     remove_process_records_for_session_with(&file, session_id).await;
 }
 
+/// Every pid currently recorded for `session_id` (its own `omp` root processes) -- issue #891's
+/// holder preflight (`git/worktree_holders.rs::preflight`) excludes these from whatever Windows
+/// Restart Manager reports: the Session's own still-running agent holding its own files open is
+/// never a reason to refuse deleting it. Read-only; never mutates `processes.json`.
+pub(crate) async fn pids_for_session(session_id: &str) -> Vec<u32> {
+    let Some(file) = require_file_path() else {
+        return Vec::new();
+    };
+    pids_for_session_with(&file, session_id).await
+}
+
+async fn pids_for_session_with(file: &Path, session_id: &str) -> Vec<u32> {
+    let _guard = QUEUE.lock().await;
+    let records: Vec<ProcessRecord> = read_json_file(file, make_default)
+        .await
+        .unwrap_or_else(|_| make_default());
+    records
+        .into_iter()
+        .filter(|r| r.session_id == session_id)
+        .map(|r| r.pid)
+        .collect()
+}
+
 async fn record_process_with(file: &Path, pid: u32, session_id: &str, query: QueryFn) {
     let (start_time, image_path) = query(pid).unwrap_or_else(|| (0, default_image_path()));
     let _guard = QUEUE.lock().await;

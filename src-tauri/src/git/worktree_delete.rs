@@ -11,30 +11,27 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::fs::remove_tree::{remove_tree, RemoveTreeError};
+
 use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
 use super::worktree_validity::{
     canonical_comparable_path, comparable_path, is_worktree_registered,
 };
 use super::worktrees::{branch_exists, worktrees_root};
 
+/// Issue #891 trimmed this to only the two reasons still reachable: both `remove_orphaned_
+/// worktree_folder` and the registered path now remove a non-empty folder themselves (via
+/// `fs::remove_tree`) rather than refusing on sight of its contents.
 enum OrphanRefusalReason {
-    NotEmpty,
-    RegisteredNotEmpty,
     IsALink,
     NotADirectory,
-    InvalidGitEntry,
-    ForeignGitdir,
 }
 
 fn orphan_refusal_message(worktree_path: &Path, reason: OrphanRefusalReason) -> String {
     let wt = worktree_path.display();
     match reason {
-        OrphanRefusalReason::NotEmpty => format!("Refract did not delete anything. The worktree folder {wt} still contains files or folders git no longer tracks. Move anything you want to keep somewhere else, then delete the folder itself (Refract only ever removes an empty folder), then choose Delete again."),
-        OrphanRefusalReason::RegisteredNotEmpty => format!("Refract did not delete anything. The worktree folder {wt} is still registered with git, but its own .git file is gone and real files remain. Move or delete them yourself, or restore its .git file, then choose Delete again."),
         OrphanRefusalReason::IsALink => format!("Refract did not delete anything. {wt} is a link, not a worktree folder. Remove only the link itself (in File Explorer delete the link; do not delete its contents), then choose Delete again."),
         OrphanRefusalReason::NotADirectory => format!("Refract did not delete anything. {wt} is a file, not a worktree folder. Remove it yourself, then choose Delete again."),
-        OrphanRefusalReason::InvalidGitEntry => format!("Refract did not delete anything. {wt} contains a .git folder or file Refract does not recognise; it may be a separate repository. Check what it is, and if you no longer need it, move the folder somewhere else yourself, then choose Delete again."),
-        OrphanRefusalReason::ForeignGitdir => format!("Refract did not delete anything. {wt} contains a .git file that does not point to one of this repository's worktrees. Check it, and if you no longer need it, delete that .git file (or move the folder) yourself, then choose Delete again."),
     }
 }
 
@@ -81,6 +78,24 @@ fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
             GitErrorCode::WorktreeFailed,
             format!("Refract could not remove {wt}: {err}"),
         ),
+    }
+}
+
+/// Maps `fs::remove_tree`'s own error into the same `GitError` shape every other refusal in
+/// this file uses. `RemoveTreeError::Io` names the EXACT sub-path that failed (not
+/// `worktree_path` itself) -- issue #891's "if a removal later fails part-way, report exactly
+/// what remains" -- so `wrap_fs_error`'s own sharing-violation/access-denied wording correctly
+/// points at whatever file or folder a holder actually appeared on, not the worktree root.
+fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError {
+    match err {
+        RemoveTreeError::OutsideBoundary => GitError::new(
+            GitErrorCode::WorktreeFailed,
+            format!(
+                "Refract did not delete anything. {} resolves outside Refract's worktree folder (likely through a link somewhere above it), so Refract will not remove it. Check what it actually points to, then choose Delete again.",
+                worktree_path.display()
+            ),
+        ),
+        RemoveTreeError::Io { path, source } => wrap_fs_error(source, &path),
     }
 }
 
@@ -237,32 +252,23 @@ async fn assert_within_worktrees_root(
     }
 }
 
-/// A folder can be REGISTERED yet already emptied by hand (its `.git` pointer deleted, folder
-/// and registration both remain). True only when a real directory exists with no `.git` entry.
-async fn is_registered_but_hand_emptied(worktree_path: &Path) -> Result<bool, GitError> {
-    let Some(meta) = lstat_optional(worktree_path).await? else {
-        return Ok(false);
-    };
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Ok(false);
-    }
-    let has_git = tokio::fs::symlink_metadata(worktree_path.join(".git"))
-        .await
-        .is_ok();
-    Ok(!has_git)
-}
-
-/// Issue #599 step 3: finds and removes ONLY the one admin directory under
+/// Issue #599 step 3, split by issue #891 (git metadata contract: "resolve the admin entry
+/// BEFORE any file is deleted"): finds, but does not remove, the one admin directory under
 /// `<gitCommonDir>/worktrees/` whose `gitdir` file canonicalises to `<worktreePath>/.git` --
 /// never a repo-wide `git worktree prune`, which would drop every OTHER stale admin entry too.
-/// Refuses (removes nothing) if the entry is locked, or if zero or more than one candidate
-/// matches.
-async fn remove_admin_entry_for(repo: &Path, worktree_path: &Path) -> Result<(), GitError> {
+/// Refuses (nothing removed, nothing even looked at on disk yet) if the entry is locked, or if
+/// zero or more than one candidate matches.
+async fn find_admin_entry_for(repo: &Path, worktree_path: &Path) -> Result<PathBuf, GitError> {
     let admin_root = git_common_dir(repo).await?.join("worktrees");
     let wanted_git_file = comparable_path(&worktree_path.join(".git").to_string_lossy());
     let mut entries = match tokio::fs::read_dir(&admin_root).await {
         Ok(rd) => rd,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(GitError::new(
+                GitErrorCode::WorktreeFailed,
+                admin_entry_refusal_message(worktree_path),
+            ))
+        }
         Err(e) => return Err(wrap_fs_error(e, worktree_path)),
     };
     let mut matches: Vec<PathBuf> = Vec::new();
@@ -310,15 +316,23 @@ async fn remove_admin_entry_for(repo: &Path, worktree_path: &Path) -> Result<(),
             admin_entry_refusal_message(worktree_path),
         ));
     }
-    tokio::fs::remove_dir_all(&admin_entry)
+    Ok(admin_entry)
+}
+
+/// Removes an already-resolved admin entry (see `find_admin_entry_for`, which performs every
+/// committed match/locked/containment check above before this ever runs).
+async fn remove_admin_entry(admin_entry: &Path, worktree_path: &Path) -> Result<(), GitError> {
+    tokio::fs::remove_dir_all(admin_entry)
         .await
         .map_err(|e| wrap_fs_error(e, worktree_path))
 }
 
-/// Issue #599 step 3: removes an UNREGISTERED worktree folder, never a registered one. Returns
-/// `true` if it actually removed something. Removes the folder only once it is a REAL directory
-/// that is then either EMPTY, or holds only a `.git` file pointing strictly inside this
-/// repository's own admin area -- never a recursive delete of unknown content.
+/// Issue #599 step 3, rewritten by issue #891: removes an UNREGISTERED worktree folder, never a
+/// registered one. Returns `true` if it actually removed something. A real directory's entire
+/// contents are removed via `fs::remove_tree` (long-path-safe, never follows a link) regardless
+/// of what is in it -- this folder lives inside Refract's own exclusive worktrees root, so
+/// anything found there is leftover Refract-generated content (node_modules, build output, a
+/// stale `.git` pointer), never used by anything else.
 async fn remove_orphaned_worktree_folder(
     repo: &Path,
     worktree_path: &Path,
@@ -338,75 +352,11 @@ async fn remove_orphaned_worktree_folder(
             orphan_refusal_message(worktree_path, OrphanRefusalReason::NotADirectory),
         ));
     }
-    let mut dir = tokio::fs::read_dir(worktree_path)
+    let root = worktrees_root(repo);
+    remove_tree(worktree_path, &root)
         .await
-        .map_err(|e| wrap_fs_error(e, worktree_path))?;
-    let mut names: Vec<String> = Vec::new();
-    while let Some(entry) = dir
-        .next_entry()
-        .await
-        .map_err(|e| wrap_fs_error(e, worktree_path))?
-    {
-        names.push(entry.file_name().to_string_lossy().into_owned());
-    }
-    if names.is_empty() {
-        tokio::fs::remove_dir(worktree_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        return Ok(true);
-    }
-    if names.len() == 1 && names[0] == ".git" {
-        let git_file_path = worktree_path.join(".git");
-        let git_file_meta = tokio::fs::symlink_metadata(&git_file_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        if !git_file_meta.is_file() {
-            return Err(GitError::new(
-                GitErrorCode::WorktreeFailed,
-                orphan_refusal_message(worktree_path, OrphanRefusalReason::InvalidGitEntry),
-            ));
-        }
-        let content = tokio::fs::read_to_string(&git_file_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        let Some(gitdir_raw) = content
-            .lines()
-            .find_map(|l| l.strip_prefix("gitdir:"))
-            .map(str::trim)
-        else {
-            return Err(GitError::new(
-                GitErrorCode::WorktreeFailed,
-                orphan_refusal_message(worktree_path, OrphanRefusalReason::InvalidGitEntry),
-            ));
-        };
-        let gitdir_abs = if Path::new(gitdir_raw).is_absolute() {
-            PathBuf::from(gitdir_raw)
-        } else {
-            worktree_path.join(gitdir_raw)
-        };
-        let admin_root = git_common_dir(repo).await?.join("worktrees");
-        let admin_root_key = comparable_path(&admin_root.to_string_lossy());
-        let prefix = format!("{admin_root_key}{}", std::path::MAIN_SEPARATOR);
-        let points_into_this_repo =
-            comparable_path(&gitdir_abs.to_string_lossy()).starts_with(&prefix);
-        if !points_into_this_repo {
-            return Err(GitError::new(
-                GitErrorCode::WorktreeFailed,
-                orphan_refusal_message(worktree_path, OrphanRefusalReason::ForeignGitdir),
-            ));
-        }
-        tokio::fs::remove_file(&git_file_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        tokio::fs::remove_dir(worktree_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        return Ok(true);
-    }
-    Err(GitError::new(
-        GitErrorCode::WorktreeFailed,
-        orphan_refusal_message(worktree_path, OrphanRefusalReason::NotEmpty),
-    ))
+        .map_err(|err| map_remove_tree_error(err, worktree_path))?;
+    Ok(true)
 }
 
 /// `git branch -D`'s own "used by worktree at '<path>'" message names the OTHER checkout as
@@ -528,66 +478,45 @@ pub async fn remove_session_worktree(
 
     let registered = is_worktree_registered(repo, worktree_path).await;
 
-    if registered && is_registered_but_hand_emptied(worktree_path).await? {
-        let mut dir = tokio::fs::read_dir(worktree_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        if dir
-            .next_entry()
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?
-            .is_some()
-        {
-            return Err(GitError::new(
-                GitErrorCode::WorktreeFailed,
-                orphan_refusal_message(worktree_path, OrphanRefusalReason::RegisteredNotEmpty),
-            ));
-        }
-        remove_admin_entry_for(repo, worktree_path).await?;
-        tokio::fs::remove_dir(worktree_path)
-            .await
-            .map_err(|e| wrap_fs_error(e, worktree_path))?;
-        delete_branch_if_requested(repo, branch, delete_branch, true).await?;
-        return Ok(());
-    }
-
     if registered {
-        let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-        let result = git_raw(
-            repo,
-            &["worktree", "remove", "--force", "--", &worktree_path_str],
-            None,
-        )
-        .await;
-        if result.code != 0 {
-            let stderr = if !result.stderr.trim().is_empty() {
-                result.stderr.trim().to_string()
-            } else {
-                result.stdout.trim().to_string()
-            };
-            let lower = stderr.to_lowercase();
-            if lower.contains("locked working tree") {
-                return Err(GitError::new(
-                    GitErrorCode::WorktreeFailed,
-                    locked_worktree_message(worktree_path),
-                ));
-            }
-            if lower.contains("permission denied")
-                || lower.contains("resource busy")
-                || lower.contains("being used by another process")
-                || lower.contains("access is denied")
-            {
-                return Err(GitError::new(
-                    GitErrorCode::WorktreeFailed,
-                    format!("Refract could not finish removing {} because another program may be using it. Close any terminal or editor open in that folder, then choose Delete again.", worktree_path.display()),
-                ));
-            }
+        // Issue #891 git metadata contract: resolve the ONE admin entry this removal will
+        // touch BEFORE any file is deleted -- an ambiguous, locked, or unresolvable entry
+        // refuses here, with every file still in place, rather than after they are already
+        // gone.
+        let admin_entry = find_admin_entry_for(repo, worktree_path).await?;
+
+        // Covers all three shapes a "registered" worktree can be in today: a live checkout full
+        // of real files, one hand-emptied of its `.git` pointer with files left behind, and one
+        // whose folder is missing entirely (git still lists it, but there is nothing on disk --
+        // the "registered, folder missing" case the git metadata contract calls out explicitly).
+        // `fs::remove_tree` is long-path-safe and never follows a link, so a full `node_modules`
+        // tree is removed exactly like an empty one; `git worktree remove --force` is never
+        // called at all any more.
+        let folder_present = lstat_optional(worktree_path).await?.is_some();
+        if folder_present {
+            let root = worktrees_root(repo);
+            remove_tree(worktree_path, &root)
+                .await
+                .map_err(|err| map_remove_tree_error(err, worktree_path))?;
+        }
+
+        remove_admin_entry(&admin_entry, worktree_path).await?;
+
+        // Verify with `git worktree list --porcelain` (never `git worktree prune`, which would
+        // also drop every OTHER stale admin entry): if git still lists this path after its own
+        // admin entry is gone, something is wrong with git's own cache -- stop here rather than
+        // delete the branch out from under a worktree git still thinks exists.
+        if is_worktree_registered(repo, worktree_path).await {
             return Err(GitError::new(
                 GitErrorCode::WorktreeFailed,
-                format!("git worktree remove failed: {stderr}"),
+                format!(
+                    "Refract removed {}'s files and its own git admin entry, but git still lists it as a worktree. Run `git worktree list` yourself to check, then choose Delete again.",
+                    worktree_path.display()
+                ),
             ));
         }
-        delete_branch_if_requested(repo, branch, delete_branch, true).await?;
+
+        delete_branch_if_requested(repo, branch, delete_branch, folder_present).await?;
         return Ok(());
     }
 

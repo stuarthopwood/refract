@@ -4496,3 +4496,56 @@ pair for `CodeBlock`'s own focus ring), `node --check` on both edited scripts --
 **Live Tauri verify: DONE** (see T329 above, re-run at head `9b7afa8` after gate round 1
 remediation); `ci-local.mjs` all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0
 failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build) at head `9b7afa8`.
+
+## Phase 69: Convergence (#891, FR-029 amended) [US6]
+
+(Next free numbers as of this branch's cut from `origin/main`: Phase 68/T325-T329 claimed up to
+T329, so this phase claims T330 onward.)
+
+**Goal**: Delete no longer dead-ends on a full, generated-file worktree or one still held open by
+another program. The Delete dialog runs a background leftover-files walk on open; the worktree-
+held preflight runs before the agent is stopped; Refract removes the worktree's own files with its
+own long-path-safe walker instead of `git worktree remove --force`. Decided on the issue (Stuart,
+2026-10-15 and 2026-10-19 grill, issue #891); Rust implementation already landed on this branch.
+
+- [X] T330 `src-tauri/src/fs/remove_tree.rs` (new): long-path-safe recursive worktree-file
+  remover replacing `git worktree remove --force` for this Session's own worktree. Per-entry
+  `symlink_metadata` (never following a link), `\\?\`-prefixed paths used over 260 characters,
+  read-only attributes cleared before removal, junctions/symlinks removed as links and never
+  descended into or deleted through. Only this worktree's own `.git/worktrees/<name>` admin entry
+  is removed afterward (never `git worktree prune`), verified with `git worktree list
+  --porcelain`.
+- [X] T331 `src-tauri/src/git/worktree_holders.rs` (new): the holder preflight run before the
+  agent is stopped. Windows Restart Manager names a program and pid holding a file open inside
+  the worktree, excluding this Session's own recorded `omp` pids (`process/pid_records.rs`); only
+  if Restart Manager finds nobody, a safe rename probe (rename the worktree folder to a sibling
+  name inside the worktrees root and straight back) catches a folder held only as a working
+  directory. A named holder, or an in-use folder with no named holder, refuses the delete; a
+  holder that cannot be detected does not block.
+- [X] T332 `src-tauri/src/ipc/sessions_lifecycle.rs`: registers `sessions.deleteLeftoverSummary(id:
+  string): Promise<Result<LeftoverSummary>>` (`LeftoverSummary = { generatedFolders: { name:
+  string; fileCount: number }[]; otherFiles: string[]; moreCount: number }`), a background
+  filesystem walk started when the Delete dialog opens, separate from the existing git-based
+  `sessions.deleteCheck`. Wires `worktree_holders`'s preflight into `sessions.delete` ahead of
+  stopping the agent, surfacing a refusal as the new `worktree-held` error code through the
+  existing `Promise<Result<void>>` error channel (no signature change); a refusal leaves the
+  Session running. `remove_session_worktree`'s own signature stays stable (#476).
+- [X] T333 `src/shared/ipc.ts`: `IpcErrorCode` gains `worktree-held`; the `sessions` interface
+  gains `deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>` and the `LeftoverSummary`
+  type, alongside the existing `deleteCheck`/`delete` entries.
+- [X] T334 `src/renderer/features/sessions/DeleteDialog.tsx`: fetches `deleteLeftoverSummary`
+  alongside the existing `deleteCheck`, on the same cancelled-guard `useEffect([open,
+  session.id, check])` pattern, rendering the generated-folders/other-files list with a
+  "Checking files…" loading state and Delete enabled throughout; a `worktree-held` refusal
+  surfaces through the dialog's existing `role="alert"` error paragraph, so Retry is clicking
+  Delete again with no new control.
+- [X] T335 Docs: amended `specs/001-core-session-workspace/spec.md` FR-029, two new Acceptance
+  Scenarios (User Story 6) and two new Edge Cases, and a dated `### Session 2026-10-19 (Session
+  delete: leftover summary and holder preflight, issue #891)` Clarifications entry;
+  `plan.md`'s new `## Amendment 2026-10-19` section; `contracts/ipc.md`'s new
+  `sessions.deleteLeftoverSummary` row and the `worktree-held` error documented on
+  `sessions.delete`.
+
+**Non-build checks**: Rust side already compiles clean (`cargo check -p refract-tauri
+--all-targets`, confirmed on this branch before this phase was appended); this phase's own work
+is documentation plus the frontend dialog wiring (T333/T334), landing in the same PR.

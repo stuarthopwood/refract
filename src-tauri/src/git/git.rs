@@ -24,6 +24,10 @@ pub enum GitErrorCode {
     PathTooLong,
     BranchMissing,
     CheckoutFailed,
+    /// Issue #891: something external still holds the worktree folder (a named process via
+    /// Windows Restart Manager, or an unnamed one detected only by the rename-probe failing).
+    /// Never raised for anything this Session's own recorded `omp` pids hold.
+    WorktreeHeld,
 }
 
 impl GitErrorCode {
@@ -37,6 +41,7 @@ impl GitErrorCode {
             Self::PathTooLong => "path-too-long",
             Self::BranchMissing => "branch-missing",
             Self::CheckoutFailed => "checkout-failed",
+            Self::WorktreeHeld => "worktree-held",
         }
     }
 }

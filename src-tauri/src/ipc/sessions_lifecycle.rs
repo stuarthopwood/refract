@@ -22,13 +22,16 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::fs::leftover_summary::compute_leftover_summary;
 use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
+use crate::git::worktree_holders;
 use crate::git::worktree_validity::comparable_path;
 use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,
     remove_worktree,
 };
+use crate::process::pid_records;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -43,6 +46,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sessions.archive", sessions_archive);
     d.register("sessions.restore", sessions_restore);
     d.register("sessions.deleteCheck", sessions_delete_check);
+    d.register("sessions.deleteLeftoverSummary", sessions_delete_leftover_summary);
     d.register("sessions.delete", sessions_delete);
     d.register("sessions.recreateWorktree", sessions_recreate_worktree);
     d.register("sessions.diffStat", sessions_diff_stat);
@@ -289,6 +293,34 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
     })
 }
 
+/// `sessions.deleteLeftoverSummary` (issue #891, Stuart's 2026-10-19 grill item 3): a
+/// read-only background filesystem walk the Delete dialog runs as soon as it opens, listing
+/// generated folders (for example `node_modules`) by name with file counts and other files by
+/// path, capped with "and N more". Purely informational -- Delete stays enabled regardless of
+/// how long this takes or what it finds; see `fs::leftover_summary`'s own header for why this
+/// is deliberately a SEPARATE call from `sessions.deleteCheck`'s own fast git-only answer.
+pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let id = match arg_str(&args, 0) {
+            Some(id) => id.to_string(),
+            None => {
+                return Err(invalid_argument(
+                    "sessions.deleteLeftoverSummary expects a string id",
+                ))
+            }
+        };
+        let session = {
+            let registry = state.registry.lock().await;
+            registry
+                .get_session(&id)
+                .ok_or_else(|| not_found(format!("Session not found: {id}")))?
+                .clone()
+        };
+        let summary = compute_leftover_summary(Path::new(&session.worktree_path)).await;
+        Ok(serde_json::to_value(summary).expect("LeftoverSummary is always JSON-serialisable"))
+    })
+}
+
 /// `sessions.delete` (T042): removes the worktree (issue #599's safe-delete path), best-effort
 /// deletes this Session's own Conversation transcript files, then removes the registry entry.
 /// See this file's header for the `resumingIds`/file-explorer simplifications.
@@ -329,6 +361,16 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .clone();
             (session, repository)
         };
+
+        // Issue #891, Stuart's 2026-10-19 grill item 2: the holder check runs BEFORE the agent
+        // is stopped and before `begin_worktree_operation` -- a refused Delete must leave the
+        // Session exactly as it was, agent still running, watcher untouched. This Session's own
+        // recorded `omp` pids are excluded from whatever Restart Manager reports: the agent
+        // itself holding its own files open is never a reason to refuse.
+        let own_pids = pid_records::pids_for_session(&id).await;
+        worktree_holders::preflight(Path::new(&session.worktree_path), &own_pids)
+            .await
+            .map_err(map_git_error)?;
 
         // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: see `sessions_archive`'s own
         // comment -- resets on failure too, not only on success.
