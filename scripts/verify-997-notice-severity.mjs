@@ -360,7 +360,16 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-close-button.png'));
     await cdp.pressEnter();
     await cdp.waitFor(`${toastSelector}.length === 0`, { timeoutMs: 10_000, label: 'Enter on the focused close button dismisses the toast' });
-
+    // Falsified live (first run): sending again right after this `waitFor` raced sonner's own
+    // internals -- `deleteToast()` sets `data-removed="true"` (what the `waitFor` above checks)
+    // IMMEDIATELY on click, but the real `ToastState.dismiss(id)` call that registers this id as
+    // genuinely closed (so a same-id `create()` takes the fresh-toast branch, confirmed by
+    // reading `node_modules/sonner/dist/index.mjs`'s own `create`/`dismiss`/`removeToast`) only
+    // fires `TIME_BEFORE_UNMOUNT` (200ms) later, from `removeToast`'s own `setTimeout`. Resending
+    // inside that window hits the `alreadyExists` update branch, not a fresh mount. Waiting
+    // comfortably past 200ms (not a guess -- the exact constant this library documents and uses
+    // for its own exit-animation timer) avoids the race without touching any production code.
+    await sleep(400);
     // Gate round 1 (#997, Medium, Test): a fresh refusal, then typing a single character into
     // the draft (the real onChange keystroke path, `MessageInput.tsx`) dismisses it -- `notify.
     // ts`'s dismiss helper is a no-op when nothing is open, so this also proves it costs nothing
