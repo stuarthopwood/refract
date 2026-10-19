@@ -4548,7 +4548,7 @@ same branch/PR, cited by sha where the report below gives one.
   survives a restart; fallback outranks a stale pin), and a dated `### Session 2026-10-19
   (Composer role chip, pin persistence, fallback signal, #741)` Clarifications entry recording
   `issuecomment-6266024041`'s four decisions. This Convergence phase. `docs/PLAN.md`'s #741 row.
-- [ ] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs` + `verify-741-role-chip-
+- [X] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs` + `verify-741-role-chip-
   helpers.mjs`, five launches, a fake-omp tape): chip text and icon for a role Session; muted-text
   contrast >= 4.5:1 and a real keyboard path (Tab/focus-visible/Tooltip/Escape/Shift+Tab) on the
   chip; real-geometry truncation (not a guessed selector); Custom after a hand-pick AND after a
@@ -4565,16 +4565,34 @@ same branch/PR, cited by sha where the report below gives one.
   re-probe even while pinned, generation-guarded against a race with a second invalidation), the
   pin-seeding race closed (every pin/un-pin writer also sets `pinned_seeded`; `persist_pinned`
   reads back from state and skips a no-op write), `ComposerPickers.tsx`'s `RoleChip` contrast and
-  AX-name-suffix fixes, `RoleAndModelPicker` (narrow-width wrap-together), `modelRoles.ts` icon
-  swap and the `CUSTOM_ROLE` string-forgery guard, `ModelPicker.tsx`'s `friendlyProviderLabel`/
-  `ROLE_LABEL` reuse, `SessionDetailsCard.tsx`'s tighter model/provider grouping. Not yet run
-  against a built Tauri debug binary this pass.
+  AX-name fixes (an explicit `aria-label`, not a visible-text-plus-sr-only-span join, which
+  measured an extra space live), `RoleAndModelPicker` (narrow-width wrap-together),
+  `modelRoles.ts` icon swap and the `CUSTOM_ROLE` string-forgery guard, `ModelPicker.tsx`'s
+  `friendlyProviderLabel`/`ROLE_LABEL` reuse, `SessionDetailsCard.tsx`'s tighter model/provider
+  grouping. **Real product bug found live and fixed**: `maybe_invalidate_role_cache` updated
+  Rust-side role/pin state correctly but never emitted `session_list_changed` -- the renderer's
+  own Sessions store is purely event-driven (`init-stores.ts`'s `onSessionListChanged`, no
+  polling timer), so a live fallback's new role sat correct in Rust state but invisible to the
+  chip until this fix.
 
-**Non-build checks** (re-run at head `1daa6e57`): `pnpm tsc --noEmit -p tsconfig.web.json` clean;
-`node scripts/check-indent.mjs` (0 odd-indent lines); `node scripts/check-file-size.mjs` (0 cap
-violations, no baseline raised -- `model.rs`/`manager.rs`/`ModelPicker.tsx`/`MessageInput.tsx` all
-brought back to/under cap by splitting pin/fallback helpers into `model_support.rs` and
-condensing comments); targeted `vitest run` on `model-roles-store.test.ts`,
-`modelRoleSuffix.test.ts`, `sessions-store.test.ts` (28/28 passed; no new renderer tests, per the
-prototyping-phase rule). **Not yet run this pass**: `cargo check`/`cargo test`/`cargo clippy` on
-`src-tauri` (T338's own build-slot step), `ci-local.mjs`, and any live Tauri verification.
+**FINAL LIVE-VERIFIED PASS, clean HEAD `871b89bb`**: full chained `ci-local.mjs && verify-741-
+role-chip.mjs` -- `ci-local.mjs` all 11 non-build steps PASS, `cargo fmt --check`/`cargo test`
+PASS; `verify-741-role-chip.mjs`: **0 failures, 0 notExercised** across all five launches.
+Screenshots viewed: the chip at full muted-text strength in all five theme presets (`01-chip-
+default-*.png`), the composer row right after the real keyboard Tab/Shift+Tab path (focus ring
+visible on the Ask pill after Shift+Tab, `06-composer-row.png`), the Session details card's real
+hover-triggered "via GitHub Copilot" line (`06-details-card.png`), the hand-pick-to-Custom and
+restart-persisted-Custom chips (`02`/`03`), the mid-session Fallback-while-pinned transition with
+no restart (`07-chip-fallback-while-pinned.png`), the standalone tape-proven Fallback chip with
+its exact composed Tooltip text (`04-chip-fallback.png`), both no-chip cases (`05`/`10`), and the
+role chip + Model picker sharing one row at 380px and 520px (`08`/`09`). Three fix rounds against
+this exact build before it passed clean (this file's own trailer, immediately below, keeps the
+non-build-only citation from before the build slot was granted, for the record).
+
+**Non-build checks** (re-run at head `1daa6e57`, before gate round 1): `pnpm tsc --noEmit -p
+tsconfig.web.json` clean; `node scripts/check-indent.mjs` (0 odd-indent lines); `node
+scripts/check-file-size.mjs` (0 cap violations, no baseline raised -- `model.rs`/`manager.rs`/
+`ModelPicker.tsx`/`MessageInput.tsx` all brought back to/under cap by splitting pin/fallback
+helpers into `model_support.rs` and condensing comments); targeted `vitest run` on `model-roles-
+store.test.ts`, `modelRoleSuffix.test.ts`, `sessions-store.test.ts` (28/28 passed; no new
+renderer tests, per the prototyping-phase rule).
