@@ -85,6 +85,11 @@ fn is_directory_attribute(meta: &std::fs::Metadata) -> bool {
     meta.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0
 }
 
+/// `set_readonly(false)` is a cross-platform footgun clippy warns about (on Unix it makes a
+/// file world-writable), but this whole build is Windows-only (constitution, spec.md
+/// Assumptions): here it only ever clears the `FILE_ATTRIBUTE_READONLY` bit, never touching any
+/// Unix permission bit.
+#[allow(clippy::permissions_set_readonly_false)]
 async fn clear_readonly(p: &Path) {
     if let Ok(meta) = tokio::fs::metadata(long_path(p)).await {
         let mut perms = meta.permissions();
@@ -98,14 +103,14 @@ async fn clear_readonly(p: &Path) {
 /// Removes exactly one entry that is a link (symlink or junction -- both are "name surrogate"
 /// reparse points, which is what `symlink_metadata`'s own `is_symlink()` checks on Windows, so
 /// it is true for a junction too): NEVER descends into it, removing only the link itself, so
-/// whatever it points to is always left untouched.
+/// whatever it points to is always left untouched. Deliberately never clears a read-only
+/// attribute through this path: `clear_readonly`'s own `tokio::fs::metadata` call FOLLOWS a
+/// reparse point to whatever it points to, so calling it on a link would read and could
+/// rewrite the TARGET's own permissions -- exactly the kind of outside-the-boundary touch this
+/// whole module exists to never make. `RemoveDirectoryW`/`DeleteFileW` remove a reparse point
+/// fine regardless of its own attributes; no real-world junction has been observed read-only.
 async fn remove_link(p: &Path, is_dir: bool) -> std::io::Result<()> {
     let target = long_path(p);
-    // `mklink /J` (and some third-party symlink tools) create the link itself with the
-    // read-only attribute set, even though it is only a link -- cleared the same way a real
-    // file or directory's own read-only attribute is cleared below, or `RemoveDirectory`/
-    // `DeleteFile` refuses with access-denied.
-    clear_readonly(p).await;
     if is_dir {
         tokio::fs::remove_dir(&target).await
     } else {
