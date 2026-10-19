@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 
 use super::atomic_json::write_json_file;
 pub use super::chat_width::ChatWidth;
+pub use super::holiday_touches::HolidayTouches;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,6 +91,10 @@ pub struct Settings {
     pub theme: ThemeId,
     pub watermark_enabled: bool,
     pub chat_width: ChatWidth,
+    /// Issue #1048 (Settings, Appearance "Holiday touches"): default `Full` -- see
+    /// `HolidayTouches`'s own doc comment. No raw/lazy-correction tracking needed, the same
+    /// plain-enum shape `chat_width` above uses.
+    pub holiday_touches: HolidayTouches,
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
@@ -204,6 +209,12 @@ impl SettingsStore {
             .and_then(|v| serde_json::from_value::<ChatWidth>(v.clone()).ok())
             .unwrap_or(ChatWidth::Full);
 
+        // Issue #1048: default `Full` -- a missing/malformed value is never trusted, the same
+        // lazy-correction pattern `chat_width` above uses.
+        let holiday_touches = object
+            .get("holidayTouches")
+            .and_then(|v| serde_json::from_value::<HolidayTouches>(v.clone()).ok())
+            .unwrap_or(HolidayTouches::Full);
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
             thinking: raw_transcript_display
@@ -248,7 +259,7 @@ impl SettingsStore {
             .map(clamp_pull_requests_list_width_px)
             .unwrap_or(PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT);
 
-        const KNOWN_FIELDS: [&str; 13] = [
+        const KNOWN_FIELDS: [&str; 14] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -256,6 +267,7 @@ impl SettingsStore {
             "theme",
             "watermarkEnabled",
             "chatWidth",
+            "holidayTouches",
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
@@ -277,6 +289,7 @@ impl SettingsStore {
             theme,
             watermark_enabled,
             chat_width,
+            holiday_touches,
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
@@ -332,6 +345,7 @@ impl SettingsStore {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
         map.insert("chatWidth".to_string(), json!(self.data.chat_width));
+        map.insert("holidayTouches".to_string(), json!(self.data.holiday_touches));
         map.insert(
             "transcriptDisplay".to_string(),
             json!(self.data.transcript_display),
@@ -445,6 +459,16 @@ impl SettingsStore {
     pub async fn set_chat_width(&mut self, width: ChatWidth) -> std::io::Result<Settings> {
         let next = Settings {
             chat_width: width,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setHolidayTouches(value)` (issue #1048): plain-replace shape, as `set_chat_width`
+    /// above uses -- no raw/lazy-correction tracking needed.
+    pub async fn set_holiday_touches(&mut self, value: HolidayTouches) -> std::io::Result<Settings> {
+        let next = Settings {
+            holiday_touches: value,
             ..self.data.clone()
         };
         self.persist_whole(next).await

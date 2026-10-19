@@ -1,6 +1,8 @@
 import { useId, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
+import { useHolidayStore, useSettingsStore } from '@/state'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 
 /** Below this size (px) the halo's blur filter is dropped (issue #612 step 2e: "no blur filter
  * on the small variant") -- everything else about the mark (geometry, sequence, palette) is
@@ -105,6 +107,14 @@ const CYCLE_MS = 10000
  * its own -- the "Working" announcement stays entirely owned by each call site's existing
  * `sr-only` `STATUS_LABEL` text (`sessionDisplay.tsx`), unchanged from `BrandSpinner`'s own
  * contract. */
+/** Issue #1048 (Holiday touches, decision 5): in season, with the setting not `'off'`, swaps
+ * the default split/rotate/merge core for the active holiday's own icon (`HOLIDAY_CONTENT`) --
+ * "only its shape changes": same `size`, same `--agent-spinner-core` colour token (`data-palette`
+ * still wins via the SAME `.agent-spinner[data-palette=...]` CSS rules, since this keeps the
+ * `agent-spinner` class too), same `CYCLE_MS`/phase-locked delay (`.agent-spinner-holiday` in
+ * `globals.css` reads both custom properties exactly like `.agent-spinner-core-rotator` does),
+ * `aria-hidden`, and no accessible name of its own -- the caller's existing `sr-only`
+ * `STATUS_LABEL` text is untouched either way, since this component never rendered one. */
 export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinnerProps) {
   // Older React `useId()` formats contained colons (invalid, unescaped, in a `url(#...)`
   // reference); stripped defensively so every mounted instance's gradient/filter id stays
@@ -113,6 +123,32 @@ export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinne
   // Computed once per instance via the lazy initializer -- not an effect, not a listener, and
   // never recomputed on re-render, matching BrandSpinner's own shared-clock technique.
   const [delay] = useState(() => `-${Date.now() % CYCLE_MS}ms`)
+  const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
+  const holiday = useHolidayStore((s) => s.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && holiday ? HOLIDAY_CONTENT[holiday] : null
+  const cycleStyle = {
+    // Both custom properties set from this one constant (quality-gate remediation, Code
+    // LOW, round 5): previously `--agent-spinner-cycle` was a separate `10s` literal in
+    // globals.css that had to be kept in sync with `CYCLE_MS` by hand; deriving both from
+    // the same constant here removes that duplication entirely.
+    '--agent-spinner-cycle': `${CYCLE_MS}ms`,
+    '--agent-spinner-delay': delay
+  } as CSSProperties
+  if (holidayEntry) {
+    const HolidayIcon = holidayEntry.icon
+    return (
+      <HolidayIcon
+        aria-hidden
+        focusable={false}
+        width={size}
+        height={size}
+        strokeWidth={2}
+        className={cn('agent-spinner agent-spinner-holiday', className)}
+        data-palette={palette}
+        style={cycleStyle}
+      />
+    )
+  }
   return (
     <svg
       aria-hidden
@@ -122,16 +158,7 @@ export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinne
       viewBox={VIEW_BOX}
       className={cn('agent-spinner', className)}
       data-palette={palette}
-      style={
-        {
-          // Both custom properties set from this one constant (quality-gate remediation, Code
-          // LOW, round 5): previously `--agent-spinner-cycle` was a separate `10s` literal in
-          // globals.css that had to be kept in sync with `CYCLE_MS` by hand; deriving both from
-          // the same constant here removes that duplication entirely.
-          '--agent-spinner-cycle': `${CYCLE_MS}ms`,
-          '--agent-spinner-delay': delay
-        } as CSSProperties
-      }
+      style={cycleStyle}
     >
       <AgentSpinnerCore uid={uid} blurred={size >= LEGIBILITY_FLOOR_PX} />
     </svg>

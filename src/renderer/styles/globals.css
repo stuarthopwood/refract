@@ -1078,11 +1078,97 @@
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  .watermark-mark {
+  .watermark-mark,
+  .watermark-mark-holiday {
     display: none;
   }
 }
 /* ===== End spec 012: Brand watermark ===================================================== */
+
+/* ===== Issue #1048: Holiday touches (ambient loops + spinner glyph) ======================
+ * Per-holiday ambient loop layer (Full only, `HolidayAmbientLoop.tsx`): mounted in the SAME
+ * `-z-10`/`isolate` background layer `BrandWatermark.tsx`'s own 'live' variant uses (ChatPane's
+ * `!session` Empty fallback and its normal transcript container) -- painting BEHIND normal-flow
+ * content by construction satisfies "never over text or controls" and "never under the
+ * composer's input area" (the composer is a separate sibling outside that container) without
+ * any manual z-index/pointer-events bookkeeping beyond what the watermark already set up.
+ * `aria-hidden` (set by the component itself); `data-paused` (set by the component's own
+ * pause-rule effect -- window hidden/unfocused, 60s idle; JS-driven since none of those three
+ * conditions are expressible in plain CSS) freezes the animation the same way
+ * `prefers-reduced-motion`/forced-colors already do below -- one rule shape covers every exit
+ * path. */
+.holiday-ambient-loop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.holiday-ambient-loop[data-paused] .holiday-ambient-loop-bat {
+  animation-play-state: paused;
+}
+
+/* Halloween: 3 drifting bat silhouettes (grill decision 2's own "pick the calmer one" -- a
+ * slow diagonal drift reads calmer than a flicker, and never needs tuning around WCAG 2.3.1's
+ * 3-flashes-per-second ceiling the way an opacity flicker would). Single colour
+ * (`--muted-foreground`, the same token the watermark itself uses), very low opacity, animating
+ * `opacity`/`transform` only (motion doc's own "Caps and pause rules": "Animate only opacity
+ * and transform"). `cqw`/`cqh` resolve against the same size-container the watermark's own
+ * `20cqw` clamp already relies on (`[container-type:size]` on the shared ancestor). */
+.holiday-ambient-loop-bat {
+  position: absolute;
+  color: var(--muted-foreground);
+  opacity: 0.1;
+  animation: holiday-bat-drift 26s ease-in-out infinite;
+}
+.holiday-ambient-loop-bat:nth-child(1) { top: 12%; left: 8%; }
+.holiday-ambient-loop-bat:nth-child(2) { top: 32%; left: 55%; animation-delay: -9s; animation-duration: 31s; }
+.holiday-ambient-loop-bat:nth-child(3) { top: 58%; left: 22%; animation-delay: -18s; animation-duration: 23s; }
+@keyframes holiday-bat-drift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.1; }
+  25% { transform: translate(6cqw, -2cqh); opacity: 0.16; }
+  50% { transform: translate(2cqw, 4cqh); opacity: 0.08; }
+  75% { transform: translate(-4cqw, 1cqh); opacity: 0.14; }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .holiday-ambient-loop {
+    display: none;
+  }
+}
+
+/* The agent-working spinner's holiday glyph (`AgentSpinner.tsx`): a themed icon in place of the
+ * default split/rotate/merge core, same `--agent-spinner-core` colour token, same
+ * `--agent-spinner-cycle`/`--agent-spinner-delay` phase-locking the default core already sets
+ * inline (decision 5: "same colour, size, speed"). A plain, constant-speed spin -- deliberately
+ * NOT the default core's own split/rotate/merge choreography, since a single static icon has no
+ * "split" state to animate. */
+.agent-spinner-holiday {
+  display: inline-flex;
+  color: var(--agent-spinner-core);
+  animation: holiday-spinner-spin var(--agent-spinner-cycle, 10000ms) linear infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+@keyframes holiday-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-spinner-holiday {
+    /* Decision 5's own "reduced-motion static glyph": the same explicit `animation: none`
+     * posture `.agent-spinner-core-rotator`/`.agent-spinner-core-disc-group` already use above
+     * (not just the global 0.01ms-duration collapse), so the glyph rests upright rather than at
+     * whatever angle a near-instant single iteration happens to stop on. */
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .agent-spinner-holiday {
+    animation: none;
+    color: CanvasText;
+  }
+}
+/* ===== End issue #1048: Holiday touches ==================================================== */
 
 @layer base {
   * {

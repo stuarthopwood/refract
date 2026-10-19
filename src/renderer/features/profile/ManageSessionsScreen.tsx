@@ -13,7 +13,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
+import { useHolidayStore, useRepositoriesStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { ManageSessionRow } from './ManageSessionRow'
@@ -21,6 +21,7 @@ import { ManageSessionsToolbar } from './ManageSessionsToolbar'
 import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel } from './manageSessionsHelpers'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import { DEFAULT_FILTERS } from '@/state/view-store'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 
 export function ManageSessionsScreen() {
   const sessions = useSessionsStore((state) => state.sessions)
@@ -31,6 +32,10 @@ export function ManageSessionsScreen() {
   // filter to its default on return.
   const filters = useViewStore((state) => state.manageSessionsFilters)
   const setFilters = useViewStore((state) => state.setManageSessionsFilters)
+  // Issue #1048 (Holiday touches): the "No sessions yet" empty state's own decorative line.
+  const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
+  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const [announcement, announce] = useClearedAnnouncement()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -194,6 +199,13 @@ export function ManageSessionsScreen() {
               </EmptyMedia>
               <EmptyTitle>No sessions yet</EmptyTitle>
               <EmptyDescription>Create a session from a repository in the left nav.</EmptyDescription>
+              {/* Issue #1048 (Holiday touches): purely decorative, aria-hidden -- never
+                  replaces the EmptyDescription guidance text above. */}
+              {holidayEntry && (
+                <p aria-hidden className="mt-1 text-xs text-muted-foreground">
+                  {holidayEntry.emptyStateLine}
+                </p>
+              )}
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" onClick={handleBackToChat}>

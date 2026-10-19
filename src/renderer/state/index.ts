@@ -12,6 +12,7 @@ import { usePendingRequestsStore } from './pending-requests-store'
 import { EMPTY_QUEUE, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
+import { useHolidayStore } from './holiday-store'
 import { useChatScrollStore } from './scroll-store'
 import { useSessionsStore } from './sessions-store'
 import { EMPTY_TRANSCRIPT, useTranscriptStore } from './transcript-store'
@@ -45,6 +46,7 @@ export { usePendingRequestsStore }
 export { EMPTY_QUEUE, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
+export { useHolidayStore } from './holiday-store'
 export { useChatScrollStore }
 export { useSessionsStore }
 export { EMPTY_TRANSCRIPT, useTranscriptStore }
@@ -92,6 +94,7 @@ export interface RefractDevStores {
   pullRequestsLayout: typeof usePullRequestsLayoutStore
   theme: typeof useThemeStore
   chatWidth: typeof useChatWidthStore
+  holiday: typeof useHolidayStore
   updates: typeof useUpdateStore
   stageToggle: typeof useStageToggleStore
 }
@@ -132,6 +135,7 @@ if (import.meta.env.DEV) {
     pullRequestsLayout: usePullRequestsLayoutStore,
     theme: useThemeStore,
     chatWidth: useChatWidthStore,
+    holiday: useHolidayStore,
     updates: useUpdateStore,
     stageToggle: useStageToggleStore
   }

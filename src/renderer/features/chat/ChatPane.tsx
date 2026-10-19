@@ -2,7 +2,7 @@
 // Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and errors").
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -17,10 +17,12 @@ import {
   useChatScrollStore,
   useCommandsStore,
   useDraftStore,
+  useHolidayStore,
   usePendingRequestsStore,
   useQueueStore,
   useReadoutStore,
   useSessionsStore,
+  useSettingsStore,
   useSplitStore,
   useSubagentPanelStore
 } from '@/state'
@@ -33,6 +35,8 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
+import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
+import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
 import { SessionStartNotice } from './SessionStartNotice'
@@ -118,6 +122,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
   const openInSplit = useSplitStore((s) => s.openInSplit)
+  // Issue #1048 (Holiday touches): reused by the empty-state's own decorative line below.
+  const holidayTouches = useSettingsStore((s) => s.settings.holidayTouches)
+  const activeHolidayId = useHolidayStore((s) => s.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   // Issue #512 requirement 2: whether the start-failed banner's "Details" disclosure (the
   // stderr/omp-log/memory text behind `startFailureDetails` below) is expanded.
@@ -256,8 +264,19 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const activeStartingMessageRef = useRef<Map<string, number>>(new Map())
   const lastStartingMessageRef = useRef<Map<string, number>>(new Map())
   const [startingMessageIndex, setStartingMessageIndex] = useState<number | undefined>(undefined)
-  const startingMessageText = startingMessageIndex !== undefined ? STARTING_MESSAGES[startingMessageIndex] : undefined
-  const startingMessageEmoji = startingMessageIndex !== undefined ? STARTING_MESSAGE_EMOJI[startingMessageIndex] : undefined
+  // Issue #1048 (Holiday touches): in season (and with the setting not 'off'), the holiday's
+  // own lines/emoji join the base pool for this render -- never announced, same as every other
+  // entry (`startingMessages.ts`'s own header comment); `pickStartingMessageIndex` takes this
+  // pool's own length rather than assuming the base pool, so it picks from the combined set.
+  const startingMessagePool = useMemo(() => {
+    if (!holidayEntry) return { messages: STARTING_MESSAGES, emoji: STARTING_MESSAGE_EMOJI }
+    return {
+      messages: [...STARTING_MESSAGES, ...holidayEntry.startingMessages],
+      emoji: [...STARTING_MESSAGE_EMOJI, ...holidayEntry.startingMessages.map(() => holidayEntry.emoji)]
+    }
+  }, [holidayEntry])
+  const startingMessageText = startingMessageIndex !== undefined ? startingMessagePool.messages[startingMessageIndex] : undefined
+  const startingMessageEmoji = startingMessageIndex !== undefined ? startingMessagePool.emoji[startingMessageIndex] : undefined
   // Gate-fixes a11y finding: focuses the Cancel button once Keep waiting dismisses the prompt
   // (the Keep waiting button itself unmounts, since it only renders in the 'prompt' stage).
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
@@ -404,7 +423,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         setStartingMessageIndex(active)
       } else {
         const prevIndex = lastStartingMessageRef.current.get(sessionId)
-        const nextIndex = pickStartingMessageIndex(prevIndex)
+        const nextIndex = pickStartingMessageIndex(prevIndex, startingMessagePool.messages.length)
         activeStartingMessageRef.current.set(sessionId, nextIndex)
         lastStartingMessageRef.current.set(sessionId, nextIndex)
         setStartingMessageIndex(nextIndex)
@@ -461,7 +480,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       )
     }
     prevStartProgressKindRef.current = { sessionId, kind: startProgress?.kind }
-  }, [effectiveStartProgress, startProgress, session, announceStart, showBanner, recoveringId, startingNewId, resumingId, sessionId])
+  }, [effectiveStartProgress, startProgress, session, announceStart, showBanner, recoveringId, startingNewId, resumingId, sessionId, startingMessagePool])
 
   // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
@@ -778,12 +797,19 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     return (
       <Empty className="relative isolate h-full [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
+        {showWatermark && <HolidayAmbientLoop />}
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <MessageSquareIcon />
           </EmptyMedia>
           <EmptyTitle>No Session selected</EmptyTitle>
           <EmptyDescription>Select a Session or create one.</EmptyDescription>
+          {/* Issue #1048 (Holiday touches): purely decorative, aria-hidden -- never replaces EmptyDescription. */}
+          {holidayEntry && (
+            <p aria-hidden className="mt-1 text-xs text-muted-foreground">
+              {holidayEntry.emptyStateLine}
+            </p>
+          )}
         </EmptyHeader>
       </Empty>
     )
@@ -1379,6 +1405,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       />
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
+        {showWatermark && <HolidayAmbientLoop />}
         <Transcript
           sessionId={sessionId}
           hasHistory={hasHistory}

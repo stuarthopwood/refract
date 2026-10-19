@@ -26,14 +26,18 @@ export const STARTING_MESSAGES: readonly string[] = [
 // `aria-hidden` span without string-splitting at render time.
 export const STARTING_MESSAGE_EMOJI: readonly string[] = ['☕', '🦥', '🧙', '🔧', '🚀', '🐹', '🧠', '🪄', '🛸', '🍞', '🦆', '🔌']
 
-/** Picks a random index into `STARTING_MESSAGES`, distinct from `previousIndex` when the pool has
- * more than one entry (design note: "avoid repeating the previous pick"). `previousIndex` is
- * `undefined` for the very first pick a Session ever makes (nothing to avoid repeating yet). */
-export function pickStartingMessageIndex(previousIndex: number | undefined): number {
-  if (STARTING_MESSAGES.length <= 1) return 0
-  let next = Math.floor(Math.random() * STARTING_MESSAGES.length)
+/** Picks a random index into a starting-message pool of `poolLength` entries, distinct from
+ * `previousIndex` when the pool has more than one entry (design note: "avoid repeating the
+ * previous pick"). `previousIndex` is `undefined` for the very first pick a Session ever makes
+ * (nothing to avoid repeating yet). `poolLength` is an explicit parameter (not implicitly
+ * `STARTING_MESSAGES.length`) so issue #1048's own holiday additions -- appended to the base
+ * pool at the call site, in season -- are picked from too, without this module needing to know
+ * anything about holidays itself. */
+export function pickStartingMessageIndex(previousIndex: number | undefined, poolLength: number): number {
+  if (poolLength <= 1) return 0
+  let next = Math.floor(Math.random() * poolLength)
   if (next === previousIndex) {
-    next = (next + 1 + Math.floor(Math.random() * (STARTING_MESSAGES.length - 1))) % STARTING_MESSAGES.length
+    next = (next + 1 + Math.floor(Math.random() * (poolLength - 1))) % poolLength
   }
   return next
 }
