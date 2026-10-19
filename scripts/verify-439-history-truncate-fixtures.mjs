@@ -1,12 +1,15 @@
-// Pure-logic, behaviour-preserving extraction from `verify-439-history-truncate.mjs` (issue
-// #1012 gate follow-up: the Escape-stacking fix pushed the main script to 604 lines, over the
-// #806 600-line soft cap; gate round 1's real-Tab/focus-ring/tooltip-position checks pushed it
-// over again). Fixture constants and small pure helpers shared by `main()`; no logic change,
+// Shared module for `verify-439-history-truncate.mjs` (issue #1012 gate follow-ups), split out
+// to keep the main script under the #806 600-line soft cap as each gate round added more live
+// checks: fixture constants, DOM-finder expression builders, CDP-driving data-reading helpers
+// (these DO make live calls against the running app through `cdp`, not pure functions in the FP
+// sense), and the per-theme assertion helpers moved verbatim out of `main()` (parameterised on
+// `cdp`/`findings`/`failures` instead of closures). No behaviour change from any one move;
 // `node --check` clean on both files (same pattern as `scripts/verify-551-helpers.mjs`).
 
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pressTab } from './verify-tauri-session-list-helpers.mjs';
+import { sleep } from './verify-tauri-cdp.mjs';
 
 export const THEMES = [
   { id: 'dark', name: 'Dark', shot: '01-history-dark.png' },
@@ -114,14 +117,33 @@ export async function readRowFocusStyle(cdp, titleText) {
   })()`);
 }
 
+/** Finder expression for the KNOWN Tooltip -- the one whose text content includes `titleText`,
+ * or (before its content settles) one whose `data-state` shows it is genuinely open
+ * (`delayed-open`/`instant-open`) -- never a bare `[role="tooltip"]`, which could match an
+ * unrelated tooltip elsewhere in the app (gate round 2, Main). */
+export function tooltipFinder(titleText) {
+  return `Array.from(document.querySelectorAll('[role="tooltip"]')).find((t) => t.textContent.includes(${JSON.stringify(titleText)}) || t.getAttribute('data-state') === 'delayed-open' || t.getAttribute('data-state') === 'instant-open')`;
+}
+
+/** Waits until the known Tooltip (matched by `tooltipFinder`) has no running Web Animations
+ * (`Element.getAnimations()`), so its entrance transform has genuinely settled before its rect
+ * is read -- a read mid-transition could pass or fail a position assertion by accident (gate
+ * round 2, Main). */
+export async function waitForTooltipAnimationsSettled(cdp, titleText) {
+  await cdp.waitFor(`(() => { const t = ${tooltipFinder(titleText)}; return !!t && t.getAnimations().length === 0; })()`, {
+    timeoutMs: 3_000,
+    label: 'Tooltip animations settled'
+  });
+}
+
 /** Geometry evidence for the row/Tooltip position check: the row's right edge, the open
- * Tooltip's left edge, and each of its `<p>` lines' own top/bottom (to confirm they stack
- * vertically rather than laying out side by side in `TooltipContent`'s default row direction).
- * `null` if the row or an open `[role="tooltip"]` is not present. */
+ * Tooltip's left AND right edges, and each of its `<p>` lines' own top/bottom (to confirm they
+ * stack vertically rather than laying out side by side in `TooltipContent`'s default row
+ * direction). `null` if the row or the known Tooltip (`tooltipFinder`) is not present. */
 export async function readTooltipPositionEvidence(cdp, titleText) {
   return cdp.evaluate(`(() => {
     const row = ${rowButtonFinder(titleText)};
-    const tooltip = document.querySelector('[role="tooltip"]');
+    const tooltip = ${tooltipFinder(titleText)};
     if (!row || !tooltip) return null;
     const rowRect = row.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
@@ -129,11 +151,21 @@ export async function readTooltipPositionEvidence(cdp, titleText) {
     return {
       rowRight: rowRect.right,
       tooltipLeft: tooltipRect.left,
+      tooltipRight: tooltipRect.right,
       lineTops: lineRects.map((r) => r.top),
       lineBottoms: lineRects.map((r) => r.bottom)
     };
   })()`);
 }
+
+/** Overrides the rendered viewport size via CDP device-metrics emulation (same technique
+ * `verify-554-chat-width.mjs`'s own `setWindowWidth` uses against this exact Tauri app), so a
+ * narrow-window pass can be driven without resizing the real native window. */
+export async function setWindowWidth(cdp, width) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+  await sleep(400);
+}
+
 
 /** Dialog-level: no horizontal overflow at the current theme. `findings`/`failures` are the
  * caller's own arrays (mutated in place, same pattern `main()` itself used before this

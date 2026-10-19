@@ -37,6 +37,14 @@
 //     uses for every `DropdownMenu` in this codebase) means the first Escape closes only the
 //     Tooltip -- the topmost layer -- and a second closes the Dialog; the dialog's own Close
 //     button is confirmed as an equally valid, independent dismissal path too.
+//   - Gate round 2 (Main): the native `title` attributes on the title/preview spans are removed
+//     (decided, item 3 -- the focus-visible Tooltip from item 1 is now the one source of the
+//     full text); the Tooltip is kept on-screen under narrow windows (`max-w-[min(20rem,var(
+//     --radix-tooltip-content-available-width))]`, `collisionPadding={8}`, a wider
+//     `sideOffset={22}` clearing the dialog's own padding/scrollbar/Close button) and re-checked
+//     at a ~960px window width, not only the default size; `disableHoverableContent` (added in
+//     round 1) is removed again, since it violates WCAG 1.4.13 (`docs/design/accessibility.md`,
+//     `components.md`, `foundations-icons.md` all forbid it for this exact reason).
 //
 // Decided (Skippy, delegated by Stuart 2026-10-18, issue #439, docs/PLAN.md): ellipsis only, no
 // fade -- this script asserts the `truncate` utility's three CSS properties
@@ -49,21 +57,19 @@
 //     (`verify-tauri-567.mjs`'s own header comment records the same CDP limitation) -- the
 //     "Dark (high contrast)" theme screenshot below is Refract's own in-app preset, not the OS
 //     forced-colors media feature.
-//   - A native browser tooltip actually painting on mouse hover over the native `title`
-//     attribute: only its presence and exact value are asserted (structural proof), not a
-//     rendered tooltip bitmap -- CDP has no mouse-hover-dwell-timer-triggered native tooltip
-//     capture API. (Separately, the in-app Radix Tooltip added for issue #1012 item 1 IS proven
-//     live below: it renders a real `[role="tooltip"]` node this script reads structurally.)
 //   - Opening an earlier Conversation from this dialog (`handleOpenConversation`): out of this
 //     issue's scope, matching `verify-862-conversation-history.mjs`'s own stated scope (it also
 //     only opens the dialog and reads the rows, never switches).
-//   - 200%+ zoom / an extremely narrow window: the dialog is centred and unconstrained by the
-//     app window's own width (`fixed` positioning, `max-w-[calc(100%-2rem)]`), so this was not
-//     re-run at another viewport size.
+//   - 200%+ zoom: the dialog itself is centred and unconstrained by the app window's own width
+//     (`fixed` positioning, `max-w-[calc(100%-2rem)]`), so this specific case was not re-run at
+//     another zoom level. (A ~960px-wide window IS re-run below, item 2 gate round 2 -- the
+//     DIALOG'S own width does not depend on the window, but the TOOLTIP'S available room to its
+//     right genuinely shrinks as the window narrows, which an earlier version of this comment
+//     had backwards.)
 //
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task (lane brief: "NO BUILD" --
-// the build slot is granted by Main explicitly later) -- this script has never executed against
-// a real built app. `node --check` is the only command that has been run against it.
+// Live-verified across multiple gate rounds against a real built app (most recently 50 findings,
+// 0 failures at head `b2906c93`, issue #1012's own gate process); this round's own changes are
+// pending the next live run under the granted build slot.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -96,7 +102,10 @@ import {
   writeConversationFile,
   reachRowViaRealTab,
   readRowFocusStyle,
+  tooltipFinder,
+  waitForTooltipAnimationsSettled,
   readTooltipPositionEvidence,
+  setWindowWidth,
   assertDialogNeverScrollsHorizontally,
   assertRowTruncation
 } from './verify-439-history-truncate-fixtures.mjs';
@@ -115,9 +124,8 @@ async function main() {
   const failures = [];
   const notExercised = [
     'Windows forced-colors/high-contrast MEDIA rendering of the ellipsis: WebView2\'s own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs already records); the "Dark (high contrast)" screenshot below is Refract\'s own in-app preset, not the OS forced-colors feature.',
-    'A native browser tooltip (the title/preview spans\' own `title` attribute) actually painting on mouse hover: only its presence and exact value are asserted (structural proof), not a rendered tooltip bitmap -- CDP has no hover-dwell-timer tooltip capture API. The separate in-app Radix Tooltip (issue #1012 item 1) IS proven live below via a real [role="tooltip"] node.',
     'Opening an earlier Conversation from this dialog (handleOpenConversation): out of this issue\'s scope, matching verify-862-conversation-history.mjs\'s own stated scope (it also only opens the dialog and reads the rows, never switches).',
-    'Behaviour at 200%+ zoom or an extremely narrow window: the dialog is fixed-positioned and unconstrained by the app window\'s own width, so this was not re-run at another viewport size.'
+    '200%+ zoom: the Conversation history dialog is fixed-positioned and unconstrained by the app window\'s own width (max-w-[calc(100%-2rem)]), so this specific case was not re-run at another zoom level. (A ~960px-wide window IS re-run below -- gate round 2 -- since the Tooltip\'s own available room to its right genuinely shrinks as the window narrows, unlike the dialog itself.)'
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -311,29 +319,36 @@ async function main() {
       findings.push(`Long row button matches :focus-visible with a real rendered focus ring (boxShadow: ${longRowFocusStyle.boxShadow}), reached via real Tab presses (issue #1012 item 2).`);
     }
 
-    await cdp.waitFor(`!!document.querySelector('[role="tooltip"]')`, {
+    await cdp.waitFor(`!!(${tooltipFinder(LONG_TITLE)})`, {
       timeoutMs: 5_000,
       label: 'Full-title Tooltip opened on keyboard focus of the long row'
     });
-    const focusTooltipText = await cdp.evaluate(`document.querySelector('[role="tooltip"]')?.textContent ?? null`);
+    const focusTooltipText = await cdp.evaluate(`(${tooltipFinder(LONG_TITLE)})?.textContent ?? null`);
     if (!focusTooltipText || !focusTooltipText.includes(LONG_TITLE) || !focusTooltipText.includes(LONG_PREVIEW)) {
       failures.push(`Full-title Tooltip on keyboard focus: expected content to include the full long title and preview, got ${JSON.stringify(focusTooltipText)}.`);
     } else {
       findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
     }
 
+    // Gate follow-up (UI, Main round 2): a read mid-entrance-transition could pass or fail the
+    // position assertion below by accident -- wait for the Tooltip's own Web Animations to
+    // settle to zero first, so its rect is read only once it has genuinely stopped moving.
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+
     // Gate follow-up (UI, Main round 1): the tooltip opens to the RIGHT of the row (`side="right"`,
     // never covering the dialog heading or the row above) and its lines are stacked vertically,
     // not laid out side by side in `TooltipContent`'s own default `inline-flex` row direction.
+    // Gate round 2 (Main): no slop -- `sideOffset={22}` already clears the dialog's own padding
+    // and scrollbar gutter by design, so the tooltip's left edge must be at or past the row's
+    // own right edge exactly, not merely "close enough".
     const tooltipPositionEvidence = await readTooltipPositionEvidence(cdp, LONG_TITLE);
-    const POSITION_SLOP_PX = 4;
     if (!tooltipPositionEvidence) {
       failures.push('Could not read the Tooltip/row geometry for the position check (row or tooltip not found).');
     } else {
-      if (tooltipPositionEvidence.tooltipLeft < tooltipPositionEvidence.rowRight - POSITION_SLOP_PX) {
-        failures.push(`Tooltip is not positioned to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} < row right ${tooltipPositionEvidence.rowRight} - ${POSITION_SLOP_PX}px slop) -- expected side="right".`);
+      if (tooltipPositionEvidence.tooltipLeft < tooltipPositionEvidence.rowRight) {
+        failures.push(`Tooltip is not positioned to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} < row right ${tooltipPositionEvidence.rowRight}) -- expected side="right".`);
       } else {
-        findings.push(`Tooltip opens to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} >= row right ${tooltipPositionEvidence.rowRight} - ${POSITION_SLOP_PX}px slop), not covering the dialog heading or the row above (issue #1012 item 3).`);
+        findings.push(`Tooltip opens to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} >= row right ${tooltipPositionEvidence.rowRight}, no slop), not covering the dialog heading or the row above (issue #1012 item 3).`);
       }
       let linesStacked = tooltipPositionEvidence.lineTops.length >= 2;
       for (let i = 1; i < tooltipPositionEvidence.lineTops.length; i++) {
@@ -348,6 +363,31 @@ async function main() {
         findings.push(`Tooltip's ${tooltipPositionEvidence.lineTops.length} lines (title, date, preview) are stacked vertically, each below the previous one's bottom, not laid out side by side (issue #1012 item 2).`);
       }
     }
+
+    // Gate round 2 (Main): re-check the SAME position/reachability guarantee at a ~960px window
+    // width -- the dialog itself does not depend on the window (fixed, max-w-[calc(100%-2rem)]),
+    // but the Tooltip's own available room to its right genuinely shrinks as the window narrows,
+    // and `collisionPadding`/`max-w-[min(20rem,...)]` must keep it fully inside the viewport
+    // rather than flipping side or spilling off-screen.
+    const NARROW_WINDOW_WIDTH_PX = 960;
+    await setWindowWidth(cdp, NARROW_WINDOW_WIDTH_PX);
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+    const narrowTooltipPositionEvidence = await readTooltipPositionEvidence(cdp, LONG_TITLE);
+    if (!narrowTooltipPositionEvidence) {
+      failures.push(`Could not read the Tooltip/row geometry at a ${NARROW_WINDOW_WIDTH_PX}px window width (row or tooltip not found).`);
+    } else {
+      const windowInnerWidth = await cdp.evaluate('window.innerWidth');
+      if (narrowTooltipPositionEvidence.tooltipLeft < narrowTooltipPositionEvidence.rowRight) {
+        failures.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width, Tooltip is not positioned to the right of the long row (tooltip left ${narrowTooltipPositionEvidence.tooltipLeft} < row right ${narrowTooltipPositionEvidence.rowRight}).`);
+      } else if (narrowTooltipPositionEvidence.tooltipRight > windowInnerWidth) {
+        failures.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width, Tooltip spills past the viewport's own right edge (tooltip right ${narrowTooltipPositionEvidence.tooltipRight} > window.innerWidth ${windowInnerWidth}) -- collisionPadding/max-w did not keep it on-screen.`);
+      } else {
+        findings.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width (window.innerWidth ${windowInnerWidth}), Tooltip still opens to the right of the long row (tooltip left ${narrowTooltipPositionEvidence.tooltipLeft} >= row right ${narrowTooltipPositionEvidence.rowRight}) and stays fully on-screen (tooltip right ${narrowTooltipPositionEvidence.tooltipRight} <= window.innerWidth ${windowInnerWidth}), issue #1012 gate round 2.`);
+      }
+    }
+    await setWindowWidth(cdp, 1280);
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+
 
     await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
     findings.push('Screenshot captured: the full-title/preview Tooltip visibly open to the right of the long row while it holds real keyboard focus, with a visible focus-visible ring (00-focus-tooltip.png).');
@@ -375,7 +415,7 @@ async function main() {
     // does NOT (confirms the dialog has no Escape listener registered while the tooltip is the
     // highest layer, per the citations above).
     await pressEscape(cdp);
-    await cdp.waitFor(`!document.querySelector('[role="tooltip"]')`, {
+    await cdp.waitFor(`!(${tooltipFinder(LONG_TITLE)})`, {
       timeoutMs: 5_000,
       label: 'First Escape (tooltip open): Tooltip closes'
     });
@@ -416,15 +456,26 @@ async function main() {
     // can transiently read zero-size right at mount (before Radix's entrance transform/layout
     // settles), and `cdp.click()`'s own waitFor only checks truthiness of the computed rect
     // object -- a `{x:0,y:0}` degenerate click (the window's own top-left corner) is still
-    // truthy, so it was accepted and silently missed the button entirely. Waits for a real,
-    // non-zero, laid-out rect FIRST, so `cdp.click()` only ever reads coordinates once the
+    // truthy, so it was accepted and silently missed the button entirely. A non-zero size alone
+    // is not enough either: a still-animating entrance transform can report a non-zero but
+    // MOVING rect. Waits until either the dialog itself reports zero running Web Animations (the
+    // entrance transition has genuinely finished), or the button's own rect reads identical on
+    // two consecutive polls (persisted on `window` between polls, since each poll is a fresh,
+    // stateless `cdp.evaluate` call) -- so `cdp.click()` only ever reads coordinates once the
     // button is actually where it will stay.
+    await cdp.evaluate('window.__verify439CloseRect = null;');
     await cdp.waitFor(`(() => {
+      const dialog = ${HISTORY_DIALOG_FINDER};
+      if (dialog && dialog.getAnimations().length === 0) return true;
       const el = ${historyDialogCloseButtonFinder};
       if (!el) return false;
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    })()`, { timeoutMs: 5_000, label: 'Close button laid out with a non-zero size' });
+      if (r.width <= 0 || r.height <= 0) return false;
+      const key = JSON.stringify({ x: r.x, y: r.y, width: r.width, height: r.height });
+      const stable = window.__verify439CloseRect === key;
+      window.__verify439CloseRect = key;
+      return stable;
+    })()`, { timeoutMs: 5_000, label: 'Close button laid out with a stable, non-zero rect (entrance animation settled)' });
     await cdp.click(historyDialogCloseButtonFinder);
     await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 5_000, label: 'Close button closes the Conversation history dialog' });
     findings.push("The dialog's own visible Close button also closes it, independent of Escape.");
