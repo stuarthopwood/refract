@@ -75,6 +75,11 @@ function assertEqual(actual, expected, label) {
 }
 
 async function focusAndPress(cdp, finderExpr, vk, key, code) {
+  // WebView2's own CDP endpoint only delivers real `Input.dispatchKeyEvent`s to a JS-focused
+  // element once focus EMULATION is explicitly on (`verify-tauri-569.mjs`'s own keyboard-only
+  // profile-menu precedent) -- a scratch, offscreen launch has no real OS window focus of its
+  // own otherwise.
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await cdp.evaluate(`(${finderExpr}).focus()`);
   await pressKey(cdp, vk, key, code);
 }
