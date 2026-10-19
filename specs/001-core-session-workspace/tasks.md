@@ -4469,21 +4469,30 @@ background. Pre-decided on the issue (Decided, Skippy, delegated by Stuart 2026-
   `verify-439-history-truncate.mjs`'s own fixture-driven harness and `verify-551-presets.mjs`'s
   themed-screenshot loop. For every built-in preset: asserts by computed style that the header
   and body share one literal background, that it equals the theme's own live-resolved `--card`
-  (read off a throwaway `div.bg-card` probe, never a hand-copied hex), and that the rendered
-  comment token clears 4.5:1 against that background, measured live via
-  `contrast-math.mjs`'s `measuredContrastRatio`; screenshots each preset (Cyber Amber the
-  headline shot). **Live-verified (build slot, head `1821ca8`): `report.json` 0 failures,
-  exitCode 0, gitHead matches, dirty false.** Every preset's header/body backgrounds were
-  byte-identical computed-style strings equal to that theme's own live `--card` probe; the
-  comment token measured 13.93:1 (Obsidian, the lowest) to 17.88:1 (Dark high contrast) against
-  it. All 5 screenshots viewed: Cyber Amber (headline) and Dark both show one seamless surface
-  behind header and body, every token readable.
+  (read off a throwaway `div.bg-card` probe, never a hand-copied hex), that Shiki's own raw
+  `<pre>` background computes to transparent (`rgba(0, 0, 0, 0)`, a hard check the WRAPPER div's
+  own `bg-card` alone cannot prove), and that the rendered comment TOKEN -- the leaf `span.line >
+  span` with no children, not the outer line wrapper, which inherits the `<pre>`'s own default
+  foreground (gate round 1 fix, Main, Code1/Code2 High) -- clears 4.5:1 against that background,
+  measured live via `contrast-math.mjs`'s `measuredContrastRatio`; screenshots each preset
+  (Cyber Amber the headline shot). **Live-verified (build slot, head `9b7afa8`, re-run after gate
+  round 1 remediation): `report.json` 0 failures, exitCode 0, gitHead matches, dirty false.**
+  Every preset's header/body backgrounds were byte-identical computed-style strings equal to
+  that theme's own live `--card` probe; Shiki's own `<pre>` background computed to transparent
+  in every preset; the comment token measured 5.35:1 (Obsidian, the lowest) to 5.82:1 (Dark) for
+  the four `github-dark-default` presets, 11.31:1 for Dark high contrast's own
+  `github-dark-high-contrast` -- matching research.md decision 25's own predicted range exactly,
+  and genuinely distinct from each theme's own inherited default foreground (the gate round 1
+  regression guard). All 5 screenshots viewed: Cyber Amber (headline) and Dark both show one
+  seamless surface behind header and body, every token readable.
 
 **Non-build checks**: `pnpm typecheck`, `pnpm vitest run` (148/148, no new tests per the
 prototyping-phase rule), `pnpm run check:indent` (0 odd-indent lines), `pnpm run check:file-size`
 (`Markdown.tsx` exactly at its existing 997-line baseline, no growth; `check-theme-contrast.mjs`
-exactly at its existing 743-line baseline), `pnpm run check:theme-contrast` (818 of 818 pairs
-PASS across 5 themes, up from 773 -- the 45 new Shiki-token rows all pass), `node --check` on
-both edited scripts -- all clean. **Live Tauri verify: DONE** (see T329 above); `ci-local.mjs`
-all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0 failed/1 ignored, `cargo clippy
--D warnings`, Tauri debug build) at head `1821ca8`.
+exactly at its existing 743-line baseline), `pnpm run check:theme-contrast` (828 of 828 pairs
+PASS across 5 themes, up from 773 -- 50 new rows: 45 Shiki-token rows, including `carriage-return`
+now correctly included rather than wrongly excluded per gate round 1, plus a new `ring`/`card`
+pair for `CodeBlock`'s own focus ring), `node --check` on both edited scripts -- all clean.
+**Live Tauri verify: DONE** (see T329 above, re-run at head `9b7afa8` after gate round 1
+remediation); `ci-local.mjs` all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0
+failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build) at head `9b7afa8`.
