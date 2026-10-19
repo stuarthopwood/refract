@@ -89,7 +89,7 @@ const THEMES = [
   { id: 'obsidian', name: 'Obsidian', shot: '02-history-obsidian.png' },
   { id: 'dark-high-contrast', name: 'Dark (high contrast)', shot: '03-history-dark-high-contrast.png' }
 ];
-const SHOT_NAMES = [...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fake-omp-invocations.log'];
+const SHOT_NAMES = ['00-focus-tooltip.png', ...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fake-omp-invocations.log'];
 
 const NORMAL_TITLE = 'Normal conversation (#439 check)';
 const NORMAL_PREVIEW = 'Short first message, fits comfortably inside the dialog.';
@@ -358,6 +358,8 @@ async function main() {
       failures.push(`Full-title Tooltip on keyboard focus: expected content to include the full long title and preview, got ${JSON.stringify(focusTooltipText)}.`);
     } else {
       findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
+      await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
+      findings.push('Screenshot captured: the full-title/preview Tooltip visibly open beside the long row while it holds keyboard focus (00-focus-tooltip.png).');
     }
     // Live-run finding (not a #1012 scope item, but a pre-existing gap this script's first ever
     // execution surfaced -- this script was "WRITTEN, NOT RUN" before this fix): a synthetic
