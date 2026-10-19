@@ -354,16 +354,46 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, data
     }
     if (theme === THEMES[0]) {
       // Gate round 2 fix (HIGH #3): an in-run sensitivity self-check -- forces the chip's own
-      // inline `opacity` to 0.6 via CDP and re-measures, proving the probe actually REACTS to a
+      // inline `opacity` to 0.6 and re-measures, proving the probe actually REACTS to a
       // genuinely dimmed chip (rather than, say, always returning a number >= 4.5 regardless of
       // opacity due to a mistake in the compositing math), then removes the override.
-      await cdp1.evaluate(`(${ROLE_CHIP_FINDER}).style.opacity = '0.6'`);
-      const dimmedRatio = await measureChipContrast(cdp1);
-      await cdp1.evaluate(`(${ROLE_CHIP_FINDER}).style.opacity = ''`);
-      if (dimmedRatio !== null && dimmedRatio < 4.5) {
+      //
+      // Round 2 fix (own bug, live-found): set/measure/restore used to be THREE separate
+      // `cdp.evaluate` round-trips -- live-measured 7.63:1 both before AND after forcing
+      // opacity:0.6 (mathematically impossible if the override had actually been read: blending
+      // ANY fraction of a foreground colour toward its own backdrop strictly lowers contrast).
+      // One atomic evaluate call (set, measure, restore, all in the SAME synchronous script
+      // execution) removes any inter-call gap a remount/reconciliation could exploit; a direct
+      // `appliedOpacity` readback confirms the override was actually observed by
+      // `getComputedStyle`, independent of the contrast math, for a clearer failure if it isn't.
+      const dimmedProbe = await cdp1.evaluate(`
+        (() => {
+          const chip = ${ROLE_CHIP_FINDER};
+          if (!chip) return null;
+          const previousOpacity = chip.style.opacity;
+          chip.style.opacity = '0.6';
+          const appliedOpacity = getComputedStyle(chip).opacity;
+          const fg = getComputedStyle(chip).color;
+          const bgLayers = [];
+          let opacity = 1;
+          let el = chip;
+          while (el) {
+            opacity *= parseFloat(getComputedStyle(el).opacity) || 1;
+            bgLayers.push(getComputedStyle(el).backgroundColor);
+            el = el.parentElement;
+          }
+          bgLayers.reverse();
+          chip.style.opacity = previousOpacity;
+          return { fg, bgLayers, opacity, appliedOpacity };
+        })()
+      `);
+      const dimmedRatio = dimmedProbe ? resolveEffectiveTextContrast(dimmedProbe.fg, dimmedProbe.bgLayers, dimmedProbe.opacity) : null;
+      if (dimmedProbe && dimmedProbe.appliedOpacity !== '0.6') {
+        failures.push(`Contrast probe sensitivity self-check: forcing chip.style.opacity='0.6' did not take effect -- getComputedStyle read back "${dimmedProbe.appliedOpacity}".`);
+      } else if (dimmedRatio !== null && dimmedRatio < 4.5) {
         findings.push(`Contrast probe sensitivity self-check: forcing the chip's own inline opacity to 0.6 drops the measured ratio to ${dimmedRatio.toFixed(2)}:1 (< 4.5, confirms the probe reacts to opacity).`);
       } else {
-        failures.push(`Contrast probe sensitivity self-check failed: forcing opacity:0.6 measured ${dimmedRatio === null ? 'unmeasurable' : dimmedRatio.toFixed(2) + ':1'}, expected < 4.5:1.`);
+        failures.push(`Contrast probe sensitivity self-check failed: forcing opacity:0.6 (confirmed applied) measured ${dimmedRatio === null ? 'unmeasurable' : dimmedRatio.toFixed(2) + ':1'}, expected < 4.5:1.`);
       }
     }
     const shotName = `01-chip-default-${theme.id}.png`;
