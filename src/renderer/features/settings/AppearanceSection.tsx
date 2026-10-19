@@ -203,7 +203,7 @@ export function AppearanceSection() {
         <div className="flex flex-col gap-0.5">
           <label htmlFor="watermark-toggle" className="text-sm font-medium">Background watermark</label>
           <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
-            {holidayEntry ? 'A faint mark shown in the corner of the chat area -- a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
+            {holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
           </span>
         </div>
         <Switch

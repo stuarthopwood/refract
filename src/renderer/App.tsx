@@ -3,7 +3,7 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
-import { BrandWatermark } from '@/features/chat/BrandWatermark'
+import { EmptyChatState } from '@/features/chat/EmptyChatState'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
@@ -26,7 +26,8 @@ import {
 } from '@/state'
 import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
-import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'; import { HolidayAmbientLoop } from '@/features/holidays/HolidayAmbientLoop'; import { HolidayEmptyStateLine } from '@/features/holidays/HolidayEmptyStateLine'
+import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
+import { HolidayAmbientLoop } from '@/features/holidays/HolidayAmbientLoop'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
@@ -524,35 +525,22 @@ export function App() {
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
-            <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
+            {/* Gate round 2 fix (Medium, item 7): `relative isolate` here (not an extra wrapper
+                div) gives the single `HolidayAmbientLoop` mount below a stacking context to
+                paint behind, for exactly ONE instance per window regardless of split state --
+                split view used to mount it once per `ChatPane`, doubling the bats. */}
+            <ResizablePanel id="chat" className="relative isolate" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
+                {view === 'chat' && <HolidayAmbientLoop />}
                 {view === 'pull-requests' ? (
                   // specs/003-pull-request-management: swaps only this panel's content (never
                   // the session-list panel or the subagent panel, both of which stay mounted --
                   // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : paneSessionIds.length === 0 ? (
-                  // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
-                  // in this branch, so the mark anchors to this div's own full box.
-                  //
-                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
-                  // this root itself to be the query container (`[container-type:size]`), not the
-                  // window, matching ChatPane.tsx's own transcript container (research.md decision
-                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
-                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
-                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
-                  // over it: `isolate` is what creates the stacking context here (`container-type`
-                  // does not, it only applies style and size containment).
-                  <div
-                    data-chat-empty-state
-                    role="region"
-                    aria-label="Chat"
-                    tabIndex={-1}
-                    className="relative isolate flex flex-col h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
-                  >
-                    <BrandWatermark variant="live" /><HolidayAmbientLoop />
-                    <span>Select a Session or create one.</span><HolidayEmptyStateLine className="text-xs" />
-                  </div>
+                  // Spec 012 (research.md decision 3, extracted to EmptyChatState.tsx, gate
+                  // round 2 item 11): no pane open at all.
+                  <EmptyChatState />
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane
                     sessionId={frontSessionId as string}

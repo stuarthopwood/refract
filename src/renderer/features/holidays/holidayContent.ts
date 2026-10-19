@@ -48,7 +48,7 @@ export const HOLIDAY_CONTENT: Record<HolidayId, HolidayContent> = {
     icon: Flame,
     emoji: '🎇',
     startingMessages: ["Lighting the agent's fuse…", "Setting off the agent's sparks…"],
-    emptyStateLine: '🎇 Quiet here -- save the sparks for later.',
+    emptyStateLine: '🎇 Quiet here — save the sparks for later.',
     hasAmbientLoop: false
   },
   christmas: {

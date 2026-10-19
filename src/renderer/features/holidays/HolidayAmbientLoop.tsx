@@ -42,14 +42,43 @@ export function HolidayAmbientLoop() {
     // `idleTimeoutMs` changes (a debug-only override arriving after the first mount), and the
     // real hidden/unfocused state could have changed in between.
     setPaused(document.hidden || !document.hasFocus())
+    // Gate round 2 fix (Medium, item 5): a modal dialog/alert-dialog/sheet steals the user's
+    // attention the same way a hidden/unfocused window does -- `:not([data-closed])` excludes
+    // one mid-exit-animation (Radix keeps the Content mounted with `data-closed` for its own
+    // `animate-out`, about to unmount), so this never re-pauses on a dialog that is already on
+    // its way out.
+    function isDialogOpen() {
+      return !!document.querySelector(
+        '[role="dialog"]:not([data-closed]), [role="alertdialog"]:not([data-closed]), [data-slot="sheet-content"]:not([data-closed])'
+      )
+    }
     function schedulePause() {
       window.clearTimeout(idleTimerRef.current)
       idleTimerRef.current = window.setTimeout(() => setPaused(true), idleTimeoutMs)
     }
+    // Gate round 2 fix (Medium, item 4): an unfocused window under the cursor (another app on
+    // top, or this window merely hovered without being the active one) must not restart the
+    // loop -- `pointermove`/`wheel` fire on an unfocused-but-visible window just from the OS
+    // routing hover/scroll to whatever is under the cursor, which is not "the user is reading
+    // this window". `isDialogOpen()` gates it the same way: any input while a modal is open
+    // targets the modal, never this ambient background.
     function handleActivity() {
-      if (document.hidden) return
+      if (document.hidden || !document.hasFocus() || isDialogOpen()) return
       setPaused(false)
       schedulePause()
+    }
+    // Gate round 2 fix (Medium, item 4): `pointermove` fires dozens of times a second while the
+    // cursor is merely resting and twitching over the window -- every one of those used to
+    // reschedule the idle timer (`clearTimeout`+`setTimeout`, a real timer churn cost for no
+    // behavioural benefit over one reschedule a second), so this throttles it to about 1/s; the
+    // leading call still runs immediately (first movement in a quiet window still counts right
+    // away), only the CHATTER during continuous movement is dropped.
+    let lastPointerMoveAt = 0
+    function handlePointerMove() {
+      const now = Date.now()
+      if (now - lastPointerMoveAt < 1000) return
+      lastPointerMoveAt = now
+      handleActivity()
     }
     function handleVisibility() {
       if (document.hidden) {
@@ -63,23 +92,33 @@ export function HolidayAmbientLoop() {
       setPaused(true)
       window.clearTimeout(idleTimerRef.current)
     }
+    function handleDialogMutation() {
+      if (isDialogOpen()) {
+        setPaused(true)
+        window.clearTimeout(idleTimerRef.current)
+      }
+    }
     schedulePause()
+    handleDialogMutation()
     window.addEventListener('pointerdown', handleActivity)
-    window.addEventListener('pointermove', handleActivity)
+    window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('keydown', handleActivity)
     window.addEventListener('wheel', handleActivity, { passive: true })
     window.addEventListener('blur', handleBlur)
     window.addEventListener('focus', handleActivity)
     document.addEventListener('visibilitychange', handleVisibility)
+    const dialogObserver = new MutationObserver(handleDialogMutation)
+    dialogObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-closed', 'role'] })
     return () => {
       window.clearTimeout(idleTimerRef.current)
       window.removeEventListener('pointerdown', handleActivity)
-      window.removeEventListener('pointermove', handleActivity)
+      window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('keydown', handleActivity)
       window.removeEventListener('wheel', handleActivity)
       window.removeEventListener('blur', handleBlur)
       window.removeEventListener('focus', handleActivity)
       document.removeEventListener('visibilitychange', handleVisibility)
+      dialogObserver.disconnect()
     }
   }, [active, idleTimeoutMs])
 
@@ -101,18 +140,21 @@ export function HolidayAmbientLoop() {
 /** One drifting bat (Halloween, "pick the calmer one" -- gentle drift, never a flicker). Plain
  * hand-drawn shapes, not a lucide icon: lucide has no bat glyph. Gate round 1 fix (Medium): the
  * original single-path silhouette read as a pair of chevrons (the sidebar's own collapse-all
- * control, `ChevronsDownUpIcon`); redrawn as a round head with two pointed ears and two
- * scalloped (3-finger) wings either side of a small oval body, reused three times with only its
- * CSS position/timing varied (`:nth-child` in `globals.css`). */
+ * control, `ChevronsDownUpIcon`). Gate round 2 fix (Medium, item 8): that redraw still read as
+ * too squat/boxy at this size (32x20, a 1.6x span-to-height ratio) -- widened to 48x16 (a flat
+ * 3x ratio, the "span at least 3x height, 40-48px" the ui-architect review asked for) with a
+ * longer, more pronounced scalloped (3-finger) trailing edge on each wing, a round head with two
+ * pointed ears, and a small oval body; reused three times with only its CSS position/timing
+ * varied (`:nth-child` in `globals.css`). */
 function BatSilhouette() {
   return (
-    <svg className="holiday-ambient-loop-bat" width="32" height="20" viewBox="0 0 32 20" fill="currentColor" focusable={false}>
-      <path d="M14 9 L5 4 L8 9 L2 9 L6 12 L1 15 L8 13 L11 15 L12 12 Z" />
-      <path d="M18 9 L27 4 L24 9 L30 9 L26 12 L31 15 L24 13 L21 15 L20 12 Z" />
-      <path d="M13 4 L14 1 L15 4 Z" />
-      <path d="M17 4 L18 1 L19 4 Z" />
-      <circle cx="16" cy="6" r="3" />
-      <ellipse cx="16" cy="11" rx="2.5" ry="4" />
+    <svg className="holiday-ambient-loop-bat" width="48" height="16" viewBox="0 0 48 16" fill="currentColor" focusable={false}>
+      <path d="M22 6 L2 2 L6 5 L3 7 L9 8 L5 11 L12 10 L10 9 Z" />
+      <path d="M26 6 L46 2 L42 5 L45 7 L39 8 L43 11 L36 10 L38 9 Z" />
+      <path d="M21.3 2 L22 0 L22.7 2 Z" />
+      <path d="M25.3 2 L26 0 L26.7 2 Z" />
+      <circle cx="24" cy="4" r="2.3" />
+      <ellipse cx="24" cy="9" rx="1.8" ry="3.2" />
     </svg>
   )
 }

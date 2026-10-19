@@ -45,7 +45,7 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
-import { processTreeCpuSeconds, settleForScreenshot, dispatchNeutralPointerdown, dispatchShiftKeyTap } from './verify-1048-holiday-touches-helpers.mjs';
+import { settleForScreenshot, dispatchNeutralPointerdown, dispatchShiftKeyTap, measureAmbientLoopCpuBudget } from './verify-1048-holiday-touches-helpers.mjs';
 import { runOffSeasonBaseline, runInvalidDateOverrideCheck } from './verify-1048-holiday-touches-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -83,32 +83,6 @@ function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-/** Keeps the loop genuinely RUNNING for `durationMs` (real dispatched Shift keydown/keyup every
- * 2s -- gate round 1 fix, High, item 4: a plain synthetic mouse move used to leave the loop
- * idle-paused for almost the whole window, measuring "app idle" twice over, not "loop running"
- * vs "no loop"). Returns the CPU-seconds consumed over the window (process tree, not just the
- * root exe) and the loop's own `data-paused` state at the start and end of the sample. Gate
- * round 2 fix: `processTreeCpuSeconds` recursively walks the process tree via PowerShell
- * (`Get-CimInstance`), which can itself take longer than the debug-shortened idle timeout
- * (`SHORT_IDLE_MS`, 3s) -- the idle timer could fire DURING that measurement, so `pausedAtStart`
- * used to be read on a loop that had already gone idle before the keep-awake loop even started.
- * A fresh tap right before the `pausedAtStart` read closes that gap regardless of how long the
- * `before` measurement took. */
-async function measureCpuSample(cdp, pid, durationMs) {
-  const before = processTreeCpuSeconds(pid);
-  await dispatchShiftKeyTap(cdp);
-  const pausedAtStart = await cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`);
-  const ticks = Math.max(1, Math.floor(durationMs / 2000));
-  for (let i = 0; i < ticks; i++) {
-    await dispatchShiftKeyTap(cdp);
-    await sleep(2000);
-  }
-  const pausedAtEnd = await cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`);
-  const after = processTreeCpuSeconds(pid);
-  const cpuSeconds = before !== null && after !== null ? after - before : null;
-  return { cpuSeconds, pausedAtStart, pausedAtEnd };
-}
-
 async function main() {
   const head = gitHead(REPO_ROOT);
   const dirtyLines = spawnSync_('git', ['-C', REPO_ROOT, 'status', '--porcelain']).stdout.split('\n').filter(Boolean);
@@ -125,7 +99,7 @@ async function main() {
     'ambient-loop-reduced-motion.png',
     'ambient-loop-blurred.png',
     'spinner-working.png',
-    'baseline-no-override.png',
+    'baseline-off-season.png',
     'report.json'
   ]);
 
@@ -284,24 +258,29 @@ async function main() {
     await switchTheme(cdp, 'dark', 'Dark');
     await settleForScreenshot(cdp);
 
-    // ---- Gate round 1 fix (High, item 2): the ambient loop genuinely paints BEHIND content --
-    // `elementFromPoint` at each bat's own centre must never resolve to the bat itself. ----
+    // ---- Gate round 2 fix (Medium, item 6): the round 1 `elementFromPoint` proof can never
+    // fail -- `pointer-events: none` already makes every browser hit-test skip the bat itself by
+    // spec, so "never resolves to the bat" was tautological, not a real proof of paint order.
+    // Asserting the COMPUTED `z-index` and the positioned ancestor's COMPUTED `isolation`
+    // instead proves the actual mechanism this relies on: `-10` alone is a no-op without an
+    // `isolate` ancestor creating the stacking context it paints BEHIND (without one, a
+    // negative z-index can still paint above a sibling with no z-index of its own, depending on
+    // DOM order). ----
     const batStackingCheck = await cdp.evaluate(`(() => {
+      const loop = document.querySelector('.holiday-ambient-loop');
       const bats = Array.from(document.querySelectorAll('.holiday-ambient-loop-bat'));
-      return bats.map((bat) => {
-        const r = bat.getBoundingClientRect();
-        const cx = r.x + r.width / 2;
-        const cy = r.y + r.height / 2;
-        const el = document.elementFromPoint(cx, cy);
-        return { isBat: !!(el && el.closest('.holiday-ambient-loop-bat')), hitTag: el ? el.tagName : null };
-      });
+      if (!loop) return null;
+      const loopStyle = getComputedStyle(loop);
+      const parentStyle = loop.parentElement ? getComputedStyle(loop.parentElement) : null;
+      return {
+        batCount: bats.length,
+        loopZIndex: loopStyle.zIndex,
+        parentIsolation: parentStyle ? parentStyle.isolation : null
+      };
     })()`);
-    assertTrue(batStackingCheck.length === 3, 'Three bat silhouettes found for the stacking-order proof', batStackingCheck);
-    assertTrue(
-      batStackingCheck.every((b) => !b.isBat),
-      'elementFromPoint at every bat centre never resolves to the bat itself (painted behind content, -z-10)',
-      batStackingCheck
-    );
+    assertTrue(batStackingCheck !== null && batStackingCheck.batCount === 3, 'Three bat silhouettes found for the stacking-order proof', batStackingCheck);
+    assertEqual(batStackingCheck.loopZIndex, '-10', 'Ambient loop layer computed z-index is -10');
+    assertEqual(batStackingCheck.parentIsolation, 'isolate', "Ambient loop layer's positioned ancestor computed isolation is isolate (the -10 z-index genuinely creates a BEHIND stacking context, not a no-op)");
 
     // ---- Ambient loop: Full (default) ----
     let loopState = await readAmbientLoopState(cdp);
@@ -354,6 +333,9 @@ async function main() {
       timeoutMs: SHORT_PAUSE_PROOF_MS,
       label: `Ambient loop pauses on window blur within ${SHORT_PAUSE_PROOF_MS}ms (proves the blur handler, not a coincidental idle-timer fire)`
     });
+    // Gate round 2 fix (Medium, item 9): this proof only ever lived in `cdp.waitFor`'s own
+    // label, never in `report.json` -- added here so the evidence file carries it as a step.
+    report.push({ step: `Ambient loop pauses on window blur within ${SHORT_PAUSE_PROOF_MS}ms (proves the blur handler, not a coincidental idle-timer fire)`, ok: true });
     await cdp.screenshot(path.join(SHOTS_DIR, 'ambient-loop-blurred.png'));
     await cdp.evaluate(`window.dispatchEvent(new Event('focus'))`);
     await dispatchNeutralPointerdown(cdp);
@@ -368,6 +350,8 @@ async function main() {
       timeoutMs: SHORT_PAUSE_PROOF_MS,
       label: `Ambient loop pauses when document.hidden becomes true within ${SHORT_PAUSE_PROOF_MS}ms (proves the visibility handler)`
     });
+    // Gate round 2 fix (Medium, item 9): same as the blur proof above -- now a report.json step.
+    report.push({ step: `Ambient loop pauses when document.hidden becomes true within ${SHORT_PAUSE_PROOF_MS}ms (proves the visibility handler)`, ok: true });
     await cdp.evaluate(`Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange'))`);
     await dispatchNeutralPointerdown(cdp);
     await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') !== 'true'`, { timeoutMs: SHORT_PAUSE_PROOF_MS, label: 'Ambient loop resumes once visible again plus a real input' });
@@ -420,30 +404,29 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings screen opened' });
     await cdp.clickByText('Appearance', { tag: 'button' });
     await cdp.waitFor(`!!document.querySelector('#holiday-touches-select')`, { timeoutMs: 10_000, label: 'Appearance section shows the Holiday touches control' });
+    await cdp.evaluate(`document.querySelector('#holiday-touches-select').scrollIntoView({ block: 'center' })`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, 'settings-appearance.png'));
+    // ---- Gate round 2 fix (Medium, item 9): exercises the REAL Settings control once, not only
+    // the debug `window.refract.settings.setHolidayTouches` shortcut every other mode switch in
+    // this script uses -- proves the actual Select wiring (SelectTrigger/SelectItem), not just
+    // the underlying Zustand setter it calls. ----
+    await cdp.click(`document.querySelector('#holiday-touches-select')`);
+    await cdp.waitFor(`!!document.querySelector('[data-slot="select-item"]')`, { timeoutMs: 5_000, label: 'Holiday touches select options open' });
+    await cdp.clickByText('Artwork only', { tag: '[data-slot="select-item"]' });
+    await cdp.waitFor(`document.querySelector('#holiday-touches-select')?.textContent.includes('Artwork only')`, { timeoutMs: 5_000, label: 'Holiday touches select shows Artwork only after a real selection through the control itself' });
+    await cdp.click(`document.querySelector('#holiday-touches-select')`);
+    await cdp.waitFor(`!!document.querySelector('[data-slot="select-item"]')`, { timeoutMs: 5_000, label: 'Holiday touches select options open again' });
+    await cdp.clickByText('Full', { tag: '[data-slot="select-item"]' });
+    await cdp.waitFor(`document.querySelector('#holiday-touches-select')?.textContent.includes('Full')`, { timeoutMs: 5_000, label: 'Holiday touches select back to Full through the control itself' });
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 10_000, label: 'Back to chat from Settings' });
 
-    // ---- Idle CPU, Full vs Off, over a real 60s window each (kept genuinely RUNNING via real
-    // dispatched Shift keystrokes every 2s, process-tree CPU sum, `data-paused` recorded at the
-    // start and end of each sample -- gate round 1 fix, High, item 4). ----
-    await cdp.evaluate(`window.refract.settings.setHolidayTouches('full')`);
-    await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop active before the Full CPU sample' });
-    await dispatchNeutralPointerdown(cdp);
-    const fullSample = await measureCpuSample(cdp, launched.targetPid, 60_000);
-    await cdp.evaluate(`window.refract.settings.setHolidayTouches('off')`);
-    await cdp.waitFor(`!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop gone before the Off CPU sample' });
-    const offSample = await measureCpuSample(cdp, launched.targetPid, 60_000);
-    report.push({
-      step: 'Idle CPU, Full vs Off, over 60s each (process-tree CPU-seconds consumed, kept awake by real Shift taps every 2s, lower is better)',
-      ok: fullSample.cpuSeconds !== null && offSample.cpuSeconds !== null,
-      full: fullSample,
-      off: offSample,
-      deltaSeconds: fullSample.cpuSeconds !== null && offSample.cpuSeconds !== null ? fullSample.cpuSeconds - offSample.cpuSeconds : null
-    });
-    assertTrue(!fullSample.pausedAtStart && !fullSample.pausedAtEnd, 'Full CPU sample: the loop was NOT paused at either the start or end of the 60s window (the keep-awake taps worked)', fullSample);
-    console.log(`${LOG}: idle CPU over 60s -- Full: ${fullSample.cpuSeconds}s, Off: ${offSample.cpuSeconds}s`);
+    // ---- Gate round 2 fix (High, items 1-2): the FAILING CPU budget check, replacing the
+    // round 1 informational-only Full-vs-Off single sample -- median of 3 alternating
+    // Full/Artwork-only 60s samples, plus a paused-state budget, both asserted against a hard
+    // ceiling (see `measureAmbientLoopCpuBudget`'s own doc comment). ----
+    await measureAmbientLoopCpuBudget(cdp, launched.targetPid, report, assertTrue, { log: LOG, shortIdleMs: SHORT_IDLE_MS, dispatchShiftKeyTap });
 
     report.push({
       step: 'screenshots',

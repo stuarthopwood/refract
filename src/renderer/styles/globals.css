@@ -1110,24 +1110,30 @@
 /* Halloween: 3 drifting bat silhouettes (grill decision 2's own "pick the calmer one" -- a
  * slow diagonal drift reads calmer than a flicker, and never needs tuning around WCAG 2.3.1's
  * 3-flashes-per-second ceiling the way an opacity flicker would). Single colour
- * (`--muted-foreground`, the same token the watermark itself uses), very low opacity, animating
- * `opacity`/`transform` only (motion doc's own "Caps and pause rules": "Animate only opacity
- * and transform"). `cqw`/`cqh` resolve against the same size-container the watermark's own
- * `20cqw` clamp already relies on (`[container-type:size]` on the shared ancestor). */
+ * (`--muted-foreground`, the same token the watermark itself uses), very low CONSTANT opacity,
+ * animating `transform` only. Gate round 2 fix (High, item 1): a smooth `ease-in-out` curve
+ * forces the compositor to produce a fresh interpolated frame on every vsync tick for the whole
+ * cycle -- the ui-architect review's own repro measured this at about 7s of CPU per minute,
+ * frame PRODUCTION, not paint. `steps(26)` on this rule's shared `animation` shorthand applies
+ * per keyframe segment (4 segments here), so it ticks about 4 times a second instead of every
+ * frame -- the compositor can hold one static transform between ticks. The opacity keyframes
+ * are dropped entirely (a constant value never needs re-evaluating), and the drift distances are
+ * now plain `px` (not `cqw`/`cqh`): a fixed small drift reads the same regardless of container
+ * size, and this no longer depends on the watermark's own `[container-type:size]` ancestor. */
 .holiday-ambient-loop-bat {
   position: absolute;
   color: var(--muted-foreground);
   opacity: 0.1;
-  animation: holiday-bat-drift 26s ease-in-out infinite;
+  animation: holiday-bat-drift 26s steps(26) infinite;
 }
 .holiday-ambient-loop-bat:nth-child(1) { top: 12%; left: 8%; }
 .holiday-ambient-loop-bat:nth-child(2) { top: 32%; left: 55%; animation-delay: -9s; animation-duration: 31s; }
 .holiday-ambient-loop-bat:nth-child(3) { top: 58%; left: 22%; animation-delay: -18s; animation-duration: 23s; }
 @keyframes holiday-bat-drift {
-  0%, 100% { transform: translate(0, 0); opacity: 0.1; }
-  25% { transform: translate(6cqw, -2cqh); opacity: 0.16; }
-  50% { transform: translate(2cqw, 4cqh); opacity: 0.08; }
-  75% { transform: translate(-4cqw, 1cqh); opacity: 0.14; }
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(24px, -10px); }
+  50% { transform: translate(8px, 18px); }
+  75% { transform: translate(-16px, 4px); }
 }
 
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {

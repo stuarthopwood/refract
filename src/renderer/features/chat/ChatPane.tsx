@@ -35,7 +35,7 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
-import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'; import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
+import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -798,7 +798,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     return (
       <Empty className="relative isolate h-full [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
-        {showWatermark && <HolidayAmbientLoop />}
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <MessageSquareIcon />
@@ -1401,7 +1400,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       />
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
-        {showWatermark && <HolidayAmbientLoop />}
         <Transcript
           sessionId={sessionId}
           hasHistory={hasHistory}

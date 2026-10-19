@@ -98,8 +98,8 @@ export async function runOffSeasonBaseline(ctx) {
     if (!ok) throw new Error(`FAIL: off-season baseline still shows holiday content: ${JSON.stringify(noHoliday)}`);
     console.log(`${LOG}: PASS off-season override baseline: nothing holiday-related renders anywhere`);
     await settleForScreenshot(cdp);
-    await cdp.screenshot(path.join(shotsDir, 'baseline-no-override.png'));
-    report.push({ step: 'off-season override baseline screenshot', ok: true, screenshots: citeScreenshots(shotsDir, ['baseline-no-override.png']) });
+    await cdp.screenshot(path.join(shotsDir, 'baseline-off-season.png'));
+    report.push({ step: 'off-season override baseline screenshot', ok: true, screenshots: citeScreenshots(shotsDir, ['baseline-off-season.png']) });
   } catch (err) {
     report.push({ step: 'off-season override baseline crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;
