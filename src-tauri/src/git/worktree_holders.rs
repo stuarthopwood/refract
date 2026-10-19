@@ -1,22 +1,26 @@
-// Issue #891 preflight: detects whether anything external still holds a Session's worktree
-// folder, run BEFORE the agent is stopped and before any file is touched (Stuart's 2026-10-19
-// grill, issuecomment-6266131548, amended by issuecomment-6266265342). Two complementary
-// checks, run in this order:
+// Issue #891 holder detection: detects whether anything external still holds a Session's
+// worktree folder (Stuart's 2026-10-19 grill, issuecomment-6266131548, amended by
+// issuecomment-6266265342). Two complementary checks, exposed as SEPARATE functions
+// (`check_named_holders`/`check_folder_in_use`) rather than one combined preflight, because the
+// caller (`ipc::sessions_lifecycle`'s `sessions.delete`) MUST run its own agent's shutdown
+// BETWEEN them -- see `check_folder_in_use`'s own doc comment for why:
 //
 //   (a) Windows Restart Manager (`RmRegisterResources`/`RmGetList`) over the worktree path,
 //       which names a PROGRAM (image name) and PID holding an open FILE HANDLE somewhere inside
 //       it. This Session's own recorded `omp` pids (`process::pid_records::pids_for_session`)
 //       are excluded from the result first -- the agent itself holding its own files open is
-//       never a reason to refuse deleting it.
-//   (b) A safe rename probe, run ONLY when (a) found nobody: a cwd holder (a terminal or File
-//       Explorer window merely sitting inside the folder) holds no file handle Restart Manager
-//       can see, only a directory handle via the Windows "current directory" mechanism -- the
-//       amendment's own words, "a cwd holder is invisible to Restart Manager". Renaming the
-//       folder to a sibling name inside the worktrees root and straight back fails with a
-//       sharing violation if anything still has it open as a working directory; the rename-BACK
-//       failing is the one outcome that must never be silently swallowed -- the real files
-//       would then sit at the probe name, not the original path, so that case reports the exact
-//       current path plainly instead.
+//       never a reason to refuse deleting it. Runs BEFORE the agent is stopped: a refusal here
+//       leaves the Session exactly as it was.
+//   (b) A safe rename probe, run ONLY when (a) found nobody AND only AFTER this Session's own
+//       agent has been shut down: a cwd holder (a terminal or File Explorer window merely
+//       sitting inside the folder) holds no file handle Restart Manager can see, only a
+//       directory handle via the Windows "current directory" mechanism -- the amendment's own
+//       words, "a cwd holder is invisible to Restart Manager". Renaming the folder to a sibling
+//       name inside the worktrees root and straight back fails with a sharing violation if
+//       anything still has it open as a working directory; the rename-BACK failing is the one
+//       outcome that must never be silently swallowed -- the real files would then sit at the
+//       probe name, not the original path, so that case reports the exact current path plainly
+//       instead.
 //
 // Refract never ends a process (Stuart's grill, Skippy's 2026-10-19 decision): this module only
 // NAMES holders, it never calls `TerminateProcess` or anything like it.
@@ -80,12 +84,17 @@ fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String
     )
 }
 
-/// Runs the full issue #891 preflight for `worktree_path`. Returns `Ok(())` when nothing visible
-/// holds the folder (Stuart: "proceed if no holder is visible" -- this is not a guarantee
-/// nothing holds it, only that nothing DETECTABLE does), or a `WorktreeHeld` error naming the
-/// holder (or, with no named holder, the generic in-use wording) otherwise. A missing folder is
-/// not this module's concern at all -- nothing to hold, so always `Ok(())`.
-pub async fn preflight(worktree_path: &Path, exclude_pids: &[u32]) -> Result<(), GitError> {
+/// Names a program (and pid) holding an open FILE HANDLE somewhere inside `worktree_path`, via
+/// Windows Restart Manager, excluding `exclude_pids` (this Session's own recorded `omp` root
+/// processes -- the agent itself holding its own files open is never a reason to refuse).
+/// Returns `Ok(())` when nothing visible holds a file (Stuart: "proceed if no holder is
+/// visible" -- not a guarantee, only that nothing DETECTABLE does), or a `WorktreeHeld` error
+/// naming the holder otherwise. Safe to call with the Session's own agent still running (it is
+/// designed to run BEFORE that agent is stopped, so a refusal here leaves the Session exactly
+/// as it was): unlike `check_folder_in_use` below, a named FILE holder is never this Session's
+/// own doing once its own pids are excluded. A missing folder is not this check's concern --
+/// nothing to hold, so always `Ok(())`.
+pub async fn check_named_holders(worktree_path: &Path, exclude_pids: &[u32]) -> Result<(), GitError> {
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
         return Ok(());
     }
@@ -101,7 +110,31 @@ pub async fn preflight(worktree_path: &Path, exclude_pids: &[u32]) -> Result<(),
             named_holders_message(worktree_path, &named),
         ));
     }
+    Ok(())
+}
 
+/// The safe rename-and-back probe (issuecomment-6266265342's own amendment): a cwd holder (a
+/// terminal or File Explorer window merely sitting inside the folder) holds no file handle
+/// Restart Manager can see, only a directory handle via the Windows "current directory"
+/// mechanism -- "a cwd holder is invisible to Restart Manager". Renaming the folder to a
+/// sibling name inside the worktrees root and straight back fails with a sharing violation if
+/// anything still has it open as a working directory.
+///
+/// **Must only be called once this Session's own agent has already been stopped.** Its own
+/// process (`session::agent::launch`'s `OmpProcessOptions::new` sets `cwd` to exactly
+/// `worktree_path`) is itself indistinguishable, via a plain rename, from a genuine external
+/// cwd holder: Windows refuses the rename if ANY process at all has the folder as its working
+/// directory, ours or someone else's, with no way to attribute which -- unlike
+/// `check_named_holders` above, there is no pid-exclusion mechanism available here. Confirmed
+/// live: called while this Session's own agent was still running, this always read as held,
+/// regardless of any genuine third party, even after several retries. Calling it only after
+/// shutdown trades the "a refusal leaves the Session running" wording for correctness: a
+/// refusal found here may leave the agent stopped rather than literally uninterrupted, but it
+/// is no longer a false positive on every ordinary Delete of a still-running Session.
+pub async fn check_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
+    if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
+        return Ok(());
+    }
     probe_folder_in_use(worktree_path).await
 }
 

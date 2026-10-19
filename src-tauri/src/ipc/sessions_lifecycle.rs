@@ -365,13 +365,14 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (session, repository)
         };
 
-        // Issue #891, Stuart's 2026-10-19 grill item 2: the holder check runs BEFORE the agent
-        // is stopped and before `begin_worktree_operation` -- a refused Delete must leave the
-        // Session exactly as it was, agent still running, watcher untouched. This Session's own
-        // recorded `omp` pids are excluded from whatever Restart Manager reports: the agent
-        // itself holding its own files open is never a reason to refuse.
+        // Issue #891, Stuart's 2026-10-19 grill item 2: the NAMED-holder (file-handle) check
+        // runs BEFORE the agent is stopped and before `begin_worktree_operation` -- a refused
+        // Delete for an external FILE holder must leave the Session exactly as it was, agent
+        // still running, watcher untouched. This Session's own recorded `omp` pids are excluded
+        // from whatever Restart Manager reports: the agent itself holding its own files open is
+        // never a reason to refuse.
         let own_pids = pid_records::pids_for_session(&id).await;
-        worktree_holders::preflight(Path::new(&session.worktree_path), &own_pids)
+        worktree_holders::check_named_holders(Path::new(&session.worktree_path), &own_pids)
             .await
             .map_err(map_git_error)?;
 
@@ -388,11 +389,27 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // cwd (and open file handles) inside the worktree; removing it out from under a live
         // process is exactly the EBUSY/EPERM class `git::worktree_delete`'s own `wrap_fs_error`
         // exists to explain, not something this handler should ever risk causing.
+        //
+        // Also why the CWD-holder check below must come AFTER this, never before (see
+        // `worktree_holders::check_folder_in_use`'s own doc comment): this Session's own agent,
+        // while still running, is itself an unattributable cwd holder from a plain rename's
+        // point of view -- checking first would refuse every ordinary Delete of a still-running
+        // Session.
         state
             .session_manager
             .get_or_create_agent(&id)
             .shutdown()
             .await;
+
+        // Issue #891: the cwd-holder (rename-and-back) probe, now free of this Session's own
+        // interference. A refusal here leaves this Session's own agent stopped (it already runs
+        // after shutdown, immediately above) rather than literally untouched, but the Session
+        // entry, branch, and worktree are still left exactly as they were; a later Retry (or
+        // simply reopening the Session) resumes it the same way any other quiesced Session does.
+        worktree_holders::check_folder_in_use(Path::new(&session.worktree_path))
+            .await
+            .map_err(map_git_error)?;
+
         crate::process::pid_records::remove_process_records_for_session(&id).await;
 
         remove_session_worktree(
