@@ -348,11 +348,10 @@ async function main() {
       } else {
         findings.push('Clicking "Go to Stage 4" moved keyboard focus to Stage 4\'s own trigger.');
       }
-      // A fixed settle delay, then ONE definitive `elementFromPoint` hit test, not a polled
-      // bounds comparison (gate round 2: polling this same bounds check against `content-
-      // visibility:auto`'s own estimate-to-real-height reflow mid-scroll read "never in
-      // viewport" for the full 10s even though the very next screenshot showed it correctly
-      // placed).
+      // A fixed settle delay, then one definitive `elementFromPoint` hit test (gate round 2:
+      // `jumpToStage`'s own settle loop, `stageJump.ts`, now fights the vendored scroller's
+      // sticky follow-bottom mode for up to `JUMP_SETTLE_MAX_FRAMES` frames -- comfortably under
+      // 1s at 60fps -- so this sleep only needs to outlast that, not poll it).
       await sleep(1_500);
       const stage4Check = await cdp.evaluate(viewportHitTestExpr(stage4TriggerExpr));
       if (stage4Check.found && stage4Check.inBounds && stage4Check.hit) {
