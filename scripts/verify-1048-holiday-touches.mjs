@@ -430,19 +430,33 @@ async function main() {
 
 async function runOffSeasonBaseline(head, dirty, report, notExercised) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-data-'));
+  const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-import-'));
+  const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-repo-'));
+  const repoDir = makeScratchRepo(repoDirBase, 'verify-1048-holiday-touches-baseline');
+  const worktreesRootForCleanup = path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
   const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-exe-'));
   const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-launcher-'));
+  const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-1048-baseline-shim-'));
   let child;
   let cdp;
   try {
+    buildOmpShim(shimDir);
     const launcherExe = buildLauncher(launcherDir);
     const exeInfo = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: `${LOG}-baseline` });
     const port = await getFreePort();
     const launched = await launchBuiltExe(launcherExe, exeInfo.dest, {
       port,
       dataDir,
+      pathPrepend: shimDir,
       logFile: path.join(exeDir, 'app.log'),
-      extraEnv: { REFRACT_DATE_OVERRIDE: OFF_SEASON_DATE_OVERRIDE }
+      extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+        REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+        REFRACT_FAKE_OMP_NODE: process.execPath,
+        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log'),
+        REFRACT_FAKE_OMP_SCENARIO: 'session',
+        REFRACT_DATE_OVERRIDE: OFF_SEASON_DATE_OVERRIDE
+      }
     });
     child = launched.child;
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
@@ -450,7 +464,31 @@ async function runOffSeasonBaseline(head, dirty, report, notExercised) {
     if (!isTargetOwningPort(port, launched.targetPid)) {
       throw new Error(`${LOG}: baseline CDP target on port ${port} is not owned by the process this run launched`);
     }
+    const overridesResult = await cdp.evaluate(`window.refract.debug.getOverrides()`);
+    const overridesMatch = overridesResult.ok === true && overridesResult.value.date === OFF_SEASON_DATE_OVERRIDE;
+    report.push({ step: 'Baseline: debug.getOverrides() reports the off-season date override verbatim', ok: overridesMatch, actual: overridesResult });
+    if (!overridesMatch) throw new Error(`FAIL: baseline debug.getOverrides() mismatch: ${JSON.stringify(overridesResult)}`);
+    console.log(`${LOG}: PASS baseline: debug.getOverrides() reports the off-season date override verbatim`);
+
+    // Past Readiness and a repository added (REAL UI flow, same as the main run), so the
+    // sidebar and the "No Session selected" empty state are both genuinely mounted -- without
+    // this, the absence check below would trivially pass on the Readiness screen alone, which
+    // never mounts SessionList/ChatPane regardless of the date override working or not.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'baseline: Readiness screen mounted' });
+    await cdp.waitFor(
+      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+      { timeoutMs: 60_000, label: 'baseline: Readiness green (fake omp)' }
+    );
+    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'baseline: Add repository dialog open' });
+    await cdp.click(`document.querySelector('[role="dialog"] input')`);
+    await cdp.send('Input.insertText', { text: repoDir });
+    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.waitFor(
+      `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
+      { timeoutMs: 30_000, label: 'baseline: scratch repository added' }
+    );
+
     const noHoliday = await cdp.evaluate(`(() => {
       const watermark = document.querySelector('.watermark-mark-holiday');
       const sidebarAccessory = document.querySelector('.drag-region svg.${HALLOWEEN_ICON_CLASS}');
@@ -458,7 +496,7 @@ async function runOffSeasonBaseline(head, dirty, report, notExercised) {
       return { watermarkPresent: !!watermark, sidebarAccessoryPresent: !!sidebarAccessory, ambientLoopPresent: !!ambientLoop };
     })()`);
     const ok = !noHoliday.watermarkPresent && !noHoliday.sidebarAccessoryPresent && !noHoliday.ambientLoopPresent;
-    report.push({ step: 'Baseline (outside every window): nothing holiday-related renders anywhere', ok, actual: noHoliday });
+    report.push({ step: 'Baseline (outside every window, sidebar + "No Session selected" both genuinely mounted): nothing holiday-related renders', ok, actual: noHoliday });
     if (!ok) throw new Error(`FAIL: baseline run outside every window still shows holiday content: ${JSON.stringify(noHoliday)}`);
     console.log(`${LOG}: PASS baseline (outside every window): nothing holiday-related renders anywhere`);
     await cdp.screenshot(path.join(SHOTS_DIR, 'baseline-no-override.png'));
@@ -466,8 +504,12 @@ async function runOffSeasonBaseline(head, dirty, report, notExercised) {
     if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
     await safeRmSync(dataDir, LOG);
+    await safeRmSync(importSourceDir, LOG);
+    await safeRmSync(repoDirBase, LOG);
+    await safeRmSync(worktreesRootForCleanup, LOG);
     await safeRmSync(exeDir, LOG);
     await safeRmSync(launcherDir, LOG);
+    await safeRmSync(shimDir, LOG);
   }
 }
 
