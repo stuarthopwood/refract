@@ -113,9 +113,15 @@ export function populateOrphanWorktree(worktreePath) {
  * handle Restart Manager can see, only the directory-as-cwd handle the rename probe exists for.
  * Never passes a `/C <command>`: that would spawn a grandchild process that inherits the SAME
  * cwd and keeps holding it even after this script kills the `cmd.exe` parent it actually spawned
- * (the bug this live check's own unit-test sibling hit and fixed). */
+ * (the bug this live check's own unit-test sibling hit and fixed). stdin is an open PIPE, never
+ * written to or closed (not `'ignore'`, a NUL device): a bare interactive `cmd.exe` reading EOF
+ * immediately off a NUL stdin exits almost at once instead of staying alive as a cwd holder --
+ * confirmed live (this exact test went from reliably catching the holder to silently never
+ * catching it once an unrelated fix added a few extra seconds before the rename probe actually
+ * ran, giving the already-exiting process time to finish first). An open, never-EOF'd pipe
+ * leaves it genuinely blocked waiting for input, the same as a real idle terminal window. */
 export function spawnCwdHolder(cwd) {
-  const child = spawn('cmd.exe', [], { cwd, stdio: 'ignore', windowsHide: true });
+  const child = spawn('cmd.exe', [], { cwd, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
   return child;
 }
 
