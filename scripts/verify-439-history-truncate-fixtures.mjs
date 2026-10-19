@@ -16,7 +16,14 @@ export const THEMES = [
   { id: 'obsidian', name: 'Obsidian', shot: '02-history-obsidian.png' },
   { id: 'dark-high-contrast', name: 'Dark (high contrast)', shot: '03-history-dark-high-contrast.png' }
 ];
-export const SHOT_NAMES = ['00-focus-tooltip.png', ...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fake-omp-invocations.log'];
+export const SHOT_NAMES = [
+  '00-focus-tooltip.png',
+  '00b-narrow-window-tooltip.png',
+  ...THEMES.map((t) => t.shot),
+  'report.json',
+  'app.log',
+  'fake-omp-invocations.log'
+];
 
 export const NORMAL_TITLE = 'Normal conversation (#439 check)';
 export const NORMAL_PREVIEW = 'Short first message, fits comfortably inside the dialog.';

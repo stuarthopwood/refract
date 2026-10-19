@@ -385,9 +385,10 @@ async function main() {
         findings.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width (window.innerWidth ${windowInnerWidth}), Tooltip still opens to the right of the long row (tooltip left ${narrowTooltipPositionEvidence.tooltipLeft} >= row right ${narrowTooltipPositionEvidence.rowRight}) and stays fully on-screen (tooltip right ${narrowTooltipPositionEvidence.tooltipRight} <= window.innerWidth ${windowInnerWidth}), issue #1012 gate round 2.`);
       }
     }
+    await cdp.screenshot(path.join(SHOTS_DIR, '00b-narrow-window-tooltip.png'));
+    findings.push(`Screenshot captured: the Tooltip visibly open to the right of the long row and fully on-screen at a ${NARROW_WINDOW_WIDTH_PX}px window width (00b-narrow-window-tooltip.png).`);
     await setWindowWidth(cdp, 1280);
     await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
-
 
     await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
     findings.push('Screenshot captured: the full-title/preview Tooltip visibly open to the right of the long row while it holds real keyboard focus, with a visible focus-visible ring (00-focus-tooltip.png).');
