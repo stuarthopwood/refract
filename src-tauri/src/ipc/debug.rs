@@ -34,16 +34,17 @@ pub fn debug_get_overrides(_state: AppState, _args: Vec<Value>) -> HandlerFuture
     })
 }
 
-/// Mirrors `lib.rs::data_dir`'s own shape: the `#[cfg(debug_assertions)]` block short-circuits
-/// with a real return in a debug build; a release build never reaches it and falls through to
-/// the always-inert default below.
+/// Mirrors `lib.rs::data_dir`'s own shape: the `#[cfg(debug_assertions)]` block is this
+/// function's own tail expression in a debug build (the `#[cfg(not(debug_assertions))]` block
+/// below is compiled out entirely in that build); a release build compiles out the first block
+/// instead and falls through to the always-inert default.
 fn resolve_overrides() -> DebugOverrides {
     #[cfg(debug_assertions)]
     {
-        return resolve_overrides_from(
+        resolve_overrides_from(
             std::env::var("REFRACT_DATE_OVERRIDE").ok(),
             std::env::var("REFRACT_HOLIDAY_IDLE_MS").ok(),
-        );
+        )
     }
     #[cfg(not(debug_assertions))]
     DebugOverrides {
