@@ -902,7 +902,32 @@ redirects focus on this transition and nothing else in the fixture ever moves it
 afterward). Also confirms focus lands specifically on the Stage's own trigger once settled (the
 fix's own stated remedy, not merely "somewhere other than body"). Per-theme screenshots only, no
 colour-dependent assertion, matching `verify-991-stage-focus.mjs`'s/`verify-1000-stage-defer.mjs`'s
-own theme-loop rationale. **Written, not run end-to-end**: no build slot granted for this
-sub-task -- `node --check` plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping
-at the shared build-slot guard before touching cargo) are the only commands actually run against
-this file.
+own theme-loop rationale.
+
+**Live-run record**: first attempt (head `3941250`) FAILED -- `document.activeElement` was
+`<body>` in 208 of 390 sampled frames, never redirected. Root cause: the focus-tracking
+listener was attached via a plain `useRef` + `useEffect(() => {...}, [])`, which runs exactly
+once at `StageGroupRow`'s own initial mount -- but a one-agent Stage starts collapsed (Radix
+never renders `CollapsibleContent` while closed), so the ref was still `null` at that one run
+and the listener was never attached once the row was later expanded. Fixed with a callback ref
+(head `28b26e1`, re-fires on every real mount/unmount of the underlying node); re-ran clean (0
+failures, 0 notExercised, verdict DONE).
+
+**Gate round 1** (Main, 2026-10-19), five findings, all fixed in this one round: (1, A11y/UI
+Medium) a window blur fires `focusout` with `relatedTarget` null while `document.activeElement`
+stays the SAME element (never reassigned by a blur) -- the handler now returns early (keeping
+the flag) when `event.target === document.activeElement`, the window-blur signature, preferred
+over `document.hasFocus()`; (2, Code/Test/A11y Medium) a click onto a non-focusable spot used to
+leave the flag stuck true forever (indistinguishable from a real removal using
+`relatedTarget`/`activeElement` alone) -- now uses the repo's own `ProfileAlertRows.tsx`/
+`FileExplorerPanel.tsx` rAF-plus-`isConnected` pattern (the just-blurred target is still
+connected one frame later only when nothing removed it); (3, Code Medium) a missed join is now
+a hard failure, not a silent skip, the LAST pre-join frame (not merely "any") must confirm
+focus, and `joinedMemberExpr` is scoped to the Stage's own content; (4, Test/A11y Medium,
+Visual) focus is placed with a real keyboard Tab (arming `:focus-visible` for the rest of the
+run), backed by a hard `:focus-visible` match on the trigger in Dark (not eyeballing a
+screenshot alone) taken before any theme switch steals focus; the later per-theme shots are
+honestly labelled as non-proofs; (5, Test Medium) a simulated window blur
+(`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the existing
+assertions; a dedicated click-away negative proof needs its own second 1-to-2 transition and is
+recorded in `notExercised` instead.

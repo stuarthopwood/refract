@@ -172,12 +172,33 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     focusWasInsideRef.current = true
   }, [])
   const handleMemberContentFocusOut = React.useCallback((event: FocusEvent) => {
-    // A focusout landing on `<body>` (or nowhere) is the symptom itself -- the node that just
-    // got removed, not a legitimate move elsewhere -- so the flag is left set for the layout
-    // effect below to still catch it; anything else is a real, intentional focus change away.
-    const next = (event.relatedTarget as Node | null) ?? document.activeElement
-    if (next === document.body || next === null) return
-    focusWasInsideRef.current = false
+    // Gate round 1 fix (item 1, A11y/UI Medium): a window blur (switching to another app, or
+    // the OS taking focus) fires this exact `focusout` -- `relatedTarget` null -- but NEVER
+    // reassigns `document.activeElement` itself (only a real focus move does that), so the
+    // just-blurred TARGET is still `document.activeElement` at the instant this fires. Checked
+    // here (preferred over `document.hasFocus()`, UI's own call) and returned early, keeping
+    // the flag, so a join while the user is in another app/window still redirects focus
+    // correctly once they come back to this one.
+    if (event.target === document.activeElement) return
+    // Gate round 1 fix (item 2, Code/Test/A11y Medium): a click onto a non-focusable spot moves
+    // focus to `<body>` with nothing left in this content to redirect -- a real, ordinary move
+    // away (the user's own choice), not the removal symptom this flag exists to survive -- and
+    // must clear the flag; but neither `relatedTarget` nor `document.activeElement` alone can
+    // tell this apart from an element about to be REMOVED (both can read `<body>`/`null`
+    // either way). Repo pattern (`ProfileAlertRows.tsx`, `FileExplorerPanel.tsx`): capture the
+    // just-blurred target, then ask one animation frame later whether it is STILL connected to
+    // the document -- still connected means nothing removed it (a deliberate click-away), so
+    // the flag is cleared; disconnected means it really was removed, which the
+    // `useLayoutEffect` below already handled SYNCHRONOUSLY, in the very same commit, well
+    // before this `requestAnimationFrame` ever runs -- nothing further to do here in that case.
+    const lost = event.target as Element | null
+    requestAnimationFrame(() => {
+      if (!lost || !lost.isConnected) return
+      // Consistent with item 1: a window blur landing in THIS one-frame gap (the user alt-
+      // tabbed away between the focusout and this callback) must not clear the flag either.
+      if (document.activeElement === lost) return
+      focusWasInsideRef.current = false
+    })
   }, [])
   const memberContentRef = React.useCallback(
     (el: HTMLDivElement | null) => {
