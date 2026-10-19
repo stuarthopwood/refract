@@ -145,6 +145,17 @@ fn count_files(dir: &Path, cancel: &AtomicBool) -> u64 {
 /// (already split on `\0` by the caller) into the summary shape, counting each matched
 /// generated-folder bucket's real files on disk (`git status` reports only that the directory
 /// itself is untracked/ignored, never a file count).
+///
+/// Live-check gate round fix: git's own untracked/ignored collapsing happens at the TOP of a
+/// newly-untracked subtree, not necessarily at a generated folder living somewhere inside it --
+/// a `node_modules` nested a few levels down (e.g. `patient/client/node_modules`) under a
+/// directory that is ITSELF entirely new (`patient/`) collapses to ONE line for `patient/`,
+/// never `patient/client/node_modules/`, so checking only the reported entry's own basename
+/// missed it entirely (confirmed live: scenario (a)'s own nested fixture). When a reported
+/// directory's basename does NOT itself match a generated-folder name, `walk_for_generated`
+/// below walks INTO it (never through a link) to find any nested one, bucketing by name exactly
+/// as if git had reported it directly, and lists every other real file under it individually by
+/// path -- never walking through a link, same rule as `count_files`.
 fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> LeftoverSummary {
     let root_name = worktree_path
         .file_name()
@@ -174,14 +185,26 @@ fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> 
         let trimmed = path.trim_end_matches('/');
         let basename = trimmed.rsplit('/').next().unwrap_or(trimmed);
 
-        if is_dir && GENERATED_FOLDER_NAMES.contains(&basename) {
+        if !is_dir {
+            if other_files.len() < MAX_OTHER_FILES_LISTED {
+                other_files.push(trimmed.to_string());
+            } else {
+                more_count += 1;
+            }
+        } else if GENERATED_FOLDER_NAMES.contains(&basename) {
             let full = worktree_path.join(trimmed);
             let count = count_files(&full, cancel);
             *generated.entry(basename.to_string()).or_insert(0) += count;
-        } else if other_files.len() < MAX_OTHER_FILES_LISTED {
-            other_files.push(trimmed.to_string());
         } else {
-            more_count += 1;
+            let full = worktree_path.join(trimmed);
+            walk_for_generated(
+                &full,
+                worktree_path,
+                &mut generated,
+                &mut other_files,
+                &mut more_count,
+                cancel,
+            );
         }
     }
 
@@ -193,6 +216,78 @@ fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> 
             .collect(),
         other_files,
         more_count,
+    }
+}
+
+/// Walks `dir` (a real directory git reported as one collapsed untracked/ignored entry whose OWN
+/// basename did not match a generated-folder name) looking for a nested one at any depth: a
+/// matching subdirectory is bucketed by name (its own files counted, never descended into
+/// individually); everything else real is listed by its path relative to `worktree_path`. Never
+/// follows a link (symlink or junction) -- it counts as one "other" entry at its own path,
+/// matching `count_files`'s identical rule.
+#[allow(clippy::too_many_arguments)]
+fn walk_for_generated(
+    dir: &Path,
+    worktree_path: &Path,
+    generated: &mut BTreeMap<String, u64>,
+    other_files: &mut Vec<String>,
+    more_count: &mut u64,
+    cancel: &AtomicBool,
+) {
+    if cancel.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            push_other_file(worktree_path, &path, other_files, more_count);
+            continue;
+        }
+        if meta.is_dir() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if GENERATED_FOLDER_NAMES.contains(&name.as_str()) {
+                let count = count_files(&path, cancel);
+                *generated.entry(name).or_insert(0) += count;
+            } else {
+                walk_for_generated(
+                    &path,
+                    worktree_path,
+                    generated,
+                    other_files,
+                    more_count,
+                    cancel,
+                );
+            }
+        } else {
+            push_other_file(worktree_path, &path, other_files, more_count);
+        }
+    }
+}
+
+fn push_other_file(
+    worktree_path: &Path,
+    path: &Path,
+    other_files: &mut Vec<String>,
+    more_count: &mut u64,
+) {
+    let relative = path
+        .strip_prefix(worktree_path)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    if other_files.len() < MAX_OTHER_FILES_LISTED {
+        other_files.push(relative);
+    } else {
+        *more_count += 1;
     }
 }
 

@@ -192,7 +192,16 @@ fn stale_probe_message(probe_path: &Path) -> String {
 /// in the folder) stays held across every attempt either way and is still reported exactly as
 /// before. Only after every rename-back attempt fails is the catastrophic "files are currently
 /// at the probe path" message shown -- that failure must still never be silently swallowed.
-const RENAME_PROBE_ATTEMPTS: u32 = 15;
+///
+/// Live-check gate round fix: widened from 15 to 30 attempts (4.5s -> 9s) -- a real run against
+/// scenario (a)'s own pnpm-shaped fixture (junctions, a 260+-char path, a few thousand files)
+/// exhausted the previous 4.5s budget and still reported a false "folder in use" refusal
+/// moments after the Session's own agent had genuinely finished shutting down, confirmed by
+/// `app.log`'s own `sessions.delete -> err:worktree-held` landing a full ~10s after the
+/// preceding `deleteCheck` (most of that gap spent in Restart Manager's own file registration
+/// scan and the agent shutdown wait, leaving the rename probe too little of its own 4.5s to
+/// absorb Windows not yet having released the agent's own cwd lock).
+const RENAME_PROBE_ATTEMPTS: u32 = 30;
 const RENAME_PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 async fn probe_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
