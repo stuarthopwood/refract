@@ -5,6 +5,19 @@
 // one line" pattern, applied to a sibling module instead).
 use serde_json::{json, Value};
 
+/// FINDINGS item 62's own five live-probed status literals -- the renderer's own
+/// `TodoTaskStatus` union (`src/shared/todo.ts`) names exactly these. Gate round 1 fix (Main
+/// P4): a future OMP status this slice has never seen must never reach the renderer as an
+/// arbitrary string the glyph table has no entry for; normalised here, at the one place every
+/// wire read of a task's own status already goes through.
+const KNOWN_STATUSES: [&str; 5] = [
+    "pending",
+    "in_progress",
+    "completed",
+    "blocked",
+    "abandoned",
+];
+
 #[derive(Debug, Clone)]
 pub(super) struct TodoTaskState {
     /// Issue #700/#701 slice (a): retained (FINDINGS item 62) so the pinned panel can show each
@@ -56,7 +69,8 @@ pub(super) fn parse_todo_phases(value: &Value) -> Option<Vec<TodoPhaseState>> {
                                 status: task
                                     .get("status")
                                     .and_then(Value::as_str)
-                                    .unwrap_or("")
+                                    .filter(|s| KNOWN_STATUSES.contains(s))
+                                    .unwrap_or("pending")
                                     .to_string(),
                                 blocker: task
                                     .get("blocker")

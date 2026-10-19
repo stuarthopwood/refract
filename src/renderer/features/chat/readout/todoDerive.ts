@@ -14,8 +14,9 @@ export interface TodoTotals {
 /** `false` when there is no task list at all (`todoTree` is `null`, or every phase is empty) --
  * the one check the pill (hidden), the panel (unmounted, decision item 5's "no plan"), and the
  * future card all share, distinct from "every task is done or abandoned" (`isTodoAllDone`
- * below), which still has a real plan to show. */
-export function hasTodoPlan(todoTree: TodoPhase[] | null): boolean {
+ * below), which still has a real plan to show. A type guard (gate round 1 fix, Main P5): lets
+ * every caller narrow `todoTree` to `TodoPhase[]` after an early return, with no `as` cast. */
+export function hasTodoPlan(todoTree: TodoPhase[] | null): todoTree is TodoPhase[] {
   return todoTree !== null && todoTree.flatMap((phase) => phase.tasks).length > 0
 }
 
@@ -24,7 +25,7 @@ export function hasTodoPlan(todoTree: TodoPhase[] | null): boolean {
  * `hasTodoPlan` is `false`. */
 export function deriveTodoTotals(todoTree: TodoPhase[] | null): TodoTotals | null {
   if (!hasTodoPlan(todoTree)) return null
-  const open = (todoTree as TodoPhase[]).flatMap((phase) => phase.tasks).filter((t) => t.status !== 'abandoned')
+  const open = todoTree.flatMap((phase) => phase.tasks).filter((t) => t.status !== 'abandoned')
   return { done: open.filter((t) => t.status === 'completed').length, total: open.length }
 }
 
@@ -45,14 +46,18 @@ export function isPhaseFinished(phase: TodoPhase): boolean {
   return totals.total > 0 && totals.done === totals.total
 }
 
-/** The one `in_progress` task, in phase then task order -- the pill's "current task" word, the
- * panel header's "· <current task>", and the thing the panel's own `scrollIntoView` follows.
- * `null` when nothing is in progress (nothing started yet, or everything is done/abandoned). */
-export function deriveCurrentTask(todoTree: TodoPhase[] | null): TodoTask | null {
+/** The one `in_progress` task, in phase then task order, WITH its own phase -- the pill's
+ * "current task" word, the panel header's "· <current task>", the panel's own manual
+ * scroll-follow, and the per-task dedup key (`<phase.name>\0<task.content>`, two phases can
+ * legitimately name an identical task) all need the phase alongside the task itself (gate round
+ * 1 fix, Main P5: returning only the bare task forced `PinnedTodoPanel.tsx` to keep its own
+ * duplicate `findCurrentTask`, which this replaces). `null` when nothing is in progress (nothing
+ * started yet, or everything is done/abandoned). */
+export function deriveCurrentTask(todoTree: TodoPhase[] | null): { phase: TodoPhase; task: TodoTask } | null {
   if (!todoTree) return null
   for (const phase of todoTree) {
     const task = phase.tasks.find((t) => t.status === 'in_progress')
-    if (task) return task
+    if (task) return { phase, task }
   }
   return null
 }

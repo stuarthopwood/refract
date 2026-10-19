@@ -1405,7 +1405,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           }
         />
       </div>
-      <PinnedTodoPanel sessionId={sessionId} />
+      <PinnedTodoPanel key={sessionId} sessionId={sessionId} />
       <MessageInput
         key={sessionId}
         sessionId={sessionId}

@@ -4,6 +4,8 @@
 export const TODO_PILL_SELECTOR =
   `Array.from(document.querySelectorAll('[data-slot="readout-chip"]')).find((el) => (el.querySelector('span.sr-only')?.textContent ?? '').startsWith('Todo:'))`;
 export const PANEL_SELECTOR = `document.querySelector('[data-slot="pinned-todo-panel"]')`;
+export const STOP_BUTTON_SELECTOR = `document.querySelector('[aria-label="Stop"]')`;
+export const SCROLLER_SELECTOR = `document.querySelector('[data-slot="message-scroller-viewport"]')`;
 
 /** Reads the pill's own live state without assuming it is present (it is intentionally absent
  * once there is no plan, or once `sessionReadout['todo-progress']` is turned off). */
@@ -29,7 +31,7 @@ export async function readPanel(cdp) {
     const panel = ${PANEL_SELECTOR};
     if (!panel) return null;
     const header = panel.querySelector(':scope > div.flex.h-6 > span')?.textContent?.trim() ?? null;
-    const collapseBtn = panel.querySelector('[aria-label="Collapse todo list"], [aria-label="Expand todo list"]');
+    const collapseBtn = panel.querySelector('[aria-label="Todo list details"]');
     const unpinBtn = panel.querySelector('[aria-label="Unpin todo list"]');
     const list = panel.querySelector('div.overflow-y-auto');
     const rows = list
@@ -40,13 +42,16 @@ export async function readPanel(cdp) {
           hasBlockedLine: /Blocked:/.test(li.textContent)
         }))
       : null;
-    const phaseHeaders = Array.from(panel.querySelectorAll('div.py-0\\\\.5 > div.text-\\\\[11px\\\\]')).map((d) => d.textContent.trim());
+    const phaseHeaders = Array.from(panel.querySelectorAll('div.py-0\\\\.5 > div')).map((d) => d.textContent.trim());
     return {
+      tagName: panel.tagName,
       id: panel.id,
       ariaLabel: panel.getAttribute('aria-label'),
       header,
       collapsed: collapseBtn ? collapseBtn.getAttribute('aria-expanded') === 'false' : null,
-      collapseAriaLabel: collapseBtn ? collapseBtn.getAttribute('aria-label') : null,
+      collapseAriaControls: collapseBtn ? collapseBtn.getAttribute('aria-controls') : null,
+      listId: list ? list.id : null,
+      listTabIndex: list ? list.getAttribute('tabindex') : null,
       hasUnpinButton: !!unpinBtn,
       rows,
       phaseHeaders
@@ -55,7 +60,7 @@ export async function readPanel(cdp) {
 }
 
 export async function clickCollapseButton(cdp) {
-  await cdp.click(`(${PANEL_SELECTOR}).querySelector('[aria-label="Collapse todo list"], [aria-label="Expand todo list"]')`);
+  await cdp.click(`(${PANEL_SELECTOR}).querySelector('[aria-label="Todo list details"]')`);
 }
 
 export async function clickUnpinButton(cdp) {
@@ -66,9 +71,34 @@ export async function clickTodoPill(cdp) {
   await cdp.click(TODO_PILL_SELECTOR);
 }
 
-/** The transcript's own scrollable container (`Transcript.tsx`'s `role="log"` region) -- used to
- * prove opening/closing the panel never shifts its scroll position (decision item 5's last
- * bullet). */
-export async function readTranscriptScrollTop(cdp) {
-  return cdp.evaluate(`document.querySelector('[role="log"]')?.scrollTop ?? null`);
+/** The transcript's own real scrollable viewport (gate round 1 fix, Main E1: `[role="log"]`
+ * itself never scrolls -- the library's own inner `Viewport` does). */
+export async function readScrollerScrollTop(cdp) {
+  return cdp.evaluate(`(${SCROLLER_SELECTOR})?.scrollTop ?? null`);
+}
+
+export async function readScrollerMetrics(cdp) {
+  return cdp.evaluate(`(() => {
+    const el = ${SCROLLER_SELECTOR};
+    if (!el) return null;
+    return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+  })()`);
+}
+
+/** The first user message row's own `getBoundingClientRect().top` -- a second, independent
+ * "did the transcript visually move" signal alongside `scrollTop` (gate round 1, Main E1). */
+export async function readFirstMessageTop(cdp) {
+  return cdp.evaluate(`(() => {
+    const el = document.querySelector('[data-slot="message-scroller-viewport"] [role="log"] *');
+    const row = Array.from(document.querySelectorAll('[role="log"] *')).find((n) => (n.textContent ?? '').includes('plan and build the thing'));
+    return row ? row.getBoundingClientRect().top : null;
+  })()`);
+}
+
+export async function readUpNextVisible(cdp) {
+  return cdp.evaluate(`Array.from(document.querySelectorAll('span')).some((el) => el.textContent.trim() === 'Up next')`);
+}
+
+export async function readStillRunning(cdp) {
+  return cdp.evaluate(`!!(${STOP_BUTTON_SELECTOR})`);
 }

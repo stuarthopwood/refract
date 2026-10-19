@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 // Live CDP check for issues #700/#701 slice (a): the Todo readout becomes a pin-toggle, and a
 // pinned todo panel appears above the message box with a live-updating tree. Driven by the
-// `todo-pin-700` fake-omp tape (`scripts/fixtures/omp-frames/todo-pin-700.jsonl`, next to this
-// file's own README row) -- deterministic, no real model cost, three turns: (1) build Setup
-// (2 tasks) and Work (5 tasks) phases through every status this slice cares about, mid-turn,
-// settling with Setup folded/done and Work mixed (completed/in_progress/blocked/abandoned/
-// pending); (2) complete every remaining open task ("All N done"); (3) clear the plan entirely
-// (panel unmounts, pin stays). Selectors and small read helpers live in
-// `verify-700-todo-pin-helpers.mjs` to stay under the #806 600-line soft cap.
+// `todo-pin-700` fake-omp tape (`scripts/fixtures/omp-frames/todo-pin-700.jsonl`) -- four turns:
+// (1) a one-agent Stage plus Setup (2 tasks) and an overflowing 12-task Work phase through every
+// status, two 8s mid-turn holds, a long assistant reply, settling with a genuine live-vs-settle
+// divergence; (2) completes everything ("All N done"); (3) clears the plan entirely (panel
+// unmounts, pin stays); (4) re-creates a small follow-up plan with NO click, proving the pin
+// itself survived the gap. Selectors live in `verify-700-todo-pin-helpers.mjs` (#806 cap).
 //
-// WRITTEN FOR A BUILD SLOT: this script has not yet been run against a real built app (no slot
-// granted at authoring time) -- `node --check` is the only thing run against it so far.
+// Gate round 1 (consolidated five-reviewer findings on PR #1054, relayed by Main): every item
+// below is tagged with its own finding id (P1-P10 product, E1-E8 evidence) at its assertion.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -41,7 +40,11 @@ import {
   clickCollapseButton,
   clickUnpinButton,
   clickTodoPill,
-  readTranscriptScrollTop
+  readScrollerScrollTop,
+  SCROLLER_SELECTOR,
+  readFirstMessageTop,
+  readUpNextVisible,
+  readStillRunning
 } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,12 +78,9 @@ function assertEqual(actual, expected, label) {
 
 async function focusAndPress(cdp, finderExpr, vk, key, code) {
   // WebView2's own CDP endpoint only delivers real `Input.dispatchKeyEvent`s to a JS-focused
-  // element once focus EMULATION is explicitly on (`verify-tauri-569.mjs`'s own keyboard-only
-  // profile-menu precedent) -- a scratch, offscreen launch has no real OS window focus of its
-  // own otherwise. `text`/`unmodifiedText` on the keyDown (the shared `pressKey` helper omits
-  // both) are what actually make Chromium run a focused `<button>`'s own default Enter/Space
-  // activation -- the exact fields `CdpSession.pressEnter()` already carries for its own proven
-  // Enter path; `key`/`code` alone (what bare `pressKey` sends) is not enough.
+  // element once focus EMULATION is explicitly on; `text`/`unmodifiedText` on the keyDown are
+  // what actually make Chromium run a focused `<button>`'s own default Enter/Space activation
+  // (the exact fields `CdpSession.pressEnter()` already carries).
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await cdp.evaluate(`(${finderExpr}).focus()`);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: vk, key, code, text: key === 'Enter' ? '\r' : ' ', unmodifiedText: key === 'Enter' ? '\r' : ' ' });
@@ -94,6 +94,15 @@ async function setWidth(cdp, width) {
 async function clearWidth(cdp) {
   await cdp.send('Emulation.clearDeviceMetricsOverride', {});
   await sleep(300);
+}
+
+/** Gate round 1 (Main E7): move the pointer to a neutral spot and wait out any stray tooltip or
+ * hover card before a screenshot that must be clean -- used for every theme shot, not only the
+ * narrow-width ones. */
+async function settleForScreenshot(cdp) {
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 50 });
+  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' }).catch(() => {});
+  await cdp.evaluate(`document.getAnimations().forEach((a) => a.finish())`);
 }
 
 async function main() {
@@ -155,65 +164,119 @@ async function main() {
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session A composer enabled' });
 
-    const transcriptScrollBefore = await readTranscriptScrollTop(cdp);
-
     // ---- Turn 1: kick off the scripted tape ----
     await cdp.typeIntoByLabel('Message', 'plan and build the thing');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!!(${TODO_PILL_SELECTOR})`, { timeoutMs: 15_000, label: 'Todo pill appears once the first todo tool call lands' });
     assertTrue(!!(await cdp.evaluate(PANEL_SELECTOR.replace('document.querySelector', '!!document.querySelector'))) === false, 'Pinned panel is not yet mounted (not pinned yet)');
 
+    // ---- E8: Up next, unpinned, with a real Stage and a real pending phase ----
+    await cdp.waitFor(`true`, { timeoutMs: 500 }).catch(() => {});
+    assertTrue(await readUpNextVisible(cdp), 'E8: Up next renders while UNPINNED (a real one-agent Stage plus a pending phase exist)');
+
     const pillBeforePin = await readPill(cdp);
     assertEqual(pillBeforePin.ariaPressed, 'false', 'Pill aria-pressed is false before pinning');
     const axBeforePin = await getAccessibleNameAndRole(cdp, TODO_PILL_SELECTOR);
     assertTrue(axBeforePin.role === 'button', 'Pill AX role is a button', axBeforePin);
-    assertTrue(/^Pin todo list \(Todo \d+\/\d+\)$/.test(axBeforePin.name ?? ''), 'Pill AX name matches the fixed "Pin todo list (Todo d/t)" pattern', axBeforePin);
+    assertTrue(/^Pin todo list \(Todo \d+\/\d+\)$/.test(axBeforePin.name ?? ''), 'P8: Pill AX name matches the fixed "Pin todo list (Todo d/t)" pattern', axBeforePin);
 
-    // ---- Pin mid-turn (well before settle: the tape still has several __delay__-spaced todo
-    // calls left) ----
+    // ---- Pin mid-turn (well before settle) ----
     await clickTodoPill(cdp);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Pinned panel mounts the instant the pill is clicked' });
+    assertTrue(!(await readUpNextVisible(cdp)), 'E8: Up next hides the instant the panel is pinned');
     const pillAfterPin = await readPill(cdp);
     assertEqual(pillAfterPin.ariaPressed, 'true', 'Pill aria-pressed is true once pinned');
     const panelFirstRead = await readPanel(cdp);
-    assertEqual(pillAfterPin.ariaControls, panelFirstRead.id, 'Pill aria-controls names the panel\'s own id');
+    assertEqual(panelFirstRead.tagName, 'SECTION', 'P6: panel root is a <section> (an implicit ARIA region, not a bare <div>)');
+    assertEqual(pillAfterPin.ariaControls, panelFirstRead.id, 'P10: Pill aria-controls names the panel\'s own id');
     assertEqual(panelFirstRead.ariaLabel, 'Todo list', 'Panel region is labelled "Todo list"');
-    // No dev-only `window.__refractStores` hook exists in this built (non-`vite dev`) asset
-    // bundle (`import.meta.env.DEV` is false for a `vite build` output regardless of the Rust
-    // side's own debug/release profile) -- the real Session id is instead read straight off the
-    // panel's own DOM id (`todo-panel-<sessionId>`, `PinnedTodoPanel.tsx`), needing no hook.
     const sessionIdA = panelFirstRead.id.replace(/^todo-panel-/, '');
     assertTrue(sessionIdA.length > 0, 'Session A id read from the panel\'s own DOM id');
-    const transcriptScrollAfterPin = await readTranscriptScrollTop(cdp);
-    assertEqual(transcriptScrollAfterPin, transcriptScrollBefore, 'Opening the panel did not move the transcript scroll position');
+    assertEqual(panelFirstRead.collapseAriaControls, panelFirstRead.listId, 'P7: Collapse button aria-controls names the task list\'s own id');
+    const axCollapse = await getAccessibleNameAndRole(cdp, `(${PANEL_SELECTOR}).querySelector('[aria-label="Todo list details"]')`);
+    assertEqual(axCollapse.name, 'Todo list details', 'P7: Collapse button has the FIXED accessible name "Todo list details"');
 
-    // ---- Live mid-turn updates: poll until the Work phase's current task reaches "Implement
-    // feature" (todo-5), well before the turn settles ----
-    await cdp.waitFor(`(${PANEL_SELECTOR}).textContent.includes('Implement feature')`, { timeoutMs: 10_000, label: 'Panel header shows "Implement feature" as the live current task, mid-turn' });
+    // ---- Unpin via the panel header, re-pin via the pill (quick round trip for E8's "returns
+    // when unpinned" half, before the longer mid-turn section below) ----
+    await clickUnpinButton(cdp);
+    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts on Unpin' });
+    assertTrue(await readUpNextVisible(cdp), 'E8: Up next returns once unpinned');
+    assertTrue(!!(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`)), 'P3: focus lands on the pill after Unpin removes the focused button (never <body>)');
+    await clickTodoPill(cdp);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned' });
+
+    // ---- Live mid-turn updates ----
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Implement feature')`, { timeoutMs: 10_000, label: 'Panel header shows "Implement feature" as the live current task, mid-turn' });
     const midTurnRead = await readPanel(cdp);
     assertTrue(midTurnRead.phaseHeaders.some((h) => h.startsWith('Setup')), 'Setup phase header visible mid-turn (2 phases, so headers show)');
     assertTrue(midTurnRead.phaseHeaders.some((h) => h.startsWith('Work')), 'Work phase header visible mid-turn');
+    assertEqual(midTurnRead.listTabIndex, '0', 'P9: the 12-task Work phase overflows its own cap, so the list is a keyboard Tab stop');
 
-    await cdp.waitFor(`(${PANEL_SELECTOR}).textContent.includes('waiting on API docs')`, { timeoutMs: 10_000, label: 'Blocked task\'s own blocker line appears live, mid-turn' });
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('waiting on API docs')`, { timeoutMs: 10_000, label: 'Blocked task\'s own blocker line appears live, mid-turn' });
     const blockedRead = await readPanel(cdp);
     const blockedRow = blockedRead.rows.find((r) => r.hasBlockedLine);
     assertTrue(!!blockedRow, 'A row with a "Blocked:" line exists', blockedRead.rows);
     assertTrue(blockedRow.text.includes('waiting on API docs'), 'Blocked row names the real blocker text', blockedRow);
 
-    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 10_000, label: 'Abandoned task strike-through appears live, mid-turn' });
+    // ---- E2: an 8s hold is now in the tape (after todo-6) -- the turn is still genuinely
+    // running while the panel already shows the live blocked state ----
+    assertTrue(await readStillRunning(cdp), 'E2: the turn is still running (Stop control present) while the blocked state is already shown live, well before settle');
+
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 15_000, label: 'Abandoned task strike-through appears live, mid-turn' });
+    assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
-    // Setup (2/2, both completed) folds to one line once Work's own progression has moved past
-    // it -- no individual "Scaffold"/"Configure" rows left once folded.
     assertTrue(!abandonedRead.rows.some((r) => r.text.includes('Scaffold')), 'Setup phase folded: no individual Scaffold row once Setup is fully done');
 
-    // ---- Settle, then confirm the panel matches the settle state exactly ----
+    // ---- E4: overflow + follow, then a real user scroll stops it ----
+    const listMetrics = await cdp.evaluate(`(() => { const l = document.getElementById((${PANEL_SELECTOR}).querySelector('[role="group"]').id); return { scrollHeight: l.scrollHeight, clientHeight: l.clientHeight, scrollTop: l.scrollTop }; })()`);
+    assertTrue(listMetrics.scrollHeight > listMetrics.clientHeight, 'E4: the 14-task list genuinely overflows its own max-height cap');
+    const currentRowTop = await cdp.evaluate(`(() => { const row = (${PANEL_SELECTOR}).querySelector('[data-current-task="true"]'); const list = (${PANEL_SELECTOR}).querySelector('[role="group"]'); if (!row || !list) return null; const r = row.getBoundingClientRect(); const l = list.getBoundingClientRect(); return r.top >= l.top && r.bottom <= l.bottom; })()`);
+    assertTrue(currentRowTop === true, 'E4: the in-progress row is actually within the scrolled list\'s own visible bounds (followed into view)');
+    // A real wheel scroll by the user, dispatched at the list's own centre point.
+    const listRect = await cdp.evaluate(`(() => { const l = (${PANEL_SELECTOR}).querySelector('[role="group"]'); const r = l.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: listRect.x, y: listRect.y, deltaX: 0, deltaY: -40 });
+    await sleep(200);
+    const scrollTopAfterUserScroll = await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').scrollTop`);
+
+    // ---- A SECOND current-task change (todo-8: Implement feature done, Clean up starts) lands
+    // after the user's own scroll -- the list must NOT auto-follow it (E4's own "stops" half). ----
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Clean up')`, { timeoutMs: 15_000, label: 'The second current-task change (Clean up) lands live' });
+    await sleep(300);
+    const scrollTopAfterSecondChange = await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').scrollTop`);
+    assertEqual(scrollTopAfterSecondChange, scrollTopAfterUserScroll, 'E4: the list did NOT auto-scroll back to the new current task after a real user scroll (follow genuinely stopped)');
+
+    // ---- E1: the transcript's own real scroller never jumps when the panel mounts/resizes,
+    // read via its real viewport, at both "scrolled to the bottom" and "scrolled to the middle" ----
+    await cdp.waitFor(`!!(${SCROLLER_SELECTOR})`, { timeoutMs: 1_000 }).catch(() => {});
+    const scrollAtBottomBefore = await readScrollerScrollTop(cdp);
+    const firstTopBefore = await readFirstMessageTop(cdp);
+    await clickCollapseButton(cdp);
+    assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: collapsing the panel (bottom-scrolled transcript) does not move the real scroller');
+    assertEqual(await readFirstMessageTop(cdp), firstTopBefore, 'E1: collapsing the panel does not move the first message\'s own on-screen position');
+    await clickCollapseButton(cdp);
+    assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: expanding the panel again (bottom-scrolled transcript) does not move the real scroller');
+
+    await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; if (!el) return null; el.scrollTop = Math.floor(el.scrollHeight / 2); return el.scrollTop; })()`);
+    await sleep(200);
+    const scrollAtMiddleBefore = await readScrollerScrollTop(cdp);
+    assertTrue(scrollAtMiddleBefore !== null && scrollAtMiddleBefore > 0, 'E1 setup: transcript genuinely scrolled away from the bottom, to the middle');
+    const firstTopMiddleBefore = await readFirstMessageTop(cdp);
+    await clickUnpinButton(cdp);
+    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Unpinned for the middle-scroll E1 check' });
+    assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: unpinning (mid-scrolled transcript) does not move the real scroller');
+    assertEqual(await readFirstMessageTop(cdp), firstTopMiddleBefore, 'E1: unpinning does not move the first message\'s own on-screen position');
+    await clickTodoPill(cdp);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned for the middle-scroll E1 check' });
+    assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: re-pinning (mid-scrolled transcript) does not move the real scroller');
+
+    // ---- Settle, then confirm the panel RECONCILES to the settle tree, which genuinely
+    // DIFFERS from the last live frame (E2) ----
     await cdp.waitFor(`document.querySelector('[aria-label="Message"]') && !document.querySelector('[aria-label="Message"]').disabled`, { timeoutMs: 60_000, label: 'Turn 1 settled, composer re-enabled' });
     await sleep(500);
     const settledRead = await readPanel(cdp);
-    assertEqual(settledRead.rows, abandonedRead.rows, 'Panel state after settle is byte-identical to the last live mid-turn read (no reconciliation drift)');
-    const settledHeaderMatch = /Todo 3\/6/.test(settledRead.header ?? '');
-    assertTrue(settledHeaderMatch, 'Header reads "Todo 3/6" at settle (done: Setup 2 + Write tests 1; total: Setup 2 + Work non-abandoned 4)', settledRead.header);
+    assertTrue(!settledRead.rows.some((r) => r.hasBlockedLine), 'E2: settle tree reconciles "Update docs" from blocked (last live) to completed -- no Blocked line remains');
+    assertTrue(/Todo 5\/13/.test(settledRead.header ?? ''), 'E2: header reads "Todo 5\\/13" at settle, differing from the pre-settle "Todo 4\\/13" (the reconciled Update docs now also counts as done)', settledRead.header);
 
     // ---- Collapse control ----
     await clickCollapseButton(cdp);
@@ -231,20 +294,24 @@ async function main() {
     assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)), 'Panel stays mounted (still pinned) even though the pill itself is now hidden');
     await clickUnpinButton(cdp);
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts once Unpin is clicked from inside the panel, pill hidden' });
+    assertTrue(!!(await cdp.evaluate(`document.activeElement === document.querySelector('[aria-label="Message"]')`)), 'P3: focus lands on the composer after Unpin, with the pill itself hidden (never <body>)');
     await cdp.evaluate(`window.refract.settings.setReadoutVisibility('todo-progress', true)`);
     await cdp.waitFor(`!!(${TODO_PILL_SELECTOR})`, { timeoutMs: 5_000, label: 'Pill reappears once the readout setting is back on' });
 
-    // ---- Keyboard toggle: Enter re-pins, Space unpins ----
+    // ---- Keyboard toggle: Enter re-pins, Space unpins, with real focus assertions (E6) ----
     await focusAndPress(cdp, TODO_PILL_SELECTOR, 13, 'Enter', 'Enter');
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Enter key on the focused pill pins the panel' });
     assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Pill aria-pressed true after Enter');
+    assertTrue(!!(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`)), 'E6: focus stays on the pill itself after the Enter that pinned it');
+    // Keyboard Unpin: focus the panel's own Unpin button directly and press Enter on it.
+    await focusAndPress(cdp, `(${PANEL_SELECTOR}).querySelector('[aria-label="Unpin todo list"]')`, 13, 'Enter', 'Enter');
+    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Enter key on the focused Unpin button unpins the panel' });
+    assertTrue(!!(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`)), 'E6: keyboard Unpin leaves focus on the pill (never <body>)');
     await focusAndPress(cdp, TODO_PILL_SELECTOR, 32, ' ', 'Space');
-    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Space key on the focused pill unpins the panel' });
-    assertEqual((await readPill(cdp)).ariaPressed, 'false', 'Pill aria-pressed false after Space');
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Space key on the focused pill pins the panel' });
+    assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Pill aria-pressed true after Space');
 
     // ---- Collapse persists per Session across a Session switch ----
-    await clickTodoPill(cdp);
-    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned for the session-switch check' });
     await clickCollapseButton(cdp);
     assertEqual((await readPanel(cdp)).collapsed, true, 'Collapsed before switching sessions');
 
@@ -255,6 +322,15 @@ async function main() {
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
     assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)) === false, 'Session B starts unpinned, a genuinely different pane (independent of Session A which is still pinned)');
 
+    // ---- E3: Session B gets its own real plan, pins independently, expanded by default ----
+    await cdp.typeIntoByLabel('Message', 'plan and build the thing');
+    await cdp.clickByLabel('Send message');
+    await cdp.waitFor(`!!(${TODO_PILL_SELECTOR})`, { timeoutMs: 15_000, label: 'Session B: Todo pill appears once its own first todo tool call lands' });
+    assertEqual((await readPill(cdp)).ariaPressed, 'false', 'Session B: pill starts unpressed');
+    await clickTodoPill(cdp);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Session B: pinned' });
+    assertEqual((await readPanel(cdp)).collapsed, false, 'Session B: a FRESH pin starts expanded (its own default, independent of Session A\'s saved collapse)');
+
     const SESSION_A_ROW = `document.querySelector(${JSON.stringify(`button[data-session-open="${sessionIdA}"]`)})`;
     await cdp.click(SESSION_A_ROW);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 10_000, label: 'Switching back to Session A remounts its own pinned panel' });
@@ -264,27 +340,22 @@ async function main() {
     // ---- Narrow widths: wrap, no clipping, no horizontal scroll, no transcript jump ----
     for (const width of [360, 520]) {
       await setWidth(cdp, width);
-      const scrollBefore = await readTranscriptScrollTop(cdp);
+      const scrollBefore = await readScrollerScrollTop(cdp);
       const overflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
       assertTrue(!overflow, `No horizontal scrollbar at ${width}px`);
       const noClip = await cdp.evaluate(`(() => { const panel = ${PANEL_SELECTOR}; if (!panel) return null; return Array.from(panel.querySelectorAll('li')).every((li) => { const span = li.querySelector('span.block.break-words'); return !span || getComputedStyle(span).overflow !== 'hidden'; }); })()`);
       assertTrue(noClip === true, `Task text has no clipping overflow at ${width}px`, noClip);
-      // The Session A row's own hover card (`SessionDetailsCard.tsx`) can still be open from the
-      // earlier session-switch click above; move the pointer to a neutral spot over the
-      // transcript (far from the sidebar) and wait for it to actually close before this
-      // screenshot, rather than capturing it as a stray overlay.
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 50 });
-      await cdp.waitFor(`!document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: `[${width}px] stray session hover card closed before screenshot` }).catch(() => {});
+      await settleForScreenshot(cdp);
       await cdp.screenshot(path.join(SHOTS_DIR, `${width}px.png`));
-      const scrollAfter = await readTranscriptScrollTop(cdp);
-      assertEqual(scrollAfter, scrollBefore, `Transcript scroll position unchanged at ${width}px (no jump from the panel's own presence)`);
+      assertEqual(await readScrollerScrollTop(cdp), scrollBefore, `Transcript scroll position unchanged at ${width}px (no jump from the panel's own presence)`);
     }
     await clearWidth(cdp);
 
-    // ---- Five-theme screenshots + a live contrast read of the Blocked (amber) status word ----
+    // ---- E7: five-theme screenshots, every one clean (no tooltip/hover-card), plus a live
+    // contrast read of the Blocked (amber) status word ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
-      await cdp.evaluate(`document.getAnimations().forEach((a) => a.finish())`);
+      await settleForScreenshot(cdp);
       const warningColor = await resolveCssVarColor(cdp, '--severity-warning', 'color');
       const panelBg = await cdp.evaluate(`getComputedStyle(document.body).backgroundColor`);
       const ratio = measuredContrastRatio(warningColor, panelBg);
@@ -293,21 +364,30 @@ async function main() {
     }
     await switchTheme(cdp, 'dark', 'Dark');
 
-    // ---- Turn 2 on Session A (already the current pane, unchanged since the switch-back
-    // above): complete everything -> "All N done" ----
+    // ---- Turn 2 on Session A: complete everything -> "All N done" (collapses the LIST itself,
+    // not merely the header text -- P2's own report step) ----
     assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)), 'Still on Session A, panel still pinned');
     await cdp.typeIntoByLabel('Message', 'finish the rest');
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(`(${PANEL_SELECTOR}).textContent.includes('All 6 done')`, { timeoutMs: 20_000, label: 'Panel collapses its header to "All 6 done" once every open task is complete' });
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('All 13 done')`, { timeoutMs: 20_000, label: 'Panel header reads "All 13 done" once every open task is complete' });
+    const allDoneRead = await readPanel(cdp);
+    assertTrue(allDoneRead.rows === null, 'P2: "All N done" genuinely COLLAPSES the task list itself (list absent, not just the header text)');
 
-    // ---- Turn 3 on Session A: clear the plan -> panel unmounts, pin survives ----
+    // ---- Turn 3 on Session A: clear the plan -> panel unmounts, pill hidden too ----
+    await clickCollapseButton(cdp); // the user CAN expand again after all-done (P2's own reversibility)
+    assertEqual((await readPanel(cdp)).collapsed, false, 'P2: the user can still expand the panel again after it auto-collapsed to "All N done"');
+    await clickCollapseButton(cdp);
     await cdp.typeIntoByLabel('Message', 'clear the plan');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 20_000, label: 'Panel unmounts once the agent clears its plan entirely' });
-    assertTrue(!!(await cdp.evaluate(`!(${TODO_PILL_SELECTOR})`)), 'Pill is also hidden with no plan (FR-021, unchanged)');
-    notExercised.push('"The pin stays" with no plan (decision item 5): with both the pill and panel absent (no plan at all), there is no DOM-observable trace of the underlying per-Session `pinned` flag to assert against in a built (non-`vite dev`) asset bundle, which exposes no `window.__refractStores` hook -- `useTodoPinStore`\'s own `pinned`/`setPinned` logic (it is never cleared by `PinnedTodoPanel.tsx`, which only ever READS it) was verified by code inspection, not a live DOM read; a fourth tape turn re-creating a plan and observing the panel reappear pinned with no click would prove it live and was not built this round.');
+    const noPlanStep = !!(await cdp.evaluate(`!(${TODO_PILL_SELECTOR})`));
+    assertTrue(noPlanStep, 'E5: "panel absent with no plan" is its own distinct report step -- pill is also hidden with no plan (FR-021, unchanged)');
 
-    notExercised.push('Up next hiding while pinned (FR-030): this tape\'s turns never include a task()/subagent batch, so UpNextList never renders at all regardless of pin state (gated on stagesCount > 0) -- the hide-while-pinned rule could not be exercised against a real appear/disappear transition without a second, subagent-carrying tape; UpNextList.tsx\'s own `pinned` read was verified by code inspection only.');
+    // ---- Turn 4: a NEW plan, with NO click from this script -- "the pin stays" (E8) ----
+    await cdp.typeIntoByLabel('Message', 'start a follow-up plan');
+    await cdp.clickByLabel('Send message');
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 20_000, label: 'E8: the panel reappears, ALREADY pinned, the instant a new plan exists -- no click from this script' });
+    assertEqual((await readPill(cdp)).ariaPressed, 'true', 'E8: the pill itself also reads pressed again on the new plan, with no click');
 
     report.push({ step: 'screenshots', ok: true, screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `pinned-${t.id}.png`), '360px.png', '520px.png']) });
   } catch (err) {

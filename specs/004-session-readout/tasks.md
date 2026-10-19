@@ -683,10 +683,32 @@ for the build lane that picks the PR up.
   `CheckCircle2Icon`/muted for `completed`, `CircleSlashIcon`/muted/strike-through for
   `abandoned`, `CircleAlertIcon`/amber plus a second "Blocked: <reason>" line for `blocked`,
   `pending` and `completed`'s own words screen-reader only). The list follows the current
-  `in_progress` task with `scrollIntoView({block:'nearest'})` only when it changes, latched off
-  the instant the developer scrolls by hand. The panel unmounts entirely once `hasTodoPlan` is
-  false (pin survives), and collapses its header to "All N done" once every open task is
-  complete. (#700/#701)
+  `in_progress` task, keeping it in view by setting the list's own `scrollTop` directly (never
+  `scrollIntoView`, which can scroll an ancestor), latched off only by a real wheel/pointer/key
+  event on the list itself, re-armed on mount, expand and re-pin. The panel unmounts entirely
+  once `hasTodoPlan` is false (pin survives), and auto-collapses (the task list itself hides,
+  not just the header text) once every open task completes, leaving the user free to expand it
+  again afterward. (#700/#701)
+
+  **Gate round 1 fixes (Main, consolidated five-reviewer findings on PR #1054):** the follow-
+  current effect used to latch on its OWN `onScroll` (the very first follow permanently
+  disabled every later one); `ChatPane.tsx` now renders this with `key={sessionId}` so latch/
+  scroll state never leaks between Sessions. Unpinning, or the plan vanishing, used to strand
+  focus on `<body>`; a `useLayoutEffect`-cleanup focus-intent (`isFocusStranded`, `@/lib/focus`,
+  the `useFocusSearchOnStrandedUnmount.ts`/#900 precedent) now redirects it to the pill
+  (`aria-controls`'s own target) or the composer. An unrecognised task status no longer crashes
+  the render (renderer falls back to the `pending` glyph; `readout_todo.rs`'s own
+  `parse_todo_phases` normalises an unknown/missing wire status to `"pending"` first). The panel
+  is now a real `<section aria-label="Todo list">` region; the Collapse control has a FIXED
+  name ("Todo list details") plus `aria-controls` to the list's own id (the permanently-pressed
+  ghost-button fill from `aria-expanded:bg-muted` is overridden off for this one button); both
+  Collapse and Unpin gained a Tooltip, `aria-describedby={undefined}`, and the forced-colours
+  focus class (`COMPOSER_BUTTON_FOCUS_CLASS`). The scrolling list is a keyboard Tab stop
+  (`tabIndex={0}`) only while it genuinely overflows. A folded phase header now shows a muted
+  check icon; a completed task's own text recedes (muted); the header's current-task text
+  carries a `title` attribute for when it truncates. `deriveCurrentTask` (`todoDerive.ts`) now
+  returns `{phase, task}` (replacing this file's own duplicate `findCurrentTask`); `hasTodoPlan`
+  is now a type guard, dropping every `as TodoPhase[]` cast.
 - [X] T136 [US1] FR-030: `UpNextList.tsx` reads `useTodoPinStore`'s `pinned` flag for its own
   Session and hides (alongside its existing `isLastTurn`/`stagesCount`/empty-list guards) while
   pinned, so the plan never shows twice. (#700/#701; amends spec 001 FR-079)
