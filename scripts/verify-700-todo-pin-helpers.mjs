@@ -74,8 +74,10 @@ export async function readPinnedFlag(cdp, sessionId) {
   return cdp.evaluate(`window.__refractStores.todoPin.getState().pinnedBySession[${JSON.stringify(sessionId)}] ?? false`);
 }
 
+/** The single visible pane's own Session id (`paneSessionIds[0]`, `split-store.ts` -- there is
+ * no separate "selected session" concept once a Session is open; the pane IS the selection). */
 export async function currentSessionId(cdp) {
-  return cdp.evaluate(`window.__refractStores.view.getState().selectedSessionId ?? window.__refractStores.sessions.getState().sessions.find((s) => true)?.id ?? null`);
+  return cdp.evaluate(`window.__refractStores.split.getState().paneSessionIds[0] ?? null`);
 }
 
 /** The transcript's own scrollable container (`Transcript.tsx`'s `role="log"` region) -- used to
