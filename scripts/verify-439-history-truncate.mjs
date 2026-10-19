@@ -32,7 +32,11 @@
 //   - Row-level truncation (title/preview `scrollWidth`/`clientWidth` overflow) is re-measured in
 //     every theme in the themed-screenshot loop, not only once on the initial theme.
 //   - A new check confirms the full-title/preview Tooltip (issue #1012 item 1) actually opens
-//     when the long row receives keyboard focus.
+//     when the long row receives keyboard focus, and proves exactly how Escape then behaves:
+//     Radix's own nested-`DismissableLayer` stacking (the SAME mechanism `@radix-ui/react-menu`
+//     uses for every `DropdownMenu` in this codebase) means the first Escape closes only the
+//     Tooltip -- the topmost layer -- and a second closes the Dialog; the dialog's own Close
+//     button is confirmed as an equally valid, independent dismissal path too.
 //
 // Decided (Skippy, delegated by Stuart 2026-10-18, issue #439, docs/PLAN.md): ellipsis only, no
 // fade -- this script asserts the `truncate` utility's three CSS properties
@@ -78,7 +82,7 @@ import {
   switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -361,13 +365,56 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
       findings.push('Screenshot captured: the full-title/preview Tooltip visibly open beside the long row while it holds keyboard focus (00-focus-tooltip.png).');
     }
-    // Live-run finding (not a #1012 scope item, but a pre-existing gap this script's first ever
-    // execution surfaced -- this script was "WRITTEN, NOT RUN" before this fix): a synthetic
-    // CDP `Input.dispatchKeyEvent` Escape never closed this dialog in this build regardless of
-    // what held keyboard focus beforehand (confirmed with and without a prior blur) -- root
-    // cause not conclusively isolated. The per-theme loop below dismisses the dialog with a
-    // real click on its own visible Close button (`DialogPrimitive.Close`, `dialog.tsx`)
-    // instead, which is unambiguous and does not depend on whatever this Escape-handling gap is.
+    // Root cause of the earlier "Escape never closes the dialog" finding (gate follow-up,
+    // Main): NOT a bug -- confirmed from the installed library source, no build needed.
+    // `src/renderer/components/ui/tooltip.tsx`'s `TooltipContent` renders Radix's own
+    // `TooltipPrimitive.Content` unmodified; that primitive's `TooltipContentImpl` wraps its
+    // popup in a `DismissableLayer` with `onDismiss: onClose` (node_modules/.pnpm/@radix-ui+
+    // react-tooltip@1.2_.../node_modules/@radix-ui/react-tooltip/dist/index.mjs:334-342).
+    // `DismissableLayer` itself only attaches its own Escape `keydown` listener while it is the
+    // topmost layer in the shared stack (`isHighestLayer` gate, .../@radix-ui/react-
+    // dismissable-layer/dist/index.mjs:90-107) -- a lower layer (here, the Dialog) has NO
+    // Escape listener registered at all while a higher layer (the just-opened Tooltip) exists.
+    // This is the EXACT SAME mechanism `@radix-ui/react-menu` uses for every `DropdownMenu` in
+    // this codebase (.../@radix-ui/react-menu/dist/index.mjs:271-279, same `DismissableLayer`
+    // wrapping) -- a menu opened inside a Dialog elsewhere in this app requires the identical
+    // two separate Escape presses (one per nested layer, topmost first), so this is Radix's own
+    // shared, intentional nested-dismissable-layer convention, not something unique to the new
+    // Tooltip. The Dialog is never trapped: a second Escape (or any other dismissal) always
+    // reaches it once the Tooltip is gone. Proven live below instead of just asserted.
+
+    // ---- Issue #1012 item 1 gate follow-up: Escape from a focused row, proven precisely ----
+    // First Escape: the long row's Tooltip (the topmost DismissableLayer) closes; the Dialog
+    // does NOT (confirms the dialog has no Escape listener registered while the tooltip is the
+    // highest layer, per the citations above).
+    await pressEscape(cdp);
+    await cdp.waitFor(`!document.querySelector('[role="tooltip"]')`, {
+      timeoutMs: 5_000,
+      label: 'First Escape (tooltip open): Tooltip closes'
+    });
+    const dialogStillOpenAfterFirstEscape = await cdp.evaluate(`!!(${HISTORY_DIALOG_FINDER})`);
+    if (!dialogStillOpenAfterFirstEscape) {
+      failures.push('First Escape (tooltip open) unexpectedly also closed the Conversation history dialog -- expected only the Tooltip to close on this press (nested DismissableLayer stacking, topmost layer first).');
+    } else {
+      findings.push('First Escape while the long row\'s Tooltip is open closes ONLY the Tooltip; the Conversation history dialog stays open (Radix\'s own nested-DismissableLayer stacking, item 1 gate follow-up -- see the code comment above for the exact library citations).');
+    }
+    // Second Escape: the Tooltip is gone, so the Dialog is the topmost layer again and its own
+    // Escape listener is now registered -- this press closes it, matching pre-#1012 behaviour
+    // (and every other focus target in this dialog, which has no Tooltip to contend with).
+    await pressEscape(cdp);
+    await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
+      timeoutMs: 5_000,
+      label: 'Second Escape (tooltip already closed): Conversation history dialog closes'
+    });
+    findings.push('A second Escape then closes the Conversation history dialog itself, once the Tooltip layer above it is gone -- the dialog is never keyboard-trapped, just reached one nested layer at a time, same as a DropdownMenu opened inside any Dialog in this codebase.');
+
+    // ---- Confirms the dialog's own visible Close button is an equally valid, independent
+    // dismissal path (not only Escape) -- reopen, then close this way before the per-theme loop. ----
+    await cdp.clickByLabel('Conversation history');
+    await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog reopened for the Close-button check' });
+    await cdp.clickByText('Close', { inDialog: true });
+    await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 5_000, label: 'Close button closes the Conversation history dialog' });
+    findings.push("The dialog's own visible Close button also closes it, independent of Escape.");
 
     // ---- Dialog-level: no horizontal overflow, re-measured in every theme below ----
     async function assertDialogNeverScrollsHorizontally(themeName) {
@@ -470,7 +517,7 @@ async function main() {
       // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
       // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
       // per-theme overflow/truncation checks and screenshot.
-      await cdp.clickByText('Close', { inDialog: true });
+      await pressEscape(cdp);
       await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 10_000,
         label: `Conversation history dialog closed before switching to ${theme.name}`
