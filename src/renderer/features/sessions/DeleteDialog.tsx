@@ -184,7 +184,7 @@ export function DeleteDialog({
         )}
         {leftoverLoading && <p className="text-sm text-muted-foreground">Checking files…</p>}
         {leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0) && (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <ul className="min-w-0 list-disc space-y-1 pl-5 text-sm break-all text-muted-foreground">
             {leftoverSummary.generatedFolders.map((folder) => (
               <li key={folder.name}>
                 {folder.name} ({folder.fileCount} file{folder.fileCount === 1 ? '' : 's'})
