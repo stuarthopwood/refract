@@ -94,7 +94,10 @@ fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String
 /// as it was): unlike `check_folder_in_use` below, a named FILE holder is never this Session's
 /// own doing once its own pids are excluded. A missing folder is not this check's concern --
 /// nothing to hold, so always `Ok(())`.
-pub async fn check_named_holders(worktree_path: &Path, exclude_pids: &[u32]) -> Result<(), GitError> {
+pub async fn check_named_holders(
+    worktree_path: &Path,
+    exclude_pids: &[u32],
+) -> Result<(), GitError> {
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
         return Ok(());
     }
@@ -138,18 +141,22 @@ pub async fn check_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
     probe_folder_in_use(worktree_path).await
 }
 
-/// Real-world transient locks -- Windows Defender's real-time scan or the Search indexer,
-/// both routinely still working through a `node_modules`-sized tree seconds after it finishes
-/// writing -- raise the exact same sharing/access-denied errors a genuine cwd holder does, but
-/// clear within milliseconds. Retried up to `RENAME_PROBE_ATTEMPTS` times (short, fixed backoff)
-/// before concluding "held": a real holder (a terminal or Explorer window actually sitting in
-/// the folder) stays held across every attempt and is still reported exactly as before; this
-/// only spares a transient scan from being misreported as one. The rename-BACK below is
-/// deliberately NOT retried -- that failure must never be silently swallowed (this module's own
-/// header comment), and by the time the first rename has already succeeded, there is no longer
-/// a plausible transient-scan explanation for the second one failing.
-const RENAME_PROBE_ATTEMPTS: u32 = 5;
-const RENAME_PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+/// Retried up to `RENAME_PROBE_ATTEMPTS` times (short, fixed backoff) before concluding "held".
+/// Two real-world causes raise the exact same sharing/access-denied errors a genuine cwd
+/// holder does, but clear within a bounded window: (1) this Session's own agent, just stopped
+/// by the caller immediately before this runs -- `SessionAgent::shutdown`'s own `await` only
+/// guarantees the OS process has exited, not that Windows has finished releasing every handle
+/// (including its own cwd lock) by the instant that `await` returns, confirmed live as a real,
+/// if narrow, race; (2) Windows Defender's real-time scan or the Search indexer, still working
+/// through a `node_modules`-sized tree seconds after it finishes writing. A real holder (a
+/// terminal or Explorer window actually sitting in the folder) stays held across every attempt
+/// and is still reported exactly as before; this only spares either transient cause from being
+/// misreported as one. The rename-BACK below is deliberately NOT retried -- that failure must
+/// never be silently swallowed (this module's own header comment), and by the time the first
+/// rename has already succeeded, there is no longer a plausible transient explanation for the
+/// second one failing.
+const RENAME_PROBE_ATTEMPTS: u32 = 15;
+const RENAME_PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 async fn probe_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
     let Some(probe_path) = probe_sibling_path(worktree_path) else {
