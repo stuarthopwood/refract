@@ -66,10 +66,7 @@ function getHighlighter(): Promise<Highlighter> {
 // language inference) a tool call's Arguments/Output (T083, FR-049/FR-050): the language's name
 // when it is both known and actually highlighted, else "text" -- including when `lang` was given
 // but Shiki failed to load or highlight it (the plain-fallback branch below), so the header never
-// claims a highlight the body does not show. Meets WCAG AA contrast in the app's current
-// dark-only theme (docs/DESIGN.md "Look and feel": "dark only, Stuart ... I don't think I want a
-// light mode"); same `bg-muted`/`text-muted-foreground` pairing as `DiffView`'s own path header --
-// unverified for a future light theme.
+// claims a highlight the body does not show. `bg-card` (#975: was `bg-muted`) now matches the body's own surface in every theme (see `CodeBlock`'s own effect for the neutralised Shiki background).
 // `copyText` is the full, untruncated value the Copy button puts on the clipboard -- distinct
 // from `label` (the language shown) so a caller whose visible body is capped (ToolRow.tsx's
 // "Show all" truncation) can still copy the complete original text (#524, PLAN.md "Code
@@ -82,7 +79,7 @@ function getHighlighter(): Promise<Highlighter> {
 // multiple blocks in one transcript are distinguishable in a screen reader's button list.
 function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2.5 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate">{label}</span>
       {copyText !== '' && (
         <CopyButton
@@ -160,7 +157,11 @@ export function CodeBlock({
           await highlighter.loadLanguage(lang as Parameters<Highlighter['loadLanguage']>[0])
         }
         if (cancelled) return
-        setHtml(highlighter.codeToHtml(code, { lang, theme: THEMES[activeThemeId].syntaxTheme }))
+        // #975: body now shares `bg-card` with the header/gutter; Shiki's own fixed root
+        // background is neutralised via `colorReplacements` (keyed on the theme's own `.bg`, probed against shiki@4.4.3 -- the one per-call override for background alone).
+        const syntaxTheme = THEMES[activeThemeId].syntaxTheme
+        const themeBg = highlighter.getTheme(syntaxTheme).bg.toLowerCase()
+        setHtml(highlighter.codeToHtml(code, { lang, theme: syntaxTheme, colorReplacements: { [themeBg]: 'transparent' } }))
       } catch {
         if (!cancelled) setHtml(null)
       }
@@ -207,10 +208,9 @@ export function CodeBlock({
   ) : null
 
   if (html) {
-    // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
-    // per the constitution's markdown/sanitisation rule. The `[&>pre]:` arbitrary-variant
-    // selectors apply to the `<pre>` Shiki's own `dangerouslySetInnerHTML` output contains,
-    // since a plain class on this wrapping `<div>` cannot reach inside raw injected HTML.
+    // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup,
+    // per the constitution's markdown/sanitisation rule). `bg-card` on this div (#975, matching
+    // the plain-fallback `<pre>` below) paints the body now Shiki's own bg is neutralised above.
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
         <CodeBlockHeader label={label} copyText={copyText ?? code} />
@@ -221,7 +221,7 @@ export function CodeBlock({
             role="region"
             aria-label={regionLabel}
             className={cn(
-              'min-w-0 flex-1',
+              'min-w-0 flex-1 bg-card',
               wrap ? wrapClassName : scrollableClassName,
               wrap ? '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:leading-[1.6]'
             )}

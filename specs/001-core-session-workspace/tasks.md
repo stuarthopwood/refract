@@ -4427,3 +4427,57 @@ run` (148/148, no new tests per the prototyping-phase rule), `pnpm run check:ind
 check:file-size` (no baseline change), `node --check` on the updated script, plus a real
 `import()` load-check (fails only at the shared `CARGO_TARGET_DIR` build-slot guard, confirming
 every import resolves) -- all clean.
+
+## Phase 68: Code-block background follows theme surface (#975, FR-050 amended) [US1]
+
+(Renumbered against `origin/main` just before merging, this file's own convention: Phase 67/
+T322-T324 claims the next free numbers as of this branch's cut from `origin/main`.)
+
+**Goal**: a fenced code block's header and body share one literal background -- the active
+preset's own `--card` -- in every built-in theme, never a bundled Shiki syntax theme's fixed
+colour; every token colour that syntax theme ships still clears 4.5:1 against the new
+background. Pre-decided on the issue (Decided, Skippy, delegated by Stuart 2026-10-19).
+
+- [X] T325 `src/renderer/features/chat/Markdown.tsx`: `CodeBlockHeader` moves from `bg-muted` to
+  `bg-card` (matching the body/gutter's existing surface). `CodeBlock`'s `codeToHtml` effect
+  neutralises Shiki's own root background to `transparent` via `colorReplacements`, keyed on
+  `highlighter.getTheme(syntaxTheme).bg`; the highlighted-body wrapper `<div>` gains its own
+  `bg-card` (the inner `<pre>`'s `[&>pre]:m-0` means its box exactly covers the div's, same as
+  the plain-fallback `<pre>` already painting its own box directly).
+- [X] T326 `src/shared/themes.ts`: `dark`, `obsidian`, `nordic-frost` and `cyber-amber` move
+  `syntaxTheme` from `github-dark` to `github-dark-default` (research.md decision 25's own
+  "no amount of surface retuning can fix `github-dark`'s comment colour" finding);
+  `dark-high-contrast`'s `github-dark-high-contrast` is unchanged.
+- [X] T327 `scripts/theme-contrast-pairs.mjs`: new `shikiTokenContrastRows(themes,
+  themeMetadata)` -- loads every distinct `syntaxTheme` via `shiki`'s `createHighlighter`
+  (JS regex engine, no WASM), collects each theme's distinct non-self-backgrounded token
+  foreground colours (plus its own default `.fg`), and checks each against that preset's
+  resolved `--card` at 4.5:1. `scripts/check-theme-contrast.mjs`'s `THEME_METADATA_RE` gains a
+  `syntaxTheme` capture group (between `swatch` and `titleBarOverlay`, `themes.ts`'s own
+  declaration order) and wires the new check into the existing composited-checks loop.
+- [X] T328 Update the docs: amended `specs/001-core-session-workspace/spec.md` with FR-050
+  (amended again, after issue #558's own prior amendment) and a dated `### Session 2026-10-19
+  (Code-block background follows theme surface, #975)` Clarifications entry; `research.md`
+  decision 25 records the full rationale, including why a surface retune alone cannot fix
+  `github-dark`'s own comment colour; `src/shared/themes.ts`'s own `nordic-frost`/`cyber-amber`
+  doc comment (originally written by #551) is rewritten to record the follow-up as resolved.
+- [ ] T329 New fixture `scripts/fixtures/omp-frames/code-surface-975.jsonl` (hand-extended copy
+  of `user-message-time.jsonl`'s own first-turn shape, a FIXED assistant reply carrying one
+  deterministic JavaScript fence -- a comment, a string, a keyword, a function -- so the
+  rendered Shiki token colours are stable run over run, which a real model turn could not
+  guarantee) and new `scripts/verify-975-code-surface.mjs`, modelled on
+  `verify-439-history-truncate.mjs`'s own fixture-driven harness and `verify-551-presets.mjs`'s
+  themed-screenshot loop. For every built-in preset: asserts by computed style that the header
+  and body share one literal background, that it equals the theme's own live-resolved `--card`
+  (read off a throwaway `div.bg-card` probe, never a hand-copied hex), and that the rendered
+  comment token clears 4.5:1 against that background, measured live via
+  `contrast-math.mjs`'s `measuredContrastRatio`; screenshots each preset (Cyber Amber the
+  headline shot). Written, not yet run -- no build slot granted for this sub-task; `node
+  --check` is the only command run against it so far.
+
+**Non-build checks**: `pnpm typecheck`, `pnpm vitest run` (148/148, no new tests per the
+prototyping-phase rule), `pnpm run check:indent` (0 odd-indent lines), `pnpm run check:file-size`
+(`Markdown.tsx` exactly at its existing 997-line baseline, no growth; `check-theme-contrast.mjs`
+exactly at its existing 743-line baseline), `pnpm run check:theme-contrast` (818 of 818 pairs
+PASS across 5 themes, up from 773 -- the 45 new Shiki-token rows all pass), `node --check` on
+both edited scripts -- all clean. Live Tauri verify pending the build slot.

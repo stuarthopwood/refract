@@ -29,6 +29,8 @@
 // kept visible in the gate's output for anyone re-measuring it, never failing the run.
 
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
+import { createHighlighter } from 'shiki'
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 
 export const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -432,6 +434,74 @@ export function sidebarBorderContrastRows(themes) {
       bgHex: linearToHex(fillLinear),
       note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })
+  }
+  return rows
+}
+
+// Issue #975 (code-block background follows each preset's own `--card`, not whatever a bundled
+// Shiki theme ships with): `Markdown.tsx`'s `CodeBlock` neutralises Shiki's own root background
+// to `transparent` and renders `CodeBlockHeader`/the Shiki output/the plain-text fallback on
+// `bg-card`, so a fenced code block's REAL backdrop in every theme is now `--card`, never the
+// `syntaxTheme` chosen in `src/shared/themes.ts`. Checks every distinct, non-self-backgrounded
+// tokenColour foreground that chosen `syntaxTheme` ships -- keywords, strings, comments, the
+// theme's own default text colour (`.fg`, what an UNstyled token actually renders, per Shiki's
+// own `codeToHast` source) -- against that preset's own resolved `--card`, at the 4.5:1 floor
+// the #975 decision comment set (not the 3:1 non-text floor `PAIRS` uses elsewhere: a code
+// token is real body text, same as `muted-foreground`/`card` above). A tokenColour entry that
+// carries its OWN `settings.background` (e.g. `github-dark`'s `carriage-return`/`markup.
+// ignored`/`markup.untracked` scopes) is excluded: it always renders on that literal paired
+// background, which this issue's neutralisation never touches (only the theme's single ROOT
+// background is replaced, keyed on its own resolved hex, `Markdown.tsx`'s own `colorReplacements`
+// call) -- its contrast is unaffected by this change and was never broken by it.
+function hexToLinearSrgb(hex) {
+  let h = hex.slice(1)
+  if (h.length === 3) h = [...h].map((c) => c + c).join('')
+  const r = parseInt(h.slice(0, 2), 16) / 255
+  const g = parseInt(h.slice(2, 4), 16) / 255
+  const b = parseInt(h.slice(4, 6), 16) / 255
+  return [srgbGammaDecode(r), srgbGammaDecode(g), srgbGammaDecode(b)]
+}
+
+export async function shikiTokenContrastRows(themes, themeMetadata) {
+  const distinctSyntaxThemes = [...new Set(Object.values(themeMetadata).map((m) => m.syntaxTheme).filter(Boolean))]
+  const rows = []
+  if (distinctSyntaxThemes.length === 0) return rows
+  const highlighter = await createHighlighter({ themes: distinctSyntaxThemes, langs: [], engine: createJavaScriptRegexEngine() })
+  const tokenColoursByTheme = new Map()
+  for (const syntaxTheme of distinctSyntaxThemes) {
+    const resolved = highlighter.getTheme(syntaxTheme)
+    const colours = new Map()
+    colours.set(resolved.fg.toLowerCase(), '(default text)')
+    for (const entry of resolved.settings) {
+      const fg = entry.settings?.foreground
+      if (!fg || entry.settings?.background) continue
+      const scope = Array.isArray(entry.scope) ? entry.scope.join(', ') : (entry.scope ?? '(default text)')
+      if (!colours.has(fg.toLowerCase())) colours.set(fg.toLowerCase(), scope)
+    }
+    tokenColoursByTheme.set(syntaxTheme, colours)
+  }
+
+  for (const [themeId, props] of Object.entries(themes)) {
+    const syntaxTheme = themeMetadata[themeId]?.syntaxTheme
+    const card = props['card']
+    if (!syntaxTheme || !card) {
+      rows.push({ themeId, fg: 'shiki token colour', bg: 'card', min: 4.5, ratio: null, pass: false, note: `'${themeId}' has no syntaxTheme (themes.ts) or --card token (globals.css)` })
+      continue
+    }
+    const cardLum = relativeLuminance(card.linear)
+    for (const [hex, scope] of tokenColoursByTheme.get(syntaxTheme)) {
+      const ratio = contrastRatio(relativeLuminance(hexToLinearSrgb(hex)), cardLum)
+      rows.push({
+        themeId,
+        fg: `shiki:${syntaxTheme} ${scope}`,
+        bg: 'card',
+        min: 4.5,
+        ratio,
+        pass: ratio >= 4.5,
+        fgHex: hex,
+        bgHex: linearToHex(card.linear),
+      })
+    }
   }
   return rows
 }

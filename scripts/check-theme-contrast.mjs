@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows } from './theme-contrast-pairs.mjs'
+import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -206,15 +206,18 @@ const missingThemeBlocks = declaredThemeIds.filter((id) => !(id in themes))
 // The exact bug that caused this PR's first two gate failures -- `themes.ts`'s `swatch`/
 // `titleBarOverlay.color` silently drifting from the theme's own `.theme-<id>` `--background`
 // -- was only ever caught by a human re-reading two files side by side; nothing in this script
-// checked it. Parse every entry's `id`, `swatch`, and `titleBarOverlay.color` out of the same
-// `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?` gaps (not a
-// plain `[\s\S]*?`) stop each entry's own match at the next `id:`, so a theme entry missing its
-// `swatch` or `titleBarOverlay` cannot silently read the NEXT entry's values instead -- it just
-// fails to match, which the count check below turns into a hard failure.
-const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
+// checked it. Parse every entry's `id`, `swatch`, `syntaxTheme` and `titleBarOverlay.color` out
+// of the same `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?`
+// gaps (not a plain `[\s\S]*?`) stop each entry's own match at the next `id:`, so a theme entry
+// missing any one of these cannot silently read the NEXT entry's values instead -- it just
+// fails to match, which the count check below turns into a hard failure. `syntaxTheme` (#975:
+// feeds `shikiTokenContrastRows` below, checking every Shiki token colour that theme ships
+// against this preset's own `--card`) is captured between `swatch` and `titleBarOverlay`, the
+// same declaration order every entry in `src/shared/themes.ts` already uses.
+const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?syntaxTheme:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
 const themeMetadata = Object.create(null)
 for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
-  themeMetadata[m[1]] = { swatch: m[2].toLowerCase(), titleBarOverlayColor: m[3].toLowerCase() }
+  themeMetadata[m[1]] = { swatch: m[2].toLowerCase(), syntaxTheme: m[3], titleBarOverlayColor: m[4].toLowerCase() }
 }
 if (Object.keys(themeMetadata).length !== declaredThemeIds.length) {
   console.error(
@@ -695,11 +698,12 @@ for (const [themeId, props] of Object.entries(themes)) {
   }
 }
 
-// Issue #559 decision 28 (gate round 3 correction), issue #610 (hyperlinks) and #551 gate round
-// 1 item 9 (sidebar-border hover fill, informational only -- see that function's own comment):
-// all three composited checks live in `theme-contrast-pairs.mjs`, not inline here, to keep this
-// file at its own #806 baseline; merged into one loop for the same reason.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes)]) {
+// Issue #559 decision 28 (gate round 3 correction), issue #610 (hyperlinks), #551 gate round 1
+// item 9 (sidebar-border hover fill, informational only -- see that function's own comment) and
+// #975 (Shiki token colours vs the new `--card` code-block background): all four composited
+// checks live in `theme-contrast-pairs.mjs`, not inline here, to keep this file at its own #806
+// baseline; merged into one loop for the same reason.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)
