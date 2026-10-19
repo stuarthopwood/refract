@@ -412,6 +412,19 @@ async function main() {
     await cdp.clickByLabel('Conversation history');
     await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog reopened for the Close-button check' });
     const historyDialogCloseButtonFinder = `(() => { const dialog = ${HISTORY_DIALOG_FINDER}; if (!dialog) return null; return Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Close') ?? null; })()`;
+    // Gate follow-up (live-run finding, Main round 2): the Close button's own `getBoundingClientRect()`
+    // can transiently read zero-size right at mount (before Radix's entrance transform/layout
+    // settles), and `cdp.click()`'s own waitFor only checks truthiness of the computed rect
+    // object -- a `{x:0,y:0}` degenerate click (the window's own top-left corner) is still
+    // truthy, so it was accepted and silently missed the button entirely. Waits for a real,
+    // non-zero, laid-out rect FIRST, so `cdp.click()` only ever reads coordinates once the
+    // button is actually where it will stay.
+    await cdp.waitFor(`(() => {
+      const el = ${historyDialogCloseButtonFinder};
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    })()`, { timeoutMs: 5_000, label: 'Close button laid out with a non-zero size' });
     await cdp.click(historyDialogCloseButtonFinder);
     await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 5_000, label: 'Close button closes the Conversation history dialog' });
     findings.push("The dialog's own visible Close button also closes it, independent of Escape.");
