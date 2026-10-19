@@ -2,9 +2,8 @@
 // Live CDP check for issue #1008 (UI polish: Stage rows -- failed Stage label colour and jump to
 // Stage from the chain row). Both items already Decided (Skippy, delegated by Stuart
 // 2026-10-18) on the issue; gate round 1 remediation (Main, 2026-10-18) added items 6-9 below;
-// gate round 2 (Main, 2026-10-18) found and fixed a real product bug (item 2's own jump, see
-// below) plus the polish items 1/2/3/4/5 recorded on this round. Decisions recorded in
-// `research.md` decision 23 and `spec.md` FR-089.
+// gate round 2 (Main, 2026-10-18) found/fixed a real product bug (item 2's own jump, see below)
+// plus polish items 1-5. Decisions recorded in `research.md` decision 23 and `spec.md` FR-089.
 //
 // Item 1: a failed Stage's own label now gets `text-severity-error` the same way a failed tool
 // row's label already does (`ToolRow.tsx` :209/:405) -- `SubagentChainRow.tsx`'s `StageGroupRow`
@@ -228,7 +227,9 @@ async function main() {
     // jsdoc has the full record; #1021, not fixed here) -- recorded as a finding either way, no
     // pass/fail asserted (see the `notExercised` entry after the re-check).
     const stage2TriggerExpr = stageTriggerSelector(STAGE2_TITLE);
-    // Gate round 4 fix (Test Low): check Stage 2's state, and a "before" position for contrast.
+    // Gate round 4 fix (Test Low, falsified live): raced Stage 2's own mount -- Stage 1 runs
+    // alone first in this fixture. Wait for it, THEN check its state and position for contrast.
+    await cdp.waitFor(`!!(${stage2TriggerExpr})`, { timeoutMs: 15_000, label: "Stage 2's own trigger exists (baseline for the mid-stream jump proof)" });
     const stage2BeforeExpanded = await cdp.evaluate(`(${stage2TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage2BeforeExpanded !== 'false') {
       failures.push(`Stage 2's own row was not closed just before the mid-stream jump (aria-expanded was ${JSON.stringify(stage2BeforeExpanded)}, expected "false").`);
@@ -453,9 +454,8 @@ async function main() {
         failures.push('Could not place keyboard focus on the "Go to Stage 3" button itself before pressing Enter.');
       } else {
         findings.push('Keyboard focus placed on the "Go to Stage 3" button itself (keyboard-reachable, issue #1008 item 2).');
-        // Gate round 4 fix (Test Low): the jump button's own scrollIntoView above can itself move
-        // the viewport -- re-measure Stage 3's own off-screen precondition HERE, right before the
-        // real keyboard jump, instead of relying on the earlier `stage3RectBefore` check.
+        // Gate round 4 fix (Test Low): the jump button's own scrollIntoView can itself move the
+        // viewport -- re-measure the off-screen precondition HERE, right before the real jump.
         const stage3RectBeforeKeyboardJump = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
         if (rectIsInViewport(stage3RectBeforeKeyboardJump)) {
           failures.push(`Stage 3's own row is already in the viewport right before the keyboard jump (rect ${JSON.stringify(stage3RectBeforeKeyboardJump)}, after the jump button's own scrollIntoView) -- the off-screen precondition this proof depends on no longer holds.`);
