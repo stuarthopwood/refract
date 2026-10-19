@@ -3,24 +3,10 @@
 // issuecomment-6266265342). Two complementary checks, exposed as SEPARATE functions
 // (`check_named_holders`/`check_folder_in_use`) rather than one combined preflight, because the
 // caller (`ipc::sessions_lifecycle`'s `sessions.delete`) MUST run its own agent's shutdown
-// BETWEEN them -- see `check_folder_in_use`'s own doc comment for why:
-//
-//   (a) Windows Restart Manager (`RmRegisterResources`/`RmGetList`) over the worktree path,
-//       which names a PROGRAM (image name) and PID holding an open FILE HANDLE somewhere inside
-//       it. This Session's own recorded `omp` pids (`process::pid_records::pids_for_session`)
-//       are excluded from the result first -- the agent itself holding its own files open is
-//       never a reason to refuse deleting it. Runs BEFORE the agent is stopped: a refusal here
-//       leaves the Session exactly as it was.
-//   (b) A safe rename probe, run ONLY when (a) found nobody AND only AFTER this Session's own
-//       agent has been shut down: a cwd holder (a terminal or File Explorer window merely
-//       sitting inside the folder) holds no file handle Restart Manager can see, only a
-//       directory handle via the Windows "current directory" mechanism -- the amendment's own
-//       words, "a cwd holder is invisible to Restart Manager". Renaming the folder to a sibling
-//       name inside the worktrees root and straight back fails with a sharing violation if
-//       anything still has it open as a working directory; the rename-BACK failing is the one
-//       outcome that must never be silently swallowed -- the real files would then sit at the
-//       probe name, not the original path, so that case reports the exact current path plainly
-//       instead.
+// BETWEEN them: (a) Restart Manager names a program/pid holding an open FILE HANDLE, run BEFORE
+// the agent stops so a refusal here leaves the Session untouched; (b) a safe rename-and-back
+// probe for a cwd holder invisible to Restart Manager, run only AFTER the agent stops -- see
+// each function's own doc comment below for the full detail and why the ordering matters.
 //
 // Refract never ends a process (Stuart's grill, Skippy's 2026-10-19 decision): this module only
 // NAMES holders, it never calls `TerminateProcess` or anything like it.
@@ -126,14 +112,18 @@ pub async fn check_named_holders(
         .unwrap_or(ContainmentCheck::OutsideBoundary);
     let canonical_path = match check {
         ContainmentCheck::Missing => return Ok(()),
-        ContainmentCheck::OutsideBoundary => return Err(outside_worktrees_root_refusal(worktree_path)),
+        ContainmentCheck::OutsideBoundary => {
+            return Err(outside_worktrees_root_refusal(worktree_path))
+        }
         ContainmentCheck::Ok(p) => p,
     };
 
     let exclude = exclude_pids.to_vec();
-    let named = tokio::task::spawn_blocking(move || imp::restart_manager_holders(&canonical_path, &exclude))
-        .await
-        .unwrap_or_default();
+    let named = tokio::task::spawn_blocking(move || {
+        imp::restart_manager_holders(&canonical_path, &exclude)
+    })
+    .await
+    .unwrap_or_default();
     if !named.is_empty() {
         return Err(GitError::new(
             GitErrorCode::WorktreeHeld,
@@ -190,7 +180,9 @@ pub async fn check_folder_in_use(
             }
             return Ok(());
         }
-        ContainmentCheck::OutsideBoundary => return Err(outside_worktrees_root_refusal(worktree_path)),
+        ContainmentCheck::OutsideBoundary => {
+            return Err(outside_worktrees_root_refusal(worktree_path))
+        }
         ContainmentCheck::Ok(p) => p,
     };
     diag::log_holder_diagnostics(session_id, own_pids).await;
