@@ -35,6 +35,7 @@ import { describeStartProgressLabel } from '@/features/sessions/startProgressDis
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
+import { PinnedTodoPanel } from './PinnedTodoPanel'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
 import { Transcript } from './Transcript'
@@ -1404,6 +1405,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           }
         />
       </div>
+      <PinnedTodoPanel sessionId={sessionId} />
       <MessageInput
         key={sessionId}
         sessionId={sessionId}

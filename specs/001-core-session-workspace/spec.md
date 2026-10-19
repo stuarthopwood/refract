@@ -1279,6 +1279,10 @@ The developer types a slash command and finds the ones the agent offers. If a se
   > below the Subagent chain (a sibling, not nested inside its own expanded body), gated on
   > `isLastTurn` and at least one Stage.
 
+  > Amended 2026-10-19 by spec 004 FR-030 (issue #700/#701 decision record item 2): the Up
+  > next list above is ALSO hidden while the Session's todo list is pinned (spec 004's new
+  > `PinnedTodoPanel.tsx`), so the agent's plan never shows twice at once.
+
 - **FR-078** (new, 2026-10-18, issue #937, follow-up to #917/PR #923; renumbered from a provisional FR-076 once #954 landed the real FR-074/FR-075 on `origin/main` first, and #967 claimed FR-076/FR-077): The composer status line MUST show an Advisor readout only while the Session's advisor is on, with no Settings toggle to show or hide it; it MUST NOT show any cost, spend, or token figure. Activating it MUST send `/advisor off`. The Session's advisor on/off state MUST be sourced from `/advisor on`'s and `/advisor off`'s own reply text (authoritative) and, as a best-effort hint only, a silent `/advisor status` probe run once at Session attach or resume; an ambiguous `/advisor status` reply MUST be treated as off/hidden, never guessed on.
 - **FR-080** (new, 2026-10-18, issue #672, follow-up to #618: "I like the *Summoning your agent*
   message, but can it be placed centrally in the chat window, and made larger"; renumbered from a

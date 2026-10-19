@@ -46,10 +46,19 @@ export interface ReadoutChipProps {
   href?: string
   /** Required when `onActivate` or `href` is set: the accessible name stating what it opens. */
   accessibleName?: string
+  /** Issue #700/#701: a toggle control (the Todo pill) renders real `aria-pressed` on its own
+   * `<button>` -- omitted (`undefined`) by every other chip, which has no boolean on/off state
+   * of its own, so this never changes their markup. The pressed LOOK is the caller's own
+   * `className` (decision record item 1: "a pin glyph plus a pressed border... never the open-
+   * card background"), not baked in here -- every other chip keeps today's hover-only styling. */
+  pressed?: boolean
+  /** Names the region `pressed` toggles (WCAG 4.1.2 `aria-controls`); meaningful only
+   * alongside `pressed`. */
+  controls?: string
   className?: string
 }
 
-export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className }: ReadoutChipProps) {
+export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls }: ReadoutChipProps) {
   const baseClasses = cn(READOUT_CHIP_BASE_CLASS, className)
   const interactiveClasses = cn(baseClasses, READOUT_CHIP_INTERACTIVE_ADDITIONS)
 
@@ -68,7 +77,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   if (onActivate) {
     return (
-      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} className={interactiveClasses}>
+      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} aria-pressed={pressed} aria-controls={controls} className={interactiveClasses}>
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>

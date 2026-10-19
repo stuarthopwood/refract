@@ -60,7 +60,7 @@ use super::agent::SessionAgent;
 
 #[path = "readout_todo.rs"]
 mod readout_todo;
-use readout_todo::{compute_up_next, parse_todo_phases, TodoPhaseState};
+use readout_todo::{build_todo_tree, compute_up_next, parse_todo_phases, TodoPhaseState};
 
 /// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
 /// per Session under streaming" -- test-review/perf gate round 1 finding: the PREVIOUS 50 ms value
@@ -164,6 +164,24 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             }
         }
         "tool_execution_end" => {
+            // Issue #700/#701 slice (a), FINDINGS item 62: the `todo` tool's own call-end frame
+            // already carries the FULL, up-to-date `phases` tree (never a delta) -- replacing
+            // `todo_phases` with it here lets the pinned panel update live, mid-turn, rather
+            // than waiting for the next `sync_from_state` (launch, Conversation switch, command
+            // refresh, or settle). A malformed/absent `details.phases` leaves the retained tree
+            // untouched (stale-but-present beats a flicker to empty on a transient shape miss).
+            if frame.get("toolName").and_then(Value::as_str) == Some("todo") {
+                if let Some(phases) = frame
+                    .get("result")
+                    .and_then(|r| r.get("details"))
+                    .and_then(|d| d.get("phases"))
+                    .and_then(parse_todo_phases)
+                {
+                    agent
+                        .with_readout_state(|s| s.todo_phases = Some(phases))
+                        .await;
+                }
+            }
             schedule_readout_update(agent).await;
         }
         _ => {}
@@ -305,7 +323,7 @@ fn empty_readout() -> Value {
         "turnTime": Value::Null,
         "pullRequest": Value::Null,
         "subagentCount": Value::Null,
-        "todoProgress": Value::Null,
+        "todoTree": Value::Null,
         "todoPhases": Value::Null,
         "branch": Value::Null,
     })
@@ -537,18 +555,11 @@ fn build_readout_value(
         None if s.state_synced => Value::String("not-available".to_string()),
         None => Value::Null,
     };
-    let todo_progress = s.todo_phases.as_ref().and_then(|phases| {
-        let total = phases.iter().map(|p| p.tasks.len()).sum::<usize>();
-        if total == 0 {
-            return None;
-        }
-        let done = phases
-            .iter()
-            .flat_map(|p| p.tasks.iter())
-            .filter(|t| t.status == "completed")
-            .count();
-        Some(json!({ "done": done, "total": total }))
-    });
+    // Issue #700/#701 slice (a): the full retained tree (every phase, every task's own
+    // `content`/`status`/`blocker`) -- `todoProgress`'s own done/total counting moved OUT of
+    // Rust entirely (decision record item 4: "the pill, card and panel all take these from the
+    // ONE derive", `todoDerive.ts`, shared with #687/#526, never duplicated here).
+    let todo_tree = build_todo_tree(s.todo_phases.as_ref());
     // Issue #941 "Up next" (`readout_todo.rs`): the agent's own pending Todo phases, shown
     // after a turn's Stages; `null` when there is no todo list, or every phase is finished.
     let todo_phases_up_next = compute_up_next(s.todo_phases.as_ref());
@@ -565,7 +576,7 @@ fn build_readout_value(
         "turnTime": turn_time,
         "pullRequest": pull_request,
         "subagentCount": subagent_count,
-        "todoProgress": todo_progress,
+        "todoTree": todo_tree,
         "todoPhases": todo_phases_up_next,
         "branch": branch,
     })

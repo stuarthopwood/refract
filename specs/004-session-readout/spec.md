@@ -143,6 +143,43 @@ field whose bottom bar shows the mode, model, and agent.
   step, `--text-readout` (`globals.css`, `docs/design/foundations-typography-spacing.md` "Status
   line type"), rather than a bare arbitrary `text-[13px]` value.
 
+### Session 2026-10-19 (todo pin, issues #700/#701)
+
+- Q: Stuart's steer while away ("I can't quite daily drive without seeing the plan and changes
+  that have been made", "easier to have access to all that info in one app"): #700 asks for
+  hover/focus summary cards on the Todo and Agents readouts plus a pin mode the Todo readout
+  toggles; #701 asks for the pinned todo panel itself. How does the readout's click behaviour
+  split, and what ships in this slice? → A: Decided (Skippy, delegated by Stuart 2026-10-19, away
+  mode, `ui-architect-v3` ruling; full record on issue #700's own latest comment). One pill, one
+  click-target: the Todo readout becomes `<button aria-pressed aria-controls=panel>` with a
+  FIXED accessible name, "Pin todo list (Todo d/t)" (unchanged by pin state), toggling a new
+  pinned todo panel above the message box. The pinned look is a pin glyph plus a rendered border,
+  never the hover/open-card background every other interactive readout already uses. Work ships
+  in three slices: **(a)** (this slice) the Rust-retained todo tree (`content`/`status`/
+  `blocker`, wire field `todoTree`), live mid-turn updates from the `todo` tool's own
+  `tool_execution_end`, a shared pure derive (`todoDerive.ts`, ready for #687/#526), the pinned
+  panel itself, and the readout's own pin-toggle click -- no hover/focus card yet. **(b)**
+  (separate story, closes #700) the Todo and Agents hover/focus cards plus the Rust
+  `taskSummary` field. **(c)** (separate story, after #1048, closes #701) the
+  `pinTodoByDefault` Settings, Appearance toggle.
+- Q: What do `done`/`total` count, now that a task can be `blocked` or `abandoned` as well as
+  `pending`/`in_progress`/`completed`? → A: `done` counts `completed` tasks; `total` excludes
+  `abandoned` tasks entirely (neither open nor done); a `blocked` task counts as open (toward
+  `total`, never `done`). One shared pure derive (`readout/todoDerive.ts`) computes this so the
+  readout, the panel, and the future card (slice b) never disagree.
+- Q: Is the live mid-turn todo shape (`tool_execution_end`'s own `result.details.phases` for the
+  `todo` tool) verified on the supported OMP version before the panel relies on it, per the
+  constitution's "Evidence before design"? → A: Yes -- probed live against the real signed-in
+  profile on `omp 18.12.2` (`docs/spike/todo-tree-pin-probe-700.mjs`, FINDINGS item 62, next to
+  `docs/spike/FINDINGS.md`): the shape is `{op, phases: [{name, tasks: [{content, status,
+  blocker?}]}], storage}`, byte-for-byte the same shape `get_state().todoPhases` already reports
+  at settle (extending FINDINGS item 35(d)); `blocker` is present only on a `blocked` task; the
+  five live status literals are `pending`, `in_progress`, `completed`, `blocked`, `abandoned`.
+  Each call-end frame already carries the FULL current tree (not a delta), so the live handler
+  simply replaces its retained tree on every `todo` `tool_execution_end`, with turn settle
+  (`get_state`) staying the authoritative resync, matching every other readout field's own
+  "live updates, settle reconciles" rule (FR-008).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -195,6 +232,14 @@ and that the row updates as the turn progresses.
 11. **Given** the agent keeps a task list for the current work, **When** the developer looks at the
     chip row, **Then** a Todo chip shows how many of its tasks are done out of the total (for
     example "Todo 2/5"); **Given** the agent has no task list, **Then** the chip is not shown.
+12. **Given** the agent keeps a task list, **When** the developer clicks the Todo readout (or
+    activates it with Enter/Space), **Then** a pinned todo panel appears above the message box
+    showing every phase and task with its status and, live, as the agent's own `todo` tool calls
+    change them mid-turn; **When** the developer clicks it again, or the panel's own Unpin
+    button, **Then** the panel disappears and the in-transcript Up next list (spec 001 FR-079)
+    reappears. **Given** the panel is pinned and every task becomes done, **Then** it collapses
+    to "All N done"; **Given** the agent's task list is cleared entirely while pinned, **Then**
+    the panel disappears but stays pinned for the next task list (issue #700/#701).
 
 ---
 
@@ -382,6 +427,14 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   name stating what it opens.
 - Every non-clickable chip is still readable by assistive technology as one phrase (for example
   "Context window 42 percent used").
+- The pinned todo panel is toggled open while the agent's task list is cleared (a new
+  Conversation, or the agent dropping its plan): the panel unmounts (there is nothing to show),
+  but the pin choice itself survives into the next task list the agent starts (issue #700/#701).
+- A task is marked `blocked` mid-turn: the panel's own row for it shows a second "Blocked:
+  <reason>" line in addition to its status icon and word; an `abandoned` task shows a
+  strike-through and is excluded from both `done` and `total` (decision record item 4).
+- The pinned panel is open at a 360px pane width: task text wraps in full rather than clipping,
+  and opening or closing the panel does not shift the transcript's own scroll position.
 
 ## Requirements *(mandatory)*
 
@@ -479,7 +532,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   of the total (for example "Todo 2/5"), MUST be hidden when the agent has no task list, and MUST
   be readable by assistive technology as one phrase (for example "Todo: 2 of 5 tasks done"). It
   replaces the chat's own task-list rows, which are hidden (spec 001 FR-052), so the agent's plan
-  progress stays visible.
+  progress stays visible. (Amended 2026-10-19, issue #700/#701 slice (a): this readout's own
+  click behaviour is superseded by FR-028; its done/total figure is computed by the shared
+  `deriveTodoTotals` (FR-029), never duplicated here.)
 - **FR-022**: The subagent panel's content (stream text, paragraphs, tool call summaries) MUST
   wrap within the panel's own width at every panel width Refract supports, MUST NOT clip text or
   grow the panel wider to fit it, and MUST use the same horizontal padding on the subagent list and
@@ -527,6 +582,35 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   return keyboard focus to whichever control activated it, if that control still exists in the
   document, and MUST fall back to the Subagents chip only when it does not (issue #563; see
   FR-019).
+- **FR-028** (new, 2026-10-19, issue #700/#701 slice (a)): The Todo progress readout MUST be a
+  keyboard-operable toggle control (`aria-pressed`, `aria-controls` naming the pinned panel
+  below) with a FIXED accessible name stating the current figure (for example "Pin todo list
+  (Todo 2/5)") that does not change between pinned and unpinned states. Activating it MUST
+  toggle a per-Session pinned todo panel (FR-029); the pinned state MUST be shown as a pin icon
+  plus a rendered border, never the same hover/open background every other interactive readout
+  uses.
+- **FR-029** (new, 2026-10-19, issue #700/#701 slice (a)): While a Session's todo list is pinned,
+  Refract MUST show a pinned todo panel directly above the message box: a header (the current
+  done/total figure and, when one task is in progress, its text, truncated) with a Collapse
+  control (`aria-expanded`) and an Unpin control, both keyboard-operable with fixed accessible
+  names; and, while not collapsed, the full task tree capped to a scrolling list, grouped by
+  phase (a phase header shown only when the agent reports more than one phase, each naming its
+  own done/total), with a finished phase folded to one line and the phase containing the current
+  task always expanded. Each task MUST show a status icon and, for `in_progress`, `blocked`, and
+  `abandoned`, a visible status word (`pending` and `completed` carry the same word for assistive
+  technology only); a `blocked` task MUST additionally show its own blocker text on a second
+  line; an `abandoned` task MUST show with a strike-through and MUST NOT count toward either
+  `done` or `total` (FR-028's shared derive). The list MUST keep the current `in_progress` task
+  in view when it changes, UNLESS the developer has scrolled the list themselves, in which case
+  it MUST stop auto-following. Task text MUST wrap in full at every panel width Refract supports,
+  down to 360px, with no clipping. The panel MUST disappear entirely once the agent has no task
+  list at all, without clearing the pinned choice itself, and MUST collapse to a plain "All N
+  done" line once every one of its open tasks is complete. Opening or closing the panel MUST NOT
+  change the transcript's own scroll position.
+- **FR-030** (new, 2026-10-19, issue #700/#701 slice (a); amends spec 001 FR-079): While a
+  Session's todo list is pinned (FR-028/FR-029), the in-transcript Up next list (spec 001 FR-079)
+  MUST be hidden for that Session, so the agent's plan is never shown in two places at once;
+  unpinning MUST show it again under FR-079's own existing rule.
 
 ### Key Entities
 
@@ -545,6 +629,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   failed, cancelled, or exited — a process confirmed gone with nothing known about its own work,
   issues #489, #563), its own child agents when the tracker knows the parent (FR-024), and, when
   selected, its stream of output and tool calls.
+- **Pinned todo panel** (new, issue #700/#701 slice (a)): the Session-scoped view of the agent's
+  full todo tree (phase name, each task's content/status/blocker), toggled by the Todo readout
+  (FR-028) and shown directly above the message box while pinned (FR-029); its own collapsed/
+  expanded choice persists per Session separately from the pin itself, and neither is persisted
+  across an app restart (#701 slice (c)'s `pinTodoByDefault` setting, not built here, is the only
+  planned persistence).
 
 ## Success Criteria *(mandatory)*
 
@@ -613,3 +703,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   resolved straight to `exited` with no RPC round trip. The exact scenario Stuart saw when he
   filed #489 (what crashed, Refract or `omp`, and whether a process was left running) is unconfirmed
   and logged as PLAN.md's open question 9, not assumed here.
+- Issue #700's own hover/focus summary cards on the Todo and Agents readouts, and the Rust
+  `taskSummary` field they need, are **deferred to a separate story (slice (b), closes #700)**:
+  FR-028 through FR-030 above build only the pin-toggle click path and the pinned panel. Issue
+  #701's `pinTodoByDefault` Settings, Appearance toggle is likewise **deferred to a separate
+  story (slice (c), after #1048, closes #701)**: until it ships, every Session starts unpinned,
+  with no way to change that default.

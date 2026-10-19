@@ -15,10 +15,11 @@ import {
   GitPullRequestIcon,
   ListTodoIcon,
   Loader2Icon,
+  PinIcon,
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, usePullRequestsStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore, useViewStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,7 @@ import { DiffStatLine } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
 import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
+import { deriveTodoTotals } from './todoDerive'
 
 // Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
 // 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
@@ -246,17 +248,36 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
   )
 }
 
-/** FR-021: "Todo N/M", hidden when the agent has no task list at all. */
+/** FR-021, amended by issue #700/#701 slice (a), decision record item 1: "Todo N/M" is now the
+ * pin-TOGGLE pill -- a native `<button>` (`ReadoutChip`'s own `onActivate` branch), so a click
+ * or keyboard Enter/Space both toggle `useTodoPinStore`'s per-Session `pinned` flag, which
+ * mounts/unmounts `PinnedTodoPanel.tsx` in `ChatPane.tsx`. Hidden when there is no task list at
+ * all (`deriveTodoTotals` returns `null`, the one shared derive also used by the panel). The
+ * accessible name is FIXED regardless of pinned state (decision item 1: "clicking to pin...
+ * keeps focus on the pill" with no name change -- the panel's own header carries the separate
+ * Unpin control, so this pill never needs to say "Unpin"); the pinned LOOK is a pin glyph plus a
+ * rendered border (`aria-pressed:border`), never the hover/open-card background every other
+ * interactive chip already gets from `READOUT_CHIP_INTERACTIVE_ADDITIONS`. */
 export function TodoProgressChip({ sessionId }: { sessionId: string }) {
-  const todoProgress = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoProgress)
-  if (todoProgress === null) return null
+  const todoTree = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoTree)
+  const pinned = useTodoPinStore((s) => s.pinnedBySession[sessionId] ?? false)
+  const togglePinned = useTodoPinStore((s) => s.togglePinned)
+  const totals = deriveTodoTotals(todoTree)
+  if (totals === null) return null
   return (
-    <ReadoutChip icon={ListTodoIcon}>
+    <ReadoutChip
+      icon={pinned ? PinIcon : ListTodoIcon}
+      onActivate={() => togglePinned(sessionId)}
+      accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
+      pressed={pinned}
+      controls={`todo-panel-${sessionId}`}
+      className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
+    >
       {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
           sr-only fix. */}
-      <span className="sr-only">{`Todo: ${todoProgress.done} of ${todoProgress.total} tasks done`}</span>
+      <span className="sr-only">{`Todo: ${totals.done} of ${totals.total} tasks done`}</span>
       <span aria-hidden>
-        Todo {todoProgress.done}/{todoProgress.total}
+        Todo {totals.done}/{totals.total}
       </span>
     </ReadoutChip>
   )
