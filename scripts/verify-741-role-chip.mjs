@@ -3,13 +3,17 @@
 // Session details card provider line). Decided (Stuart, 2026-10-19, `issuecomment-6266024041`).
 //
 // Fake-omp tape (`scripts/fixtures/omp-frames/role-chip-741.jsonl`, same preamble shape
-// `session.jsonl`/`verify-555-user-message-time.mjs` already use): the SAME tape drives every
-// launch below -- what differs per launch is the literal content Node pre-writes into the
-// Session's own Conversation file BEFORE launch (`$conversationFile` sentinel), since #741
-// decision 2/FINDINGS item 51 establishes `currentRole` has no RPC source at all: Rust's own
-// `session::model::read_role_from_session_file` reads that file directly off disk. A role chip
-// (Default, no chip for an unknown role, Fallback) is therefore proven by what this script seeds
-// on disk BEFORE the app ever opens the Session, never by a tape frame.
+// `session.jsonl`/`verify-555-user-message-time.mjs` already use): launches 1, 3 and 4 below are
+// all BRAND-NEW Sessions (`launch.rs`'s `attachAndVerify` skips `switch_session` for those) and
+// share this one tape; launch 2 reopens the EXISTING Session launch 1 created, so it drives a
+// separate companion tape (`role-chip-741-reopen.jsonl`) that scripts the real `switch_session`
+// request a genuine reattach sends first (same split `user-message-time`/`user-message-time-
+// reopen.jsonl` already use for issue #555). What differs per launch is the literal content Node
+// pre-writes into the Session's own Conversation file BEFORE launch (`$conversationFile`
+// sentinel), since #741 decision 2/FINDINGS item 51 establishes `currentRole` has no RPC source
+// at all: Rust's own `session::model::read_role_from_session_file` reads that file directly off
+// disk. A role chip (Default, no chip for an unknown role, Fallback) is therefore proven by what
+// this script seeds on disk BEFORE the app ever opens the Session, never by a tape frame.
 //
 // Four launches, one build:
 //   1. "default" conversation file -> Default chip, 60-char-plus model name truncation, details
@@ -58,6 +62,10 @@ import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-h
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TAPE_NAME = 'role-chip-741';
+// Launch 2 reopens an EXISTING Session (`currentConversation` already set from launch 1), so
+// `launch.rs`'s `attachAndVerify` sends a real `switch_session` request first -- a brand-new
+// Session never does (see `TAPE_NAME`'s own README row). A separate tape scripts that frame.
+const TAPE_NAME_REOPEN = 'role-chip-741-reopen';
 
 // All 5 built-in theme presets (`src/shared/themes.ts`); #741 decision 3 names "every preset
 // where the UI changes" for screenshots.
@@ -123,13 +131,18 @@ async function openScratchSession(cdp, repoDir) {
  * Both render inside the same `aria-disabled` ghost-button family with no other stable marker,
  * so the chip is found structurally: the one button in the bottom row whose own accessible name
  * reads "Role: ..." (the `sr-only` prefix every chip carries). */
-const ROLE_CHIP_FINDER = `Array.from(document.querySelectorAll('button')).find((b) => (b.textContent || '').trim().startsWith('Role:') === false && b.querySelector('span.sr-only') && b.querySelector('span.sr-only').textContent === 'Role: ')`;
+const ROLE_CHIP_FINDER = `Array.from(document.querySelectorAll('button')).find((b) => { const sr = b.querySelector('span.sr-only'); return !!sr && sr.textContent === 'Role: '; })`;
+
+// `.textContent` on the chip button also picks up the `sr-only` "Role: " prefix span's own text
+// (CSS visibility never removes a node from the DOM text walk) -- strip it via a clone so every
+// comparison below checks the VISIBLE label only ("Default", "Custom", "Fallback"), never
+// "Role: Default". Reused by both `readRoleChip` and the inline `waitFor` predicates below.
+const ROLE_CHIP_LABEL_EXPR = `(() => { const b = (${ROLE_CHIP_FINDER}); if (!b) return null; const clone = b.cloneNode(true); clone.querySelectorAll('.sr-only').forEach((el) => el.remove()); return clone.textContent.trim(); })()`;
 
 async function readRoleChip(cdp) {
   const exists = await cdp.evaluate(`!!(${ROLE_CHIP_FINDER})`);
   if (!exists) return null;
-  const text = await cdp.evaluate(`(${ROLE_CHIP_FINDER}).textContent.trim()`);
-  return text;
+  return cdp.evaluate(ROLE_CHIP_LABEL_EXPR);
 }
 
 async function main() {
@@ -290,7 +303,7 @@ async function main() {
     // exercises any more directly than this call does.
     const setModelRes = await cdp1.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId1)}, 'github-copilot', 'claude-haiku-5.5')`);
     if (!setModelRes.ok) failures.push(`model.setModel failed: ${JSON.stringify(setModelRes)}`);
-    await cdp1.waitFor(`(${ROLE_CHIP_FINDER})?.textContent.trim() === 'Custom'`, { timeoutMs: 15_000, label: 'Role chip reads Custom after a hand-picked model' }).catch((err) => {
+    await cdp1.waitFor(`${ROLE_CHIP_LABEL_EXPR} === 'Custom'`, { timeoutMs: 15_000, label: 'Role chip reads Custom after a hand-picked model' }).catch((err) => {
       failures.push(`Role chip never flipped to Custom after model.setModel: ${err.message}`);
     });
     const afterPinList = await cdp1.evaluate(`window.refract.sessions.list()`);
@@ -322,7 +335,7 @@ async function main() {
       extraEnv: {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
-        REFRACT_FAKE_OMP_SCENARIO: TAPE_NAME,
+        REFRACT_FAKE_OMP_SCENARIO: TAPE_NAME_REOPEN,
         REFRACT_FAKE_OMP_CONVERSATION_FILE: conversationFile1,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-2.log')
       }
@@ -338,7 +351,7 @@ async function main() {
       timeoutMs: 60_000,
       label: 'Relaunch: Session reattached, composer enabled'
     });
-    await cdp2.waitFor(`(${ROLE_CHIP_FINDER})?.textContent.trim() === 'Custom'`, { timeoutMs: 15_000, label: 'Role chip reads Custom after a restart with the same REFRACT_DATA_DIR, no hand-pick repeated' }).catch((err) => {
+    await cdp2.waitFor(`${ROLE_CHIP_LABEL_EXPR} === 'Custom'`, { timeoutMs: 15_000, label: 'Role chip reads Custom after a restart with the same REFRACT_DATA_DIR, no hand-pick repeated' }).catch((err) => {
       failures.push(`Role chip did not read Custom after restart: ${err.message}`);
     });
     const restartList = await cdp2.evaluate(`window.refract.sessions.list()`);
