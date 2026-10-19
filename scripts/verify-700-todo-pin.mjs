@@ -255,7 +255,7 @@ async function main() {
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
     assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)) === false, 'Session B starts unpinned, a genuinely different pane (independent of Session A which is still pinned)');
 
-    const NOT_CURRENT_SESSION_ROW = `Array.from(document.querySelectorAll('nav[aria-label="Sessions"] [aria-current]')).find((el) => el.getAttribute('aria-current') !== 'true')`;
+    const NOT_CURRENT_SESSION_ROW = `Array.from(document.querySelectorAll('nav[aria-label="Sessions"] button[aria-label]')).find((el) => el.getAttribute('aria-current') !== 'true' && !el.getAttribute('aria-label').startsWith('Resume ') && !el.getAttribute('aria-label').endsWith(' actions'))`;
     await cdp.click(NOT_CURRENT_SESSION_ROW);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 10_000, label: 'Switching back to Session A remounts its own pinned panel' });
     assertEqual((await readPanel(cdp)).collapsed, true, 'Session A\'s panel is STILL collapsed after switching away and back (per-Session, not reset)');
