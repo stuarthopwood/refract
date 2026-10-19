@@ -16,10 +16,23 @@
 //   - "long": a deliberately very long title (the one the issue's own design notes call out as
 //     having "to cope with a long title and the Current badge beside it" -- this file is the
 //     SESSION's own current Conversation, via the `user-message-time.jsonl` scenario's
-//     `$conversationFile` sentinel, so its row renders the Current badge next to the truncating
-//     title) and a preview padded to EXACTLY 120 characters, `conversations.rs`'s own
-//     `PREVIEW_MAX_LENGTH` cap -- wider than the `sm:max-w-md` dialog at `text-xs`, so it must
-//     clip too.
+//     `$conversationFile` sentinel) and a preview padded to EXACTLY 120 characters,
+//     `conversations.rs`'s own `PREVIEW_MAX_LENGTH` cap -- wider than the `sm:max-w-md` dialog at
+//     `text-xs`, so it must clip too.
+//
+// Issue #1012 item 5 fixes (follow-ups from this #439 gate, PR #1011):
+//   - The Current badge beside the long row is now actually exercised: this script sends one
+//     real prompt through the composer and approves `user-message-time.jsonl`'s own scripted
+//     tool call, settling the turn so `sync_from_state.rs`'s `if message_count > 0` guard marks
+//     the long Conversation current BEFORE the history dialog is ever opened, rather than only
+//     recording the gap as `notExercised` with an overstated "not a product bug" claim.
+//   - Every dialog-presence/content read is now scoped to the KNOWN Conversation history dialog
+//     (its own `DialogTitle` text, "Conversation history"), never any element that merely has
+//     `role="dialog"`.
+//   - Row-level truncation (title/preview `scrollWidth`/`clientWidth` overflow) is re-measured in
+//     every theme in the themed-screenshot loop, not only once on the initial theme.
+//   - A new check confirms the full-title/preview Tooltip (issue #1012 item 1) actually opens
+//     when the long row receives keyboard focus.
 //
 // Decided (Skippy, delegated by Stuart 2026-10-18, issue #439, docs/PLAN.md): ellipsis only, no
 // fade -- this script asserts the `truncate` utility's three CSS properties
@@ -32,9 +45,11 @@
 //     (`verify-tauri-567.mjs`'s own header comment records the same CDP limitation) -- the
 //     "Dark (high contrast)" theme screenshot below is Refract's own in-app preset, not the OS
 //     forced-colors media feature.
-//   - A native browser tooltip actually painting on mouse hover: only the `title` attribute's
-//     presence and exact value are asserted (structural proof), not a rendered tooltip bitmap --
-//     CDP has no mouse-hover-dwell-timer-triggered native tooltip capture API.
+//   - A native browser tooltip actually painting on mouse hover over the native `title`
+//     attribute: only its presence and exact value are asserted (structural proof), not a
+//     rendered tooltip bitmap -- CDP has no mouse-hover-dwell-timer-triggered native tooltip
+//     capture API. (Separately, the in-app Radix Tooltip added for issue #1012 item 1 IS proven
+//     live below: it renders a real `[role="tooltip"]` node this script reads structurally.)
 //   - Opening an earlier Conversation from this dialog (`handleOpenConversation`): out of this
 //     issue's scope, matching `verify-862-conversation-history.mjs`'s own stated scope (it also
 //     only opens the dialog and reads the rows, never switches).
@@ -86,6 +101,23 @@ const LONG_PREVIEW_PREFIX =
   'ISSUE439-LONG-PREVIEW-CHECK: first user message, deliberately sized to the full PREVIEW_MAX_LENGTH cap for the history-dialog truncation check ';
 const LONG_PREVIEW = (LONG_PREVIEW_PREFIX + '#'.repeat(120)).slice(0, 120);
 const PREVIEW_MAX_LENGTH = 120; // conversations.rs
+// Issue #1012 item 5: one real prompt sent through the composer to settle a turn (reusing
+// `user-message-time.jsonl`'s own already-scripted tool call -- AGENTS.md: no new fixtures), so
+// `sync_from_state.rs`'s `if message_count > 0` guard marks the long Conversation current.
+const PROMPT_TEXT = 'Issue #1012 check: exercise the Current badge next to a long truncating title.';
+
+// Issue #1012 item 5: scopes every dialog-presence/content read to the KNOWN Conversation
+// history dialog specifically (its own `DialogTitle` text), never any element that merely has
+// `role="dialog"` -- the post-theme-switch reopen wait used to accept any such element.
+const HISTORY_DIALOG_FINDER =
+  `Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => d.querySelector('[data-slot="dialog-title"]')?.textContent.trim() === 'Conversation history')`;
+
+/** Finder expression for one history row's own button by its exact title-span text, scoped to
+ * the known history dialog (never any `[role="dialog"]`). Evaluates to `null` when the dialog
+ * or the row is not present. */
+function rowButtonFinder(titleText) {
+  return `(() => { const dialog = ${HISTORY_DIALOG_FINDER}; if (!dialog) return null; return Array.from(dialog.querySelectorAll('ul li button[data-choice-item]')).find((b) => (b.children[0]?.querySelector('span')?.textContent ?? '') === ${JSON.stringify(titleText)}) ?? null; })()`;
+}
 
 /** `conversations.rs`'s own `parse_file_name` doc comment: a file is named
  * `<timestamp with ':'/'.' replaced by '-'>_<id>.jsonl`, the timestamp prefix always exactly 25
@@ -108,9 +140,7 @@ function writeConversationFile(dir, isoTimestamp, id, lines) {
  * either span if the row does not have it (e.g. no preview). */
 async function readRowTruncationEvidence(cdp, titleText) {
   return cdp.evaluate(`(() => {
-    const btn = Array.from(document.querySelectorAll('[role="dialog"] ul li button[data-choice-item]')).find(
-      (b) => (b.children[0]?.querySelector('span')?.textContent ?? '') === ${JSON.stringify(titleText)}
-    );
+    const btn = ${rowButtonFinder(titleText)};
     if (!btn) return null;
     const describe = (el) => {
       if (!el) return null;
@@ -145,7 +175,7 @@ async function main() {
   const failures = [];
   const notExercised = [
     'Windows forced-colors/high-contrast MEDIA rendering of the ellipsis: WebView2\'s own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs already records); the "Dark (high contrast)" screenshot below is Refract\'s own in-app preset, not the OS forced-colors feature.',
-    'A native browser tooltip actually painting on mouse hover: only the title attribute\'s presence and exact value are asserted (structural proof), not a rendered tooltip bitmap -- CDP has no hover-dwell-timer tooltip capture API.',
+    'A native browser tooltip (the title/preview spans\' own `title` attribute) actually painting on mouse hover: only its presence and exact value are asserted (structural proof), not a rendered tooltip bitmap -- CDP has no hover-dwell-timer tooltip capture API. The separate in-app Radix Tooltip (issue #1012 item 1) IS proven live below via a real [role="tooltip"] node.',
     'Opening an earlier Conversation from this dialog (handleOpenConversation): out of this issue\'s scope, matching verify-862-conversation-history.mjs\'s own stated scope (it also only opens the dialog and reads the rows, never switches).',
     'Behaviour at 200%+ zoom or an extremely narrow window: the dialog is fixed-positioned and unconstrained by the app window\'s own width, so this was not re-run at another viewport size.'
   ];
@@ -273,26 +303,68 @@ async function main() {
 
     await addRepository(cdp, repoDir);
     await createSessionViaQuickCreate(cdp, repoName);
-    findings.push('Session created in the scratch repo, agent attached (fake omp, user-message-time.jsonl scenario, no prompt sent).');
+    findings.push('Session created in the scratch repo, agent attached (fake omp, user-message-time.jsonl scenario).');
+
+    // ---- Issue #1012 item 5: exercise the Current badge beside the long truncating title.
+    // Sends one real prompt through the composer (the SAME user-message-time.jsonl tape already
+    // in use -- AGENTS.md: no new fixtures) and approves its one scripted tool call, so the turn
+    // settles, get_state reports messageCount: 2, and sync_from_state.rs's own
+    // `if message_count > 0` guard marks the long Conversation (this Session's sessionFile, via
+    // REFRACT_FAKE_OMP_CONVERSATION_FILE above) current BEFORE the history dialog is ever opened
+    // below -- replacing the previous notExercised gap with a real assertion. ----
+    await cdp.typeIntoByLabel('Message', PROMPT_TEXT);
+    await cdp.clickByLabel('Send message');
+    await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, {
+      timeoutMs: 30_000,
+      label: 'Tool-call approval card rendered'
+    });
+    await cdp.clickByText('Approve');
+    await cdp.waitFor(
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.includes('xyzzy9'); })()`,
+      { timeoutMs: 60_000, label: "Turn settled (user-message-time.jsonl's own reply token present)" }
+    );
+    await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentConversation != null)`, {
+      timeoutMs: 15_000,
+      label: 'Session.current_conversation set after the turn settles'
+    });
+    findings.push("Prompt sent and the turn settled (fake omp, user-message-time.jsonl's own scripted tool call approved); Session.current_conversation is confirmed set before the history dialog opens.");
 
     await cdp.clickByLabel('Conversation history');
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Conversation history dialog open' });
+    await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog open' });
     await cdp.waitFor(
-      `!((document.querySelector('[role="dialog"]')?.textContent || '').includes('Loading'))`,
+      `!(((${HISTORY_DIALOG_FINDER})?.textContent || '').includes('Loading'))`,
       { timeoutMs: 15_000, label: 'Conversation history list finished loading' }
     );
 
-    const rowCount = await cdp.evaluate(`document.querySelectorAll('[role="dialog"] ul li button[data-choice-item]').length`);
+    const rowCount = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.querySelectorAll('ul li button[data-choice-item]').length ?? 0`);
     if (rowCount !== 2) {
       failures.push(`Conversation history dialog shows ${rowCount} row(s), expected 2 (the normal and long seeded Conversations).`);
     } else {
       findings.push('Conversation history dialog shows exactly 2 rows: the normal and the long Conversation.');
     }
 
-    // ---- Dialog-level: no horizontal overflow, measured once per theme below ----
+    // ---- Issue #1012 item 1: the full-title/preview Tooltip opens on keyboard focus ----
+    await cdp.evaluate(`(${rowButtonFinder(LONG_TITLE)})?.focus()`);
+    await cdp.waitFor(`document.activeElement === (${rowButtonFinder(LONG_TITLE)})`, {
+      timeoutMs: 5_000,
+      label: 'Long row button received keyboard focus'
+    });
+    await cdp.waitFor(`!!document.querySelector('[role="tooltip"]')`, {
+      timeoutMs: 5_000,
+      label: 'Full-title Tooltip opened on keyboard focus of the long row'
+    });
+    const focusTooltipText = await cdp.evaluate(`document.querySelector('[role="tooltip"]')?.textContent ?? null`);
+    if (!focusTooltipText || !focusTooltipText.includes(LONG_TITLE) || !focusTooltipText.includes(LONG_PREVIEW)) {
+      failures.push(`Full-title Tooltip on keyboard focus: expected content to include the full long title and preview, got ${JSON.stringify(focusTooltipText)}.`);
+    } else {
+      findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
+    }
+    await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+
+    // ---- Dialog-level: no horizontal overflow, re-measured in every theme below ----
     async function assertDialogNeverScrollsHorizontally(themeName) {
       const dialogGeometry = await cdp.evaluate(`(() => {
-        const dialog = document.querySelector('[role="dialog"]');
+        const dialog = ${HISTORY_DIALOG_FINDER};
         return dialog ? { scrollWidth: dialog.scrollWidth, clientWidth: dialog.clientWidth } : null;
       })()`);
       if (!dialogGeometry) {
@@ -308,12 +380,6 @@ async function main() {
       }
     }
 
-    // ---- Row-level: ellipsis CSS in effect, long row genuinely clips, title attribute carries
-    // the full text, normal row does NOT need to clip (control case). Run once, on the initial
-    // (Dark) theme -- geometry is not expected to change across themes, only colour. ----
-    const normalEvidence = await readRowTruncationEvidence(cdp, NORMAL_TITLE);
-    const longEvidence = await readRowTruncationEvidence(cdp, LONG_TITLE);
-
     function assertTruncateCss(label, span) {
       if (!span) {
         failures.push(`${label}: span not found.`);
@@ -326,84 +392,93 @@ async function main() {
       }
     }
 
-    if (!normalEvidence) {
-      failures.push('Normal Conversation row not found.');
-    } else {
-      assertTruncateCss('Normal row title', normalEvidence.title);
-      if (normalEvidence.title && normalEvidence.title.overflowsVisually) {
-        failures.push(`Normal row title unexpectedly overflows visually (scrollWidth ${normalEvidence.title.scrollWidth} > clientWidth ${normalEvidence.title.clientWidth}) -- the control case should fit without clipping.`);
-      }
-      if (normalEvidence.title && normalEvidence.title.textContent !== NORMAL_TITLE) {
-        failures.push(`Normal row title text content is "${normalEvidence.title.textContent}", expected "${NORMAL_TITLE}".`);
-      }
-      assertTruncateCss('Normal row preview', normalEvidence.preview);
-      if (normalEvidence.preview && normalEvidence.preview.overflowsVisually) {
-        failures.push(`Normal row preview unexpectedly overflows visually (scrollWidth ${normalEvidence.preview.scrollWidth} > clientWidth ${normalEvidence.preview.clientWidth}) -- the control case should fit without clipping.`);
-      }
-      if (normalEvidence.hasCurrentBadge) {
-        failures.push('Normal row unexpectedly shows the Current badge (expected only the long row to be current).');
-      }
-      if (!failures.length) findings.push('Normal (short) row: both title and preview fit without visual overflow (control case).');
-    }
+    // ---- Row-level: ellipsis CSS in effect, long row genuinely clips, title attribute carries
+    // the full text, normal row does NOT need to clip (control case), Current badge beside the
+    // long row -- re-run in every theme (issue #1012 item 5: geometry is no longer assumed
+    // constant across themes). ----
+    async function assertRowTruncation(themeName) {
+      const normalEvidence = await readRowTruncationEvidence(cdp, NORMAL_TITLE);
+      const longEvidence = await readRowTruncationEvidence(cdp, LONG_TITLE);
 
-    if (!longEvidence) {
-      failures.push('Long Conversation row not found.');
-    } else {
-      assertTruncateCss('Long row title', longEvidence.title);
-      if (longEvidence.title && !longEvidence.title.overflowsVisually) {
-        failures.push(`Long row title does not overflow visually (scrollWidth ${longEvidence.title.scrollWidth} <= clientWidth ${longEvidence.title.clientWidth}) -- the long title fixture did not actually need to clip.`);
-      } else if (longEvidence.title) {
-        findings.push(`Long row title genuinely clips visually (scrollWidth ${longEvidence.title.scrollWidth} > clientWidth ${longEvidence.title.clientWidth}), proving the ellipsis is actually doing work, not just styled.`);
-      }
-      if (longEvidence.title && longEvidence.title.title !== LONG_TITLE) {
-        failures.push(`Long row title's own title attribute is ${JSON.stringify(longEvidence.title.title)}, expected the full title ${JSON.stringify(LONG_TITLE)} -- the full text must stay available even when visually clipped.`);
-      } else if (longEvidence.title) {
-        findings.push("Long row title's own title attribute carries the full, un-truncated title text.");
-      }
-      if (longEvidence.hasCurrentBadge) {
-        findings.push('Long row also shows the Current badge beside the truncating long title, the exact combination the issue\'s design notes call out.');
+      if (!normalEvidence) {
+        failures.push(`[${themeName}] Normal Conversation row not found.`);
       } else {
-        notExercised.push(
-          'The Current badge beside a long truncating title (issue design notes): not exercised this run -- `user-message-time.jsonl`\'s own scripted first `get_state` reports `messageCount: 0` (a genuinely fresh attach, no prompt sent), and `sync_from_state.rs`\'s own `if message_count > 0` guard (sets `Session.current_conversation` only once a turn has completed) never fires without sending a prompt through the scripted tape. Not a product bug -- this is the same guard that correctly keeps `current_conversation` unset until OMP reports real message activity; the title/preview truncation and overflow checks below do not depend on it.'
-        );
+        assertTruncateCss(`[${themeName}] Normal row title`, normalEvidence.title);
+        if (normalEvidence.title && normalEvidence.title.overflowsVisually) {
+          failures.push(`[${themeName}] Normal row title unexpectedly overflows visually (scrollWidth ${normalEvidence.title.scrollWidth} > clientWidth ${normalEvidence.title.clientWidth}) -- the control case should fit without clipping.`);
+        }
+        if (normalEvidence.title && normalEvidence.title.textContent !== NORMAL_TITLE) {
+          failures.push(`[${themeName}] Normal row title text content is "${normalEvidence.title.textContent}", expected "${NORMAL_TITLE}".`);
+        }
+        assertTruncateCss(`[${themeName}] Normal row preview`, normalEvidence.preview);
+        if (normalEvidence.preview && normalEvidence.preview.overflowsVisually) {
+          failures.push(`[${themeName}] Normal row preview unexpectedly overflows visually (scrollWidth ${normalEvidence.preview.scrollWidth} > clientWidth ${normalEvidence.preview.clientWidth}) -- the control case should fit without clipping.`);
+        }
+        if (normalEvidence.hasCurrentBadge) {
+          failures.push(`[${themeName}] Normal row unexpectedly shows the Current badge (expected only the long row to be current).`);
+        }
+        findings.push(`[${themeName}] Normal (short) row: both title and preview fit without visual overflow (control case).`);
       }
 
-      assertTruncateCss('Long row preview', longEvidence.preview);
-      if (longEvidence.preview && !longEvidence.preview.overflowsVisually) {
-        failures.push(`Long row preview does not overflow visually (scrollWidth ${longEvidence.preview.scrollWidth} <= clientWidth ${longEvidence.preview.clientWidth}) -- the 120-char preview fixture did not actually need to clip.`);
-      } else if (longEvidence.preview) {
-        findings.push(`Long row preview (exactly ${PREVIEW_MAX_LENGTH} characters, PREVIEW_MAX_LENGTH) genuinely clips visually (scrollWidth ${longEvidence.preview.scrollWidth} > clientWidth ${longEvidence.preview.clientWidth}).`);
-      }
-      if (longEvidence.preview && longEvidence.preview.title !== LONG_PREVIEW) {
-        failures.push(`Long row preview's own title attribute is ${JSON.stringify(longEvidence.preview.title)}, expected the full preview ${JSON.stringify(LONG_PREVIEW)}.`);
-      } else if (longEvidence.preview) {
-        findings.push("Long row preview's own title attribute carries the full, un-truncated 120-character preview text.");
+      if (!longEvidence) {
+        failures.push(`[${themeName}] Long Conversation row not found.`);
+      } else {
+        assertTruncateCss(`[${themeName}] Long row title`, longEvidence.title);
+        if (longEvidence.title && !longEvidence.title.overflowsVisually) {
+          failures.push(`[${themeName}] Long row title does not overflow visually (scrollWidth ${longEvidence.title.scrollWidth} <= clientWidth ${longEvidence.title.clientWidth}) -- the long title fixture did not actually need to clip.`);
+        } else if (longEvidence.title) {
+          findings.push(`[${themeName}] Long row title genuinely clips visually (scrollWidth ${longEvidence.title.scrollWidth} > clientWidth ${longEvidence.title.clientWidth}), proving the ellipsis is actually doing work, not just styled.`);
+        }
+        if (longEvidence.title && longEvidence.title.title !== LONG_TITLE) {
+          failures.push(`[${themeName}] Long row title's own title attribute is ${JSON.stringify(longEvidence.title.title)}, expected the full title ${JSON.stringify(LONG_TITLE)} -- the full text must stay available even when visually clipped.`);
+        } else if (longEvidence.title) {
+          findings.push(`[${themeName}] Long row title's own title attribute carries the full, un-truncated title text.`);
+        }
+        if (!longEvidence.hasCurrentBadge) {
+          failures.push(`[${themeName}] Long row does not show the Current badge beside the truncating long title -- expected once Session.current_conversation is set.`);
+        } else {
+          findings.push(`[${themeName}] Long row shows the Current badge beside the truncating long title, the exact combination the issue's design notes call out.`);
+        }
+
+        assertTruncateCss(`[${themeName}] Long row preview`, longEvidence.preview);
+        if (longEvidence.preview && !longEvidence.preview.overflowsVisually) {
+          failures.push(`[${themeName}] Long row preview does not overflow visually (scrollWidth ${longEvidence.preview.scrollWidth} <= clientWidth ${longEvidence.preview.clientWidth}) -- the 120-char preview fixture did not actually need to clip.`);
+        } else if (longEvidence.preview) {
+          findings.push(`[${themeName}] Long row preview (exactly ${PREVIEW_MAX_LENGTH} characters, PREVIEW_MAX_LENGTH) genuinely clips visually (scrollWidth ${longEvidence.preview.scrollWidth} > clientWidth ${longEvidence.preview.clientWidth}).`);
+        }
+        if (longEvidence.preview && longEvidence.preview.title !== LONG_PREVIEW) {
+          failures.push(`[${themeName}] Long row preview's own title attribute is ${JSON.stringify(longEvidence.preview.title)}, expected the full preview ${JSON.stringify(LONG_PREVIEW)}.`);
+        } else if (longEvidence.preview) {
+          findings.push(`[${themeName}] Long row preview's own title attribute carries the full, un-truncated 120-character preview text.`);
+        }
       }
     }
 
     // ---- Themed screenshots (Dark, Obsidian, Dark high contrast), re-confirming the dialog's
-    // own no-horizontal-overflow guarantee holds under every theme, not just the default one ----
+    // own no-horizontal-overflow guarantee AND row-level truncation hold under every theme, not
+    // just the one open above (issue #1012 item 5) ----
     for (const theme of THEMES) {
       // The dialog is a modal (Radix `Dialog`, `dialog.tsx`): its overlay blocks pointer events
       // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
       // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
-      // per-theme overflow check and screenshot.
+      // per-theme overflow/truncation checks and screenshot.
       await pressEscape(cdp);
-      await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, {
+      await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 10_000,
         label: `Conversation history dialog closed before switching to ${theme.name}`
       });
       await switchTheme(cdp, theme.id, theme.name);
       await cdp.clickByLabel('Conversation history');
-      await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, {
+      await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 15_000,
         label: `Conversation history dialog reopened under ${theme.name}`
       });
-      await cdp.waitFor(`!((document.querySelector('[role="dialog"]')?.textContent || '').includes('Loading'))`, {
+      await cdp.waitFor(`!(((${HISTORY_DIALOG_FINDER})?.textContent || '').includes('Loading'))`, {
         timeoutMs: 15_000,
         label: `Conversation history list finished loading under ${theme.name}`
       });
       await assertDialogNeverScrollsHorizontally(theme.name);
+      await assertRowTruncation(theme.name);
       await cdp.screenshot(path.join(SHOTS_DIR, theme.shot));
       findings.push(`Screenshot captured: Conversation history dialog (both rows, long row's truncating title/preview) under the ${theme.name} theme (${theme.shot}).`);
     }
