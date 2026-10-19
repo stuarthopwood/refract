@@ -192,7 +192,7 @@ async function main() {
     assertTrue(!!blockedRow, 'A row with a "Blocked:" line exists', blockedRead.rows);
     assertTrue(blockedRow.text.includes('waiting on API docs'), 'Blocked row names the real blocker text', blockedRow);
 
-    await cdp.waitFor(`(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 10_000, label: 'Abandoned task strike-through appears live, mid-turn' });
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 10_000, label: 'Abandoned task strike-through appears live, mid-turn' });
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
     // Setup (2/2, both completed) folds to one line once Work's own progression has moved past
