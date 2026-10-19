@@ -276,3 +276,99 @@ pub(super) fn resolve_role_selector<'a>(
     direct_selector_with_fallback(model_roles, target)
         .filter(|hop| !hop.starts_with('@') && *hop != "*")
 }
+
+/// #741 decision 1: the FIRST time this Session's pin state is read this run (lazily, from
+/// `current_selection` -- never eagerly at `SessionAgent::new`, which has no `await` and no
+/// registry access of its own), folds the registry's own persisted `pinned_model` field into
+/// in-memory `State.pinned` so a hand-picked model (`set_model`/`cycle_model`/a direct `/switch
+/// <model>` token, all pinned BEFORE this app restart) still reads as pinned afterwards, instead
+/// of resetting to `false` (and so to the `default` role) the moment the process relaunched. An
+/// old `registry.json` with no `pinned_model` field at all deserialises it `false`
+/// (`registry.rs`'s own `#[serde(default)]`), correctly folding in as "not pinned". Guarded by
+/// `pinned_seeded` so the registry lock is only ever taken once per Session per run; a later
+/// in-run pin/un-pin can never be clobbered by a stale re-seed (it persists its own value the
+/// moment it happens, via `persist_pinned` below).
+pub(super) async fn ensure_pin_seeded(agent: &SessionAgent) {
+    let already_seeded = agent.with_model_state(|s| s.pinned_seeded).await;
+    if already_seeded {
+        return;
+    }
+    let persisted_pinned = agent
+        .registry()
+        .lock()
+        .await
+        .get_session(agent.session_id())
+        .is_some_and(|session| session.pinned_model);
+    agent
+        .with_model_state(|s| {
+            s.pinned_seeded = true;
+            if persisted_pinned {
+                s.pinned = true;
+            }
+        })
+        .await;
+}
+
+/// #741 decision 1: persists `pinned` to the registry's own `pinnedModel` field -- best-effort,
+/// matching `thinking_level.rs`'s own `update_session` discipline (a failed write only means a
+/// SUBSEQUENT restart replays the stale value once more; nothing else this run depends on the
+/// write having landed, so it is never surfaced as an error to the caller of
+/// `set_model`/`cycle_model`/`apply_role_now`/`handle_switch_text`). Emits `session_list_changed`
+/// on success so an already-open Sessions list (and this Session's own composer chip, once #766
+/// lands) refreshes without waiting for the next poll.
+pub(super) async fn persist_pinned(agent: &SessionAgent, pinned: bool) {
+    let patched = agent
+        .registry()
+        .lock()
+        .await
+        .update_session(
+            agent.session_id(),
+            crate::store::registry::SessionPatch {
+                pinned_model: Some(pinned),
+                ..Default::default()
+            },
+        )
+        .await;
+    if patched.is_ok() {
+        agent.events().emit_session_list_changed();
+    }
+}
+
+/// #741 decision 2: the effective role for one `model_change` entry's own JSON value.
+/// `resolvedModelIsFallback` (`omp://session.md`: "marks a retry-fallback transition") overrides
+/// whatever `role` this SAME entry also carries -- OMP's own automatic recovery after repeated
+/// failures is not the user's saved choice, so the chip reads Fallback even if `role` still says
+/// e.g. `"default"`. The reserved role name `"fallback"` (`omp://session.md`: "ephemeral")
+/// doubles as the renderer's own sentinel for this (`modelRoles.ts`'s `FALLBACK_ROLE`). FINDINGS
+/// item 61: never observed `true` live (a 90s probe against a connection-refused failure never
+/// triggered it) -- shipped code-verified against the documented field, not a live-forced
+/// observation; forcing the transition live is #650.
+pub(super) fn model_change_role(value: &Value) -> String {
+    if value.get("resolvedModelIsFallback").and_then(Value::as_bool) == Some(true) {
+        return "fallback".to_string();
+    }
+    value
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or("default")
+        .to_string()
+}
+
+/// #741 decision 2 (issue text "Refresh the role... after any model change, and after a
+/// fallback"): `model_changed`/`retry_fallback_succeeded` (`omp://rpc.md`'s event list) are
+/// autonomous OMP events, landing OUTSIDE this lane's own set_model/apply_role_now/
+/// handle_switch_text paths -- clearing the role cache here is the only way `model.rs`'s own
+/// `current_selection` re-reads the Session file fresh on its next call, picking up the new
+/// entry (and `resolvedModelIsFallback`, `model_change_role` above) instead of returning a stale
+/// cached role forever. Called from `model.rs`'s own `on_frame` for every frame.
+pub(super) async fn maybe_invalidate_role_cache(agent: &SessionAgent, frame_type: &str) {
+    if frame_type != "model_changed" && frame_type != "retry_fallback_succeeded" {
+        return;
+    }
+    agent
+        .with_model_state(|s| {
+            s.current_role = None;
+            s.role_probed_path = None;
+        })
+        .await;
+}

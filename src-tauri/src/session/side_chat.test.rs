@@ -339,6 +339,7 @@ async fn make_test_agent(
         current_turn_subagents: None,
         stopped_on_request_conversation: None,
         stopped_on_request_at_size: None,
+        pinned_model: false,
     };
     let mut registry_store = crate::store::registry::RegistryStore::open(&dir)
         .await

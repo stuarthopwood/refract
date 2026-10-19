@@ -52,15 +52,17 @@ import { CHAT_MODEL_ROLES, MODEL_KIND_ROLES, ROLE_CATALOG_KIND } from '../../../
 import type { CatalogKind, ModelRoleId } from '../../../shared/model'
 import { applyThinkingSuffixCarryOver } from './modelRoleSuffix'
 
-interface RoleDescriptor {
+export interface RoleDescriptor {
   role: ModelRoleId
   label: string
   description: string
 }
 
 // Labels/descriptions from `omp://models.md` ("Role aliases and settings"), sentence case per the
-// design rules.
-const CHAT_ROLE_DESCRIPTORS: RoleDescriptor[] = [
+// design rules. Exported (#741): the composer's role chip (`lib/modelRoles.ts`) reuses these
+// SAME labels/descriptions for its own text and tooltip, so Settings and the chip can never
+// drift onto two different names for the same role.
+export const CHAT_ROLE_DESCRIPTORS: RoleDescriptor[] = [
   { role: 'default', label: 'Default', description: 'The active chat model, used when nothing else overrides it.' },
   { role: 'smol', label: 'Smol', description: 'A lightweight model for cheap, fast background work.' },
   { role: 'slow', label: 'Slow', description: 'A stronger model for work worth the extra time.' },

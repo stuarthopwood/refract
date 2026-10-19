@@ -106,7 +106,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatModelLabel } from '@/lib/modelDisplay'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
@@ -133,7 +132,8 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   // Gate round 1 fix (MEDIUM): a friendly display name (`entry.name ?? session.lastModel.name`)
   // is not code-shaped data -- monospace is reserved for a raw `provider/id` fallback, which is
   // the only case this trigger label actually needs it (no catalog `name` was ever reported).
-  const modelFullLabel = formatModelLabel(session ?? {})
+  // #741 Part 1: `formatModelLabel` is now name-only; this unchanged Tooltip's full form is built locally.
+  const modelFullLabel = session?.lastModel ? `${session.lastModel.provider}/${session.lastModel.name?.trim() || session.lastModel.id}` : null
   const modelLabelIsRaw = Boolean(session?.lastModel && !session.lastModel.name)
   // Gate round 5 fix (Layout/Flow/Visual Medium #3): the VISIBLE trigger text is the bare model
   // name (or raw id, the same `modelLabelIsRaw` case), never `provider/name` -- the full form

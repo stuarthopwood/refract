@@ -93,6 +93,7 @@ pub(super) struct State {
     /// `current_role` (which caches a FOUND role) -- this caches the negative result, keyed by
     /// path so a later Conversation (a genuinely new file) is still probed fresh.
     pub(super) role_probed_path: Option<String>,
+    pub(super) pinned_seeded: bool, // #741 decision 1: guards `model_support::ensure_pin_seeded`
     /// Monotonic id source for this lane's own transcript notices (`upsert_transcript_item`
     /// needs a stable, unique id per row; this lane posts no OMP frame of its own to derive one
     /// from the way `apply_frame`'s internal counter does for a `notice` frame).
@@ -126,6 +127,7 @@ pub struct RoleChangeSummary {
 }
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+    model_support::maybe_invalidate_role_cache(agent, frame_type).await; // #741 decision 2
     // Matches `agent::frame`'s own settle detection exactly (`"session_settled"`, or a
     // `prompt_result` whose own `sessionSettled` flag is set) -- by the time either fires,
     // `handle_turn_settled()` has already moved the Session back to `Idle` (frame.rs runs it
@@ -210,13 +212,7 @@ async fn read_role_from_session_file(conversation_path: &str) -> Option<String> 
             continue;
         };
         if value.get("type").and_then(Value::as_str) == Some("model_change") {
-            latest = Some(
-                value
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .unwrap_or("default")
-                    .to_string(),
-            );
+            latest = Some(model_support::model_change_role(&value)); // #741 decision 2
         }
     }
     latest
@@ -234,6 +230,7 @@ async fn read_role_from_session_file(conversation_path: &str) -> Option<String> 
 /// by the probed path, so a later call for the SAME Conversation returns immediately, while a
 /// genuinely new Conversation (a different path) is still probed fresh.
 pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
+    model_support::ensure_pin_seeded(agent).await; // #741 decision 1
     let (pinned, cached_role) = agent
         .with_model_state(|s| (s.pinned, s.current_role.clone()))
         .await;
@@ -349,6 +346,7 @@ async fn pick_model_via_rpc(
             s.pending_role_reapply = None;
         })
         .await;
+    model_support::persist_pinned(agent, true).await;
     post_notice(
         agent,
         NoticeLevel::Info,
@@ -500,6 +498,7 @@ pub async fn apply_role_now(
             s.pending_role_reapply = None;
         })
         .await;
+    model_support::persist_pinned(agent, false).await;
     if settings_triggered {
         post_notice(
             agent,
@@ -596,5 +595,6 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
             s.pending_role_reapply = None;
         })
         .await;
+    model_support::persist_pinned(agent, true).await;
     Ok(json!({ "queued": false }))
 }

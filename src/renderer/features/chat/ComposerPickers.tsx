@@ -37,12 +37,47 @@ import { Loader2Icon, PaperclipIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { formatThinkingLevelLabel, THINKING_LEVEL_LABEL, THINKING_LEVELS } from '@/lib/modelDisplay'
+import { roleChipDisplay } from '@/lib/modelRoles'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
 import { notify, useSessionsStore } from '@/state'
 import type { ThinkingLevel } from '../../../shared/ipc-model'
 import { COMPOSER_DISABLED_CLASS, GHOST_BUTTON_FOCUS_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 export { ModelPicker } from './ModelPicker'
+
+/** #741 decisions 1-3: the composer's role chip, immediately before the Model picker in the
+ * bottom row (`MessageInput.tsx`). Shows the Session's `currentRole`/`pinned` fields
+ * (`sessions.list()`, already present -- no new IPC) as a small ghost button, text plus a
+ * provisional per-role icon (`@/lib/modelRoles`; #717 reviews the final icon choice). No role
+ * colour (#714 adds it); colour is never the only cue either way. Inert for now (#766 makes it
+ * the role switcher's own trigger): `aria-disabled` rather than the native `disabled` attribute,
+ * matching every other composer trigger's own disabled pattern, so it stays focusable and its
+ * Tooltip stays reachable on keyboard focus -- clicking or pressing it today does nothing at all
+ * (no handler is attached), the least surprising placeholder for a control that visibly looks
+ * like a button and is described in the issue as becoming one. An unestablished role shows no
+ * chip (#741: "if the role cannot be established, show nothing rather than a guess") -- this
+ * component then renders nothing, not an empty slot.
+ */
+export function RoleChip({ sessionId }: { sessionId: string }) {
+  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
+  const display = session ? roleChipDisplay(session) : null
+  if (!display) return null
+  const { label, Icon, tooltip } = display
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-disabled="true" className={cn(PICKER_TRIGGER_CLASS, 'max-w-24')}>
+          <Icon aria-hidden className="size-3" />
+          <span className="min-w-0 flex-1 truncate">
+            <span className="sr-only">Role: </span>
+            {label}
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function ReasoningPicker({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
