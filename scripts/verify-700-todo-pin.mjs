@@ -201,7 +201,12 @@ async function main() {
     await clickUnpinButton(cdp);
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts on Unpin' });
     assertTrue(await readUpNextVisible(cdp), 'E8: Up next returns once unpinned');
-    assertTrue(!!(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`)), 'P3: focus lands on the pill after Unpin removes the focused button (never <body>)');
+    // Gate round 2 fix (self-caught live-check failure, confirmed by a throwaway diagnostic probe
+    // before reverting it): the restore is correctly deferred one rAF (PinnedTodoPanel.tsx's own
+    // comment on that effect), and a real CDP round trip can resolve in under one animation
+    // frame -- a single synchronous read here raced the rAF and failed even though the restore
+    // itself was already correct and settled moments later. `waitFor` polls instead of racing it.
+    await cdp.waitFor(`document.activeElement === (${TODO_PILL_SELECTOR})`, { timeoutMs: 2_000, label: 'P3: focus lands on the pill after Unpin removes the focused button (never <body>)' });
     await clickTodoPill(cdp);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned' });
 
