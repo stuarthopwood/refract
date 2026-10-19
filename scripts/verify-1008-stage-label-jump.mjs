@@ -32,29 +32,21 @@
 // (AGENTS.md: no new fixtures) -- it already carries a genuinely failed Stage (Stage 5, one
 // FailAgent member) among ten Stages, so the turn already satisfies "2+ Stages where one fails"
 // with no fixture change needed. Gate round 2 item 5 (Live, UI): the same fixture also gives a
-// jump-while-still-streaming check for free. Falsified live (Main 2026-10-19): landing
-// immediately after the jump holds, but can still be dragged back once a LATER Stage streams in
-// afterward -- a REAL wheel scroll (CDP trace, TEST A) holds against the same new content, so
-// this is JUMP-SPECIFIC (issue #1021), not a general scroller defect, not a regression of
-// #1008's own two settled-turn acceptance items below. Recorded as an honest finding plus a
-// `notExercised` entry, never asserted pass/fail, never hidden.
+// jump-while-still-streaming check for free, falsified live (Main 2026-10-19) as JUMP-SPECIFIC
+// not pre-existing (issue #1021; full record at that phase's own comment below).
 //
 // Two Stages used as independent jump targets against the FINAL settled turn -- both multi-member,
 // fully finished, and never otherwise touched by this script before their own jump, so each starts
 // genuinely CLOSED (no failed/cancelled/exited member, issue #1000's multi-Stage auto-open rule):
 // Stage 4 (mouse click) and Stage 3 (keyboard: focus its own jump button directly, then a real
 // Enter keypress -- native <button> Enter activation needs no special-casing in `jumpToStageRow`
-// itself). Stage 1 is deliberately NOT used for either settled-turn proof (gate round 1, falsified
-// live): it runs alone first in this fixture and is observed genuinely running before Stage 2
-// streams in, so it auto-opens under the single-Stage exception and then STAYS open forever
-// (research.md decision 22) -- it never starts closed for this proof (Stage 2 is used instead for
-// the still-streaming proof above, where "starts open" is not a concern since it is jumped to
-// before anything could auto-open or close it). Gate round 1 item 8 (Medium): the transcript is
-// explicitly scrolled to its own end before EACH settled-turn jump (Stage 4/Stage 3 sit near the
-// top of a ten-Stage turn) and the target row's own off-screen state is asserted as a hard
-// precondition, not assumed; after the jump, a fixed settle delay then one definitive
-// `elementFromPoint` hit test at the row's own centre confirms landing (not a bounds-only read,
-// which a screenshot alone can misleadingly satisfy -- see the gate round 2 section below).
+// itself). Stage 1 is deliberately NOT used for either settled-turn proof: it runs alone first in
+// this fixture, auto-opens under the single-Stage exception (research.md decision 22), and STAYS
+// open forever -- never starting closed. Gate round 1 item 8 (Medium): the transcript is
+// explicitly scrolled to its own end before EACH settled-turn jump and the target row's own
+// off-screen state is asserted as a hard precondition, not assumed; after the jump, a fixed settle
+// delay then one definitive `elementFromPoint` hit test at the row's own centre confirms landing
+// (not a bounds-only read, which a screenshot alone can misleadingly satisfy).
 //
 // Gate round 1 item 9 (Medium): #991 persistence is exercised cheaply by toggling "Show tool
 // calls" off then back on (a real IPC round trip, `window.refract.settings.setTranscriptDisplay`,
@@ -62,9 +54,9 @@
 // mouse jump -- this is a genuine unmount/remount of Stage 4's own row (gate round 1 item 1's own
 // visibility gate), doubling as the proof that Stage 4's manual-open (set by the jump) survives
 // it, and that Stage 5 (a failed Stage, force-visible regardless of the toggle) never disappears.
-// `prefers-reduced-motion` is NOT emulated by this CDP session, so `jumpToStageRow`'s own
-// instant-assignment branch (gate round 2 item 2: there is no OTHER branch any more -- the shared
-// settle loop never animates either) is recorded in `notExercised`, never silently skipped.
+// prefers-reduced-motion is not emulated; jumpToStageRow has no reduced-motion branch because
+// runScrollSettleLoop never animates, so the path tested above is the reduced-motion path.
+// Recorded in `notExercised` below (the CDP session's own emulation gap), never silently skipped.
 //
 // Gate round 1 fix (falsified live, that round): the chain row is NEVER clicked open by this
 // script -- see `ChainStageLine` section's own comment below for the full story of the bug that
@@ -229,20 +221,21 @@ async function main() {
     await cdp.clickByLabel('Send message');
 
     // ---- Gate round 2 item 5 (Live, UI, Main 2026-10-18/19): a jump while the transcript is
-    // STILL ACTIVELY STREAMING, not only against the final settled turn the items below exercise.
-    // Jumping to Stage 2 HERE, before the "all ten Stages settled" wait below, then re-checking
-    // once Stage 10's own button ALSO exists (8+ more Stages' worth of streamed content) plus a
-    // flat 2s delay, falsified live (Main 2026-10-19) that "still growing AFTER the jump settles"
-    // is JUMP-SPECIFIC, not a general scroller defect: a REAL user wheel scroll (CDP trace, issue
-    // #1021's own TEST A) holds against the identical new content for the whole 3s window, but
-    // `jumpToStageRow`'s own programmatic jump does not (`jumpToStageRow`'s own jsdoc,
-    // `Transcript.tsx`, has the full record; issue #1021, not fixed here) -- recorded as a finding
-    // either way, no pass/fail asserted for the later-streamed-content portion (see the
-    // `notExercised` entry after the re-check). Stage 2 (not Stage 1, which auto-opens under the
-    // single-Stage-so-far exception) is confirmed CLOSED while genuinely running once the turn
-    // reaches two Stages (issue #1000, FR-087) -- a clean, still-streaming baseline, no fixture
-    // change needed.
+    // STILL ACTIVELY STREAMING. Jumping to Stage 2 HERE, then re-checking once Stage 10's own
+    // button ALSO exists plus a flat 2s delay, falsified live that "still growing AFTER the jump
+    // settles" is JUMP-SPECIFIC, not a general scroller defect: a REAL wheel scroll (issue
+    // #1021's own TEST A) holds against identical new content; the jump does not (`jumpToStageRow`
+    // jsdoc has the full record; #1021, not fixed here) -- recorded as a finding either way, no
+    // pass/fail asserted (see the `notExercised` entry after the re-check).
     const stage2TriggerExpr = stageTriggerSelector(STAGE2_TITLE);
+    // Gate round 4 fix (Test Low): check Stage 2's state, and a "before" position for contrast.
+    const stage2BeforeExpanded = await cdp.evaluate(`(${stage2TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
+    if (stage2BeforeExpanded !== 'false') {
+      failures.push(`Stage 2's own row was not closed just before the mid-stream jump (aria-expanded was ${JSON.stringify(stage2BeforeExpanded)}, expected "false").`);
+    } else {
+      findings.push('Stage 2 is confirmed CLOSED immediately before the mid-stream jump (aria-expanded="false", read live).');
+    }
+    const stage2CheckBefore = await cdp.evaluate(viewportHitTestExpr(stage2TriggerExpr));
     await cdp.waitFor(`!!(${jumpButtonExpr(STAGE2_TITLE)})`, {
       timeoutMs: 15_000,
       label: 'The chain row\'s own "Go to Stage 2" button (while the transcript is still actively streaming)'
@@ -256,8 +249,9 @@ async function main() {
       findings.push('Clicking "Go to Stage 2" (mid-stream, before the turn settles) opened Stage 2\'s own row.');
     }
     const stage2CheckImmediate = await cdp.evaluate(viewportHitTestExpr(stage2TriggerExpr));
+    const stage2WasOnscreenBefore = stage2CheckBefore.found && stage2CheckBefore.inBounds && stage2CheckBefore.hit;
     if (stage2CheckImmediate.found && stage2CheckImmediate.inBounds && stage2CheckImmediate.hit) {
-      findings.push(`Stage 2's own row is in the viewport immediately after the mid-stream jump (rect ${JSON.stringify(stage2CheckImmediate.rect)}).`);
+      findings.push(`Stage 2's own row is in the viewport immediately after the mid-stream jump (rect ${JSON.stringify(stage2CheckImmediate.rect)})${stage2WasOnscreenBefore ? ` -- NOTE: it was ALSO already in the viewport just before the jump (rect ${JSON.stringify(stage2CheckBefore.rect)}), so this alone does not prove the jump moved anything` : `, having been off-screen just before (rect ${JSON.stringify(stage2CheckBefore.rect)}) -- the jump genuinely moved it`}.`);
     } else {
       failures.push(`Stage 2's own row did not land in the viewport immediately after the mid-stream jump: ${JSON.stringify(stage2CheckImmediate)}`);
     }
@@ -459,6 +453,15 @@ async function main() {
         failures.push('Could not place keyboard focus on the "Go to Stage 3" button itself before pressing Enter.');
       } else {
         findings.push('Keyboard focus placed on the "Go to Stage 3" button itself (keyboard-reachable, issue #1008 item 2).');
+        // Gate round 4 fix (Test Low): the jump button's own scrollIntoView above can itself move
+        // the viewport -- re-measure Stage 3's own off-screen precondition HERE, right before the
+        // real keyboard jump, instead of relying on the earlier `stage3RectBefore` check.
+        const stage3RectBeforeKeyboardJump = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
+        if (rectIsInViewport(stage3RectBeforeKeyboardJump)) {
+          failures.push(`Stage 3's own row is already in the viewport right before the keyboard jump (rect ${JSON.stringify(stage3RectBeforeKeyboardJump)}, after the jump button's own scrollIntoView) -- the off-screen precondition this proof depends on no longer holds.`);
+        } else {
+          findings.push(`Stage 3's own row is still off-screen right before the keyboard jump (rect ${JSON.stringify(stage3RectBeforeKeyboardJump)}) -- the jump button's own scrollIntoView did not accidentally satisfy this proof's own precondition.`);
+        }
         await cdp.pressEnter();
         const stage3AfterExpanded = await cdp.evaluate(`(${stage3TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
         if (stage3AfterExpanded !== 'true') {
@@ -526,7 +529,7 @@ async function main() {
       findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}).`);
     }
 
-    notExercised.push("prefers-reduced-motion is not emulated by this CDP session, so jumpToStageRow's own single-instant-assignment branch (the reducedMotion check in Transcript.tsx) is never independently exercised by this script -- every other check above already goes through the shared, never-animated runScrollSettleLoop regardless.");
+    notExercised.push("prefers-reduced-motion is not emulated; jumpToStageRow has no reduced-motion branch because runScrollSettleLoop never animates, so the path tested above is the reduced-motion path.");
 
     const verdict = failures.length > 0 ? 'FAILED' : 'DONE';
     const exitCode = failures.length > 0 ? 1 : 0;

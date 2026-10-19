@@ -437,6 +437,15 @@ export function Transcript({
   // fix for issue #485's restore-on-return silently losing the detached position every time.
   const landingInProgressRef = React.useRef(false)
 
+  // Gate round 4 fix (M1): the in-flight JUMP's own `runScrollSettleLoop` cancel() (never the
+  // landing effect's own, kept in its own closure) -- a NEW landing, a NEW jump, a real
+  // "Scroll to end" click, or unmount each calls this first so only one settle loop ever
+  // touches `scrollTop` at a time.
+  const jumpCancelRef = React.useRef<(() => void) | null>(null)
+  // Bumped on every landing/jump start (gate round 4, M1): a jump's own `onAborted` no-ops if a
+  // newer landing/jump already took over -- defence in depth alongside `jumpCancelRef`.
+  const jumpTokenRef = React.useRef(0)
+
   // Mirrors `landingInProgressRef` into a real render value so `MessageScrollerProvider`'s own
   // `autoScroll` prop (below) can be turned off for the same settle window: the vendored
   // `@shadcn/react` message-scroller has its OWN scroll listener that reclassifies itself into
@@ -560,6 +569,10 @@ export function Transcript({
   function handleScrollToEnd() {
     const viewport = viewportRef.current
     if (!viewport) return
+    // Gate round 4 fix (M1): a real click always wins over a still-running jump -- this direct
+    // write bypasses the settle loop's own input listeners (not every activation method reaches them).
+    jumpCancelRef.current?.()
+    landingInProgressRef.current = false
     const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
     viewport.scrollTop = target
     useChatScrollStore.getState().record(sessionId, { atEnd: true, scrollTop: target })
@@ -665,6 +678,10 @@ export function Transcript({
     // Falls back to the viewport itself only if the root ref somehow is not attached yet (it is
     // always rendered as the viewport's own parent below, so this is defensive, not expected).
     const root = scrollerRootRef.current ?? viewport
+    // Gate round 4 fix (M1): a landing always wins over a still-running jump -- cancel it and
+    // bump the token so a stale `onAborted` cannot stomp this landing's own fresh state.
+    jumpCancelRef.current?.()
+    jumpTokenRef.current += 1
     landingInProgressRef.current = true
     const cancel = runScrollSettleLoop(root, viewport, {
       computeTarget: ({ scrollHeight, clientHeight }) => {
@@ -686,7 +703,9 @@ export function Transcript({
         landingInProgressRef.current = false
         setAutoScrollSuppressed(!atEnd)
         setIsAtEnd(atEnd)
-      }
+      },
+      // Never fires here (no `shouldAbort` supplied); required by the interface (gate round 4, M1).
+      onAborted: () => {}
     })
     return () => {
       cancel()
@@ -697,39 +716,23 @@ export function Transcript({
   // "Go to Stage N" (issue #1008 item 2; gate round 2, Main 2026-10-18, Decided -- falsified
   // live): `ChainStageLine` is a SIBLING of the Stage row it targets, never its parent, so there
   // is no React ref to use -- this callback, reached via `JumpToStageContext` (provided below),
-  // is the lever instead. Gate round 2 fix: the ORIGINAL implementation (`stageJump.ts`'s own
-  // deleted `jumpToStage`/`settleScrollToRow`) ran its own short, fixed-budget settle loop that
-  // could never reach `autoScrollSuppressed` (this component's own local state) -- on a turn that
-  // stays unsettled (a permanently failed Stage, FR-068), `MessageScrollerProvider`'s sticky
-  // follow-bottom mode stayed engaged the WHOLE time, re-snapping to the end the instant the
-  // jumped-to Stage's own expansion mutated the DOM; a live `scrollTop` trace showed it pinned at
-  // `scrollHeight - clientHeight` from frame 0, never once reaching the row. Moved here so the
-  // SAME suppression the detached-restore path already uses applies: `setAutoScrollSuppressed`
-  // goes true the instant the jump starts (before the Stage's own `setManualOpen` re-render can
-  // even fire), and `runScrollSettleLoop`'s `onSettled`/`onInterrupted` only clear it once the
-  // viewport is ACTUALLY at the end again -- so it holds through every later streamed chunk too,
-  // not just the jump's own short settle window (`handleViewportScroll` above is the only other
-  // place that ever clears it, on a real user scroll back to the end). No `prefers-reduced-motion`
-  // branch (gate round 2, item 2): `runScrollSettleLoop` never animates -- every frame is a plain
-  // instant `scrollTop =` assignment, the same as the landing effect above already uses
-  // unconditionally.
-  //
-  // Known limitation (gate round 2 item 5, falsified live, filed as issue #1021 -- NOT fixed
-  // here): on a turn that is STILL ACTIVELY STREAMING (not yet settled), this jump holds
-  // correctly against the vendored scroller's sticky follow-bottom mode for its own immediate
-  // settle window, but a LATER Stage streaming in can still pull the viewport back toward the
-  // end -- `MessageScrollerProvider`'s own content-mutation-observer (`handleContentChange`)
-  // appears to re-anchor to each newly-streamed item independently of both the `autoScroll` prop
-  // and (confirmed live, instrumented trace) a dispatched synthetic `wheel` event matching a
-  // genuine user scroll's own event shape -- unlike a genuine user's OWN wheel/touch/key action,
-  // which DOES hold indefinitely (traced live). Several attempted fixes here (a zero-delta
-  // dispatched wheel event, then three real-magnitude ticks) produced no measurable change,
-  // and an instrumented trace (temporary, not shipped) captured zero wheel/scroll events on this
-  // jump's own viewport despite a confirmed `scrollTop` change -- an unresolved anomaly, not
-  // something this PR's own scope stretches to debugging further in third-party, minified,
-  // undocumented vendor internals. The two settled-turn jump proofs this issue's own acceptance
-  // criteria actually ask for (Stage 3/Stage 4, both fully finished before their own jump) are
-  // unaffected and hold correctly.
+  // is the lever instead. The scroll/settle logic lives HERE (not `stageJump.ts`, whose own jsdoc
+  // has the full gate-round-2 history of why) because only this component holds
+  // `autoScrollSuppressed`: it goes true the instant the jump starts, and
+  // `runScrollSettleLoop`'s `onSettled`/`onInterrupted` only clear it once the viewport is
+  // ACTUALLY at the end again, or `handleViewportScroll` records a real user scroll back to the
+  // end -- the flag stays suppressed through every later streamed chunk, but on a turn that is
+  // STILL ACTIVELY STREAMING a jump made mid-stream can still be pulled back toward the end by a
+  // LATER Stage's own content regardless (issue #1021, jump-specific, filed not fixed here --
+  // `MessageScrollerProvider`'s own content-mutation-observer re-anchors to each newly-streamed
+  // item regardless of `autoScroll`; a genuine user wheel/touch/key action suppresses it, traced
+  // live, but this jump's own programmatic `scrollTop` writes do not replicate whatever internal
+  // signal that trips; several synthetic-dispatch fix attempts produced no measurable change, not
+  // something this PR's own scope stretches to debugging further in third-party, minified vendor
+  // internals -- the two settled-turn jump proofs this issue's own acceptance criteria actually
+  // ask for, Stage 3/Stage 4 below, are unaffected and hold correctly). No
+  // `prefers-reduced-motion` branch: `runScrollSettleLoop` never animates -- every frame is a
+  // plain instant `scrollTop =` assignment, the same as the landing effect above already uses.
   const jumpToStageRow = React.useCallback(
     (stageId: string) => {
       const row = document.getElementById(stageRowDomId(sessionId, stageId))
@@ -739,14 +742,17 @@ export function Transcript({
       const viewport = viewportRef.current
       const root = scrollerRootRef.current ?? viewport
       if (!viewport || !root) return
+      // Gate round 4 fix (M1): a new jump always wins over a still-running previous one -- cancel
+      // it first, then claim a fresh token this jump's own `onAborted` checks before touching
+      // shared state, so a stale abort can never stomp a landing or newer jump that took over.
+      jumpCancelRef.current?.()
+      const myToken = ++jumpTokenRef.current
       landingInProgressRef.current = true
       setAutoScrollSuppressed(true)
-      runScrollSettleLoop(root, viewport, {
+      const cancel = runScrollSettleLoop(root, viewport, {
         // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
-        // `row` from the DOM (or detach it from this `viewport`) before the loop settles -- stop
-        // touching `scrollTop` for a target that is gone, rather than keep computing a
-        // meaningless rect against a disconnected node. The session-landing effect above has no
-        // such external target, so it never needs this.
+        // `row` from the DOM before the loop settles -- stop touching `scrollTop` for a gone
+        // target, and release this jump's claim via `onAborted` below (gate round 4, M1).
         shouldAbort: () => !row.isConnected || !viewport.contains(row),
         computeTarget: ({ scrollTop, scrollHeight, clientHeight }) => {
           const rowRect = row.getBoundingClientRect()
@@ -757,6 +763,9 @@ export function Transcript({
         },
         onSettled: (landedAtEnd) => {
           landingInProgressRef.current = false
+          // Gate round 4 fix (M2): save position on settle too, like `onInterrupted` below --
+          // previously a jump that settled on its own left the scroll-memory store stale.
+          useChatScrollStore.getState().record(sessionId, { atEnd: landedAtEnd, scrollTop: viewport.scrollTop })
           setAutoScrollSuppressed(!landedAtEnd)
           setIsAtEnd(landedAtEnd)
         },
@@ -765,8 +774,19 @@ export function Transcript({
           landingInProgressRef.current = false
           setAutoScrollSuppressed(!atEnd)
           setIsAtEnd(atEnd)
+        },
+        // Gate round 4 fix (M1, falsified live): previously `shouldAbort` stopped the loop
+        // silently, stuck `landingInProgressRef`/`autoScrollSuppressed` dead. Re-measures fresh
+        // and releases this jump's claim, guarded by the token in case a newer one took over.
+        onAborted: () => {
+          if (jumpTokenRef.current !== myToken) return
+          landingInProgressRef.current = false
+          const atEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
         }
       })
+      jumpCancelRef.current = cancel
     },
     [sessionId]
   )
@@ -795,7 +815,11 @@ export function Transcript({
     })
     observer.observe(viewport)
     if (contentRef.current) observer.observe(contentRef.current)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      // Gate round 4 fix (M1): stop any still-running jump on unmount.
+      jumpCancelRef.current?.()
+    }
   }, [])
 
   return (

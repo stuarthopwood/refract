@@ -76,14 +76,23 @@ export interface ScrollSettleLoopCallbacks {
    * the loop naturally settles -- the developer has taken over mid-settle. */
   onInterrupted: (atEnd: boolean) => void
   /** Checked at the START of every frame, before `computeTarget`; if it returns true the loop
-   * stops immediately -- no `scrollTop` write, no `onSettled`/`onInterrupted` call -- the
-   * caller's own target has disappeared out from under it (gate round 2, issue #1008 item 3:
-   * `jumpToStageRow`'s jumped-to row can be removed by a Session/Conversation switch mid-loop;
-   * the caller already handles its own cleanup for that, this just stops writing to a viewport
-   * that may itself be gone too). The session-landing effect below has no such external target
-   * (`resolveLandingScrollTop` only ever reads the scroll-memory store), so it never supplies
-   * this. */
+   * stops immediately -- no `scrollTop` write -- and calls `onAborted` instead of
+   * `onSettled`/`onInterrupted` (gate round 2, issue #1008 item 3: `jumpToStageRow`'s jumped-to
+   * row can be removed by a Session/Conversation switch mid-loop). The session-landing effect
+   * below has no such external target (`resolveLandingScrollTop` only ever reads the
+   * scroll-memory store), so it never supplies this -- `shouldAbort` undefined means the loop can
+   * never abort, only settle or be interrupted. */
   shouldAbort?: () => boolean
+  /** Called exactly once if `shouldAbort` fires (gate round 4 fix, issue #1008, M1 -- falsified
+   * live): previously `shouldAbort` stopped the loop silently, calling NEITHER `onSettled` nor
+   * `onInterrupted`, so a caller's own "settle in progress" state (`landingInProgressRef`,
+   * `autoScrollSuppressed` in `Transcript.tsx`) stayed stuck true forever -- `handleViewportScroll`
+   * and the ResizeObserver both no-op while that ref reads true, so the "at end" state and the
+   * vendored scroller's own `autoScroll` prop went dead until an unrelated Session/Conversation
+   * switch happened to reset them. Every caller that supplies `shouldAbort` MUST also supply this
+   * to release whatever it claimed before starting the loop; a caller with no `shouldAbort` (the
+   * session-landing effect) can pass a no-op here since it is provably unreachable without one. */
+  onAborted: () => void
 }
 
 /** Gate round 2 (issue #1008, falsified live): the shared "poll via `requestAnimationFrame`,
@@ -96,11 +105,15 @@ export interface ScrollSettleLoopCallbacks {
  * second, narrower implementation (the deleted `stageJump.ts#settleScrollToRow`, which only ever
  * held the line for its own short, fixed frame budget -- the instant that budget ran out, nothing
  * stopped the vendored scroller's follow-bottom mode re-engaging on the NEXT streamed chunk,
- * since only THIS shared engine's caller, via `onSettled`/`onInterrupted`, can reach the
- * `autoScrollSuppressed` state that actually holds it off). Returns a `cancel()` function the
+ * since only THIS shared engine's caller, via `onSettled`/`onInterrupted`/`onAborted`, can reach
+ * the `autoScrollSuppressed` state that holds follow-bottom off once the loop itself has settled,
+ * until the user genuinely scrolls back to the end -- that flag does NOT by itself stop a jump
+ * made mid-loop, on a turn that is still streaming, from being pulled back toward the end by a
+ * LATER chunk's own content once this loop has already settled (issue #1021, jump-specific, not
+ * fixed here). Returns a `cancel()` function the
  * caller's own effect cleanup (or early-return path) can call to stop the loop and remove its
- * input listeners without invoking either callback -- exactly what the landing effect's own
- * cleanup already did inline before this extraction. */
+ * input listeners without invoking any callback -- exactly what the landing effect's own cleanup
+ * already did inline before this extraction. */
 export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, callbacks: ScrollSettleLoopCallbacks): () => void {
   let cancelled = false
   let frame = 0
@@ -153,6 +166,7 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     if (callbacks.shouldAbort?.()) {
       cancelled = true
       removeInputListeners()
+      callbacks.onAborted()
       return
     }
     const { scrollHeight, clientHeight } = viewport
