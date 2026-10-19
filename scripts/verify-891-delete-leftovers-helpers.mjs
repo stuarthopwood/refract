@@ -250,13 +250,17 @@ export async function openDeleteDialogFor(cdp, name, shotDir) {
   }
 }
 
-/** Waits for the leftover-summary walk to finish ("Checking files…" gone) and returns its own
- * rendered text (the generated-folder/other-file list, or '' if nothing was found). */
+/** Waits for BOTH the leftover-summary walk AND `deleteCheck` to settle (`waitForDialogSettled`)
+ * and returns the leftover list's own rendered text (the generated-folder/other-file list, or
+ * '' if nothing was found). Gate round 2: a real bug found live -- the unified status line
+ * (gate round 2, M5) shows only ONE "Checking…" message at a time, `deleteCheck`'s own text
+ * taking priority, so a narrower wait checking only for the literal "Checking files…" string
+ * resolved PREMATURELY whenever `deleteCheck` was still pending while the walk itself was also
+ * still running (the status text read "Checking for uncommitted or unpushed work…" instead,
+ * masking the still-running walk) -- scenario (a)'s own node_modules-bucket assertion then read
+ * an empty, not-yet-populated list. `waitForDialogSettled` checks both signals correctly. */
 export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
-  await cdp.waitFor(
-    `!Array.from(document.querySelectorAll('[role="alertdialog"] p')).some((p) => p.textContent === 'Checking files…')`,
-    { timeoutMs, label: 'leftover summary walk finished' }
-  );
+  await waitForDialogSettled(cdp, { timeoutMs });
   return cdp.evaluate(
     `Array.from(document.querySelectorAll('[role="alertdialog"] ul')).map((ul) => ul.textContent).join(' | ')`
   );
