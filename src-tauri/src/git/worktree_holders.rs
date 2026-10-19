@@ -105,22 +105,49 @@ pub async fn preflight(worktree_path: &Path, exclude_pids: &[u32]) -> Result<(),
     probe_folder_in_use(worktree_path).await
 }
 
+/// Real-world transient locks -- Windows Defender's real-time scan or the Search indexer,
+/// both routinely still working through a `node_modules`-sized tree seconds after it finishes
+/// writing -- raise the exact same sharing/access-denied errors a genuine cwd holder does, but
+/// clear within milliseconds. Retried up to `RENAME_PROBE_ATTEMPTS` times (short, fixed backoff)
+/// before concluding "held": a real holder (a terminal or Explorer window actually sitting in
+/// the folder) stays held across every attempt and is still reported exactly as before; this
+/// only spares a transient scan from being misreported as one. The rename-BACK below is
+/// deliberately NOT retried -- that failure must never be silently swallowed (this module's own
+/// header comment), and by the time the first rename has already succeeded, there is no longer
+/// a plausible transient-scan explanation for the second one failing.
+const RENAME_PROBE_ATTEMPTS: u32 = 5;
+const RENAME_PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
 async fn probe_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
     let Some(probe_path) = probe_sibling_path(worktree_path) else {
         return Ok(());
     };
-    if let Err(err) = tokio::fs::rename(worktree_path, &probe_path).await {
-        return if is_in_use_error(&err) {
-            Err(GitError::new(
-                GitErrorCode::WorktreeHeld,
-                FOLDER_IN_USE_MESSAGE.to_string(),
-            ))
-        } else {
-            // Some unrelated I/O failure (e.g. a stale probe name from a previous crashed run):
-            // not a holder signal either way -- never block Delete here on an error the real
-            // removal path will surface properly on its own.
-            Ok(())
-        };
+    let mut last_in_use_err = None;
+    for attempt in 1..=RENAME_PROBE_ATTEMPTS {
+        match tokio::fs::rename(worktree_path, &probe_path).await {
+            Ok(()) => {
+                last_in_use_err = None;
+                break;
+            }
+            Err(err) if is_in_use_error(&err) => {
+                last_in_use_err = Some(err);
+                if attempt < RENAME_PROBE_ATTEMPTS {
+                    tokio::time::sleep(RENAME_PROBE_RETRY_DELAY).await;
+                }
+            }
+            Err(_) => {
+                // Some unrelated I/O failure (e.g. a stale probe name from a previous crashed
+                // run): not a holder signal either way -- never block Delete here on an error
+                // the real removal path will surface properly on its own.
+                return Ok(());
+            }
+        }
+    }
+    if last_in_use_err.is_some() {
+        return Err(GitError::new(
+            GitErrorCode::WorktreeHeld,
+            FOLDER_IN_USE_MESSAGE.to_string(),
+        ));
     }
     if tokio::fs::rename(&probe_path, worktree_path).await.is_err() {
         return Err(GitError::new(
