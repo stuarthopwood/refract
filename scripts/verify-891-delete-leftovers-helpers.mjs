@@ -230,6 +230,21 @@ export async function isDialogOpen(cdp) {
   return cdp.evaluate(`!!document.querySelector('[role="alertdialog"]')`);
 }
 
+/** Polls until `sessions.list()` reports anything other than `'stopped'` (or `null`, not
+ * listed) for the Session named `name` -- Rust's own `SessionAgent::status()`, not a DOM/CSS
+ * guess (a `StateIcon` glyph is `aria-hidden`, and its colour class is an implementation
+ * detail this test should not depend on). Issue #891, Stuart's decision 2
+ * (issuecomment-6273442096): a refused Delete must leave (or put back) the Session's agent
+ * running, confirmed here by its REAL status, not merely that the Session row still exists.
+ * Resolves to the actual status string once it is anything but `'stopped'`. */
+
+export async function waitForSessionAgentRunning(cdp, name, { timeoutMs = 20_000 } = {}) {
+  return cdp.waitFor(
+    `window.refract.sessions.list().then((r) => { if (!r.ok) return false; const s = r.value.find((s) => s.name === ${JSON.stringify(name)}); return !!s && s.status !== 'stopped' && s.status; })`,
+    { timeoutMs, label: `${name} agent running again after refusal` }
+  );
+}
+
 /** Polls for EITHER the dialog closing (success) OR a non-empty error appearing in its own
  * `role="alert"` paragraph (a backend refusal, e.g. `worktree-held`, or any other delete
  * failure) -- a bare "wait for closed" would otherwise spin for the full timeout on every

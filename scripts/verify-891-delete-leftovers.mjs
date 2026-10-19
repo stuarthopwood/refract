@@ -50,6 +50,7 @@ import {
   clickDeleteButton,
   readDialogError,
   waitForDeleteOutcome,
+  waitForSessionAgentRunning,
   isSessionListed
 } from './verify-891-delete-leftovers-helpers.mjs';
 
@@ -187,6 +188,15 @@ async function main() {
       !!errC && errC.toLowerCase().includes('close it') && (await isSessionListed(cdp, nameC)) && existsSync(sessionC.worktreePath);
     if (cRefusedCorrectly) ok('(c) cmd.exe cwd-holder refuses Delete with the in-use message; Session stays listed; nothing deleted');
     else fail('(c) cmd.exe cwd-holder refuses Delete', new Error(`error=${JSON.stringify(errC)} listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
+    // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a refused Delete must leave
+    // (or restart) the Session's own agent running -- checked by its REAL status, not merely
+    // that the row still exists.
+    try {
+      const cAgentStatus = await waitForSessionAgentRunning(cdp, nameC, { timeoutMs: 20_000 });
+      ok(`(c) Session's agent is running again after the refusal (status: ${cAgentStatus})`);
+    } catch (err) {
+      fail("(c) Session's agent is running again after the refusal", err);
+    }
     await killSpawned(cmdHolder);
     await clickDeleteButton(cdp); // Retry: same button
     const outcomeC = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });

@@ -23,6 +23,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::fs::leftover_summary::compute_leftover_summary;
+use crate::git::git::GitError;
 use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
 use crate::git::worktree_holders;
@@ -32,6 +33,7 @@ use crate::git::worktrees::{
     remove_worktree,
 };
 use crate::process::pid_records;
+use crate::session::SessionStatus;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -371,6 +373,12 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // Session's own recorded `omp` pids are excluded from whatever Restart Manager reports:
         // the agent itself holding its own files open is never a reason to refuse.
         let own_pids = pid_records::pids_for_session(&id).await;
+        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a direct status read, not
+        // `!own_pids.is_empty()` -- that list is only a proxy used to exclude this Session's
+        // own pids from Restart Manager, and could in principle be stale (a crashed process
+        // whose record has not yet been reaped) while the agent itself already reads `Stopped`.
+        let was_running =
+            state.session_manager.get_or_create_agent(&id).status().await != SessionStatus::Stopped;
         worktree_holders::check_named_holders(Path::new(&session.worktree_path), &own_pids)
             .await
             .map_err(map_git_error)?;
@@ -395,14 +403,30 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .shutdown()
             .await;
 
-        // Issue #891: the cwd-holder (rename-and-back) probe, now free of this Session's own
-        // interference. A refusal here leaves the agent stopped (already shut down above)
-        // rather than literally untouched, but the Session entry, branch, and worktree are
-        // still left exactly as they were; a later Retry (or reopening the Session) resumes it
-        // the same way any other quiesced Session does.
-        worktree_holders::check_folder_in_use(Path::new(&session.worktree_path))
-            .await
-            .map_err(map_git_error)?;
+        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): "a refused Delete leaves
+        // the Session running" stands even here. If the probe refuses and the agent WAS
+        // running before this call (`was_running`, captured above -- Delete's own shutdown is
+        // the only reason it would not be), restart it through the normal `start()` path before
+        // returning the refusal; a Session already stopped beforehand stays stopped, matching
+        // every other refusal. A restart failure must never hide the real one: `status()` is
+        // checked afterwards (same pattern `ipc/sessions_agent.rs`'s own `resume_session_core`
+        // uses), and if it is still `Stopped` the returned message names that too.
+        if let Err(err) =
+            worktree_holders::check_folder_in_use(Path::new(&session.worktree_path)).await
+        {
+            let code = err.code;
+            let mut message = err.message;
+            if was_running {
+                let agent = state.session_manager.get_or_create_agent(&id);
+                let _ = agent.start().await;
+                if agent.status().await == SessionStatus::Stopped {
+                    message = format!(
+                        "{message} Also, Refract could not restart this Session's agent automatically -- reopen it yourself."
+                    );
+                }
+            }
+            return Err(map_git_error(GitError::new(code, message)));
+        }
 
         crate::process::pid_records::remove_process_records_for_session(&id).await;
 
