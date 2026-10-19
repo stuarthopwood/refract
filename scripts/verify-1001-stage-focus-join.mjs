@@ -287,21 +287,51 @@ async function main() {
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-solo-focus-placed.png'));
 
-    // Gate round 1 fix (item 5, Test Medium): a simulated window blur (CDP's
-    // `Emulation.setFocusEmulationEnabled`, the standard headless-testing way to exercise this
-    // without actually losing real OS focus) spliced in BEFORE the join -- re-uses the SAME
-    // assertions below rather than a separate negative check. `document.activeElement` is never
-    // reassigned by a real window blur either, so there is nothing new to read here; the proof
-    // is behavioural: if gate round 1 item 1's own fix regressed (the blur wrongly cleared
-    // `focusWasInsideRef`), the LATER real join's own redirect would fail exactly the same way
-    // the existing assertions below already catch (a body/null sample, or a non-trigger last
-    // sample) -- no separate code path needed. A dedicated negative proof for item 2 (a
-    // deliberate click-away clearing the flag, then the join NOT redirecting) needs its own
-    // second 1-to-2 transition in the fixture and is recorded in `notExercised` below instead.
+    // Gate round 1 fix (item 5, Test Medium; condition added on Main's own grant, 2026-10-19):
+    // a simulated window blur (CDP's `Emulation.setFocusEmulationEnabled`, the standard
+    // headless-testing way to exercise this without actually losing real OS focus), spliced in
+    // BEFORE the join, re-using the SAME assertions below rather than a separate negative check
+    // -- IF it genuinely produces a real signal. `document.activeElement` is never reassigned
+    // by a real window blur, so it cannot confirm anything on its own; a TEMPORARY, test-only
+    // listener (never product code) on the Prompt code block itself records whether a
+    // `focusout` with `event.target === document.activeElement` (the exact signature
+    // `SubagentChainRow.tsx`'s own handler checks) actually fired, and whether
+    // `document.hasFocus()` went `false`. If `Emulation.setFocusEmulationEnabled` produces
+    // neither signal on this WebView2 renderer, a real `window` `blur` event is dispatched as a
+    // second, still-cheap attempt before giving up. If NEITHER attempt ever produces either
+    // signal, this is recorded honestly as `notExercised` -- never silently claimed as a pass
+    // just because the later join still happens to redirect correctly (that proves the
+    // POSITIVE path, not that the window-blur code path was ever actually exercised).
+    await cdp.evaluate(`(() => {
+      window.__r1001Blur = { focusoutSeen: false };
+      const target = (${promptCodeBlockExpr()});
+      if (target) {
+        target.addEventListener('focusout', (event) => {
+          if (event.target === document.activeElement) window.__r1001Blur.focusoutSeen = true;
+        });
+      }
+    })()`);
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
     await new Promise((resolve) => setTimeout(resolve, 200));
+    let blurDiag = await cdp.evaluate(`({ focusoutSeen: window.__r1001Blur.focusoutSeen, hasFocusNow: document.hasFocus() })`);
+    if (!blurDiag.focusoutSeen && blurDiag.hasFocusNow !== false) {
+      // First attempt produced no observable signal -- try the real `window` `blur` event
+      // dispatch Main's own grant names as the cheap fallback, before concluding this is a gap.
+      await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      blurDiag = await cdp.evaluate(`({ focusoutSeen: window.__r1001Blur.focusoutSeen, hasFocusNow: document.hasFocus() })`);
+    }
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-    findings.push("Simulated a window blur (Emulation.setFocusEmulationEnabled) while focus sat inside the solo member's own content, before the join -- re-uses the sampling assertions below rather than a separate check (gate round 1, item 5).");
+    const windowBlurExercised = blurDiag.focusoutSeen || blurDiag.hasFocusNow === false;
+    if (windowBlurExercised) {
+      findings.push(
+        `Simulated a window blur (observed signal: focusout-with-activeElement-unchanged=${blurDiag.focusoutSeen}, document.hasFocus() went false=${blurDiag.hasFocusNow === false}) while focus sat inside the solo member's own content, before the join -- re-uses the sampling assertions below rather than a separate check (gate round 1, item 5).`
+      );
+    } else {
+      notExercised.push(
+        'Gate round 1 item 5 (window-blur case): neither Emulation.setFocusEmulationEnabled(false) nor a dispatched window "blur" event produced an observable focusout-with-activeElement-unchanged or a document.hasFocus() === false signal on this WebView2 renderer -- the window-blur code path (SubagentChainRow.tsx\'s own `event.target === document.activeElement` check) was not actually exercised this run; honestly recorded rather than claimed as a pass merely because the later join still redirects correctly (that proves the positive path only).'
+      );
+    }
 
     // ---- Phase: sample document.activeElement on every animation frame across the WHOLE join
     // (issue #1001's own red/green discriminator) -- in-page, not Node-side polling, so no CDP
