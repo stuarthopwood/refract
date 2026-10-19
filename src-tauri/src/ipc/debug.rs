@@ -18,9 +18,9 @@ pub fn register(d: &mut Dispatcher) {
 /// Gate round 1 fix (Low, #1053): a debug build should never honour an idle override shorter
 /// than this -- a live check that asked for 0ms would otherwise busy-loop the pause/resume
 /// transition on every render. Only ever read from inside `resolve_overrides_from` (itself
-/// `#[cfg(any(debug_assertions, test))]`), so this carries the same gate -- an unqualified
-/// release build never declares (or warns about) a constant it can never read.
-#[cfg(any(debug_assertions, test))]
+/// `#[cfg(debug_assertions)]`), so this carries the same gate -- an unqualified release build
+/// never declares (or warns about) a constant it can never read.
+#[cfg(debug_assertions)]
 const MIN_IDLE_TIMEOUT_MS: u64 = 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -65,11 +65,14 @@ fn resolve_overrides() -> DebugOverrides {
     }
 }
 
-/// Pure parsing logic, factored out so it is `#[test]`-able without touching the real process
-/// environment (same reasoning `lib.rs::resolve_data_dir_override` documents). Gate round 1 fix
-/// (Low, #1053): now `#[cfg(any(debug_assertions, test))]` -- it has no reason to exist in a
-/// release build at all (`resolve_overrides` above never calls it there), so it no longer does.
-#[cfg(any(debug_assertions, test))]
+/// Pure parsing logic, factored out for readability (same reasoning `lib.rs::resolve_data_dir_override`
+/// documents). Gate round 1 fix (Low, #1053): `#[cfg(debug_assertions)]` only -- it has no reason
+/// to exist in a release build at all (`resolve_overrides` above never calls it there), and
+/// AGENTS.md's prototyping rule forbids a new `#[cfg(test)]` path for it (the whole file is new
+/// on this branch); the live check proves it instead (`scripts/verify-1048-holiday-touches.mjs`'s
+/// `runInvalidDateOverrideCheck` launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts
+/// the override resolves to `null`).
+#[cfg(debug_assertions)]
 fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>) -> DebugOverrides {
     let date = raw_date
         .as_deref()
@@ -139,31 +142,4 @@ fn is_valid_calendar_date(year: i32, month: u32, day: u32) -> bool {
 #[cfg(debug_assertions)]
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn blank_and_whitespace_date_is_none() {
-        assert_eq!(resolve_overrides_from(Some("  ".to_string()), None).date, None);
-        assert_eq!(resolve_overrides_from(None, None).date, None);
-        assert_eq!(
-            resolve_overrides_from(Some("2026-10-27".to_string()), None).date,
-            Some("2026-10-27".to_string())
-        );
-    }
-
-    /// Gate round 1 (#1053) added real calendar-validity rejection (`2026-02-30` is not a real
-    /// day) and the `MIN_IDLE_TIMEOUT_MS` clamp -- AGENTS.md's prototyping rule forbids a new
-    /// test for either, so both are proven live instead (`scripts/verify-1048-holiday-touches.mjs`
-    /// launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts the override resolves to
-    /// `null`). This pre-existing test is only ADAPTED (never a new one): its second assertion
-    /// now reflects the clamp the code under test gained, rather than the pre-clamp `Some(500)`.
-    #[test]
-    fn unparsable_idle_ms_is_none() {
-        assert_eq!(resolve_overrides_from(None, Some("not-a-number".to_string())).idle_timeout_ms, None);
-        assert_eq!(resolve_overrides_from(None, Some("500".to_string())).idle_timeout_ms, Some(MIN_IDLE_TIMEOUT_MS));
-    }
 }
