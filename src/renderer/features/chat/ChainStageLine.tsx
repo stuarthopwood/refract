@@ -8,11 +8,12 @@
 // 2026-10-18: a pure, component-free leaf module -- moved out of `SubagentChainRow.tsx` so this
 // file and that one no longer import each other at all).
 import { cn } from '@/lib/utils'
+import * as React from 'react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import { StageUsesLine } from './StageDependencies'
 import { rowVisibility } from './transcriptRowVisibility'
-import { jumpToStage } from './stageJump'
+import { JumpToStageContext } from './stageJump'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
@@ -96,10 +97,15 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
   const speechHeading = stageHeading(stage.stageIndex, stage.label, true)
   // Issue #1008 gate round 1, item 1 (High): the jump button only renders while this Stage's own
   // row is genuinely `'visible'` (`transcriptRowVisibility.ts`) -- "Show tool calls" off can drop
-  // a settled, problem-free Stage entirely, leaving no row for `jumpToStage` to find (see its
-  // own jsdoc, `stageJump.ts`, for the defensive lookup there too).
+  // a settled, problem-free Stage entirely, leaving no row for `jumpToStageRow` to find (see its
+  // own jsdoc, `Transcript.tsx`, for the defensive lookup there too). Gate round 2 fix (item 4,
+  // Low): also requires a real `jumpToStageRow` (from `JumpToStageContext`, provided by the
+  // owning `Transcript`) AND a non-null `sessionId` -- without a `sessionId` there is no
+  // persisted store to record a manual-open against, so a clickable "jump" that could never
+  // actually count as the user's own open would be misleading; falls back to the plain label.
   const transcriptDisplay = useSettingsStore((s) => s.settings.transcriptDisplay)
-  const isStageRowVisible = rowVisibility(stage, transcriptDisplay) === 'visible'
+  const jumpToStageRow = React.useContext(JumpToStageContext)
+  const canJump = rowVisibility(stage, transcriptDisplay) === 'visible' && sessionId != null && jumpToStageRow != null
   const colorClass = subagentStatusTextClass(counts)
   return (
     <div
@@ -109,18 +115,20 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
       aria-label={`${speechHeading}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
     >
-      {isStageRowVisible ? (
+      {canJump ? (
         <button
           type="button"
           title={`Go to ${stageLabel}`}
           // Issue #1008 gate round 1 (item 3, Medium): cursor/underline affordance cues beyond
-          // colour; `py-0.5` matches `ChainAgentEntry`'s own 28px button height above.
+          // colour; `py-1` really matches `ChainAgentEntry`'s own 28px button height above (its
+          // button uses `py-1`, not `py-0.5` -- gate round 2 fix, item 4: the old comment here
+          // claimed a match that was never true).
           className={cn(
-            'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-0.5 font-medium hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+            'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 font-medium hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
             colorClass
           )}
           aria-label={`Go to ${speechHeading}`}
-          onClick={() => jumpToStage(sessionId, stage.id)}
+          onClick={() => jumpToStageRow(stage.id)}
         >
           {stageLabel}
         </button>

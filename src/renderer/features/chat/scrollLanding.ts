@@ -63,3 +63,120 @@ export function resolveLandingScrollTop(
   if (!memory || memory.atEnd) return maxScrollTop
   return Math.min(memory.scrollTop, maxScrollTop)
 }
+
+export interface ScrollSettleLoopCallbacks {
+  /** Called once per animation frame with the viewport's own CURRENT metrics (read fresh, not
+   * memoised) to compute that frame's target `scrollTop`. */
+  computeTarget: (metrics: ViewportMetrics) => number
+  /** Called exactly once, when the loop decides it has settled -- `scrollHeight` unchanged AND
+   * the viewport on-target for `SCROLL_LANDING_STABLE_FRAMES` consecutive frames, or
+   * `SCROLL_LANDING_MAX_FRAMES` reached -- never if a real user input interrupts it first. */
+  onSettled: (landedAtEnd: boolean) => void
+  /** Called exactly once if a real wheel/key/pointer/touch/focusin event on `root` fires before
+   * the loop naturally settles -- the developer has taken over mid-settle. */
+  onInterrupted: (atEnd: boolean) => void
+  /** Checked at the START of every frame, before `computeTarget`; if it returns true the loop
+   * stops immediately -- no `scrollTop` write, no `onSettled`/`onInterrupted` call -- the
+   * caller's own target has disappeared out from under it (gate round 2, issue #1008 item 3:
+   * `jumpToStageRow`'s jumped-to row can be removed by a Session/Conversation switch mid-loop;
+   * the caller already handles its own cleanup for that, this just stops writing to a viewport
+   * that may itself be gone too). The session-landing effect below has no such external target
+   * (`resolveLandingScrollTop` only ever reads the scroll-memory store), so it never supplies
+   * this. */
+  shouldAbort?: () => boolean
+}
+
+/** Gate round 2 (issue #1008, falsified live): the shared "poll via `requestAnimationFrame`,
+ * re-applying a freshly-computed target `scrollTop` every frame, stop on real user input" engine
+ * `Transcript.tsx`'s own session-landing effect already proved against `content-visibility:auto`
+ * row growth, Chromium's own scroll anchoring, AND `MessageScrollerProvider`'s own sticky
+ * follow-bottom mode (this file's own `SCROLL_LANDING_MAX_FRAMES` doc already names that last one
+ * explicitly) -- extracted here so `jumpToStageRow` (`Transcript.tsx`) can reuse the EXACT same
+ * engine for a one-shot "jump to this Stage row" instead of re-solving the same fight with a
+ * second, narrower implementation (the deleted `stageJump.ts#settleScrollToRow`, which only ever
+ * held the line for its own short, fixed frame budget -- the instant that budget ran out, nothing
+ * stopped the vendored scroller's follow-bottom mode re-engaging on the NEXT streamed chunk,
+ * since only THIS shared engine's caller, via `onSettled`/`onInterrupted`, can reach the
+ * `autoScrollSuppressed` state that actually holds it off). Returns a `cancel()` function the
+ * caller's own effect cleanup (or early-return path) can call to stop the loop and remove its
+ * input listeners without invoking either callback -- exactly what the landing effect's own
+ * cleanup already did inline before this extraction. */
+export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, callbacks: ScrollSettleLoopCallbacks): () => void {
+  let cancelled = false
+  let frame = 0
+  let stableFrames = 0
+  let lastHeight = -1
+  let lastAssignedScrollTop = -1
+
+  function removeInputListeners() {
+    root.removeEventListener('wheel', handleViewportPointerOrWheel)
+    root.removeEventListener('keydown', handleKeyInput)
+    root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
+    root.removeEventListener('touchstart', handleViewportPointerOrWheel)
+    root.removeEventListener('focusin', handleFocusInput)
+  }
+
+  function handleUserInput() {
+    if (cancelled) return
+    cancelled = true
+    removeInputListeners()
+    const atEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
+    callbacks.onInterrupted(atEnd)
+  }
+
+  const SCROLL_NAVIGATION_KEYS: Record<string, true> = {
+    ArrowUp: true, ArrowDown: true, Home: true, End: true, PageUp: true, PageDown: true, ' ': true
+  }
+  function handleKeyInput(event: KeyboardEvent) {
+    if (!SCROLL_NAVIGATION_KEYS[event.key]) return
+    handleUserInput()
+  }
+
+  function handleFocusInput(event: FocusEvent) {
+    if (!viewport.contains(event.target as Node)) return
+    handleUserInput()
+  }
+
+  function handleViewportPointerOrWheel(event: Event) {
+    if (!(event.target instanceof Node) || !viewport.contains(event.target)) return
+    handleUserInput()
+  }
+
+  root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
+  root.addEventListener('keydown', handleKeyInput, { passive: true })
+  root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
+  root.addEventListener('touchstart', handleViewportPointerOrWheel, { passive: true })
+  root.addEventListener('focusin', handleFocusInput, { passive: true })
+
+  function step() {
+    if (cancelled) return
+    if (callbacks.shouldAbort?.()) {
+      cancelled = true
+      removeInputListeners()
+      return
+    }
+    const { scrollHeight, clientHeight } = viewport
+    const heightStable = scrollHeight === lastHeight
+    const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
+    stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
+    lastHeight = scrollHeight
+    frame += 1
+    const target = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
+    viewport.scrollTop = target
+    lastAssignedScrollTop = target
+    if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
+      cancelled = true
+      removeInputListeners()
+      const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
+      callbacks.onSettled(landedAtEnd)
+      return
+    }
+    requestAnimationFrame(step)
+  }
+
+  requestAnimationFrame(step)
+  return () => {
+    cancelled = true
+    removeInputListeners()
+  }
+}

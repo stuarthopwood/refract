@@ -10,11 +10,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Message, MessageContent } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
+import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
 import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
-import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
+import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
@@ -35,6 +35,7 @@ import { NoticeRow } from './NoticeRow'
 import { SkillPromptRow } from './SkillPromptRow'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
+import { JUMP_SCROLL_TOP_MARGIN_PX, JumpToStageContext, stageRowDomId } from './stageJump'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -647,33 +648,13 @@ export function Transcript({
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
   // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
   // a Session switch, a Conversation switch, or this pane's very first mount -- never on an
-  // ordinary streamed `items` update. Polls via `requestAnimationFrame`, re-applying the target
-  // `scrollTop` on EVERY frame (not just once at the end): a `content-visibility:auto` row above
-  // the target can keep growing `scrollHeight` after a single assignment would have landed, and
-  // Chromium's own scroll-anchoring can independently nudge `scrollTop` while that growth is in
-  // flight (#459's same root cause) -- a one-shot assignment loses the race either way. A long
-  // transcript's settling is NOT purely a `scrollHeight`-stability question either: scroll
-  // anchoring (and, while it is still catching up, `MessageScrollerProvider`'s own `autoScroll`,
-  // suppressed above for this exact window) can silently overwrite `scrollTop` again in the gap
-  // between two of this loop's own frames, leaving `scrollHeight` reading "stable" while the
-  // position itself keeps drifting toward the bottom -- so each frame also checks whether the
-  // PREVIOUS frame's own assignment actually stuck (`viewport.scrollTop` still reads what was
-  // last written) and resets the counter if not, the same as a genuine height change would.
-  // Bounded by `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll
-  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint, in
-  // the same commit as the DOM update. Gate-fix (quality-gate cycle 2, finding 1):
-  // `resolveLandingScrollTop` now clamps its result to `scrollHeight - clientHeight`, matching
-  // the clamp the browser itself applies to `scrollTop` -- an unclamped "land at end" target
-  // could never equal the browser-clamped `viewport.scrollTop` read back afterwards, so
-  // `notPerturbed` was never true and every at-end landing silently spent all
-  // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
-  // instant it sees real user input (wheel, keydown, pointerdown, touchstart) anywhere inside the
-  // `MessageScroller` root -- the viewport itself, or the app-owned sibling "Scroll to end" button
-  // (gate fixes 2, finding 2: that button lives outside `viewportRef`'s own subtree, so listeners
-  // scoped to just the viewport never saw a click/Enter/Space on it, and a developer using it to
-  // jump to the end mid-settle had to fight the loop's own re-assertion for up to
-  // `SCROLL_LANDING_MAX_FRAMES` frames) -- a developer taking over mid-settle must not keep
-  // fighting the loop's own re-assertion either way.
+  // ordinary streamed `items` update. `useLayoutEffect` (not `useEffect`) so the first
+  // re-assertion lands before paint, in the same commit as the DOM update. Gate round 2 (issue
+  // #1008): the actual poll-and-fight engine now lives in `runScrollSettleLoop`
+  // (`scrollLanding.ts`), shared with `jumpToStageRow` below -- this effect only supplies ITS OWN
+  // target (`resolveLandingScrollTop`, reading the scroll-memory store) and the React-state side
+  // effects (`landingInProgressRef`, `autoScrollSuppressed`, `isAtEnd`, the scroll-memory record
+  // on a real-input interrupt) the shared engine has no business knowing about.
   React.useLayoutEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) {
@@ -685,116 +666,93 @@ export function Transcript({
     // always rendered as the viewport's own parent below, so this is defensive, not expected).
     const root = scrollerRootRef.current ?? viewport
     landingInProgressRef.current = true
-    let cancelled = false
-    let frame = 0
-    let stableFrames = 0
-    let lastHeight = -1
-    let lastAssignedScrollTop = -1
-
-    function removeInputListeners() {
-      root.removeEventListener('wheel', handleViewportPointerOrWheel)
-      root.removeEventListener('keydown', handleKeyInput)
-      root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
-      root.removeEventListener('touchstart', handleViewportPointerOrWheel)
-      root.removeEventListener('focusin', handleFocusInput)
-    }
-
-    // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear the in-progress flag, and record wherever they
-    // are now. `autoScroll` only resumes if that position is actually at the end (quality-gate
-    // cycle 2, finding 1): unconditionally clearing it let the vendored scroller's own
-    // `autoScroll` re-engage mid-collapse, overwriting a genuine upward wheel scroll.
-    function handleUserInput() {
-      if (cancelled || !viewport) return
-      cancelled = true
-      removeInputListeners()
-      const atEnd = isAtScrollEnd({
-        scrollTop: viewport.scrollTop,
-        scrollHeight: viewport.scrollHeight,
-        clientHeight: viewport.clientHeight
-      })
-      useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-      landingInProgressRef.current = false
-      setAutoScrollSuppressed(!atEnd)
-      setIsAtEnd(atEnd)
-    }
-
-    // Quality-gate remediation (round 2, 2026-10-07, a11y): the vendored scroller only reacts to
-    // a handful of navigation keys itself (ArrowUp/ArrowDown/Home/End/PageUp/PageDown/Space); a
-    // bare `keydown` listener here used to treat EVERY key -- Shift, Ctrl, even Ctrl+C -- as "the
-    // developer took over", cancelling the landing settle loop on keystrokes that never move the
-    // viewport at all. Filtered to exactly the keys the library itself moves on.
-    const SCROLL_NAVIGATION_KEYS: Record<string, true> = {
-      ArrowUp: true, ArrowDown: true, Home: true, End: true, PageUp: true, PageDown: true, ' ': true
-    }
-    function handleKeyInput(event: KeyboardEvent) {
-      if (!SCROLL_NAVIGATION_KEYS[event.key]) return
-      handleUserInput()
-    }
-
-    // Finding 5 (gate fixes 4, a11y): focus moving INTO the viewport mid-settle (Tab reaching a
-    // focusable row, or a screen reader's virtual cursor driving `scrollIntoView`) is just as
-    // much "the developer took over" as a wheel/key/pointer event -- previously only those were
-    // watched, so an assistive-tech user navigating into the transcript had their own focus
-    // target fought by the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES` frames.
-    // `focusin` bubbles (unlike `focus`), so one listener on `root` catches it from any
-    // descendant; scoped to `viewport.contains(target)` so focus landing on the sibling button
-    // (handled by its own click path, and by finding 1's focus-restoration effect) doesn't
-    // double-trigger this.
-    function handleFocusInput(event: FocusEvent) {
-      if (!viewport || !viewport.contains(event.target as Node)) return
-      handleUserInput()
-    }
-
-    // Gate-fix (#672, UI round 1; touchstart round 2): a wheel/pointerdown/touch on the notice's own buttons used to bubble to `root` and cancel this loop -- scoped like `handleFocusInput`.
-    function handleViewportPointerOrWheel(event: Event) {
-      if (!viewport || !(event.target instanceof Node) || !viewport.contains(event.target)) return
-      handleUserInput()
-    }
-
-    root.addEventListener('wheel', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('keydown', handleKeyInput, { passive: true })
-    root.addEventListener('pointerdown', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('touchstart', handleViewportPointerOrWheel, { passive: true })
-    root.addEventListener('focusin', handleFocusInput, { passive: true })
-
-    function step() {
-      if (cancelled || !viewport) return
-      const { scrollHeight, clientHeight } = viewport
-      const heightStable = scrollHeight === lastHeight
-      const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
-      stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
-      lastHeight = scrollHeight
-      frame += 1
-      const memory = useChatScrollStore.getState().bySession[sessionId]
-      const target = resolveLandingScrollTop(memory, scrollHeight, clientHeight)
-      viewport.scrollTop = target
-      lastAssignedScrollTop = target
-      if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
-        cancelled = true
-        removeInputListeners()
+    const cancel = runScrollSettleLoop(root, viewport, {
+      computeTarget: ({ scrollHeight, clientHeight }) => {
+        const memory = useChatScrollStore.getState().bySession[sessionId]
+        return resolveLandingScrollTop(memory, scrollHeight, clientHeight)
+      },
+      onSettled: (landedAtEnd) => {
         landingInProgressRef.current = false
-        // Quality-gate finding (code review, High): decided from where the viewport ACTUALLY
-        // landed (the same `isAtScrollEnd` check `handleViewportScroll`/`handleUserInput` use),
-        // not from `memory` directly -- a stale/incorrect memory entry (e.g. a scroll race the
-        // `inFlight` guard above did not fully close, or any future call site that forgets to
-        // set it) can then never leave auto-follow permanently suppressed for a Conversation
-        // that is actually sitting at its end.
-        const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
         setAutoScrollSuppressed(!landedAtEnd)
         setIsAtEnd(landedAtEnd)
-        return
+      },
+      // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
+      // over mid-settle: record wherever they are now. `autoScroll` only resumes if that position
+      // is actually at the end (quality-gate cycle 2, finding 1): unconditionally clearing it let
+      // the vendored scroller's own `autoScroll` re-engage mid-collapse, overwriting a genuine
+      // upward wheel scroll.
+      onInterrupted: (atEnd) => {
+        useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+        landingInProgressRef.current = false
+        setAutoScrollSuppressed(!atEnd)
+        setIsAtEnd(atEnd)
       }
-      requestAnimationFrame(step)
-    }
-
-    requestAnimationFrame(step)
+    })
     return () => {
-      cancelled = true
-      removeInputListeners()
+      cancel()
       landingInProgressRef.current = false
     }
   }, [sessionId, transcript.generation])
+
+  // "Go to Stage N" (issue #1008 item 2; gate round 2, Main 2026-10-18, Decided -- falsified
+  // live): `ChainStageLine` is a SIBLING of the Stage row it targets, never its parent, so there
+  // is no React ref to use -- this callback, reached via `JumpToStageContext` (provided below),
+  // is the lever instead. Gate round 2 fix: the ORIGINAL implementation (`stageJump.ts`'s own
+  // deleted `jumpToStage`/`settleScrollToRow`) ran its own short, fixed-budget settle loop that
+  // could never reach `autoScrollSuppressed` (this component's own local state) -- on a turn that
+  // stays unsettled (a permanently failed Stage, FR-068), `MessageScrollerProvider`'s sticky
+  // follow-bottom mode stayed engaged the WHOLE time, re-snapping to the end the instant the
+  // jumped-to Stage's own expansion mutated the DOM; a live `scrollTop` trace showed it pinned at
+  // `scrollHeight - clientHeight` from frame 0, never once reaching the row. Moved here so the
+  // SAME suppression the detached-restore path already uses applies: `setAutoScrollSuppressed`
+  // goes true the instant the jump starts (before the Stage's own `setManualOpen` re-render can
+  // even fire), and `runScrollSettleLoop`'s `onSettled`/`onInterrupted` only clear it once the
+  // viewport is ACTUALLY at the end again -- so it holds through every later streamed chunk too,
+  // not just the jump's own short settle window (`handleViewportScroll` above is the only other
+  // place that ever clears it, on a real user scroll back to the end). No `prefers-reduced-motion`
+  // branch (gate round 2, item 2): `runScrollSettleLoop` never animates -- every frame is a plain
+  // instant `scrollTop =` assignment, the same as the landing effect above already uses
+  // unconditionally.
+  const jumpToStageRow = React.useCallback(
+    (stageId: string) => {
+      const row = document.getElementById(stageRowDomId(sessionId, stageId))
+      if (!row) return
+      if (sessionId != null) useStageToggleStore.getState().setManualOpen(sessionId, stageId, true)
+      row.focus({ preventScroll: true })
+      const viewport = viewportRef.current
+      const root = scrollerRootRef.current ?? viewport
+      if (!viewport || !root) return
+      landingInProgressRef.current = true
+      setAutoScrollSuppressed(true)
+      runScrollSettleLoop(root, viewport, {
+        // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
+        // `row` from the DOM (or detach it from this `viewport`) before the loop settles -- stop
+        // touching `scrollTop` for a target that is gone, rather than keep computing a
+        // meaningless rect against a disconnected node. The session-landing effect above has no
+        // such external target, so it never needs this.
+        shouldAbort: () => !row.isConnected || !viewport.contains(row),
+        computeTarget: ({ scrollTop, scrollHeight, clientHeight }) => {
+          const rowRect = row.getBoundingClientRect()
+          const viewportRect = viewport.getBoundingClientRect()
+          const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+          const raw = scrollTop + (rowRect.top - viewportRect.top) - JUMP_SCROLL_TOP_MARGIN_PX
+          return Math.max(0, Math.min(raw, maxScrollTop))
+        },
+        onSettled: (landedAtEnd) => {
+          landingInProgressRef.current = false
+          setAutoScrollSuppressed(!landedAtEnd)
+          setIsAtEnd(landedAtEnd)
+        },
+        onInterrupted: (atEnd) => {
+          useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+          landingInProgressRef.current = false
+          setAutoScrollSuppressed(!atEnd)
+          setIsAtEnd(atEnd)
+        }
+      })
+    },
+    [sessionId]
+  )
 
   // Finding 6 (gate fixes 4): `isAtEnd` otherwise only updates from a real `scroll` event, the
   // render-phase reset above, or the settle loop's own completion -- a pane resize (e.g.
@@ -828,6 +786,7 @@ export function Transcript({
     // (`Markdown.tsx`'s `a`/inline-`code`/`FileLinkButton`, `ToolRow.tsx`, `DiffView.tsx`) via
     // `LinkContext` instead of a prop threaded through that whole call chain -- set here, not in
     // `ChatPane.tsx`, so this stays clear of #621's own changes to that file.
+    <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
@@ -1054,5 +1013,6 @@ export function Transcript({
       </MessageScroller>
     </MessageScrollerProvider>
     </LinkContext.Provider>
+    </JumpToStageContext.Provider>
   )
 }
