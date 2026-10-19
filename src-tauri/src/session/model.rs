@@ -189,14 +189,12 @@ pub(super) async fn on_start_progress(
 // ---------------------------------------------------------------------------
 
 /// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`
-/// entry's `role` (FINDINGS item 51: `set_model`/`open_session`-override always write an
-/// explicit `role:"default"`; `cycle_model` omits `role` entirely -- both reconstruct to
-/// `"default"` per the same finding). `None` when the file has no `model_change` entry at all
-/// (nothing has ever touched this Session's model this Conversation) or cannot be read --
-/// callers must not guess `"default"` for that case (#741: "if the role cannot be established,
-/// show nothing rather than a guess"). Reads the whole file once (cached by the caller into
-/// `State.current_role` so this never repeats for the same Session/Conversation; a NOT-found
-/// result is cached too, by path, in `State.role_probed_path` -- gate-fix HIGH/perf).
+/// entry's effective role (`model_support::model_change_role`: `set_model`/`open_session`-
+/// override always write an explicit `role:"default"`; `cycle_model` omits `role` entirely --
+/// both reconstruct to `"default"`, FINDINGS item 51). `None` when the file has no
+/// `model_change` entry at all or cannot be read -- never guessed as `"default"` (#741). Reads
+/// the whole file once (cached into `State.current_role`; a NOT-found result is cached too, by
+/// path, in `State.role_probed_path` -- gate-fix HIGH/perf).
 async fn read_role_from_session_file(conversation_path: &str) -> Option<String> {
     let content = tokio::fs::read_to_string(conversation_path).await.ok()?;
     let mut latest: Option<String> = None;
@@ -235,7 +233,8 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
         .with_model_state(|s| (s.pinned, s.current_role.clone()))
         .await;
     if pinned || cached_role.is_some() {
-        return (pinned, cached_role);
+        let effective_pinned = pinned && cached_role.as_deref() != Some("fallback"); // #741: fallback outranks a stale pin
+        return (effective_pinned, cached_role);
     }
     let Some(path) = agent.current_conversation_path().await else {
         return (pinned, None);
