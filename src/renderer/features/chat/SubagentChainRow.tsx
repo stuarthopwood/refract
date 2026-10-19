@@ -154,32 +154,46 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // looking different from every later one forever (no `SubagentRow` chrome, unlike #563's own
   // "never switch element type between solo and multi members" rule intends) -- the structure
   // does not allow it cleanly, so this falls through to the decision's own stated fallback.
-  const memberContentRef = React.useRef<HTMLDivElement>(null)
+  // Gate fix (first real build-slot live-check run, falsified live): a plain `useRef` +
+  // `useEffect(..., [])` attaches the `focusin`/`focusout` listeners only once, at THIS
+  // component's own initial mount -- but a solo Stage starts collapsed (`isOpenByDefault` is
+  // always false for one agent) and Radix does not render `CollapsibleContent` at all while
+  // closed, so `memberContentRef.current` is still `null` at that first run and the listeners
+  // are never attached at all once the row is later expanded. A callback ref re-fires every
+  // time React actually attaches/detaches the underlying DOM node -- exactly the open/close
+  // (mount/unmount) cycle this needs to survive -- so the listeners are (re)attached the
+  // instant the content genuinely mounts, not merely once at this component's own first render.
+  const memberContentNodeRef = React.useRef<HTMLDivElement | null>(null)
   const triggerRef = React.useRef<HTMLElement>(null)
   const focusWasInsideRef = React.useRef(false)
   const prevTotalRef = React.useRef(total)
 
-  React.useEffect(() => {
-    const el = memberContentRef.current
-    if (!el) return
-    const handleFocusIn = () => {
-      focusWasInsideRef.current = true
-    }
-    const handleFocusOut = (event: FocusEvent) => {
-      // A focusout landing on `<body>` (or nowhere) is the symptom itself -- the node that just
-      // got removed, not a legitimate move elsewhere -- so the flag is left set for the layout
-      // effect below to still catch it; anything else is a real, intentional focus change away.
-      const next = (event.relatedTarget as Node | null) ?? document.activeElement
-      if (next === document.body || next === null) return
-      focusWasInsideRef.current = false
-    }
-    el.addEventListener('focusin', handleFocusIn)
-    el.addEventListener('focusout', handleFocusOut)
-    return () => {
-      el.removeEventListener('focusin', handleFocusIn)
-      el.removeEventListener('focusout', handleFocusOut)
-    }
+  const handleMemberContentFocusIn = React.useCallback(() => {
+    focusWasInsideRef.current = true
   }, [])
+  const handleMemberContentFocusOut = React.useCallback((event: FocusEvent) => {
+    // A focusout landing on `<body>` (or nowhere) is the symptom itself -- the node that just
+    // got removed, not a legitimate move elsewhere -- so the flag is left set for the layout
+    // effect below to still catch it; anything else is a real, intentional focus change away.
+    const next = (event.relatedTarget as Node | null) ?? document.activeElement
+    if (next === document.body || next === null) return
+    focusWasInsideRef.current = false
+  }, [])
+  const memberContentRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      const prevEl = memberContentNodeRef.current
+      if (prevEl) {
+        prevEl.removeEventListener('focusin', handleMemberContentFocusIn)
+        prevEl.removeEventListener('focusout', handleMemberContentFocusOut)
+      }
+      memberContentNodeRef.current = el
+      if (el) {
+        el.addEventListener('focusin', handleMemberContentFocusIn)
+        el.addEventListener('focusout', handleMemberContentFocusOut)
+      }
+    },
+    [handleMemberContentFocusIn, handleMemberContentFocusOut]
+  )
 
   React.useLayoutEffect(() => {
     const prevTotal = prevTotalRef.current
