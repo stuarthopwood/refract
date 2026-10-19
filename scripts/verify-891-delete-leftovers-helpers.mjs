@@ -162,11 +162,11 @@ export async function openDeleteDialogFor(cdp, name) {
     { timeoutMs: 10_000, label: `row actions trigger revealed for "${name}"` }
   );
   await cdp.click(triggerFinder);
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete')`, {
+  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete\u2026')`, {
     timeoutMs: 10_000,
-    label: 'row menu open with Delete item'
+    label: 'row menu open with Delete\u2026 item'
   });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete')`);
+  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete\u2026')`);
   await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog opened' });
 }
 
