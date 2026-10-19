@@ -8,6 +8,8 @@ Decided by Stuart in the #474 grill, 2026-10-08.
 
 Motion always carries a function, never only decoration: every animated state keeps colour, icon, and `sr-only` text as its non-motion signal, so `prefers-reduced-motion: reduce` can remove the motion without losing information (agenda item 11). This expands the old `docs/DESIGN.md` Motion rule; it does not change it.
 
+**Exception, Holiday touches (Stuart, 2026-10-19, #1048):** seasonal artwork and its ambient loops (snow, pumpkin flicker, sparks) are decoration by design. They are allowed only behind the Appearance setting "Holiday touches" (Full / Artwork only / Off). Loops pause when the window is hidden or unfocused, after 60 s with no input, and under OS reduced motion (WCAG 2.2.2, 2.3.3). They never flash more than three times a second, never cover text or controls, are `aria-hidden`, and never replace a functional animation's non-motion signal (the holiday spinner keeps its colour, sr-only word and reduced-motion glyph).
+
 ## Durations
 
 - Hover and state fades: up to 150ms.

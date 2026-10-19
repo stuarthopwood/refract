@@ -136,6 +136,10 @@ _Avoid_: Active pane, selected pane
 The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues).
 _Avoid_: Home pane, dashboard, start page
 
+**Holiday touches**:
+Seasonal, purely decorative artwork (and, when allowed, gentle ambient motion) that Refract shows near a holiday, and the Appearance setting that controls it (Full, Artwork only, Off).
+_Avoid_: Easter eggs, seasonal theme, festive mode
+
 **Pull requests view**:
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
