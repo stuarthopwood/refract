@@ -7,9 +7,18 @@
 // the SAME visible "·" form every `STAGE*_TITLE` constant already carries, with "·" swapped for
 // ", " (the identical transform `stageHeading`'s own `forSpeech` branch applies). Never found at
 // all on `origin/main`, where this label is still a plain, non-interactive `<span>`.
+// Gate round 2 fix (falsified live, item 5): STAGE10_BORDERLINE_TITLE's own text contains an
+// apostrophe ("brief's") -- the old version embedded `ariaLabel` directly inside an OUTER
+// single-quoted JS string, so that apostrophe closed the string early, a syntax error the
+// instant this title was ever actually waited on (the exact same shape of bug `titleSelector`'s
+// own doc comment, `verify-941-stage-naming-helpers.mjs`, already fixed once for `titleText`
+// itself). Fixed the same way: escape the CSS attribute VALUE first, then `JSON.stringify` the
+// WHOLE `querySelector` argument once, so no apostrophe or quote inside `titleText` can ever
+// break out of a hand-built quoted literal again.
 export function jumpButtonExpr(titleText) {
   const ariaLabel = `Go to ${titleText.replace(' \u00b7 ', ', ')}`;
-  return `document.querySelector('[aria-label="Transcript"] button[aria-label="${ariaLabel}"]')`;
+  const cssValue = ariaLabel.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `document.querySelector(${JSON.stringify(`[aria-label="Transcript"] button[aria-label="${cssValue}"]`)})`;
 }
 
 /** Bounds-based "is this genuinely in the viewport" proof: a real, positive on-screen extent
