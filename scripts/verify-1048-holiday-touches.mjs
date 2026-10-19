@@ -63,6 +63,11 @@ const HALLOWEEN_DATE_OVERRIDE = '2026-10-27';
 // deterministic regardless of what day this script happens to run on.
 const OFF_SEASON_DATE_OVERRIDE = '2026-07-15';
 const SHORT_IDLE_MS = 3_000;
+// The one DOM probe for "did holiday artwork render anywhere": the watermark/sidebar/spinner
+// all carry a lucide icon whose own class name is `lucide-<kebab-icon-name>`; Halloween's own
+// icon is `Ghost` -> `lucide-ghost`. Module scope (used by both `main()` and
+// `runOffSeasonBaseline()`).
+const HALLOWEEN_ICON_CLASS = 'lucide-ghost';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -133,7 +138,6 @@ async function main() {
    * all carry a lucide icon whose own class name is `lucide-<kebab-icon-name>`; Halloween's own
    * icon is `Ghost` -> `lucide-ghost`. Cheaper and more direct than asserting each placement's
    * own exact markup one at a time for the "present in all five placements" sweep. */
-  const HALLOWEEN_ICON_CLASS = 'lucide-ghost';
 
   async function readArtworkPresence(cdp) {
     return cdp.evaluate(`(() => {
