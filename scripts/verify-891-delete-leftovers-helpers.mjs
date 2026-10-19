@@ -210,6 +210,20 @@ export async function isDialogOpen(cdp) {
   return cdp.evaluate(`!!document.querySelector('[role="alertdialog"]')`);
 }
 
+/** Polls for EITHER the dialog closing (success) OR a non-empty error appearing in its own
+ * `role="alert"` paragraph (a backend refusal, e.g. `worktree-held`, or any other delete
+ * failure) -- a bare "wait for closed" would otherwise spin for the full timeout on every
+ * failure, since a failed delete leaves the dialog open showing the error by design
+ * (`DeleteDialog.tsx`'s own `handleDelete`: `setError(...); return` never closes it). Returns
+ * `{ closed: true }` or `{ closed: false, error: string }`; throws only if NEITHER happens
+ * within `timeoutMs`. */
+export async function waitForDeleteOutcome(cdp, { timeoutMs = 60_000 } = {}) {
+  return cdp.waitFor(
+    `(() => { if (!document.querySelector('[role="alertdialog"]')) return { closed: true }; const err = document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent; return err ? { closed: false, error: err } : false; })()`,
+    { timeoutMs, label: 'delete outcome (closed or errored)' }
+  );
+}
+
 export async function isSessionListed(cdp, name) {
   return cdp.evaluate(
     `!!Array.from(document.querySelectorAll('[data-session-open]')).find((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))`
