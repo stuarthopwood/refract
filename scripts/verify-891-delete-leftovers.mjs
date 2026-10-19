@@ -19,7 +19,7 @@
 // generation are new (`verify-891-delete-leftovers-helpers.mjs`) -- no existing script touches
 // this dialog.
 
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -86,11 +86,12 @@ async function main() {
   const canaryDir = path.join(SCRATCH_ROOT, 'canary-outside-worktree');
   const port = await getFreePort();
 
+  const appLogFile = path.join(SCRATCH_ROOT, 'app.log');
   const { child, targetPid } = await launchBuiltExe(launcherExe, exePath, {
     port,
     dataDir,
     importSourceDir,
-    logFile: path.join(SCRATCH_ROOT, 'app.log')
+    logFile: appLogFile
   });
 
   let cdp;
@@ -224,6 +225,16 @@ async function main() {
     for (const p of spawned) await killSpawned(p).catch(() => {});
     if (cdp) cdp.close();
     await stopLauncher(child).catch(() => {});
+    // Preserved alongside screenshots (SHOT_DIR survives; SCRATCH_ROOT does not) -- the app's
+    // own tauri_plugin_log output is otherwise lost the moment safeRmSync below runs, which is
+    // exactly when a failure most needs it.
+    if (existsSync(appLogFile)) {
+      try {
+        copyFileSync(appLogFile, path.join(SHOT_DIR, 'app.log'));
+      } catch {
+        /* best-effort */
+      }
+    }
     await safeRmSync(SCRATCH_ROOT, 'verify-891');
   }
 

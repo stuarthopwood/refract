@@ -193,8 +193,22 @@ export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
 
 /** `cdp.clickByText(text, { inDialog: true })` scopes to `[role="dialog"]`, which a Radix
  * AlertDialog never carries (it is `[role="alertdialog"]`) -- clicks the AlertDialog's own
- * "Delete"/"Deleting…" button directly instead of going through that shared helper. */
+ * "Delete"/"Deleting…" button directly instead of going through that shared helper. Waits for
+ * the button's own `aria-disabled` to clear first: it stays `true` (Tailwind's own
+ * `aria-disabled:pointer-events-none`, `DeleteDialog.tsx`'s `aria-disabled={loading ||
+ * deleting}`) until the SEPARATE `sessions.deleteCheck` git-status call resolves, which is not
+ * the same wait as `waitForLeftoverSummary`'s own leftover-walk completion -- against a real,
+ * large worktree the git-status scan can still be in flight after the (much cheaper)
+ * leftover-walk has already finished. A real OS-level click dispatched at the button's own
+ * coordinates while `pointer-events: none` is still set is silently swallowed: no exception,
+ * no renderer console output, nothing -- `handleDelete` is simply never called, which is
+ * exactly the "dialog hangs forever" symptom this fixes (confirmed live: an `aria-disabled`
+ * read at the exact moment of a premature click came back `"true"`). */
 export async function clickDeleteButton(cdp) {
+  await cdp.waitFor(
+    `(() => { const b = Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete'); return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`,
+    { timeoutMs: 30_000, label: 'Delete button enabled (deleteCheck resolved)' }
+  );
   await cdp.click(
     `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete')`
   );
