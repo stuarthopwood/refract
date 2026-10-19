@@ -1,5 +1,5 @@
 import { initStores } from './init-stores'
-import { notify } from './notify'
+import { dismissSlashCommandRefusalToast, notify } from './notify'
 import { useAdvisorStore } from './advisor-store'
 import { useAlertDismissStore } from './alert-dismiss-store'
 import { useAccountsStore } from './accounts'
@@ -31,7 +31,7 @@ import { useStageToggleStore } from './stage-toggle-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
-export { notify }
+export { dismissSlashCommandRefusalToast, notify }
 export { useAccountsStore }
 export { useAdvisorStore }
 export { useAlertDismissStore }

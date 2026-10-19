@@ -178,8 +178,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
               // Issue #997: `[overflow-wrap:anywhere]` (not `break-words`, which Tailwind maps
               // to `overflow-wrap: break-word` -- a word still spills past the edge once the
               // whole word is wider than the column, e.g. a long unbroken token/URL) is this
-              // transcript's prevailing choice; the expanded detail `<p>` below (line ~294)
-              // already uses it for the identical reason.
+              // transcript's prevailing choice; the expanded detail `<p id={detailId}>` below
+              // (same file) already uses it for the identical reason.
               summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
               summaryClassName ?? 'text-muted-foreground'
             )}

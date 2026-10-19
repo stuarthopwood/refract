@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react'
+import { InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
@@ -9,7 +9,10 @@ type NoticeLevel = Extract<TranscriptItem, { kind: 'notice' }>['level']
 const NOTICE_ICON = {
   info: InfoIcon,
   warning: TriangleAlertIcon,
-  error: CircleAlertIcon
+  // Gate round 1 (#997, Low): `components.md`'s own severity table calls the error shape an
+  // octagon (matching the Toaster's `OctagonXIcon`, `sonner.tsx`) -- `CircleAlertIcon` was the
+  // wrong shape for this severity, not just a different icon.
+  error: OctagonAlertIcon
 } as const satisfies Record<NoticeLevel, unknown>
 
 const NOTICE_CLASS = {
@@ -88,7 +91,7 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
        * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
        * this previously set explicitly, which reads brighter than primary chat prose. */}
-      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground">{text}</div>
+      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</div>
     </CollapsedLine>
   )
 }
