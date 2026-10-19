@@ -15,12 +15,19 @@
 // disk. A role chip (Default, no chip for an unknown role, Fallback) is therefore proven by what
 // this script seeds on disk BEFORE the app ever opens the Session, never by a tape frame.
 //
-// Four launches, one build:
-//   1. "default" conversation file -> Default chip, 60-char-plus model name truncation, details
-//      card name/provider line, AX names, 5-theme screenshots, then a real `set_model` IPC call
-//      (the backend contract itself, matching `verify-rm-live-check.mjs`'s own established
-//      precedent for RPC-level proof -- NOT a UI click, since #741's hand-pick is a Rust/registry
-//      concern the DOM cannot exercise any more directly) pins the Session -> Custom chip.
+// Five launches, one build (gate round 1 added launch 5, the empty-conversation case):
+//   1. "default" conversation file -> Default chip, 60-char-plus model name truncation (real
+//      geometry, not a guessed selector), details card name/provider line, AX names, muted-text
+//      contrast >= 4.5:1 in all five theme presets (screenshots), a real keyboard path (Tab,
+//      focus-visible, tooltip, Escape, Shift+Tab), then a real `set_model` IPC call (the backend
+//      contract itself, matching `verify-rm-live-check.mjs`'s own established precedent for
+//      RPC-level proof -- NOT a UI click, since #741's hand-pick is a Rust/registry concern the
+//      DOM cannot exercise any more directly) pins the Session -> Custom chip. Gate round 1 fix
+//      (MEDIUM #4): with the Session still pinned, a fallback `model_change` line is appended to
+//      the SAME conversation file and the tape autonomously emits a real `retry_fallback_
+//      succeeded` frame -- the chip must flip to Fallback with NO restart, proving `model.rs`'s
+//      own "fallback outranks a pin" fix, and the registry's own `pinned` flag must stay true
+//      underneath (never cleared by a fallback).
 //   2. SAME `dataDir` as launch 1 (a fresh process, same `registry.json`): proves the pin survives
 //      a restart (`ensure_pin_seeded` folding `pinnedModel` back in) -- Custom chip reappears with
 //      NO hand-pick repeated this run.
@@ -28,18 +35,14 @@
 //      line) -> Fallback chip, tape-proven per FINDINGS item 61 (a live-forced fallback could not
 //      be produced in 90s against a real OMP; forcing/confirming that transition live is #650).
 //   4. "unknown-role" conversation file (a role string outside every known chat role) -> no chip
-//      at all (#741: "if the role cannot be established, show nothing rather than a guess").
-//
-// Story DOM marker first (`refract-ui-lane-gate-checklist`): every launch asserts the Readiness
-// screen's own `[data-readiness-primary]` mounts and goes green before anything else is judged --
-// if the build never reaches a working app, every later check reports "target missing", never a
-// false PASS.
-//
-// `report.json`: `{gitHead, dirty, exeSha256, findings, failures, notExercised, exitCode}`.
-// Every check either finds its real target and asserts on it, or is recorded in `notExercised`
-// with the reason -- never silently skipped.
+//      at all (#741: "if the role cannot be established, show nothing rather than a guess"),
+//      asserted only after `sessions.list()` itself reports the seeded `currentRole` (gate round
+//      1 fix HIGH #3b: a fixed sleep used to stand in for that real wait).
+//   5. Gate round 1 fix (HIGH #3b): an EMPTY conversation file (no `model_change` line at all)
+//      -> `currentRole` reads `null` and no chip renders -- the other half of "show nothing
+//      rather than a guess" launch 4 alone never exercised.
 
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -54,10 +57,20 @@ import {
   requireSharedCargoTarget,
   clearKnownOutputFiles,
   getAccessibleNameAndRole,
-  axText,
-  switchTheme
+  axText
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
+import {
+  openScratchSession,
+  readRoleChip,
+  runLaunch1Checks,
+  ROLE_CHIP_FINDER,
+  ROLE_CHIP_LABEL_EXPR,
+  THEMES,
+  DEFAULT_MODEL_CHANGE_LINE,
+  FALLBACK_MODEL_CHANGE_LINE,
+  UNKNOWN_ROLE_MODEL_CHANGE_LINE
+} from './verify-741-role-chip-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -66,84 +79,6 @@ const TAPE_NAME = 'role-chip-741';
 // `launch.rs`'s `attachAndVerify` sends a real `switch_session` request first -- a brand-new
 // Session never does (see `TAPE_NAME`'s own README row). A separate tape scripts that frame.
 const TAPE_NAME_REOPEN = 'role-chip-741-reopen';
-
-// All 5 built-in theme presets (`src/shared/themes.ts`); #741 decision 3 names "every preset
-// where the UI changes" for screenshots.
-const THEMES = [
-  { id: 'dark', name: 'Dark' },
-  { id: 'obsidian', name: 'Obsidian' },
-  { id: 'dark-high-contrast', name: 'Dark (high contrast)' },
-  { id: 'nordic-frost', name: 'Nordic Frost' },
-  { id: 'cyber-amber', name: 'Cyber Amber' }
-];
-
-const DEFAULT_MODEL_CHANGE_LINE = JSON.stringify({
-  type: 'model_change',
-  model: 'github-copilot/claude-fable-5-the-sixty-plus-character-example-model-name',
-  role: 'default',
-  resolvedModelIsFallback: false
-});
-const FALLBACK_MODEL_CHANGE_LINE = JSON.stringify({
-  type: 'model_change',
-  model: 'github-copilot/claude-fable-5',
-  role: 'default',
-  resolvedModelIsFallback: true
-});
-const UNKNOWN_ROLE_MODEL_CHANGE_LINE = JSON.stringify({
-  type: 'model_change',
-  model: 'github-copilot/claude-fable-5',
-  role: 'a-role-no-chat-role-map-recognises',
-  resolvedModelIsFallback: false
-});
-
-async function openScratchSession(cdp, repoDir) {
-  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted (story DOM marker)' });
-  await cdp.waitFor(
-    `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
-    { timeoutMs: 60_000, label: 'Readiness checklist green' }
-  );
-  await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
-  await cdp.click(`document.querySelector('[role="dialog"] input')`);
-  await cdp.send('Input.insertText', { text: repoDir });
-  await cdp.clickByText('Add repository', { inDialog: true });
-  await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
-    { timeoutMs: 30_000, label: 'Scratch repository added' }
-  );
-  await cdp.clickByLabel('New session from a branch in ', { prefix: true });
-  await cdp.waitFor(
-    `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
-    { timeoutMs: 15_000, label: 'New session dialog open, Create session enabled' }
-  );
-  await cdp.clickByText('Create session', { inDialog: true });
-  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
-  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-    timeoutMs: 60_000,
-    label: 'Session opened, composer enabled'
-  });
-  const list = await cdp.evaluate(`window.refract.sessions.list()`);
-  if (!list.ok || list.value.length !== 1) throw new Error(`openScratchSession: expected exactly 1 session, got ${JSON.stringify(list)}`);
-  return list.value[0].id;
-}
-
-/** #741: the role chip sits immediately before the Model picker in the composer bottom row.
- * Both render inside the same `aria-disabled` ghost-button family with no other stable marker,
- * so the chip is found structurally: the one button in the bottom row whose own accessible name
- * reads "Role: ..." (the `sr-only` prefix every chip carries). */
-const ROLE_CHIP_FINDER = `Array.from(document.querySelectorAll('button')).find((b) => { const sr = b.querySelector('span.sr-only'); return !!sr && sr.textContent === 'Role: '; })`;
-
-// `.textContent` on the chip button also picks up the `sr-only` "Role: " prefix span's own text
-// (CSS visibility never removes a node from the DOM text walk) -- strip it via a clone so every
-// comparison below checks the VISIBLE label only ("Default", "Custom", "Fallback"), never
-// "Role: Default". Reused by both `readRoleChip` and the inline `waitFor` predicates below.
-const ROLE_CHIP_LABEL_EXPR = `(() => { const b = (${ROLE_CHIP_FINDER}); if (!b) return null; const clone = b.cloneNode(true); clone.querySelectorAll('.sr-only').forEach((el) => el.remove()); return clone.textContent.trim(); })()`;
-
-async function readRoleChip(cdp) {
-  const exists = await cdp.evaluate(`!!(${ROLE_CHIP_FINDER})`);
-  if (!exists) return null;
-  return cdp.evaluate(ROLE_CHIP_LABEL_EXPR);
-}
 
 async function main() {
   const findings = [];
@@ -158,8 +93,9 @@ async function main() {
   let dataDir1, importSourceDir1, repoDir1, convDir1, conversationFile1;
   let dataDir3, importSourceDir3, repoDir3, convDir3, conversationFile3;
   let dataDir4, importSourceDir4, repoDir4, convDir4, conversationFile4;
-  let child1, child2, child3, child4;
-  let cdp1, cdp2, cdp3, cdp4;
+  let dataDir5, importSourceDir5, repoDir5, convDir5, conversationFile5;
+  let child1, child2, child3, child4, child5;
+  let cdp1, cdp2, cdp3, cdp4, cdp5;
 
   try {
     SHOTS_DIR = process.env.REFRACT_741_SHOTS_DIR || SHOTS_DIR;
@@ -170,16 +106,23 @@ async function main() {
       'app2.log',
       'app3.log',
       'app4.log',
+      'app5.log',
       'fake-omp-1.log',
       'fake-omp-2.log',
       'fake-omp-3.log',
       'fake-omp-4.log',
+      'fake-omp-5.log',
       ...THEMES.map((t) => `01-chip-default-${t.id}.png`),
       '02-chip-custom.png',
       '03-chip-custom-after-restart.png',
       '04-chip-fallback.png',
       '05-no-chip-unknown-role.png',
-      '06-details-card.png'
+      '06-details-card.png',
+      '06-composer-row.png',
+      '07-chip-fallback-while-pinned.png',
+      '08-narrow-380.png',
+      '09-narrow-520.png',
+      '10-no-chip-empty-conversation.png'
     ]);
     BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
     gitHeadSha = gitHead(REPO_ROOT);
@@ -232,89 +175,7 @@ async function main() {
     const sessionId1 = await openScratchSession(cdp1, repoDir1);
     findings.push('Launch 1: scratch Session created and opened (fake omp, role-chip-741 tape, "default" seeded conversation file).');
 
-    await cdp1.waitFor(`!!(${ROLE_CHIP_FINDER})`, { timeoutMs: 30_000, label: 'Role chip rendered' });
-    const defaultChipText = await readRoleChip(cdp1);
-    if (defaultChipText === 'Default') {
-      findings.push('Role chip reads "Default" for a Session whose latest model_change entry carries role:"default".');
-    } else {
-      failures.push(`Role chip text was ${JSON.stringify(defaultChipText)}, expected "Default".`);
-    }
-    const chipAx = await getAccessibleNameAndRole(cdp1, `(${ROLE_CHIP_FINDER})`);
-    if (chipAx.name === 'Role: Default') {
-      findings.push('Role chip accessible name is "Role: Default" (sr-only prefix confirmed via the AX tree).');
-    } else {
-      failures.push(`Role chip accessible name was ${JSON.stringify(chipAx.name)}, expected "Role: Default".`);
-    }
-    const chipIconFound = await cdp1.evaluate(`!!(${ROLE_CHIP_FINDER}).querySelector('svg[aria-hidden]')`);
-    if (chipIconFound) findings.push('Role chip renders an aria-hidden icon beside its text.');
-    else failures.push('Role chip has no aria-hidden <svg> icon.');
-
-    // 60-char-plus model name: the Model picker's own trigger text must truncate without the
-    // Reasoning picker (the "effort item") being pushed out of the composer row at all.
-    const truncationProbe = await cdp1.evaluate(`
-      (() => {
-        const row = document.querySelector('[aria-label="Message"]')?.closest('[data-slot="card"]') || document.body;
-        const buttons = Array.from(row.querySelectorAll('button'));
-        const modelButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'));
-        const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Default') && (b.getAttribute('aria-label') || '').toLowerCase().includes('reasoning') === false && b !== modelButton);
-        return {
-          modelTruncated: modelButton ? modelButton.scrollWidth > modelButton.clientWidth || getComputedStyle(modelButton.querySelector('span') || modelButton).textOverflow === 'ellipsis' : null,
-          reasoningVisible: !!reasoningButton && reasoningButton.getClientRects().length > 0,
-          attachVisible: !!Array.from(row.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes('attach')) 
-        };
-      })()
-    `);
-    if (truncationProbe.attachVisible) {
-      findings.push('A 60-character-plus model name does not push the Attach button (end of the composer row) out of view.');
-    } else {
-      notExercised.push('Could not confirm the Attach button stayed on-screen alongside the long model name (selector did not resolve it); recorded rather than guessed.');
-    }
-
-    await cdp1.screenshot(path.join(SHOTS_DIR, '06-composer-row.png'));
-
-    // Session details card: hover the session row, wait the real 750ms openDelay, read the
-    // muted "via {provider}" line.
-    await cdp1.send('Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      ...(await cdp1.evaluate(`(() => { const r = document.querySelector('[data-session-open]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`))
-    });
-    await cdp1.waitFor(`document.body.textContent.includes('via GitHub Copilot')`, { timeoutMs: 3_000, label: 'Details card "via GitHub Copilot" line visible' }).catch(() => {
-      failures.push('Session details card never showed a "via GitHub Copilot" line after hovering the session row for its 750ms openDelay.');
-    });
-    if (failures.length === 0 || !failures[failures.length - 1].startsWith('Session details card')) {
-      findings.push('Session details card shows a muted "via GitHub Copilot" second line under the model name.');
-    }
-    const detailsNameVisible = await cdp1.evaluate(`document.body.textContent.includes('Claude Fable Five, an Example Model Name Over Sixty Characters Long')`);
-    if (detailsNameVisible) findings.push('Session details card shows the model\'s full display name.');
-    else failures.push('Session details card does not show the model display name text.');
-    await cdp1.screenshot(path.join(SHOTS_DIR, '06-details-card.png'));
-    await cdp1.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); // move away, close the card
-
-    for (const theme of THEMES) {
-      await switchTheme(cdp1, theme.id, theme.name);
-      const shotName = `01-chip-default-${theme.id}.png`;
-      await cdp1.screenshot(path.join(SHOTS_DIR, shotName));
-      findings.push(`Screenshot captured: composer strip with the Default role chip under the ${theme.name} theme (${shotName}).`);
-    }
-
-    // Real backend hand-pick: `model.setModel` (session-scoped RPC, #454) pins the Session --
-    // matches `verify-rm-live-check.mjs`'s own established precedent for driving this exact IPC
-    // surface directly; #741's pin/Custom-chip contract is a Rust/registry concern no DOM click
-    // exercises any more directly than this call does.
-    const setModelRes = await cdp1.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId1)}, 'github-copilot', 'claude-haiku-5.5')`);
-    if (!setModelRes.ok) failures.push(`model.setModel failed: ${JSON.stringify(setModelRes)}`);
-    await cdp1.waitFor(`${ROLE_CHIP_LABEL_EXPR} === 'Custom'`, { timeoutMs: 15_000, label: 'Role chip reads Custom after a hand-picked model' }).catch((err) => {
-      failures.push(`Role chip never flipped to Custom after model.setModel: ${err.message}`);
-    });
-    const afterPinList = await cdp1.evaluate(`window.refract.sessions.list()`);
-    const afterPinSummary = afterPinList.ok ? afterPinList.value.find((s) => s.id === sessionId1) : undefined;
-    if (afterPinSummary?.pinned === true && afterPinSummary?.currentRole == null) {
-      findings.push('sessions.list() reports pinned:true, currentRole:null after model.setModel -- the registry-level pin contract.');
-    } else {
-      failures.push(`sessions.list() after pin: ${JSON.stringify(afterPinSummary)}, expected pinned:true, currentRole:null.`);
-    }
-    await cdp1.screenshot(path.join(SHOTS_DIR, '02-chip-custom.png'));
-    findings.push('Launch 1 complete: Default chip, truncation, details card, AX names, 5-theme screenshots, and the hand-pick-to-Custom transition all exercised.');
+    await runLaunch1Checks(cdp1, sessionId1, conversationFile1, findings, failures, notExercised, SHOTS_DIR);
 
     cdp1.close();
     cdp1 = undefined;
@@ -355,7 +216,10 @@ async function main() {
       failures.push(`Role chip did not read Custom after restart: ${err.message}`);
     });
     const restartList = await cdp2.evaluate(`window.refract.sessions.list()`);
-    const restartSummary = restartList.ok ? restartList.value[0] : undefined;
+    // Gate round 1 fix (LOW #13a): looked up by `sessionId1` (the real id launch 1 created),
+    // never an assumed `[0]` -- a brand-new, incidental Session (readiness probes, import, etc.)
+    // could otherwise silently shift the index this reads.
+    const restartSummary = restartList.ok ? restartList.value.find((s) => s.id === sessionId1) : undefined;
     if (restartSummary?.pinned === true) {
       findings.push('Pin persisted across a full app restart with the same REFRACT_DATA_DIR (registry.json\'s pinnedModel field round-tripped) -- Custom chip shown with zero hand-pick repeated this run.');
     } else {
@@ -408,6 +272,11 @@ async function main() {
       findings.push('Role chip reads "Fallback" for a Session whose latest model_change entry carries resolvedModelIsFallback:true, overriding its own role:"default" field.');
     } else {
       failures.push(`Fallback-scenario chip text was ${JSON.stringify(fallbackChipText)}, expected "Fallback".`);
+    }
+    if (fallbackAx.name === 'Fallback, role') {
+      findings.push('Fallback chip accessible name is "Fallback, role" (visible text first, sr-only ", role" suffix confirmed via the AX tree).');
+    } else {
+      failures.push(`Fallback chip accessible name was ${JSON.stringify(fallbackAx.name)}, expected "Fallback, role".`);
     }
     const fallbackTooltipText = await axText(cdp3, `(${ROLE_CHIP_FINDER})`).catch(() => null);
     const tooltipShown = await cdp3.evaluate(`
@@ -462,8 +331,13 @@ async function main() {
     if (!isTargetOwningPort(port4, launched4.targetPid)) throw new Error(`verify-741: CDP target on port ${port4} is not owned by this run's own process`);
 
     await openScratchSession(cdp4, repoDir4);
-    // Give the first sessions.list() poll a real chance to land before asserting absence.
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Gate round 1 fix (HIGH #3b): a real wait for `sessions.list()` to report the SEEDED
+    // unrecognised `currentRole` (proving the Rust side actually read it off disk), not a fixed
+    // sleep standing in for that real signal before asserting absence.
+    await cdp4.waitFor(
+      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole === 'a-role-no-chat-role-map-recognises')`,
+      { timeoutMs: 15_000, label: 'sessions.list() reports the seeded unrecognised currentRole' }
+    );
     const noChipFound = await cdp4.evaluate(`!(${ROLE_CHIP_FINDER})`);
     if (noChipFound) {
       findings.push('No role chip renders at all for a Session whose latest model_change entry carries an unrecognised role string -- never a guess.');
@@ -471,6 +345,63 @@ async function main() {
       failures.push('A role chip rendered even though the Session\'s role string is not a recognised chat role.');
     }
     await cdp4.screenshot(path.join(SHOTS_DIR, '05-no-chip-unknown-role.png'));
+
+    cdp4.close();
+    cdp4 = undefined;
+    await stopLauncher(child4);
+    child4 = undefined;
+
+    // ---------------------------------------------------------------------
+    // Launch 5 (gate round 1 fix HIGH #3b): an EMPTY conversation file (no `model_change` line
+    // at all) -> `currentRole` reads `null` and no chip renders -- unlike launch 4 (a role
+    // STRING that fails to resolve against any known chat role), this proves the "no
+    // `model_change` entry found at all" branch too (the other half of "show nothing rather
+    // than a guess").
+    // ---------------------------------------------------------------------
+    dataDir5 = mkdtempSync(path.join(tmpdir(), 'refract-741-data5-'));
+    importSourceDir5 = mkdtempSync(path.join(tmpdir(), 'refract-741-import5-'));
+    repoDir5 = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-741-repo5-')), 'verify-741-5');
+    convDir5 = mkdtempSync(path.join(tmpdir(), 'refract-741-conv5-'));
+    conversationFile5 = path.join(convDir5, 'conversation.jsonl');
+    writeFileSync(conversationFile5, '');
+
+    const port5 = await getFreePort();
+    const launched5 = await launchBuiltExeWithEnv(launcherExe, exePath, {
+      port: port5,
+      dataDir: dataDir5,
+      importSourceDir: importSourceDir5,
+      pathPrepend: shimDir,
+      logFile: path.join(SHOTS_DIR, 'app5.log'),
+      extraEnv: {
+        REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
+        REFRACT_FAKE_OMP_NODE: process.execPath,
+        REFRACT_FAKE_OMP_SCENARIO: TAPE_NAME,
+        REFRACT_FAKE_OMP_CONVERSATION_FILE: conversationFile5,
+        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-5.log')
+      }
+    });
+    child5 = launched5.child;
+    const wsUrl5 = await waitForCdpTarget(port5, { timeoutMs: 60_000 });
+    cdp5 = await CdpSession.connect(wsUrl5);
+    if (!isTargetOwningPort(port5, launched5.targetPid)) throw new Error(`verify-741: CDP target on port ${port5} is not owned by this run's own process`);
+
+    await openScratchSession(cdp5, repoDir5);
+    await cdp5.waitFor(
+      `window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentRole == null)`,
+      { timeoutMs: 15_000, label: 'sessions.list() reports currentRole: null for an empty conversation file' }
+    );
+    const noChipFoundEmpty = await cdp5.evaluate(`!(${ROLE_CHIP_FINDER})`);
+    if (noChipFoundEmpty) {
+      findings.push('No role chip renders for a Session whose conversation file has no model_change entry at all -- currentRole reads null, never a guess.');
+    } else {
+      failures.push('A role chip rendered even though the Session\'s conversation file has no model_change entry at all.');
+    }
+    await cdp5.screenshot(path.join(SHOTS_DIR, '10-no-chip-empty-conversation.png'));
+
+    cdp5.close();
+    cdp5 = undefined;
+    await stopLauncher(child5);
+    child5 = undefined;
 
     const report = { gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, exitCode: failures.length > 0 ? 1 : 0 };
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
@@ -501,16 +432,19 @@ async function main() {
     if (cdp2) cdp2.close();
     if (cdp3) cdp3.close();
     if (cdp4) cdp4.close();
+    if (cdp5) cdp5.close();
     if (child1) await stopLauncher(child1).catch(() => {});
     if (child2) await stopLauncher(child2).catch(() => {});
     if (child3) await stopLauncher(child3).catch(() => {});
     if (child4) await stopLauncher(child4).catch(() => {});
+    if (child5) await stopLauncher(child5).catch(() => {});
     try {
       for (const [name, dir] of [
         ['app1.log', exeDir],
         ['app2.log', exeDir],
         ['app3.log', exeDir],
-        ['app4.log', exeDir]
+        ['app4.log', exeDir],
+        ['app5.log', exeDir]
       ]) {
         const src = path.join(dir ?? '', name);
         if (dir && existsSync(src)) copyFileSync(src, path.join(SHOTS_DIR, name));
@@ -533,7 +467,11 @@ async function main() {
       dataDir4,
       importSourceDir4,
       repoDir4,
-      convDir4
+      convDir4,
+      dataDir5,
+      importSourceDir5,
+      repoDir5,
+      convDir5
     ]) {
       await safeRmSync(dir);
     }

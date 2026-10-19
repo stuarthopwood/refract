@@ -4548,13 +4548,27 @@ same branch/PR, cited by sha where the report below gives one.
   survives a restart; fallback outranks a stale pin), and a dated `### Session 2026-10-19
   (Composer role chip, pin persistence, fallback signal, #741)` Clarifications entry recording
   `issuecomment-6266024041`'s four decisions. This Convergence phase. `docs/PLAN.md`'s #741 row.
-- [ ] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs`, a fake-omp tape): chip text
-  and icon for a role Session; Custom after a hand-pick AND after a restart with the same
-  `REFRACT_DATA_DIR` (pin persisted); no chip for an unrecognised role; Fallback from a tape entry
-  carrying `resolvedModelIsFallback: true` (tape-proven, since T333 could not force it live; the
-  real-OMP probe is #650); the details card's name and "via ..." line; a 60-character model name
-  truncating without pushing the effort item out; accessible names via the AX tree; strip
-  screenshots in all five theme presets. Not yet run against a built Tauri debug binary.
+- [ ] T338 Live CDP verification (`scripts/verify-741-role-chip.mjs` + `verify-741-role-chip-
+  helpers.mjs`, five launches, a fake-omp tape): chip text and icon for a role Session; muted-text
+  contrast >= 4.5:1 and a real keyboard path (Tab/focus-visible/Tooltip/Escape/Shift+Tab) on the
+  chip; real-geometry truncation (not a guessed selector); Custom after a hand-pick AND after a
+  restart with the same `REFRACT_DATA_DIR` (pin persisted, found by session id not index); a
+  mid-session fallback WHILE PINNED (an autonomous `retry_fallback_succeeded` frame, the pin
+  itself never cleared); no chip for an unrecognised role (asserted only after `sessions.list()`
+  reports the seeded role) AND for an empty conversation file (`currentRole: null`); Fallback
+  from a tape entry carrying `resolvedModelIsFallback: true` (tape-proven, since T333 could not
+  force it live; the real-OMP probe is #650), its own accessible name asserted too; the details
+  card's name and "via ..." line; the role chip and Model picker wrapping together at 380px/520px
+  chat widths; accessible names via the AX tree; strip screenshots in all five theme presets.
+  Gate round 1 fixes (Main's five-reviewer gate on this Convergence): `model.rs`/`model_support.rs`
+  fallback-outranks-a-pin made reachable (a `role_needs_reprobe`/`role_generation` pair forces a
+  re-probe even while pinned, generation-guarded against a race with a second invalidation), the
+  pin-seeding race closed (every pin/un-pin writer also sets `pinned_seeded`; `persist_pinned`
+  reads back from state and skips a no-op write), `ComposerPickers.tsx`'s `RoleChip` contrast and
+  AX-name-suffix fixes, `RoleAndModelPicker` (narrow-width wrap-together), `modelRoles.ts` icon
+  swap and the `CUSTOM_ROLE` string-forgery guard, `ModelPicker.tsx`'s `friendlyProviderLabel`/
+  `ROLE_LABEL` reuse, `SessionDetailsCard.tsx`'s tighter model/provider grouping. Not yet run
+  against a built Tauri debug binary this pass.
 
 **Non-build checks** (re-run at head `1daa6e57`): `pnpm tsc --noEmit -p tsconfig.web.json` clean;
 `node scripts/check-indent.mjs` (0 odd-indent lines); `node scripts/check-file-size.mjs` (0 cap

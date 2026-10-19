@@ -9,18 +9,18 @@
 // final design decision. No role colour here (#714 adds it); colour is never the only cue either
 // way (WCAG 2.1 AA 1.4.1).
 import {
-  BrainIcon,
   ClipboardListIcon,
-  CircleIcon,
+  DatabaseIcon,
   EyeIcon,
   FeatherIcon,
   GitCommitIcon,
+  HouseIcon,
+  ImageIcon,
   LifeBuoyIcon,
   ListChecksIcon,
-  SlidersHorizontalIcon,
+  PinIcon,
   SproutIcon,
   TurtleIcon,
-  UserCheckIcon,
   type LucideIcon
 } from 'lucide-react'
 import type { ModelRoleId } from '../../shared/model'
@@ -68,17 +68,17 @@ const ROLE_TOOLTIP: Partial<Record<RoleChipRoleId, string>> = {
 }
 
 export const ROLE_ICON: Partial<Record<RoleChipRoleId, LucideIcon>> = {
-  default: CircleIcon,
+  default: HouseIcon,
   smol: FeatherIcon,
   slow: TurtleIcon,
-  vision: EyeIcon,
+  vision: ImageIcon,
   plan: ClipboardListIcon,
   commit: GitCommitIcon,
   tiny: SproutIcon,
-  memory: BrainIcon,
+  memory: DatabaseIcon,
   task: ListChecksIcon,
-  advisor: UserCheckIcon,
-  [CUSTOM_ROLE]: SlidersHorizontalIcon,
+  advisor: EyeIcon,
+  [CUSTOM_ROLE]: PinIcon,
   [FALLBACK_ROLE]: LifeBuoyIcon
 }
 
@@ -135,7 +135,11 @@ export function roleChipDisplay(session: { pinned?: boolean; currentRole?: strin
     return { role: CUSTOM_ROLE, label: ROLE_LABEL[CUSTOM_ROLE]!, Icon: ROLE_ICON[CUSTOM_ROLE]!, tooltip: ROLE_TOOLTIP[CUSTOM_ROLE]! }
   }
   const role = session.currentRole
-  if (!role) return null
+  // Gate round 1 fix (LOW #10): Custom is derived ONLY from `pinned` above, never from a role
+  // STRING literally equal to the `custom` sentinel -- OMP never reports a role named "custom"
+  // (not reachable today), but a lookup keyed by an arbitrary string should not be able to
+  // forge the one state meant to come exclusively from the registry's own pin flag.
+  if (!role || role === CUSTOM_ROLE) return null
   const roleId = role as RoleChipRoleId
   const label = ROLE_LABEL[roleId]
   const Icon = ROLE_ICON[roleId]

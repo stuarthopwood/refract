@@ -94,6 +94,20 @@ pub(super) struct State {
     /// path so a later Conversation (a genuinely new file) is still probed fresh.
     pub(super) role_probed_path: Option<String>,
     pub(super) pinned_seeded: bool, // #741 decision 1: guards `model_support::ensure_pin_seeded`
+    /// Gate round 1 fix (HIGH #2): set by `model_support::maybe_invalidate_role_cache` so
+    /// `current_selection` re-reads the Conversation file at least once even while `pinned` is
+    /// true -- the plain `pinned` early return below used to skip that re-read unconditionally,
+    /// so an autonomous fallback entry a fresh `model_changed`/`retry_fallback_succeeded` frame
+    /// wrote to the file while pinned could never surface ("fallback outranks a pin" was
+    /// unreachable). Cleared the moment the forced reprobe completes.
+    pub(super) role_needs_reprobe: bool,
+    /// Gate round 1 fix (HIGH #5): bumped by `maybe_invalidate_role_cache` on every invalidation.
+    /// `current_selection` captures this BEFORE its own (possibly slow) file read begins, and
+    /// only writes that read's result back to `current_role`/`role_probed_path` if the
+    /// generation is still the one it started under -- a second invalidation racing in while a
+    /// read is in flight must never have its own request to re-probe silently undone by an
+    /// earlier read's now-stale result landing after it.
+    pub(super) role_generation: u64,
     /// Monotonic id source for this lane's own transcript notices (`upsert_transcript_item`
     /// needs a stable, unique id per row; this lane posts no OMP frame of its own to derive one
     /// from the way `apply_frame`'s internal counter does for a `notice` frame).
@@ -189,78 +203,18 @@ pub(super) async fn on_start_progress(
 // Role lookup (Session's own tracked role, `cycleOrder`, and `/role`'s validation set).
 // ---------------------------------------------------------------------------
 
-/// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`
-/// entry's effective role (`model_support::model_change_role`: `set_model`/`open_session`-
-/// override always write an explicit `role:"default"`; `cycle_model` omits `role` entirely --
-/// both reconstruct to `"default"`, FINDINGS item 51). `None` when the file has no
-/// `model_change` entry at all or cannot be read -- never guessed as `"default"` (#741). Reads
-/// the whole file once (cached into `State.current_role`; a NOT-found result is cached too, by
-/// path, in `State.role_probed_path` -- gate-fix HIGH/perf).
-async fn read_role_from_session_file(conversation_path: &str) -> Option<String> {
-    let content = tokio::fs::read_to_string(conversation_path).await.ok()?;
-    let mut latest: Option<String> = None;
-    for line in content.lines() {
-        let line = line.trim();
-        // Gate-fix (HIGH, perf): skip the `serde_json::from_str` parse entirely for the common
-        // case -- most lines in a long-running Conversation are not `model_change` entries, and
-        // a plain substring scan is far cheaper than parsing JSON just to discard it.
-        if line.is_empty() || !line.contains("model_change") {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(Value::as_str) == Some("model_change") {
-            latest = Some(model_support::model_change_role(&value)); // #741 decision 2
-        }
-    }
-    latest
-}
-
 /// Read access to this lane's own per-Session state, for `ipc::model` (the role selector's
 /// listing), `session::manager` (the #740 propagation sweep), and `ipc::chat` (the `/role`
 /// interception) -- all outside this module's own tree, so this wraps `with_model_state` in a
-/// `pub` function rather than widening the `State` struct's own fields to `pub`. Lazily seeds
-/// `current_role` from the Session's own Conversation file on the first call this run (gate-fix,
-/// HIGH, #741: never a guessed `"default"`), then returns the cached value on every later call.
-/// Gate-fix (HIGH, perf): a Session whose Conversation has no `model_change` entry at all (the
-/// common case) used to re-read and re-parse the WHOLE file on every call (every
-/// `sessions.list()` poll, one Session at a time); the negative result is now cached too, keyed
-/// by the probed path, so a later call for the SAME Conversation returns immediately, while a
-/// genuinely new Conversation (a different path) is still probed fresh.
+/// `pub` function rather than widening the `State` struct's own fields to `pub`. Full logic
+/// (lazy seed, negative-result cache, gate round 1 fixes HIGH #2/#5: a pinned Session's own
+/// forced reprobe and the generation-guarded cache write-back) lives in
+/// `model_support::resolve_current_selection` -- this file is at its own 600-line cap, and that
+/// logic is a pure Session-state concern the sibling file already owns (`ensure_pin_seeded`,
+/// `persist_pinned`, `maybe_invalidate_role_cache`).
 pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
     model_support::ensure_pin_seeded(agent).await; // #741 decision 1
-    let (pinned, cached_role) = agent
-        .with_model_state(|s| (s.pinned, s.current_role.clone()))
-        .await;
-    if pinned || cached_role.is_some() {
-        let effective_pinned = pinned && cached_role.as_deref() != Some("fallback"); // #741: fallback outranks a stale pin
-        return (effective_pinned, cached_role);
-    }
-    let Some(path) = agent.current_conversation_path().await else {
-        return (pinned, None);
-    };
-    let already_probed = agent
-        .with_model_state(|s| s.role_probed_path.as_deref() == Some(path.as_str()))
-        .await;
-    if already_probed {
-        return (pinned, None);
-    }
-    let role = read_role_from_session_file(&path).await;
-    if let Some(role) = role.clone() {
-        agent
-            .with_model_state(|s| {
-                if s.current_role.is_none() {
-                    s.current_role = Some(role);
-                }
-            })
-            .await;
-    } else {
-        agent
-            .with_model_state(|s| s.role_probed_path = Some(path.clone()))
-            .await;
-    }
-    (pinned, role)
+    model_support::resolve_current_selection(agent).await
 }
 
 /// `cycleOrder` (read fresh every call) plus `"plan"` (#766, Stuart's own decided design,
@@ -342,11 +296,12 @@ async fn pick_model_via_rpc(
     agent
         .with_model_state(|s| {
             s.pinned = true;
+            s.pinned_seeded = true; // gate round 1 fix (LOW #9): this writer's own pin IS the seed
             s.current_role = None;
             s.pending_role_reapply = None;
         })
         .await;
-    model_support::persist_pinned(agent, true).await;
+    model_support::persist_pinned(agent).await;
     post_notice(
         agent,
         NoticeLevel::Info,
@@ -494,11 +449,12 @@ pub async fn apply_role_now(
     agent
         .with_model_state(|s| {
             s.pinned = false;
+            s.pinned_seeded = true; // gate round 1 fix (LOW #9): this writer's own un-pin IS the seed
             s.current_role = Some(role.to_string());
             s.pending_role_reapply = None;
         })
         .await;
-    model_support::persist_pinned(agent, false).await;
+    model_support::persist_pinned(agent).await;
     if settings_triggered {
         post_notice(
             agent,
@@ -591,10 +547,11 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
     agent
         .with_model_state(|s| {
             s.pinned = true;
+            s.pinned_seeded = true; // gate round 1 fix (LOW #9): this writer's own pin IS the seed
             s.current_role = None;
             s.pending_role_reapply = None;
         })
         .await;
-    model_support::persist_pinned(agent, true).await;
+    model_support::persist_pinned(agent).await;
     Ok(json!({ "queued": false }))
 }

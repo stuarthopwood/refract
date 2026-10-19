@@ -12,3 +12,5 @@
 {"id":"$lastId","type":"response","command":"set_model","success":true,"data":{"model":{"provider":"github-copilot","id":"claude-haiku-5.5","name":"Claude Haiku 5.5"}}}
 {"__wait__":["get_state"]}
 {"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-741-0001","messageCount":1,"isSettled":true,"model":{"provider":"github-copilot","id":"claude-haiku-5.5","name":"Claude Haiku 5.5"},"thinkingLevel":"medium"}}
+{"__delay__":3000}
+{"type":"retry_fallback_succeeded","model":"github-copilot/claude-haiku-5.5","role":"fallback"}
