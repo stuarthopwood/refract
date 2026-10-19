@@ -56,7 +56,7 @@
 // selector reused here (`stageTriggerSelector`, `titleSelector`, the chain row's own
 // `[title="Subagents"]` trigger finder) was already grep-verified by the `verify-941-*`/
 // `verify-1000-*` scripts that share them; the new finder expressions (`jumpButtonExpr`, the
-// chain row's own "Go to Stage N, <label>" button by its full accessible name; `isInViewportExpr`)
+// chain row's own "Go to Stage N, <label>" button by its full accessible name; `viewportHitTestExpr`)
 // are built the same, already-proven way.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
@@ -139,11 +139,31 @@ function rectIsInViewport(rect) {
   return !!rect && rect.height > 0 && rect.bottom > 0 && rect.top < rect.viewportHeight;
 }
 
-// Gate round 1 item 8: a single boolean expression for `cdp.waitFor` to poll -- the jump's own
-// smooth scroll (`stageJump.ts`) settles asynchronously, so a one-shot `evaluate` right after the
-// click could read a mid-transition rect.
-function isInViewportExpr(triggerExpr) {
-  return `(() => { const el = (${triggerExpr}); if (!el) return false; const r = el.getBoundingClientRect(); return r.height > 0 && r.bottom > 0 && r.top < window.innerHeight; })()`;
+// Gate round 2 (falsified live, head 1390fdd): `cdp.waitFor(isInViewportExpr(...))` polled this
+// same `getBoundingClientRect()` test every 250ms for the full 10s timeout and NEVER once saw
+// Stage 4's own row satisfy it after the MOUSE jump -- yet the screenshot taken immediately
+// afterward (same run) shows that row sitting plainly in view, open and focused. The keyboard
+// jump (Stage 3) never showed this split. The one structural difference: `clickScrolled` (mouse
+// path only) first does its own instant/smooth `scrollIntoView` on the chain's button BEFORE
+// `jumpToStage`'s own smooth scroll fires -- two scroll animations in quick succession across a
+// `content-visibility:auto` transcript (`message-scroller.tsx`), where skipped items resize from
+// estimated to real height as they re-enter rendering. A single rect read right after the click
+// can race that reflow. Replaced the bounds-only predicate with a real `elementFromPoint` hit
+// test at the row's own centre -- this is the same proof a screenshot gives (an actual pixel
+// resolves to this row), checked once after a generous fixed settle delay instead of polling a
+// geometry comparison that can read stale mid-reflow.
+function viewportHitTestExpr(triggerExpr) {
+  return `(() => {
+    const el = (${triggerExpr});
+    if (!el) return { found: false };
+    const r = el.getBoundingClientRect();
+    const inBounds = r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+    const cx = r.left + r.width / 2;
+    const cy = Math.min(Math.max(r.top + r.height / 2, 0), window.innerHeight - 1);
+    const hitEl = document.elementFromPoint(cx, cy);
+    const hit = !!hitEl && (hitEl === el || el.contains(hitEl) || hitEl.contains(el));
+    return { found: true, inBounds, hit, rect: { top: r.top, bottom: r.bottom, height: r.height, viewportHeight: window.innerHeight } };
+  })()`;
 }
 
 // Gate round 1 item 8: scrolls ONLY the transcript's own viewport to its own end -- Stage 1/
@@ -322,12 +342,17 @@ async function main() {
       } else {
         findings.push('Clicking "Go to Stage 4" moved keyboard focus to Stage 4\'s own trigger.');
       }
-      try {
-        await cdp.waitFor(isInViewportExpr(stage4TriggerExpr), { timeoutMs: 10_000, label: 'Stage 4 row in the viewport after the mouse jump (smooth scroll settles)' });
-        const stage4Rect = await cdp.evaluate(viewportRectExpr(stage4TriggerExpr));
-        findings.push(`Stage 4's own row is in the viewport after the jump (rect ${JSON.stringify(stage4Rect)}).`);
-      } catch (err) {
-        failures.push(`Stage 4's own row never entered the viewport after the jump: ${err.message}`);
+      // A fixed settle delay, then ONE definitive `elementFromPoint` hit test, not a polled
+      // bounds comparison (gate round 2: polling this same bounds check against `content-
+      // visibility:auto`'s own estimate-to-real-height reflow mid-scroll read "never in
+      // viewport" for the full 10s even though the very next screenshot showed it correctly
+      // placed).
+      await sleep(1_500);
+      const stage4Check = await cdp.evaluate(viewportHitTestExpr(stage4TriggerExpr));
+      if (stage4Check.found && stage4Check.inBounds && stage4Check.hit) {
+        findings.push(`Stage 4's own row is in the viewport after the jump, confirmed by an elementFromPoint hit test at its own centre (rect ${JSON.stringify(stage4Check.rect)}).`);
+      } else {
+        failures.push(`Stage 4's own row did not settle into a hit-testable viewport position after the jump: ${JSON.stringify(stage4Check)}`);
       }
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-stage4-jumped-open-focused.png'));
@@ -424,12 +449,13 @@ async function main() {
         } else {
           findings.push('Pressing Enter on "Go to Stage 3" moved keyboard focus to Stage 3\'s own trigger.');
         }
-        try {
-          await cdp.waitFor(isInViewportExpr(stage3TriggerExpr), { timeoutMs: 10_000, label: 'Stage 3 row in the viewport after the keyboard jump (smooth scroll settles)' });
-          const stage3Rect = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
-          findings.push(`Stage 3's own row is in the viewport after the keyboard jump (rect ${JSON.stringify(stage3Rect)}).`);
-        } catch (err) {
-          failures.push(`Stage 3's own row never entered the viewport after the keyboard jump: ${err.message}`);
+        // Same settle-then-hit-test proof as the mouse jump above (gate round 2).
+        await sleep(1_500);
+        const stage3Check = await cdp.evaluate(viewportHitTestExpr(stage3TriggerExpr));
+        if (stage3Check.found && stage3Check.inBounds && stage3Check.hit) {
+          findings.push(`Stage 3's own row is in the viewport after the keyboard jump, confirmed by an elementFromPoint hit test at its own centre (rect ${JSON.stringify(stage3Check.rect)}).`);
+        } else {
+          failures.push(`Stage 3's own row did not settle into a hit-testable viewport position after the keyboard jump: ${JSON.stringify(stage3Check)}`);
         }
       }
     }
