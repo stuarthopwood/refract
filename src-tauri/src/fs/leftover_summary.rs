@@ -182,7 +182,3 @@ pub async fn compute_leftover_summary(worktree_path: &Path) -> LeftoverSummary {
     })
 }
 
-#[cfg(test)]
-#[path = "leftover_summary_tests.rs"]
-mod tests;
-

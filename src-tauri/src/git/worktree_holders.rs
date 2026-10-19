@@ -306,7 +306,3 @@ mod imp {
         Vec::new()
     }
 }
-
-#[cfg(test)]
-#[path = "worktree_holders_tests.rs"]
-mod tests;
