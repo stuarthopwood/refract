@@ -175,7 +175,12 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
               // genuinely shrink below its own content width under real pressure, while
               // `max-w-[40%]` still caps how much of the row it can claim either way.
               summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
-              summaryWrap || (wrapWhenOpen && actualOpen) ? 'break-words whitespace-normal' : 'truncate',
+              // Issue #997: `[overflow-wrap:anywhere]` (not `break-words`, which Tailwind maps
+              // to `overflow-wrap: break-word` -- a word still spills past the edge once the
+              // whole word is wider than the column, e.g. a long unbroken token/URL) is this
+              // transcript's prevailing choice; the expanded detail `<p id={detailId}>` below
+              // (same file) already uses it for the identical reason.
+              summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
               summaryClassName ?? 'text-muted-foreground'
             )}
             title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}

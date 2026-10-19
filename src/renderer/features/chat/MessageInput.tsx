@@ -17,7 +17,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
+import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
@@ -646,9 +646,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (isNewConversationCommand) {
         useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
       }
-      notify(result.error)
+      notify(result.error, sessionId)
       return
     }
+    dismissSlashCommandRefusalToast(sessionId)
     // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
     // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
     // attachments clear once the send is accepted, not once the agent's turn finishes; pending
@@ -1402,11 +1403,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               useDraftStore.getState().setText(sessionId, value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
-              // FR-014, Edge Cases: every edit re-checks every pending chip's label against the
-              // new value -- an explicit delete and an edit that merely breaks the label both
-              // drop it from pending state the same way. Accessibility remediation (High):
-              // whatever got dropped is announced via the live region below, since this was
-              // previously completely silent to a screen-reader user.
+              // FR-014, Edge Cases: every edit re-checks every pending chip's label (an explicit
+              // delete, or an edit that merely breaks the label, both drop it); the drop is now
+              // announced via the live region below (previously silent to a screen reader).
               const prunedChips = pruneDanglingChips(value, attachments.textChips)
               if (prunedChips.length !== attachments.textChips.length) {
                 announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
