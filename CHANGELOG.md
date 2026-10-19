@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.5.0 (2026-10-19)
+
+### Features
+
+- feat(chat): #1012 history dialog follow-ups (focus tooltip, focus ring, date truncate, verify-439) (https://github.com/stuarthopwood/refract/pull/1024)
+- feat(#975): code-block background follows each theme's own --card, not the bundled Shiki theme (https://github.com/stuarthopwood/refract/pull/1032)
+
+### Fixes
+
+- fix(991): Stage row focus, toggle memory, selector scoping (https://github.com/stuarthopwood/refract/pull/999)
+- fix(subagents): scope async-result job matching to unresolved Stage items (#989) [live-verified] (https://github.com/stuarthopwood/refract/pull/1003)
+- fix(862): stream bounded Conversation preview scan past OMP's new prelude entries (https://github.com/stuarthopwood/refract/pull/1006)
+- fix(439): Conversation history truncates with an ellipsis, no horizontal scroll (https://github.com/stuarthopwood/refract/pull/1011)
+- fix(1000): Stage rows defer running auto-open to the chain row once a turn has two or more Stages (https://github.com/stuarthopwood/refract/pull/1007)
+- fix(911): Stop-cut-short tool rows settle to a neutral cancelled status (https://github.com/stuarthopwood/refract/pull/1015)
+- fix(a11y): preserve focus when a solo Stage gains a second agent (https://github.com/stuarthopwood/refract/pull/1027)
+- fix(chat): notice severity tokens, non-dismissing unknown-command warning toast (https://github.com/stuarthopwood/refract/pull/1031)
+
+### Other
+
+- Slash refusal text, notice wrap, advisor settings mention (#938 items 2, 3, 5) (https://github.com/stuarthopwood/refract/pull/996)
+- docs(plan): add #1004 follow-ups from #991/#938 gates (https://github.com/stuarthopwood/refract/pull/1005)
+- docs(plan): add #1008 follow-up from #1007/#1000 ui gate (https://github.com/stuarthopwood/refract/pull/1009)
+- docs(plan): confirm #439 history-dialog truncation fix, record decision (https://github.com/stuarthopwood/refract/pull/1010)
+- docs: place #1012 follow-ups row in PLAN.md (https://github.com/stuarthopwood/refract/pull/1013)
+- docs: PLAN.md row for #1016 (#802 scrollbar follow-ups) (https://github.com/stuarthopwood/refract/pull/1017)
+- docs: PLAN.md row for #1018 (#911 gate follow-ups, PR #1015) (https://github.com/stuarthopwood/refract/pull/1019)
+- docs(plan): add #1021 and #1022 rows (https://github.com/stuarthopwood/refract/pull/1023)
+- UI polish: Stage rows - failed Stage label colour and jump to Stage from the chain row (#1008) (https://github.com/stuarthopwood/refract/pull/1020)
+- docs(plan): add #1025 row, mark #1008 done (https://github.com/stuarthopwood/refract/pull/1026)
+- chore(scripts): #1022 verify-563 targets selectable tree rows (https://github.com/stuarthopwood/refract/pull/1028)
+- docs(plan): add #1029 row (#1001 gate follow-ups) (https://github.com/stuarthopwood/refract/pull/1030)
+
 ## v0.4.0 (2026-10-18)
 
 ### Features
