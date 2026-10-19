@@ -120,37 +120,29 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   // precedent): Unpin and the plan vanishing both unmount whichever button/row currently holds
   // focus inside this panel, which would otherwise strand it on `<body>`.
   //
-  // Gate round 2 fix (self-caught live-check failure: P3's own assertion failed, "actual false"):
-  // the precedent hook's cleanup fires on a REAL fiber deletion (`useFocusSearchOnStrandedUnmount`
-  // is called by a component -- `SessionRow`/`RepositoryGroup` -- that is itself removed from the
-  // tree), where React still has the deleted subtree's refs attached when it runs each deleted
-  // fiber's own effect cleanup. THIS component never unmounts itself (`ChatPane.tsx` always
-  // renders it); only its OWN internal `<section>` conditionally disappears, so this effect's
-  // cleanup instead fires via the ordinary "dependency changed" path, which React runs for the
-  // WHOLE commit only AFTER every mutation (including detaching the just-removed `<section>`'s
-  // own ref, and the browser resetting `document.activeElement` to `<body>`) has already
-  // happened -- `rootRef.current` is already null and `document.activeElement` is already
-  // `<body>` by the time this runs, so the old `rootRef.current?.contains(document.activeElement)`
-  // guard could never be true and silently skipped the restore on every real Unpin click.
-  // `focusWasInsideRef` instead tracks the answer continuously via `focusin`/`focusout` on the
-  // section while it exists, so the cleanup reads a snapshot from BEFORE the removal, never a
-  // live query of state the removal itself already erased.
+  // Gate round 2 fix (self-caught live-check failure: P3's own assertion failed, "actual false",
+  // twice -- the first retry still kept a direct `rootRef.current` read inside the tracking
+  // effect's OWN setup, which is just as exposed to the same ordering hazard on whichever commit
+  // removes the section): the precedent hook's cleanup fires on a REAL fiber deletion
+  // (`useFocusSearchOnStrandedUnmount` is called by a component -- `SessionRow`/`RepositoryGroup`
+  // -- that is itself removed from the tree), where React still has the deleted subtree's own
+  // refs attached when it runs that fiber's own effect cleanup. THIS component never unmounts
+  // itself (`ChatPane.tsx` always renders it); only its OWN internal `<section>` conditionally
+  // disappears, so any check that reads `rootRef.current` -- in the cleanup OR in an effect body
+  // that could itself be re-run on the SAME commit that removes the section -- risks reading a
+  // ref React has already detached. `focusWasInsideRef` instead listens on `document` (attached
+  // once, for this component instance's whole lifetime, independent of the section's own mount
+  // state) and re-derives the panel by id from the event's own target on every `focusin`, never
+  // dereferencing `rootRef` at all.
   const focusWasInsideRef = useRef(false)
-  const sectionMounted = pinned && hasTodoPlan(todoTree)
   useLayoutEffect(() => {
-    const root = rootRef.current
-    if (!root) return
-    const update = () => {
-      focusWasInsideRef.current = root.contains(document.activeElement)
+    const onFocusIn = (event: FocusEvent) => {
+      const panel = document.getElementById(`todo-panel-${sessionId}`)
+      focusWasInsideRef.current = !!(panel && event.target instanceof Node && panel.contains(event.target))
     }
-    update()
-    root.addEventListener('focusin', update)
-    root.addEventListener('focusout', update)
-    return () => {
-      root.removeEventListener('focusin', update)
-      root.removeEventListener('focusout', update)
-    }
-  }, [sectionMounted])
+    document.addEventListener('focusin', onFocusIn, true)
+    return () => document.removeEventListener('focusin', onFocusIn, true)
+  }, [sessionId])
 
   // A `useLayoutEffect` cleanup keyed on `active` fires exactly on the true -> false edge (both
   // causes above collapse to the SAME transition, since `active` already requires `pinned &&
