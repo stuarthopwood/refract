@@ -465,7 +465,9 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
         return (effective_pinned, cached_role);
     }
     let Some(path) = agent.current_conversation_path().await else {
-        agent.with_model_state(|s| s.role_needs_reprobe = false).await;
+        agent
+            .with_model_state(|s| s.role_needs_reprobe = false)
+            .await;
         return (pinned, cached_role);
     };
     let (already_probed, read_generation) = agent
@@ -477,7 +479,9 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
         })
         .await;
     if already_probed {
-        agent.with_model_state(|s| s.role_needs_reprobe = false).await;
+        agent
+            .with_model_state(|s| s.role_needs_reprobe = false)
+            .await;
         return (pinned, cached_role);
     }
     let role = read_role_from_session_file(&path).await;
