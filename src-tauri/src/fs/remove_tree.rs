@@ -76,15 +76,33 @@ pub async fn remove_tree(path: &Path, boundary_root: &Path) -> Result<(), Remove
         .unwrap_or(Err(RemoveTreeError::OutsideBoundary))
 }
 
-fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
+/// Issue #891 gate round 2 (M1): the containment/link-refusal gate shared by `remove_tree`
+/// itself (the removal) and `worktree_holders`'s own two checks (the Restart Manager walk and
+/// the rename probe) -- all three must refuse a link sitting at `path` itself and then operate
+/// on the SAME canonicalized, contained path, never three independently-resolved copies of it.
+/// Distinguishes a path that simply does not exist (`Missing`, never itself a refusal -- the
+/// holder checks treat "nothing there" as "nothing to hold") from one that exists but is a
+/// link, fails to canonicalize, or canonicalizes outside `boundary_root` (`OutsideBoundary`,
+/// always a hard refusal). Blocking I/O; callers run it inside their own `spawn_blocking`.
+pub enum ContainmentCheck {
+    Missing,
+    OutsideBoundary,
+    Ok(PathBuf),
+}
+
+pub fn checked_canonical_path(path: &Path, boundary_root: &Path) -> ContainmentCheck {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if !meta.file_type().is_symlink() => {}
-        _ => return Err(RemoveTreeError::OutsideBoundary),
+        Ok(meta) if meta.file_type().is_symlink() => return ContainmentCheck::OutsideBoundary,
+        Ok(_) => {}
+        Err(_) => return ContainmentCheck::Missing,
     }
 
-    let canonical_path = dunce::canonicalize(path).map_err(|_| RemoveTreeError::OutsideBoundary)?;
-    let canonical_root =
-        dunce::canonicalize(boundary_root).map_err(|_| RemoveTreeError::OutsideBoundary)?;
+    let Ok(canonical_path) = dunce::canonicalize(path) else {
+        return ContainmentCheck::OutsideBoundary;
+    };
+    let Ok(canonical_root) = dunce::canonicalize(boundary_root) else {
+        return ContainmentCheck::OutsideBoundary;
+    };
     // Same lexical lowercasing `worktree_validity::canonical_comparable_path` uses for its own
     // final compare, reused directly here (`comparable_path` is `pub(crate)`) rather than
     // duplicated -- both inputs are already absolute, real, canonical paths at this point, so
@@ -93,8 +111,22 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
     let root_key = comparable_path(&canonical_root.to_string_lossy());
     let prefix = format!("{root_key}{}", std::path::MAIN_SEPARATOR);
     if path_key == root_key || !path_key.starts_with(&prefix) {
-        return Err(RemoveTreeError::OutsideBoundary);
+        return ContainmentCheck::OutsideBoundary;
     }
+    ContainmentCheck::Ok(canonical_path)
+}
+
+fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
+    let canonical_path = match checked_canonical_path(path, boundary_root) {
+        ContainmentCheck::Ok(p) => p,
+        // `remove_tree`'s own callers already resolve "does this exist" separately before ever
+        // calling remove -- a missing path reaching here is as much a refusal to remove as an
+        // out-of-bounds one, matching this function's original behaviour (both outcomes used
+        // the same `_ => Err(OutsideBoundary)` arm).
+        ContainmentCheck::Missing | ContainmentCheck::OutsideBoundary => {
+            return Err(RemoveTreeError::OutsideBoundary)
+        }
+    };
 
     std::fs::remove_dir_all(&canonical_path).map_err(|source| RemoveTreeError::Io {
         path: canonical_path,

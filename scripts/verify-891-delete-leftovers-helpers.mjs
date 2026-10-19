@@ -146,13 +146,18 @@ export function populateOrphanWorktree(worktreePath) {
   }
 }
 
-/** Scenario (f): a deliberately large generated-folder tree (tens of thousands of files) so the
- * leftover-summary walk's own per-bucket file count (`fs::leftover_summary::count_files`) takes
- * long enough that clicking Delete immediately after the dialog's `deleteCheck` resolves
- * reliably lands WHILE "Checking files…" is still running -- proving issue #891 gate round item
- * 5 (the walk is cancelled and awaited before the holder preflight, never a false refusal over
- * Refract's own open handles). */
-export function populateLargeGeneratedTree(worktreePath, fileCount = 50_000) {
+/** Scenario (f): a deliberately large generated-folder tree so the leftover-summary walk's own
+ * per-bucket file count (`fs::leftover_summary::count_files`) takes long enough that clicking
+ * Delete immediately after the dialog's `deleteCheck` resolves reliably lands WHILE "Checking
+ * files…" is still running -- proving issue #891 gate round item 5 (the walk is cancelled and
+ * awaited before the holder preflight, never a false refusal over Refract's own open handles).
+ * Issue #891 gate round 2 (H4): widened from 50,000 to 400,000 -- a live run at 50,000 found
+ * the walk finishing about 4 SECONDS BEFORE the click (`clickDeleteButton`'s own wait gates
+ * only on the separate, much-faster `deleteCheck`, which never opens this folder at all), so
+ * that run never actually overlapped; `main()`'s own scenario (f) now asserts the status line
+ * right before the click to catch this for real rather than silently reporting a pass that
+ * proved nothing. */
+export function populateLargeGeneratedTree(worktreePath, fileCount = 400_000) {
   const nodeModules = path.join(worktreePath, 'node_modules');
   mkdirSync(nodeModules, { recursive: true });
   const perPkg = 200;
@@ -272,24 +277,49 @@ export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
  * button's own coordinates while `pointer-events: none` is still set is silently swallowed: no
  * exception, no renderer console output, nothing -- `handleDelete` is simply never called,
  * which is exactly the "dialog hangs forever" symptom this fixes (confirmed live: an
- * `aria-disabled` read at the exact moment of a premature click came back `"true"`). */
-export async function clickDeleteButton(cdp) {
+ * `aria-disabled` read at the exact moment of a premature click came back `"true"`). Issue
+ * #891 gate round 2 (H4): accepts an optional `onReadyToClick` callback, invoked AFTER the
+ * enabled-wait resolves but immediately before the actual click -- the one point a caller can
+ * read dialog state that is genuinely "right before the click", not some earlier moment that
+ * may no longer hold once this function's own wait finishes resolving. */
+export async function clickDeleteButton(cdp, { onReadyToClick } = {}) {
   const findButton = `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete' || el.textContent.trim() === 'Retry')`;
   await cdp.waitFor(`(() => { const b = ${findButton}; return !!b && b.getAttribute('aria-disabled') !== 'true'; })()`, {
     timeoutMs: 30_000,
     label: 'Delete/Retry button enabled (deleteCheck resolved)'
   });
+  if (onReadyToClick) await onReadyToClick();
   await cdp.click(findButton);
 }
 
-/** The dialog's own `role="alert"` paragraph -- '' while no error (it stays mounted, `sr-only`,
- * per `DeleteDialog.tsx`'s own convention). */
-export async function readDialogError(cdp, { timeoutMs = 15_000 } = {}) {
-  return cdp.waitFor(`document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent || null`, { timeoutMs, label: 'dialog error text' });
+/** The dialog's own unified `role="status"` line (`DeleteDialog.tsx`'s `leftoverStatusText`,
+ * issue #891 gate round 2 M5) -- '' if the element is somehow missing. Distinct from
+ * `waitForLeftoverSummary`'s own wait condition (which only proves the WALK is no longer
+ * "Checking files…"): this reads whatever text currently actually occupies that one line,
+ * which can still be `deleteCheck`'s own "Checking for uncommitted or unpushed work…" if that
+ * has not yet resolved. */
+export async function readLeftoverStatusText(cdp) {
+  return cdp.evaluate(`document.querySelector('[role="alertdialog"] [role="status"]')?.textContent || ''`);
 }
 
-export async function isDialogOpen(cdp) {
-  return cdp.evaluate(`!!document.querySelector('[role="alertdialog"]')`);
+/** Waits until BOTH independent checks the Delete dialog runs on open have settled: the
+ * leftover-summary walk (no longer "Checking files…") AND `deleteCheck`'s own git-status read
+ * (the Delete/Retry button's `aria-disabled` clears). Issue #891 gate round 2 (M5) folded both
+ * into ONE status line that shows only whichever is still pending, `deleteCheck`'s own text
+ * taking priority -- a caller that needs to read the FINAL leftover-summary/unavailable text
+ * reliably (issue #891 gate round 2, H2) must wait for both, not just the walk alone. */
+export async function waitForDialogSettled(cdp, { timeoutMs = 30_000 } = {}) {
+  const findButton = `Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((el) => el.textContent.trim() === 'Delete' || el.textContent.trim() === 'Retry')`;
+  await cdp.waitFor(
+    `(() => {
+      const statusEl = document.querySelector('[role="alertdialog"] [role="status"]');
+      const stillChecking = !!statusEl && statusEl.textContent === 'Checking files…';
+      const b = ${findButton};
+      const buttonReady = !!b && b.getAttribute('aria-disabled') !== 'true';
+      return !stillChecking && buttonReady;
+    })()`,
+    { timeoutMs, label: 'both deleteCheck and the leftover-summary walk settled' }
+  );
 }
 
 /** Polls until `sessions.list()` reports anything other than `'stopped'` (or `null`, not

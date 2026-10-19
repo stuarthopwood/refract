@@ -27,8 +27,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::fs::remove_tree::{checked_canonical_path, ContainmentCheck};
+
 use super::git::{GitError, GitErrorCode};
-use super::worktree_validity::is_within_worktrees_root;
 use super::worktrees::worktrees_root;
 
 mod diag;
@@ -42,7 +43,7 @@ pub struct Holder {
 /// Issue #891 gate round (S1): a cheap, no-git-call containment guard run before EITHER holder
 /// check ever touches Restart Manager or the rename probe -- a corrupted or hand-edited
 /// registry entry naming a path outside Refract's own worktrees root must never reach either
-/// one. See `worktree_validity::is_within_worktrees_root`'s own doc comment.
+/// one. See `fs::remove_tree::checked_canonical_path`'s own doc comment.
 fn outside_worktrees_root_refusal(worktree_path: &Path) -> GitError {
     GitError::new(
         GitErrorCode::WorktreeFailed,
@@ -91,7 +92,7 @@ fn named_holders_message(worktree_path: &Path, holders: &[Holder]) -> String {
 /// nothing more specific is known in this case (Restart Manager found nobody; only the rename
 /// probe detected use).
 const FOLDER_IN_USE_MESSAGE: &str =
-    "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry.";
+    "Refract did not delete anything. A program has this folder open, for example a terminal or File Explorer window. Close it, then choose Retry.";
 
 fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String {
     format!(
@@ -118,16 +119,19 @@ pub async fn check_named_holders(
     worktree_path: &Path,
     exclude_pids: &[u32],
 ) -> Result<(), GitError> {
-    if !is_within_worktrees_root(worktree_path, &worktrees_root(repo)) {
-        return Err(outside_worktrees_root_refusal(worktree_path));
-    }
-    if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
-        return Ok(());
-    }
+    let root = worktrees_root(repo);
+    let path = worktree_path.to_path_buf();
+    let check = tokio::task::spawn_blocking(move || checked_canonical_path(&path, &root))
+        .await
+        .unwrap_or(ContainmentCheck::OutsideBoundary);
+    let canonical_path = match check {
+        ContainmentCheck::Missing => return Ok(()),
+        ContainmentCheck::OutsideBoundary => return Err(outside_worktrees_root_refusal(worktree_path)),
+        ContainmentCheck::Ok(p) => p,
+    };
 
     let exclude = exclude_pids.to_vec();
-    let path = worktree_path.to_path_buf();
-    let named = tokio::task::spawn_blocking(move || imp::restart_manager_holders(&path, &exclude))
+    let named = tokio::task::spawn_blocking(move || imp::restart_manager_holders(&canonical_path, &exclude))
         .await
         .unwrap_or_default();
     if !named.is_empty() {
@@ -167,14 +171,30 @@ pub async fn check_folder_in_use(
     session_id: &str,
     own_pids: &[u32],
 ) -> Result<(), GitError> {
-    if !is_within_worktrees_root(worktree_path, &worktrees_root(repo)) {
-        return Err(outside_worktrees_root_refusal(worktree_path));
-    }
-    if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
-        return Ok(());
-    }
+    let root = worktrees_root(repo);
+    let path = worktree_path.to_path_buf();
+    let check = tokio::task::spawn_blocking(move || checked_canonical_path(&path, &root))
+        .await
+        .unwrap_or(ContainmentCheck::OutsideBoundary);
+    let canonical_path = match check {
+        ContainmentCheck::Missing => {
+            // Issue #891 gate round 2 (M2): missing isn't "nothing to hold" -- a crashed/killed
+            // Delete may have renamed it to its own probe sibling and never renamed back; checked here, not assumed.
+            if let Some(probe_path) = probe_sibling_path(worktree_path) {
+                if tokio::fs::symlink_metadata(&probe_path).await.is_ok() {
+                    return Err(GitError::new(
+                        GitErrorCode::WorktreeHeld,
+                        rename_back_failed_message(worktree_path, &probe_path),
+                    ));
+                }
+            }
+            return Ok(());
+        }
+        ContainmentCheck::OutsideBoundary => return Err(outside_worktrees_root_refusal(worktree_path)),
+        ContainmentCheck::Ok(p) => p,
+    };
     diag::log_holder_diagnostics(session_id, own_pids).await;
-    probe_folder_in_use(worktree_path).await
+    probe_folder_in_use(&canonical_path).await
 }
 
 /// Issue #891 gate round (S5): a leftover probe folder from an earlier crashed/killed attempt
@@ -302,11 +322,15 @@ mod imp {
     const MAX_RM_PATH_LEN: usize = 260;
 
     /// Collects up to `MAX_RM_FILES` real file paths under `root`, never descending into a link
-    /// (symlink or junction -- the same rule `fs::remove_tree` enforces for removal, applied
-    /// here so Restart Manager is never asked about a path outside this worktree through a
-    /// redirected link).
+    /// (same rule `fs::remove_tree` enforces). Gate round 2 (M1): also refuses to START at all
+    /// if `root` itself is a link -- otherwise `read_dir` would walk its TARGET on the first
+    /// call, before the per-entry `is_symlink` check below ever runs.
     fn collect_files_for_rm(root: &Path) -> Vec<PathBuf> {
         let mut out = Vec::new();
+        match std::fs::symlink_metadata(root) {
+            Ok(meta) if !meta.file_type().is_symlink() => {}
+            _ => return out,
+        }
         let mut stack = vec![root.to_path_buf()];
         while let Some(dir) = stack.pop() {
             if out.len() >= MAX_RM_FILES {

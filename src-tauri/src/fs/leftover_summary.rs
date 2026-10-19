@@ -94,6 +94,14 @@ pub struct LeftoverSummary {
     pub generated_folders: Vec<GeneratedFolderEntry>,
     pub other_files: Vec<String>,
     pub more_count: u64,
+    /// Issue #891 gate round 2 (H2): true when the underlying `git status` call failed, timed
+    /// out, or its `spawn_blocking` join itself failed -- as opposed to a worktree that
+    /// genuinely has nothing left. Collapsing both into the same empty-looking shape told the
+    /// dialog "Nothing left in the worktree" when the real answer was "unknown" (confirmed by
+    /// scenario (b): an unregistered leftover folder with no usable `.git` makes every `git
+    /// status` call fail, yet the folder can still hold thousands of real files). Renderer
+    /// shows "Couldn't list the folder's files." instead of a summary whenever this is true.
+    pub unavailable: bool,
 }
 
 impl LeftoverSummary {
@@ -103,6 +111,19 @@ impl LeftoverSummary {
             generated_folders: Vec::new(),
             other_files: Vec::new(),
             more_count: 0,
+            unavailable: false,
+        }
+    }
+
+    /// The underlying `git status` read failed, timed out, or its `spawn_blocking` join failed
+    /// -- distinct from `empty`, which means the walk genuinely found nothing to report.
+    fn unavailable(root_name: String) -> Self {
+        Self {
+            root_name,
+            generated_folders: Vec::new(),
+            other_files: Vec::new(),
+            more_count: 0,
+            unavailable: true,
         }
     }
 }
@@ -292,16 +313,54 @@ fn push_other_file(
 }
 
 /// Issue #891 gate round 1 item 5: a process-wide registry of in-flight summary walks, keyed by
-/// Session id, so `sessions.delete` can cancel and await THIS Session's own walk (if one is
-/// running) before its holder preflight checks for external handles. `Notify::notify_one`
-/// (never `notify_waiters`) is the deliberate choice: it buffers exactly one permit for a
-/// `notified()` future created before the notification arrives, which is the pattern
-/// `cancel_and_wait` below relies on (its own doc comment) -- `notify_waiters` only wakes
-/// callers ALREADY suspended in `.await` at the exact instant it is called, which could lose a
-/// notification that arrives between `cancel_and_wait`'s lookup and its first `.await`.
+/// Session id, so `sessions.delete` can cancel and await THIS Session's own walk(s) (if any are
+/// running) before its holder preflight checks for external handles. Issue #891 gate round 2
+/// (M3): a `Vec` per Session, not a single entry -- two walks for the SAME Session can be in
+/// flight at once (a rapid reopen or Retry starting a fresh `deleteLeftoverSummary` call while
+/// a previous one is still finishing), and a single `HashMap<String, RegistryEntry>` let the
+/// second `.insert` silently overwrite the first walk's own entry, so whichever walk finished
+/// FIRST would then deregister the SECOND, still-running walk's entry out from under it --
+/// exactly the false-holder race this whole mechanism exists to prevent. Each walk is
+/// identified by `Arc::ptr_eq` on its own `cancel` flag, never by `session_id` alone, so it only
+/// ever removes its OWN entry (`RegistryGuard`'s own `Drop` impl, below).
+///
+/// `Notify::notify_one` (never `notify_waiters`) is the deliberate choice: it buffers exactly
+/// one permit for a `notified()` future created before the notification arrives, which is the
+/// pattern `cancel_and_wait` below relies on (its own doc comment) -- `notify_waiters` only
+/// wakes callers ALREADY suspended in `.await` at the exact instant it is called, which could
+/// lose a notification that arrives between `cancel_and_wait`'s lookup and its first `.await`.
+/// Safe per-walk: each walk's own `Notify` is never shared with any other walk's.
 type RegistryEntry = (Arc<AtomicBool>, Arc<Notify>);
-static IN_FLIGHT: LazyLock<Mutex<HashMap<String, RegistryEntry>>> =
+static IN_FLIGHT: LazyLock<Mutex<HashMap<String, Vec<RegistryEntry>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Issue #891 gate round 2 (M3): deregisters exactly ONE walk's own entry when dropped --
+/// identified by `Arc::ptr_eq`, never by `session_id` alone -- so a cancelled, panicked, or
+/// otherwise dropped `compute_leftover_summary` future can never leave a stale entry behind.
+/// Without this, dropping that future mid-poll (its own enclosing IPC call aborted or timed
+/// out) would skip the plain cleanup code at the end of the function entirely, and a LATER
+/// `cancel_and_wait` call for the same Session would then spin forever waiting for a
+/// `notify_one` that walk will now never send.
+struct RegistryGuard {
+    session_id: String,
+    cancel: Arc<AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+impl Drop for RegistryGuard {
+    fn drop(&mut self) {
+        let mut registry = IN_FLIGHT
+            .lock()
+            .expect("leftover summary registry poisoned");
+        if let Some(entries) = registry.get_mut(&self.session_id) {
+            entries.retain(|(cancel, _)| !Arc::ptr_eq(cancel, &self.cancel));
+            if entries.is_empty() {
+                registry.remove(&self.session_id);
+            }
+        }
+        self.notify.notify_one();
+    }
+}
 
 /// Runs the background walk for `session_id`'s worktree, registering a cancellable flag for the
 /// duration so `cancel_and_wait` can stop it early. An empty summary for a worktree folder that
@@ -321,8 +380,16 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
         let mut registry = IN_FLIGHT
             .lock()
             .expect("leftover summary registry poisoned");
-        registry.insert(session_id.to_string(), (cancel.clone(), notify.clone()));
+        registry
+            .entry(session_id.to_string())
+            .or_default()
+            .push((cancel.clone(), notify.clone()));
     }
+    let _guard = RegistryGuard {
+        session_id: session_id.to_string(),
+        cancel: cancel.clone(),
+        notify,
+    };
 
     let raw = git_raw(
         worktree_path,
@@ -337,32 +404,29 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
     )
     .await;
 
-    let summary = if raw.code != 0 {
-        LeftoverSummary::empty(root_name)
-    } else {
-        let path = worktree_path.to_path_buf();
-        let cancel_for_count = cancel.clone();
-        tokio::task::spawn_blocking(move || build_summary(&path, &raw.stdout, &cancel_for_count))
-            .await
-            .unwrap_or_else(|_| LeftoverSummary::empty(root_name))
-    };
-
-    {
-        let mut registry = IN_FLIGHT
-            .lock()
-            .expect("leftover summary registry poisoned");
-        registry.remove(session_id);
+    if raw.code != 0 {
+        // Issue #891 gate round 2 (H2): a failed/timed-out `git status` means "we don't know",
+        // never "nothing left" -- `raw.code` is non-zero both for a genuine git failure (e.g.
+        // scenario (b)'s unregistered folder, where `.git` no longer resolves) and for the
+        // timeout branch of `git_raw` itself.
+        return LeftoverSummary::unavailable(root_name);
     }
-    notify.notify_one();
-    summary
+    let path = worktree_path.to_path_buf();
+    let cancel_for_count = cancel.clone();
+    tokio::task::spawn_blocking(move || build_summary(&path, &raw.stdout, &cancel_for_count))
+        .await
+        .unwrap_or_else(|_| LeftoverSummary::unavailable(root_name))
+    // `_guard` drops here (or on an early return above, or if this whole future is itself
+    // dropped before completing), deregistering this walk's own entry and firing its `notify`
+    // exactly once either way.
 }
 
 /// Issue #891 gate round 1 item 5: "Delete during 'Checking files…': the summary walk becomes
 /// cancellable; Delete stops it and waits for it to exit before any holder check, so Refract
-/// never refuses because of its own open handles." Sets the cooperative cancel flag
-/// `count_files`/`build_summary` check, then waits for that in-flight `compute_leftover_summary`
-/// call to actually return and deregister -- a no-op (returns immediately) if no summary walk is
-/// currently running for this Session.
+/// never refuses because of its own open handles." Sets the cooperative cancel flag on EVERY
+/// walk currently registered for `session_id` (gate round 2, M3: there may be more than one),
+/// then waits for each to actually deregister -- a no-op (returns immediately, no log line) if
+/// no summary walk is currently running for this Session.
 ///
 /// The `notify.notified()` future is created BEFORE each registry re-check (the standard safe
 /// `tokio::sync::Notify` idiom for "wait until a condition becomes false"): this guarantees a
@@ -370,26 +434,41 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
 /// permit for the next `notified()` poll regardless of whether that poll has already started
 /// waiting.
 pub async fn cancel_and_wait(session_id: &str) {
-    let (cancel, notify) = {
+    let entries: Vec<RegistryEntry> = {
         let registry = IN_FLIGHT
             .lock()
             .expect("leftover summary registry poisoned");
-        match registry.get(session_id) {
-            Some((cancel, notify)) => (cancel.clone(), notify.clone()),
-            None => return,
-        }
+        registry.get(session_id).cloned().unwrap_or_default()
     };
-    cancel.store(true, Ordering::Relaxed);
-    loop {
-        let notified = notify.notified();
-        let still_running = IN_FLIGHT
-            .lock()
-            .expect("leftover summary registry poisoned")
-            .contains_key(session_id);
-        if !still_running {
-            return;
+    if entries.is_empty() {
+        return;
+    }
+    // Issue #891 gate round 2 (H4, Main's own request): logged ONLY when a walk was actually
+    // found and cancelled -- scenario (f)'s own overlap proof needs a line that is genuinely
+    // absent whenever this call is a no-op, not one that always fires regardless of outcome.
+    log::debug!(
+        "leftover_summary::cancel_and_wait: cancelling {} in-flight walk(s) for {session_id}",
+        entries.len()
+    );
+    for (cancel, _) in &entries {
+        cancel.store(true, Ordering::Relaxed);
+    }
+    for (cancel, notify) in entries {
+        loop {
+            let notified = notify.notified();
+            let still_running = {
+                let registry = IN_FLIGHT
+                    .lock()
+                    .expect("leftover summary registry poisoned");
+                registry
+                    .get(session_id)
+                    .is_some_and(|list| list.iter().any(|(c, _)| Arc::ptr_eq(c, &cancel)))
+            };
+            if !still_running {
+                break;
+            }
+            notified.await;
         }
-        notified.await;
     }
 }
 

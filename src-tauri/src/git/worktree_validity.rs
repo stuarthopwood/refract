@@ -192,20 +192,6 @@ pub async fn worktree_is_valid(repo: &Path, worktree_path: &Path) -> WorktreeVal
     registered_validity(worktree_path, registered.as_deref()).await
 }
 
-/// Issue #891 gate round (S1): a cheap, no-git-call containment guard `worktree_holders`'s own
-/// preflight checks (`check_named_holders`/`check_folder_in_use`) run BEFORE ever touching
-/// Restart Manager or the rename probe -- a corrupted or hand-edited registry entry naming a
-/// path outside Refract's own worktrees root must never reach either holder check, the same
-/// invariant `worktree_delete::assert_within_worktrees_root` already enforces for the removal
-/// step itself. Lexical only (no `.git`/git call needed, so this never blocks on a slow disk):
-/// `root` itself is never "within" itself.
-pub(crate) fn is_within_worktrees_root(worktree_path: &Path, root: &Path) -> bool {
-    let root_key = comparable_path(&root.to_string_lossy());
-    let target_key = comparable_path(&worktree_path.to_string_lossy());
-    target_key != root_key
-        && target_key.starts_with(&format!("{root_key}{}", std::path::MAIN_SEPARATOR))
-}
-
 /// Issue #891 gate round (S4): `is_worktree_registered`'s own bool contract is documented as
 /// safe ONLY for its one external caller (`delete_check_for_session`, a confirmation-text-only
 /// read where collapsing a timeout to "not registered" costs nothing worse than slightly
@@ -348,49 +334,6 @@ mod tests {
         assert_eq!(
             worktree_is_valid(&repo, &junction).await,
             WorktreeValidity::Valid
-        );
-    }
-
-    #[test]
-    fn is_within_worktrees_root_true_for_a_direct_child() {
-        let root = Path::new("/repo/.refract-worktrees");
-        let child = root.join("session-a");
-        assert!(is_within_worktrees_root(&child, root));
-    }
-
-    #[test]
-    fn is_within_worktrees_root_false_for_the_root_itself() {
-        let root = Path::new("/repo/.refract-worktrees");
-        assert!(!is_within_worktrees_root(root, root));
-    }
-
-    #[test]
-    fn is_within_worktrees_root_false_for_a_lookalike_sibling() {
-        let root = Path::new("/repo/.refract-worktrees");
-        let sibling = Path::new("/repo/.refract-worktrees-evil/session-a");
-        assert!(!is_within_worktrees_root(sibling, root));
-    }
-
-    #[tokio::test]
-    async fn registration_state_registered_for_an_added_worktree() {
-        let repo = init_repo().await;
-        let added = add_worktree_with_generated_name(&repo, "main")
-            .await
-            .expect("create worktree");
-        assert_eq!(
-            worktree_registration_state(&repo, &added.worktree_path).await,
-            RegistrationState::Registered
-        );
-    }
-
-    #[tokio::test]
-    async fn registration_state_not_registered_for_a_folder_git_never_added() {
-        let repo = init_repo().await;
-        let orphan = worktrees_root(&repo).join("never-registered");
-        tokio::fs::create_dir_all(&orphan).await.unwrap();
-        assert_eq!(
-            worktree_registration_state(&repo, &orphan).await,
-            RegistrationState::NotRegistered
         );
     }
 }

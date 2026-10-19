@@ -62,8 +62,21 @@ function summarizeLeftovers(summary: LeftoverSummary): string {
 
 // Issue #891 gate round (M2): ONE `role="status"` line cycling through every coarse step --
 // "Checking files…", then the count summary, then "Deleting N files…" during the delete call
-// itself. Empty string renders nothing (a cleared/not-yet-started phase).
-function leftoverStatusText(deleting: boolean, leftoverLoading: boolean, leftoverSummary: LeftoverSummary | null): string {
+// itself. Empty string renders nothing (a cleared/not-yet-started phase). Gate round 2 (M5):
+// also folds in `deleteCheck`'s own "Checking for uncommitted or unpushed work…" line (no
+// longer a separate, independently-mounted `<p>`), in order deleting, then checking (deleteCheck
+// first, then the leftover walk), then the summary. Gate round 2 (H2): a `leftoverSummary`
+// marked `unavailable` (the underlying `git status` call failed, timed out, or its own join
+// failed) reads as "Couldn't list the folder's files.", the same text an outright IPC failure
+// (`leftoverError`) already used -- never silently falls through to `summarizeLeftovers`, which
+// would otherwise report a git failure as "Nothing left in the worktree".
+function leftoverStatusText(
+  deleting: boolean,
+  loading: boolean,
+  leftoverLoading: boolean,
+  leftoverError: boolean,
+  leftoverSummary: LeftoverSummary | null
+): string {
   if (deleting) {
     if (leftoverSummary) {
       // Every file this call is actually removing: each generated folder's own real count plus
@@ -76,7 +89,9 @@ function leftoverStatusText(deleting: boolean, leftoverLoading: boolean, leftove
     }
     return 'Deleting…'
   }
+  if (loading) return 'Checking for uncommitted or unpushed work…'
   if (leftoverLoading) return 'Checking files…'
+  if (leftoverError || leftoverSummary?.unavailable) return "Couldn't list the folder's files."
   if (leftoverSummary) return summarizeLeftovers(leftoverSummary)
   return ''
 }
@@ -123,6 +138,16 @@ export function DeleteDialog({
   // informational, the same way the summary itself never gates Delete.
   const [leftoverError, setLeftoverError] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Issue #891 gate round 2 (H1): set ONLY in `handleDelete`'s own `!response.ok` branch, never
+  // by a `deleteCheck` failure on open -- `error` alone drove the button's Retry label before
+  // this, so a dialog that opened straight into a failed `deleteCheck` (no loss summary ever
+  // shown) still read "Retry", and pressing it called `handleDelete` directly: a real delete
+  // attempt with no confirmation the user had ever seen. Cleared everywhere `error` clears.
+  const [refused, setRefused] = useState(false)
+  // Issue #891 gate round 2 (M4): a SEPARATE flag from `loading` for the P4 post-refusal
+  // `deleteCheck` refresh -- `loading` also gates the Delete/Retry button's `aria-disabled`,
+  // and that refresh must never grey out Retry while it runs in the background.
+  const [refreshing, setRefreshing] = useState(false)
   const deletedRef = useRef(false)
   // Live, not closure-captured: handleDelete's own `session` is fixed to whatever it was
   // when that specific call started (an ordinary JS closure), so it can never detect that a
@@ -140,6 +165,8 @@ export function DeleteDialog({
     deletedRef.current = false
     setDeleting(false)
     setError(null)
+    setRefused(false)
+    setRefreshing(false)
     let cancelled = false
 
     if (check) {
@@ -202,16 +229,23 @@ export function DeleteDialog({
     setDeleting(false)
     if (!response.ok) {
       setError(response.error.message)
+      // Issue #891 gate round 2 (H1): only a `handleDelete` failure proves the user has seen
+      // the loss summary before this specific Delete attempt actually ran -- this is the one
+      // and only place `refused` is ever set `true`.
+      setRefused(true)
       // Issue #891 gate round (P4): a partial failure may have changed what git and the
       // filesystem actually show (some files could already be gone before a holder appeared,
       // or git's own registration state could have changed) -- refresh both reads so Retry's
       // own display, and the next Delete attempt, see current state rather than whatever was
-      // true when the dialog first opened.
+      // true when the dialog first opened. Issue #891 gate round 2 (M4): the deleteCheck
+      // refresh uses its own `refreshing` flag, never `loading` -- `loading` also gates the
+      // Delete/Retry button's `aria-disabled`, and this background refresh must never grey out
+      // Retry for the several seconds it can take against a large worktree.
       if (!check) {
-        setLoading(true)
+        setRefreshing(true)
         void window.refract.sessions.deleteCheck(deletingId).then((refreshed) => {
           if (sessionIdRef.current !== deletingId) return
-          setLoading(false)
+          setRefreshing(false)
           if (refreshed.ok) setResult(refreshed.value)
         })
       }
@@ -234,7 +268,7 @@ export function DeleteDialog({
   }
 
   const { first: errorFirst, rest: errorRest } = error ? splitFirstSentence(error) : { first: '', rest: '' }
-  const statusText = leftoverStatusText(deleting, leftoverLoading, leftoverSummary)
+  const statusText = leftoverStatusText(deleting, loading || refreshing, leftoverLoading, leftoverError, leftoverSummary)
   const hasLeftoverList = !!leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0)
 
   return (
@@ -258,11 +292,6 @@ export function DeleteDialog({
           <AlertDialogTitle>Delete Session {session.name}?</AlertDialogTitle>
           <AlertDialogDescription>This removes its worktree, its branch, and its Conversations.</AlertDialogDescription>
         </AlertDialogHeader>
-        {loading && (
-          <p role="status" className="text-sm text-muted-foreground">
-            Checking for uncommitted or unpushed work…
-          </p>
-        )}
         {result && (result.uncommittedFiles > 0 || result.unpushedCommits > 0 || !result.hasUpstream) && (
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {result.uncommittedFiles > 0 && (
@@ -280,14 +309,15 @@ export function DeleteDialog({
         )}
         {/* Issue #891 gate round (M2): ONE role="status" line for every coarse step of the
             leftover-files walk/delete, never the list itself (the list below is a separate,
-            non-live element). */}
-        {statusText && (
-          <p role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
-            {statusText}
-          </p>
-        )}
-        {leftoverError && !leftoverLoading && <p className="text-sm text-muted-foreground">Couldn't list the folder's files.</p>}
+            non-live element). Issue #891 gate round 2 (M5): ALWAYS mounted, never conditionally
+            rendered on `statusText` being non-empty -- some assistive tech only announces a
+            CHANGE to an already-present live region, not a node that appears for the first
+            time. `min-h-5` keeps this row's own height constant as the icon and text come and
+            go, matching the error box below's own established pattern. */}
+        <p role="status" className="flex min-h-5 items-center gap-1.5 text-sm text-muted-foreground">
+          {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
+          {statusText}
+        </p>
         {hasLeftoverList && leftoverSummary && (
           <div className="min-w-0">
             {/* Issue #891 gate round (P3): "The list sits in its own bounded, keyboard-scrollable
@@ -303,7 +333,7 @@ export function DeleteDialog({
             <ul
               aria-labelledby="leftover-files-label"
               tabIndex={0}
-              className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
               {leftoverSummary.generatedFolders.map((folder) => (
                 <li key={folder.name} className="flex min-w-0 items-start gap-1.5">
@@ -365,7 +395,11 @@ export function DeleteDialog({
           {/* Issue #891 gate round 1 item 2 (ui-architect-v3 ruling): after any refusal this
               same button relabels to Retry (still destructive, still the only filled button,
               same onClick) rather than gaining a second control -- every backend refusal
-              message already ends "then choose Retry" to match. `error` clears at the start of
+              message already ends "then choose Retry" to match. Issue #891 gate round 2 (H1):
+              the label reads `refused`, never bare `error` -- a `deleteCheck` failure on open
+              also sets `error` (its own message already explains itself) but must NEVER show
+              Retry, since no loss summary has ever been shown for this Session yet; `refused`
+              is set only inside `handleDelete`'s own failure branch. Both clear at the start of
               a new attempt and at every fresh dialog open, so this reverts to "Delete" then. */}
           <AlertDialogAction
             variant="destructive"
@@ -378,7 +412,7 @@ export function DeleteDialog({
               void handleDelete()
             }}
           >
-            {deleting ? 'Deleting…' : error ? 'Retry' : 'Delete'}
+            {deleting ? 'Deleting…' : refused ? 'Retry' : 'Delete'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

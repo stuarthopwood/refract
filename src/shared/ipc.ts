@@ -282,12 +282,16 @@ export interface MergeInput {
  * folders (e.g. `node_modules`) by name with a combined file count, and other files by path,
  * capped with `moreCount` once there are too many to list individually. `rootName` (gate round,
  * M3) is the worktree folder's own basename, so the renderer can lead each displayed path with
- * which Session it belongs to. */
+ * which Session it belongs to. `unavailable` (gate round 2, H2) is true when the underlying
+ * `git status` call failed, timed out, or its own join failed -- distinct from a genuinely
+ * empty worktree; the dialog must show "Couldn't list the folder's files." in that case, never
+ * fold it into "Nothing left in the worktree". */
 export interface LeftoverSummary {
   rootName: string;
   generatedFolders: { name: string; fileCount: number }[];
   otherFiles: string[];
   moreCount: number;
+  unavailable: boolean;
 }
 
 // ---------------------------------------------------------------------------

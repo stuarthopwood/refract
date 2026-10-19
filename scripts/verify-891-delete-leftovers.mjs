@@ -12,6 +12,9 @@
 //   (d) A PowerShell process this script spawned holding one file open inside the worktree is
 //       NAMED in the refusal (Restart Manager); killing it then lets Retry succeed.
 //   (e) The dialog shows the leftover summary (generated-folder bucket, file counts).
+//   (f) Clicking Delete while the leftover-summary walk is still running (a genuine overlap,
+//       asserted right before the click, not assumed) cancels that walk cleanly before the
+//       holder preflight -- never a false refusal over Refract's own open handles.
 //
 // Build/launch/CDP plumbing reused from the established `verify-tauri-*` scripts
 // (`verify-tauri-scratch-helpers.mjs`, `verify-tauri-cdp.mjs`, `verify-tauri-session-list-
@@ -19,7 +22,7 @@
 // generation are new (`verify-891-delete-leftovers-helpers.mjs`) -- no existing script touches
 // this dialog.
 
-import { mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -49,6 +52,8 @@ import {
   killSpawned,
   openDeleteDialogFor,
   waitForLeftoverSummary,
+  waitForDialogSettled,
+  readLeftoverStatusText,
   clickDeleteButton,
   readDialogError,
   waitForDeleteOutcome,
@@ -148,12 +153,20 @@ async function main() {
     const nameA = await newSession('a');
     const sessionA = sessionByName(dataDir, nameA);
     const { canaryFile } = populateFullWorktree(sessionA.worktreePath, canaryDir);
+    // Issue #891 gate round 2 (M8): a positive control -- prove the worktree genuinely WAS
+    // registered before Delete runs, so the later "admin entry gone" check actually proves
+    // something instead of trivially passing against a worktree that was never registered.
+    if (isRegisteredWorktree(repoDir, sessionA.worktreePath)) ok('(a) positive control: worktree is registered before Delete runs');
+    else fail('(a) positive control: worktree is registered before Delete runs', new Error('isRegisteredWorktree returned false before any delete attempt'));
     await openDeleteDialogFor(cdp, nameA, SHOT_DIR);
     const summaryTextA = await waitForLeftoverSummary(cdp);
     if (summaryTextA.toLowerCase().includes('node_modules')) ok('(e) dialog shows the leftover summary (node_modules bucket present)');
     else fail('(e) dialog shows the leftover summary', new Error(`no node_modules bucket in: ${summaryTextA}`));
     await cdp.screenshot(path.join(SHOT_DIR, '01-dialog-summary.png'));
-    await clickDeleteButton(cdp);
+    // Issue #891 gate round 2 (L2): a shot taken right after BOTH checks have genuinely
+    // settled (the button's own enabled-wait, immediately before the click) -- proof the
+    // dialog is actually in its real "ready to click" state, not assumed from '01' alone.
+    await clickDeleteButton(cdp, { onReadyToClick: () => cdp.screenshot(path.join(SHOT_DIR, '04-dialog-ready.png')) });
     const outcomeA = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeA.closed) fail('(a) full worktree deletes cleanly', new Error(`delete failed: ${outcomeA.error}`));
     const aGone = !(await isSessionListed(cdp, nameA));
@@ -167,9 +180,21 @@ async function main() {
     const nameB = await newSession('b');
     const sessionB = sessionByName(dataDir, nameB);
     dropAdminEntry(repoDir, sessionB.worktreePath);
+    // Issue #891 gate round 2 (M8): a positive control -- prove `dropAdminEntry` genuinely
+    // unregistered the worktree, so scenario (b) actually starts from the unregistered state
+    // its own name claims, not a silent no-op.
+    if (!isRegisteredWorktree(repoDir, sessionB.worktreePath)) ok('(b) positive control: worktree is unregistered right after dropAdminEntry');
+    else fail('(b) positive control: worktree is unregistered right after dropAdminEntry', new Error('isRegisteredWorktree still returned true'));
     populateOrphanWorktree(sessionB.worktreePath);
     await openDeleteDialogFor(cdp, nameB, SHOT_DIR);
-    await waitForLeftoverSummary(cdp);
+    await waitForDialogSettled(cdp);
+    // Issue #891 gate round 2 (H2): an unregistered folder makes every `git status` call fail,
+    // which must read as "we don't know", never a silent "Nothing left in the worktree" --
+    // this is the exact repro for the bug H2 fixes.
+    const statusTextB = await readLeftoverStatusText(cdp);
+    if (statusTextB === "Couldn't list the folder's files.") ok(`(b, H2) unregistered folder's failed git status reads "Couldn't list the folder's files.", never a false "Nothing left"`);
+    else fail('(b, H2) unregistered folder shows "Couldn\'t list the folder\'s files."', new Error(`status line read: ${JSON.stringify(statusTextB)}`));
+    await cdp.screenshot(path.join(SHOT_DIR, '05-dialog-cant-list.png'));
     await clickDeleteButton(cdp);
     const outcomeB = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeB.closed) fail('(b) leftover unregistered full folder deletes', new Error(`delete failed: ${outcomeB.error}`));
@@ -279,17 +304,48 @@ async function main() {
     // settle, so Delete fires while "Checking files…" is still walking this deliberately large
     // tree. Proves `sessions.delete` cancels and awaits that walk before its own holder
     // preflight, so Refract's own open handles during the walk never cause a false refusal.
+    // Issue #891 gate round 2 (H4): a prior run never actually overlapped (the walk finished
+    // ~4s before the click) and silently reported a pass that proved nothing -- the status
+    // line is now read right at the moment `clickDeleteButton`'s own enabled-wait resolves
+    // (`onReadyToClick`), immediately before the click itself; a run that genuinely does not
+    // overlap is recorded as notExercised, never claimed as a pass.
     const nameF = await newSession('f');
     const sessionF = sessionByName(dataDir, nameF);
     populateLargeGeneratedTree(sessionF.worktreePath);
     await openDeleteDialogFor(cdp, nameF, SHOT_DIR);
-    await clickDeleteButton(cdp);
-    const outcomeF = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
-    if (!outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`delete failed: ${outcomeF.error}`));
-    const fGone = !(await isSessionListed(cdp, nameF));
-    const fWorktreeGone = !existsSync(sessionF.worktreePath);
-    if (outcomeF.closed && fGone && fWorktreeGone) ok('(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk\'s own open handles');
-    else if (outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`sessionGone=${fGone} worktreeGone=${fWorktreeGone}`));
+    let statusTextF = '';
+    await clickDeleteButton(cdp, {
+      onReadyToClick: async () => {
+        statusTextF = await readLeftoverStatusText(cdp);
+      }
+    });
+    if (statusTextF !== 'Checking files…') {
+      notExercised.push(
+        `(f) Delete clicked while the leftover-summary walk is still running -- this run never actually overlapped (status line read ${JSON.stringify(statusTextF)} right before the click, not "Checking files…"), so no genuine overlap was proven this run`
+      );
+    } else {
+      const outcomeF = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
+      if (!outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`delete failed: ${outcomeF.error}`));
+      const fGone = !(await isSessionListed(cdp, nameF));
+      const fWorktreeGone = !existsSync(sessionF.worktreePath);
+      if (outcomeF.closed && fGone && fWorktreeGone) ok("(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk's own open handles");
+      else if (outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`sessionGone=${fGone} worktreeGone=${fWorktreeGone}`));
+      // Issue #891 gate round 2 (H4): `cancel_and_wait` must have actually found and cancelled
+      // this Session's own in-flight walk before the holder preflight ran -- proven by its own
+      // debug line in app.log, scoped to this Session's id (never just "a log line exists
+      // somewhere"). Retried briefly: the log writer flushes asynchronously, so a read taken
+      // the instant the IPC call resolves can race a buffered write that has not landed yet.
+      const cancelLogPatternF = new RegExp(`cancelling \\d+ in-flight walk\\(s\\) for ${sessionF.id}`);
+      let appLogTextF = '';
+      let cancelLoggedF = false;
+      for (let attempt = 0; attempt < 10 && !cancelLoggedF; attempt++) {
+        appLogTextF = existsSync(appLogFile) ? readFileSync(appLogFile, 'utf8') : '';
+        cancelLoggedF = cancelLogPatternF.test(appLogTextF);
+        if (!cancelLoggedF) await new Promise((r) => setTimeout(r, 200));
+      }
+      if (cancelLoggedF) ok("(f, H4) cancel_and_wait logged cancelling this Session's own in-flight walk before the holder preflight ran");
+      else fail('(f, H4) cancel_and_wait logs cancelling the in-flight walk for this Session', new Error('no matching debug line found in app.log'));
+    }
   } catch (err) {
     fail('unhandled', err);
   } finally {
@@ -328,7 +384,7 @@ async function main() {
     notExercised,
     screenshots: citeScreenshots(
       SHOT_DIR,
-      ['01-dialog-summary.png', '02-dialog-refusal-cwd-holder.png', '03-dialog-refusal-named-holder.png', '99-diag-delete-dialog-failure.png'].filter((name) =>
+      ['01-dialog-summary.png', '02-dialog-refusal-cwd-holder.png', '03-dialog-refusal-named-holder.png', '04-dialog-ready.png', '05-dialog-cant-list.png', '99-diag-delete-dialog-failure.png'].filter((name) =>
         existsSync(path.join(SHOT_DIR, name))
       )
     )
