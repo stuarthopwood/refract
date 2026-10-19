@@ -86,7 +86,7 @@ import {
   STAGE4_TITLE,
   STAGE5_TITLE
 } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
 import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -282,6 +282,11 @@ async function main() {
     }
 
     const stage4TriggerExpr = stageTriggerSelector(STAGE4_TITLE);
+    // Gate round 1 fix (falsified live): a single-shot read right after the "nothing Running"
+    // wait can race a final render still settling for one specific Stage's own title/trigger --
+    // `cdp.waitFor` polls for the trigger's own existence first (it is never expected to be
+    // genuinely absent), closing that race before reading its `aria-expanded`/rect state.
+    await cdp.waitFor(`!!(${stage4TriggerExpr})`, { timeoutMs: 10_000, label: "Stage 4's own trigger exists" });
     const stage4BeforeExpanded = await cdp.evaluate(`(${stage4TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage4BeforeExpanded !== 'false') {
       failures.push(`Stage 4's own row was not closed before the mouse jump proof (aria-expanded was ${JSON.stringify(stage4BeforeExpanded)}, expected "false") -- this script never touches Stage 4 before this point.`);
@@ -368,6 +373,7 @@ async function main() {
     }
 
     const stage3TriggerExpr = stageTriggerSelector(STAGE3_TITLE);
+    await cdp.waitFor(`!!(${stage3TriggerExpr})`, { timeoutMs: 10_000, label: "Stage 3's own trigger exists" });
     const stage3BeforeExpanded = await cdp.evaluate(`(${stage3TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage3BeforeExpanded !== 'false') {
       failures.push(`Stage 3's own row was not closed before the keyboard jump proof (aria-expanded was ${JSON.stringify(stage3BeforeExpanded)}, expected "false") -- this script never touches Stage 3 before this point.`);
@@ -390,10 +396,14 @@ async function main() {
       failures.push(`The chain row's own "Go to Stage 3" jump button was never found: ${err.message} -- issue #1008 item 2 regression.`);
     }
     if (stage3JumpFound) {
-      // Keyboard path (distinct from Stage 1's mouse click above): focus the jump button itself
-      // directly (proving it is keyboard-reachable), then a REAL Enter keypress -- a native
-      // `<button>` needs no special key handling to activate on Enter, so this also proves
-      // `jumpToStage` was wired through `onClick`, not a click-only handler.
+      // Keyboard path (distinct from Stage 4's mouse click above): focus the jump button itself
+      // directly (proving it is keyboard-reachable), then a REAL Enter keypress -- `cdp.pressEnter()`
+      // (sends `text`/`unmodifiedText: '\r'` alongside the keycode), NOT the bare `pressKey`
+      // helper (keycode only): a native `<button>`'s own default "Enter activates the focused
+      // button" behaviour needs those text fields to fire in this WebView2 build (the same gap
+      // `verify-tauri-560-helpers.mjs`'s own `pressRealEnter` doc comment and
+      // `verify-tauri-567.mjs`'s own Delete-dialog Enter press already document -- confirmed
+      // live here too: the bare `pressKey` form moved focus nowhere and opened nothing).
       await cdp.evaluate(`(() => { const el = (${jumpButtonExpr(STAGE3_TITLE)}); if (el) el.scrollIntoView({ block: 'center' }); })()`);
       await cdp.evaluate(`(${jumpButtonExpr(STAGE3_TITLE)})?.focus()`);
       const stage3ButtonFocused = await cdp.evaluate(`document.activeElement === (${jumpButtonExpr(STAGE3_TITLE)})`);
@@ -401,7 +411,7 @@ async function main() {
         failures.push('Could not place keyboard focus on the "Go to Stage 3" button itself before pressing Enter.');
       } else {
         findings.push('Keyboard focus placed on the "Go to Stage 3" button itself (keyboard-reachable, issue #1008 item 2).');
-        await pressKey(cdp, 13, 'Enter', 'Enter');
+        await cdp.pressEnter();
         const stage3AfterExpanded = await cdp.evaluate(`(${stage3TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
         if (stage3AfterExpanded !== 'true') {
           failures.push(`Pressing Enter on "Go to Stage 3" did not open Stage 3's own row (aria-expanded is ${JSON.stringify(stage3AfterExpanded)}, expected "true").`);
