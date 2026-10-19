@@ -29,6 +29,8 @@
 // kept visible in the gate's output for anyone re-measuring it, never failing the run.
 
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
+import { createHighlighter } from 'shiki'
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 
 export const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -209,6 +211,10 @@ export const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
+  // Issue #975 gate round 1 (Main, Low): `CodeBlock`'s own scrollable/body region
+  // (`Markdown.tsx`, `focus-visible:ring-2 focus-visible:ring-ring`) sits directly on `--card`
+  // -- this issue's own new code-block background -- and was never checked against it before.
+  { fg: 'ring', bg: 'card', min: 3 },
   // Gate round 4 (#564 follow-up): the Approval mode pill's `focus-visible:outline-ring` used to
   // render its opaque focus outline directly on `--composer-background`. #927 (quiet composer)
   // replaced that token with `--composer-focus` (muted in Dark/Obsidian, an exact `--ring` alias
@@ -432,6 +438,91 @@ export function sidebarBorderContrastRows(themes) {
       bgHex: linearToHex(fillLinear),
       note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })
+  }
+  return rows
+}
+
+// Issue #975 (code-block background follows each preset's own `--card`, not whatever a bundled
+// Shiki theme ships with): `Markdown.tsx`'s `CodeBlock` neutralises Shiki's own root background
+// to `transparent` and renders `CodeBlockHeader`/the Shiki output/the plain-text fallback on
+// `bg-card`, so a fenced code block's REAL backdrop in every theme is now `--card`, never the
+// `syntaxTheme` chosen in `src/shared/themes.ts`. Checks every distinct, non-self-backgrounded
+// tokenColour foreground that chosen `syntaxTheme` ships -- keywords, strings, comments, the
+// theme's own default text colour (`.fg`, what an UNstyled token actually renders, per Shiki's
+// own `codeToHast` source) -- against that preset's own resolved `--card`, at the 4.5:1 floor
+// the #975 decision comment set (not the 3:1 non-text floor `PAIRS` uses elsewhere: a code
+// token is real body text, same as `muted-foreground`/`card` above).
+//
+// Gate round 1 fix (Main, Code4 Medium): a tokenColour entry carrying its OWN `settings.
+// background` is excluded ONLY when every one of its scope names is CONFIRMED unreachable --
+// scanned all 346 bundled Shiki language grammars' own JSON for a rule producing `markup.
+// ignored`/`markup.untracked` (the only self-backgrounded scopes `github-dark`/`github-dark-
+// default`/`github-dark-high-contrast` ship): zero matches anywhere, including `diff`, the one
+// bundled language whose own scope names plausibly suggested a hit -- so no fence this app can
+// ever highlight (`lang` loads whichever bundled Shiki language id an agent-authored fence
+// names) can produce either scope. The previous cut's own claim ("it always renders on that
+// literal paired background") was wrong for a THIRD self-backgrounded scope, `carriage-return`:
+// the bundled `mdx` grammar's own hard-line-break rule (two or more trailing spaces) genuinely
+// stacks it onto a token's own scope list, so an `mdx`-tagged fence CAN reach it -- confirmed
+// live against `bundledLanguages.mdx`, not assumed. `carriage-return` is deliberately NOT in
+// the confirmed-unreachable set below: it stays in the loop, measured against `--card` like any
+// other token (its real backdrop when it fires is its own literal paired background, a separate
+// concern this issue's neutralisation never touches, but there is no way to prove it unreachable
+// the way the other two are, and its own foreground clears comfortably against every preset's
+// `--card` regardless). The scope-less root-default entry (the theme's own overall `foreground`/
+// `background` pair, redundant with the `.fg` entry already seeded below) stays skipped too.
+const SELF_BACKGROUND_SCOPES_CONFIRMED_UNREACHABLE = new Set(['markup.ignored', 'markup.untracked'])
+function hexToLinearSrgb(hex) {
+  let h = hex.slice(1)
+  if (h.length === 3) h = [...h].map((c) => c + c).join('')
+  const r = parseInt(h.slice(0, 2), 16) / 255
+  const g = parseInt(h.slice(2, 4), 16) / 255
+  const b = parseInt(h.slice(4, 6), 16) / 255
+  return [srgbGammaDecode(r), srgbGammaDecode(g), srgbGammaDecode(b)]
+}
+
+export async function shikiTokenContrastRows(themes, themeMetadata) {
+  const distinctSyntaxThemes = [...new Set(Object.values(themeMetadata).map((m) => m.syntaxTheme).filter(Boolean))]
+  const rows = []
+  if (distinctSyntaxThemes.length === 0) return rows
+  const highlighter = await createHighlighter({ themes: distinctSyntaxThemes, langs: [], engine: createJavaScriptRegexEngine() })
+  const tokenColoursByTheme = new Map()
+  for (const syntaxTheme of distinctSyntaxThemes) {
+    const resolved = highlighter.getTheme(syntaxTheme)
+    const colours = new Map()
+    colours.set(resolved.fg.toLowerCase(), '(default text)')
+    for (const entry of resolved.settings) {
+      const fg = entry.settings?.foreground
+      if (!fg) continue
+      const scopeNames = Array.isArray(entry.scope) ? entry.scope : entry.scope ? [entry.scope] : []
+      if (entry.settings?.background && (scopeNames.length === 0 || scopeNames.every((s) => SELF_BACKGROUND_SCOPES_CONFIRMED_UNREACHABLE.has(s)))) continue
+      const scope = scopeNames.length > 0 ? scopeNames.join(', ') : '(default text)'
+      if (!colours.has(fg.toLowerCase())) colours.set(fg.toLowerCase(), scope)
+    }
+    tokenColoursByTheme.set(syntaxTheme, colours)
+  }
+
+  for (const [themeId, props] of Object.entries(themes)) {
+    const syntaxTheme = themeMetadata[themeId]?.syntaxTheme
+    const card = props['card']
+    if (!syntaxTheme || !card) {
+      rows.push({ themeId, fg: 'shiki token colour', bg: 'card', min: 4.5, ratio: null, pass: false, note: `'${themeId}' has no syntaxTheme (themes.ts) or --card token (globals.css)` })
+      continue
+    }
+    const cardLum = relativeLuminance(card.linear)
+    for (const [hex, scope] of tokenColoursByTheme.get(syntaxTheme)) {
+      const ratio = contrastRatio(relativeLuminance(hexToLinearSrgb(hex)), cardLum)
+      rows.push({
+        themeId,
+        fg: `shiki:${syntaxTheme} ${scope}`,
+        bg: 'card',
+        min: 4.5,
+        ratio,
+        pass: ratio >= 4.5,
+        fgHex: hex,
+        bgHex: linearToHex(card.linear),
+      })
+    }
   }
   return rows
 }

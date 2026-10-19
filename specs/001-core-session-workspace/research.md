@@ -931,3 +931,43 @@ honestly labelled as non-proofs; (5, Test Medium) a simulated window blur
 (`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the existing
 assertions; a dedicated click-away negative proof needs its own second 1-to-2 transition and is
 recorded in `notExercised` instead.
+
+## 25. Code-block background follows the active preset's own `--card`, not the bundled Shiki
+theme's fixed colour (issue #975, 2026-10-19; renumbered against `origin/main` just before
+merging, this file's own convention, if a parallel lane claims 25 first)
+
+**Problem**: every built-in preset's fenced code block rendered Shiki's own bundled syntax
+theme's fixed background (`github-dark`'s `#24292e`, `github-dark-high-contrast`'s `#0a0c10`)
+underneath its own header's `bg-muted` -- independent of the active theme's own `--card`, so the
+two never matched, most visibly a colour-family clash under Cyber Amber (warm amber header,
+cool blue-grey body, #551 gate round 1).
+
+**Decision**: `Markdown.tsx`'s `CodeBlockHeader` moves to `bg-card` (matching the body/gutter's
+existing surface); `CodeBlock`'s `codeToHtml` call neutralises Shiki's own root background to
+`transparent` via the `colorReplacements` option (probed against the installed shiki@4.4.3 API:
+the one per-call override that replaces a literal colour -- including the root background --
+throughout the rendered HTML; `rootStyle: false`/`structure: 'inline'` were rejected, both also
+drop the theme's own default foreground and/or the `<pre>`/`<code>` wrapper the `[&>pre]:`
+selectors depend on), keyed on `highlighter.getTheme(syntaxTheme).bg` so a future theme swap can
+never silently stop neutralising the right colour. `scripts/check-theme-contrast.mjs` gained a
+Shiki-token-colour check (`theme-contrast-pairs.mjs`'s `shikiTokenContrastRows`): every
+distinct, non-self-backgrounded token foreground the chosen `syntaxTheme` ships (keywords,
+strings, comments, its own default text colour) must clear 4.5:1 against that preset's own
+`--card`.
+
+**Verified**: `github-dark`'s own comment colour (`#6a737d`, relative luminance ~0.168) caps out
+at ~4.36:1 against a background of literal pure black (luminance 0) -- below the 4.5:1 floor
+regardless of how dark any real preset's `--card` is, so no amount of retuning any preset's own
+surface token could fix it (computed via the same OKLab/WCAG matrices `contrast-math.mjs`
+already uses). `dark`, `obsidian`, `nordic-frost` and `cyber-amber` (all `github-dark`) move to
+`github-dark-default` (GitHub's own newer theme): its comment colour (`#8b949e`) clears 4.5:1
+against every one of those presets' own `--card` with margin (worst case 5.35:1, Obsidian);
+every other token colour it ships clears with even more margin. `dark-high-contrast`'s own
+`github-dark-high-contrast` is untouched -- its comment colour (`#bdc4cc`) already clears
+11.31:1 against its own `--card`.
+
+**Alternatives**: retuning each failing preset's own `--card`/`--surface-1` darker (rejected:
+mathematically cannot work for `github-dark`'s comment colour at any depth, see Verified above,
+and would still need retuning four independent presets); a bespoke hand-authored Shiki theme
+(rejected by the issue's own decision: "keep only the bundled Shiki theme's TOKEN colours",
+never a custom per-scope palette).
