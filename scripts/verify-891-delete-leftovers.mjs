@@ -99,6 +99,24 @@ async function main() {
     cdp = await CdpSession.connect(wsUrl);
     assertExeMatchesProcess(targetPid, exePath, hash);
 
+    // Forwards the renderer's own console/exception output to this script's stdout -- the only
+    // way to see a silent JS throw inside an onSelect handler, which would otherwise leave a
+    // click looking like it "did nothing" with no error anywhere in this script's own output.
+    await cdp.send('Runtime.enable');
+    cdp.ws.addEventListener('message', (event) => {
+      let msg;
+      try {
+        msg = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (msg.method === 'Runtime.exceptionThrown') {
+        console.error('RENDERER EXCEPTION:', JSON.stringify(msg.params.exceptionDetails));
+      } else if (msg.method === 'Runtime.consoleAPICalled' && (msg.params.type === 'error' || msg.params.type === 'warning')) {
+        console.error('RENDERER CONSOLE:', msg.params.type, msg.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
+      }
+    });
+
     // The Readiness screen's own omp/GitHub checks can genuinely take up to a minute on a
     // brand-new scratch profile (established wait shape, verify-tauri-559/560/567.mjs).
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -121,7 +139,7 @@ async function main() {
     const nameA = await newSession('a');
     const sessionA = sessionByName(dataDir, nameA);
     const { canaryFile } = populateFullWorktree(sessionA.worktreePath, canaryDir);
-    await openDeleteDialogFor(cdp, nameA);
+    await openDeleteDialogFor(cdp, nameA, SHOT_DIR);
     const summaryTextA = await waitForLeftoverSummary(cdp);
     if (summaryTextA.toLowerCase().includes('node_modules')) ok('(e) dialog shows the leftover summary (node_modules bucket present)');
     else fail('(e) dialog shows the leftover summary', new Error(`no node_modules bucket in: ${summaryTextA}`));
@@ -140,7 +158,7 @@ async function main() {
     const sessionB = sessionByName(dataDir, nameB);
     dropAdminEntry(repoDir, sessionB.worktreePath);
     populateOrphanWorktree(sessionB.worktreePath);
-    await openDeleteDialogFor(cdp, nameB);
+    await openDeleteDialogFor(cdp, nameB, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'scenario (b) delete dialog closed' });
@@ -156,7 +174,7 @@ async function main() {
     const cmdHolder = spawnCwdHolder(sessionC.worktreePath);
     spawned.push(cmdHolder);
     await new Promise((r) => setTimeout(r, 300)); // let Windows finish establishing the child's own cwd
-    await openDeleteDialogFor(cdp, nameC);
+    await openDeleteDialogFor(cdp, nameC, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
     const errC = await readDialogError(cdp);
@@ -181,7 +199,7 @@ async function main() {
     const fileHolder = spawnFileHolder(heldFile);
     spawned.push(fileHolder);
     await new Promise((r) => setTimeout(r, 500));
-    await openDeleteDialogFor(cdp, nameD);
+    await openDeleteDialogFor(cdp, nameD, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
     const errD = await readDialogError(cdp);
@@ -210,7 +228,12 @@ async function main() {
     dirty,
     failures,
     notExercised,
-    screenshots: citeScreenshots(SHOT_DIR, ['01-dialog-summary.png', '02-dialog-refusal-cwd-holder.png', '03-dialog-refusal-named-holder.png'])
+    screenshots: citeScreenshots(
+      SHOT_DIR,
+      ['01-dialog-summary.png', '02-dialog-refusal-cwd-holder.png', '03-dialog-refusal-named-holder.png', '99-diag-delete-dialog-failure.png'].filter((name) =>
+        existsSync(path.join(SHOT_DIR, name))
+      )
+    )
   };
   writeFileSync(path.join(SHOT_DIR, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`report.json written to ${path.join(SHOT_DIR, 'report.json')}`);

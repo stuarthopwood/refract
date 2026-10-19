@@ -149,7 +149,7 @@ function rowActionsFinderByName(name) {
 /** Opens a named Session row's own "..." menu and clicks "Delete", waiting for the real
  * AlertDialog to mount. Mirrors `openRowActionsMenu`'s hover-then-click pattern (the trigger is
  * revealed by `group-hover`, a bare click can race the reveal). */
-export async function openDeleteDialogFor(cdp, name) {
+export async function openDeleteDialogFor(cdp, name, shotDir) {
   const triggerFinder = rowActionsFinderByName(name);
   const rowFinder = `(${triggerFinder})?.closest('li')`;
   const rowRect = await cdp.waitFor(
@@ -162,12 +162,21 @@ export async function openDeleteDialogFor(cdp, name) {
     { timeoutMs: 10_000, label: `row actions trigger revealed for "${name}"` }
   );
   await cdp.click(triggerFinder);
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete\u2026')`, {
-    timeoutMs: 10_000,
-    label: 'row menu open with Delete\u2026 item'
-  });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete\u2026')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog opened' });
+  const menuItemFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Delete\u2026')`;
+  const itemRect = await cdp.waitFor(
+    `(() => { const el = ${menuItemFinder}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 10_000, label: 'row menu open with Delete\u2026 item' }
+  );
+  await cdp.click(menuItemFinder);
+  try {
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog opened' });
+  } catch (err) {
+    const diag = await cdp.evaluate(
+      `(() => ({ elementAtClickPoint: document.elementFromPoint(${itemRect.x}, ${itemRect.y})?.outerHTML?.slice(0, 300) ?? null, menuStillOpen: !!document.querySelector('[role="menu"]'), menuItemCount: document.querySelectorAll('[role="menuitem"]').length, dialogCount: document.querySelectorAll('[role="dialog"]').length, activeElementTag: document.activeElement?.tagName, activeElementLabel: document.activeElement?.getAttribute?.('aria-label') ?? null }))()`
+    );
+    if (shotDir) await cdp.screenshot(path.join(shotDir, '99-diag-delete-dialog-failure.png'));
+    throw new Error(`openDeleteDialogFor("${name}") failed: Delete dialog never opened -- diagnostics: ${JSON.stringify(diag)}. Original: ${err.message}`);
+  }
 }
 
 /** Waits for the leftover-summary walk to finish ("Checking files…" gone) and returns its own
