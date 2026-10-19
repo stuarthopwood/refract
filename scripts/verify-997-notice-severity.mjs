@@ -1,45 +1,48 @@
 #!/usr/bin/env node
 // Live CDP check for issue #997 (notices and refusal toasts gate follow-ups from #996/#938):
 //
-//   1. `notify.ts`'s `unknown-command`/`unsupported-arguments` branches (`src/renderer/state/
-//      notify.ts`): a slash-command refusal is `toast.warning(...)` (the warning icon,
-//      `data-type="warning"`), not `toast.error`, carries a close button, never auto-dismisses
-//      on its own timer, and dedupes to exactly one toast via a fixed `id` across repeated
-//      refusals -- asserted by sending `/zzznotarealcommand997` (genuinely unknown against the
-//      fake omp's own `available_commands_update`, which lists only `new`/`tools`) TWICE,
-//      confirming nothing was sent, confirming exactly one toast exists after the second send,
-//      then waiting past Sonner's own 4000ms `TOAST_LIFETIME` default (`node_modules/sonner/
-//      dist/index.mjs`'s own `remainingTime`/`startTimer`: only `duration === Infinity` skips
-//      the close timer) and confirming the SAME toast is still mounted and not mid-removal --
-//      backed by THREE independently real signals (`document.visibilityState`, the toast's own
-//      `data-expanded`, and focus never silently inside the toaster), not merely sonner's own
-//      internal `data-visible` CSS-animation-state flag (gate round 1, Test: gate round 0 wrongly
-//      equated that flag with real visibility). Gate round 1 also asserts the close button is
-//      reached by a REAL bounded Tab sequence, shows a genuine `:focus-visible` ring, and that
-//      Enter on it dismisses the toast; and that a fresh refusal is separately dismissed by
-//      typing a character into the draft (`MessageInput.tsx`'s real onChange keystroke path).
+//   1. `notify.ts`'s `unknown-command`/`unsupported-arguments` branches: a slash-command
+//      refusal is `toast.warning(...)` (the warning icon, `data-type="warning"`), not
+//      `toast.error`, carries a close button, and never auto-dismisses on its own timer.
+//      Gate round 2 (HIGH, confirmed live in sonner's own Toaster merge, `index.mjs:1033-1046`):
+//      a FIXED toast id used to dedupe repeated refusals in place, but a refusal raised inside
+//      sonner's own ~200ms exit-animation window could merge into the still-closing entry and
+//      silently never show -- `notify.ts` now gives every refusal a FRESH id and explicitly
+//      `toast.dismiss()`s the previous one first. Asserted here by: sending
+//      `/zzznotarealcommand997` (genuinely unknown against the fake omp's own
+//      `available_commands_update`, which lists only `new`/`tools`), confirming nothing was
+//      sent; sending it again while the first toast is still open and confirming exactly ONE
+//      toast settles on screen (a `waitFor`, not a blind sleep); waiting past Sonner's own
+//      4000ms `TOAST_LIFETIME` default and confirming the toast is still mounted and not mid-
+//      removal, backed by THREE independently real signals (`document.visibilityState`, the
+//      toast's own `data-expanded`, and focus never silently inside the toaster), not merely
+//      sonner's own internal `data-visible` CSS-animation-state flag; closing it with a REAL
+//      bounded Tab sequence to the close button, a genuine `:focus-visible` ring, and Enter; then
+//      the race-regression check itself -- resending the SAME refused draft IMMEDIATELY (no
+//      wait) right after that close-button dismissal still shows a visible refusal toast 600ms
+//      later (the exact sequence the old fixed-id design could silently lose). Gate round 2
+//      (Medium, decided Skippy, delegated by Stuart 2026-10-19): typing a character into the
+//      refused draft no longer dismisses the toast (`MessageInput.tsx`'s onChange dismiss call
+//      was removed) -- it stays open until the close button, a successful send from the same
+//      Session, or a newer refusal replaces it; asserted by confirming it is STILL mounted after
+//      that keystroke.
 //   2. `NoticeRow.tsx`'s `NOTICE_CLASS` now reads `text-severity-warning`/`text-severity-error`
 //      (not the old `text-state-needs-you`/`text-destructive` aliases) -- asserted by rendering
 //      one short warning and one short error `notice` frame (the new `997-notice-severity.jsonl`
 //      fixture, deterministic, no dependence on a real model choosing to emit either), then
 //      comparing each row's own summary span computed `color` against a scratch probe element
 //      styled with `color: var(--severity-warning)`/`var(--severity-error)`, AND asserting the
-//      span's own classList names the new token and no longer carries the old one (gate round 1,
-//      Test: colour-value equality alone cannot distinguish the fix from a deliberately
-//      reinstated old class that happens to alias the same value), across EVERY one of the five
-//      built-in theme presets (`src/shared/themes.ts`), not just the two-theme Dark/Obsidian
-//      convention other scripts use for "light vs dark" -- these severity values genuinely
-//      differ per preset (`globals.css`), so "each preset" is checked literally.
+//      span's own classList names the new token and no longer carries the old one (colour-value
+//      equality alone cannot distinguish the fix from a deliberately reinstated old class that
+//      happens to alias the same value), across EVERY one of the five built-in theme presets
+//      (`src/shared/themes.ts`), not just the two-theme Dark/Obsidian convention other scripts
+//      use for "light vs dark" -- these severity values genuinely differ per preset
+//      (`globals.css`), so "each preset" is checked literally. The error row's own icon is also
+//      asserted to be `OctagonAlertIcon` (`lucide-octagon-alert`), the octagon shape
+//      `components.md`'s severity table calls for (not the old `CircleAlertIcon`).
 //   3. `CollapsedLine.tsx`'s short-summary wrap branch now carries `[overflow-wrap:anywhere]`
 //      (not `break-words`) -- asserted by a computed-style check (`overflowWrap: 'anywhere'`) on
 //      the warning notice's own summary span (`summaryWrap` is always on for a short NoticeRow).
-//
-// Modelled on `verify-980-toast-send.mjs`'s own toast-identification pattern (tag every toast
-// already on screen before triggering, then poll for the one UNTAGGED toast -- Sonner PREPENDS
-// new toasts, so a stale one is never mistaken for this run's own) and
-// `verify-917-advisor-command.mjs`/`verify-947-938-helpers.mjs`'s own `NoticeRow` sr-only-label
-// finder (survives `react-virtuoso` windowing; the two-parent climb reaches either the plain-div
-// short-notice or the `CollapsibleTrigger`-button long-notice container either way).
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -248,26 +251,42 @@ async function main() {
       report.push({ step: `${theme.name}: screenshot`, ok: true, warningResult, warningProbeColor, errorResult, errorProbeColor });
     }
 
+    // Error NoticeRow icon (Low): `OctagonAlertIcon` (`lucide-octagon-alert`), the octagon shape
+    // `components.md`'s severity table calls for, not the old `CircleAlertIcon`. Theme-
+    // independent (icon shape, not colour), so checked once rather than once per preset.
+    const errorIconClass = await cdp.evaluate(`(() => {
+      const rows = (${noticeFinder('Error:')});
+      const row = rows[rows.length - 1];
+      const svg = row?.querySelector('svg');
+      return svg ? svg.getAttribute('class') : null;
+    })()`);
+    assertTrue(errorIconClass !== null && errorIconClass.includes('lucide-octagon-alert'), 'error NoticeRow icon is OctagonAlertIcon (lucide-octagon-alert class)', {
+      errorIconClass
+    });
+
     // Unknown-command refusal toast: warning icon (data-type="warning"), a close button
-    // (`closeButton: true`), does not auto-dismiss on its own timer, dedupes to exactly one
-    // toast via its fixed `id` across repeated refusals (`notify.ts`'s
-    // `SLASH_COMMAND_REFUSAL_TOAST_ID`), and is dismissed by a successful send or by continuing
-    // to type (`MessageInput.tsx`'s `dismissSlashCommandRefusalToast()` call sites). Back to
-    // Dark first (the app's own default) so the screenshot matches every other script's own
-    // convention of a default-theme evidence shot for the primary assertion.
+    // (`closeButton: true`), never auto-dismisses on its own timer. Gate round 2 (HIGH):
+    // `notify.ts` no longer dedupes via a FIXED id (which raced sonner's own ~200ms exit-
+    // animation window) -- every refusal gets a FRESH id, with the previous one explicitly
+    // `toast.dismiss()`-ed first. `MessageInput.tsx`'s `dismissSlashCommandRefusalToast
+    // (sessionId)` now ONLY clears it on a successful send from the SAME Session (decided,
+    // Skippy, delegated by Stuart 2026-10-19, gate round 2): typing in the draft no longer
+    // dismisses it. Back to Dark first (the app's own default) so the screenshot matches every
+    // other script's own convention.
     await switchTheme(cdp, 'dark', 'Dark');
     const toastSelector = `document.querySelectorAll('[data-sonner-toast]:not([data-removed="true"])')`;
-    await cdp.evaluate(`Array.from(${toastSelector}).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`);
+    const freshToastExpr = `Array.from(${toastSelector}).find((el) => !el.hasAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}))`;
+    async function tagExistingToasts() {
+      await cdp.evaluate(`Array.from(${toastSelector}).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`);
+    }
+
+    await tagExistingToasts();
     const messageCountBefore = await cdp.evaluate(`document.querySelectorAll('[data-slot="message"]').length`);
     await cdp.typeIntoByLabel('Message', UNKNOWN_COMMAND);
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(
-      `!!Array.from(${toastSelector}).find((el) => !el.hasAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}))`,
-      { timeoutMs: 15_000, label: 'A fresh, untagged refusal toast mounted' }
-    );
+    await cdp.waitFor(`!!(${freshToastExpr})`, { timeoutMs: 15_000, label: 'A fresh, untagged refusal toast mounted' });
     await sleep(400); // CSS slide-in settles before any read below.
 
-    const freshToastExpr = `Array.from(${toastSelector}).find((el) => !el.hasAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}))`;
     const immediateRead = await cdp.evaluate(`(() => {
       const el = ${freshToastExpr};
       if (!el) return null;
@@ -289,10 +308,6 @@ async function main() {
       iconClass: immediateRead.iconClass
     });
     assertEqual(immediateRead.mounted, 'true', 'unknown-command refusal toast: data-mounted="true" immediately after send');
-    // Gate round 1 (#997, Medium, Test): renamed from "visible" -- `data-visible` is sonner's
-    // own internal CSS-animation-state flag (false only mid-exit-transition), not the page's
-    // real visibility; the genuinely independent signals (document.visibilityState, focus,
-    // data-expanded) are checked separately below, past the default lifetime.
     assertEqual(immediateRead.dataVisible, 'true', `unknown-command refusal toast: sonner's own data-visible="true" immediately after send`);
     assertTrue(immediateRead.hasCloseButton, 'unknown-command refusal toast: carries a close button ([data-close-button])');
 
@@ -301,26 +316,24 @@ async function main() {
 
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-warning.png'));
 
-    // Gate round 1 (#997, Medium): a SECOND refusal while the first toast is still open must
-    // not stack a duplicate -- `notify.ts`'s fixed `id` replaces the one open toast in place
-    // (sonner's own in-place-update semantics, the same pattern `ProfileMenu.tsx`'s
-    // `UpdateMenuItem` already relies on). A refusal leaves the draft untouched (FR-019), so
-    // clicking Send again resends the SAME text with no retyping needed.
+    // Gate round 2 (Medium, item c): a SECOND quick refusal while the first toast is still open
+    // must still show exactly ONE toast on screen -- now proven by the fresh-id-plus-explicit-
+    // dismiss design, not an id collision. A refusal leaves the draft untouched (FR-019), so
+    // clicking Send again resends the SAME text with no retyping needed. `waitFor` (not a blind
+    // sleep) settles once the dismiss-then-create pair has actually committed.
     await cdp.clickByLabel('Send message');
-    await sleep(400);
-    const toastCountAfterSecondSend = await cdp.evaluate(`${toastSelector}.length`);
-    assertEqual(toastCountAfterSecondSend, 1, 'unknown-command refusal sent twice: exactly ONE refusal toast exists (deduped by its fixed id), not two stacked');
+    await cdp.waitFor(`${toastSelector}.length === 1`, { timeoutMs: 5_000, label: 'unknown-command refusal sent twice: exactly ONE refusal toast settles on screen' });
+    assertEqual(await cdp.evaluate(`${toastSelector}.length`), 1, 'unknown-command refusal sent twice: exactly ONE refusal toast exists (deduped via explicit dismiss-then-create), not two stacked');
 
-    // Past Sonner's own 4000ms default lifetime: the SAME toast element (re-found by the
+    // Past Sonner's own 4000ms default lifetime: the CURRENT toast (re-found by the
     // `TOAST_SEEN_ATTR`-absence query -- it never carries that tag, so this is unambiguously the
-    // one just triggered, not a coincidentally-timed new one) is still mounted and not mid-
-    // removal, proving `duration: Infinity` genuinely disabled the auto-dismiss timer rather
-    // than this check merely outrunning a slow removal animation. Three independently real
-    // signals back `data-mounted` up here: `document.visibilityState` (the actual Page
-    // Visibility API, not sonner's own flag), the toast's own `data-expanded` (sonner's hover/
-    // stack-expand state -- "visible" must not secretly depend on the mouse hovering the
-    // stack), and that focus never silently landed inside the toaster (nothing in this flow has
-    // focused it yet).
+    // one just triggered by the second send, not a coincidentally-timed new one) is still
+    // mounted and not mid-removal, proving `duration: Infinity` genuinely disabled the auto-
+    // dismiss timer rather than this check merely outrunning a slow removal animation. Three
+    // independently real signals back `data-mounted` up here: `document.visibilityState` (the
+    // actual Page Visibility API, not sonner's own flag), the toast's own `data-expanded`
+    // (sonner's hover/stack-expand state), and that focus never silently landed inside the
+    // toaster.
     await sleep(PAST_DEFAULT_LIFETIME_MS);
     const pastLifetimeRead = await cdp.evaluate(`(() => {
       const el = ${freshToastExpr};
@@ -342,10 +355,10 @@ async function main() {
     assertTrue(pastLifetimeRead.dataExpanded !== 'true', `unknown-command refusal toast: data-expanded is not "true" ${PAST_DEFAULT_LIFETIME_MS}ms later (genuinely still on screen, not an artifact of the hover-expanded stack state)`);
     assertTrue(!pastLifetimeRead.focusInsideToaster, `unknown-command refusal toast: focus has not silently landed inside the toaster ${PAST_DEFAULT_LIFETIME_MS}ms later`);
 
-    // Gate round 1 (#997, Medium, Test): Tab to the close button with REAL Tab presses (bounded,
-    // never a direct `.focus()` call, which would prove nothing about the real keyboard route),
-    // assert a genuine `:focus-visible` ring (not merely `:focus`, which Chromium also sets on a
-    // mouse-driven focus), press Enter, and assert the toast is actually gone.
+    // Tab to the close button with REAL Tab presses (bounded, never a direct `.focus()` call,
+    // which would prove nothing about the real keyboard route), assert a genuine `:focus-visible`
+    // ring (not merely `:focus`, which Chromium also sets on a mouse-driven focus), press Enter,
+    // and assert the toast is actually gone.
     const closeButtonExpr = `(${freshToastExpr})?.querySelector('[data-close-button]')`;
     await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.focus()`);
     let reachedCloseButton = false;
@@ -360,29 +373,38 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-close-button.png'));
     await cdp.pressEnter();
     await cdp.waitFor(`${toastSelector}.length === 0`, { timeoutMs: 10_000, label: 'Enter on the focused close button dismisses the toast' });
-    // Falsified live (first run): sending again right after this `waitFor` raced sonner's own
-    // internals -- `deleteToast()` sets `data-removed="true"` (what the `waitFor` above checks)
-    // IMMEDIATELY on click, but the real `ToastState.dismiss(id)` call that registers this id as
-    // genuinely closed (so a same-id `create()` takes the fresh-toast branch, confirmed by
-    // reading `node_modules/sonner/dist/index.mjs`'s own `create`/`dismiss`/`removeToast`) only
-    // fires `TIME_BEFORE_UNMOUNT` (200ms) later, from `removeToast`'s own `setTimeout`. Resending
-    // inside that window hits the `alreadyExists` update branch, not a fresh mount. Waiting
-    // comfortably past 200ms (not a guess -- the exact constant this library documents and uses
-    // for its own exit-animation timer) avoids the race without touching any production code.
-    await sleep(400);
-    // Gate round 1 (#997, Medium, Test): a fresh refusal, then typing a single character into
-    // the draft (the real onChange keystroke path, `MessageInput.tsx`) dismisses it -- `notify.
-    // ts`'s dismiss helper is a no-op when nothing is open, so this also proves it costs nothing
-    // extra to call on every keystroke.
-    await cdp.evaluate(`Array.from(${toastSelector}).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`);
+
+    // Gate round 2 (HIGH, item b, the race-regression check): resend the SAME refused draft
+    // IMMEDIATELY -- no wait at all -- right after the close-button dismissal, the exact
+    // sequence that silently lost the refusal under the old fixed-id design (a refusal raised
+    // inside sonner's own ~200ms exit-animation window merged into the still-closing entry and
+    // never showed). A real, visible refusal toast must still exist 600ms later: this is what
+    // proves the fresh-id-plus-explicit-dismiss fix, not a lucky scheduling gap.
+    await tagExistingToasts();
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(
-      `!!Array.from(${toastSelector}).find((el) => !el.hasAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}))`,
-      { timeoutMs: 15_000, label: 'A fresh refusal toast mounted again (third send)' }
-    );
-    await sleep(400);
+    await sleep(600);
+    const regressionRead = await cdp.evaluate(`(() => {
+      const el = ${freshToastExpr};
+      if (!el) return null;
+      return { mounted: el.getAttribute('data-mounted'), visible: el.getAttribute('data-visible'), removed: el.getAttribute('data-removed') };
+    })()`);
+    assertTrue(regressionRead !== null, 'race regression check: resending immediately (no wait) right after a close-button dismissal still shows a refusal toast 600ms later');
+    assertEqual(regressionRead.mounted, 'true', 'race regression check: the toast is data-mounted="true" 600ms after the immediate resend');
+    assertEqual(regressionRead.visible, 'true', 'race regression check: the toast is data-visible="true" 600ms after the immediate resend');
+    assertTrue(regressionRead.removed !== 'true', 'race regression check: the toast is not mid-removal 600ms after the immediate resend');
+
+    // Gate round 2 (Medium, item a, decided Skippy 2026-10-19): typing in the draft no longer
+    // dismisses the refusal (onChange's own dismiss call was removed) -- it stays open until the
+    // close button, a successful send from the same Session, or a newer refusal replaces it.
     await cdp.typeIntoByLabel('Message', 'x');
-    await cdp.waitFor(`${toastSelector}.length === 0`, { timeoutMs: 10_000, label: 'Typing a character into the draft dismisses the open refusal toast' });
+    const stillOpenAfterKeystroke = await cdp.evaluate(`(() => {
+      const el = ${freshToastExpr};
+      if (!el) return null;
+      return { mounted: el.getAttribute('data-mounted'), removed: el.getAttribute('data-removed') };
+    })()`);
+    assertTrue(stillOpenAfterKeystroke !== null, 'typing a character into the refused draft: the refusal toast is STILL mounted (onChange no longer dismisses it)');
+    assertEqual(stillOpenAfterKeystroke.mounted, 'true', 'typing a character into the refused draft: still data-mounted="true"');
+    assertTrue(stillOpenAfterKeystroke.removed !== 'true', 'typing a character into the refused draft: not mid-removal');
 
     report.push({
       step: 'screenshots',

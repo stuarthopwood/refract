@@ -89,7 +89,7 @@ Governance (agenda item 12) decided to put this checklist in the Spec Kit plan t
 - [ ] Every icon-only control has a `Tooltip`, matching `aria-label`, a 24px+ target (the strict icon-only bundle has no spacing exception; the general 2.5.8 rule above covers other targets), and a keyboard focus-visible reveal.
 - [ ] No box (fill or border) outside the components.md "Cards and boxes" allow-list or its named user-bubble exception, and no box nested inside another box (zero-box rule, #556).
 - [ ] A grouped list of rows (a tool group, a Stage, the Subagent chain) hangs from a **Spine** -- one neutral `border-divider` left rule, never coloured, animated, or shown for a group of exactly one member (issue #565).
-- [ ] Toast/banner/inline/transcript channel matches the scope of the message, and errors never auto-dismiss. Exception: slash-command refusal warnings stay until dismissed, with a close button (#997).
+- [ ] Toast/banner/inline/transcript channel matches the scope of the message, and errors never auto-dismiss. Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997).
 
 ### Patterns ([patterns.md](patterns.md))
 

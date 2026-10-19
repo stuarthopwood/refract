@@ -45,7 +45,7 @@ Four written-down channels (agenda item 7), each with one job:
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A problem scoped to one Session or pane | Stays until the problem is fixed. |
-| Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: slash-command refusal warnings stay until dismissed, with a close button (#997). |
+| Toast | A transient, app-level result | Auto-dismisses after about 5s, paused on hover and focus. **Errors never auto-dismiss.** Exception: a slash-command refusal warning stays until its own close button is used, a successful send from the same Session, or a newer refusal replaces it (#997). |
 | Inline text | Form fields | Clears with the field's own validation. |
 | Transcript notice | Agent-originated news | Renders as a normal transcript row; never dropped. |
 

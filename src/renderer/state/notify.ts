@@ -6,35 +6,57 @@ import type { IpcError } from '../../shared/ipc'
 //
 // Issue #997: a slash command Refract refuses (`unknown-command`/`unsupported-arguments`,
 // FR-032/FR-033) is a warning, not an app-level error -- the design doc's own wording for this
-// is "warning", so it gets the warning toast/icon, not the red error one. Gate round 1 (Skippy,
-// delegated by Stuart 2026-10-19): it also stays on screen until the user dismisses it, not just
-// past its own auto-dismiss timer -- `duration: Infinity` disables sonner's close timer
-// (confirmed in `node_modules/sonner/dist/index.mjs`: `toast.duration === Infinity` skips
-// starting it at all) and `closeButton: true` gives it the explicit dismiss control (the
-// Toaster's own global `closeButton` stays off for every other toast, `components/ui/
-// sonner.tsx`). A fixed `id` (sonner's own in-place-replace key, the same pattern `ProfileMenu.
-// tsx`'s `UpdateMenuItem` already uses) means a SECOND refusal while the first is still open
-// replaces it in place rather than stacking a duplicate -- `dismissSlashCommandRefusalToast()`
-// below (called by `MessageInput.tsx` on a successful send or once the draft changes) is the
-// SAME id, so `toast.dismiss(id)` always targets the one open refusal toast, never a stale one.
-export const SLASH_COMMAND_REFUSAL_TOAST_ID = 'slash-command-refusal'
+// is "warning", so it gets the warning toast/icon, not the red error one, with a close button
+// and no auto-dismiss timer (`duration: Infinity` disables sonner's own close timer, confirmed
+// in `node_modules/sonner/dist/index.mjs`).
+//
+// Gate round 2 (HIGH, confirmed live in sonner's own Toaster merge, `index.mjs:1033-1046`): a
+// FIXED toast id used to dedupe repeated refusals in place -- but a refusal raised inside
+// sonner's own ~200ms exit-animation window (after the user closes the current one) merged into
+// that still-closing entry, which keeps its internal `delete: true` flag, and the "new" refusal
+// silently never showed. Each refusal now gets a FRESH id (`refusalCounter`, module-scoped) --
+// sonner can never conflate it with one that is mid-exit. `openRefusal` tracks the one refusal
+// currently on screen (its id and the Session it belongs to); a second refusal explicitly
+// dismisses the previous one first (`toast.dismiss`, not relying on an id collision), so exactly
+// one is ever shown. `onDismiss`/`onAutoClose` clear the tracked entry only if it still matches
+// THIS toast's own id -- a stale callback from an already-superseded refusal (its `toast.dismiss`
+// call above fires asynchronously, after `openRefusal` has already moved on) is a safe no-op.
+let refusalCounter = 0
+let openRefusal: { id: string; sessionId: string } | null = null
 
 const SLASH_COMMAND_REFUSAL_CODES: Partial<Record<IpcError['code'], true>> = {
   'unknown-command': true,
   'unsupported-arguments': true
 }
 
-export function notify(error: IpcError): void {
+export function notify(error: IpcError, sessionId?: string): void {
   if (SLASH_COMMAND_REFUSAL_CODES[error.code]) {
-    toast.warning(error.message, { id: SLASH_COMMAND_REFUSAL_TOAST_ID, duration: Infinity, closeButton: true })
+    if (openRefusal) toast.dismiss(openRefusal.id)
+    const id = `slash-command-refusal-${++refusalCounter}`
+    openRefusal = sessionId !== undefined ? { id, sessionId } : null
+    toast.warning(error.message, {
+      id,
+      duration: Infinity,
+      closeButton: true,
+      onDismiss: () => {
+        if (openRefusal?.id === id) openRefusal = null
+      },
+      onAutoClose: () => {
+        if (openRefusal?.id === id) openRefusal = null
+      }
+    })
     return
   }
   toast.error(error.message)
 }
 
-/** Clears the one open slash-command-refusal toast, if any -- a no-op `toast.dismiss` call when
- * none is open (sonner itself only ever acts on a toast id that actually exists), so callers
- * never need to track whether one is currently showing. */
-export function dismissSlashCommandRefusalToast(): void {
-  toast.dismiss(SLASH_COMMAND_REFUSAL_TOAST_ID)
+/** Dismisses the open slash-command-refusal toast, but ONLY when one is tracked for THIS
+ * Session -- never a blind `toast.dismiss` on every call (that would also force an unneeded
+ * Toaster re-render for every OTHER mounted toast each time this runs). A mismatched or absent
+ * `sessionId` is a plain no-op: sonner is never called at all. */
+export function dismissSlashCommandRefusalToast(sessionId: string): void {
+  if (openRefusal !== null && openRefusal.sessionId === sessionId) {
+    toast.dismiss(openRefusal.id)
+    openRefusal = null
+  }
 }

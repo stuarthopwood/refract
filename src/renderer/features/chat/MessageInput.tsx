@@ -646,10 +646,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (isNewConversationCommand) {
         useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
       }
-      notify(result.error)
+      notify(result.error, sessionId)
       return
     }
-    dismissSlashCommandRefusalToast()
+    dismissSlashCommandRefusalToast(sessionId)
     // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
     // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
     // attachments clear once the send is accepted, not once the agent's turn finishes; pending
@@ -1401,7 +1401,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               const value = event.target.value
               const cursor = event.target.selectionStart ?? value.length
               useDraftStore.getState().setText(sessionId, value)
-              dismissSlashCommandRefusalToast()
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
               // FR-014, Edge Cases: every edit re-checks every pending chip's label (an explicit
