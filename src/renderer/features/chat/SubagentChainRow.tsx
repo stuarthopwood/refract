@@ -13,13 +13,13 @@ import { BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
-import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { ChainStageLine } from './ChainStageLine'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
+import { stageRowDomId } from './stageJump'
 import { SubagentBody, SubagentRow } from './ToolRow'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading, extractContextLabel, stageRollupText } from './stageMeta'
@@ -28,37 +28,14 @@ import type { StageGroup } from './groupSubagentStages'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import {
   chatRowStatus,
-  isSubagentSuccessStatus,
   SUBAGENT_STATUS_LABEL,
-  SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
-  SubagentStatusIcon,
+  subagentStatusTextClass,
   summarizeSubagentStatuses,
   type SubagentRowStatus
 } from '../subagents/subagentStatus'
 
-type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
-
-// Gate round 3 fix (architect M1): `endedAt` used to be the max over only whichever items
-// happened to report BOTH `startedAt` and `durationMs`, silently skipping any settled member
-// missing one -- a cancelled/exited member with no recorded duration made the Stage/chain total
-// understated instead of absent. Now `endedAt` is `undefined` unless EVERY item has both fields;
-// `startedAt` is unaffected (still needed by the live running tick, which only ever needs it).
-function stageTimeRange(items: readonly SubagentItem[]): { startedAt?: number; endedAt?: number } {
-  let startedAt: number | undefined
-  let maxEnd: number | undefined
-  let everyItemSettled = true
-  for (const item of items) {
-    if (item.startedAt != null && (startedAt === undefined || item.startedAt < startedAt)) startedAt = item.startedAt
-    if (item.startedAt == null || item.durationMs == null) {
-      everyItemSettled = false
-      continue
-    }
-    const end = item.startedAt + item.durationMs
-    if (maxEnd === undefined || end > maxEnd) maxEnd = end
-  }
-  return { startedAt, endedAt: everyItemSettled ? maxEnd : undefined }
-}
+import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
 
 // "N running", "N failed", "N cancelled", "N exited" joined by commas, each only when non-zero
 // (decisions 5/15): cancelled is always its own word, never folded into "failed". Used by
@@ -71,38 +48,6 @@ function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
   return parts.join(', ')
-}
-
-// Exported: the Transcript.tsx settle announcer (a sibling slice, #563 remediation H3) needs the
-// same overall-status classification a Stage/chain header already uses, so its one centralised
-// announcement is keyed off the exact same "has this settled" logic as the visible icon.
-export function overallStatus(counts: Record<SubagentRowStatus, number>): SubagentRowStatus {
-  if (counts.running > 0) return 'running'
-  if (counts.failed > 0) return 'failed'
-  if (counts.cancelled > 0) return 'cancelled'
-  if (counts.exited > 0) return 'exited'
-  return 'finished'
-}
-
-// Stage header roll-up wording (issue #941 grill item 3, gate round 1 fix: "N done"/"N done, M
-// failed", not "N of M finished" -- while running, the live form states how many have settled
-// so far against the total ("N of M done"), with any non-zero failed/cancelled/exited appended
-// (comma-joined, same shape as `rollupPhrase`). Gate round 1 fix (issue #941 part 2, item 6):
-// both delegate to the shared `stageRollupText` (`stageMeta.ts`), reused verbatim by the
-// Subagents panel's own Stage header so the two surfaces can never read this wording
-// differently.
-function stageRunningSummary(counts: Record<SubagentRowStatus, number>, total: number): string {
-  return stageRollupText(counts, total, true)
-}
-
-/** The settled-form roll-up text (issue #941 grill item 3, gate round 1 fix): always leads with
- * "N done" (never a bare agent count), appending any non-zero failed/cancelled/exited --
- * "5 done" when every agent finished, "4 done, 1 failed" for a mixed outcome. Exported: the
- * Transcript.tsx settle announcer (a sibling slice) reads this exact text, so its live-region
- * announcement can never drift from what the Stage's own header already shows. */
-export function stageSettleSummary(group: StageGroup): string {
-  const counts = summarizeSubagentStatuses(group.items.map((item) => chatRowStatus(item.status)))
-  return stageRollupText(counts, group.items.length, false)
 }
 
 /** One Stage, rendered in place (decision 4): ALWAYS the same `CollapsedLine` (mirrors
@@ -120,11 +65,9 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   const status = overallStatus(counts)
   const isRunning = status === 'running'
   const total = group.items.length
-  // Issue #941 grill item 2: a finished agent or Stage gets green icon AND text (the one
-  // exception to "done is neutral" -- tool rows/groups are untouched, `toolStatus.tsx`'s own
-  // module). The icon already gets its colour from `STATUS_GLYPH` via `SubagentStatusGlyph`;
-  // this is the matching text-colour half, applied to the label below.
-  const successLabelClass = isSubagentSuccessStatus(status) ? SUBAGENT_SUCCESS_TEXT_CLASS : undefined
+  // Issue #941/#1008: the Stage label's own text-colour half (`subagentStatus.tsx`'s
+  // `subagentStatusTextClass`), alongside the icon colour `STATUS_GLYPH` already supplies.
+  const labelColorClass = subagentStatusTextClass(counts)
 
   // #563 remediation (L4/decision 19, #565 decision 26) fade-in: a member row that mounts WHILE
   // this Stage is live (running) fades in; one present at a settled/history mount never does.
@@ -181,13 +124,109 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // (by auto-open or the user), it never auto-closes again -- only the user's own toggle can
   // close it. This fixes item 4 and, as a side effect, the AUTO-CLOSE-driven slice of item 1's
   // a11y defect (WCAG 2.4.3): the only way this row closes now is the user's own activation of
-  // its own trigger, which already holds focus. A SEPARATE, pre-existing focus-loss path is NOT
-  // fixed here and stays open on the issue (Main, gate round 1): a solo Stage's own body
-  // (`SubagentBody`) swaps for a `SpineList` the instant a second agent streams into the same
-  // Stage, unmounting whatever was focused inside it. A manual toggle survives this row's own
-  // remount (a session switch, or `Transcript.tsx`'s sr-only-stub/full-row visibility swap),
-  // keyed by session + this Stage's own `group.id`.
+  // its own trigger, which already holds focus. A SEPARATE, pre-existing focus-loss path --
+  // flagged here in gate round 1 -- is a solo Stage's own body (`SubagentBody`) swapping for a
+  // `SpineList` the instant a second agent streams into the same Stage, unmounting whatever was
+  // focused inside it (fixed below, issue #1001). A manual toggle
+  // survives this row's own remount (a session switch, or `Transcript.tsx`'s sr-only-stub/
+  // full-row visibility swap), keyed by session + this Stage's own `group.id`.
   const { open, onOpenChange } = useStickyDisclosure(sessionId, group.id, isOpenByDefault)
+
+  // Issue #1001 (WCAG 2.4.3), the "SEPARATE, pre-existing focus-loss path" the comment above
+  // flags: a solo Stage's own `SubagentBody` unmounts the instant a second agent streams into
+  // the same Stage (this row's own `total > 1` branch below swaps it for a `SpineList`) --
+  // whatever was focused inside it (its own Prompt/Result code block, `ToolRow.tsx`'s
+  // `CodeBlock`) is removed from the document along with it. Removing a focused node blurs it
+  // to `<body>` SYNCHRONOUSLY in every real browser -- there is no later point at which the
+  // just-removed element can be asked whether it held focus, so `focusWasInsideRef` below is
+  // kept current the whole time via a plain `focusin`/`focusout` listener on
+  // `memberContentRef` (the one wrapper that survives the swap, the SubagentBody-or-SpineList
+  // slot itself below), independent of React's own render cycle. Once the transition is
+  // observed (`prevTotalRef` was 1, `total` is now more than 1) and focus genuinely fell to
+  // `<body>`, it is moved to this Stage's OWN trigger (`triggerRef`, this row's `CollapsedLine`
+  // below) -- the one element guaranteed to survive every member-count transition, the same
+  // remedy `Transcript.tsx`'s own "Scroll to end" button/viewport pair already uses for an
+  // analogous removed-while-focused control. Structural alternative considered and rejected
+  // (Decided, Skippy, delegated by Stuart 2026-10-19): pre-wrapping the solo body in the same
+  // `SpineList`/`SpineItem` shape a joining second member would need keeps `SubagentBody` itself
+  // mounted (no redirect needed at all), but it either draws the Spine's own rail/indent for
+  // every solo Stage (a permanent, unrelated visual regression) or leaves the FIRST member
+  // looking different from every later one forever (no `SubagentRow` chrome, unlike #563's own
+  // "never switch element type between solo and multi members" rule intends) -- the structure
+  // does not allow it cleanly, so this falls through to the decision's own stated fallback.
+  // Gate fix (first real build-slot live-check run, falsified live): a plain `useRef` +
+  // `useEffect(..., [])` attaches the `focusin`/`focusout` listeners only once, at THIS
+  // component's own initial mount -- but a solo Stage starts collapsed (`isOpenByDefault` is
+  // always false for one agent) and Radix does not render `CollapsibleContent` at all while
+  // closed, so `memberContentRef.current` is still `null` at that first run and the listeners
+  // are never attached at all once the row is later expanded. A callback ref re-fires every
+  // time React actually attaches/detaches the underlying DOM node -- exactly the open/close
+  // (mount/unmount) cycle this needs to survive -- so the listeners are (re)attached the
+  // instant the content genuinely mounts, not merely once at this component's own first render.
+  const memberContentNodeRef = React.useRef<HTMLDivElement | null>(null)
+  const triggerRef = React.useRef<HTMLElement>(null)
+  const focusWasInsideRef = React.useRef(false)
+  const prevTotalRef = React.useRef(total)
+
+  const handleMemberContentFocusIn = React.useCallback(() => {
+    focusWasInsideRef.current = true
+  }, [])
+  const handleMemberContentFocusOut = React.useCallback((event: FocusEvent) => {
+    // Gate round 1 fix (item 1, A11y/UI Medium): a window blur (switching to another app, or
+    // the OS taking focus) fires this exact `focusout` -- `relatedTarget` null -- but NEVER
+    // reassigns `document.activeElement` itself (only a real focus move does that), so the
+    // just-blurred TARGET is still `document.activeElement` at the instant this fires. Checked
+    // here (preferred over `document.hasFocus()`, UI's own call) and returned early, keeping
+    // the flag, so a join while the user is in another app/window still redirects focus
+    // correctly once they come back to this one.
+    if (event.target === document.activeElement) return
+    // Gate round 1 fix (item 2, Code/Test/A11y Medium), corrected after live debugging found a
+    // real bug in the first cut: a click onto a non-focusable spot moves focus to `<body>` with
+    // nothing left in this content to redirect -- a real, ordinary move away (the user's own
+    // choice), not the removal symptom this flag exists to survive -- and must clear the flag.
+    // The FIRST cut compared the new `document.activeElement` against this exact event's own
+    // `lost` target, which falsified live: focus moving internally between two descendants of
+    // THIS SAME container (e.g. a real Tab from a CodeBlock's own Copy button onto its Prompt
+    // region, both inside `memberContentRef`) ALSO fires a `focusout` on the button being left
+    // -- `lost` (the button) is still connected and no longer equals `document.activeElement`
+    // (now the region), so the old check wrongly read this as "moved away" and cleared the flag
+    // right before the real join, reproducing the exact bug this fix exists to prevent. Fixed:
+    // ask whether `document.activeElement` is STILL somewhere inside this container (any
+    // descendant, not only the exact `lost` node) -- an internal move stays inside and must
+    // never clear the flag; only a genuine move OUT of the whole container does.
+    const lost = event.target as Element | null
+    requestAnimationFrame(() => {
+      if (!lost || !lost.isConnected) return
+      const container = memberContentNodeRef.current
+      if (container && container.contains(document.activeElement)) return
+      focusWasInsideRef.current = false
+    })
+  }, [])
+  const memberContentRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      const prevEl = memberContentNodeRef.current
+      if (prevEl) {
+        prevEl.removeEventListener('focusin', handleMemberContentFocusIn)
+        prevEl.removeEventListener('focusout', handleMemberContentFocusOut)
+      }
+      memberContentNodeRef.current = el
+      if (el) {
+        el.addEventListener('focusin', handleMemberContentFocusIn)
+        el.addEventListener('focusout', handleMemberContentFocusOut)
+      }
+    },
+    [handleMemberContentFocusIn, handleMemberContentFocusOut]
+  )
+
+  React.useLayoutEffect(() => {
+    const prevTotal = prevTotalRef.current
+    prevTotalRef.current = total
+    if (prevTotal !== 1 || total <= 1 || !focusWasInsideRef.current) return
+    focusWasInsideRef.current = false
+    if (document.activeElement === document.body || document.activeElement === null) {
+      triggerRef.current?.focus({ preventScroll: true })
+    }
+  }, [total])
 
   const { startedAt, endedAt } = stageTimeRange(group.items)
   const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
@@ -264,13 +303,15 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
 
   return (
     <CollapsedLine
+      ref={triggerRef}
+      id={stageRowDomId(sessionId, group.id)}
       icon={<SubagentStatusGlyph status={status} />}
       label={stageLabel}
       // Gate round 5 fix (issue #941, item 1, HIGH): `min-w-16` lives HERE now, not in
       // `CollapsedLine`'s own shared base class -- every other caller (tool rows, advisory
       // rows, notices) shares that same label span and was silently widened by a floor only
       // this Stage row needed.
-      labelClassName={cn('min-w-16', successLabelClass)}
+      labelClassName={cn('min-w-16', labelColorClass)}
       summary={soloAgentName}
       summaryFixedWidth={soloAgentName !== undefined}
       meta={meta}
@@ -308,114 +349,25 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             no item in the run captured a `context` (a flat call, or history from before #941). */}
         {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
         <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
-        {total > 1 ? (
-          <SpineList gap="member">
-            {group.items.map((item) => (
-              <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                <SubagentRow item={item} />
-              </SpineItem>
-            ))}
-          </SpineList>
-        ) : (
-          <SubagentBody item={group.items[0]!} />
-        )}
+        {/* Issue #1001: a stable wrapper scoped to ONLY the member content that actually swaps
+            element type on a 1-to-2 members transition -- never the context brief/Uses line
+            above, which do not unmount on it -- so the focus-tracking effect above never
+            redirects focus away from one of THOSE while they stay mounted. */}
+        <div ref={memberContentRef}>
+          {total > 1 ? (
+            <SpineList gap="member">
+              {group.items.map((item) => (
+                <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+                  <SubagentRow item={item} />
+                </SpineItem>
+              ))}
+            </SpineList>
+          ) : (
+            <SubagentBody item={group.items[0]!} />
+          )}
+        </div>
       </div>
     </CollapsedLine>
-  )
-}
-
-/** One compact agent entry inside the chain's expanded body (decision 6): icon, name, duration;
- * a button that opens the Subagent panel on this agent when the tracker still knows it (decision
- * 7), else plain text (decision 7: "unbuilt [here, no-longer-tracked] actions are hidden, not
- * disabled" -- `docs/design/patterns.md`). Correlated to the live `SubagentSummary` list by
- * `toolCallId`+`specIndex` (the two representations use unrelated id schemes, `model.ts`'s own
- * documented rule), never by `item.id` directly. */
-function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: string | null }) {
-  // Quality-gate remediation (Medium, code review): the bare `?? []` fallback returned a fresh
-  // array identity on every render, defeating zustand's `useSyncExternalStore` memoisation under
-  // React 19 -- `EMPTY_READOUT_ENTRY` is the stable singleton the rest of the codebase already
-  // uses for exactly this (e.g. `SubagentPanel.tsx`). Gate round 4 fix (issue #941, P7, LOW):
-  // the OUTER `sessionId ? ... : []` branch still had its own fresh-literal fallback below this
-  // comment was originally written to describe fixing -- both branches now resolve to the same
-  // stable `EMPTY_READOUT_ENTRY.subagents` reference.
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
-  const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
-  const status = chatRowStatus(item.status)
-  const duration = item.durationMs != null ? formatElapsed(item.durationMs) : undefined
-  const content = (
-    <>
-      <SubagentStatusIcon status={status} />
-      <span className={cn('min-w-0 truncate', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)} title={item.name}>
-        {item.name}
-      </span>
-      {duration && <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{duration}</span>}
-    </>
-  )
-  if (!match || !sessionId) {
-    return <span className="inline-flex max-w-48 items-center gap-1 px-2 py-1 text-sm text-muted-foreground">{content}</span>
-  }
-  return (
-    <button
-      type="button"
-      className="inline-flex max-w-48 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-      onClick={(event) =>
-        openHostedPanel('subagents', sessionId, {
-          selectSubagentId: match.id,
-          selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
-          opener: event.currentTarget
-        })
-      }
-    >
-      {content}
-    </button>
-  )
-}
-
-// Decision 8: each Stage's own line in the chain body is a labelled `role="group"` -- the
-// `<ol>`/`<li>` from `SpineList` only gives an unlabelled "1 of 2" position, which softens the
-// stage boundary a screen reader needs to hear. `px-2` (gate round 2, High): `SpineList`'s own
-// `pl-2` was dropped in favour of each ROW supplying its own 8px gap from the line (#565
-// decision 8), which this row's text never did, leaving "Stage N" flush against the spine.
-function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
-  // Gate round 3 (Low): the label used `stageSettleSummary` unconditionally, hiding the running
-  // state entirely while a Stage was still in flight ("Stage 1 of 2, 2 agents" instead of
-  // stating that it's running) -- mirrors `StageGroupRow`'s own running-vs-settled summary split.
-  const counts = summarizeSubagentStatuses(stage.items.map((item) => chatRowStatus(item.status)))
-  const status = overallStatus(counts)
-  const summaryText = status === 'running' ? stageRunningSummary(counts, stage.items.length) : stageSettleSummary(stage)
-  // Issue #941 grill item 4 (gate round 1 fix): the chain's own terse one-line-per-stage summary
-  // also states the Stage's own duration.
-  const { startedAt, endedAt } = stageTimeRange(stage.items)
-  const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
-  // Issue #941 grill item 3: the same three-tier Stage label `StageGroupRow` shows, here on the
-  // chain's own terse one-line-per-stage summary.
-  const stageLabel = stageHeading(stage.stageIndex, stage.label)
-  return (
-    <div
-      role="group"
-      // Gate round 1 fix (item 6): the speech form swaps "·" for a comma so it is never read
-      // aloud as a literal glyph.
-      aria-label={`${stageHeading(stage.stageIndex, stage.label, true)}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
-      className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
-    >
-      <span
-        className={cn('min-w-0 max-w-full truncate font-medium', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
-        title={stageLabel}
-      >
-        {stageLabel}
-      </span>
-      {durationMs != null && (
-        <span aria-hidden="true" className="shrink-0 tabular-nums text-xs text-muted-foreground">
-          {formatElapsed(durationMs)}
-        </span>
-      )}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        {stage.items.map((item) => (
-          <ChainAgentEntry key={item.id} item={item} sessionId={sessionId} />
-        ))}
-      </div>
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="basis-full" />
-    </div>
   )
 }
 

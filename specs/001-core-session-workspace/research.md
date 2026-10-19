@@ -721,3 +721,213 @@ check, neither of which depends on real-time pacing.
 focus-survives-settling phase both still hold unchanged: Stage 1's own render during ITS delay
 window is still single-Stage-so-far (Stage 2's new delay runs strictly later in the tape), so
 it auto-opens exactly as before either way.
+
+## 23. Stage label colour and jump-to-Stage from the chain row (issue #1008, 2026-10-18)
+
+**Problem**: `StageGroupRow`'s own label and `ChainStageLine`'s terse per-Stage summary line
+apply `SUBAGENT_SUCCESS_TEXT_CLASS` (green) to a finished Stage's label (decision 11/FR-079),
+but leave a failed Stage's own label the default muted colour -- only its icon
+(`SubagentStatusGlyph`) turns red. With both a finished and a failed Stage open side by side,
+the finished one reads as more significant than the failed one, the opposite of what matters.
+`ToolRow.tsx` already solved the identical problem for a failed tool call's own label
+(`labelClassName={item.status === 'error' ? 'text-severity-error' : undefined}`, FR-061).
+Separately, `ChainStageLine` renders each Stage's own name as a plain, non-interactive `<span>`
+-- with ten Stages in a turn (issue #941's own fixture), finding the one the chain row's own
+summary line describes means scrolling the whole transcript by hand.
+
+**Decision** (Skippy, delegated by Stuart 2026-10-18, both items pre-decided on the issue from
+a ui-architect-v3 gate finding at PR #1007/#1000): (1) a new shared
+`subagentStatus.tsx#subagentStatusTextClass(counts)` resolves to `SUBAGENT_ERROR_TEXT_CLASS`
+(`text-severity-error`, the same token `ToolRow.tsx` already uses) the instant ANY member has
+settled `failed` (gate round 1 fix, item 5: reads the raw roll-up `counts.failed` directly,
+never the Stage's own overall running/failed/cancelled/exited priority order, which would
+otherwise keep the whole Stage "running" -- and the label the default colour -- for as long as
+any sibling member stays unsettled), `SUBAGENT_SUCCESS_TEXT_CLASS` only once every member has
+genuinely finished, and `undefined` otherwise (running/cancelled/exited stay neutral) -- one
+call, read by both `StageGroupRow`'s own label and `ChainStageLine`'s button, so the two
+surfaces can never colour a Stage differently. (2) `ChainStageLine`'s "Stage N" text becomes a
+real `<button>` with the accessible name "Go to Stage N" plus the Stage's own label when one
+exists (gate round 1 fix, item 6: the bare number alone did not distinguish two unopened Stages
+for a screen reader user) -- `jumpToStage`, split out to a new `stageJump.ts` module to keep
+`SubagentChainRow.tsx` under the #806 600-line cap. The button renders ONLY while its own Stage
+row is currently `rowVisibility(stage, transcriptDisplay) === 'visible'` (gate round 1 fix, item
+1, High: "Show tool calls" off drops a settled, problem-free Stage's own row entirely --
+`transcriptRowVisibility.ts`'s existing `'hidden'` outcome, not merely an `'sr-only'` stub --
+leaving nothing for `jumpToStage` to find; a hidden Stage keeps the original, non-interactive
+label text instead); `jumpToStage` itself still defensively no-ops `setManualOpen` when the row
+is not found, so a jump can never persist a manual-open flag for a Stage nothing can currently
+show. On activation, `jumpToStage` forces the target Stage's own manual-open state through
+`useStageToggleStore.setManualOpen` directly -- the SAME persisted store `useStickyDisclosure`
+already reads for a user's own toggle (decision 19/FR-084/#991), so a jump counts as a genuine
+manual open, not a second, ad-hoc "opened by a jump" flag a remount could forget -- then looks
+the target row up by a new, stable DOM id (`stageRowDomId`, scoped by `sessionId` too, gate
+round 1 fix, item 4: a split pane can show two different Sessions at once, each its own
+Transcript tree, so a bare `group.id` alone risked a duplicate DOM id across them; a new `id`
+prop threaded through `CollapsedLine` onto whichever element already receives focus -- the plain
+row `div` with no `children`, or the `CollapsibleTrigger` button with them). `ChainStageLine` is
+a SIBLING of the Stage row it targets, never its parent, so there is no React ref to use; the
+shared DOM id is the one mechanism available that does not require threading new props down
+through `Transcript.tsx`'s own render loop. No virtualizer removes a VISIBLE target row from the
+DOM regardless of scroll position to defeat this -- `message-scroller.tsx`'s own
+`content-visibility:auto` only skips paint/layout work off-screen (confirmed: this codebase has
+no windowing-library virtualizer at all) -- but the row is only guaranteed to EXIST at all while
+its own `rowVisibility` reads `'visible'` (corrected from this decision's own first draft, which
+over-claimed "guaranteed already mounted" unconditionally; gate round 1 item 1 is precisely the
+case where that is false). Scrolling (gate round 1 fix, item 2, Medium) touches ONLY the
+transcript's own scroll viewport (`[aria-label="Transcript"]`, found via `row.closest(...)`),
+computing the row's position relative to it and calling `viewport.scrollTo({ top, behavior })`
+directly -- never a bare `scrollIntoView`, which walks up and scrolls EVERY scrollable ancestor
+it finds, a real hazard in a split-pane layout where a sibling pane's own scroller could move
+too. The row lands a small margin below the viewport's own top edge (Decided: aligned to the
+top, not centred -- matching how a reader's eye naturally starts reading a newly-revealed row
+from its own header down). `row.focus({ preventScroll: true })` (the same pattern
+`Transcript.tsx`'s own focus-restoration effects use) stops the browser's own native
+focus-scrolling from fighting the scroll already placed. `prefers-reduced-motion` drops the
+smooth scroll to `'auto'`, matching `SideChatPanel.tsx`'s own existing convention -- not
+independently exercised by the live check (no reduced-motion CDP emulation set up for this
+script; recorded in its own `notExercised`).
+
+**Gate round 1 remediation** (Main, 2026-10-18; code review only, no build slot yet -- see
+`tasks.md` Phase 66 for the full per-item record): items 1/2/4/5/6 above are the product/design
+decisions this round added; items 3 (Low, UI: `cursor-pointer`/`hover:underline` plus `py-0.5`
+to match `ChainAgentEntry`'s own 28px button height -- a non-colour affordance cue), 7 (High,
+Test: colour checks re-resolve `--severity-error`/`--severity-success` INSIDE the live check's
+own per-theme loop, after each `switchTheme`, rather than once under the default theme only;
+also measures the chain row's own "Go to Stage 5" button text, not only the in-place label), 8
+(Medium, Test: the live check now scrolls the transcript to its own end before each jump and
+hard-asserts the target row starts off-screen, then `cdp.waitFor`s the in-viewport condition
+after the jump instead of a single immediate read, since the smooth scroll settles
+asynchronously), and 9 (Medium, Test: #991 persistence across Stage 1's remount is exercised
+cheaply by toggling "Show tool calls" off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip right after Stage 1's own jump --
+doubling as item 1's own visibility-gating proof, since that toggle is exactly what makes Stage
+1's row disappear and reappear) are script/implementation fixes with no further product
+decision needed. `ChainStageLine`/`ChainAgentEntry` were ALSO split out of `SubagentChainRow.tsx`
+into a new `ChainStageLine.tsx` during this round, purely to stay under the #806 600-line cap
+once the above fixes landed (a circular import back to `SubagentChainRow.tsx` for
+`overallStatus`/`stageSettleSummary`/`stageRunningSummary`/`stageTimeRange`/`SubagentItem` is
+safe here: every binding crossing the cycle is a hoisted `function`/`type` declaration, never
+evaluated at either module's own top level).
+
+**Live check** (`scripts/verify-1008-stage-label-jump.mjs`, modelled on
+`scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+`verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` colour-measurement
+pattern): reuses the SAME `stages-941.jsonl` fixture every `verify-941-*`/`verify-991-*`/
+`verify-1000-*` script already shares (AGENTS.md: no new fixtures) -- it already carries a
+genuinely failed Stage (Stage 5, one `FailAgent` member) among ten Stages, so "2+ Stages where
+one fails" needs no fixture change. Measures Stage 5's own label against the theme's resolved
+`--severity-error` and Stage 1's own label against `--severity-success` (gate round 1 fix, item
+7: re-resolved INSIDE the per-theme loop, after each `switchTheme`, plus the chain row's own
+"Go to Stage 5" button text, not only the in-place label). Proves the jump on two independent,
+never-otherwise-touched, multi-member, fully-finished Stages (so each starts genuinely closed,
+FR-089's own no-bad-member rule) -- Stage 1 by a mouse click, Stage 3 by keyboard (focus the
+button directly, then a real Enter keypress). Gate round 1 fix (item 8): before each jump, the
+transcript is scrolled to its own end and the target row's own off-screen state is hard-asserted
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport (the smooth scroll settles asynchronously) before the open/`activeElement`
+checks. Gate round 1 fix (item 9): right after Stage 1's own mouse jump, "Show tool calls" is
+toggled off then back on via the real `window.refract.settings.setTranscriptDisplay` IPC round
+trip -- Stage 1's own "Go to Stage 1" button must disappear while hidden (item 1's own
+visibility gate), Stage 5's own button must stay (force-visible, failed member), and Stage 1's
+manual-open must survive the remount once restored (#991 persistence). The jump button's own
+existence (its full accessible name, `button[aria-label="Go to Stage N, <label>"]`, gate round 1
+item 6) is a red/green discriminator in its own right: `origin/main` never renders one at all
+(`ChainStageLine`'s "Stage N" text stays a plain span there), so the lookup fails outright.
+Screenshots in all 3 themes. `prefers-reduced-motion` is recorded in `notExercised` (no CDP
+emulation set up for it). **Written, not run end-to-end**: no build slot granted for this
+sub-task -- `node --check` plus a real `import()` load-check (with `CARGO_TARGET_DIR` unset,
+stopping at the shared build-slot guard before touching cargo) are the only commands actually
+run against this file.
+
+## 24. One-agent to two-agent Stage focus-loss follow-up (issue #1001, 2026-10-18/2026-10-19)
+
+**Problem**: `StageGroupRow` (`SubagentChainRow.tsx`) renders a one-agent Stage's content as a
+bare `SubagentBody` (no `SpineList`, no per-member `CollapsedLine` wrapper -- #563's own "never
+switch element type between solo and multi members" rule keeps a solo Stage's own presentation
+simpler than a multi-member one). The instant a second agent streams into the SAME Stage (the
+documented mechanism: two separate `task()` calls echoed back inside one assistant message,
+`transcript.rs`/`subagent_items.rs`), `total` crosses from 1 to 2 and the content swaps to a
+`SpineList` of `SubagentRow`s. React reconciles this as a genuine unmount: the position's own
+element type changed (`SubagentBody` directly vs. `SpineList` wrapping it), so whatever DOM node
+was focused inside the old `SubagentBody` (its own Prompt/Result `CodeBlock`, `Markdown.tsx`) is
+removed from the document along with it. Removing a focused node blurs it to `<body>`
+SYNCHRONOUSLY in every real browser (well-established, the root cause of this whole bug class) --
+there is no later point, not even the very next microtask, at which the just-removed element can
+be asked whether it held focus; any fix must either prevent the removal outright, or react to it
+within the SAME synchronous commit, before the browser paints or any other code runs.
+
+**Decision** (Skippy, delegated by Stuart, decided on the issue 2026-10-18; the no-remount-vs-
+fallback choice itself decided 2026-10-19 once the structure was actually inspected): implement
+the issue's own named fallback -- move focus to the Stage's own trigger (its `CollapsedLine`,
+forwarded via a new `ref`) the instant the transition is observed with focus known to have been
+inside the removed content. `StageGroupRow` gains: a `memberContentRef` wrapping ONLY the
+solo-body-or-`SpineList` slot (never the context brief/Uses line siblings, which do not unmount
+on this transition, and never itself unmounting across it -- the one stable anchor the fix
+attaches to); a plain `focusin`/`focusout` listener on that wrapper keeping `focusWasInsideRef`
+current continuously, independent of React's own render cycle (`focusout` is NOT relied on to
+catch the removal itself -- browsers do not reliably bubble it for a node mid-removal, the same
+reason this bug class exists in the first place -- only `focusin`, from ordinary prior
+interaction, which is reliable); a `prevTotalRef` to detect the exact 1-to-2 transition; and a
+`useLayoutEffect` keyed on `total` that, on that exact transition, with focus known to have been
+inside and `document.activeElement` already `<body>`/`null`, calls `triggerRef.current.focus()`.
+This mirrors `Transcript.tsx`'s own already-shipped "Scroll to end" button/viewport pair (an
+`inert`-going button, same underlying hazard): move focus to a still-mounted anchor rather than
+try to prevent the browser's own native focus-loss-on-removal behaviour.
+
+**Structural alternative considered and rejected**: pre-wrapping the solo body in the same
+`SpineList`/`SpineItem` shape a joining second member would need (so `SubagentBody` for the
+first member is never actually removed -- its position in the tree would already match what a
+multi-member Stage's own first `SpineItem` needs, so growing to 2 members would only ever APPEND
+a sibling, never swap the first entry's own type). Rejected because it forces an unpalatable
+choice between two regressions: (a) wrapping the solo body in `SpineList`/`SpineItem` even while
+alone draws that component's own visible rail/`ml-4` indent for EVERY one-agent Stage, a
+permanent visual change unrelated to this bug (today's solo Stage deliberately renders with none
+of that chrome); or (b) if the first member is instead kept bare (no `SubagentRow` wrapper) even
+once the Stage becomes multi-member, to avoid (a), it then looks permanently different from
+every later-joining member (no header/icon/chevron of its own), contradicting the same
+"never switch element type between solo and multi members" intent #563 established FR-067 on.
+Neither option is available without a user-visible regression the issue never asked for, so the
+fallback above is correct, not merely expedient.
+
+**Live check** (`scripts/verify-1001-stage-focus-join.mjs`, a new fixture
+`scripts/fixtures/omp-frames/stages-1001.jsonl` -- every existing `stages-941.jsonl` Stage
+declares its full member count upfront in one `task()` call's own `tasks[]`, so none of them
+ever grows after first render; a new fixture was required). Keyboard focus is placed on the
+solo member's own Prompt code block, then `document.activeElement` is sampled on every animation
+frame (in-page `requestAnimationFrame`, not Node-side polling, so no CDP round-trip jitter can
+narrow the sampled window) across the whole join, from well before the second `task()` call
+starts to well after it settles -- zero sampled frames may ever read `document.activeElement ===
+document.body`, THE red/green discriminator (this MUST fail on `origin/main`, where nothing
+redirects focus on this transition and nothing else in the fixture ever moves it again
+afterward). Also confirms focus lands specifically on the Stage's own trigger once settled (the
+fix's own stated remedy, not merely "somewhere other than body"). Per-theme screenshots only, no
+colour-dependent assertion, matching `verify-991-stage-focus.mjs`'s/`verify-1000-stage-defer.mjs`'s
+own theme-loop rationale.
+
+**Live-run record**: first attempt (head `3941250`) FAILED -- `document.activeElement` was
+`<body>` in 208 of 390 sampled frames, never redirected. Root cause: the focus-tracking
+listener was attached via a plain `useRef` + `useEffect(() => {...}, [])`, which runs exactly
+once at `StageGroupRow`'s own initial mount -- but a one-agent Stage starts collapsed (Radix
+never renders `CollapsibleContent` while closed), so the ref was still `null` at that one run
+and the listener was never attached once the row was later expanded. Fixed with a callback ref
+(head `28b26e1`, re-fires on every real mount/unmount of the underlying node); re-ran clean (0
+failures, 0 notExercised, verdict DONE).
+
+**Gate round 1** (Main, 2026-10-19), five findings, all fixed in this one round: (1, A11y/UI
+Medium) a window blur fires `focusout` with `relatedTarget` null while `document.activeElement`
+stays the SAME element (never reassigned by a blur) -- the handler now returns early (keeping
+the flag) when `event.target === document.activeElement`, the window-blur signature, preferred
+over `document.hasFocus()`; (2, Code/Test/A11y Medium) a click onto a non-focusable spot used to
+leave the flag stuck true forever (indistinguishable from a real removal using
+`relatedTarget`/`activeElement` alone) -- now uses the repo's own `ProfileAlertRows.tsx`/
+`FileExplorerPanel.tsx` rAF-plus-`isConnected` pattern (the just-blurred target is still
+connected one frame later only when nothing removed it); (3, Code Medium) a missed join is now
+a hard failure, not a silent skip, the LAST pre-join frame (not merely "any") must confirm
+focus, and `joinedMemberExpr` is scoped to the Stage's own content; (4, Test/A11y Medium,
+Visual) focus is placed with a real keyboard Tab (arming `:focus-visible` for the rest of the
+run), backed by a hard `:focus-visible` match on the trigger in Dark (not eyeballing a
+screenshot alone) taken before any theme switch steals focus; the later per-theme shots are
+honestly labelled as non-proofs; (5, Test Medium) a simulated window blur
+(`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the existing
+assertions; a dedicated click-away negative proof needs its own second 1-to-2 transition and is
+recorded in `notExercised` instead.

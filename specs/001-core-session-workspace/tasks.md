@@ -4243,3 +4243,187 @@ the existing screenshot loop, not only under the default theme. **(9, Low)**
 `finalize_live_items`'s own stale doc comment fixed; a stopped hidden bookkeeping call (e.g.
 `todo`) no longer posts a red failure notice; the no-matching-`tool_execution_start` end-frame
 branch now also respects `turn_abort_requested`.
+
+## Phase 66: Stage label colour and jump-to-Stage from the chain row (#1008, FR-089) [US1]
+
+**Goal**: a failed Stage's own label reads `text-severity-error`, the same way a failed tool
+call's own label already does; the chain row's own "Stage N" text becomes a real button that
+scrolls to, opens, and focuses the Stage row it describes -- both items pre-decided on the
+issue (ui-architect-v3 gate on PR #1007/#1000).
+
+- [X] T318 `src/renderer/features/subagents/subagentStatus.tsx`: new `isSubagentFailedStatus`
+  (mirrors `isSubagentSuccessStatus`), `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`), and
+  the shared `subagentStatusTextClass(status)` combinator (green when finished, the new error
+  class when failed, `undefined` otherwise) both `StageGroupRow` and `ChainStageLine` read, so
+  the two surfaces can never colour a Stage differently.
+- [X] T319 `src/renderer/features/chat/CollapsedLine.tsx`: new optional `id` prop threaded onto
+  whichever element already receives focus (the plain row `div` with no `children`, or the
+  `CollapsibleTrigger` button with them) -- a stable DOM id a sibling component (the chain row)
+  can look a Stage row up by, since there is no React ref across sibling subtrees.
+- [X] T320 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own
+  `labelClassName` reads `subagentStatusTextClass(status)` (replacing the success-only
+  ternary), tagged with the new `id={stageRowDomId(group.id)}`; `ChainStageLine`'s "Stage N"
+  `<span>` becomes a `<button>` (accessible name "Go to Stage N", same colour class) calling
+  the new `jumpToStage(sessionId, stage.id)` on click. Split `stageRowDomId`/`jumpToStage` out
+  to a new `src/renderer/features/chat/stageJump.ts` module (keeps `SubagentChainRow.tsx` under
+  the #806 600-line cap): `jumpToStage` forces the target's manual-open state through
+  `useStageToggleStore.setManualOpen` directly (the same store `useStickyDisclosure` already
+  reads, decision 19/FR-084/#991), then `document.getElementById`/`scrollIntoView`/`.focus()`s
+  the row found by its new DOM id, dropping to `'auto'` scroll under
+  `prefers-reduced-motion` (matching `SideChatPanel.tsx`'s own convention).
+- [X] T321 New `scripts/verify-1008-stage-label-jump.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` pattern. Reuses the
+  SAME `stages-941.jsonl` fixture (AGENTS.md: no new fixtures needed -- it already carries a
+  genuinely failed Stage, Stage 5's own `FailAgent`, among ten Stages). Measures Stage 5's own
+  label against the theme's resolved `--severity-error` (red/green discriminator 1: reads the
+  default colour on `origin/main`) and Stage 1's own label against the same token (a done-Stage
+  regression guard). Proves the jump on Stage 1 (mouse click) and Stage 3 (keyboard: focus the
+  button directly, then a real Enter keypress) -- both multi-member, fully finished, never
+  otherwise touched, so each starts genuinely closed: asserts the target row opens
+  (`aria-expanded`), holds `document.activeElement`, and sits inside the viewport
+  (`getBoundingClientRect`). The jump button's own existence
+  (`button[aria-label="Go to Stage N"]`) is red/green discriminator 2 -- `origin/main` never
+  renders one (`ChainStageLine`'s text stays a plain span there). Screenshots in all 3 themes.
+  **Written, not run end-to-end**: no build slot granted for this sub-task -- `node --check`
+  plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping at the shared
+  build-slot guard) are the only commands actually run against this file.
+
+**Spec**: `spec.md` gains FR-089 (amends FR-079, FR-068) and a dated Clarifications section
+recording both decisions, Decided/Skippy/delegated-by-Stuart per this story's own away-mode
+convention; `research.md` gains decision 23 with the full rationale.
+
+**Gate round 1 remediation** (Main, 2026-10-18; Sec/Code/A11y PASS, Test/UI FAIL -- all 9 items
+addressed, no build slot used): **(1, High, UI, Decided)** the "Go to Stage N" button now
+renders only while its own Stage row reads `rowVisibility(stage, transcriptDisplay) ===
+'visible'` (`ChainStageLine.tsx`) -- "Show tool calls" off can drop a settled, problem-free
+Stage's own row entirely (not merely an `'sr-only'` stub), leaving nothing for `jumpToStage` to
+find; a hidden Stage falls back to its original plain-text label, and `jumpToStage` itself
+defensively no-ops `setManualOpen` when the row lookup comes back empty. **(2, Medium, UI,
+Decided: top-aligned, not centred)** `jumpToStage` (`stageJump.ts`) now scrolls ONLY the
+transcript's own `[aria-label="Transcript"]` viewport (found via `row.closest(...)`, its
+position relative to the row computed by rect maths, `viewport.scrollTo({ top, behavior })`),
+never a bare `scrollIntoView` that would walk up every scrollable ancestor (a real hazard in a
+split pane); `row.focus({ preventScroll: true })` stops the browser's own native focus-scroll
+fighting it. **(3, Medium, UI, Decided)** the button gained `cursor-pointer`, `hover:underline`,
+a `title` of "Go to {stage heading}", and `py-0.5` to match `ChainAgentEntry`'s own 28px button
+height. **(4, Medium, UI, Decided: scope by sessionId)** `stageRowDomId` now takes `sessionId`
+too -- a split pane showing two Sessions at once could otherwise produce a duplicate DOM id
+across their two Transcript trees, a real HTML violation, not merely an ambiguous lookup. **(5,
+Medium, UI)** `subagentStatusTextClass` now takes the roll-up `counts` directly (not a single
+derived `status`): a Stage with any member settled `failed` is red immediately, even while a
+sibling member is still running, matching FR-089's own "any member failed" wording exactly
+(previously derived from `overallStatus`, whose running-first priority order delayed the red
+label until the whole Stage settled). **(6, Low, all, Decided)** the button's own `aria-label`
+is now "Go to {full stage heading, speech form}" (e.g. "Go to Stage 5, Finish the remaining
+Story559 polish and run the fail probe."), not a bare "Go to Stage N" that never distinguished
+two unopened Stages for a screen reader user. **(7, High, Test)**
+`scripts/verify-1008-stage-label-jump.mjs`'s colour checks moved INSIDE the per-theme loop,
+re-resolving `--severity-error`/`--severity-success` after each `switchTheme` (previously
+resolved once, under the default theme only), and now also measure the chain row's own "Go to
+Stage 5" button text, not only the in-place label. **(8, Medium, Test)** before each jump, the
+script scrolls the transcript to its own end and hard-asserts the target row starts off-screen
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport instead of a single immediate read, since the now-smooth scroll settles
+asynchronously. **(9, Medium, Test)** #991 persistence across a remount is now exercised: right
+after Stage 1's own mouse jump, "Show tool calls" is toggled off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip (the same dev-exposed call
+`verify-557-thought-runs.mjs` already uses) -- doubling as item 1's own visibility-gating proof
+(Stage 1's button must disappear while hidden, Stage 5's must stay, force-visible) and
+confirming Stage 1's manual-open survives the remount once restored. `prefers-reduced-motion` is
+recorded in the script's own `notExercised` (no CDP emulation set up for it), never silently
+skipped without comment. `ChainStageLine`/`ChainAgentEntry` were also split out of
+`SubagentChainRow.tsx` into a new `ChainStageLine.tsx` during this round, purely to stay under
+the #806 600-line cap once the above fixes landed (safe circular import back to
+`SubagentChainRow.tsx` for hoisted `function`/`type` exports only).
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm run
+check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
+`ChainStageLine.tsx` well under the cap, no baseline bump), `pnpm run check:parity -- --gate`,
+`pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
+`node --check` plus a real `import()` load-check on the rewritten live-check script
+(`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.
+
+## Phase 67: One-agent to two-agent Stage focus-loss follow-up (#1001, FR-090) [US1]
+
+**Goal**: a keyboard-focused solo Stage's own Prompt/Result code block never drops focus to
+`<body>` the instant a second agent streams into the same Stage and the content swaps from a
+bare `SubagentBody` to a `SpineList` -- pre-decided on the issue (accessibility auditor finding
+at PR #999's own gate, Decided/Skippy/delegated-by-Stuart 2026-10-18/2026-10-19).
+
+- [X] T322 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow` gains
+  `memberContentRef` (a CALLBACK ref -- see the live-run record below for why, wrapping only
+  the solo-body-or-`SpineList` slot, never unmounting itself across the transition),
+  `triggerRef` (forwarded onto the Stage's own `CollapsedLine`), `focusWasInsideRef` (kept
+  current by a `focusin`/`focusout` listener attached via that callback ref, since a focused
+  node's removal blurs it to `<body>` synchronously -- there is no later point at which the
+  just-removed element can be asked whether it held focus), and `prevTotalRef`. A
+  `useLayoutEffect` keyed on `total` moves focus to `triggerRef` the instant a 1-to-2-member
+  transition is observed with `focusWasInsideRef.current` true and `document.activeElement`
+  already fallen to `<body>`/`null`. Structural no-remount alternative (pre-wrapping the solo
+  body in the same `SpineList`/`SpineItem` shape) considered and rejected: see FR-090/spec.md
+  Clarifications for the full rationale. **Live-run record**: first attempt (head `3941250`)
+  FAILED -- the listener was attached via a plain `useRef` + `useEffect(() => {...}, [])`,
+  which runs once at mount, but a solo Stage starts collapsed (Radix never renders
+  `CollapsibleContent` while closed), so the ref was still `null` then and the listener never
+  attached once the row was later expanded; fixed with a callback ref (head `28b26e1`, re-fires
+  on every real mount/unmount). **Gate round 1** (Main, 2026-10-19) found two further Mediums
+  in the `focusin`/`focusout` handling, both fixed: a window blur fires `focusout` with
+  `relatedTarget` null while `document.activeElement` stays the SAME element (never reassigned
+  by a blur) -- the handler now returns early (keeping the flag) when `event.target ===
+  document.activeElement`; a click onto a non-focusable spot used to leave the flag stuck true
+  forever (indistinguishable from a real removal using `relatedTarget`/`activeElement` alone)
+  -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx` rAF-plus-
+  `isConnected` pattern to tell a deliberate click-away apart from a genuine removal.
+- [X] T323 New fixture `scripts/fixtures/omp-frames/stages-1001.jsonl` (a new fixture was
+  required: every existing `stages-941.jsonl` Stage declares its full member count upfront in
+  one `task()` call's own `tasks[]`, so none of them ever grows after first render). One Stage
+  whose two members arrive as two SEPARATE `task()` calls sharing one assistant message id --
+  the documented mechanism (`transcript.rs`/`subagent_items.rs`) by which a Stage genuinely
+  grows `total` from 1 to 2 in place. The first call's own shared batch `context` is the only
+  one either member ever carries, so the Stage's own header label stays stable across the
+  transition (`computeStageLabel`'s tier-1 rule), giving the live check one stable title
+  selector throughout.
+- [X] T324 New `scripts/verify-1001-stage-focus-join.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`/`verify-991-stage-focus.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors. Places keyboard focus on the solo member's
+  own Prompt code block, then samples `document.activeElement` on every animation frame (not
+  Node-side polling, so no CDP round-trip jitter can narrow the window) across the whole join --
+  THE red/green discriminator: zero sampled frames may ever read `document.activeElement ===
+  document.body`. Also confirms focus lands specifically on the Stage's own trigger once
+  settled (the fix's own stated remedy, not merely "somewhere other than body"). Per-theme
+  screenshots only (no colour-dependent assertion), matching `verify-991-stage-focus.mjs`'s own
+  theme-loop rationale. **Live-run record**: first attempt (head `3941250`) FAILED --
+  `document.activeElement` was `<body>` in 208 of 390 sampled frames -- fixed with a callback
+  ref (head `28b26e1`, see T322's own note above); re-ran clean (0 failures, 0 notExercised,
+  verdict DONE).
+
+**Spec**: `spec.md` gains FR-090 (amends FR-067) and a dated Clarifications section recording
+the no-remount-vs-fallback structural decision, Decided/Skippy/delegated-by-Stuart per this
+story's own away-mode convention.
+
+**Gate round 1 remediation** (Main, 2026-10-19; five Mediums, all fixed, no build slot used):
+**(1, A11y/UI)** a window blur fires `focusout` with `relatedTarget` null while
+`document.activeElement` stays the SAME element (never reassigned by a blur) --
+`StageGroupRow`'s handler now returns early (keeping the flag) when `event.target ===
+document.activeElement`, the window-blur signature, preferred over `document.hasFocus()`.
+**(2, Code/Test/A11y)** a click onto a non-focusable spot used to leave the flag stuck true
+forever -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx`
+rAF-plus-`isConnected` pattern (the just-blurred target is still connected one frame later only
+when nothing removed it) to tell a deliberate click-away apart from a real removal. **(3,
+Code)** a missed join (or a missed pre-join precondition) is now a hard failure in
+`verify-1001-stage-focus-join.mjs`, not a silent `notExercised`; the LAST pre-join frame (not
+merely "any") must confirm focus; `joinedMemberExpr` is scoped to the Stage's own content.
+**(4, Test/A11y, Visual)** focus is placed with a real keyboard Tab (not `.focus()`), arming
+`:focus-visible` for the rest of the run; the Dark-theme screenshot (taken before any theme
+switch steals focus) is backed by a hard `:focus-visible` match, not eyeballing alone; the
+later per-theme shots are honestly labelled as non-proofs. **(5, Test)** a simulated window
+blur (`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the
+existing assertions; a dedicated click-away negative proof needs its own second 1-to-2
+transition and is recorded in `notExercised` instead.
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm vitest
+run` (148/148, no new tests per the prototyping-phase rule), `pnpm run check:indent`, `pnpm run
+check:file-size` (no baseline change), `node --check` on the updated script, plus a real
+`import()` load-check (fails only at the shared `CARGO_TARGET_DIR` build-slot guard, confirming
+every import resolves) -- all clean.

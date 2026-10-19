@@ -827,6 +827,45 @@
   same way -- the group meta slot's "N stopped" count, and `ToolCallDialog.tsx`'s own small
   "View full call" header. No new visible-label surface was added or is needed.
 
+### Session 2026-10-18 (Stage label colour and jump-to-Stage, #1008)
+
+- Q: Issue #1008 (ui-architect-v3 gate on PR #1007/#1000): a finished Stage's own label gets
+  green text (FR-079) but a failed Stage's own label stays default colour, only its icon
+  turning red -- `ToolRow.tsx` already applies `text-severity-error` to a failed tool row's
+  label the same way. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): apply
+  `text-severity-error` to a failed Stage's own label exactly the same way, on both the
+  in-place Stage row and the per-turn chain row's own terse per-Stage summary line.
+- Q: The chain row's own "Stage N" text (`ChainStageLine`) has no way to jump to the Stage row
+  it describes. Fix? → A: Decided (Skippy, delegated by Stuart 2026-10-18): make it a real,
+  keyboard-reachable button ("Go to Stage N") that scrolls that Stage's own row into view,
+  opens it (through the same persisted manual-open path FR-084/#991 already reads, so a jump
+  counts as the user's own deliberate open), and moves keyboard focus to that Stage row's own
+  trigger.
+
+### Session 2026-10-19 (One-agent to two-agent Stage focus-loss, #1001)
+
+- Q: Issue #1001 (found by the accessibility auditor at PR #999's own gate, filed 2026-10-18,
+  pre-existing since #941): a one-agent Stage renders a bare `SubagentBody`; the instant a
+  second agent streams into the same Stage, the content swaps to a `SpineList` of
+  `SubagentRow`s, unmounting whatever was focused inside the first member's own Prompt/Result
+  code block, which the browser then drops to `<body>` (WCAG 2.4.3). Decided (Skippy, delegated
+  by Stuart 2026-10-18): keep the one-agent body mounted as the first spine entry (no remount)
+  if the structure allows; otherwise move focus to the Stage trigger when focused content is
+  removed. Which did the structure allow? → A: Decided (Skippy, delegated by Stuart 2026-10-19):
+  the no-remount path does not allow it cleanly -- pre-wrapping the solo body in the same
+  `SpineList`/`SpineItem` shape a joining second member would need either draws the Spine's own
+  rail/indent for every solo Stage (a permanent, unrelated visual regression, since today's solo
+  Stage deliberately renders with no Spine chrome at all) or leaves the FIRST member looking
+  different from every later one forever (no `SubagentRow` header/chevron, contradicting FR-067's
+  own "never switch element type between solo and multi members" rule from #563). The fallback
+  is implemented instead: the Stage's own content wrapper tracks whether focus sits inside it via
+  a plain `focusin`/`focusout` listener (removing a focused node blurs it to `<body>`
+  synchronously in every real browser, so there is no later point at which the just-removed
+  element can be asked whether it held focus); the instant the one-to-two-member transition is
+  observed with focus known to have been inside, focus moves to the Stage's own trigger --
+  mirroring `Transcript.tsx`'s own established "move focus to a still-mounted anchor" remedy for
+  an analogous removed-while-focused control (its "Scroll to end" button going `inert`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1336,6 +1375,45 @@ The developer types a slash command and finds the ones the agent offers. If a se
   own "Cancelled" wording are unchanged (both have sources other than the user's own Stop
   click, confirmed by code: `map_progress_status`'s own direct OMP-wire-string mapping, and an
   `ask` call cancelled by the process/Conversation ending with no answer, respectively).
+- **FR-089** (new, 2026-10-18, issue #1008, ui-architect-v3 gate on PR #1007/#1000; gate round 1
+  remediation 2026-10-18, Main; amends FR-079, FR-068): A Stage with ANY member settled `failed`
+  MUST show the same error-coloured label text a failed tool call already shows (FR-061's own
+  `text-severity-error` rule) -- even while a sibling member is still running (never derived
+  from the Stage's own overall running/failed/cancelled/exited priority order, which would
+  otherwise delay the red label until the whole Stage settles) -- on both the in-place Stage row
+  (FR-067) and the per-turn Subagent chain row's own terse per-Stage summary line (FR-068),
+  amending FR-079's green-only rule, which covered only the finished case and left a failed
+  Stage's own label the default colour. Each Stage's own "Stage N" text in the chain row
+  (FR-068) MUST additionally be a real, keyboard-reachable button with the accessible name "Go
+  to Stage N" (plus its own label when one was computed, e.g. "Go to Stage 5, Finish the
+  remaining Story559 polish and run the fail probe.") -- gate round 1 fix (item 6): the bare
+  "Go to Stage N" form alone did not distinguish two Stages a screen reader user has not yet
+  opened either one of. This button MUST render only while its own Stage row is currently
+  `'visible'` under the existing "Show tool calls"/"Show thinking" view filters (FR-008's own
+  `rowVisibility`) -- gate round 1 fix (item 1, High): "Show tool calls" off can drop a settled,
+  problem-free Stage's own row entirely, leaving nothing to jump to; a hidden Stage's own label
+  stays the original, non-interactive text instead. Activating the button (click or Enter) MUST
+  scroll ONLY the transcript's own scroll viewport (never any other scrollable ancestor) so that
+  Stage's own row lands near the viewport's own top edge (a small margin below it, never
+  centred -- gate round 1 decision, item 2), open it through the same persisted manual-open
+  mechanism FR-084/#991's upward-only disclosure already reads (so a jump counts as the user's
+  own deliberate open, surviving exactly as a manual toggle already does, including across an
+  unmount/remount the view filters above can themselves cause), and move keyboard focus to that
+  Stage row's own trigger without re-triggering the browser's own native focus-scroll.
+- **FR-090** (new, 2026-10-19, issue #1001, found by the accessibility auditor at PR #999's own
+  gate; amends FR-067): A Stage row (FR-067) that gains a second member while keyboard focus
+  sits inside its own one-agent content MUST NOT drop that focus to `<body>` once the content
+  swaps from a bare member body to the multi-member Spine list (WCAG 2.4.3). Decided (Skippy,
+  delegated by Stuart 2026-10-18, then 2026-10-19, Clarifications above): the Stage's own
+  trigger is the fallback focus target when the removed content held focus -- the issue's own
+  preferred no-remount alternative (pre-wrapping a one-agent Stage's body in the same Spine-list
+  shape a joining second member would need) was considered and rejected: it either draws the
+  Spine's own rail/indent for every one-agent Stage (a permanent, unrelated visual regression)
+  or leaves the first member looking different from every later one forever, contradicting this
+  same requirement's own "never switch element type between solo and multi members" rule. Focus
+  MUST be moved synchronously (no externally observable frame where `document.activeElement` is
+  `<body>`) the instant the transition is observed with focus known to have been inside the
+  removed content.
 
 ### Key Entities
 
