@@ -344,7 +344,11 @@ pub(super) async fn persist_pinned(agent: &SessionAgent, pinned: bool) {
 /// triggered it) -- shipped code-verified against the documented field, not a live-forced
 /// observation; forcing the transition live is #650.
 pub(super) fn model_change_role(value: &Value) -> String {
-    if value.get("resolvedModelIsFallback").and_then(Value::as_bool) == Some(true) {
+    if value
+        .get("resolvedModelIsFallback")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
         return "fallback".to_string();
     }
     value

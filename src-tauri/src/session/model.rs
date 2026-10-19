@@ -127,7 +127,8 @@ pub struct RoleChangeSummary {
 }
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
-    model_support::maybe_invalidate_role_cache(agent, frame_type).await; // #741 decision 2
+    // #741 decision 2: a model-change/fallback frame invalidates the cached role (`model_support.rs`).
+    model_support::maybe_invalidate_role_cache(agent, frame_type).await;
     // Matches `agent::frame`'s own settle detection exactly (`"session_settled"`, or a
     // `prompt_result` whose own `sessionSettled` flag is set) -- by the time either fires,
     // `handle_turn_settled()` has already moved the Session back to `Idle` (frame.rs runs it
