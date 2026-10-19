@@ -180,23 +180,25 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     // the flag, so a join while the user is in another app/window still redirects focus
     // correctly once they come back to this one.
     if (event.target === document.activeElement) return
-    // Gate round 1 fix (item 2, Code/Test/A11y Medium): a click onto a non-focusable spot moves
-    // focus to `<body>` with nothing left in this content to redirect -- a real, ordinary move
-    // away (the user's own choice), not the removal symptom this flag exists to survive -- and
-    // must clear the flag; but neither `relatedTarget` nor `document.activeElement` alone can
-    // tell this apart from an element about to be REMOVED (both can read `<body>`/`null`
-    // either way). Repo pattern (`ProfileAlertRows.tsx`, `FileExplorerPanel.tsx`): capture the
-    // just-blurred target, then ask one animation frame later whether it is STILL connected to
-    // the document -- still connected means nothing removed it (a deliberate click-away), so
-    // the flag is cleared; disconnected means it really was removed, which the
-    // `useLayoutEffect` below already handled SYNCHRONOUSLY, in the very same commit, well
-    // before this `requestAnimationFrame` ever runs -- nothing further to do here in that case.
+    // Gate round 1 fix (item 2, Code/Test/A11y Medium), corrected after live debugging found a
+    // real bug in the first cut: a click onto a non-focusable spot moves focus to `<body>` with
+    // nothing left in this content to redirect -- a real, ordinary move away (the user's own
+    // choice), not the removal symptom this flag exists to survive -- and must clear the flag.
+    // The FIRST cut compared the new `document.activeElement` against this exact event's own
+    // `lost` target, which falsified live: focus moving internally between two descendants of
+    // THIS SAME container (e.g. a real Tab from a CodeBlock's own Copy button onto its Prompt
+    // region, both inside `memberContentRef`) ALSO fires a `focusout` on the button being left
+    // -- `lost` (the button) is still connected and no longer equals `document.activeElement`
+    // (now the region), so the old check wrongly read this as "moved away" and cleared the flag
+    // right before the real join, reproducing the exact bug this fix exists to prevent. Fixed:
+    // ask whether `document.activeElement` is STILL somewhere inside this container (any
+    // descendant, not only the exact `lost` node) -- an internal move stays inside and must
+    // never clear the flag; only a genuine move OUT of the whole container does.
     const lost = event.target as Element | null
     requestAnimationFrame(() => {
       if (!lost || !lost.isConnected) return
-      // Consistent with item 1: a window blur landing in THIS one-frame gap (the user alt-
-      // tabbed away between the focusout and this callback) must not clear the flag either.
-      if (document.activeElement === lost) return
+      const container = memberContentNodeRef.current
+      if (container && container.contains(document.activeElement)) return
       focusWasInsideRef.current = false
     })
   }, [])
