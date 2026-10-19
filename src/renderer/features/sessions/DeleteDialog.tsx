@@ -148,6 +148,11 @@ export function DeleteDialog({
   // `deleteCheck` refresh -- `loading` also gates the Delete/Retry button's `aria-disabled`,
   // and that refresh must never grey out Retry while it runs in the background.
   const [refreshing, setRefreshing] = useState(false)
+  // Issue #891 gate round 3 (M4): Retry can be clicked again WHILE a previous attempt's own
+  // post-failure refresh is still in flight (`refreshing` deliberately does not disable the
+  // button) -- a generation counter so a stale refresh response from an EARLIER attempt can
+  // never overwrite a fresher one, independent of `sessionIdRef`'s own cross-Session guard.
+  const deleteGenerationRef = useRef(0)
   const deletedRef = useRef(false)
   // Live, not closure-captured: handleDelete's own `session` is fixed to whatever it was
   // when that specific call started (an ordinary JS closure), so it can never detect that a
@@ -219,13 +224,18 @@ export function DeleteDialog({
     // call started, so it can never disagree with `deletingId`. `sessionIdRef` is the live
     // value instead, reassigned on every render.
     const deletingId = session.id
+    const myGeneration = ++deleteGenerationRef.current
     setDeleting(true)
     setError(null)
+    // Issue #891 gate round 3 (M4): cleared here too, not just on dialog open -- a NEW attempt
+    // starting must never leave a PREVIOUS attempt's "Retry" label state lying around.
+    setRefused(false)
     const response = await window.refract.sessions.delete(deletingId, { confirmed: true })
     // The dialog may now belong to a different Session entirely (this component persists
-    // across a Session change; see the effect above). If so, this stale resolution must not
-    // touch `deleting`, `deletedRef`, or close whatever is currently open for the new Session.
-    if (sessionIdRef.current !== deletingId) return
+    // across a Session change; see the effect above), or a LATER attempt for the SAME Session
+    // may already be in flight (the generation check). If so, this stale resolution must not
+    // touch `deleting`, `deletedRef`, or close whatever is currently open.
+    if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
     setDeleting(false)
     if (!response.ok) {
       setError(response.error.message)
@@ -244,20 +254,31 @@ export function DeleteDialog({
       if (!check) {
         setRefreshing(true)
         void window.refract.sessions.deleteCheck(deletingId).then((refreshed) => {
-          if (sessionIdRef.current !== deletingId) return
+          if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
           setRefreshing(false)
-          if (refreshed.ok) setResult(refreshed.value)
+          // Issue #891 gate round 3 (M4): a refresh that itself fails after a partial delete
+          // must not keep showing the PRE-delete loss bullets as if they were still accurate
+          // -- cleared, not left stale.
+          setResult(refreshed.ok ? refreshed.value : null)
         })
       }
       if (!leftoverSummaryOverride) {
         setLeftoverLoading(true)
         void window.refract.sessions.deleteLeftoverSummary(deletingId).then((refreshed) => {
-          if (sessionIdRef.current !== deletingId) return
+          if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
           setLeftoverLoading(false)
           if (!refreshed.ok) {
             setLeftoverError(true)
+            // Issue #891 gate round 3 (M4): same stale-bullets fix for the leftover list --
+            // the bounded `<ul>` renders from `leftoverSummary` directly, independent of
+            // `leftoverError`, so it must be cleared too or it would keep showing the PRE-
+            // delete file list underneath a status line that now says "Couldn't list...".
+            setLeftoverSummary(null)
             return
           }
+          // Issue #891 gate round 3 (M4): reset on a SUCCESSFUL refresh -- an earlier failed
+          // refresh must not leave `leftoverError` stuck true forever once a later one works.
+          setLeftoverError(false)
           setLeftoverSummary(refreshed.value)
         })
       }

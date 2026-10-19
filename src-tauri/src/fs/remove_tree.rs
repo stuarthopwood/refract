@@ -94,7 +94,12 @@ pub fn checked_canonical_path(path: &Path, boundary_root: &Path) -> ContainmentC
     match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => return ContainmentCheck::OutsideBoundary,
         Ok(_) => {}
-        Err(_) => return ContainmentCheck::Missing,
+        // Issue #891 gate round 3 (M2): only "genuinely does not exist" maps to `Missing` --
+        // any OTHER lstat error (permission denied, a path component that is not a directory,
+        // an I/O error) is refused outright, never silently treated the same as "nothing
+        // there, nothing to hold/remove".
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return ContainmentCheck::Missing,
+        Err(_) => return ContainmentCheck::OutsideBoundary,
     }
 
     let Ok(canonical_path) = dunce::canonicalize(path) else {
@@ -116,20 +121,51 @@ pub fn checked_canonical_path(path: &Path, boundary_root: &Path) -> ContainmentC
     ContainmentCheck::Ok(canonical_path)
 }
 
-fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
-    let canonical_path = match checked_canonical_path(path, boundary_root) {
-        ContainmentCheck::Ok(p) => p,
-        // `remove_tree`'s own callers already resolve "does this exist" separately before ever
-        // calling remove -- a missing path reaching here is as much a refusal to remove as an
-        // out-of-bounds one, matching this function's original behaviour (both outcomes used
-        // the same `_ => Err(OutsideBoundary)` arm).
-        ContainmentCheck::Missing | ContainmentCheck::OutsideBoundary => {
-            return Err(RemoveTreeError::OutsideBoundary)
-        }
-    };
+/// Issue #891 gate round 3 (H2): Main's own root-cause finding -- the "transient sharing
+/// violation" scenarios (c)/(d) hit live was Refract's OWN background `deleteCheck` refresh
+/// racing the removal (fixed at the source by `worktree_access`'s read/write lock, H1), but a
+/// genuinely external, truly transient holder (a brief antivirus/indexer scan) is still a real
+/// possibility `remove_dir_all` itself can hit. Retried here, product-side, rather than only in
+/// the live-check script: bounded (10 attempts, 300ms apart) and ONLY for the specific raw OS
+/// errors that mean "something had a handle open a moment ago" (32 `ERROR_SHARING_VIOLATION`,
+/// 33 `ERROR_LOCK_VIOLATION`, 5 `ERROR_ACCESS_DENIED`, 145 `ERROR_DIR_NOT_EMPTY` -- the last
+/// possible if something else briefly recreated an entry mid-walk). `checked_canonical_path` is
+/// re-run before EACH attempt, not just once up front: a long retry window must re-confirm the
+/// path is still the same real, contained directory it was, never trust a stale resolution.
+const REMOVE_RETRY_ATTEMPTS: u32 = 10;
+const REMOVE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
-    std::fs::remove_dir_all(&canonical_path).map_err(|source| RemoveTreeError::Io {
-        path: canonical_path,
-        source,
-    })
+fn is_retryable_remove_error(err: &std::io::Error) -> bool {
+    matches!(err.raw_os_error(), Some(32) | Some(33) | Some(5) | Some(145))
+}
+
+fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
+    for attempt in 1..=REMOVE_RETRY_ATTEMPTS {
+        let canonical_path = match checked_canonical_path(path, boundary_root) {
+            ContainmentCheck::Ok(p) => p,
+            // `remove_tree`'s own callers already resolve "does this exist" separately before
+            // ever calling remove -- a missing path reaching here is as much a refusal to
+            // remove as an out-of-bounds one, matching this function's original behaviour
+            // (both outcomes used the same `_ => Err(OutsideBoundary)` arm). Never retried:
+            // containment is a hard refusal, not a transient condition.
+            ContainmentCheck::Missing | ContainmentCheck::OutsideBoundary => {
+                return Err(RemoveTreeError::OutsideBoundary)
+            }
+        };
+
+        match std::fs::remove_dir_all(&canonical_path) {
+            Ok(()) => return Ok(()),
+            Err(source) => {
+                if is_retryable_remove_error(&source) && attempt < REMOVE_RETRY_ATTEMPTS {
+                    std::thread::sleep(REMOVE_RETRY_DELAY);
+                    continue;
+                }
+                return Err(RemoveTreeError::Io {
+                    path: canonical_path,
+                    source,
+                });
+            }
+        }
+    }
+    unreachable!("the loop above always returns on its final iteration")
 }

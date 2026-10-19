@@ -96,11 +96,30 @@ fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
     }
 }
 
+/// Issue #891 gate round 3 (M3): `RemoveTreeError::Io`'s own `path` is the worktree ROOT being
+/// removed, never a specific failing sub-path -- `std::fs::remove_dir_all` gives no handle on
+/// WHICH entry inside the tree it stopped at, only the top-level call's own `io::Error` (the
+/// previous version of this comment claimed otherwise; it did not match what the struct is
+/// actually constructed with in `remove_tree.rs`). By the time this is reached, H2's own
+/// bounded retry has already run out against a real raw-OS error, and `remove_dir_all` had
+/// already walked (and very likely partially removed) a real directory tree before failing --
+/// `wrap_fs_error`'s own "Refract could not remove X because another program is using it"
+/// wording would falsely imply nothing was touched, so this path gets its own honest wording
+/// instead, naming the remaining (still-present) folder.
+fn partial_removal_message(err: &std::io::Error, worktree_path: &Path) -> String {
+    let wt = worktree_path.display();
+    let reason = match err.raw_os_error() {
+        Some(32) => "another program is using a file inside it".to_string(),
+        Some(33) => "a file inside it is locked".to_string(),
+        Some(5) => "Windows denied access to a file inside it".to_string(),
+        Some(145) => "a file inside it reappeared while Refract was removing it".to_string(),
+        _ => format!("{err}"),
+    };
+    format!("Some files were already deleted. Refract could not finish removing {wt}: {reason}. Close any terminal or editor open in that folder, then choose Retry.")
+}
+
 /// Maps `fs::remove_tree`'s own error into the same `GitError` shape every other refusal in
-/// this file uses. `RemoveTreeError::Io` names the EXACT sub-path that failed (not
-/// `worktree_path` itself) -- issue #891's "if a removal later fails part-way, report exactly
-/// what remains" -- so `wrap_fs_error`'s own sharing-violation/access-denied wording correctly
-/// points at whatever file or folder a holder actually appeared on, not the worktree root.
+/// this file uses.
 fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError {
     match err {
         RemoveTreeError::OutsideBoundary => GitError::new(
@@ -110,7 +129,10 @@ fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError
                 worktree_path.display()
             ),
         ),
-        RemoveTreeError::Io { path, source } => wrap_fs_error(source, &path),
+        RemoveTreeError::Io { path, source } => GitError::new(
+            GitErrorCode::WorktreeFailed,
+            partial_removal_message(&source, &path),
+        ),
     }
 }
 

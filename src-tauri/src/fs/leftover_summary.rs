@@ -229,6 +229,13 @@ fn build_summary(worktree_path: &Path, porcelain: &str, cancel: &AtomicBool) -> 
         }
     }
 
+    if cancel.load(Ordering::Relaxed) {
+        // Issue #891 gate round 3 (M5): a cancelled walk must never return a complete-looking
+        // summary built from whatever partial counts it reached before the flag was set --
+        // `unavailable` is the only honest shape for "we don't actually know what's left",
+        // same as a failed/timed-out `git status` call (H2).
+        return LeftoverSummary::unavailable(root_name);
+    }
     LeftoverSummary {
         root_name,
         generated_folders: generated
@@ -341,7 +348,11 @@ static IN_FLIGHT: LazyLock<Mutex<HashMap<String, Vec<RegistryEntry>>>> =
 /// Without this, dropping that future mid-poll (its own enclosing IPC call aborted or timed
 /// out) would skip the plain cleanup code at the end of the function entirely, and a LATER
 /// `cancel_and_wait` call for the same Session would then spin forever waiting for a
-/// `notify_one` that walk will now never send.
+/// `notify_one` that walk will now never send. Gate round 3: also sets `cancel` on drop -- if
+/// this future itself is dropped while `build_summary`'s own `spawn_blocking` closure is still
+/// running on its own thread (a hard-abort cannot stop that thread, only a dropped `JoinHandle`
+/// future stops AWAITING it), the closure's own `cancel_for_count` clone still sees it and
+/// winds down sooner instead of running to completion pointlessly.
 struct RegistryGuard {
     session_id: String,
     cancel: Arc<AtomicBool>,
@@ -350,6 +361,7 @@ struct RegistryGuard {
 
 impl Drop for RegistryGuard {
     fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
         let mut registry = IN_FLIGHT
             .lock()
             .expect("leftover summary registry poisoned");
@@ -367,14 +379,17 @@ impl Drop for RegistryGuard {
 /// duration so `cancel_and_wait` can stop it early. An empty summary for a worktree folder that
 /// is not actually there (nothing to report).
 pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) -> LeftoverSummary {
-    let root_name = worktree_path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
-        return LeftoverSummary::empty(root_name);
-    }
+    // Issue #891 gate round 3 (H1): held for this whole call -- `sessions.delete`'s own write
+    // guard blocks until this releases, so Refract's own git/filesystem reads can never race
+    // the actual removal. Acquired before anything else, including the registry registration
+    // just below, so there is no window at all where this walk is doing real work unprotected.
+    let _read_guard = crate::fs::worktree_access::read_guard(session_id).await;
 
+    // Issue #891 gate round 3 (M1): registered, and this guard created, BEFORE the first
+    // `await` below (previously after it) -- `cancel_and_wait` sees a registered entry the
+    // MOMENT this function is first polled at all, closing a window where a caller could race
+    // ahead believing no walk is running yet, when one is about to start doing real git/
+    // filesystem work against this exact worktree.
     let cancel = Arc::new(AtomicBool::new(false));
     let notify = Arc::new(Notify::new());
     {
@@ -391,6 +406,14 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
         cancel: cancel.clone(),
         notify,
     };
+
+    let root_name = worktree_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
+        return LeftoverSummary::empty(root_name);
+    }
 
     let raw = git_raw(
         worktree_path,
@@ -417,9 +440,10 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
     tokio::task::spawn_blocking(move || build_summary(&path, &raw.stdout, &cancel_for_count))
         .await
         .unwrap_or_else(|_| LeftoverSummary::unavailable(root_name))
-    // `_guard` drops here (or on an early return above, or if this whole future is itself
-    // dropped before completing), deregistering this walk's own entry and firing its `notify`
-    // exactly once either way.
+    // `_guard`/`_read_guard` drop here (or on an early return above, or if this whole future is
+    // itself dropped before completing), deregistering this walk's own entry, firing its
+    // `notify` exactly once either way, and releasing the read guard for `sessions.delete`'s
+    // own write guard to acquire.
 }
 
 /// Issue #891 gate round 1 item 5: "Delete during 'Checking files…': the summary walk becomes

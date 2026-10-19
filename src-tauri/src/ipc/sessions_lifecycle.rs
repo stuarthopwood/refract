@@ -286,6 +286,12 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .clone();
             (session, repository)
         };
+        // Issue #891 gate round 3 (H1): held for the whole `delete_check_for_session` call --
+        // this spawns about five git child processes with their own `current_dir` set to the
+        // worktree; `sessions.delete`'s own write guard blocks until this releases, so a Retry
+        // can never start removing the worktree while a STALE `deleteCheck` call (the P4
+        // post-refusal refresh) still has git children running with a cwd inside it.
+        let _read_guard = crate::fs::worktree_access::read_guard(&id).await;
         let check = delete_check_for_session(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
@@ -372,6 +378,16 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // "Checking files…" can never be mistaken for an external holder. A no-op if no walk
         // is currently in flight for this Session.
         cancel_and_wait(&id).await;
+
+        // Issue #891 gate round 3 (H1, Main's own root-cause finding from app.log): the write
+        // guard blocks until EVERY Refract-owned reader of this worktree (`sessions.
+        // deleteCheck`'s own git children, the leftover-summary walk above) has actually
+        // finished and released -- the leftover walk was already cancelled above for
+        // responsiveness, but `deleteCheck`'s own background P4 refresh has no cooperative
+        // cancel and must simply be waited out; it is a handful of plain git calls, never
+        // slow enough to matter. Held for the rest of this handler, through the actual
+        // removal, so no NEW reader can start once this begins either.
+        let _write_guard = crate::fs::worktree_access::write_guard(&id).await;
 
         // Issue #891, Stuart's 2026-10-19 grill item 2: the NAMED-holder (file-handle) check
         // runs BEFORE the agent is stopped -- a refused Delete for an external FILE holder must

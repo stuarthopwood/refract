@@ -11,3 +11,4 @@ pub mod remove_tree;
 pub mod resolve;
 pub mod vscode;
 pub mod watch;
+pub mod worktree_access;
