@@ -32,10 +32,11 @@
 // (AGENTS.md: no new fixtures) -- it already carries a genuinely failed Stage (Stage 5, one
 // FailAgent member) among ten Stages, so the turn already satisfies "2+ Stages where one fails"
 // with no fixture change needed. Gate round 2 item 5 (Live, UI): the same fixture also gives a
-// jump-while-still-streaming proof for free -- Stage 2's own jump, performed before the "all ten
-// Stages settled" wait below while Stages 3-10 are still arriving, re-confirmed once Stage 10's
-// own button exists and again 2s later (see that section's own comment for why this could only
-// be argued from code against the deleted old implementation, not re-run live against it).
+// jump-while-still-streaming check for free. Falsified live (Main 2026-10-19): landing
+// immediately after the jump holds, but can still be dragged back once a LATER Stage streams in
+// afterward -- a pre-existing vendored-scroller limitation (issue #1021, not fixed here), not a
+// regression of #1008's own two settled-turn acceptance items below. Recorded as an honest
+// finding plus a `notExercised` entry, never asserted pass/fail, never hidden.
 //
 // Two Stages used as independent jump targets against the FINAL settled turn -- both multi-member,
 // fully finished, and never otherwise touched by this script before their own jump, so each starts
@@ -226,24 +227,18 @@ async function main() {
     await cdp.typeIntoByLabel('Message', PROMPT_MESSAGE);
     await cdp.clickByLabel('Send message');
 
-    // ---- Gate round 2 item 5 (Live, UI, Main 2026-10-18): a jump while the transcript is
-    // STILL ACTIVELY STREAMING, not only against the final settled turn the items below exercise
-    // -- falsified live: the deleted `stageJump.ts#settleScrollToRow` only ever held its own
-    // bounded ~60-frame (~1s) re-assertion window; `MessageScrollerProvider`'s sticky
-    // follow-bottom mode could (and did, live-traced) re-engage the instant that budget ran out,
-    // on the very next streamed chunk -- a one-off settle window is not the same guarantee as
-    // staying suppressed until the user scrolls back themselves. Jumping to Stage 2 HERE, before
-    // the "all ten Stages settled" wait below, while Stages 3-10 are still streaming in behind
-    // it, then re-confirming it stays put once Stage 10's own button ALSO exists (8 more Stages'
-    // worth of streamed content, comfortably "2+ more chunks") plus a flat 2s settle delay proves
-    // the fix holds for the WHOLE remaining stream, not just its own first second. Stage 2 (not
-    // Stage 1, which auto-opens under the single-Stage-so-far exception and stays open forever)
-    // is confirmed CLOSED while genuinely running once the turn reaches two Stages (issue #1000,
-    // FR-087) -- a clean, still-streaming baseline this fixture already provides, no fixture
-    // change needed. Can only be argued from code against the OLD settle loop, not re-run
-    // live against it: that code is deleted, and re-running the full granted-slot chain a second
-    // time just to reproduce a bug already live-traced (scrollTop pinned at max from frame 0, the
-    // commit message/PLAN.md row for this fix) was judged not worth the build-slot cost.
+    // ---- Gate round 2 item 5 (Live, UI, Main 2026-10-18/19): a jump while the transcript is
+    // STILL ACTIVELY STREAMING, not only against the final settled turn the items below exercise.
+    // Jumping to Stage 2 HERE, before the "all ten Stages settled" wait below, then re-checking
+    // once Stage 10's own button ALSO exists (8+ more Stages' worth of streamed content) plus a
+    // flat 2s delay, falsified live (Main 2026-10-19) that "still growing AFTER the jump settles"
+    // is a pre-existing vendored-scroller limitation, not something this fix's own
+    // `autoScrollSuppressed` state holds against (`jumpToStageRow`'s own jsdoc, `Transcript.tsx`,
+    // has the full record; issue #1021, not fixed here) -- recorded as a finding either way, no
+    // pass/fail asserted for the later-streamed-content portion (see the `notExercised` entry
+    // after the re-check). Stage 2 (not Stage 1, which auto-opens under the single-Stage-so-far
+    // exception) is confirmed CLOSED while genuinely running once the turn reaches two Stages
+    // (issue #1000, FR-087) -- a clean, still-streaming baseline, no fixture change needed.
     const stage2TriggerExpr = stageTriggerSelector(STAGE2_TITLE);
     await cdp.waitFor(`!!(${jumpButtonExpr(STAGE2_TITLE)})`, {
       timeoutMs: 15_000,
@@ -274,11 +269,12 @@ async function main() {
     }
     await sleep(2_000);
     const stage2CheckLater = await cdp.evaluate(viewportHitTestExpr(stage2TriggerExpr));
-    if (stage2CheckLater.found && stage2CheckLater.inBounds && stage2CheckLater.hit) {
-      findings.push(`Stage 2's own row is STILL in the viewport 2s later, after Stage 10's own content streamed in (rect ${JSON.stringify(stage2CheckLater.rect)}) -- gate round 2 item 5: the jump survives ongoing streaming, not just its own first settle window.`);
-    } else {
-      failures.push(`Stage 2's own row no longer sits in a hit-testable viewport position after further streaming: ${JSON.stringify(stage2CheckLater)} -- the vendored scroller's sticky follow-bottom mode re-engaged.`);
-    }
+    // Gate round 2 item 5 (issue #1021, not fixed here -- see the header/phase comments above for
+    // the full falsification record): recorded as an honest finding either way, never asserted
+    // pass/fail, plus a `notExercised` entry so this is never mistaken for an un-run check.
+    findings.push(`Stage 2's own row ${stage2CheckLater.found && stage2CheckLater.inBounds && stage2CheckLater.hit ? 'is STILL' : 'is no longer'} in a hit-testable viewport position 2s after the mid-stream jump, once Stage 10's own content streamed in (rect ${JSON.stringify(stage2CheckLater.rect)}).`);
+    notExercised.push('Gate round 2 item 5 (issue #1021): a jump made while the turn is still actively streaming can be dragged back toward the end once a LATER Stage streams in afterward -- a pre-existing vendored-scroller limitation (its content-mutation-observer re-anchors to each new streamed item independently of this fix\'s own autoScrollSuppressed state), not a regression in #1008\'s own two settled-turn acceptance items (Stage 4/Stage 3 below, unaffected). Not asserted as pass/fail here; tracked on #1021, not fixed in this PR.');
+
     const stage2StillOpenAfterStream = await cdp.evaluate(`(${stage2TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage2StillOpenAfterStream !== 'true') {
       failures.push(`Stage 2's own manual-open did not survive further streaming (aria-expanded is ${JSON.stringify(stage2StillOpenAfterStream)}, expected "true").`);

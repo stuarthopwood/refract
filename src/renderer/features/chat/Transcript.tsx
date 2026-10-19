@@ -713,6 +713,23 @@ export function Transcript({
   // branch (gate round 2, item 2): `runScrollSettleLoop` never animates -- every frame is a plain
   // instant `scrollTop =` assignment, the same as the landing effect above already uses
   // unconditionally.
+  //
+  // Known limitation (gate round 2 item 5, falsified live, filed as issue #1021 -- NOT fixed
+  // here): on a turn that is STILL ACTIVELY STREAMING (not yet settled), this jump holds
+  // correctly against the vendored scroller's sticky follow-bottom mode for its own immediate
+  // settle window, but a LATER Stage streaming in can still pull the viewport back toward the
+  // end -- `MessageScrollerProvider`'s own content-mutation-observer (`handleContentChange`)
+  // appears to re-anchor to each newly-streamed item independently of both the `autoScroll` prop
+  // and (confirmed live, instrumented trace) a dispatched synthetic `wheel` event matching a
+  // genuine user scroll's own event shape -- unlike a genuine user's OWN wheel/touch/key action,
+  // which DOES hold indefinitely (traced live). Several attempted fixes here (a zero-delta
+  // dispatched wheel event, then three real-magnitude ticks) produced no measurable change,
+  // and an instrumented trace (temporary, not shipped) captured zero wheel/scroll events on this
+  // jump's own viewport despite a confirmed `scrollTop` change -- an unresolved anomaly, not
+  // something this PR's own scope stretches to debugging further in third-party, minified,
+  // undocumented vendor internals. The two settled-turn jump proofs this issue's own acceptance
+  // criteria actually ask for (Stage 3/Stage 4, both fully finished before their own jump) are
+  // unaffected and hold correctly.
   const jumpToStageRow = React.useCallback(
     (stageId: string) => {
       const row = document.getElementById(stageRowDomId(sessionId, stageId))
