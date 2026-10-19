@@ -34,9 +34,10 @@
 // with no fixture change needed. Gate round 2 item 5 (Live, UI): the same fixture also gives a
 // jump-while-still-streaming check for free. Falsified live (Main 2026-10-19): landing
 // immediately after the jump holds, but can still be dragged back once a LATER Stage streams in
-// afterward -- a pre-existing vendored-scroller limitation (issue #1021, not fixed here), not a
-// regression of #1008's own two settled-turn acceptance items below. Recorded as an honest
-// finding plus a `notExercised` entry, never asserted pass/fail, never hidden.
+// afterward -- a REAL wheel scroll (CDP trace, TEST A) holds against the same new content, so
+// this is JUMP-SPECIFIC (issue #1021), not a general scroller defect, not a regression of
+// #1008's own two settled-turn acceptance items below. Recorded as an honest finding plus a
+// `notExercised` entry, never asserted pass/fail, never hidden.
 //
 // Two Stages used as independent jump targets against the FINAL settled turn -- both multi-member,
 // fully finished, and never otherwise touched by this script before their own jump, so each starts
@@ -232,13 +233,15 @@ async function main() {
     // Jumping to Stage 2 HERE, before the "all ten Stages settled" wait below, then re-checking
     // once Stage 10's own button ALSO exists (8+ more Stages' worth of streamed content) plus a
     // flat 2s delay, falsified live (Main 2026-10-19) that "still growing AFTER the jump settles"
-    // is a pre-existing vendored-scroller limitation, not something this fix's own
-    // `autoScrollSuppressed` state holds against (`jumpToStageRow`'s own jsdoc, `Transcript.tsx`,
-    // has the full record; issue #1021, not fixed here) -- recorded as a finding either way, no
-    // pass/fail asserted for the later-streamed-content portion (see the `notExercised` entry
-    // after the re-check). Stage 2 (not Stage 1, which auto-opens under the single-Stage-so-far
-    // exception) is confirmed CLOSED while genuinely running once the turn reaches two Stages
-    // (issue #1000, FR-087) -- a clean, still-streaming baseline, no fixture change needed.
+    // is JUMP-SPECIFIC, not a general scroller defect: a REAL user wheel scroll (CDP trace, issue
+    // #1021's own TEST A) holds against the identical new content for the whole 3s window, but
+    // `jumpToStageRow`'s own programmatic jump does not (`jumpToStageRow`'s own jsdoc,
+    // `Transcript.tsx`, has the full record; issue #1021, not fixed here) -- recorded as a finding
+    // either way, no pass/fail asserted for the later-streamed-content portion (see the
+    // `notExercised` entry after the re-check). Stage 2 (not Stage 1, which auto-opens under the
+    // single-Stage-so-far exception) is confirmed CLOSED while genuinely running once the turn
+    // reaches two Stages (issue #1000, FR-087) -- a clean, still-streaming baseline, no fixture
+    // change needed.
     const stage2TriggerExpr = stageTriggerSelector(STAGE2_TITLE);
     await cdp.waitFor(`!!(${jumpButtonExpr(STAGE2_TITLE)})`, {
       timeoutMs: 15_000,
@@ -273,7 +276,7 @@ async function main() {
     // the full falsification record): recorded as an honest finding either way, never asserted
     // pass/fail, plus a `notExercised` entry so this is never mistaken for an un-run check.
     findings.push(`Stage 2's own row ${stage2CheckLater.found && stage2CheckLater.inBounds && stage2CheckLater.hit ? 'is STILL' : 'is no longer'} in a hit-testable viewport position 2s after the mid-stream jump, once Stage 10's own content streamed in (rect ${JSON.stringify(stage2CheckLater.rect)}).`);
-    notExercised.push('Gate round 2 item 5 (issue #1021): a jump made while the turn is still actively streaming can be dragged back toward the end once a LATER Stage streams in afterward -- a pre-existing vendored-scroller limitation (its content-mutation-observer re-anchors to each new streamed item independently of this fix\'s own autoScrollSuppressed state), not a regression in #1008\'s own two settled-turn acceptance items (Stage 4/Stage 3 below, unaffected). Not asserted as pass/fail here; tracked on #1021, not fixed in this PR.');
+    notExercised.push('Gate round 2 item 5 (issue #1021): a jump made while the turn is still actively streaming can be dragged back toward the end once a LATER Stage streams in afterward -- JUMP-SPECIFIC, not a general scroller defect: a REAL user wheel scroll holds against the identical new content (issue #1021\'s own TEST A, CDP trace), but `jumpToStageRow`\'s own programmatic jump does not replicate whatever signal the vendored scroller\'s internal `userScrollIntent()` reacts to (not exposed via the public hook this codebase uses). Not a regression in #1008\'s own two settled-turn acceptance items (Stage 4/Stage 3 below, unaffected). Not asserted as pass/fail here; tracked on #1021, not fixed in this PR.');
 
     const stage2StillOpenAfterStream = await cdp.evaluate(`(${stage2TriggerExpr})?.getAttribute('aria-expanded') ?? null`);
     if (stage2StillOpenAfterStream !== 'true') {
