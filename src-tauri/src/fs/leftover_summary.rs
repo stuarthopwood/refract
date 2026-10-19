@@ -392,3 +392,16 @@ pub async fn cancel_and_wait(session_id: &str) {
         notified.await;
     }
 }
+
+/// Diagnostic-only (Main's own request, root-causing the "folder in use" refusal): true if a
+/// summary walk is STILL registered (not yet finished/deregistered) for `session_id`.
+/// `sessions.delete` already calls `cancel_and_wait` before its own holder preflight runs, so
+/// this should always read `false` by the time `worktree_holders::check_folder_in_use` logs it
+/// -- if it ever reads `true` there, that disagreement IS the bug, not a race this function
+/// itself introduces.
+pub fn is_walk_in_flight(session_id: &str) -> bool {
+    IN_FLIGHT
+        .lock()
+        .expect("leftover summary registry poisoned")
+        .contains_key(session_id)
+}

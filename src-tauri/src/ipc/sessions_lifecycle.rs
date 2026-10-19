@@ -428,6 +428,8 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         if let Err(err) = worktree_holders::check_folder_in_use(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
+            &id,
+            &own_pids,
         )
         .await
         {

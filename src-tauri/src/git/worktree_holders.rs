@@ -155,15 +155,58 @@ pub async fn check_named_holders(
 /// shutdown trades the "a refusal leaves the Session running" wording for correctness: a
 /// refusal found here may leave the agent stopped rather than literally uninterrupted, but it
 /// is no longer a false positive on every ordinary Delete of a still-running Session. `repo` is
-/// used only for the S1 containment guard (`worktrees_root(repo)`).
-pub async fn check_folder_in_use(repo: &Path, worktree_path: &Path) -> Result<(), GitError> {
+/// used only for the S1 containment guard (`worktrees_root(repo)`). `session_id`/`own_pids` are
+/// used only for the pre-probe diagnostic log line below (Main's own request): never for a
+/// decision, since (per this function's own doc comment above) there is no way to attribute a
+/// cwd holder to a specific pid through a plain rename at all.
+pub async fn check_folder_in_use(
+    repo: &Path,
+    worktree_path: &Path,
+    session_id: &str,
+    own_pids: &[u32],
+) -> Result<(), GitError> {
     if !is_within_worktrees_root(worktree_path, &worktrees_root(repo)) {
         return Err(outside_worktrees_root_refusal(worktree_path));
     }
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
         return Ok(());
     }
+    log_holder_diagnostics(session_id, own_pids).await;
     probe_folder_in_use(worktree_path).await
+}
+
+/// Issue #891 gate round (Main's own request, root-causing a "folder in use" refusal on a run
+/// with no planted holder): logs, right before the rename probe runs, exactly which of this
+/// Session's own recorded pids (and their live descendants) are STILL alive at this instant, and
+/// whether the leftover-summary walk still reads as in-flight for this Session -- `sessions.
+/// delete` already calls `cancel_and_wait` before this point in its own flow, so the walk should
+/// always read settled here; if it does not, that is itself a bug, not a race this log line
+/// introduces. Narrows the cause by elimination: if every recorded pid and descendant already
+/// reads dead and the walk reads settled, whatever the probe then reports held is neither this
+/// Session's own agent process tree nor its summary walk -- left to the file watcher (already
+/// stopped earlier in `sessions_delete`'s own flow by the time this runs) or Defender/the
+/// indexer by elimination.
+async fn log_holder_diagnostics(session_id: &str, own_pids: &[u32]) {
+    let pids = own_pids.to_vec();
+    let (alive, descendants_alive) = tokio::task::spawn_blocking(move || {
+        let alive: Vec<u32> = pids
+            .iter()
+            .copied()
+            .filter(|&pid| imp::is_pid_alive(pid))
+            .collect();
+        let descendants = imp::descendant_pids(&pids);
+        let descendants_alive: Vec<u32> = descendants
+            .into_iter()
+            .filter(|&pid| imp::is_pid_alive(pid))
+            .collect();
+        (alive, descendants_alive)
+    })
+    .await
+    .unwrap_or_default();
+    let walk_in_flight = crate::fs::leftover_summary::is_walk_in_flight(session_id);
+    log::debug!(
+        "worktree_holders::check_folder_in_use: about to probe {session_id} -- recorded pids alive: {alive:?}; live descendants: {descendants_alive:?}; leftover-summary walk still in flight: {walk_in_flight}"
+    );
 }
 
 /// Issue #891 gate round (S5): a leftover probe folder from an earlier crashed/killed attempt
@@ -353,7 +396,7 @@ mod imp {
     /// worse than one more pid Restart Manager was never going to report anyway, while a missed
     /// descendant simply falls through to Restart Manager's own report, naming the Session's
     /// own dev server/node/cargo process, which this item exists to prevent.
-    fn descendant_pids(roots: &[u32]) -> Vec<u32> {
+    pub(super) fn descendant_pids(roots: &[u32]) -> Vec<u32> {
         use windows::Win32::Foundation::{CloseHandle, HANDLE};
         use windows::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -409,6 +452,45 @@ mod imp {
             }
         }
         out
+    }
+
+    /// Issue #891 gate round (Main's own request, root-causing the "folder in use" refusal on a
+    /// run with no planted holder): true only if `pid` currently identifies a REAL, still-
+    /// running process (`OpenProcess` succeeds AND `GetExitCodeProcess` reads `STILL_ACTIVE`,
+    /// not merely a closed-but-not-yet-reaped handle) -- diagnostic-only, read-only, never used
+    /// to decide anything, so no pid-reuse defence is needed the way a terminate path would
+    /// require.
+    pub(super) fn is_pid_alive(pid: u32) -> bool {
+        use windows::Win32::Foundation::{CloseHandle, HANDLE, STILL_ACTIVE};
+        use windows::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        struct HandleGuard(HANDLE);
+        impl Drop for HandleGuard {
+            fn drop(&mut self) {
+                // Safety: a single documented API call, closing exactly the handle this guard
+                // owns.
+                unsafe {
+                    let _ = CloseHandle(self.0);
+                }
+            }
+        }
+
+        if pid == 0 {
+            return false;
+        }
+        // Safety: a single documented, read-only API call per step; the handle is closed via
+        // `HandleGuard` on every return path.
+        unsafe {
+            let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return false;
+            };
+            let guard = HandleGuard(handle);
+            let mut exit_code: u32 = 0;
+            GetExitCodeProcess(guard.0, &mut exit_code).is_ok()
+                && exit_code == STILL_ACTIVE.0 as u32
+        }
     }
 
     /// Runs one Restart Manager session over every real file `collect_files_for_rm` finds under
@@ -514,5 +596,13 @@ mod imp {
 
     pub fn restart_manager_holders(_worktree_path: &Path, _exclude_pids: &[u32]) -> Vec<Holder> {
         Vec::new()
+    }
+
+    pub(super) fn descendant_pids(_roots: &[u32]) -> Vec<u32> {
+        Vec::new()
+    }
+
+    pub(super) fn is_pid_alive(_pid: u32) -> bool {
+        false
     }
 }
