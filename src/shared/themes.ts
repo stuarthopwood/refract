@@ -39,7 +39,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
     // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
     swatch: '#0a0a0a',
-    syntaxTheme: 'github-dark',
+    // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
+    // every `github-dark`-based preset moved to `github-dark-default`.
+    syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
   },
   'dark-high-contrast': {
@@ -61,7 +63,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     id: 'obsidian',
     name: 'Obsidian',
     swatch: '#0F1014',
-    syntaxTheme: 'github-dark',
+    // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
+    // every `github-dark`-based preset moved to `github-dark-default`.
+    syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#0F1014', symbolColor: '#F8FAFC' }
   },
   // #551 (Nordic Frost / Cyber Amber dark presets): two further additive dark presets, built
@@ -76,12 +80,35 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   // Shiki theme either, so it reuses `github-dark` too. A follow-up (filed separately as #975)
   // tracks giving each preset's code blocks their own `--card`-matched background instead of
   // reusing whatever a bundled Shiki theme ships with.
+  //
+  // #975 (the above follow-up, resolved): every code block's background now follows the
+  // active preset's own `--card` (`Markdown.tsx`'s `CodeBlock`/`CodeBlockHeader`), not
+  // whatever the chosen Shiki theme ships with -- Shiki's own root background is neutralised
+  // via a `colorReplacements` override keyed on the loaded theme's own resolved `.bg` (probed
+  // against the installed `shiki@4.4.3`: `codeToHtml`'s `colorReplacements` option substitutes
+  // any literal colour -- including the root background -- throughout the rendered HTML, the
+  // one documented per-call override Shiki exposes; `structure: 'inline'` was the only other
+  // candidate but drops the `<pre>`/`<code>` wrapper the `[&>pre]:` selectors below depend on).
+  // Keeping only `github-dark`'s own TOKEN colours (never hand-picking one) turned out to be
+  // impossible at the new 4.5:1 floor every token colour must now clear: `github-dark`'s own
+  // comment colour (`#6a737d`, relative luminance ~0.168) caps out at ~4.36:1 against a literal
+  // PURE BLACK background -- below 4.5:1 regardless of how dark any real preset's `--card`
+  // is -- so no amount of retuning any preset's own surface token could ever fix it (the
+  // decision's other listed remedy). Swapped to `github-dark-default` instead (GitHub's own
+  // newer theme, same vendor family/aesthetic): its comment colour (`#8b949e`) clears 4.5:1
+  // against every built-in preset's `--card` with margin (worst case Obsidian, 5.35:1; see
+  // `scripts/check-theme-contrast.mjs`'s own Shiki-token check, added by this issue). Dark and
+  // Obsidian (both `github-dark` too, same under-floor comment colour) move to
+  // `github-dark-default` for the same reason -- this was never scoped to Nordic Frost/Cyber
+  // Amber alone once the background actually changed. `dark-high-contrast`'s own
+  // `github-dark-high-contrast` is untouched: its comment colour (`#bdc4cc`) already clears
+  // 4.5:1 against its own `--card` with large margin (11.31:1).
   'nordic-frost': {
     id: 'nordic-frost',
     name: 'Nordic Frost',
     // Matches `.theme-nordic-frost`'s own `--background` (globals.css): a deep navy canvas.
     swatch: '#060f1e',
-    syntaxTheme: 'github-dark',
+    syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#060f1e', symbolColor: '#eff7fb' }
   },
   'cyber-amber': {
@@ -89,7 +116,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Cyber Amber',
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a warm near-black canvas.
     swatch: '#0f0703',
-    syntaxTheme: 'github-dark',
+    syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#0f0703', symbolColor: '#faf4ef' }
   }
 }

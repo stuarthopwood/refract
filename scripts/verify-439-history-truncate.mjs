@@ -16,10 +16,35 @@
 //   - "long": a deliberately very long title (the one the issue's own design notes call out as
 //     having "to cope with a long title and the Current badge beside it" -- this file is the
 //     SESSION's own current Conversation, via the `user-message-time.jsonl` scenario's
-//     `$conversationFile` sentinel, so its row renders the Current badge next to the truncating
-//     title) and a preview padded to EXACTLY 120 characters, `conversations.rs`'s own
-//     `PREVIEW_MAX_LENGTH` cap -- wider than the `sm:max-w-md` dialog at `text-xs`, so it must
-//     clip too.
+//     `$conversationFile` sentinel) and a preview padded to EXACTLY 120 characters,
+//     `conversations.rs`'s own `PREVIEW_MAX_LENGTH` cap -- wider than the `sm:max-w-md` dialog at
+//     `text-xs`, so it must clip too.
+//
+// Issue #1012 item 5 fixes (follow-ups from this #439 gate, PR #1011):
+//   - The Current badge beside the long row is now actually exercised: this script sends one
+//     real prompt through the composer and approves `user-message-time.jsonl`'s own scripted
+//     tool call, settling the turn so `sync_from_state.rs`'s `if message_count > 0` guard marks
+//     the long Conversation current BEFORE the history dialog is ever opened, rather than only
+//     recording the gap as `notExercised` with an overstated "not a product bug" claim.
+//   - Every dialog-presence/content read is now scoped to the KNOWN Conversation history dialog
+//     (its own `DialogTitle` text, "Conversation history"), never any element that merely has
+//     `role="dialog"`.
+//   - Row-level truncation (title/preview `scrollWidth`/`clientWidth` overflow) is re-measured in
+//     every theme in the themed-screenshot loop, not only once on the initial theme.
+//   - A new check confirms the full-title/preview Tooltip (issue #1012 item 1) actually opens
+//     when the long row receives keyboard focus, and proves exactly how Escape then behaves:
+//     Radix's own nested-`DismissableLayer` stacking (the SAME mechanism `@radix-ui/react-menu`
+//     uses for every `DropdownMenu` in this codebase) means the first Escape closes only the
+//     Tooltip -- the topmost layer -- and a second closes the Dialog; the dialog's own Close
+//     button is confirmed as an equally valid, independent dismissal path too.
+//   - Gate round 2 (Main): the native `title` attributes on the title/preview spans are removed
+//     (decided, item 3 -- the focus-visible Tooltip from item 1 is now the one source of the
+//     full text); the Tooltip is kept on-screen under narrow windows (`max-w-[min(20rem,var(
+//     --radix-tooltip-content-available-width))]`, `collisionPadding={8}`, a wider
+//     `sideOffset={22}` clearing the dialog's own padding/scrollbar/Close button) and re-checked
+//     at a ~960px window width, not only the default size; `disableHoverableContent` (added in
+//     round 1) is removed again, since it violates WCAG 1.4.13 (`docs/design/accessibility.md`,
+//     `components.md`, `foundations-icons.md` all forbid it for this exact reason).
 //
 // Decided (Skippy, delegated by Stuart 2026-10-18, issue #439, docs/PLAN.md): ellipsis only, no
 // fade -- this script asserts the `truncate` utility's three CSS properties
@@ -32,19 +57,19 @@
 //     (`verify-tauri-567.mjs`'s own header comment records the same CDP limitation) -- the
 //     "Dark (high contrast)" theme screenshot below is Refract's own in-app preset, not the OS
 //     forced-colors media feature.
-//   - A native browser tooltip actually painting on mouse hover: only the `title` attribute's
-//     presence and exact value are asserted (structural proof), not a rendered tooltip bitmap --
-//     CDP has no mouse-hover-dwell-timer-triggered native tooltip capture API.
 //   - Opening an earlier Conversation from this dialog (`handleOpenConversation`): out of this
 //     issue's scope, matching `verify-862-conversation-history.mjs`'s own stated scope (it also
 //     only opens the dialog and reads the rows, never switches).
-//   - 200%+ zoom / an extremely narrow window: the dialog is centred and unconstrained by the
-//     app window's own width (`fixed` positioning, `max-w-[calc(100%-2rem)]`), so this was not
-//     re-run at another viewport size.
+//   - 200%+ zoom: the dialog itself is centred and unconstrained by the app window's own width
+//     (`fixed` positioning, `max-w-[calc(100%-2rem)]`), so this specific case was not re-run at
+//     another zoom level. (A ~960px-wide window IS re-run below, item 2 gate round 2 -- the
+//     DIALOG'S own width does not depend on the window, but the TOOLTIP'S available room to its
+//     right genuinely shrinks as the window narrows, which an earlier version of this comment
+//     had backwards.)
 //
-// WRITTEN, NOT RUN: no build slot has been granted for this sub-task (lane brief: "NO BUILD" --
-// the build slot is granted by Main explicitly later) -- this script has never executed against
-// a real built app. `node --check` is the only command that has been run against it.
+// Live-verified across multiple gate rounds against a real built app (most recently 50 findings,
+// 0 failures at head `b2906c93`, issue #1012's own gate process); this round's own changes are
+// pending the next live run under the granted build slot.
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -64,77 +89,31 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, pressEscape } from './verify-tauri-session-list-helpers.mjs';
+import {
+  THEMES,
+  SHOT_NAMES,
+  NORMAL_TITLE,
+  NORMAL_PREVIEW,
+  LONG_TITLE,
+  LONG_PREVIEW,
+  PREVIEW_MAX_LENGTH,
+  PROMPT_TEXT,
+  HISTORY_DIALOG_FINDER,
+  writeConversationFile,
+  reachRowViaRealTab,
+  readRowFocusStyle,
+  tooltipFinder,
+  waitForTooltipAnimationsSettled,
+  readTooltipPositionEvidence,
+  setWindowWidth,
+  assertDialogNeverScrollsHorizontally,
+  assertRowTruncation
+} from './verify-439-history-truncate-fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SHOTS_DIR =
   process.env.REFRACT_439_SHOTS_DIR || path.join(tmpdir(), `refract-439-history-truncate-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
-const THEMES = [
-  { id: 'dark', name: 'Dark', shot: '01-history-dark.png' },
-  { id: 'obsidian', name: 'Obsidian', shot: '02-history-obsidian.png' },
-  { id: 'dark-high-contrast', name: 'Dark (high contrast)', shot: '03-history-dark-high-contrast.png' }
-];
-const SHOT_NAMES = [...THEMES.map((t) => t.shot), 'report.json', 'app.log', 'fake-omp-invocations.log'];
-
-const NORMAL_TITLE = 'Normal conversation (#439 check)';
-const NORMAL_PREVIEW = 'Short first message, fits comfortably inside the dialog.';
-const LONG_TITLE =
-  'This deliberately very long Conversation title exists only to prove the history dialog truncates it to one line with an ellipsis instead of overflowing (issue #439)';
-// Padded to EXACTLY 120 characters (`PREVIEW_MAX_LENGTH`, `conversations.rs`) so this is the
-// widest preview the real app can ever produce, not an arbitrarily longer string.
-const LONG_PREVIEW_PREFIX =
-  'ISSUE439-LONG-PREVIEW-CHECK: first user message, deliberately sized to the full PREVIEW_MAX_LENGTH cap for the history-dialog truncation check ';
-const LONG_PREVIEW = (LONG_PREVIEW_PREFIX + '#'.repeat(120)).slice(0, 120);
-const PREVIEW_MAX_LENGTH = 120; // conversations.rs
-
-/** `conversations.rs`'s own `parse_file_name` doc comment: a file is named
- * `<timestamp with ':'/'.' replaced by '-'>_<id>.jsonl`, the timestamp prefix always exactly 25
- * characters (`YYYY-MM-DDTHH-mm-ss-mmmZ_`). */
-function conversationFileName(isoTimestamp, id) {
-  const prefix = isoTimestamp.replace(/[:.]/g, '-');
-  if (prefix.length !== 24) throw new Error(`conversationFileName: expected a 24-char dash-replaced prefix, got ${prefix.length} ("${prefix}")`);
-  return `${prefix}_${id}.jsonl`;
-}
-
-function writeConversationFile(dir, isoTimestamp, id, lines) {
-  const filePath = path.join(dir, conversationFileName(isoTimestamp, id));
-  writeFileSync(filePath, lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
-  return filePath;
-}
-
-/** Reads one Conversation history row's own structural truncation evidence: the title span
- * (inside `btn.children[0]`, alongside the Current badge) and the preview span
- * (`btn.children[2]`, only present when `conversation.preview` is non-empty). Returns `null` for
- * either span if the row does not have it (e.g. no preview). */
-async function readRowTruncationEvidence(cdp, titleText) {
-  return cdp.evaluate(`(() => {
-    const btn = Array.from(document.querySelectorAll('[role="dialog"] ul li button[data-choice-item]')).find(
-      (b) => (b.children[0]?.querySelector('span')?.textContent ?? '') === ${JSON.stringify(titleText)}
-    );
-    if (!btn) return null;
-    const describe = (el) => {
-      if (!el) return null;
-      const style = getComputedStyle(el);
-      return {
-        textContent: el.textContent,
-        title: el.getAttribute('title'),
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-        overflowsVisually: el.scrollWidth > el.clientWidth,
-        overflow: style.overflow,
-        textOverflow: style.textOverflow,
-        whiteSpace: style.whiteSpace
-      };
-    };
-    const titleSpan = btn.children[0]?.querySelector('span') ?? null;
-    const previewSpan = btn.children[2] ?? null;
-    return {
-      hasCurrentBadge: !!btn.querySelector('[data-slot="badge"]'),
-      title: describe(titleSpan),
-      preview: previewSpan ? describe(previewSpan) : null
-    };
-  })()`);
-}
 
 async function main() {
   let shimDir, dataDir, importSourceDir, repoDir, exeDir, launcherDir, conversationFileDir;
@@ -145,9 +124,8 @@ async function main() {
   const failures = [];
   const notExercised = [
     'Windows forced-colors/high-contrast MEDIA rendering of the ellipsis: WebView2\'s own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs already records); the "Dark (high contrast)" screenshot below is Refract\'s own in-app preset, not the OS forced-colors feature.',
-    'A native browser tooltip actually painting on mouse hover: only the title attribute\'s presence and exact value are asserted (structural proof), not a rendered tooltip bitmap -- CDP has no hover-dwell-timer tooltip capture API.',
     'Opening an earlier Conversation from this dialog (handleOpenConversation): out of this issue\'s scope, matching verify-862-conversation-history.mjs\'s own stated scope (it also only opens the dialog and reads the rows, never switches).',
-    'Behaviour at 200%+ zoom or an extremely narrow window: the dialog is fixed-positioned and unconstrained by the app window\'s own width, so this was not re-run at another viewport size.'
+    '200%+ zoom: the Conversation history dialog is fixed-positioned and unconstrained by the app window\'s own width (max-w-[calc(100%-2rem)]), so this specific case was not re-run at another zoom level. (A ~960px-wide window IS re-run below -- gate round 2 -- since the Tooltip\'s own available room to its right genuinely shrinks as the window narrows, unlike the dialog itself.)'
   ];
   let exeHash = null;
   let gitHeadSha = null;
@@ -273,137 +251,261 @@ async function main() {
 
     await addRepository(cdp, repoDir);
     await createSessionViaQuickCreate(cdp, repoName);
-    findings.push('Session created in the scratch repo, agent attached (fake omp, user-message-time.jsonl scenario, no prompt sent).');
+    findings.push('Session created in the scratch repo, agent attached (fake omp, user-message-time.jsonl scenario).');
+
+    // ---- Issue #1012 item 5: exercise the Current badge beside the long truncating title.
+    // Sends one real prompt through the composer (the SAME user-message-time.jsonl tape already
+    // in use -- AGENTS.md: no new fixtures) and approves its one scripted tool call, so the turn
+    // settles, get_state reports messageCount: 2, and sync_from_state.rs's own
+    // `if message_count > 0` guard marks the long Conversation (this Session's sessionFile, via
+    // REFRACT_FAKE_OMP_CONVERSATION_FILE above) current BEFORE the history dialog is ever opened
+    // below -- replacing the previous notExercised gap with a real assertion. ----
+    await cdp.typeIntoByLabel('Message', PROMPT_TEXT);
+    await cdp.clickByLabel('Send message');
+    await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, {
+      timeoutMs: 30_000,
+      label: 'Tool-call approval card rendered'
+    });
+    await cdp.clickByText('Approve');
+    await cdp.waitFor(
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.includes('xyzzy9'); })()`,
+      { timeoutMs: 60_000, label: "Turn settled (user-message-time.jsonl's own reply token present)" }
+    );
+    await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value[0]?.currentConversation != null)`, {
+      timeoutMs: 15_000,
+      label: 'Session.current_conversation set after the turn settles'
+    });
+    findings.push("Prompt sent and the turn settled (fake omp, user-message-time.jsonl's own scripted tool call approved); Session.current_conversation is confirmed set before the history dialog opens.");
 
     await cdp.clickByLabel('Conversation history');
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Conversation history dialog open' });
+    await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog open' });
     await cdp.waitFor(
-      `!((document.querySelector('[role="dialog"]')?.textContent || '').includes('Loading'))`,
+      `!(((${HISTORY_DIALOG_FINDER})?.textContent || '').includes('Loading'))`,
       { timeoutMs: 15_000, label: 'Conversation history list finished loading' }
     );
 
-    const rowCount = await cdp.evaluate(`document.querySelectorAll('[role="dialog"] ul li button[data-choice-item]').length`);
+    const rowCount = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.querySelectorAll('ul li button[data-choice-item]').length ?? 0`);
     if (rowCount !== 2) {
       failures.push(`Conversation history dialog shows ${rowCount} row(s), expected 2 (the normal and long seeded Conversations).`);
     } else {
       findings.push('Conversation history dialog shows exactly 2 rows: the normal and the long Conversation.');
     }
 
-    // ---- Dialog-level: no horizontal overflow, measured once per theme below ----
-    async function assertDialogNeverScrollsHorizontally(themeName) {
-      const dialogGeometry = await cdp.evaluate(`(() => {
-        const dialog = document.querySelector('[role="dialog"]');
-        return dialog ? { scrollWidth: dialog.scrollWidth, clientWidth: dialog.clientWidth } : null;
-      })()`);
-      if (!dialogGeometry) {
-        failures.push(`[${themeName}] Conversation history dialog not found when measuring horizontal overflow.`);
-        return;
-      }
-      if (dialogGeometry.scrollWidth > dialogGeometry.clientWidth) {
-        failures.push(
-          `[${themeName}] Conversation history dialog has horizontal overflow: scrollWidth ${dialogGeometry.scrollWidth} > clientWidth ${dialogGeometry.clientWidth}.`
-        );
-      } else {
-        findings.push(`[${themeName}] Conversation history dialog has no horizontal overflow (scrollWidth ${dialogGeometry.scrollWidth} <= clientWidth ${dialogGeometry.clientWidth}).`);
-      }
-    }
-
-    // ---- Row-level: ellipsis CSS in effect, long row genuinely clips, title attribute carries
-    // the full text, normal row does NOT need to clip (control case). Run once, on the initial
-    // (Dark) theme -- geometry is not expected to change across themes, only colour. ----
-    const normalEvidence = await readRowTruncationEvidence(cdp, NORMAL_TITLE);
-    const longEvidence = await readRowTruncationEvidence(cdp, LONG_TITLE);
-
-    function assertTruncateCss(label, span) {
-      if (!span) {
-        failures.push(`${label}: span not found.`);
-        return;
-      }
-      if (span.overflow !== 'hidden' || span.textOverflow !== 'ellipsis' || span.whiteSpace !== 'nowrap') {
-        failures.push(`${label}: truncate CSS not fully in effect (overflow=${span.overflow}, textOverflow=${span.textOverflow}, whiteSpace=${span.whiteSpace}).`);
-      } else {
-        findings.push(`${label}: single-line with text-overflow:ellipsis active (overflow:hidden, white-space:nowrap).`);
-      }
-    }
-
-    if (!normalEvidence) {
-      failures.push('Normal Conversation row not found.');
+    // ---- Issue #1012 item 1: the full-title/preview Tooltip opens on keyboard focus ----
+    // Gate follow-up (Code/A11y/UI, Main round 1): reach the long row via REAL keyboard Tab
+    // presses, never a scripted `.focus()` -- a bare `.focus()` call does not reliably set
+    // Chromium's `:focus-visible` (same reasoning `verify-927-928-quiet-composer.mjs` and
+    // others in this codebase already document for a `<button>`), so the earlier version here
+    // never actually proved item 2's focus-visible ring renders at all. Bounded to a small N
+    // (3 focusable items in this dialog: 2 rows + Close) so a DOM-order change fails loudly
+    // instead of hanging.
+    const MAX_TAB_PRESSES_TO_LONG_ROW = 10;
+    const reachedLongRowViaTab = await reachRowViaRealTab(cdp, LONG_TITLE, MAX_TAB_PRESSES_TO_LONG_ROW);
+    if (!reachedLongRowViaTab) {
+      failures.push(`Could not reach the long row's button via real keyboard Tab presses within ${MAX_TAB_PRESSES_TO_LONG_ROW} presses.`);
     } else {
-      assertTruncateCss('Normal row title', normalEvidence.title);
-      if (normalEvidence.title && normalEvidence.title.overflowsVisually) {
-        failures.push(`Normal row title unexpectedly overflows visually (scrollWidth ${normalEvidence.title.scrollWidth} > clientWidth ${normalEvidence.title.clientWidth}) -- the control case should fit without clipping.`);
-      }
-      if (normalEvidence.title && normalEvidence.title.textContent !== NORMAL_TITLE) {
-        failures.push(`Normal row title text content is "${normalEvidence.title.textContent}", expected "${NORMAL_TITLE}".`);
-      }
-      assertTruncateCss('Normal row preview', normalEvidence.preview);
-      if (normalEvidence.preview && normalEvidence.preview.overflowsVisually) {
-        failures.push(`Normal row preview unexpectedly overflows visually (scrollWidth ${normalEvidence.preview.scrollWidth} > clientWidth ${normalEvidence.preview.clientWidth}) -- the control case should fit without clipping.`);
-      }
-      if (normalEvidence.hasCurrentBadge) {
-        failures.push('Normal row unexpectedly shows the Current badge (expected only the long row to be current).');
-      }
-      if (!failures.length) findings.push('Normal (short) row: both title and preview fit without visual overflow (control case).');
+      findings.push("Reached the long row's button via real keyboard Tab presses (never a scripted .focus()).");
     }
 
-    if (!longEvidence) {
-      failures.push('Long Conversation row not found.');
+    // Gate follow-up (A11y/UI, Main round 1): the row button's own `focus-visible:outline-hidden`
+    // (Windows High Contrast) plus `focus-visible:ring-3` (item 2) must actually render once
+    // reached by a real Tab chain -- not just assumed from the class list.
+    const longRowFocusStyle = await readRowFocusStyle(cdp, LONG_TITLE);
+    if (!longRowFocusStyle || !longRowFocusStyle.matchesFocusVisible) {
+      failures.push(`Long row button does not match :focus-visible after real Tab presses (got ${JSON.stringify(longRowFocusStyle)}) -- item 2's focus ring has no real keyboard-focus proof.`);
+    } else if (!longRowFocusStyle.boxShadow || longRowFocusStyle.boxShadow === 'none') {
+      failures.push(`Long row button matches :focus-visible but its computed box-shadow is ${JSON.stringify(longRowFocusStyle.boxShadow)} -- the focus-visible ring (item 2) is not actually rendering.`);
     } else {
-      assertTruncateCss('Long row title', longEvidence.title);
-      if (longEvidence.title && !longEvidence.title.overflowsVisually) {
-        failures.push(`Long row title does not overflow visually (scrollWidth ${longEvidence.title.scrollWidth} <= clientWidth ${longEvidence.title.clientWidth}) -- the long title fixture did not actually need to clip.`);
-      } else if (longEvidence.title) {
-        findings.push(`Long row title genuinely clips visually (scrollWidth ${longEvidence.title.scrollWidth} > clientWidth ${longEvidence.title.clientWidth}), proving the ellipsis is actually doing work, not just styled.`);
-      }
-      if (longEvidence.title && longEvidence.title.title !== LONG_TITLE) {
-        failures.push(`Long row title's own title attribute is ${JSON.stringify(longEvidence.title.title)}, expected the full title ${JSON.stringify(LONG_TITLE)} -- the full text must stay available even when visually clipped.`);
-      } else if (longEvidence.title) {
-        findings.push("Long row title's own title attribute carries the full, un-truncated title text.");
-      }
-      if (longEvidence.hasCurrentBadge) {
-        findings.push('Long row also shows the Current badge beside the truncating long title, the exact combination the issue\'s design notes call out.');
-      } else {
-        notExercised.push(
-          'The Current badge beside a long truncating title (issue design notes): not exercised this run -- `user-message-time.jsonl`\'s own scripted first `get_state` reports `messageCount: 0` (a genuinely fresh attach, no prompt sent), and `sync_from_state.rs`\'s own `if message_count > 0` guard (sets `Session.current_conversation` only once a turn has completed) never fires without sending a prompt through the scripted tape. Not a product bug -- this is the same guard that correctly keeps `current_conversation` unset until OMP reports real message activity; the title/preview truncation and overflow checks below do not depend on it.'
-        );
-      }
+      findings.push(`Long row button matches :focus-visible with a real rendered focus ring (boxShadow: ${longRowFocusStyle.boxShadow}), reached via real Tab presses (issue #1012 item 2).`);
+    }
 
-      assertTruncateCss('Long row preview', longEvidence.preview);
-      if (longEvidence.preview && !longEvidence.preview.overflowsVisually) {
-        failures.push(`Long row preview does not overflow visually (scrollWidth ${longEvidence.preview.scrollWidth} <= clientWidth ${longEvidence.preview.clientWidth}) -- the 120-char preview fixture did not actually need to clip.`);
-      } else if (longEvidence.preview) {
-        findings.push(`Long row preview (exactly ${PREVIEW_MAX_LENGTH} characters, PREVIEW_MAX_LENGTH) genuinely clips visually (scrollWidth ${longEvidence.preview.scrollWidth} > clientWidth ${longEvidence.preview.clientWidth}).`);
+    await cdp.waitFor(`!!(${tooltipFinder(LONG_TITLE)})`, {
+      timeoutMs: 5_000,
+      label: 'Full-title Tooltip opened on keyboard focus of the long row'
+    });
+    const focusTooltipText = await cdp.evaluate(`(${tooltipFinder(LONG_TITLE)})?.textContent ?? null`);
+    if (!focusTooltipText || !focusTooltipText.includes(LONG_TITLE) || !focusTooltipText.includes(LONG_PREVIEW)) {
+      failures.push(`Full-title Tooltip on keyboard focus: expected content to include the full long title and preview, got ${JSON.stringify(focusTooltipText)}.`);
+    } else {
+      findings.push('Full-title Tooltip appears on keyboard focus of the long row, carrying the complete, un-truncated title and preview text (issue #1012 item 1).');
+    }
+
+    // Gate follow-up (UI, Main round 2): a read mid-entrance-transition could pass or fail the
+    // position assertion below by accident -- wait for the Tooltip's own Web Animations to
+    // settle to zero first, so its rect is read only once it has genuinely stopped moving.
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+
+    // Gate follow-up (UI, Main round 1): the tooltip opens to the RIGHT of the row (`side="right"`,
+    // never covering the dialog heading or the row above) and its lines are stacked vertically,
+    // not laid out side by side in `TooltipContent`'s own default `inline-flex` row direction.
+    // Gate round 2 (Main): no slop -- `sideOffset={22}` already clears the dialog's own padding
+    // and scrollbar gutter by design, so the tooltip's left edge must be at or past the row's
+    // own right edge exactly, not merely "close enough".
+    const tooltipPositionEvidence = await readTooltipPositionEvidence(cdp, LONG_TITLE);
+    if (!tooltipPositionEvidence) {
+      failures.push('Could not read the Tooltip/row geometry for the position check (row or tooltip not found).');
+    } else {
+      if (tooltipPositionEvidence.tooltipLeft < tooltipPositionEvidence.rowRight) {
+        failures.push(`Tooltip is not positioned to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} < row right ${tooltipPositionEvidence.rowRight}) -- expected side="right".`);
+      } else {
+        findings.push(`Tooltip opens to the right of the long row (tooltip left ${tooltipPositionEvidence.tooltipLeft} >= row right ${tooltipPositionEvidence.rowRight}, no slop), not covering the dialog heading or the row above (issue #1012 item 3).`);
       }
-      if (longEvidence.preview && longEvidence.preview.title !== LONG_PREVIEW) {
-        failures.push(`Long row preview's own title attribute is ${JSON.stringify(longEvidence.preview.title)}, expected the full preview ${JSON.stringify(LONG_PREVIEW)}.`);
-      } else if (longEvidence.preview) {
-        findings.push("Long row preview's own title attribute carries the full, un-truncated 120-character preview text.");
+      let linesStacked = tooltipPositionEvidence.lineTops.length >= 2;
+      for (let i = 1; i < tooltipPositionEvidence.lineTops.length; i++) {
+        if (tooltipPositionEvidence.lineTops[i] <= tooltipPositionEvidence.lineBottoms[i - 1]) {
+          linesStacked = false;
+          break;
+        }
+      }
+      if (!linesStacked) {
+        failures.push(`Tooltip lines are not stacked vertically (lineTops=${JSON.stringify(tooltipPositionEvidence.lineTops)}, lineBottoms=${JSON.stringify(tooltipPositionEvidence.lineBottoms)}) -- expected each line's top to be below the previous line's bottom (issue #1012 item 2).`);
+      } else {
+        findings.push(`Tooltip's ${tooltipPositionEvidence.lineTops.length} lines (title, date, preview) are stacked vertically, each below the previous one's bottom, not laid out side by side (issue #1012 item 2).`);
       }
     }
+
+    // Gate round 2 (Main): re-check the SAME position/reachability guarantee at a ~960px window
+    // width -- the dialog itself does not depend on the window (fixed, max-w-[calc(100%-2rem)]),
+    // but the Tooltip's own available room to its right genuinely shrinks as the window narrows,
+    // and `collisionPadding`/`max-w-[min(20rem,...)]` must keep it fully inside the viewport
+    // rather than flipping side or spilling off-screen.
+    const NARROW_WINDOW_WIDTH_PX = 960;
+    await setWindowWidth(cdp, NARROW_WINDOW_WIDTH_PX);
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+    const narrowTooltipPositionEvidence = await readTooltipPositionEvidence(cdp, LONG_TITLE);
+    if (!narrowTooltipPositionEvidence) {
+      failures.push(`Could not read the Tooltip/row geometry at a ${NARROW_WINDOW_WIDTH_PX}px window width (row or tooltip not found).`);
+    } else {
+      const windowInnerWidth = await cdp.evaluate('window.innerWidth');
+      if (narrowTooltipPositionEvidence.tooltipLeft < narrowTooltipPositionEvidence.rowRight) {
+        failures.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width, Tooltip is not positioned to the right of the long row (tooltip left ${narrowTooltipPositionEvidence.tooltipLeft} < row right ${narrowTooltipPositionEvidence.rowRight}).`);
+      } else if (narrowTooltipPositionEvidence.tooltipRight > windowInnerWidth) {
+        failures.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width, Tooltip spills past the viewport's own right edge (tooltip right ${narrowTooltipPositionEvidence.tooltipRight} > window.innerWidth ${windowInnerWidth}) -- collisionPadding/max-w did not keep it on-screen.`);
+      } else {
+        findings.push(`At a ${NARROW_WINDOW_WIDTH_PX}px window width (window.innerWidth ${windowInnerWidth}), Tooltip still opens to the right of the long row (tooltip left ${narrowTooltipPositionEvidence.tooltipLeft} >= row right ${narrowTooltipPositionEvidence.rowRight}) and stays fully on-screen (tooltip right ${narrowTooltipPositionEvidence.tooltipRight} <= window.innerWidth ${windowInnerWidth}), issue #1012 gate round 2.`);
+      }
+    }
+    await cdp.screenshot(path.join(SHOTS_DIR, '00b-narrow-window-tooltip.png'));
+    findings.push(`Screenshot captured: the Tooltip visibly open to the right of the long row and fully on-screen at a ${NARROW_WINDOW_WIDTH_PX}px window width (00b-narrow-window-tooltip.png).`);
+    await setWindowWidth(cdp, 1280);
+    await waitForTooltipAnimationsSettled(cdp, LONG_TITLE);
+
+    await cdp.screenshot(path.join(SHOTS_DIR, '00-focus-tooltip.png'));
+    findings.push('Screenshot captured: the full-title/preview Tooltip visibly open to the right of the long row while it holds real keyboard focus, with a visible focus-visible ring (00-focus-tooltip.png).');
+
+    // Root cause of the earlier "Escape never closes the dialog" finding (gate follow-up,
+    // Main): NOT a bug -- confirmed from the installed library source, no build needed.
+    // `src/renderer/components/ui/tooltip.tsx`'s `TooltipContent` renders Radix's own
+    // `TooltipPrimitive.Content` unmodified; that primitive's `TooltipContentImpl` wraps its
+    // popup in a `DismissableLayer` with `onDismiss: onClose` (node_modules/.pnpm/@radix-ui+
+    // react-tooltip@1.2_.../node_modules/@radix-ui/react-tooltip/dist/index.mjs:334-342).
+    // `DismissableLayer` itself only attaches its own Escape `keydown` listener while it is the
+    // topmost layer in the shared stack (`isHighestLayer` gate, .../@radix-ui/react-
+    // dismissable-layer/dist/index.mjs:90-107) -- a lower layer (here, the Dialog) has NO
+    // Escape listener registered at all while a higher layer (the just-opened Tooltip) exists.
+    // This is the EXACT SAME mechanism `@radix-ui/react-menu` uses for every `DropdownMenu` in
+    // this codebase (.../@radix-ui/react-menu/dist/index.mjs:271-279, same `DismissableLayer`
+    // wrapping) -- a menu opened inside a Dialog elsewhere in this app requires the identical
+    // two separate Escape presses (one per nested layer, topmost first), so this is Radix's own
+    // shared, intentional nested-dismissable-layer convention, not something unique to the new
+    // Tooltip. The Dialog is never trapped: a second Escape (or any other dismissal) always
+    // reaches it once the Tooltip is gone. Proven live below instead of just asserted.
+
+    // ---- Issue #1012 item 1 gate follow-up: Escape from a focused row, proven precisely ----
+    // First Escape: the long row's Tooltip (the topmost DismissableLayer) closes; the Dialog
+    // does NOT (confirms the dialog has no Escape listener registered while the tooltip is the
+    // highest layer, per the citations above).
+    await pressEscape(cdp);
+    await cdp.waitFor(`!(${tooltipFinder(LONG_TITLE)})`, {
+      timeoutMs: 5_000,
+      label: 'First Escape (tooltip open): Tooltip closes'
+    });
+    // Gate follow-up (Test Low, Main round 1): asserts the dialog's own `data-state` attribute
+    // is genuinely "open", not merely that a `[role="dialog"]` node still exists (which could be
+    // true mid-close-animation too).
+    const dialogStateAfterFirstEscape = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.getAttribute('data-state') ?? null`);
+    if (dialogStateAfterFirstEscape !== 'open') {
+      failures.push(`First Escape (tooltip open): expected the Conversation history dialog's data-state to still be "open" (only the Tooltip should have closed), got ${JSON.stringify(dialogStateAfterFirstEscape)}.`);
+    } else {
+      findings.push('First Escape while the long row\'s Tooltip is open closes ONLY the Tooltip; the Conversation history dialog\'s own data-state stays "open" (Radix\'s own nested-DismissableLayer stacking, item 1 gate follow-up -- see the code comment above for the exact library citations).');
+    }
+    // Re-confirmed again right before the second Escape (Test Low, Main round 1): the dialog
+    // must still genuinely be open at the exact moment the press that is expected to close it
+    // is sent, not just at some earlier point.
+    const dialogStateJustBeforeSecondEscape = await cdp.evaluate(`(${HISTORY_DIALOG_FINDER})?.getAttribute('data-state') ?? null`);
+    if (dialogStateJustBeforeSecondEscape !== 'open') {
+      failures.push(`Just before the second Escape: expected the Conversation history dialog's data-state to still be "open", got ${JSON.stringify(dialogStateJustBeforeSecondEscape)}.`);
+    }
+    // Second Escape: the Tooltip is gone, so the Dialog is the topmost layer again and its own
+    // Escape listener is now registered -- this press closes it, matching pre-#1012 behaviour
+    // (and every other focus target in this dialog, which has no Tooltip to contend with).
+    await pressEscape(cdp);
+    await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
+      timeoutMs: 5_000,
+      label: 'Second Escape (tooltip already closed): Conversation history dialog closes'
+    });
+    findings.push('A second Escape then closes the Conversation history dialog itself, once the Tooltip layer above it is gone -- the dialog is never keyboard-trapped, just reached one nested layer at a time, same as a DropdownMenu opened inside any Dialog in this codebase.');
+
+    // ---- Confirms the dialog's own visible Close button is an equally valid, independent
+    // dismissal path (not only Escape) -- reopen, then close this way before the per-theme loop.
+    // Scoped to the known history dialog specifically (Test Low, Main round 1), not any element
+    // that merely has `role="dialog"`. ----
+    await cdp.clickByLabel('Conversation history');
+    await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 15_000, label: 'Conversation history dialog reopened for the Close-button check' });
+    const historyDialogCloseButtonFinder = `(() => { const dialog = ${HISTORY_DIALOG_FINDER}; if (!dialog) return null; return Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Close') ?? null; })()`;
+    // Gate follow-up (live-run finding, Main round 2): the Close button's own `getBoundingClientRect()`
+    // can transiently read zero-size right at mount (before Radix's entrance transform/layout
+    // settles), and `cdp.click()`'s own waitFor only checks truthiness of the computed rect
+    // object -- a `{x:0,y:0}` degenerate click (the window's own top-left corner) is still
+    // truthy, so it was accepted and silently missed the button entirely. A non-zero size alone
+    // is not enough either: a still-animating entrance transform can report a non-zero but
+    // MOVING rect. Waits until either the dialog itself reports zero running Web Animations (the
+    // entrance transition has genuinely finished), or the button's own rect reads identical on
+    // two consecutive polls (persisted on `window` between polls, since each poll is a fresh,
+    // stateless `cdp.evaluate` call) -- so `cdp.click()` only ever reads coordinates once the
+    // button is actually where it will stay.
+    await cdp.evaluate('window.__verify439CloseRect = null;');
+    await cdp.waitFor(`(() => {
+      const dialog = ${HISTORY_DIALOG_FINDER};
+      if (dialog && dialog.getAnimations().length === 0) return true;
+      const el = ${historyDialogCloseButtonFinder};
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const key = JSON.stringify({ x: r.x, y: r.y, width: r.width, height: r.height });
+      const stable = window.__verify439CloseRect === key;
+      window.__verify439CloseRect = key;
+      return stable;
+    })()`, { timeoutMs: 5_000, label: 'Close button laid out with a stable, non-zero rect (entrance animation settled)' });
+    await cdp.click(historyDialogCloseButtonFinder);
+    await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, { timeoutMs: 5_000, label: 'Close button closes the Conversation history dialog' });
+    findings.push("The dialog's own visible Close button also closes it, independent of Escape.");
 
     // ---- Themed screenshots (Dark, Obsidian, Dark high contrast), re-confirming the dialog's
-    // own no-horizontal-overflow guarantee holds under every theme, not just the default one ----
+    // own no-horizontal-overflow guarantee AND row-level truncation hold under every theme, not
+    // just the one open above (issue #1012 item 5) ----
     for (const theme of THEMES) {
       // The dialog is a modal (Radix `Dialog`, `dialog.tsx`): its overlay blocks pointer events
       // everywhere outside the dialog content, so `[data-profile-name-button]` (outside the
       // dialog) cannot be clicked while it is open. Close it first, switch, then reopen for the
-      // per-theme overflow check and screenshot.
+      // per-theme overflow/truncation checks and screenshot.
       await pressEscape(cdp);
-      await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, {
+      await cdp.waitFor(`!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 10_000,
         label: `Conversation history dialog closed before switching to ${theme.name}`
       });
       await switchTheme(cdp, theme.id, theme.name);
       await cdp.clickByLabel('Conversation history');
-      await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, {
+      await cdp.waitFor(`!!(${HISTORY_DIALOG_FINDER})`, {
         timeoutMs: 15_000,
         label: `Conversation history dialog reopened under ${theme.name}`
       });
-      await cdp.waitFor(`!((document.querySelector('[role="dialog"]')?.textContent || '').includes('Loading'))`, {
+      await cdp.waitFor(`!(((${HISTORY_DIALOG_FINDER})?.textContent || '').includes('Loading'))`, {
         timeoutMs: 15_000,
         label: `Conversation history list finished loading under ${theme.name}`
       });
-      await assertDialogNeverScrollsHorizontally(theme.name);
+      await assertDialogNeverScrollsHorizontally(cdp, findings, failures, theme.name);
+      await assertRowTruncation(cdp, findings, failures, theme.name);
       await cdp.screenshot(path.join(SHOTS_DIR, theme.shot));
       findings.push(`Screenshot captured: Conversation history dialog (both rows, long row's truncating title/preview) under the ${theme.name} theme (${theme.shot}).`);
     }
