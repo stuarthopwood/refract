@@ -4343,3 +4343,87 @@ check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
 `pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
 `node --check` plus a real `import()` load-check on the rewritten live-check script
 (`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.
+
+## Phase 67: One-agent to two-agent Stage focus-loss follow-up (#1001, FR-090) [US1]
+
+**Goal**: a keyboard-focused solo Stage's own Prompt/Result code block never drops focus to
+`<body>` the instant a second agent streams into the same Stage and the content swaps from a
+bare `SubagentBody` to a `SpineList` -- pre-decided on the issue (accessibility auditor finding
+at PR #999's own gate, Decided/Skippy/delegated-by-Stuart 2026-10-18/2026-10-19).
+
+- [X] T322 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow` gains
+  `memberContentRef` (a CALLBACK ref -- see the live-run record below for why, wrapping only
+  the solo-body-or-`SpineList` slot, never unmounting itself across the transition),
+  `triggerRef` (forwarded onto the Stage's own `CollapsedLine`), `focusWasInsideRef` (kept
+  current by a `focusin`/`focusout` listener attached via that callback ref, since a focused
+  node's removal blurs it to `<body>` synchronously -- there is no later point at which the
+  just-removed element can be asked whether it held focus), and `prevTotalRef`. A
+  `useLayoutEffect` keyed on `total` moves focus to `triggerRef` the instant a 1-to-2-member
+  transition is observed with `focusWasInsideRef.current` true and `document.activeElement`
+  already fallen to `<body>`/`null`. Structural no-remount alternative (pre-wrapping the solo
+  body in the same `SpineList`/`SpineItem` shape) considered and rejected: see FR-090/spec.md
+  Clarifications for the full rationale. **Live-run record**: first attempt (head `3941250`)
+  FAILED -- the listener was attached via a plain `useRef` + `useEffect(() => {...}, [])`,
+  which runs once at mount, but a solo Stage starts collapsed (Radix never renders
+  `CollapsibleContent` while closed), so the ref was still `null` then and the listener never
+  attached once the row was later expanded; fixed with a callback ref (head `28b26e1`, re-fires
+  on every real mount/unmount). **Gate round 1** (Main, 2026-10-19) found two further Mediums
+  in the `focusin`/`focusout` handling, both fixed: a window blur fires `focusout` with
+  `relatedTarget` null while `document.activeElement` stays the SAME element (never reassigned
+  by a blur) -- the handler now returns early (keeping the flag) when `event.target ===
+  document.activeElement`; a click onto a non-focusable spot used to leave the flag stuck true
+  forever (indistinguishable from a real removal using `relatedTarget`/`activeElement` alone)
+  -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx` rAF-plus-
+  `isConnected` pattern to tell a deliberate click-away apart from a genuine removal.
+- [X] T323 New fixture `scripts/fixtures/omp-frames/stages-1001.jsonl` (a new fixture was
+  required: every existing `stages-941.jsonl` Stage declares its full member count upfront in
+  one `task()` call's own `tasks[]`, so none of them ever grows after first render). One Stage
+  whose two members arrive as two SEPARATE `task()` calls sharing one assistant message id --
+  the documented mechanism (`transcript.rs`/`subagent_items.rs`) by which a Stage genuinely
+  grows `total` from 1 to 2 in place. The first call's own shared batch `context` is the only
+  one either member ever carries, so the Stage's own header label stays stable across the
+  transition (`computeStageLabel`'s tier-1 rule), giving the live check one stable title
+  selector throughout.
+- [X] T324 New `scripts/verify-1001-stage-focus-join.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`/`verify-991-stage-focus.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors. Places keyboard focus on the solo member's
+  own Prompt code block, then samples `document.activeElement` on every animation frame (not
+  Node-side polling, so no CDP round-trip jitter can narrow the window) across the whole join --
+  THE red/green discriminator: zero sampled frames may ever read `document.activeElement ===
+  document.body`. Also confirms focus lands specifically on the Stage's own trigger once
+  settled (the fix's own stated remedy, not merely "somewhere other than body"). Per-theme
+  screenshots only (no colour-dependent assertion), matching `verify-991-stage-focus.mjs`'s own
+  theme-loop rationale. **Live-run record**: first attempt (head `3941250`) FAILED --
+  `document.activeElement` was `<body>` in 208 of 390 sampled frames -- fixed with a callback
+  ref (head `28b26e1`, see T322's own note above); re-ran clean (0 failures, 0 notExercised,
+  verdict DONE).
+
+**Spec**: `spec.md` gains FR-090 (amends FR-067) and a dated Clarifications section recording
+the no-remount-vs-fallback structural decision, Decided/Skippy/delegated-by-Stuart per this
+story's own away-mode convention.
+
+**Gate round 1 remediation** (Main, 2026-10-19; five Mediums, all fixed, no build slot used):
+**(1, A11y/UI)** a window blur fires `focusout` with `relatedTarget` null while
+`document.activeElement` stays the SAME element (never reassigned by a blur) --
+`StageGroupRow`'s handler now returns early (keeping the flag) when `event.target ===
+document.activeElement`, the window-blur signature, preferred over `document.hasFocus()`.
+**(2, Code/Test/A11y)** a click onto a non-focusable spot used to leave the flag stuck true
+forever -- now uses the repo's own `ProfileAlertRows.tsx`/`FileExplorerPanel.tsx`
+rAF-plus-`isConnected` pattern (the just-blurred target is still connected one frame later only
+when nothing removed it) to tell a deliberate click-away apart from a real removal. **(3,
+Code)** a missed join (or a missed pre-join precondition) is now a hard failure in
+`verify-1001-stage-focus-join.mjs`, not a silent `notExercised`; the LAST pre-join frame (not
+merely "any") must confirm focus; `joinedMemberExpr` is scoped to the Stage's own content.
+**(4, Test/A11y, Visual)** focus is placed with a real keyboard Tab (not `.focus()`), arming
+`:focus-visible` for the rest of the run; the Dark-theme screenshot (taken before any theme
+switch steals focus) is backed by a hard `:focus-visible` match, not eyeballing alone; the
+later per-theme shots are honestly labelled as non-proofs. **(5, Test)** a simulated window
+blur (`Emulation.setFocusEmulationEnabled`) is spliced in before the join, re-using the
+existing assertions; a dedicated click-away negative proof needs its own second 1-to-2
+transition and is recorded in `notExercised` instead.
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm vitest
+run` (148/148, no new tests per the prototyping-phase rule), `pnpm run check:indent`, `pnpm run
+check:file-size` (no baseline change), `node --check` on the updated script, plus a real
+`import()` load-check (fails only at the shared `CARGO_TARGET_DIR` build-slot guard, confirming
+every import resolves) -- all clean.
