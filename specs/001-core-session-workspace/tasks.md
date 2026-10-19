@@ -4461,7 +4461,7 @@ background. Pre-decided on the issue (Decided, Skippy, delegated by Stuart 2026-
   decision 25 records the full rationale, including why a surface retune alone cannot fix
   `github-dark`'s own comment colour; `src/shared/themes.ts`'s own `nordic-frost`/`cyber-amber`
   doc comment (originally written by #551) is rewritten to record the follow-up as resolved.
-- [ ] T329 New fixture `scripts/fixtures/omp-frames/code-surface-975.jsonl` (hand-extended copy
+- [X] T329 New fixture `scripts/fixtures/omp-frames/code-surface-975.jsonl` (hand-extended copy
   of `user-message-time.jsonl`'s own first-turn shape, a FIXED assistant reply carrying one
   deterministic JavaScript fence -- a comment, a string, a keyword, a function -- so the
   rendered Shiki token colours are stable run over run, which a real model turn could not
@@ -4472,12 +4472,18 @@ background. Pre-decided on the issue (Decided, Skippy, delegated by Stuart 2026-
   (read off a throwaway `div.bg-card` probe, never a hand-copied hex), and that the rendered
   comment token clears 4.5:1 against that background, measured live via
   `contrast-math.mjs`'s `measuredContrastRatio`; screenshots each preset (Cyber Amber the
-  headline shot). Written, not yet run -- no build slot granted for this sub-task; `node
-  --check` is the only command run against it so far.
+  headline shot). **Live-verified (build slot, head `1821ca8`): `report.json` 0 failures,
+  exitCode 0, gitHead matches, dirty false.** Every preset's header/body backgrounds were
+  byte-identical computed-style strings equal to that theme's own live `--card` probe; the
+  comment token measured 13.93:1 (Obsidian, the lowest) to 17.88:1 (Dark high contrast) against
+  it. All 5 screenshots viewed: Cyber Amber (headline) and Dark both show one seamless surface
+  behind header and body, every token readable.
 
 **Non-build checks**: `pnpm typecheck`, `pnpm vitest run` (148/148, no new tests per the
 prototyping-phase rule), `pnpm run check:indent` (0 odd-indent lines), `pnpm run check:file-size`
 (`Markdown.tsx` exactly at its existing 997-line baseline, no growth; `check-theme-contrast.mjs`
 exactly at its existing 743-line baseline), `pnpm run check:theme-contrast` (818 of 818 pairs
 PASS across 5 themes, up from 773 -- the 45 new Shiki-token rows all pass), `node --check` on
-both edited scripts -- all clean. Live Tauri verify pending the build slot.
+both edited scripts -- all clean. **Live Tauri verify: DONE** (see T329 above); `ci-local.mjs`
+all steps PASS (`cargo fmt --check`, `cargo test` 731 passed/0 failed/1 ignored, `cargo clippy
+-D warnings`, Tauri debug build) at head `1821ca8`.
