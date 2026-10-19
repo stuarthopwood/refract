@@ -145,7 +145,7 @@ async function main() {
     else fail('(e) dialog shows the leftover summary', new Error(`no node_modules bucket in: ${summaryTextA}`));
     await cdp.screenshot(path.join(SHOT_DIR, '01-dialog-summary.png'));
     await clickDeleteButton(cdp);
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'scenario (a) delete dialog closed' });
+    await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 60_000, label: 'scenario (a) delete dialog closed' });
     const aGone = !(await isSessionListed(cdp, nameA));
     const aWorktreeGone = !existsSync(sessionA.worktreePath);
     const aCanarySurvived = existsSync(canaryFile);
@@ -161,7 +161,7 @@ async function main() {
     await openDeleteDialogFor(cdp, nameB, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
     await clickDeleteButton(cdp);
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'scenario (b) delete dialog closed' });
+    await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 60_000, label: 'scenario (b) delete dialog closed' });
     const bGone = !(await isSessionListed(cdp, nameB));
     const bWorktreeGone = !existsSync(sessionB.worktreePath);
     if (bGone && bWorktreeGone) ok('(b) leftover unregistered full folder deletes');
@@ -185,7 +185,7 @@ async function main() {
     else fail('(c) cmd.exe cwd-holder refuses Delete', new Error(`error=${JSON.stringify(errC)} listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
     await killSpawned(cmdHolder);
     await clickDeleteButton(cdp); // Retry: same button
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'scenario (c) Retry delete dialog closed' });
+    await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 60_000, label: 'scenario (c) Retry delete dialog closed' });
     const cRetryGone = !(await isSessionListed(cdp, nameC)) && !existsSync(sessionC.worktreePath);
     if (cRetryGone) ok('(c) Retry succeeds once the cwd-holding process is gone');
     else fail('(c) Retry succeeds after the holder is killed', new Error(`listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
@@ -209,7 +209,7 @@ async function main() {
     else fail('(d) spawned file-holder is named in the refusal', new Error(`error=${JSON.stringify(errD)}`));
     await killSpawned(fileHolder);
     await clickDeleteButton(cdp);
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'scenario (d) Retry delete dialog closed' });
+    await cdp.waitFor(`!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 60_000, label: 'scenario (d) Retry delete dialog closed' });
     const dRetryGone = !(await isSessionListed(cdp, nameD)) && !existsSync(sessionD.worktreePath);
     if (dRetryGone) ok('(d) Retry succeeds once the file-holding process is gone');
     else fail('(d) Retry succeeds after the holder is killed', new Error(`listed=${await isSessionListed(cdp, nameD)} exists=${existsSync(sessionD.worktreePath)}`));

@@ -169,10 +169,10 @@ export async function openDeleteDialogFor(cdp, name, shotDir) {
   );
   await cdp.click(menuItemFinder);
   try {
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog opened' });
+    await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Delete dialog opened' });
   } catch (err) {
     const diag = await cdp.evaluate(
-      `(() => ({ elementAtClickPoint: document.elementFromPoint(${itemRect.x}, ${itemRect.y})?.outerHTML?.slice(0, 300) ?? null, menuStillOpen: !!document.querySelector('[role="menu"]'), menuItemCount: document.querySelectorAll('[role="menuitem"]').length, dialogCount: document.querySelectorAll('[role="dialog"]').length, activeElementTag: document.activeElement?.tagName, activeElementLabel: document.activeElement?.getAttribute?.('aria-label') ?? null }))()`
+      `(() => ({ elementAtClickPoint: document.elementFromPoint(${itemRect.x}, ${itemRect.y})?.outerHTML?.slice(0, 300) ?? null, menuStillOpen: !!document.querySelector('[role="menu"]'), menuItemCount: document.querySelectorAll('[role="menuitem"]').length, dialogCount: document.querySelectorAll('[role="alertdialog"]').length, activeElementTag: document.activeElement?.tagName, activeElementLabel: document.activeElement?.getAttribute?.('aria-label') ?? null }))()`
     );
     if (shotDir) await cdp.screenshot(path.join(shotDir, '99-diag-delete-dialog-failure.png'));
     throw new Error(`openDeleteDialogFor("${name}") failed: Delete dialog never opened -- diagnostics: ${JSON.stringify(diag)}. Original: ${err.message}`);
@@ -183,11 +183,11 @@ export async function openDeleteDialogFor(cdp, name, shotDir) {
  * rendered text (the generated-folder/other-file list, or '' if nothing was found). */
 export async function waitForLeftoverSummary(cdp, { timeoutMs = 20_000 } = {}) {
   await cdp.waitFor(
-    `!Array.from(document.querySelectorAll('[role="dialog"] p')).some((p) => p.textContent === 'Checking files…')`,
+    `!Array.from(document.querySelectorAll('[role="alertdialog"] p')).some((p) => p.textContent === 'Checking files…')`,
     { timeoutMs, label: 'leftover summary walk finished' }
   );
   return cdp.evaluate(
-    `Array.from(document.querySelectorAll('[role="dialog"] ul')).map((ul) => ul.textContent).join(' | ')`
+    `Array.from(document.querySelectorAll('[role="alertdialog"] ul')).map((ul) => ul.textContent).join(' | ')`
   );
 }
 
@@ -198,11 +198,11 @@ export async function clickDeleteButton(cdp) {
 /** The dialog's own `role="alert"` paragraph -- '' while no error (it stays mounted, `sr-only`,
  * per `DeleteDialog.tsx`'s own convention). */
 export async function readDialogError(cdp, { timeoutMs = 15_000 } = {}) {
-  return cdp.waitFor(`document.querySelector('[role="dialog"] [role="alert"]')?.textContent || null`, { timeoutMs, label: 'dialog error text' });
+  return cdp.waitFor(`document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent || null`, { timeoutMs, label: 'dialog error text' });
 }
 
 export async function isDialogOpen(cdp) {
-  return cdp.evaluate(`!!document.querySelector('[role="dialog"]')`);
+  return cdp.evaluate(`!!document.querySelector('[role="alertdialog"]')`);
 }
 
 export async function isSessionListed(cdp, name) {
