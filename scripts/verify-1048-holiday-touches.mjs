@@ -87,9 +87,16 @@ function spawnSync_(cmd, args) {
  * 2s -- gate round 1 fix, High, item 4: a plain synthetic mouse move used to leave the loop
  * idle-paused for almost the whole window, measuring "app idle" twice over, not "loop running"
  * vs "no loop"). Returns the CPU-seconds consumed over the window (process tree, not just the
- * root exe) and the loop's own `data-paused` state at the start and end of the sample. */
+ * root exe) and the loop's own `data-paused` state at the start and end of the sample. Gate
+ * round 2 fix: `processTreeCpuSeconds` recursively walks the process tree via PowerShell
+ * (`Get-CimInstance`), which can itself take longer than the debug-shortened idle timeout
+ * (`SHORT_IDLE_MS`, 3s) -- the idle timer could fire DURING that measurement, so `pausedAtStart`
+ * used to be read on a loop that had already gone idle before the keep-awake loop even started.
+ * A fresh tap right before the `pausedAtStart` read closes that gap regardless of how long the
+ * `before` measurement took. */
 async function measureCpuSample(cdp, pid, durationMs) {
   const before = processTreeCpuSeconds(pid);
+  await dispatchShiftKeyTap(cdp);
   const pausedAtStart = await cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`);
   const ticks = Math.max(1, Math.floor(durationMs / 2000));
   for (let i = 0; i < ticks; i++) {
