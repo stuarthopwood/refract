@@ -33,7 +33,7 @@ import { formatElapsed } from '../chat/formatElapsed'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
 import { stageRollupText } from '../chat/stageMeta'
-import { overallStatus } from '../chat/SubagentChainRow'
+import { overallStatus } from '../chat/subagentChainStatus'
 import { groupSubagentsIntoPanelStages } from './groupSubagentPanelStages'
 import {
   isSubagentSuccessStatus,

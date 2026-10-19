@@ -4243,3 +4243,103 @@ the existing screenshot loop, not only under the default theme. **(9, Low)**
 `finalize_live_items`'s own stale doc comment fixed; a stopped hidden bookkeeping call (e.g.
 `todo`) no longer posts a red failure notice; the no-matching-`tool_execution_start` end-frame
 branch now also respects `turn_abort_requested`.
+
+## Phase 66: Stage label colour and jump-to-Stage from the chain row (#1008, FR-089) [US1]
+
+**Goal**: a failed Stage's own label reads `text-severity-error`, the same way a failed tool
+call's own label already does; the chain row's own "Stage N" text becomes a real button that
+scrolls to, opens, and focuses the Stage row it describes -- both items pre-decided on the
+issue (ui-architect-v3 gate on PR #1007/#1000).
+
+- [X] T318 `src/renderer/features/subagents/subagentStatus.tsx`: new `isSubagentFailedStatus`
+  (mirrors `isSubagentSuccessStatus`), `SUBAGENT_ERROR_TEXT_CLASS` (`text-severity-error`), and
+  the shared `subagentStatusTextClass(status)` combinator (green when finished, the new error
+  class when failed, `undefined` otherwise) both `StageGroupRow` and `ChainStageLine` read, so
+  the two surfaces can never colour a Stage differently.
+- [X] T319 `src/renderer/features/chat/CollapsedLine.tsx`: new optional `id` prop threaded onto
+  whichever element already receives focus (the plain row `div` with no `children`, or the
+  `CollapsibleTrigger` button with them) -- a stable DOM id a sibling component (the chain row)
+  can look a Stage row up by, since there is no React ref across sibling subtrees.
+- [X] T320 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own
+  `labelClassName` reads `subagentStatusTextClass(status)` (replacing the success-only
+  ternary), tagged with the new `id={stageRowDomId(group.id)}`; `ChainStageLine`'s "Stage N"
+  `<span>` becomes a `<button>` (accessible name "Go to Stage N", same colour class) calling
+  the new `jumpToStage(sessionId, stage.id)` on click. Split `stageRowDomId`/`jumpToStage` out
+  to a new `src/renderer/features/chat/stageJump.ts` module (keeps `SubagentChainRow.tsx` under
+  the #806 600-line cap): `jumpToStage` forces the target's manual-open state through
+  `useStageToggleStore.setManualOpen` directly (the same store `useStickyDisclosure` already
+  reads, decision 19/FR-084/#991), then `document.getElementById`/`scrollIntoView`/`.focus()`s
+  the row found by its new DOM id, dropping to `'auto'` scroll under
+  `prefers-reduced-motion` (matching `SideChatPanel.tsx`'s own convention).
+- [X] T321 New `scripts/verify-1008-stage-label-jump.mjs`, modelled on
+  `scripts/verify-1000-stage-defer.mjs`'s harness scaffolding and
+  `verify-941-stage-naming-helpers.mjs`'s selectors/`resolveCssVarColor` pattern. Reuses the
+  SAME `stages-941.jsonl` fixture (AGENTS.md: no new fixtures needed -- it already carries a
+  genuinely failed Stage, Stage 5's own `FailAgent`, among ten Stages). Measures Stage 5's own
+  label against the theme's resolved `--severity-error` (red/green discriminator 1: reads the
+  default colour on `origin/main`) and Stage 1's own label against the same token (a done-Stage
+  regression guard). Proves the jump on Stage 1 (mouse click) and Stage 3 (keyboard: focus the
+  button directly, then a real Enter keypress) -- both multi-member, fully finished, never
+  otherwise touched, so each starts genuinely closed: asserts the target row opens
+  (`aria-expanded`), holds `document.activeElement`, and sits inside the viewport
+  (`getBoundingClientRect`). The jump button's own existence
+  (`button[aria-label="Go to Stage N"]`) is red/green discriminator 2 -- `origin/main` never
+  renders one (`ChainStageLine`'s text stays a plain span there). Screenshots in all 3 themes.
+  **Written, not run end-to-end**: no build slot granted for this sub-task -- `node --check`
+  plus a real `import()` load-check (`CARGO_TARGET_DIR` unset, stopping at the shared
+  build-slot guard) are the only commands actually run against this file.
+
+**Spec**: `spec.md` gains FR-089 (amends FR-079, FR-068) and a dated Clarifications section
+recording both decisions, Decided/Skippy/delegated-by-Stuart per this story's own away-mode
+convention; `research.md` gains decision 23 with the full rationale.
+
+**Gate round 1 remediation** (Main, 2026-10-18; Sec/Code/A11y PASS, Test/UI FAIL -- all 9 items
+addressed, no build slot used): **(1, High, UI, Decided)** the "Go to Stage N" button now
+renders only while its own Stage row reads `rowVisibility(stage, transcriptDisplay) ===
+'visible'` (`ChainStageLine.tsx`) -- "Show tool calls" off can drop a settled, problem-free
+Stage's own row entirely (not merely an `'sr-only'` stub), leaving nothing for `jumpToStage` to
+find; a hidden Stage falls back to its original plain-text label, and `jumpToStage` itself
+defensively no-ops `setManualOpen` when the row lookup comes back empty. **(2, Medium, UI,
+Decided: top-aligned, not centred)** `jumpToStage` (`stageJump.ts`) now scrolls ONLY the
+transcript's own `[aria-label="Transcript"]` viewport (found via `row.closest(...)`, its
+position relative to the row computed by rect maths, `viewport.scrollTo({ top, behavior })`),
+never a bare `scrollIntoView` that would walk up every scrollable ancestor (a real hazard in a
+split pane); `row.focus({ preventScroll: true })` stops the browser's own native focus-scroll
+fighting it. **(3, Medium, UI, Decided)** the button gained `cursor-pointer`, `hover:underline`,
+a `title` of "Go to {stage heading}", and `py-0.5` to match `ChainAgentEntry`'s own 28px button
+height. **(4, Medium, UI, Decided: scope by sessionId)** `stageRowDomId` now takes `sessionId`
+too -- a split pane showing two Sessions at once could otherwise produce a duplicate DOM id
+across their two Transcript trees, a real HTML violation, not merely an ambiguous lookup. **(5,
+Medium, UI)** `subagentStatusTextClass` now takes the roll-up `counts` directly (not a single
+derived `status`): a Stage with any member settled `failed` is red immediately, even while a
+sibling member is still running, matching FR-089's own "any member failed" wording exactly
+(previously derived from `overallStatus`, whose running-first priority order delayed the red
+label until the whole Stage settled). **(6, Low, all, Decided)** the button's own `aria-label`
+is now "Go to {full stage heading, speech form}" (e.g. "Go to Stage 5, Finish the remaining
+Story559 polish and run the fail probe."), not a bare "Go to Stage N" that never distinguished
+two unopened Stages for a screen reader user. **(7, High, Test)**
+`scripts/verify-1008-stage-label-jump.mjs`'s colour checks moved INSIDE the per-theme loop,
+re-resolving `--severity-error`/`--severity-success` after each `switchTheme` (previously
+resolved once, under the default theme only), and now also measure the chain row's own "Go to
+Stage 5" button text, not only the in-place label. **(8, Medium, Test)** before each jump, the
+script scrolls the transcript to its own end and hard-asserts the target row starts off-screen
+(Stage 1/Stage 3 sit near the top of the ten-Stage turn); after the jump, `cdp.waitFor` polls
+for in-viewport instead of a single immediate read, since the now-smooth scroll settles
+asynchronously. **(9, Medium, Test)** #991 persistence across a remount is now exercised: right
+after Stage 1's own mouse jump, "Show tool calls" is toggled off then back on via the real
+`window.refract.settings.setTranscriptDisplay` IPC round trip (the same dev-exposed call
+`verify-557-thought-runs.mjs` already uses) -- doubling as item 1's own visibility-gating proof
+(Stage 1's button must disappear while hidden, Stage 5's must stay, force-visible) and
+confirming Stage 1's manual-open survives the remount once restored. `prefers-reduced-motion` is
+recorded in the script's own `notExercised` (no CDP emulation set up for it), never silently
+skipped without comment. `ChainStageLine`/`ChainAgentEntry` were also split out of
+`SubagentChainRow.tsx` into a new `ChainStageLine.tsx` during this round, purely to stay under
+the #806 600-line cap once the above fixes landed (safe circular import back to
+`SubagentChainRow.tsx` for hoisted `function`/`type` exports only).
+
+**Non-build checks** (re-run after gate round 1 remediation): `pnpm typecheck`, `pnpm run
+check:indent`, `pnpm run check:file-size` (`SubagentChainRow.tsx` 500 lines, new
+`ChainStageLine.tsx` well under the cap, no baseline bump), `pnpm run check:parity -- --gate`,
+`pnpm exec vitest run` (148/148 existing tests, no new tests per the prototyping-phase rule),
+`node --check` plus a real `import()` load-check on the rewritten live-check script
+(`CARGO_TARGET_DIR` unset, stopping at the shared build-slot guard) all clean.

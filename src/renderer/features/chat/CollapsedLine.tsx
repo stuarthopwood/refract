@@ -84,6 +84,12 @@ export interface CollapsedLineProps {
   /** Expansion content; omit entirely for a line with nothing to expand (it then renders as a
    * plain, non-interactive row with no chevron and no trigger). */
   children?: React.ReactNode
+  /** Issue #1008 item 2: a stable DOM id on whichever element actually receives focus (the
+   * plain row `div` with no `children`, or the `CollapsibleTrigger` button with them) --
+   * `ChainStageLine`'s own "Go to Stage N" jump button looks a Stage row up by this id
+   * (`document.getElementById`, not a ref: the two components are siblings, not parent/child).
+   * Omit for a row nothing ever needs to jump to. */
+  id?: string
   className?: string
   contentClassName?: string
 }
@@ -116,7 +122,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     hideDetailWhenOpen,
     children,
     className,
-    contentClassName
+    contentClassName,
+    id
   },
   ref
 ) {
@@ -222,6 +229,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     return (
       <div
         ref={ref as React.Ref<HTMLDivElement>}
+        id={id}
         tabIndex={-1}
         // Gate round 3 (architect L-d): an inset `outline` (not a `ring`/box-shadow) so this row
         // still shows a focus indicator in forced-colours mode, matching the trigger below.
@@ -241,6 +249,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
       <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
+          id={id}
           aria-label={triggerAriaLabel}
           aria-describedby={showDetail ? detailId : undefined}
           className={cn(
