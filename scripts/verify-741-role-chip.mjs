@@ -175,7 +175,7 @@ async function main() {
     const sessionId1 = await openScratchSession(cdp1, repoDir1);
     findings.push('Launch 1: scratch Session created and opened (fake omp, role-chip-741 tape, "default" seeded conversation file).');
 
-    await runLaunch1Checks(cdp1, sessionId1, conversationFile1, findings, failures, notExercised, SHOTS_DIR);
+    await runLaunch1Checks(cdp1, sessionId1, conversationFile1, dataDir1, findings, failures, notExercised, SHOTS_DIR);
 
     cdp1.close();
     cdp1 = undefined;

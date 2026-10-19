@@ -69,7 +69,12 @@ import { ModelPicker } from './ModelPicker'
  *
  * Gate round 1 fix (MEDIUM #6): the accessible name now reads `"<label>, role"` (visible text
  * FIRST, `docs/design/accessibility.md:16`) instead of an sr-only "Role: " PREFIX, matching every
- * other composer trigger's own WCAG 2.5.3 fix. The Tooltip composes three sentences: "Role:
+ * other composer trigger's own WCAG 2.5.3 fix. Live-verified round 2: a visible text node plus a
+ * trailing sr-only `<span>` measured as "Default , role" (an extra space) -- Chromium's own
+ * accessible-name-from-content algorithm joins sibling text alternatives with a space, same as
+ * `innerText`. An explicit `aria-label` (the SAME technique `ModelPicker.tsx`'s own identical
+ * WCAG 2.5.3 fix already uses) is a single literal string, immune to that join. The visible text
+ * itself is untouched (still just `{label}`). The Tooltip composes three sentences: "Role:
  * <label>.", the role's own description word for word (`roleChipDisplay`'s `tooltip`, e.g. the
  * Fallback/Custom sentences decision 2/1 fixed verbatim), then "Change the role from the model
  * picker." (today's one way to actually do that, since this chip itself is inert).
@@ -86,13 +91,11 @@ export function RoleChip({ sessionId }: { sessionId: string }) {
         <button
           type="button"
           aria-disabled="true"
+          aria-label={`${label}, role`}
           className={cn(PICKER_TRIGGER_CLASS, 'max-w-24 min-w-0 shrink aria-disabled:opacity-100 aria-disabled:cursor-default')}
         >
           <Icon aria-hidden className="size-3" />
-          <span className="min-w-0 flex-1 truncate">
-            {label}
-            <span className="sr-only">, role</span>
-          </span>
+          <span className="min-w-0 flex-1 truncate">{label}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent>{fullTooltip}</TooltipContent>

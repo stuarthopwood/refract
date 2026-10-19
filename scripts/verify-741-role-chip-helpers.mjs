@@ -5,7 +5,7 @@
 // `runLaunch1Checks`, taking every shared value it needs as a parameter -- `findings`/`failures`/
 // `notExercised` are mutated in place (arrays are passed by reference in JS), exactly as the
 // inline version did.
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getAccessibleNameAndRole, switchTheme } from './verify-tauri-scratch-helpers.mjs';
 import { pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
@@ -111,16 +111,15 @@ export async function openScratchSession(cdp, repoDir) {
 
 /** #741: the role chip sits immediately before the Model picker in the composer bottom row.
  * Both render inside the same `aria-disabled` ghost-button family with no other stable marker,
- * so the chip is found structurally: the one button in the bottom row whose own accessible name
- * ENDS with ", role" (gate round 1 fix MEDIUM #6: the `sr-only` SUFFIX every chip carries, visible
- * text first per `docs/design/accessibility.md:16`). */
-export const ROLE_CHIP_FINDER = `Array.from(document.querySelectorAll('button')).find((b) => { const sr = b.querySelector('span.sr-only'); return !!sr && sr.textContent === ', role'; })`;
+ * so the chip is found structurally: the one button in the bottom row whose own `aria-label`
+ * ENDS with ", role" (gate round 1 fix MEDIUM #6, round 2: an explicit `aria-label`, not a
+ * visible-text-plus-sr-only-span join, which measured an extra space live -- see
+ * `ComposerPickers.tsx`'s own comment). */
+export const ROLE_CHIP_FINDER = `Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').endsWith(', role'))`;
 
-// `.textContent` on the chip button also picks up the `sr-only` ", role" suffix span's own text
-// (CSS visibility never removes a node from the DOM text walk) -- strip it via a clone so every
-// comparison below checks the VISIBLE label only ("Default", "Custom", "Fallback"), never
-// "Default, role".
-export const ROLE_CHIP_LABEL_EXPR = `(() => { const b = (${ROLE_CHIP_FINDER}); if (!b) return null; const clone = b.cloneNode(true); clone.querySelectorAll('.sr-only').forEach((el) => el.remove()); return clone.textContent.trim(); })()`;
+// The chip's VISIBLE label is now the button's plain `textContent` (no sr-only span to strip
+// any more -- the accessible name is driven entirely by `aria-label`, round 2 fix).
+export const ROLE_CHIP_LABEL_EXPR = `(() => { const b = (${ROLE_CHIP_FINDER}); return b ? b.textContent.trim() : null; })()`;
 
 export async function readRoleChip(cdp) {
   const exists = await cdp.evaluate(`!!(${ROLE_CHIP_FINDER})`);
@@ -131,7 +130,7 @@ export async function readRoleChip(cdp) {
 /** Launch 1's full check body (Default chip through the mid-session fallback-while-pinned
  * transition) -- see `verify-741-role-chip.mjs`'s own header comment for the full launch list.
  * `findings`/`failures`/`notExercised` are mutated in place. */
-export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, findings, failures, notExercised, SHOTS_DIR) {
+export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, dataDir1, findings, failures, notExercised, SHOTS_DIR) {
   await cdp1.waitFor(`!!(${ROLE_CHIP_FINDER})`, { timeoutMs: 30_000, label: 'Role chip rendered' });
   const defaultChipText = await readRoleChip(cdp1);
   if (defaultChipText === 'Default') {
@@ -222,7 +221,16 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, find
       const rowRect = row.getBoundingClientRect();
       const buttons = Array.from(row.querySelectorAll('button'));
       const modelButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('claude-fable-5') || (b.getAttribute('aria-label') || '').startsWith('Claude Fable Five'));
-      const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Default') && (b.getAttribute('aria-label') || '').toLowerCase().includes('reasoning') === false && b !== modelButton);
+      // Round 2 fix: the TRUNCATE class (overflow:hidden) lives on the inner <span>, not the
+      // button -- an element with its own overflow:hidden becomes its own scroll container, so
+      // its CHILD's overflow never "leaks" into the BUTTON's own scrollWidth (confirmed live:
+      // the button's scrollWidth measured equal to its clientWidth even while visibly
+      // ellipsis-truncated). Measure the span that actually carries \`truncate\` instead.
+      const modelSpan = modelButton ? modelButton.querySelector('span.truncate') : null;
+      // Round 2 fix: the configured thinkingLevel in this tape is "medium" (-> "Medium"), not
+      // "Default" -- the old "Default" search never matched anything, so reasoningButton was
+      // always null and this whole check was silently vacuous before it was asserted on.
+      const reasoningButton = buttons.find((b) => (b.getAttribute('aria-label') || '').includes('Medium') && (b.getAttribute('aria-label') || '').toLowerCase().includes('reasoning') === false && b !== modelButton);
       const attachButton = buttons.find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes('attach'));
       const fullyInside = (el) => {
         if (!el) return false;
@@ -230,7 +238,7 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, find
         return r.width > 0 && r.left >= rowRect.left - 1 && r.right <= rowRect.right + 1 && r.top >= rowRect.top - 1 && r.bottom <= rowRect.bottom + 1;
       };
       return {
-        modelTruncated: modelButton ? modelButton.scrollWidth > modelButton.clientWidth : null,
+        modelTruncated: modelSpan ? modelSpan.scrollWidth > modelSpan.clientWidth : null,
         reasoningNotTruncated: reasoningButton ? reasoningButton.scrollWidth <= reasoningButton.clientWidth : null,
         reasoningFullyInside: fullyInside(reasoningButton),
         attachFullyInside: fullyInside(attachButton)
@@ -238,7 +246,7 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, find
     })()
   `);
   if (truncationProbe.modelTruncated === true) {
-    findings.push('The 60-character-plus model name truncates (real geometry: scrollWidth > clientWidth on the Model picker trigger).');
+    findings.push('The 60-character-plus model name truncates (real geometry: scrollWidth > clientWidth on the Model picker trigger\'s own truncating span).');
   } else {
     failures.push(`Model trigger truncation check: modelTruncated=${truncationProbe.modelTruncated}, expected true.`);
   }
@@ -256,12 +264,17 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, find
   await cdp1.screenshot(path.join(SHOTS_DIR, '06-composer-row.png'));
 
   // Session details card: hover the session row, wait the real 750ms openDelay, read the
-  // muted "via {provider}" line.
+  // muted "via {provider}" line. Round 2 fix: move the pointer AWAY first and let it settle --
+  // the keyboard-path test above never moved the mouse, but a defensive reset guarantees a
+  // genuine "enter" transition into the row (Radix HoverCard's own open trigger) regardless;
+  // the wait window also grew (3s -> 8s) to give the 750ms openDelay real margin.
+  await cdp1.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+  await new Promise((r) => setTimeout(r, 200));
   await cdp1.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved',
     ...(await cdp1.evaluate(`(() => { const r = document.querySelector('[data-session-open]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`))
   });
-  await cdp1.waitFor(`document.body.textContent.includes('via GitHub Copilot')`, { timeoutMs: 3_000, label: 'Details card "via GitHub Copilot" line visible' }).catch(() => {
+  await cdp1.waitFor(`document.body.textContent.includes('via GitHub Copilot')`, { timeoutMs: 8_000, label: 'Details card "via GitHub Copilot" line visible' }).catch(() => {
     failures.push('Session details card never showed a "via GitHub Copilot" line after hovering the session row for its 750ms openDelay.');
   });
   if (failures.length === 0 || !failures[failures.length - 1].startsWith('Session details card')) {
@@ -342,18 +355,23 @@ export async function runLaunch1Checks(cdp1, sessionId1, conversationFile1, find
   // mimics directly, since it would otherwise need a real retry-fallback transition) and let
   // the tape (`role-chip-741.jsonl`) autonomously emit a real `retry_fallback_succeeded` frame
   // a couple of seconds later -- the chip must flip to Fallback with NO restart (proving
-  // `model.rs`'s own "fallback outranks a pin" fix), and the registry's own `pinned` flag must
-  // stay true underneath the whole time (a fallback never clears the persisted pin).
+  // `model.rs`'s own "fallback outranks a pin" fix). Round 2 fix: `sessions.list()`'s own
+  // `pinned` field is the DISPLAYED `effective_pinned` (model.rs's `resolve_current_selection`),
+  // which is DESIGNED to read false once a fallback overrides -- that is how the chip knows to
+  // show Fallback instead of Custom. The actual claim ("the registry's own pin is never
+  // cleared") can only be checked by reading `registry.json` directly off disk, bypassing the
+  // effective-pinned wire field entirely. The wait window also grew (20s -> 45s): the fake-omp
+  // tape's own 3s `__delay__` plus a real build's poll/render latency needs real margin.
   appendFileSync(conversationFile1, FALLBACK_MODEL_CHANGE_LINE + '\n');
-  await cdp1.waitFor(`${ROLE_CHIP_LABEL_EXPR} === 'Fallback'`, { timeoutMs: 20_000, label: 'Role chip flips to Fallback while pinned, no restart' }).catch((err) => {
+  await cdp1.waitFor(`${ROLE_CHIP_LABEL_EXPR} === 'Fallback'`, { timeoutMs: 45_000, label: 'Role chip flips to Fallback while pinned, no restart' }).catch((err) => {
     failures.push(`Role chip never flipped to Fallback while pinned: ${err.message}`);
   });
-  const midSessionFallbackList = await cdp1.evaluate(`window.refract.sessions.list()`);
-  const midSessionFallbackSummary = midSessionFallbackList.ok ? midSessionFallbackList.value.find((s) => s.id === sessionId1) : undefined;
-  if (midSessionFallbackSummary?.pinned === true) {
-    findings.push('sessions.list() still reports pinned:true while the chip shows Fallback -- the registry\'s own pin is never cleared by a fallback.');
+  const registryDuringFallback = JSON.parse(readFileSync(path.join(dataDir1, 'registry.json'), 'utf8'));
+  const registrySessionDuringFallback = registryDuringFallback.sessions?.find((s) => s.id === sessionId1);
+  if (registrySessionDuringFallback?.pinnedModel === true) {
+    findings.push('registry.json\'s own pinnedModel field still reads true while the chip shows Fallback -- the persisted pin is never cleared by a fallback (only the DISPLAYED, wire-level effective_pinned flips, by design).');
   } else {
-    failures.push(`sessions.list() during mid-session fallback: pinned=${midSessionFallbackSummary?.pinned}, expected true (the pin itself must survive, only the DISPLAYED chip changes).`);
+    failures.push(`registry.json during mid-session fallback: pinnedModel=${registrySessionDuringFallback?.pinnedModel}, expected true (the persisted pin itself must survive).`);
   }
   await cdp1.screenshot(path.join(SHOTS_DIR, '07-chip-fallback-while-pinned.png'));
   findings.push('Launch 1 complete: Default chip, real-geometry truncation, details card, AX names, contrast, a real keyboard path, 5-theme and 2 narrow-width screenshots, the hand-pick-to-Custom transition, and the mid-session fallback-while-pinned transition all exercised.');
