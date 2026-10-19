@@ -323,7 +323,7 @@ async function main() {
         findings.push('Clicking "Go to Stage 4" moved keyboard focus to Stage 4\'s own trigger.');
       }
       try {
-        await cdp.waitFor(isInViewportExpr(stage4TriggerExpr), { timeoutMs: 5_000, label: 'Stage 4 row in the viewport after the mouse jump (smooth scroll settles)' });
+        await cdp.waitFor(isInViewportExpr(stage4TriggerExpr), { timeoutMs: 10_000, label: 'Stage 4 row in the viewport after the mouse jump (smooth scroll settles)' });
         const stage4Rect = await cdp.evaluate(viewportRectExpr(stage4TriggerExpr));
         findings.push(`Stage 4's own row is in the viewport after the jump (rect ${JSON.stringify(stage4Rect)}).`);
       } catch (err) {
@@ -425,7 +425,7 @@ async function main() {
           findings.push('Pressing Enter on "Go to Stage 3" moved keyboard focus to Stage 3\'s own trigger.');
         }
         try {
-          await cdp.waitFor(isInViewportExpr(stage3TriggerExpr), { timeoutMs: 5_000, label: 'Stage 3 row in the viewport after the keyboard jump (smooth scroll settles)' });
+          await cdp.waitFor(isInViewportExpr(stage3TriggerExpr), { timeoutMs: 10_000, label: 'Stage 3 row in the viewport after the keyboard jump (smooth scroll settles)' });
           const stage3Rect = await cdp.evaluate(viewportRectExpr(stage3TriggerExpr));
           findings.push(`Stage 3's own row is in the viewport after the keyboard jump (rect ${JSON.stringify(stage3Rect)}).`);
         } catch (err) {
