@@ -278,12 +278,24 @@ async function main() {
     // redirect call (`triggerRef.current.focus(...)`) -- a screenshot taken after a bare
     // `.focus()` call here would prove nothing about whether a real keyboard user ever sees a
     // visible ring.
-    await pressTab(cdp);
-    const focusedBefore = await cdp.evaluate(`document.activeElement?.getAttribute(${JSON.stringify(FOCUS_MARKER_ATTR)}) === 'target'`);
+    // Falsified live (first gate round 1 verification run): a single `pressTab` left focus one
+    // stop short -- `CodeBlockHeader`'s own Copy button (`Markdown.tsx`, "every block's header
+    // carries a Copy button") renders BEFORE the `[role="region"]` content in DOM order, so Tab
+    // from the trigger lands there FIRST, not on the Prompt region directly. A bounded loop
+    // (same established pattern as `verify-tauri-568.mjs`'s own `reachedRow` loop) presses Tab
+    // until the marker matches, tolerant of exactly how many intervening stops exist, rather
+    // than hard-coding a guessed count.
+    let focusedBefore = false;
+    let tabsUsed = 0;
+    for (let i = 0; i < 10 && !focusedBefore; i++) {
+      await pressTab(cdp);
+      tabsUsed++;
+      focusedBefore = await cdp.evaluate(`document.activeElement?.getAttribute(${JSON.stringify(FOCUS_MARKER_ATTR)}) === 'target'`);
+    }
     if (!focusedBefore) {
-      failures.push("Could not place keyboard focus (real Tab) on the solo member's own Prompt code block -- the focus-survives-the-join proof could not be set up.");
+      failures.push(`Could not place keyboard focus (real Tab, up to ${tabsUsed} presses) on the solo member's own Prompt code block -- the focus-survives-the-join proof could not be set up.`);
     } else {
-      findings.push("Keyboard focus placed (real Tab from the Stage trigger) on the solo member's own Prompt code block, inside the one-agent Stage's content.");
+      findings.push(`Keyboard focus placed (${tabsUsed} real Tab press${tabsUsed === 1 ? '' : 'es'} from the Stage trigger, past its own Copy button) on the solo member's own Prompt code block, inside the one-agent Stage's content.`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-solo-focus-placed.png'));
 
