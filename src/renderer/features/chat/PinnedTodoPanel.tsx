@@ -238,7 +238,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
           className="mt-1 max-h-[min(12rem,30vh)] overflow-y-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
           {todoTree.map((phase, phaseIndex) => (
-            <TodoPhaseGroup key={`${phase.name}-${phaseIndex}`} phase={phase} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
+            <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
           ))}
         </div>
       )}
@@ -246,7 +246,17 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   )
 }
 
-function TodoPhaseGroup({ phase, showHeader, currentTaskKey }: { phase: TodoPhase; showHeader: boolean; currentTaskKey: string | null }) {
+function TodoPhaseGroup({
+  phase,
+  phaseIndex,
+  showHeader,
+  currentTaskKey
+}: {
+  phase: TodoPhase
+  phaseIndex: number
+  showHeader: boolean
+  currentTaskKey: string | null
+}) {
   // Decision item 5: "Finished phases fold to one line and the current phase stays open. A
   // single phase gets no header" -- `showHeader` is `false` for the single-phase case, so
   // `finished` folding never applies there either (nothing to fold a header line DOWN to). A
@@ -267,7 +277,12 @@ function TodoPhaseGroup({ phase, showHeader, currentTaskKey }: { phase: TodoPhas
       {!folded && (
         <ul className="space-y-0.5">
           {phase.tasks.map((task, taskIndex) => (
-            <TodoTaskRow key={`${task.content}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phase, task) === currentTaskKey} />
+            // Gate round 2 fix (Main, security-reviewer concern): the key must never derive
+            // solely from agent-controlled text (`task.content`) -- two tasks can legitimately
+            // share wording (same name in two phases, or a repeated step), and `phaseIndex`
+            // alone does not disambiguate within a phase either. `phaseIndex`+`taskIndex` is
+            // stable and unique regardless of task content, immune to any content collision.
+            <TodoTaskRow key={`${phaseIndex}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phase, task) === currentTaskKey} />
           ))}
         </ul>
       )}
