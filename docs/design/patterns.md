@@ -17,6 +17,7 @@ Naming and microcopy (agenda item 6) is sentence case, verb first, with no trail
 | **Remove** | Take it out of Refract without deleting data (for example, a repository). |
 | **Delete** | Permanent. |
 | **Archive** | Reversible hide. |
+| **Retry** | Run a refused action again, in the same dialog (issue #891 gate round 1, ui-architect-v3: the confirm button relabels to Retry after a refusal rather than adding a second control). |
 
 Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes." Evidence at `origin/main` 9f23d22: Add repository (`AddRepositoryDialog`), Cancel (`PullRequestDetail`'s `AlertDialogCancel`), Close (the read-only/blocked dialog footer).
 

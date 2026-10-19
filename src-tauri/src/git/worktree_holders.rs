@@ -28,11 +28,27 @@
 use std::path::{Path, PathBuf};
 
 use super::git::{GitError, GitErrorCode};
+use super::worktree_validity::is_within_worktrees_root;
+use super::worktrees::worktrees_root;
 
 #[derive(Debug, Clone)]
 pub struct Holder {
     pub name: String,
     pub pid: u32,
+}
+
+/// Issue #891 gate round (S1): a cheap, no-git-call containment guard run before EITHER holder
+/// check ever touches Restart Manager or the rename probe -- a corrupted or hand-edited
+/// registry entry naming a path outside Refract's own worktrees root must never reach either
+/// one. See `worktree_validity::is_within_worktrees_root`'s own doc comment.
+fn outside_worktrees_root_refusal(worktree_path: &Path) -> GitError {
+    GitError::new(
+        GitErrorCode::WorktreeFailed,
+        format!(
+            "Refract did not delete anything. {} is outside Refract's worktree folder, so Refract will not check it for holders or remove it. Nothing was touched.",
+            worktree_path.display()
+        ),
+    )
 }
 
 /// The sibling name the rename probe uses, inside the SAME parent directory as `worktree_path`
@@ -64,7 +80,7 @@ fn named_holders_message(worktree_path: &Path, holders: &[Holder]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "Refract did not delete anything. {who} still has {} open. Close it, then choose Delete again.",
+        "Refract did not delete anything. {who} still has {} open. Close it, then choose Retry.",
         worktree_path.display()
     )
 }
@@ -77,7 +93,7 @@ const FOLDER_IN_USE_MESSAGE: &str =
 
 fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String {
     format!(
-        "Refract did not delete anything, but could not rename {} back after checking whether it was in use. Nothing was lost: your files are currently at {}. Move that folder back to {} yourself, then choose Delete again.",
+        "Refract did not delete anything, but could not rename {} back after checking whether it was in use. Nothing was lost: your files are currently at {}. Move that folder back to {} yourself, then choose Retry.",
         worktree_path.display(),
         probe_path.display(),
         worktree_path.display()
@@ -93,11 +109,16 @@ fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String
 /// designed to run BEFORE that agent is stopped, so a refusal here leaves the Session exactly
 /// as it was): unlike `check_folder_in_use` below, a named FILE holder is never this Session's
 /// own doing once its own pids are excluded. A missing folder is not this check's concern --
-/// nothing to hold, so always `Ok(())`.
+/// nothing to hold, so always `Ok(())`. `repo` is used only for the S1 containment guard below
+/// (`worktrees_root(repo)`), never passed to Restart Manager itself.
 pub async fn check_named_holders(
+    repo: &Path,
     worktree_path: &Path,
     exclude_pids: &[u32],
 ) -> Result<(), GitError> {
+    if !is_within_worktrees_root(worktree_path, &worktrees_root(repo)) {
+        return Err(outside_worktrees_root_refusal(worktree_path));
+    }
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
         return Ok(());
     }
@@ -133,28 +154,44 @@ pub async fn check_named_holders(
 /// regardless of any genuine third party, even after several retries. Calling it only after
 /// shutdown trades the "a refusal leaves the Session running" wording for correctness: a
 /// refusal found here may leave the agent stopped rather than literally uninterrupted, but it
-/// is no longer a false positive on every ordinary Delete of a still-running Session.
-pub async fn check_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
+/// is no longer a false positive on every ordinary Delete of a still-running Session. `repo` is
+/// used only for the S1 containment guard (`worktrees_root(repo)`).
+pub async fn check_folder_in_use(repo: &Path, worktree_path: &Path) -> Result<(), GitError> {
+    if !is_within_worktrees_root(worktree_path, &worktrees_root(repo)) {
+        return Err(outside_worktrees_root_refusal(worktree_path));
+    }
     if tokio::fs::symlink_metadata(worktree_path).await.is_err() {
         return Ok(());
     }
     probe_folder_in_use(worktree_path).await
 }
 
-/// Retried up to `RENAME_PROBE_ATTEMPTS` times (short, fixed backoff) before concluding "held".
-/// Two real-world causes raise the exact same sharing/access-denied errors a genuine cwd
-/// holder does, but clear within a bounded window: (1) this Session's own agent, just stopped
-/// by the caller immediately before this runs -- `SessionAgent::shutdown`'s own `await` only
-/// guarantees the OS process has exited, not that Windows has finished releasing every handle
-/// (including its own cwd lock) by the instant that `await` returns, confirmed live as a real,
-/// if narrow, race; (2) Windows Defender's real-time scan or the Search indexer, still working
-/// through a `node_modules`-sized tree seconds after it finishes writing. A real holder (a
-/// terminal or Explorer window actually sitting in the folder) stays held across every attempt
-/// and is still reported exactly as before; this only spares either transient cause from being
-/// misreported as one. The rename-BACK below is deliberately NOT retried -- that failure must
-/// never be silently swallowed (this module's own header comment), and by the time the first
-/// rename has already succeeded, there is no longer a plausible transient explanation for the
-/// second one failing.
+/// Issue #891 gate round (S5): a leftover probe folder from an earlier crashed/killed attempt
+/// sitting at the exact sibling name this probe is about to rename INTO would otherwise make
+/// `tokio::fs::rename` fail in a way indistinguishable from a genuine holder (or, worse, could
+/// merge/clobber depending on what is already there) -- checked and refused distinctly, named
+/// by its own real path, BEFORE any rename is attempted.
+fn stale_probe_message(probe_path: &Path) -> String {
+    format!(
+        "Refract did not delete anything. A leftover probe folder from an earlier attempt still exists at {}. Remove it yourself, then choose Retry.",
+        probe_path.display()
+    )
+}
+
+/// Retried up to `RENAME_PROBE_ATTEMPTS` times (short, fixed backoff) before concluding "held" --
+/// in BOTH directions (issue #891 gate round S6: the rename-back is no longer a single
+/// best-effort attempt). Two real-world causes raise the exact same sharing/access-denied
+/// errors a genuine cwd holder does, but clear within a bounded window: (1) this Session's own
+/// agent, just stopped by the caller immediately before this runs -- `SessionAgent::shutdown`'s
+/// own `await` only guarantees the OS process has exited, not that Windows has finished
+/// releasing every handle (including its own cwd lock) by the instant that `await` returns,
+/// confirmed live as a real, if narrow, race; (2) Windows Defender's real-time scan or the
+/// Search indexer, still working through a `node_modules`-sized tree seconds after it finishes
+/// writing. Either cause can plausibly still be active moments later for the rename BACK too,
+/// not only the forward rename -- a real holder (a terminal or Explorer window actually sitting
+/// in the folder) stays held across every attempt either way and is still reported exactly as
+/// before. Only after every rename-back attempt fails is the catastrophic "files are currently
+/// at the probe path" message shown -- that failure must still never be silently swallowed.
 const RENAME_PROBE_ATTEMPTS: u32 = 15;
 const RENAME_PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
@@ -162,6 +199,12 @@ async fn probe_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
     let Some(probe_path) = probe_sibling_path(worktree_path) else {
         return Ok(());
     };
+    if tokio::fs::symlink_metadata(&probe_path).await.is_ok() {
+        return Err(GitError::new(
+            GitErrorCode::WorktreeHeld,
+            stale_probe_message(&probe_path),
+        ));
+    }
     let mut last_in_use_err = None;
     for attempt in 1..=RENAME_PROBE_ATTEMPTS {
         match tokio::fs::rename(worktree_path, &probe_path).await {
@@ -189,7 +232,17 @@ async fn probe_folder_in_use(worktree_path: &Path) -> Result<(), GitError> {
             FOLDER_IN_USE_MESSAGE.to_string(),
         ));
     }
-    if tokio::fs::rename(&probe_path, worktree_path).await.is_err() {
+    let mut rename_back_ok = false;
+    for attempt in 1..=RENAME_PROBE_ATTEMPTS {
+        if tokio::fs::rename(&probe_path, worktree_path).await.is_ok() {
+            rename_back_ok = true;
+            break;
+        }
+        if attempt < RENAME_PROBE_ATTEMPTS {
+            tokio::time::sleep(RENAME_PROBE_RETRY_DELAY).await;
+        }
+    }
+    if !rename_back_ok {
         return Err(GitError::new(
             GitErrorCode::WorktreeHeld,
             rename_back_failed_message(worktree_path, &probe_path),
@@ -280,6 +333,75 @@ mod imp {
         String::from_utf16_lossy(&info.strAppName[..nul])
     }
 
+    /// Every live descendant pid of any pid in `roots` -- the process PARENT TREE only
+    /// (`CreateToolhelp32Snapshot`'s own `(pid, parent_pid)` table), never a process's memory
+    /// (Stuart's 2026-10-19 11:35 amendment explicitly bans `ReadProcessMemory`/
+    /// `NtQueryInformationProcess` for holder detection). Deliberately no identity/creation-time
+    /// re-verification, unlike `process::pid_records::kill_descendant_tree`'s own much stricter
+    /// walk: that one TERMINATES a process and so must defend against pid reuse before doing
+    /// anything irreversible, while this is a pure read used only to WIDEN an exclude-list for
+    /// Restart Manager (issue #891 gate round 1 item 4) -- a false inclusion here costs nothing
+    /// worse than one more pid Restart Manager was never going to report anyway, while a missed
+    /// descendant simply falls through to Restart Manager's own report, naming the Session's
+    /// own dev server/node/cargo process, which this item exists to prevent.
+    fn descendant_pids(roots: &[u32]) -> Vec<u32> {
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+
+        struct HandleGuard(HANDLE);
+        impl Drop for HandleGuard {
+            fn drop(&mut self) {
+                // Safety: a single documented API call, closing exactly the handle this guard
+                // owns.
+                unsafe {
+                    let _ = CloseHandle(self.0);
+                }
+            }
+        }
+
+        // Safety: a single documented API call; the handle is closed via `HandleGuard` right
+        // after the one enumeration pass below.
+        let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+            return Vec::new();
+        };
+        let guard = HandleGuard(snapshot);
+        let mut entries: Vec<(u32, u32)> = Vec::new();
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        // Safety: `entry` is sized and `dwSize`-stamped exactly as the API requires, a local on
+        // this function's own stack that outlives both calls.
+        unsafe {
+            if Process32FirstW(snapshot, &mut entry).is_ok() {
+                loop {
+                    entries.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                    if Process32NextW(snapshot, &mut entry).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        drop(guard);
+
+        let mut out = Vec::new();
+        let mut frontier: Vec<u32> = roots.to_vec();
+        let mut visited: std::collections::HashSet<u32> = roots.iter().copied().collect();
+        while let Some(parent_pid) = frontier.pop() {
+            for &(pid, ppid) in &entries {
+                if ppid != parent_pid || pid == 0 || !visited.insert(pid) {
+                    continue;
+                }
+                out.push(pid);
+                frontier.push(pid);
+            }
+        }
+        out
+    }
+
     /// Runs one Restart Manager session over every real file `collect_files_for_rm` finds under
     /// `worktree_path`, returning every named holder (image name + pid) RM reports, minus any
     /// pid in `exclude_pids`. Best-effort: any Win32 failure along the way (or an empty
@@ -292,6 +414,11 @@ mod imp {
         if files.is_empty() {
             return Vec::new();
         }
+        // Issue #891 gate round 1 item 4: widen the exclude set to every live descendant of
+        // this Session's own recorded omp pids (dev servers, node, cargo the agent itself
+        // spawned), via the process PARENT TREE -- see `descendant_pids`'s own header.
+        let mut excluded: Vec<u32> = exclude_pids.to_vec();
+        excluded.extend(descendant_pids(exclude_pids));
 
         // Safety: each Win32 call below is a single documented Restart Manager API.
         // `session_key` is a fixed-size stack buffer `RmStartSession` fills in place;
@@ -360,7 +487,7 @@ mod imp {
             buffer
                 .into_iter()
                 .take(written as usize)
-                .filter(|info| !exclude_pids.contains(&info.Process.dwProcessId))
+                .filter(|info| !excluded.contains(&info.Process.dwProcessId))
                 .map(|info| Holder {
                     name: app_name_from(&info),
                     pid: info.Process.dwProcessId,

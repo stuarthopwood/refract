@@ -38,10 +38,22 @@ export function dropAdminEntry(repoDir, worktreePath) {
 }
 
 /** Confirms git itself no longer lists `worktreePath` (the post-delete porcelain check the
- * production code itself runs). */
+ * production code itself runs). Issue #891 gate round (T1): exact, normalized per-line
+ * comparison against each distinct `worktree <path>` porcelain entry -- the previous
+ * `stdout.includes(worktreePath)` substring check could both false-positive (a worktree path
+ * that happens to be a substring of an unrelated sibling's longer path, the exact "lookalike
+ * sibling" class of bug this whole issue's safety tests already guard against in Rust) and
+ * false-negative (a different case or alias of the same real path). Mirrors
+ * `worktree_validity.rs`'s own `parse_porcelain_worktree_paths`/`comparable_path` shape. */
 export function isRegisteredWorktree(repoDir, worktreePath) {
   const result = spawnSync('git', ['-C', repoDir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', windowsHide: true });
-  return result.stdout.includes(worktreePath.replace(/\\/g, '/')) || result.stdout.includes(worktreePath);
+  const normalize = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+  const wanted = normalize(worktreePath);
+  const registered = result.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => normalize(line.slice('worktree '.length).trim()));
+  return registered.includes(wanted);
 }
 
 /** Scenario (a): a full, real-world-shaped worktree -- a few thousand files under a generated
@@ -52,6 +64,10 @@ export function populateFullWorktree(worktreePath, canaryDir) {
   mkdirSync(canaryDir, { recursive: true });
   const canaryFile = path.join(canaryDir, 'canary.txt');
   writeFileSync(canaryFile, 'do not touch -- outside the worktree');
+  // Issue #891 gate round (T4): read-only, so a bug that somehow reached past the containment
+  // refusal would ALSO have to clear this attribute before deleting it -- the strongest signal
+  // available (short of a real ACL) that nothing on the removal path ever touched it.
+  chmodSync(canaryFile, 0o444);
 
   const nodeModules = path.join(worktreePath, 'patient', 'client', 'node_modules');
   mkdirSync(nodeModules, { recursive: true });
@@ -107,6 +123,29 @@ export function populateOrphanWorktree(worktreePath) {
       writeFileSync(path.join(pkgDir, `file-${f}.js`), 'x');
     }
   }
+}
+
+/** Scenario (f): a deliberately large generated-folder tree (tens of thousands of files) so the
+ * leftover-summary walk's own per-bucket file count (`fs::leftover_summary::count_files`) takes
+ * long enough that clicking Delete immediately after the dialog's `deleteCheck` resolves
+ * reliably lands WHILE "Checking files…" is still running -- proving issue #891 gate round item
+ * 5 (the walk is cancelled and awaited before the holder preflight, never a false refusal over
+ * Refract's own open handles). */
+export function populateLargeGeneratedTree(worktreePath, fileCount = 50_000) {
+  const nodeModules = path.join(worktreePath, 'node_modules');
+  mkdirSync(nodeModules, { recursive: true });
+  const perPkg = 200;
+  const pkgCount = Math.ceil(fileCount / perPkg);
+  let written = 0;
+  for (let pkg = 0; pkg < pkgCount && written < fileCount; pkg++) {
+    const pkgDir = path.join(nodeModules, `pkg-${pkg}`);
+    mkdirSync(pkgDir, { recursive: true });
+    for (let f = 0; f < perPkg && written < fileCount; f++) {
+      writeFileSync(path.join(pkgDir, `file-${f}.js`), 'x');
+      written++;
+    }
+  }
+  return { fileCount: written };
 }
 
 /** Spawns a bare, idle `cmd.exe` with its CURRENT DIRECTORY inside `cwd` -- holds no file

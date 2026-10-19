@@ -42,6 +42,7 @@ import {
   isRegisteredWorktree,
   populateFullWorktree,
   populateOrphanWorktree,
+  populateLargeGeneratedTree,
   spawnCwdHolder,
   spawnFileHolder,
   killSpawned,
@@ -62,13 +63,17 @@ const STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const SCRATCH_ROOT = process.env.REFRACT_891_SCRATCH_ROOT || path.join(tmpdir(), `refract-891-${STAMP}`);
 const SHOT_DIR = process.env.REFRACT_891_SHOT_DIR || path.join(tmpdir(), `refract-891-shots-${STAMP}`);
 
+const passed = [];
 const failures = [];
+// Issue #891 gate round (T5): genuinely populated, not decorative -- anything this harness
+// cannot exercise live is recorded here instead of silently passing by omission.
 const notExercised = [];
 function fail(label, err) {
   failures.push({ label, message: err instanceof Error ? err.message : String(err) });
   console.error(`FAIL ${label}: ${err instanceof Error ? err.message : err}`);
 }
 function ok(label) {
+  passed.push(label);
   console.log(`PASS ${label}`);
 }
 
@@ -229,6 +234,24 @@ async function main() {
     const dRetryGone = !(await isSessionListed(cdp, nameD)) && !existsSync(sessionD.worktreePath);
     if (outcomeD.closed && dRetryGone) ok('(d) Retry succeeds once the file-holding process is gone');
     else if (outcomeD.closed) fail('(d) Retry succeeds after the holder is killed', new Error(`listed=${await isSessionListed(cdp, nameD)} exists=${existsSync(sessionD.worktreePath)}`));
+
+    // ---- Scenario (f): clicking Delete while the leftover-summary walk is still running ----
+    // Issue #891 gate round item 5: deliberately does NOT call `waitForLeftoverSummary` first --
+    // `clickDeleteButton` itself waits only for `deleteCheck` (the fast git-only read) to
+    // settle, so Delete fires while "Checking files…" is still walking this deliberately large
+    // tree. Proves `sessions.delete` cancels and awaits that walk before its own holder
+    // preflight, so Refract's own open handles during the walk never cause a false refusal.
+    const nameF = await newSession('f');
+    const sessionF = sessionByName(dataDir, nameF);
+    populateLargeGeneratedTree(sessionF.worktreePath);
+    await openDeleteDialogFor(cdp, nameF, SHOT_DIR);
+    await clickDeleteButton(cdp);
+    const outcomeF = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
+    if (!outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`delete failed: ${outcomeF.error}`));
+    const fGone = !(await isSessionListed(cdp, nameF));
+    const fWorktreeGone = !existsSync(sessionF.worktreePath);
+    if (outcomeF.closed && fGone && fWorktreeGone) ok('(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk\'s own open handles');
+    else if (outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`sessionGone=${fGone} worktreeGone=${fWorktreeGone}`));
   } catch (err) {
     fail('unhandled', err);
   } finally {
@@ -248,10 +271,21 @@ async function main() {
     await safeRmSync(SCRATCH_ROOT, 'verify-891');
   }
 
+  // Issue #891 gate round (T5): recorded honestly, not decorative -- this harness cannot
+  // simulate a stalled `git worktree list` (RegistrationState::Unknown, worktree_delete.rs
+  // gate S4) or an undetectable holder ("proceed if none visible"); both are code-reviewed
+  // only, never live-exercised here.
+  notExercised.push(
+    'RegistrationState::Unknown (a stalled `git worktree list --porcelain`) and its refusal wording -- this harness cannot force a real git timeout'
+  );
+  notExercised.push(
+    'A holder neither Restart Manager nor the rename probe can detect ("proceed if none visible") -- every spawned holder here is deliberately detectable'
+  );
   const dirty = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim().length > 0;
   const report = {
     gitHead: gitHead(REPO_ROOT),
     dirty,
+    passed,
     failures,
     notExercised,
     screenshots: citeScreenshots(

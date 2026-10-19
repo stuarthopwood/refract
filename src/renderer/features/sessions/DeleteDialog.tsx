@@ -3,6 +3,7 @@
 // the ChatPane worktree-missing banner (FR-035), so it takes only the id/name it needs, not a
 // full SessionSummary.
 import { useEffect, useRef, useState } from 'react'
+import { TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   AlertDialog,
@@ -140,6 +141,27 @@ export function DeleteDialog({
     setDeleting(false)
     if (!response.ok) {
       setError(response.error.message)
+      // Issue #891 gate round (P4): a partial failure may have changed what git and the
+      // filesystem actually show (some files could already be gone before a holder appeared,
+      // or git's own registration state could have changed) -- refresh both reads so Retry's
+      // own display, and the next Delete attempt, see current state rather than whatever was
+      // true when the dialog first opened.
+      if (!check) {
+        setLoading(true)
+        void window.refract.sessions.deleteCheck(deletingId).then((refreshed) => {
+          if (sessionIdRef.current !== deletingId) return
+          setLoading(false)
+          if (refreshed.ok) setResult(refreshed.value)
+        })
+      }
+      if (!leftoverSummaryOverride) {
+        setLeftoverLoading(true)
+        void window.refract.sessions.deleteLeftoverSummary(deletingId).then((refreshed) => {
+          if (sessionIdRef.current !== deletingId) return
+          setLeftoverLoading(false)
+          if (refreshed.ok) setLeftoverSummary(refreshed.value)
+        })
+      }
       return
     }
     deletedRef.current = true
@@ -166,7 +188,11 @@ export function DeleteDialog({
           <AlertDialogTitle>Delete Session {session.name}?</AlertDialogTitle>
           <AlertDialogDescription>This removes its worktree, its branch, and its Conversations.</AlertDialogDescription>
         </AlertDialogHeader>
-        {loading && <p className="text-sm text-muted-foreground">Checking for uncommitted or unpushed work…</p>}
+        {loading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Checking for uncommitted or unpushed work…
+          </p>
+        )}
         {result && (result.uncommittedFiles > 0 || result.unpushedCommits > 0 || !result.hasUpstream) && (
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {result.uncommittedFiles > 0 && (
@@ -182,21 +208,48 @@ export function DeleteDialog({
             {!result.hasUpstream && <li>This branch has no upstream</li>}
           </ul>
         )}
-        {leftoverLoading && <p className="text-sm text-muted-foreground">Checking files…</p>}
-        {leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0) && (
-          <ul className="min-w-0 list-disc space-y-1 pl-5 text-sm break-all text-muted-foreground">
-            {leftoverSummary.generatedFolders.map((folder) => (
-              <li key={folder.name}>
-                {folder.name} ({folder.fileCount} file{folder.fileCount === 1 ? '' : 's'})
-              </li>
-            ))}
-            {leftoverSummary.otherFiles.map((path) => (
-              <li key={path}>{path}</li>
-            ))}
-            {leftoverSummary.moreCount > 0 && <li>and {leftoverSummary.moreCount} more</li>}
-          </ul>
+        {leftoverLoading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Checking files…
+          </p>
         )}
-        <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+        {leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0) && (
+          <div className="min-w-0">
+            {/* Issue #891 gate round (P3): "The list sits in its own bounded, keyboard-scrollable
+                region with a label." Bounded (`max-h-40 overflow-y-auto`), labelled
+                (`aria-labelledby`, not just a visual heading), and keyboard-reachable/scrollable
+                (`tabIndex={0}` -- arrow keys and Page Up/Down scroll a focused, overflowing
+                element natively, no custom key handling needed). */}
+            <p id="leftover-files-label" className="text-sm font-medium">
+              Files left in the worktree
+            </p>
+            <ul
+              aria-labelledby="leftover-files-label"
+              tabIndex={0}
+              className="max-h-40 list-disc space-y-1 overflow-y-auto pl-5 text-sm break-all text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {leftoverSummary.generatedFolders.map((folder) => (
+                <li key={folder.name}>
+                  {folder.name} ({folder.fileCount} file{folder.fileCount === 1 ? '' : 's'})
+                </li>
+              ))}
+              {leftoverSummary.otherFiles.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+              {leftoverSummary.moreCount > 0 && <li>and {leftoverSummary.moreCount} more</li>}
+            </ul>
+          </div>
+        )}
+        {deleting && (
+          <p role="status" className="sr-only">
+            Deleting…
+          </p>
+        )}
+        <p
+          role="alert"
+          className={cn('flex items-start gap-1.5 text-sm text-destructive [overflow-wrap:anywhere]', !error && 'sr-only')}
+        >
+          {error && <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />}
           {error ?? ''}
         </p>
         <AlertDialogFooter>
@@ -209,6 +262,11 @@ export function DeleteDialog({
           >
             Cancel
           </AlertDialogCancel>
+          {/* Issue #891 gate round 1 item 2 (ui-architect-v3 ruling): after any refusal this
+              same button relabels to Retry (still destructive, still the only filled button,
+              same onClick) rather than gaining a second control -- every backend refusal
+              message already ends "then choose Retry" to match. `error` clears at the start of
+              a new attempt and at every fresh dialog open, so this reverts to "Delete" then. */}
           <AlertDialogAction
             variant="destructive"
             aria-disabled={loading || deleting}
@@ -219,7 +277,7 @@ export function DeleteDialog({
               void handleDelete()
             }}
           >
-            {deleting ? 'Deleting…' : 'Delete'}
+            {deleting ? 'Deleting…' : error ? 'Retry' : 'Delete'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
