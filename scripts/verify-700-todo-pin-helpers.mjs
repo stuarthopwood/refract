@@ -66,20 +66,6 @@ export async function clickTodoPill(cdp) {
   await cdp.click(TODO_PILL_SELECTOR);
 }
 
-/** Direct store read via the dev-only `window.__refractStores` hook (`state/index.ts`), for the
- * one assertion that needs the per-Session `pinned` FLAG itself, independent of whether the
- * panel (or the pill) happens to be mounted right now (decision item 5: "with no plan the panel
- * unmounts, but the pin stays"). */
-export async function readPinnedFlag(cdp, sessionId) {
-  return cdp.evaluate(`window.__refractStores.todoPin.getState().pinnedBySession[${JSON.stringify(sessionId)}] ?? false`);
-}
-
-/** The single visible pane's own Session id (`paneSessionIds[0]`, `split-store.ts` -- there is
- * no separate "selected session" concept once a Session is open; the pane IS the selection). */
-export async function currentSessionId(cdp) {
-  return cdp.evaluate(`window.__refractStores.split.getState().paneSessionIds[0] ?? null`);
-}
-
 /** The transcript's own scrollable container (`Transcript.tsx`'s `role="log"` region) -- used to
  * prove opening/closing the panel never shifts its scroll position (decision item 5's last
  * bullet). */

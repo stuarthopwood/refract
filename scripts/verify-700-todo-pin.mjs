@@ -42,8 +42,6 @@ import {
   clickCollapseButton,
   clickUnpinButton,
   clickTodoPill,
-  readPinnedFlag,
-  currentSessionId,
   readTranscriptScrollTop
 } from './verify-700-todo-pin-helpers.mjs';
 
@@ -148,8 +146,6 @@ async function main() {
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session A composer enabled' });
-    const sessionIdA = await currentSessionId(cdp);
-    assertTrue(typeof sessionIdA === 'string' && sessionIdA.length > 0, 'Session A id read from the dev store hook');
 
     const transcriptScrollBefore = await readTranscriptScrollTop(cdp);
 
@@ -162,7 +158,7 @@ async function main() {
     const pillBeforePin = await readPill(cdp);
     assertEqual(pillBeforePin.ariaPressed, 'false', 'Pill aria-pressed is false before pinning');
     const axBeforePin = await getAccessibleNameAndRole(cdp, TODO_PILL_SELECTOR);
-    assertTrue(axBeforePin.role === 'toggle button' || axBeforePin.role === 'button', 'Pill AX role is a button', axBeforePin);
+    assertTrue(axBeforePin.role === 'button', 'Pill AX role is a button', axBeforePin);
     assertTrue(/^Pin todo list \(Todo \d+\/\d+\)$/.test(axBeforePin.name ?? ''), 'Pill AX name matches the fixed "Pin todo list (Todo d/t)" pattern', axBeforePin);
 
     // ---- Pin mid-turn (well before settle: the tape still has several __delay__-spaced todo
@@ -174,6 +170,12 @@ async function main() {
     const panelFirstRead = await readPanel(cdp);
     assertEqual(pillAfterPin.ariaControls, panelFirstRead.id, 'Pill aria-controls names the panel\'s own id');
     assertEqual(panelFirstRead.ariaLabel, 'Todo list', 'Panel region is labelled "Todo list"');
+    // No dev-only `window.__refractStores` hook exists in this built (non-`vite dev`) asset
+    // bundle (`import.meta.env.DEV` is false for a `vite build` output regardless of the Rust
+    // side's own debug/release profile) -- the real Session id is instead read straight off the
+    // panel's own DOM id (`todo-panel-<sessionId>`, `PinnedTodoPanel.tsx`), needing no hook.
+    const sessionIdA = panelFirstRead.id.replace(/^todo-panel-/, '');
+    assertTrue(sessionIdA.length > 0, 'Session A id read from the panel\'s own DOM id');
     const transcriptScrollAfterPin = await readTranscriptScrollTop(cdp);
     assertEqual(transcriptScrollAfterPin, transcriptScrollBefore, 'Opening the panel did not move the transcript scroll position');
 
@@ -243,9 +245,7 @@ async function main() {
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Session B dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
-    const sessionIdB = await currentSessionId(cdp);
-    assertTrue(sessionIdB !== sessionIdA, 'Session B has a different id from Session A');
-    assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)) === false, 'Session B starts unpinned (its own default, independent of Session A)');
+    assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)) === false, 'Session B starts unpinned, a genuinely different pane (independent of Session A which is still pinned)');
 
     const NOT_CURRENT_SESSION_ROW = `Array.from(document.querySelectorAll('nav[aria-label="Sessions"] [aria-current]')).find((el) => el.getAttribute('aria-current') !== 'true')`;
     await cdp.click(NOT_CURRENT_SESSION_ROW);
@@ -291,7 +291,7 @@ async function main() {
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 20_000, label: 'Panel unmounts once the agent clears its plan entirely' });
     assertTrue(!!(await cdp.evaluate(`!(${TODO_PILL_SELECTOR})`)), 'Pill is also hidden with no plan (FR-021, unchanged)');
-    assertEqual(await readPinnedFlag(cdp, sessionIdA), true, 'The underlying pinned flag itself survives (decision item 5: "the pin stays")');
+    notExercised.push('"The pin stays" with no plan (decision item 5): with both the pill and panel absent (no plan at all), there is no DOM-observable trace of the underlying per-Session `pinned` flag to assert against in a built (non-`vite dev`) asset bundle, which exposes no `window.__refractStores` hook -- `useTodoPinStore`\'s own `pinned`/`setPinned` logic (it is never cleared by `PinnedTodoPanel.tsx`, which only ever READS it) was verified by code inspection, not a live DOM read; a fourth tape turn re-creating a plan and observing the panel reappear pinned with no click would prove it live and was not built this round.');
 
     notExercised.push('Up next hiding while pinned (FR-030): this tape\'s turns never include a task()/subagent batch, so UpNextList never renders at all regardless of pin state (gated on stagesCount > 0) -- the hide-while-pinned rule could not be exercised against a real appear/disappear transition without a second, subagent-carrying tape; UpNextList.tsx\'s own `pinned` read was verified by code inspection only.');
 
