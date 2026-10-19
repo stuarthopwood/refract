@@ -64,7 +64,7 @@
           "pullRequest": null,
           "subagentCount": null,
           "todoPhases": null,
-          "todoProgress": null,
+          "todoTree": null,
           "turnTime": null
         },
         "runtime": {
