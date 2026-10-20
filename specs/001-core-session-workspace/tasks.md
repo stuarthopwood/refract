@@ -5010,18 +5010,22 @@ record.
   `aria-describedby`, issue #533) both read "Enter sends the next queued message" while the rule
   applies, in place of the default "Message the agent"/"Markdown is supported..." wording.
   IME composition and Shift+Enter are unaffected (both already gated before this branch runs).
-- [ ] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape):
-  written, not yet run -- pending the next build slot. Covers: two queued follow-ups mid-turn,
-  Enter on a blank composer sends the oldest then the next; the placeholder text and
-  `aria-describedby` while the rule applies; a fast double Enter sends once; steering-only
-  queued, Enter is a no-op; Enter with typed text still sends that text; the slash menu open
-  suppresses the rule; Shift+Enter inserts a newline. `report.json` records `gitHead`, `dirty`,
-  failures and `notExercised`.
+- [ ] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
+  `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`): written, not yet run -- pending the
+  next build slot. Covers: two queued follow-ups mid-turn, Enter on a blank composer sends the
+  oldest then the next; the placeholder text and `aria-describedby` while the rule applies, in
+  two themes; a fast double Enter sends exactly once (proven by an exact fake-omp debug-log RECV
+  count); steering-only queued, Enter is a genuine no-op; Enter with typed text still sends that
+  text even with a follow-up queued; opening the slash menu on an unmatched command suppresses
+  the rule entirely; Shift+Enter inserts a newline and sends nothing. `report.json` records
+  `gitHead`, `dirty`, failures and `notExercised` (a ghost suggestion showing at the same instant
+  as a blank composer is structurally unreachable, so not live-exercised; neither is an
+  attachment/file-only blank composer, out of this issue's own acceptance list).
 
 **Non-build checks** (run against the renderer changes alone, before any build slot): `pnpm
 typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping-phase rule);
-`node scripts/check-indent.mjs` 0 odd-indent lines across 456 files scanned (3 allow-listed);
-`node scripts/check-file-size.mjs` 0 cap violations across 521 files scanned (`MessageInput.tsx`
+`node scripts/check-indent.mjs` 0 odd-indent lines across 457 files scanned (3 allow-listed);
+`node scripts/check-file-size.mjs` 0 cap violations across 522 files scanned (`MessageInput.tsx`
 1632/1632 baseline, unchanged -- new logic lives in `useEnterSendsQueuedFollowUp.ts` instead);
 `node scripts/check-theme-contrast.mjs` all 872 pairs across 5 themes PASS (no new token); `node
 scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
