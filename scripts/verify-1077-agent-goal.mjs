@@ -66,7 +66,7 @@ import {
   switchTheme,
   clearKnownOutputFiles
 } from './verify-tauri-scratch-helpers.mjs';
-import { buildOmpShim, launchBuiltExeWithEnv, titleSelector, stageContentSelector, stageTriggerSelector, expandRow } from './verify-941-stage-naming-helpers.mjs';
+import { buildOmpShim, launchBuiltExeWithEnv, titleSelector, stageContentSelector, stageTriggerSelector, expandRow, clickScrolled } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
@@ -252,7 +252,7 @@ async function main() {
 
     // ---- Phase 4: open the toggle -- Prompt AND Result both show, aria-expanded flips, label
     // flips to "Hide input & output". ----
-    await cdp.click(toggleButtonSelector(STAGE_A_TITLE));
+    await clickScrolled(cdp, toggleButtonSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, {
       timeoutMs: 10_000,
       label: "Stage A's own toggle opens (aria-expanded=true)"
@@ -306,11 +306,11 @@ async function main() {
 
     // ---- Phase 6: no remembered state -- re-open, collapse Stage A's own OUTER row (unmounting
     // SubagentBody), re-expand it, and confirm the toggle is COLLAPSED again. ----
-    await cdp.click(toggleButtonSelector(STAGE_A_TITLE));
+    await clickScrolled(cdp, toggleButtonSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Toggle re-opened before the outer collapse/reopen cycle' });
-    await cdp.click(stageTriggerSelector(STAGE_A_TITLE));
+    await clickScrolled(cdp, stageTriggerSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${stageTriggerSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 5_000, label: "Stage A's own outer row collapses" });
-    await cdp.click(stageTriggerSelector(STAGE_A_TITLE));
+    await clickScrolled(cdp, stageTriggerSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${stageTriggerSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: "Stage A's own outer row re-expands" });
     await cdp.waitFor(`!!(${toggleButtonSelector(STAGE_A_TITLE)})`, { timeoutMs: 5_000, label: "Stage A's own toggle link remounts" });
     const resetState = await cdp.evaluate(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') ?? null`);
@@ -345,13 +345,24 @@ async function main() {
     } else {
       findings.push("Neither of Stage B's own two members renders a goal paragraph of its own.");
     }
+    // Falsified live (first build-slot run): Phase 7's own wait above only confirms Stage B's
+    // shared CONTEXT is visible (echoed immediately with the toolCall), not that it has
+    // SETTLED -- the fixture's own 1500ms delay before `tool_execution_end` meant Phase 8 used
+    // to open MemberOne's toggle before its own `item.result` existed, so the Result half of
+    // its content was never rendered at all (`{resultBlock != null && (...)}`), a genuine
+    // Script race, not a product defect. Waits for MemberOne's own result text specifically
+    // (both members settle in the same `tool_execution_end` call in this fixture).
+    await cdp.waitFor(`(${stageContentSelector(STAGE_B_TITLE)})?.textContent.includes('Confirmed: no duplicate goal text') ?? false`, {
+      timeoutMs: 15_000,
+      label: "Stage B settles: MemberOne's own result text visible"
+    });
 
     // ---- Phase 8: each member's own toggle opens/closes independently of its sibling. ----
     await expandRow(cdp, 'MemberOne');
     await expandRow(cdp, 'MemberTwo');
     await cdp.waitFor(`!!(${toggleButtonSelector('MemberOne')})`, { timeoutMs: 10_000, label: "MemberOne's own toggle link mounted" });
     await cdp.waitFor(`!!(${toggleButtonSelector('MemberTwo')})`, { timeoutMs: 10_000, label: "MemberTwo's own toggle link mounted" });
-    await cdp.click(toggleButtonSelector('MemberOne'));
+    await clickScrolled(cdp, toggleButtonSelector('MemberOne'));
     await cdp.waitFor(`(${toggleButtonSelector('MemberOne')})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: "MemberOne's own toggle opens" });
     const memberTwoUnaffected = await cdp.evaluate(`(${toggleButtonSelector('MemberTwo')})?.getAttribute('aria-expanded') ?? null`);
     if (memberTwoUnaffected !== 'false') {
