@@ -67,8 +67,11 @@ font and code font stay with issue #4 and are out of scope here.
   every token that aliases `--foreground` -- `--card-foreground`, `--popover-foreground`,
   `--accent-foreground`, `--sidebar-foreground`, `--secondary-foreground`,
   `--sidebar-accent-foreground`) becomes chroma 0, byte-identical to Default Dark's own text
-  tokens. Only the accent family (`--accent-text`, `--primary`/`--send`, `--ring`, markdown
-  links), the warning hue, and `themes.ts`'s own `swatchPrimary` differ from Default Dark.
+  tokens. Only the accent family (`--accent-text`, `--primary`/`--send`, markdown links), the
+  warning hue, and `themes.ts`'s own `swatchPrimary` differ from Default Dark -- `--ring` is
+  NOT part of this family (the achromatic-ring decision, 2026-10-09, applies here too; gate
+  round 1 correction, 2026-10-20: an earlier draft of this session wrongly listed `--ring`
+  among the differing tokens).
 
 ### Session 2026-10-20 (final, #1039 drops its own text softening)
 
@@ -80,8 +83,27 @@ font and code font stay with issue #4 and are out of scope here.
   this spec's scope. `--foreground`, `--chat-foreground` and `--muted-foreground` in both
   Default Dark and Cyber Amber revert to `origin/main`'s own current values (`oklch(0.985 0 0)`/
   `oklch(0.90 0 0)`/`oklch(0.708 0 0)`), untouched by #1039. #1039's final, settled shape:
-  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent, Send and ring, and
-  a warning hue moved to 88.
+  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent and Send; `--ring`
+  stays achromatic and byte-identical to Default Dark's own (gate round 1 correction), and a
+  warning hue moved to 88.
+
+### Session 2026-10-20 (post-draft-PR self-review on PR #1094)
+
+- Q: A self-review against the issue body's own grill decisions, after draft PR #1094 opened,
+  found Cyber Amber still diverging from Default Dark in several places the earlier sessions
+  above missed -- Mermaid's own palette, `--input`,
+  `--scrollbar-thumb`/`--scrollbar-thumb-hover`, `--composer-focus`, and `--ring` (wrongly
+  documented as part of the accent family). Does Cyber Amber's "equals Default Dark" rule
+  extend to these? -> A: Yes. Mermaid's `MERMAID_THEME_VARIABLES['cyber-amber']` now reuses
+  `DARK_FAMILY` directly (`src/shared/mermaidThemeData.ts`); `--input`/`--scrollbar-thumb`/
+  `--scrollbar-thumb-hover`/`--composer-focus`/`--ring`/`--sidebar-ring` are now byte-identical
+  literals to Default Dark's own (not independent values, not aliases that happened to render
+  the same). The status palette (severity/state/PR-state tokens) stays Cyber Amber's own,
+  except that `--accent-text`'s new real hue (55.9) also closed the gap to `--severity-error`
+  (hue 12): the two swatches now measure only 1.23:1 apart, under the 1.5:1 distinctness floor
+  #551's own gate established. No single `--severity-error` lightness clears both that floor
+  (needs L≤~0.662) and the error-text-on-`--muted` floor (needs L≥~0.665) at once -- flagged to
+  Main for a decision, `--severity-error` left unchanged pending it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -284,14 +306,16 @@ side panel and confirm both show the same theme.
 - **FR-020** (#1039): Within any single built-in theme, the active accent colour (`--accent-text`,
   `--primary`, `--send`) MUST stay visually distinct in hue from that theme's own warning colour
   (`--severity-warning`), so a warning never reads as an accent.
-- **FR-022** (#1039, amended 2026-10-20 twice, then narrowed): Cyber Amber's surface tokens
-  (`--background`, `--sidebar`, `--card`/`--popover`, `--muted`/`--accent`/`--secondary`,
-  `--border`, `--input`) MUST all be pure neutral greys (OKLCH chroma ≤ 0.002), matching
-  Default Dark's own surface tokens exactly. `--foreground`/`--chat-foreground`/
-  `--muted-foreground` are NOT retuned by this spec (text softening moved to a separate,
-  app-wide issue, 2026-10-20) -- they stay at Default Dark's own unretuned values in both
-  themes. Only the accent family (`--accent-text`, `--primary`/`--send`, `--ring`, markdown
-  links), the warning hue, and `themes.ts`'s own `swatchPrimary` may differ from Default Dark.
+- **FR-022** (#1039, amended 2026-10-20 four times): Cyber Amber's surface and text tokens,
+  plus `--input`, `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus`, MUST
+  equal Default Dark's own tokens exactly (byte-identical, OKLCH chroma ≤ 0.002 where that
+  applies) -- `--ring`/`--sidebar-ring` too, achromatic per the 2026-10-09 decision and never
+  part of the accent family. The status palette (`--severity-success`/`--severity-warning`/
+  `--severity-error`/`--severity-info` and the state/PR-state tokens built from them) keeps
+  Cyber Amber's own preset values, EXCEPT where retuning the accent moved a distinctness floor
+  out of reach (see FR-020); only the accent family (`--accent-text`, `--primary`/`--send`,
+  markdown links), the warning hue, and `themes.ts`'s own `swatchPrimary` may differ from
+  Default Dark.
 
 ### Key Entities
 

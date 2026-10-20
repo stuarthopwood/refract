@@ -40,7 +40,12 @@
 // amendments, both rounds) reads every Cyber Amber surface AND text token's own resolved
 // colour directly (`requireResolvedCssVarColor`) and asserts its real OKLCH chroma is <=0.002
 // -- the first #1039 cut's own barely-visible warm tint (chroma 0.005-0.01) would now fail
-// this floor, proving the regression this amendment exists to catch.
+// this floor, proving the regression this amendment exists to catch. A further gate-round-1
+// assertion captures Dark's own `--ring`/`--sidebar-ring`/`--input`/`--scrollbar-thumb`/
+// `--scrollbar-thumb-hover`/`--composer-focus` (real resolved values, `THEMES` puts Dark
+// first) and asserts Cyber Amber's reading of the SAME tokens is byte-identical -- the chroma
+// check above cannot catch a lightness mismatch between two achromatic values, which is
+// exactly what these six tokens had before that gate round.
 //
 // Screenshots per theme: the chat view (the warning NoticeRow is inline in it, so one shot
 // covers both "chat" and "a warning"), the Manage sessions screen (the Session list), and the
@@ -81,9 +86,12 @@ const LOG = 'verify-1039';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1039_SHOTS_DIR || path.join(tmpdir(), 'refract-1039-amber-retune-shots');
 
+// Dark FIRST: `DARK_EQUALITY_VARS`'s own cross-theme check (below) captures Dark's resolved
+// values on this theme's own turn, then asserts Cyber Amber's reading of the SAME tokens
+// equals them exactly.
 const THEMES = [
-  { id: 'cyber-amber', name: 'Cyber Amber' },
-  { id: 'dark', name: 'Dark' }
+  { id: 'dark', name: 'Dark' },
+  { id: 'cyber-amber', name: 'Cyber Amber' }
 ];
 
 // #1039's own decision: the new orange accent (real hue ~55.9) sits closer to the OLD warning
@@ -119,7 +127,23 @@ const CYBER_AMBER_TEXT_VARS = [
   ['--chat-foreground', 'color'],
   ['--muted-foreground', 'color']
 ];
-const SURFACE_CHROMA_CEILING = 0.002;
+// Gate round 1 (self-review against the issue body's own grill decisions, 2026-10-20): these
+// four were still Cyber Amber's own independent literals (achromatic, but not literally Dark's
+// -- `--ring` in particular was a different lightness, and an earlier draft of this comment
+// wrongly called it part of the accent family; it never was, the 2026-10-09 achromatic-ring
+// decision applies here too). Chroma-only checks above cannot catch a lightness mismatch
+// between two achromatic values, so this is a REAL cross-theme equality assertion: Dark's own
+// resolved value is captured first (`darkCaptured` below, `THEME_ORDER` puts Dark first for
+// this reason), then Cyber Amber's reading of the SAME token must equal it exactly (string
+// equality on the resolved `rgb(...)` triple).
+const DARK_EQUALITY_VARS = [
+  ['--ring', 'color'],
+  ['--sidebar-ring', 'color'],
+  ['--input', 'color'],
+  ['--scrollbar-thumb', 'color'],
+  ['--scrollbar-thumb-hover', 'color'],
+  ['--composer-focus', 'color']
+];
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -280,6 +304,10 @@ async function main() {
     await cdp.waitFor(`(${noticeFinder('Warning:')}).length > 0`, { timeoutMs: 30_000, label: 'Warning notice rendered' });
     await sleep(300);
 
+    // Populated on Dark's own turn (`THEMES` puts Dark first), read back on Cyber Amber's turn
+    // for `DARK_EQUALITY_VARS`'s own cross-theme equality assertion below.
+    const darkCaptured = {};
+
     for (const theme of THEMES) {
       try {
         await switchTheme(cdp, theme.id, theme.name);
@@ -353,6 +381,28 @@ async function main() {
             failures.push(`${theme.name}: ${varName} (${raw}) measures chroma ${chroma.toFixed(4)}, above the ${SURFACE_CHROMA_CEILING} pure-neutral ceiling.`);
           } else {
             findings.push(`${theme.name}: ${varName} (${raw}) measures chroma ${chroma.toFixed(4)} (<=${SURFACE_CHROMA_CEILING}, pure neutral).`);
+          }
+        }
+
+        // ---- Gate round 1 (self-review, 2026-10-20): `--ring`/`--sidebar-ring`/`--input`/
+        // `--scrollbar-thumb`/`--scrollbar-thumb-hover`/`--composer-focus` must be BYTE-
+        // IDENTICAL to Dark's own literal, not merely achromatic (a chroma-only check cannot
+        // catch a lightness mismatch between two achromatic values). Dark's own turn captures
+        // each token's real resolved value; Cyber Amber's turn asserts equality against it. ----
+        if (theme.id === 'dark') {
+          for (const [varName, property] of DARK_EQUALITY_VARS) {
+            darkCaptured[varName] = await requireResolvedCssVarColor(cdp, varName, property);
+          }
+          findings.push(`Dark: captured ${DARK_EQUALITY_VARS.length} token(s) as the cross-theme equality baseline (${DARK_EQUALITY_VARS.map(([v]) => v).join(', ')}).`);
+        } else {
+          for (const [varName, property] of DARK_EQUALITY_VARS) {
+            const raw = await requireResolvedCssVarColor(cdp, varName, property);
+            const expected = darkCaptured[varName];
+            if (raw !== expected) {
+              failures.push(`${theme.name}: ${varName} measures ${raw}, expected it byte-identical to Dark's own ${expected}.`);
+            } else {
+              findings.push(`${theme.name}: ${varName} (${raw}) is byte-identical to Dark's own.`);
+            }
           }
         }
 

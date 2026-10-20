@@ -25,18 +25,23 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 // CSS2.1 10.3.1/10.6.1) and never paints, confirmed live (#1043, Main's pixel sample caught the
 // Theme submenu's own first cut of this exact mistake, `dropdown-menu.tsx`'s own fix comment).
 // Gate round 1 fix (PR #1057, Code/Test/UI High, 2026-10-20): the checked ring's own border was
-// `border-primary`, matching the Ask card's own look -- but `--primary` measures only 2.92-2.99:1
-// against `--popover` in Obsidian/Nordic Frost/Cyber Amber (under the 3:1 WCAG 1.4.11 floor),
-// and is visibly INVERTED there (a checked row's own ring reads FAINTER than an unchecked row's,
-// since `--primary`'s own relative luminance is LOWER than `--muted-foreground`'s in those three
-// themes -- confirmed by direct measurement, not assumed). `--primary` still clears 3:1 against
-// `--card`/`--background` everywhere (the Ask card's own dialog surfaces) -- `--popover` (the
-// menu surface this ring is NEW to) is the one surface it fails, so this was never "the same
-// pre-existing gap" the #572 decision D10 comment below describes for a DIFFERENT token
-// (`RadioGroupIndicator`'s own dot). Changed to `border-foreground`: `foreground`/`popover` is
-// already a gated PAIRS entry (`scripts/theme-contrast-pairs.mjs`) and clears comfortably in
-// every theme; `foreground`/`accent` (the row's own `focus:bg-accent` fill) is added alongside
-// it for the focused-row case. `AskCard.tsx`/`MergeDialog.tsx` keep their own `border-primary`
+// `border-primary`, matching the Ask card's own look -- but `--primary` measured only
+// 2.92-2.99:1 against `--popover` in Obsidian/Nordic Frost/Cyber Amber at the time (under the
+// 3:1 WCAG 1.4.11 floor), and was visibly INVERTED there (a checked row's own ring read
+// FAINTER than an unchecked row's, since `--primary`'s own relative luminance was LOWER than
+// `--muted-foreground`'s in those three themes -- confirmed by direct measurement, not
+// assumed). `--primary` still cleared 3:1 against `--card`/`--background` everywhere (the Ask
+// card's own dialog surfaces) -- `--popover` (the menu surface this ring is NEW to) was the one
+// surface it failed, so this was never "the same pre-existing gap" the #572 decision D10
+// comment below describes for a DIFFERENT token (`RadioGroupIndicator`'s own dot). Changed to
+// `border-foreground`: `foreground`/`popover` is already a gated PAIRS entry (`scripts/theme-
+// contrast-pairs.mjs`) and clears comfortably in every theme; `foreground`/`accent` (the row's
+// own `focus:bg-accent` fill) is added alongside it for the focused-row case. #1039 (2026-10-20,
+// later the same day) retuned Cyber Amber's own `--primary` to `#c2410c`, which now clears 3:1
+// against its own `--popover` on its own (3.46:1) -- Obsidian (2.99:1) and Nordic Frost (2.92:1)
+// still measure under the floor, so this fix stays unconditional (`border-foreground`
+// everywhere), never reverted for Cyber Amber alone.
+// `AskCard.tsx`/`MergeDialog.tsx` keep their own `border-primary`
 // ring unchanged (out of this issue's scope; D10 below still describes their design accurately).
 export const RADIO_RING_CLASS = "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-foreground"
 export const RADIO_DOT_CLASS = "size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]"

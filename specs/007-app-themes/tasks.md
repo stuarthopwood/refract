@@ -828,12 +828,14 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
 
 ## Phase 9: Convergence — #1039 Cyber Amber retune and softer text (append-only, `/speckit.converge`)
 
-Amends spec.md with a new Clarifications session (2026-10-20) and FR-020/FR-021, per the #1039
-grill (2026-10-19, Stuart, "not what I was expecting, needs to be more like the default dark
-but with orange/amber accents; main font colour should be less of a bright white, and a bit
-more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-contrast`,
-`obsidian` and `nordic-frost` stay byte-identical; only `.theme-dark` (text tokens) and
-`.theme-cyber-amber` (every token) are retuned.
+Amends spec.md with a new Clarifications session (2026-10-20) and FR-020 (accent-vs-warning
+hue distinctness), per the #1039 grill (2026-10-19, Stuart, "not what I was expecting, needs to
+be more like the default dark but with orange/amber accents; main font colour should be less
+of a bright white, and a bit more grey"). FR-021 (softer text) was added, then dropped entirely
+once text softening moved to the separate, app-wide #1074 (T043) -- see that task's own entry,
+not restated here. Same additive rule as Phase 8 for every OTHER theme: `dark-high-contrast`,
+`obsidian` and `nordic-frost` stay byte-identical; only `.theme-dark` (text tokens, later
+reverted) and `.theme-cyber-amber` (every token) are retuned.
 
 - [X] T034 Add spec.md Clarifications session 2026-10-20 and FR-020 (accent-vs-warning hue
   distinctness)/FR-021 (softer text in Dark and Cyber Amber) (depends on nothing).
@@ -943,10 +945,68 @@ more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-con
   total). #1039's final, settled shape:
   Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent, Send and ring,
   and a warning hue moved to 88.
-- [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
+- [X] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T039).
+  **Done**: build slot granted 2026-10-20; merged `origin/main` (#1050/#700/#464) first, one
+  real conflict resolved (Cyber Amber's `--command-pill-bg` moved off a `--muted` alias onto
+  Default Dark's own literal). `ci-local.mjs` 16/16 PASS (`check-theme-contrast` 872/872, Rust
+  tests 731/0 failed; one transient linker failure traced to a stale `CARGO_MANIFEST_DIR` path
+  cached from a different worktree sharing `CARGO_TARGET_DIR`, fixed by touching `build.rs`'s
+  mtime, no content change). `verify-1039-amber-retune.mjs`: 0 failures, 0 notExercised, gitHead
+  `d3b2ee6a`. Screenshots viewed directly (both themes: chat+warning, Manage sessions, Settings
+  Appearance): Cyber Amber read as Default Dark plus a vivid orange accent, no warm tint
+  anywhere. Draft PR #1094 opened (`Closes #1039`).
+- [X] T044 Post-draft-PR self-review against the issue body's own grill decisions and the
+  Mission's stated watch-items (depends on T040).
+  **Done (8 findings, all fixed):**
+  1. [High] Mermaid's own `MERMAID_THEME_VARIABLES['cyber-amber']` was still the old brown
+     palette (`src/shared/mermaidThemeData.ts`) -- now reuses `DARK_FAMILY` directly, the same
+     object Dark itself uses.
+  2. [High] `--input`, `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus` were
+     still independent values (achromatic, but not literally Dark's own) -- now byte-identical
+     literals to `.theme-dark`'s own.
+  3. [Decided] `--ring`/`--sidebar-ring` were `oklch(0.60 0 0)` (achromatic, but a DIFFERENT
+     lightness from Dark's `oklch(0.556 0 0)`) and several comments wrongly called `--ring`
+     part of the "accent family" -- Stuart's own grill on the issue body says the focus ring is
+     unchanged (the 2026-10-09 achromatic-ring decision); now byte-identical to Dark's literal,
+     and spec.md/the verify script/the globals.css header comment/`product-look-and-feel.md`
+     all corrected.
+  4. [Decided, PARTIAL -- flagged to Main]: #1039's new accent hue (55.9) also closes the gap to
+     Cyber Amber's own `--severity-error` (hue 12, unchanged since #551): the swatches now
+     measure only 1.23:1 apart, under the 1.5:1 distinctness floor. No single `--severity-error`
+     lightness (same hue/chroma) clears both that floor (needs L<=~0.662) and the error-text-
+     on-`--muted` floor (needs L>=~0.665) at once -- the two windows do not overlap. Flagging
+     the exact numbers to Main; `--severity-error` left UNCHANGED pending a decision (chroma
+     change, a relaxed floor, or an accepted gap).
+  5. FR-022 amended to the full wording (surface AND text tokens, plus `--input`/scrollbar/
+     `--composer-focus`, equal Default Dark; the status palette keeps the preset's own values,
+     with the one exception above); a new Clarifications session records the correction; this
+     Phase's own intro (above) and T040 no longer mention FR-021.
+  6. [Medium] `scripts/verify-1043-theme-radio-helpers.mjs`'s own hand-maintained Cyber Amber
+     swatch (`#0f0703`/`#c14100`) was stale -- corrected to `#0a0a0a`/`#c2410c`.
+  7. [Medium] Stale comments fixed with the current, real measured numbers:
+     `radio-group.tsx`, `theme-contrast-pairs.mjs` (two spots), `CommandPillOverlay.tsx` (three
+     spots) all still claimed Cyber Amber's `--primary`/`--popover` or `--command-pill-bg`
+     aliased `--muted` the same way Nordic Frost still does -- #1039 moved Cyber Amber off both
+     of those; `docs/design/product-look-and-feel.md`'s own "839/839" claim updated to the
+     current total (872, after the #1050/#700/#464 merge).
+  8. [Medium] `scripts/verify-1039-amber-retune.mjs` extended: a real Dark-vs-Cyber-Amber token
+     EQUALITY assertion (not only chroma) for `--ring`/`--sidebar-ring`/`--input`/
+     `--scrollbar-thumb`/`--scrollbar-thumb-hover`/`--composer-focus` -- captured live from
+     Dark's own turn (`THEMES` reordered to put Dark first), then compared against Cyber
+     Amber's own reading of the SAME token; catches a lightness mismatch between two achromatic
+     values that the existing chroma-only check could not.
+  **NOT run** (no-build remediation lane, held for the next build slot): item 8's new
+  assertion is code-verified only (`node --check` clean, matches the committed script's own
+  token/property pairing); `check:theme-contrast` 872/872 pairs across 5 themes PASS (unchanged
+  total -- no new PAIRS entries, only Cyber Amber's own literal values changed);
+  `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/`check:drag-regions` all
+  green. Actually live-running item 8's new assertion (switching themes, reading the real
+  tokens) is deferred to the next build slot, alongside the rest of T040's own re-run.
 
 T034–T038 keep `dark-high-contrast`/`obsidian`/`nordic-frost` byte-identical to `origin/main`;
-confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged inside the new
-839-pair total (up from 733 at Phase 8, +106 pairs: Cyber Amber's full re-check plus Dark's
-newly-touched literal-copy foreground pairs).
+confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged inside the
+839-pair total this phase itself reached (up from 733 at Phase 8, +106 pairs: Cyber Amber's
+full re-check plus Dark's newly-touched literal-copy foreground pairs). T044's own merge of
+`origin/main` (#1050/#700/#464) brought the total to 872 before any T044 token change; T044's
+own fixes added no new PAIRS entries, only changed Cyber Amber's existing literal values.

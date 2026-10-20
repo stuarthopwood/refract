@@ -982,26 +982,34 @@
  *
  * **Retuned #1039 (Stuart, grilled 2026-10-19, "not what I was expecting, needs to be more
  * like the default dark but with orange/amber accents"); amended #1039 THREE TIMES (Stuart,
- * 2026-10-20, issue comments):** (1) every SURFACE made pure neutral; (2) every TEXT token
- * made pure neutral too; (3) **the text-softening half of #1039 was reverted entirely** --
- * Stuart moved it to a new, separate app-wide text-opacity issue instead, so `--foreground`/
- * `--chat-foreground`/`--muted-foreground` (and every token that aliases `--foreground`:
- * `--card-foreground`/`--popover-foreground`/`--accent-foreground`/`--sidebar-foreground`/
- * `--secondary-foreground`/`--sidebar-accent-foreground`) are back to Default Dark's CURRENT
- * `origin/main` values (`oklch(0.985 0 0)`/`oklch(0.90 0 0)`/`oklch(0.708 0 0)`), not retuned by
- * this issue at all. **#1039's final, settled shape:** every surface
- * (`--background`, `--sidebar`, `--surface-1`/`--surface-2`/`--surface-3`, `--border`) is
- * chroma 0, byte-identical to `.theme-dark`'s own literal (`#0a0a0a`/`#171717`/`#262626`/
- * `#747474`) -- the original BROWN canvas this preset shipped with (see this comment's own
- * history note above) is gone, replaced by Default Dark's ladder exactly. `--input`'s
- * translucent white (`oklch(1 0 0 / 38%)`) was already chroma 0, unchanged. `--card`/`--popover`
- * collapse to one tier (0.205), the same two-tier-not-three structure `.theme-dark`'s own
- * `--surface-1`/`--surface-2` comment already documents for that theme. Only the accent family
- * (`--accent-text`/`--active-indicator`, `--primary`/`--send`, `--ring`'s own LIGHTNESS,
+ * 2026-10-20, issue comments); then round-1 gate fix (Code HIGH, same day):** (1) every
+ * SURFACE made pure neutral; (2) every TEXT token made pure neutral too; (3) **the text-
+ * softening half of #1039 was reverted entirely** -- Stuart moved it to a new, separate
+ * app-wide text-opacity issue instead, so `--foreground`/`--chat-foreground`/
+ * `--muted-foreground` (and every token that aliases `--foreground`: `--card-foreground`/
+ * `--popover-foreground`/`--accent-foreground`/`--sidebar-foreground`/`--secondary-foreground`/
+ * `--sidebar-accent-foreground`) are back to Default Dark's CURRENT `origin/main` values
+ * (`oklch(0.985 0 0)`/`oklch(0.90 0 0)`/`oklch(0.708 0 0)`), not retuned by this issue at all.
+ * (4) **Gate round 1 fix:** `--ring` (Stuart's grill on the issue body: "Unchanged: the
+ * achromatic focus ring", matching the existing 2026-10-09 rule), `--input`,
+ * `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus` were still their own
+ * distinct literals (an earlier draft of this comment wrongly called `--ring` "a different
+ * lightness, same [accent] family" -- it never was part of the accent family at all) -- all
+ * four are now byte-identical to Default Dark's own literals too. **#1039's final, settled
+ * shape:** every surface (`--background`, `--sidebar`, `--surface-1`/`--surface-2`/
+ * `--surface-3`, `--border`), every text token, and `--input`/`--scrollbar-thumb`/
+ * `--scrollbar-thumb-hover`/`--composer-focus`/`--ring`/`--sidebar-ring` are chroma 0,
+ * byte-identical to `.theme-dark`'s own literal -- the original BROWN canvas this preset
+ * shipped with (see this comment's own history note above) is gone, replaced by Default Dark
+ * exactly. `--card`/`--popover` collapse to one tier (0.205), the same two-tier-not-three
+ * structure `.theme-dark`'s own `--surface-1`/`--surface-2` comment already documents for that
+ * theme. Only the accent family (`--accent-text`/`--active-indicator`, `--primary`/`--send`,
  * markdown links -- all of which already read `--accent-text`), the warning hue
- * (`--severity-warning`), and `themes.ts`'s own `swatchPrimary` still differ from Default Dark.
+ * (`--severity-warning`), and `themes.ts`'s own `swatchPrimary` still differ from Default Dark
+ * -- `--ring` is explicitly NOT part of this family and never has been (the achromatic-ring
+ * decision, 2026-10-09, applies to every built-in preset including this one).
  *
- * **Accent, per the grill's decided hex values (unaffected by any of the three 2026-10-20
+ * **Accent, per the grill's decided hex values (unaffected by any of the four 2026-10-20
  * amendments):** `--accent-text`/`--active-indicator` move to the vivid orange `#fb923c` (real
  * hue 55.9); `--primary`/`--send` move to the deeper, filled `#c2410c` (real hue 38.4) with
  * white text. Measured against the pure-neutral surfaces: accent-text clears 4.5:1 against
@@ -1010,18 +1018,23 @@
  * 3:1 non-text floor against `--background` (3.82:1, the quiet-composer backdrop, #927).
  * `--sidebar-primary` stays the shared indigo every other preset uses (never carried the old
  * peach/orange, so it is out of this retune's "whatever else currently carries the peach or
- * burnt orange" scope). `--ring` stays achromatic (`oklch(0.60 0 0)`, a different LIGHTNESS
- * from Dark's own `oklch(0.556 0 0)` -- a pre-existing, deliberate per-preset choice, same
- * achromatic family, not a text/surface token any #1039 amendment touches).
+ * burnt orange" scope).
  *
  * **Warning stays golden amber, retuned apart from the new accent:** the new orange accent's
  * real hue (55.9) sits closer to the OLD warning hue (73.8) than the old accent's did (39.9) --
  * only ~18 degrees apart, under the ~30-degree margin this theme's own severity/accent pairs
  * have held to since #551's gate rounds. `--severity-warning` moves from hue 75 to hue 88 (same
  * lightness/chroma, `oklch(0.78 0.17 88)`, real hue 86.6) -- more yellow-gold, still clearly
- * "amber", now ~30.7 degrees from the new accent's real hue and ~75 degrees from
- * `--severity-error`'s (hue 12, unchanged). `--severity-success`/`--severity-info` are
- * unchanged (green hue 162.48, cool teal hue 200).
+ * "amber", now ~30.7 degrees from the new accent's real hue. `--severity-success`/
+ * `--severity-info` are unchanged (green hue 162.48, cool teal hue 200).
+ * **Open gate finding (round 1, HIGH, NOT yet fixed):** `--accent-text`'s new real hue (55.9)
+ * also closed the gap to `--severity-error` (hue 12, unchanged since #551): the two swatches
+ * now measure only 1.23:1 apart (WCAG luminance contrast), under the 1.5:1 distinctness floor
+ * #551's own gate established. Lowering `--severity-error`'s lightness alone cannot fix this:
+ * the swatch-distinctness floor (>=1.5:1) needs L<=~0.662, but the error-text-on-`--muted`
+ * floor (>=4.5:1) needs L>=~0.665 -- the two windows do not overlap at this hue/chroma, so no
+ * single lightness clears both. Flagged to Main for a decision (chroma change, a relaxed
+ * floor, or an accepted gap); `--severity-error` is UNCHANGED pending that call.
  *
  * **Text, foreground/chat/muted: byte-identical to Default Dark, not retuned by #1039 at
  * all** (see the third 2026-10-20 amendment above) -- `--foreground` is `oklch(0.985 0 0)`,
@@ -1031,8 +1044,8 @@
  * `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
   color-scheme: dark;
-  --scrollbar-thumb: var(--muted-foreground);
-  --scrollbar-thumb-hover: var(--foreground);
+  --scrollbar-thumb: #757575;
+  --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
 
   --background: oklch(0.145 0 0);
@@ -1059,10 +1072,13 @@
   --accent-foreground: var(--foreground);
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
-  --input: oklch(1 0 0 / 38%);
-  /* Focus ring stays achromatic grey, same as every other built-in preset (never this preset's
-   * own amber accent). */
-  --ring: oklch(0.60 0 0);
+  --input: oklch(1 0 0 / 36%);
+  /* Gate round 1 fix (Code HIGH, #1039): the focus ring stays achromatic AND byte-identical to
+   * Default Dark's own literal -- Stuart's grill on the issue body says "Unchanged: the
+   * achromatic focus ring" (the existing 2026-10-09 rule), not merely "a different lightness,
+   * same family" as an earlier draft of this comment claimed. `--sidebar-ring` already aliases
+   * `--ring` via `var()`, so it follows automatically. */
+  --ring: oklch(0.556 0 0);
   --active-indicator: var(--accent-text);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -1132,7 +1148,7 @@
   --chat-foreground: oklch(0.90 0 0);
   --composer-background: transparent;
   --composer-border: var(--divider);
-  --composer-focus: color-mix(in oklab, var(--border) 75%, transparent);
+  --composer-focus: oklch(1 0 0 / 35%);
   --composer-ring: transparent;
   --composer-control-border: transparent;
   --card: var(--surface-1);
