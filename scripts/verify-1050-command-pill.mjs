@@ -453,8 +453,15 @@ async function main() {
     // z-index at all -- `elementFromPoint` at Send's own centre resolved to the textarea, so a
     // real pointer click there never reached the button. Run LAST (not alongside the earlier
     // checks above): a real click genuinely sends through the fake-omp tape's own single
-    // scripted `prompt` reply, which nothing after this point depends on.
-    await clearAndType(cdp, pressKey, '/btw hi');
+    // scripted `prompt` reply, which nothing after this point depends on. Gate round 4 fix:
+    // `/btw ...` is NOT a plain forwarded message -- `MessageInput.tsx`'s own `handleSend` gives
+    // it special native handling (it opens the Side chat panel and asks there instead of calling
+    // `chat.send`), and refuses outright with a toast (draft left untouched) while that panel's
+    // own history has never loaded, which this harness never does -- confirmed live: the draft
+    // never cleared within 5s. `/skill:demo-review hi` still pills (proving the exact same
+    // z-index scenario) but has no special-cased handling in `handleSend`, so it reaches the
+    // real `window.refract.chat.send` -> fake-omp `prompt` path and clears normally on success.
+    await clearAndType(cdp, pressKey, '/skill:demo-review hi');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'Send/Stop clickability: pill shown before the click' });
     const sendHit = await cdp.evaluate(`(() => {
       const send = document.querySelector('[aria-label="Send message"]');
