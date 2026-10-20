@@ -29,6 +29,7 @@ import { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, u
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
 import { useStageToggleStore } from './stage-toggle-store'
+import { useTodoPinStore } from './todo-pin-store'
 import { useUpdateStore } from './update-store'
 
 export { initStores }
@@ -66,6 +67,7 @@ export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThe
 export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
 export { useStageToggleStore }
+export { useTodoPinStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -97,6 +99,7 @@ export interface RefractDevStores {
   holiday: typeof useHolidayStore
   updates: typeof useUpdateStore
   stageToggle: typeof useStageToggleStore
+  todoPin: typeof useTodoPinStore
 }
 
 declare global {
@@ -137,6 +140,7 @@ if (import.meta.env.DEV) {
     chatWidth: useChatWidthStore,
     holiday: useHolidayStore,
     updates: useUpdateStore,
-    stageToggle: useStageToggleStore
+    stageToggle: useStageToggleStore,
+    todoPin: useTodoPinStore
   }
 }

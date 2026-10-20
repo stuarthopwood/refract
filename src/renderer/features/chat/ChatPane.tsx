@@ -40,6 +40,7 @@ import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
+import { PinnedTodoPanel } from './PinnedTodoPanel'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
 import { Transcript } from './Transcript'
@@ -1431,8 +1432,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           }
         />
       </div>
+      <PinnedTodoPanel key={`todo-${sessionId}`} sessionId={sessionId} />
       <MessageInput
-        key={sessionId}
+        key={`composer-${sessionId}`}
         sessionId={sessionId}
         stopReason={effectiveStopReason}
         stopDetail={effectiveStopDetail}

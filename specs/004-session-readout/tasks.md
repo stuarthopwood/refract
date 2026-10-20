@@ -662,3 +662,93 @@ and `node scripts/check-indent.mjs` (0 odd-indent lines) all ran clean after thi
 ships in the same PR as #927 (`specs/001-core-session-workspace/tasks.md` Phase 50), which also
 records the no-build-lane items (`pnpm build`/`pnpm check:ui-text`/the new CDP live check) left
 for the build lane that picks the PR up.
+
+## Phase 38: Convergence
+
+- [X] T134 [US1] FR-028: `ReadoutChip.tsx` gains `pressed`/`controls` props (rendering real
+  `aria-pressed`/`aria-controls` on the interactive `<button>`, never changing the plain-span or
+  external-link branches); `ReadoutChips.tsx`'s `TodoProgressChip` becomes the pin-toggle control
+  -- a fixed accessible name ("Pin todo list (Todo d/t)") computed from the shared derive,
+  toggling a new per-Session, non-persisted `useTodoPinStore` (`pinnedBySession`), with a pin
+  glyph (`PinIcon`) and a rendered border (`aria-pressed:border`) replacing the default
+  `ListTodoIcon` while pinned -- never the hover/open-card background every other interactive
+  readout keeps. (#700/#701)
+- [X] T135 [US1] FR-029: a new `PinnedTodoPanel.tsx` (`src/renderer/features/chat/`), mounted in
+  `ChatPane.tsx` directly above the message box, reading `SessionReadout.todoTree` and
+  `useTodoPinStore`'s `pinned`/`collapsed` state. Header (`h-6`, the done/total figure plus the
+  current task, truncated), a Collapse chevron (`aria-expanded`) and an Unpin button (both ghost
+  icon buttons, fixed accessible names); the task list (`max-h-[min(12rem,30vh)]`, scrolling)
+  grouped by phase (header shown only for 2+ phases, a finished phase folded to one line); each
+  task shows a status icon/word (`CircleDotIcon`/working colour/`font-medium` for `in_progress`,
+  `CheckCircle2Icon`/muted for `completed`, `CircleSlashIcon`/muted/strike-through for
+  `abandoned`, `CircleAlertIcon`/amber plus a second "Blocked: <reason>" line for `blocked`,
+  `pending` and `completed`'s own words screen-reader only). The list follows the current
+  `in_progress` task, keeping it in view by setting the list's own `scrollTop` directly (never
+  `scrollIntoView`, which can scroll an ancestor), latched off only by a real wheel/pointer/key
+  event on the list itself, re-armed on mount, expand and re-pin. The panel unmounts entirely
+  once `hasTodoPlan` is false (pin survives), and auto-collapses (the task list itself hides,
+  not just the header text) once every open task completes, leaving the user free to expand it
+  again afterward. (#700/#701)
+
+  **Gate round 1 fixes (Main, consolidated five-reviewer findings on PR #1054):** the follow-
+  current effect used to latch on its OWN `onScroll` (the very first follow permanently
+  disabled every later one); `ChatPane.tsx` now renders this with `key={sessionId}` so latch/
+  scroll state never leaks between Sessions. Unpinning, or the plan vanishing, used to strand
+  focus on `<body>`; a `useLayoutEffect`-cleanup focus-intent (`isFocusStranded`, `@/lib/focus`,
+  the `useFocusSearchOnStrandedUnmount.ts`/#900 precedent) now redirects it to the pill
+  (`aria-controls`'s own target) or the composer. An unrecognised task status no longer crashes
+  the render (renderer falls back to the `pending` glyph; `readout_todo.rs`'s own
+  `parse_todo_phases` normalises an unknown/missing wire status to `"pending"` first). The panel
+  is now a real `<section aria-label="Todo list">` region; the Collapse control has a FIXED
+  name ("Todo list details") plus `aria-controls` to the list's own id (the permanently-pressed
+  ghost-button fill from `aria-expanded:bg-muted` is overridden off for this one button); both
+  Collapse and Unpin gained a Tooltip, `aria-describedby={undefined}`, and the forced-colours
+  focus class (`COMPOSER_BUTTON_FOCUS_CLASS`). The scrolling list is a keyboard Tab stop
+  (`tabIndex={0}`) only while it genuinely overflows. A folded phase header now shows a muted
+  check icon; a completed task's own text recedes (muted); the header's current-task text
+  carries a `title` attribute for when it truncates. `deriveCurrentTask` (`todoDerive.ts`) now
+  returns `{phase, task}` (replacing this file's own duplicate `findCurrentTask`); `hasTodoPlan`
+  is now a type guard, dropping every `as TodoPhase[]` cast.
+- [X] T136 [US1] FR-030: `UpNextList.tsx` reads `useTodoPinStore`'s `pinned` flag for its own
+  Session and hides (alongside its existing `isLastTurn`/`stagesCount`/empty-list guards) while
+  pinned, so the plan never shows twice. (#700/#701; amends spec 001 FR-079)
+- [X] T137 [US1] Shared pure derive: a new `src/shared/todo.ts` (`TodoTaskStatus`, `TodoTask`,
+  `TodoPhase`, standalone so neither `model.ts` -- at its own 656-line baseline -- nor the
+  renderer derive duplicate the wire shape) and a new
+  `src/renderer/features/chat/readout/todoDerive.ts` (`hasTodoPlan`, `deriveTodoTotals`,
+  `derivePhaseTotals`, `isPhaseFinished`, `deriveCurrentTask`, `isTodoAllDone`): `total` excludes
+  `abandoned` tasks, `done` counts only `completed`, a `blocked` task counts as open -- the ONE
+  place this math lives, ready for the Todo card (#700 slice (b)) and #526/#687 to import without
+  a second copy. (#700/#701)
+- [X] T138 [US1] Rust: `readout_todo.rs`'s `TodoTaskState` gains `content`/`blocker` alongside
+  `status` (`parse_todo_phases` reads both); a new `build_todo_tree` serialises the retained tree
+  to the wire shape. `readout.rs`'s `on_frame` now replaces the retained `todo_phases` tree from
+  the `todo` tool's own `tool_execution_end` `result.details.phases` the instant one arrives
+  (live, mid-turn), in addition to the existing `sync_from_state` resync at launch/Conversation
+  switch/settle; `build_readout_value`/`empty_readout` drop the old server-computed
+  `todoProgress: {done,total}` field entirely in favour of the raw `todoTree` (FR-028's shared
+  derive is now the only place that math runs). `compute_up_next`/`todoPhases` (Up next) are
+  unchanged. FINDINGS item 62 (`docs/spike/todo-tree-pin-probe-700.mjs`, live on `omp 18.12.2`)
+  confirms the exact shape and status vocabulary before this task relied on either. (#700/#701)
+- [X] T139 [US1] Docs: `specs/004-session-readout/spec.md` gains a 2026-10-19 Clarifications
+  entry, FR-028 to FR-030, a 12th User Story 1 acceptance scenario, three Edge Cases, a Pinned
+  todo panel Key Entity, and a deferred-to-slice-(b)/(c) Assumptions note; `data-model.md`'s
+  `SessionReadout` replaces `todoProgress` with `todoTree`; `specs/001-core-session-workspace/
+  spec.md`'s FR-079 gets a one-line amendment note for the new hide-while-pinned exception.
+  `docs/PLAN.md`'s "Current work banner"/"Todo and agents cards, todo pin" row records slice (a)
+  as shipped. (#700/#701)
+
+Built against the issue's own decision record (Skippy, delegated by Stuart 2026-10-19, away
+mode, `ui-architect-v3` ruling, full text on issue #700's latest comment), as a no-build lane
+(Rust/TS code only, no spawned live agent beyond the one-shot `docs/spike/todo-tree-pin-probe-
+700.mjs` FINDINGS probe): `pnpm typecheck` (both `tsconfig.node.json` and `tsconfig.web.json`)
+clean; `pnpm test` (148 tests, 11 files) all passing; `pnpm check:indent` (0 odd-indent lines
+across 415 files); `pnpm check:file-size` (0 cap violations -- `ChatPane.tsx` 1419/1445,
+`ReadoutChips.tsx` 511/600, `model.ts` 656/656, `readout.rs` 584/600, all within their recorded
+baselines or the 600-line soft cap); `pnpm check:theme-contrast` (all 829 pairs across 5 themes
+PASS -- every status icon/word uses an EXISTING checked token, `text-state-working`/
+`text-severity-warning`/`text-muted-foreground`, so no new `theme-contrast-pairs.mjs` entry was
+needed); `cargo fmt --check` clean on both touched Rust files. Not independently driven this
+round: `cargo check`/`clippy`/`test`, `pnpm build`, and the live CDP verify script
+(`scripts/verify-700-todo-pin.mjs`) -- left for the build-slot pass (one heavy build at a time
+across the concurrently-running lanes this session).

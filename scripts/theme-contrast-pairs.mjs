@@ -63,7 +63,7 @@ export const PAIRS = [
   // never checked against that specific surface before.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
   { fg: 'destructive', bg: 'background', min: 3 },
-  { fg: 'state-working', bg: 'background', min: 3 },
+  { fg: 'state-working', bg: 'background', min: 4.5 }, // #700: also real BODY TEXT ("In progress"), not just icon-only -- 4.5 subsumes the old 3:1 icon floor
   { fg: 'state-idle', bg: 'background', min: 3 },
   { fg: 'state-needs-you', bg: 'background', min: 3 },
   { fg: 'state-stopped', bg: 'background', min: 3 },

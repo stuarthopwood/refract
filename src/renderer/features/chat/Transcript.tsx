@@ -14,7 +14,7 @@ import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingReq
 import { type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
-import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop } from './scrollLanding'
+import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
@@ -425,16 +425,14 @@ export function Transcript({
   // Finding 6 (gate fixes 4): ref to the scrollable content so the ResizeObserver below can
   // recompute `isAtEnd` when content reflow changes `scrollHeight` without a `scroll` event.
   const contentRef = React.useRef<HTMLDivElement>(null)
-
+  const { isRecentGesture, resetGesture, gestureProps } = useScrollGestureTracking()
+  const lastScrollTopRef = React.useRef(0)
   // True from the moment a Session/Conversation switch's landing effect (below) starts until it
-  // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
-  // from their placeholder size, the browser can clamp/adjust `scrollTop` on its own (the
-  // just-mounted content's placeholder-sized `scrollHeight` is smaller than the real one, so a
-  // leftover `scrollTop` from the PREVIOUS Session gets silently clamped down), firing a genuine
-  // `scroll` event that `handleViewportScroll` would otherwise misrecord as "the developer's
-  // position" -- corrupting the very memory the landing effect is about to read. Suppressing
-  // recording for this one settle window (never for real scrolling once it is over) was the
-  // fix for issue #485's restore-on-return silently losing the detached position every time.
+  // applies its own `scrollTop` -- while placeholder rows are still settling, the browser can
+  // clamp `scrollTop` on its own, firing a genuine `scroll` event that `handleViewportScroll`
+  // would otherwise misrecord as the developer's position, corrupting the memory the landing
+  // effect is about to read. Suppressing recording for this one window was the fix for #485's
+  // restore-on-return silently losing the detached position every time.
   const landingInProgressRef = React.useRef(false)
 
   // Gate round 4 fix (M1): the in-flight JUMP's own `runScrollSettleLoop` cancel() (never the
@@ -515,7 +513,7 @@ export function Transcript({
   const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
   if (prevLandingKey !== landingKey) {
     setPrevLandingKey(landingKey)
-    landingInProgressRef.current = true
+    landingInProgressRef.current = true; resetGesture()
     if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
     // Finding 6 (gate fixes 4): resets `isAtEnd` to match the NEW Session/Conversation's own
     // stored memory immediately, in this same render-phase block -- previously it kept
@@ -556,7 +554,8 @@ export function Transcript({
       clientHeight: viewport.clientHeight
     })
     useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-    if (atEnd && autoScrollSuppressed) setAutoScrollSuppressed(false)
+    const movedUp = viewport.scrollTop < lastScrollTopRef.current; lastScrollTopRef.current = viewport.scrollTop
+    if (atEnd !== !autoScrollSuppressed && (atEnd || (movedUp && isRecentGesture()))) setAutoScrollSuppressed(!atEnd)
     setIsAtEnd(atEnd)
   }
 
@@ -682,7 +681,7 @@ export function Transcript({
     // bump the token so a stale `onAborted` cannot stomp this landing's own fresh state.
     jumpCancelRef.current?.()
     jumpTokenRef.current += 1
-    landingInProgressRef.current = true
+    landingInProgressRef.current = true; resetGesture()
     const cancel = runScrollSettleLoop(root, viewport, {
       computeTarget: ({ scrollHeight, clientHeight }) => {
         const memory = useChatScrollStore.getState().bySession[sessionId]
@@ -747,7 +746,7 @@ export function Transcript({
       // shared state, so a stale abort can never stomp a landing or newer jump that took over.
       jumpCancelRef.current?.()
       const myToken = ++jumpTokenRef.current
-      landingInProgressRef.current = true
+      landingInProgressRef.current = true; resetGesture()
       setAutoScrollSuppressed(true)
       const cancel = runScrollSettleLoop(root, viewport, {
         // Gate round 2 fix (item 3, Medium): a Session/Conversation switch mid-loop can remove
@@ -834,6 +833,7 @@ export function Transcript({
         <MessageScrollerViewport
           ref={viewportRef}
           onScroll={handleViewportScroll}
+          {...gestureProps}
           role="region"
           tabIndex={0}
           aria-label="Transcript"

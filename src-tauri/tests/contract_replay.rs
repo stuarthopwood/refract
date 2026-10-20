@@ -343,6 +343,13 @@ fn scrub_known_divergences(value: &mut Value) {
                 // `readout.ts` never named todo phases either, so it never appears on that
                 // shell's side of this diff.
                 map.remove("todoPhases");
+                // Issue #700/#701 slice (a): `todoProgress: {done,total}` (Electron's own
+                // frozen shape, still present on that side of this diff) is superseded on the
+                // Rust side by the richer `todoTree` (full phases/tasks, `readout_todo.rs`'s
+                // `build_todo_tree`) -- the SAME kind of one-sided rename `branch`/`todoPhases`
+                // above already establish a precedent for, never a behavioural divergence.
+                map.remove("todoTree");
+                map.remove("todoProgress");
             }
             // Issue #937: `sessions.open`'s own response value gained a brand-new, Rust-only
             // `advisorOn` field (Electron never shipped omp's advisor subsystem at all, epic

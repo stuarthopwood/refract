@@ -86,7 +86,7 @@ interface SessionReadout {
   turnTime: { startedAt: number } | null;        // null = no turn running (chip hidden); renderer computes elapsed
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden); gate fixes 2 finding 7: finished/exited/failed kept separate, never folded together; issue #563 decision 15 adds `cancelled`, split out of `failed` (a cancel/abort is not a failure)
-  todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
+  todoTree: Array<{ name: string; tasks: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'abandoned'; blocker?: string }> }> | null; // null = agent has no task list (readout hidden); issue #700/#701 slice (a), FINDINGS item 62: supersedes the earlier `todoProgress: { done, total }` shape -- `done`/`total` are now computed by the shared `src/renderer/features/chat/readout/todoDerive.ts`, never carried on the wire
 }
 
 interface ContextUsage {
