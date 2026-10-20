@@ -21,6 +21,7 @@ import { ManageSessionsToolbar } from './ManageSessionsToolbar'
 import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel } from './manageSessionsHelpers'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
 import { DEFAULT_FILTERS } from '@/state/view-store'
+import { HolidayEmptyStateLine } from '@/features/holidays/HolidayEmptyStateLine'
 
 export function ManageSessionsScreen() {
   const sessions = useSessionsStore((state) => state.sessions)
@@ -194,6 +195,7 @@ export function ManageSessionsScreen() {
               </EmptyMedia>
               <EmptyTitle>No sessions yet</EmptyTitle>
               <EmptyDescription>Create a session from a repository in the left nav.</EmptyDescription>
+              <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" onClick={handleBackToChat}>

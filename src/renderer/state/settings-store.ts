@@ -11,6 +11,7 @@ interface SettingsState {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
+  setHolidayTouches(value: Settings['holidayTouches']): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   watermarkEnabled: true,
   chatWidth: 'full',
+  holidayTouches: 'full',
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
   detectImagePathsOnPaste: true,
@@ -60,6 +62,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setWatermarkEnabled: async (enabled) => {
     const result = await window.refract.settings.setWatermarkEnabled(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setHolidayTouches: async (value) => {
+    const result = await window.refract.settings.setHolidayTouches(value)
     if (result.ok) {
       set({ settings: result.value })
     } else {

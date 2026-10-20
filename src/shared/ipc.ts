@@ -32,12 +32,15 @@ import type {
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
+import type { DebugApi } from './ipc-debug';
+import type { LeftoverSummary } from './ipc-sessions';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
+import type { HolidayTouches } from './holidayTouches';
 import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -276,23 +279,10 @@ export interface MergeInput {
   expectedHeadSha: string;
 }
 
-/** `sessions.deleteLeftoverSummary` (issue #891): a background `git status --ignored` read of
- * the worktree (gate round 1: not a raw filesystem walk -- tracked files and `.git` are never
- * listed), separate from `deleteCheck`'s own uncommitted/unpushed stats. Lists generated
- * folders (e.g. `node_modules`) by name with a combined file count, and other files by path,
- * capped with `moreCount` once there are too many to list individually. `rootName` (gate round,
- * M3) is the worktree folder's own basename, so the renderer can lead each displayed path with
- * which Session it belongs to. `unavailable` (gate round 2, H2) is true when the underlying
- * `git status` call failed, timed out, or its own join failed -- distinct from a genuinely
- * empty worktree; the dialog must show "Couldn't list the folder's files." in that case, never
- * fold it into "Nothing left in the worktree". */
-export interface LeftoverSummary {
-  rootName: string;
-  generatedFolders: { name: string; fileCount: number }[];
-  otherFiles: string[];
-  moreCount: number;
-  unavailable: boolean;
-}
+/** `ipc-sessions.ts`'s own `LeftoverSummary` has the full reasoning -- split out there (issue
+ * #891) to keep this file at its own file-size baseline (issue #806), re-exported here so every
+ * existing import from `../../shared/ipc` keeps working unchanged. */
+export type { LeftoverSummary } from './ipc-sessions';
 
 // ---------------------------------------------------------------------------
 // Channel names
@@ -377,6 +367,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
+  SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
+  DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -714,9 +706,15 @@ export interface RefractApi extends UpdatesApi {
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
+    setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
+
+  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs (`ipc-debug.ts`'s own
+   * `DebugApi` has the full reasoning) -- split out there to keep this file at its own
+   * file-size baseline (issue #806). */
+  debug: DebugApi;
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
    * never a file Refract edits itself -- always OMP's GLOBAL config.yml, never a project override. */

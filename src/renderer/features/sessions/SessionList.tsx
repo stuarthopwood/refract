@@ -12,9 +12,10 @@ import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { SearchField } from '@/components/SearchField'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
-import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useViewStore } from '@/state'
+import { useAccountsStore, useHolidayStore, usePullRequestsStore, useRepositoriesStore, useSessionListStore, useSessionsStore, useSettingsStore, useViewStore } from '@/state'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
@@ -55,6 +56,10 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+  // Issue #1048 (Holiday touches): the sidebar accessory beside the "Refract" wordmark below.
+  const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
+  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   // #735 decisions 15-19: the persisted collapse/expand state. `restored` gates the
   // toolbar and every group below -- nothing paints open and then immediately snaps shut once
   // the persisted state loads a moment after Repositories do (decision 19).
@@ -228,6 +233,9 @@ export function SessionList() {
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-semibold">Refract</span>
+        {/* Issue #1048 (Holiday touches): a purely decorative accessory beside the wordmark --
+            `aria-hidden`, the "Refract" accessible name above is unchanged either way. */}
+        {holidayEntry && <holidayEntry.icon aria-hidden focusable={false} className="size-3.5 shrink-0 text-muted-foreground" />}
       </div>
       {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
           placement answer (spec 003 Clarifications). `aria-current` gives the selected state a
