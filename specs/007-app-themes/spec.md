@@ -44,7 +44,8 @@ font and code font stay with issue #4 and are out of scope here.
 - Q: Does the softer-text change apply to every built-in theme? -> A: No -- only Default Dark
   and Cyber Amber. `--foreground` moves from near-white to about `oklch(0.90 0 0)`;
   `--chat-foreground` goes a step softer, to about `oklch(0.86 0 0)`; muted text stays a clear
-  step below both, and every text pair keeps 4.5:1 or better.
+  step below both, and every text pair keeps 4.5:1 or better. **Superseded the same day (see
+  the final 2026-10-20 session below): #1039 drops its own text softening entirely.**
 
 ### Session 2026-10-20 (later, #1039 issue comment amendment)
 
@@ -68,6 +69,19 @@ font and code font stay with issue #4 and are out of scope here.
   `--sidebar-accent-foreground`) becomes chroma 0, byte-identical to Default Dark's own text
   tokens. Only the accent family (`--accent-text`, `--primary`/`--send`, `--ring`, markdown
   links), the warning hue, and `themes.ts`'s own `swatchPrimary` differ from Default Dark.
+
+### Session 2026-10-20 (final, #1039 drops its own text softening)
+
+- Q: #1039's own text softening (`--foreground`/`--chat-foreground` retuned in Default Dark and
+  Cyber Amber) went through three same-day corrections (surfaces-only pure-neutral, then
+  text-pure-neutral-too, ...) -- is any of it kept? -> A: No. Stuart decided text softening
+  belongs to a NEW, separate, app-wide issue instead (white at opacity 0.9 for headers/UI, 0.78
+  for body/chat, 0.6 for muted, in every built-in preset except Dark (high contrast)) -- out of
+  this spec's scope. `--foreground`, `--chat-foreground` and `--muted-foreground` in both
+  Default Dark and Cyber Amber revert to `origin/main`'s own current values (`oklch(0.985 0 0)`/
+  `oklch(0.90 0 0)`/`oklch(0.708 0 0)`), untouched by #1039. #1039's final, settled shape:
+  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent, Send and ring, and
+  a warning hue moved to 88.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -270,17 +284,14 @@ side panel and confirm both show the same theme.
 - **FR-020** (#1039): Within any single built-in theme, the active accent colour (`--accent-text`,
   `--primary`, `--send`) MUST stay visually distinct in hue from that theme's own warning colour
   (`--severity-warning`), so a warning never reads as an accent.
-- **FR-021** (#1039): `--foreground` and `--chat-foreground` MUST read as a soft grey rather than
-  near-white in Default Dark and in Cyber Amber, with `--chat-foreground` staying one step
-  dimmer than `--foreground` and `--muted-foreground` staying a clear step below both, in both
-  themes; every one of these pairs MUST still clear FR-008's contrast floor.
-- **FR-022** (#1039, amended 2026-10-20 twice): Cyber Amber's surface tokens (`--background`,
-  `--sidebar`, `--card`/`--popover`, `--muted`/`--accent`/`--secondary`, `--border`, `--input`)
-  AND its text tokens (`--foreground`, `--chat-foreground`, `--muted-foreground`, and every
-  token that aliases `--foreground`) MUST all be pure neutral greys (OKLCH chroma ≤ 0.002),
-  matching Default Dark's own tokens exactly; only the accent family (`--accent-text`,
-  `--primary`/`--send`, `--ring`, markdown links), the warning hue, and `themes.ts`'s own
-  `swatchPrimary` may differ from Default Dark.
+- **FR-022** (#1039, amended 2026-10-20 twice, then narrowed): Cyber Amber's surface tokens
+  (`--background`, `--sidebar`, `--card`/`--popover`, `--muted`/`--accent`/`--secondary`,
+  `--border`, `--input`) MUST all be pure neutral greys (OKLCH chroma ≤ 0.002), matching
+  Default Dark's own surface tokens exactly. `--foreground`/`--chat-foreground`/
+  `--muted-foreground` are NOT retuned by this spec (text softening moved to a separate,
+  app-wide issue, 2026-10-20) -- they stay at Default Dark's own unretuned values in both
+  themes. Only the accent family (`--accent-text`, `--primary`/`--send`, `--ring`, markdown
+  links), the warning hue, and `themes.ts`'s own `swatchPrimary` may differ from Default Dark.
 
 ### Key Entities
 

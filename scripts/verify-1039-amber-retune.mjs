@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1039 (Cyber Amber retuned onto Default Dark's own surfaces -- PURE
-// neutral, chroma 0, amended 2026-10-20 -- with a vivid orange accent; softer
-// `--foreground`/`--chat-foreground` in both Cyber Amber and Dark).
+// neutral, chroma 0 -- with a vivid orange accent, a warning hue moved to 88, and the Send
+// button/ring following the accent family. Text softening, tried as part of #1039 through
+// three same-day corrections, 2026-10-20, was reverted entirely the same day: Stuart moved it
+// to a new, separate, app-wide issue, so `--foreground`/`--chat-foreground`/
+// `--muted-foreground` are untouched by #1039 in both Cyber Amber and Default Dark).
 //
 // Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
 // fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn that
 // deterministically renders a real `--severity-warning`-coloured NoticeRow, with no dependence
 // on a real model ever choosing to emit a warning. The same turn's own echoed user message
 // renders through `UserMessageRow.tsx`'s `text-chat-foreground` Markdown, giving a real chat-
-// prose element too -- no second fixture needed for #1039's own softer-text assertion.
+// prose element too -- no second fixture needed for this check's own text-token assertions.
 //
 // For each of Cyber Amber and Dark (Default Dark), switches via the real Profile-menu Theme
 // submenu (`switchTheme`, the same route `verify-551-presets.mjs` uses for Cyber Amber), then

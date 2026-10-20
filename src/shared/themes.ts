@@ -49,7 +49,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#dedede' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
@@ -125,13 +125,14 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     id: 'cyber-amber',
     name: 'Cyber Amber',
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
-    // `.theme-dark`'s own near-black canvas (2026-10-20, amended twice: every surface AND
-    // every text token is pure neutral, chroma 0, no warm tint anywhere -- `symbolColor` below
-    // now equals Dark's own, since `--foreground` is literally identical between the two).
+    // `.theme-dark`'s own near-black canvas (#1039, 2026-10-20: every surface is pure neutral,
+    // chroma 0, no warm tint anywhere; text was retuned softer then fully reverted the same
+    // day -- Stuart moved text softening to a separate, app-wide issue -- so `--foreground`/
+    // `symbolColor` below are back to byte-identical with Dark's own, unretuned by #1039).
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#dedede' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
   }
 }
 

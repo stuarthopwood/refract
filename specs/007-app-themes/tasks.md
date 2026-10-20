@@ -918,6 +918,31 @@ more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-con
   `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes PASS** (unchanged
   total); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
   `check:drag-regions`/`vitest run` (148/148) all green.
+- [X] T043 Revert #1039's own text softening entirely (Stuart, 2026-10-20, issue comment):
+  text softening moves to a NEW, separate, app-wide issue instead (white at opacity 0.9 for
+  headers/UI, 0.78 for body/chat, 0.6 for muted, in every built-in preset except Dark (high
+  contrast)) -- out of this spec's scope. `--foreground`/`--chat-foreground`/
+  `--muted-foreground` in BOTH `.theme-dark` and `.theme-cyber-amber` revert to Default Dark's
+  CURRENT `origin/main` values; Cyber Amber's stay byte-identical to Dark's, as they already
+  were pre-#1039. Drops spec.md FR-021 and narrows FR-022 to surfaces only; adds a final
+  Clarifications session. Keeps the chroma-0 assertions (T039/T041/T042) -- they still hold,
+  trivially, since Dark's own text tokens were always chroma 0 (depends on T042).
+  **Done**: `src/renderer/styles/globals.css` `.theme-dark` (`--foreground` 0.90 -> 0.985,
+  `--chat-foreground` 0.86 -> 0.90, and every literal copy -- `--card-foreground`/
+  `--popover-foreground`/`--secondary-foreground`/`--accent-foreground`/`--sidebar-foreground`/
+  `--sidebar-accent-foreground` -- back to 0.985) and `.theme-cyber-amber` (`--foreground`
+  0.90 -> 0.985, `--chat-foreground` 0.86 -> 0.90, `--muted-foreground` already 0.708 0 0,
+  unchanged); both header comments rewritten. `src/shared/themes.ts` (`symbolColor` `#dedede`
+  -> `#fafafa` for both `dark` and `cyber-amber`). `specs/007-app-themes/spec.md` (FR-021
+  dropped, FR-022 narrowed to surfaces, final Clarifications session). `docs/design/
+  product-look-and-feel.md` (the two stale #1039 text-softening bullets consolidated into one
+  accurate bullet: surfaces/accent/warning facts kept, the reverted text-softening claim
+  removed) and `foundations-tokens-theming.md` (surface-ladder note corrected: text tokens are
+  untouched by #1039, not "pure-neutralled by it", though still byte-identical to Dark's own).
+  `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes PASS** (unchanged
+  total). #1039's final, settled shape:
+  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent, Send and ring,
+  and a warning hue moved to 88.
 - [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T039).
 
