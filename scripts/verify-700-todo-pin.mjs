@@ -234,10 +234,20 @@ async function main() {
     await sleep(12_000);
     const __diagPanelCount = await cdp.evaluate(`document.querySelectorAll('[data-slot="pinned-todo-panel"]').length`);
     console.log('DIAG [data-slot="pinned-todo-panel"] count:', __diagPanelCount);
-    const __diagDeployLocations = await cdp.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent && el.textContent.includes('Deploy')).map((el) => ({ tag: el.tagName, text: el.textContent, closestSection: el.closest('section')?.getAttribute('aria-label') ?? null, closestDataSlot: el.closest('[data-slot]')?.getAttribute('data-slot') ?? null, role: el.closest('[role]')?.getAttribute('role') ?? null })))`);
-    console.log('DIAG every leaf element whose text includes "Deploy":', __diagDeployLocations);
+    const __diagPanelsDetail = await cdp.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('[data-slot="pinned-todo-panel"]')).map((panel) => {
+      const deployLi = Array.from(panel.querySelectorAll('li')).find((li) => li.textContent.includes('Deploy'));
+      return {
+        panelId: panel.id,
+        closestSessionPane: panel.closest('[data-session-pane]')?.getAttribute('data-session-pane') ?? null,
+        isConnected: panel.isConnected,
+        boundingRect: (() => { const r = panel.getBoundingClientRect(); return { top: r.top, left: r.left, width: r.width, height: r.height }; })(),
+        deployRowText: deployLi ? deployLi.textContent : null,
+        deployRowHasLineThrough: deployLi ? !!deployLi.querySelector('.line-through') : null
+      };
+    }))`);
+    console.log('DIAG every panel, its ancestor data-session-pane, connected state, rect, and own Deploy row:', __diagPanelsDetail);
     const __diagCommits = await cdp.evaluate(`JSON.stringify((window.__diagCommits || []).filter((c) => c.content === 'Deploy'))`);
-    console.log('DIAG TodoTaskRow commit-phase trace for Deploy (committed renders only):', __diagCommits);
+    console.log('DIAG TodoTaskRow commit-phase trace for Deploy (committed renders only, tagged by owning panel):', __diagCommits);
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);

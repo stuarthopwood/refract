@@ -294,9 +294,17 @@ function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: boolean }
   const { Icon, className, word, srOnly, muteText } = statusGlyph(task.status)
   const liRef = useRef<HTMLLIElement>(null)
   useLayoutEffect(() => {
-    const diagWin = window as typeof window & { __diagCommits?: Array<{ t: number; content: string; propStatus: string; committedText: string | null }> }
+    const diagWin = window as typeof window & {
+      __diagCommits?: Array<{ t: number; content: string; propStatus: string; committedText: string | null; panelId: string | null }>
+    }
     diagWin.__diagCommits = (diagWin.__diagCommits ?? []).concat([
-      { t: Date.now(), content: task.content, propStatus: task.status, committedText: liRef.current?.textContent ?? null }
+      {
+        t: Date.now(),
+        content: task.content,
+        propStatus: task.status,
+        committedText: liRef.current?.textContent ?? null,
+        panelId: liRef.current?.closest('[data-slot="pinned-todo-panel"]')?.id ?? null
+      }
     ])
   })
   return (
