@@ -16,14 +16,17 @@ import { Switch as SwitchPrimitive } from "radix-ui"
 // a real `getComputedStyle` read, not just visual inspection. Gate-fix (#1074 round 1, Code/Test
 // Medium): `--foreground` itself became translucent (90% alpha) when #1074 softened app-wide
 // text, so this `/40` modifier now MULTIPLIES with that alpha too (0.9 * 0.4 = 0.36 effective,
-// not a flat 40%) -- `scripts/theme-contrast-pairs.mjs`'s own `switchTrackContrastRows` checks
+// not a flat 40%) -- `scripts/switch-track-contrast.mjs`'s own `switchTrackContrastRows` checks
 // the real composited result against both surfaces a Switch renders on (`--background`,
 // `--popover`), still comfortably clearing 3:1 in every theme (Obsidian/Nordic Frost's own
 // popover, 3.21:1/3.22:1, is the binding case; `.theme-dark-high-contrast`'s own `--foreground`
-// stays solid, unaffected). The solid
-// `dark:data-[state=unchecked]:bg-foreground` thumb reaches ~5.2:1 against that now-lighter
-// track (and ~19:1 against the page). `focus-visible:border-ring` matches the solid full-opacity
-// ring Button/Badge both already use alongside their own low-opacity glow.
+// stays solid, unaffected). Round 3 correction: the thumb's own
+// `dark:data-[state=unchecked]:bg-foreground` is no longer solid either -- `--foreground` itself
+// is 90% alpha -- so thumb-vs-track tightens too; Obsidian's own popover is again the binding
+// case there, thumb vs that theme's popover-rendered track at ~4.08:1 (still clearing the 3:1
+// non-text floor; thumb vs the page background stays ~15:1, effectively unaffected).
+// `focus-visible:border-ring` matches the solid full-opacity ring Button/Badge both already use
+// alongside their own low-opacity glow.
 function Switch({
   className,
   ...props

@@ -22,11 +22,12 @@ import type { MermaidThemeVariables } from './mermaidTheme'
 const DARK_FAMILY: MermaidThemeVariables = {
   // `.theme-dark`'s `--background: oklch(0.145 0 0)` == its own `swatch`, `#0a0a0a`.
   background: '#0a0a0a',
-  // `--card: oklch(0.205 0 0)`. Gate-fix (#1074 round 1, Code/Test HIGH): this label text sits
-  // on `primaryColor` (this theme's own node fill, tied to `--card`), so FR-023's 0.9 tier
-  // applies -- white at 90% alpha composited over `--card` (`oklch(0.205 0 0)`, NOT the rounded
-  // `#171717` display hex: the real oklch token, same gamma-space math `contrast-math.mjs` uses
-  // elsewhere in this file) -- 14.59:1, comfortably above 4.5:1.
+  // `--card: oklch(0.205 0 0)`. Gate-fix (#1074 round 1, Code/Test HIGH): white at 90% alpha
+  // composited over `--card` gives 14.59:1. Round 3 correction: Mermaid's bundled 'dark' base
+  // theme hardcodes its REAL node fill (`mainBkg`/`nodeBkg`) to a literal `#1f2020`, ignoring
+  // our own `primaryColor` override entirely (`node_modules/mermaid/.../theme-dark.js`'s own
+  // constructor; we never pass a `mainBkg` override, so it never falls back to `primaryColor`)
+  // -- the REAL composited ratio here is 13.33:1 against that literal, still >>4.5:1.
   primaryColor: '#1f1f1f',
   primaryTextColor: '#e8e8e8',
   // `--border: oklch(0.56 0 0)` == `#747474`, this theme's own opaque border token
@@ -203,8 +204,10 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     ...DARK_FAMILY,
     // `--background: #0F1014`.
     background: '#0F1014',
-    // `--card: #1C1F28`. Gate-fix (#1074 round 1, Code/Test HIGH): label text on this fill --
-    // FR-023's 0.9 tier, white at 90% alpha composited over `--card` (`#1C1F28`) -- 13.51:1.
+    // `--card: #1C1F28`. Gate-fix (#1074 round 1, Code/Test HIGH): white at 90% alpha
+    // composited over `--card` (`#1C1F28`) gives 13.51:1. Round 3 correction: the REAL node
+    // fill Mermaid renders is its own hardcoded `#1f2020` literal, not `--card` (see
+    // `DARK_FAMILY`'s own comment on this key for the full citation) -- real ratio 13.43:1.
     primaryColor: '#1C1F28',
     primaryTextColor: '#e8e9e9',
     // `--border: #6F7C9D` (retuned, strong -- see globals.css's own comment on this preset's
@@ -377,17 +380,27 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // this story (gate round 1, not merely assumed from DARK_FAMILY's own Dark/Obsidian-specific
   // comment): the two narrowest-margin values, `critBkgColor`/`cScale11`, clear 3:1 against both
   // new presets' own `--card` (critBkgColor 3.31/3.37, cScale11 3.24/3.31 for Nordic
-  // Frost/Cyber Amber respectively), with `textColor`-on-`critBkgColor` and
-  // `cScaleLabel11`-on-`cScale11` both clearing 4.5:1+; only the surface-tied fields are
-  // overridden with each preset's own real globals.css tokens. Live Mermaid-render verification
-  // (`check:mermaid-contrast`, a real-Chromium check) is deferred to this lane's build slot,
-  // same as every other check requiring a live renderer.
+  // Frost/Cyber Amber respectively), with `taskTextColor`-on-`critBkgColor` (deliberately NOT
+  // softened by #1074, see that key's own comment) and `cScaleLabel11`-on-`cScale11` both
+  // clearing 4.5:1+; only the surface-tied fields are overridden with each preset's own real
+  // globals.css tokens. Live Mermaid-render verification (`check:mermaid-contrast`) is blocked,
+  // not merely deferred -- that script calls `require('electron')` directly, which the CDP/Tauri
+  // live-verify harness every other check in this story uses does not provide (issue #1106,
+  // filed round 3: port to the CDP/Tauri harness or pure `contrast-math.mjs`). Separately
+  // (issue #1108, filed round 3): every Gantt/Journey task-text token in this file
+  // (`taskTextColor`/`taskTextOutsideColor`/`taskTextClickableColor`/`critBkgColor`/
+  // `sectionBkgColor`-family) is measured by `contrast-math.mjs` arithmetic against Mermaid's
+  // own documented CSS template strings only -- no committed fixture renders an actual
+  // journey/Gantt diagram (`997-notice-severity.jsonl`'s own fence is `flowchart TD` only), so
+  // none of these have ever been visually confirmed against a real browser render.
   'nordic-frost': {
     ...DARK_FAMILY,
     background: '#060f1e', // `--background`
     primaryColor: '#101b2b', // `--card`
     // Gate-fix (#1074 round 1, Code/Test HIGH): FR-023's 0.9 tier, white at 90% alpha
-    // composited over `--card` (`#101b2b`) -- 14.13:1.
+    // composited over `--card` (`#101b2b`) gives 14.13:1. Round 3 correction: the REAL node
+    // fill Mermaid renders is its own hardcoded `#1f2020` literal, not `--card` (see
+    // `DARK_FAMILY`'s own comment on this key for the full citation) -- real ratio 13.32:1.
     primaryTextColor: '#e7e8ea',
     primaryBorderColor: '#79818c', // `--border`
     // Gate-fix (#1074 round 1): FR-023's 0.6 tier, white at 60% alpha composited over
@@ -444,7 +457,7 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // its `data:image/svg+xml` `<img>` source) is byte-for-byte identical to Dark's own render,
   // after normalising the per-mount id both sides share --
   // Mermaid derives its node FILL internally (never the raw `primaryColor` literal verbatim),
-  // so this is a full-string equality check, not a hardcoded-literal match; `textColor`
-  // (`#fafafa`) IS a literal match, confirmed separately.
+  // so this is a full-string equality check, not a hardcoded-literal match; `taskTextColor`
+  // (`#fafafa`, deliberately NOT softened by #1074) IS a literal match, confirmed separately.
   'cyber-amber': DARK_FAMILY
 }

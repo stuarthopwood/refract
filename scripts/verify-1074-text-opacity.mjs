@@ -40,8 +40,11 @@
 // the opacity is proven to really composite on screen, not only in computed style.
 //
 // Screenshots per theme: chat (chat prose plus the header and Send button all visible), a
-// popover menu (the Profile dropdown), selected chat-prose text, Manage sessions (the full
-// Session list), Settings Appearance, and an Off switch (the Appearance section's own watermark
+// popover menu (the Profile dropdown), selected chat-prose text, a composer-selection shot (a
+// real `/btw` command pill, Ctrl+A-selected -- round 3, Main's follow-up: proves
+// `--composer-selection-fg` stays legible under a real native selection highlight in every
+// preset, not only Dark), Manage sessions (the full Session list), Settings Appearance, and an
+// Off switch (the Appearance section's own watermark
 // toggle, clicked off then restored -- gate round 1, Low item 7). Every shot is preceded by
 // `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`): moves the pointer, blurs, presses
 // Escape, and THROWS if a stray tooltip/hover card is still open.
@@ -71,6 +74,8 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { PILL, clearAndType } from './verify-1050-command-pill-helpers.mjs';
 import { requireResolvedCssVarColor } from './verify-551-helpers.mjs';
 import { parseComputedColorToEntry, compositeOverLinear, resolvedLinear, relativeLuminance, srgbGammaEncode } from './contrast-math.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
@@ -423,6 +428,22 @@ async function main() {
           await cdp.evaluate(`window.getSelection()?.removeAllRanges()`);
         }
 
+        // Composer-selection text (round 3, Main's follow-up): the composer's own command-pill
+        // foreground (`--composer-selection-fg`, FR-023 DECIDED solid per the coloured-fill
+        // rule) under a REAL native selection highlight -- the same evidence
+        // `assertSelectionHighlightVisible` already captures for #1050, reused here per-theme so
+        // every preset's own pill-under-selection composite gets its own screenshot, not just
+        // Dark's (the #1050 script only ever runs against Dark).
+        await settleForScreenshot(cdp);
+        await clearAndType(cdp, pressKey, '/btw hi');
+        await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: `${theme.name}: command pill appears` });
+        await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, pill included
+        await settleForScreenshot(cdp);
+        const composerSelectionShot = `${theme.id}-07-composer-selection.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, composerSelectionShot));
+        shotNames.push(composerSelectionShot);
+        await clearAndType(cdp, pressKey, ''); // restore the composer to empty before Settings
+
         await settleForScreenshot(cdp);
         await openSettingsAppearance(cdp);
         await sleep(200);
@@ -445,7 +466,7 @@ async function main() {
 
         await closeSettingsBackToChat(cdp);
 
-        findings.push(`${theme.name}: screenshots captured (chat, popover menu, selected text, Manage sessions, Settings Appearance, Off switch).`);
+        findings.push(`${theme.name}: screenshots captured (chat, popover menu, selected text, composer-selection pill, Manage sessions, Settings Appearance, Off switch).`);
       } catch (err) {
         failures.push(`${theme.name}: ${err.message}`);
       }

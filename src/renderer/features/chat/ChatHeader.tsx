@@ -63,6 +63,11 @@ export function ChatHeader({
           // dark background -- below WCAG 1.4.3's 4.5:1 minimum for text, on the one marker this
           // spec relies on being readable without colour. `text-foreground` (near-white in the
           // dark theme) against this same tinted background comfortably clears 4.5:1.
+          // Re-verified post-#1074 (round 3): `--foreground` itself is
+          // now 90% alpha, so this double-composites (text over the badge's own
+          // `active-indicator/20` fill, itself over `--background`) -- still comfortably clear in
+          // every theme (worst case Nordic Frost, 10.81:1; Dark 13.55:1, Obsidian 11.88:1, Cyber
+          // Amber 11.91:1).
           <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
             Focused
           </span>

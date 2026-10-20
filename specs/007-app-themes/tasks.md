@@ -1168,3 +1168,34 @@ T046 keeps `dark-high-contrast` byte-identical to `origin/main`; confirmed by
 total (no PAIRS entries added or removed by T046 itself, only token values and the metadata
 drift check's own internal comparison count, which was already one-per-theme). T050 later adds
 one genuinely new pair per theme (872 -> 877, see that task's own entry).
+
+- [X] T051 Main's gate round 3 follow-up (2026-10-20): recompute Mermaid text colours against
+  the REAL rendered node fill (not `--card`/`primaryColor`) and fix every stale comment found
+  in the same audit, no build (depends on T050).
+  **Done**: read `node_modules/mermaid`'s own bundled `'dark'` base theme source directly
+  (`theme-dark.js`'s constructor) and confirmed Mermaid hardcodes its real node fill
+  (`mainBkg`/`nodeBkg`) to a literal `#1f2020`, ignoring our own `primaryColor` override
+  entirely -- `mermaidThemeData.ts` never sets a `mainBkg` key, so Mermaid's base-class
+  `|| this.primaryColor` fallback never fires. Recomputed `primaryTextColor` against that real
+  backdrop for `DARK_FAMILY`/Obsidian/Nordic Frost: 13.33:1/13.43:1/13.32:1 respectively (all
+  comfortably clear 4.5:1; no hex values needed changing, only the comments citing `--card`).
+  Also fixed, same audit: `mermaidThemeData.ts`'s stale `textColor`-on-`critBkgColor` claim
+  (corrected to `taskTextColor`, the variable actually drawn there) and its stale Cyber Amber
+  `textColor` (`#fafafa`) literal-match claim (`textColor` is `#e7e7e7` post-#1074; the real
+  `#fafafa` literal match is `taskTextColor`, deliberately unsoftened); `switch.tsx`'s stale
+  `theme-contrast-pairs.mjs` script-path reference (moved to `switch-track-contrast.mjs` in
+  round 2) and its stale "solid thumb, ~5.2:1" claim (the thumb's own `bg-foreground` is also
+  90% alpha now -- real worst case Obsidian popover, ~4.08:1, still >3:1); `globals.css`'s
+  Obsidian/Nordic Frost worst-case comments (the real lowest ratio across the whole story is
+  Obsidian's own `muted-foreground`/`sidebar-border`, 5.64:1, tighter than the previously-cited
+  `--composer-selection-fg` case, 5.82:1); and `ChatHeader.tsx`'s Focused-pill comment
+  (re-verified post-#1074's alpha change, double-composite over `active-indicator/20` still
+  clears 4.5:1 in every theme, worst case Nordic Frost 10.81:1). Added a composer-selection
+  screenshot (`verify-1074-text-opacity.mjs`, a real `/btw` command pill Ctrl+A-selected) per
+  theme, source-only (no run this round). Filed two chore issues for gaps this story cannot
+  close itself: #1106 (`check-mermaid-contrast.mjs` needs `electron`, blocked not merely
+  deferred) and #1108 (Gantt/Journey task-text tokens never verified against a real rendered
+  diagram -- `AGENTS.md`'s "no new fixtures" rule blocks fixing this here). spec.md Clarifications
+  gained a round-3 session recording both findings. `pnpm typecheck`/no-build checks run clean
+  (see verification note below). No build run; live-verify of the new composer-selection shot
+  deferred to the next build slot.

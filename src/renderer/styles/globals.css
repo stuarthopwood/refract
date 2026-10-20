@@ -473,11 +473,11 @@
    * 11.65:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
    * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
    * foreground` ALIAS cascade itself is 6.26:1 against `--surface-2`/popover (the 60%-alpha
-   * `--muted-foreground` tier). Gate-fix (round 1, corrected): the real binding case across
-   * this whole story is tighter still and lives on a DIFFERENT, independent token --
-   * `--composer-selection-fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on
-   * its own selection highlight over the command pill, 7.34:1 here (`scripts/check-theme-
-   * contrast.mjs`'s live measured numbers; Nordic Frost is the tightest of the five, 5.82:1).
+   * `--muted-foreground` tier). Gate-fix (round 2, corrected again): the real binding case
+   * across this whole story is Obsidian's OWN `muted-foreground` on `sidebar-border`-hover,
+   * 5.64:1 (informational, `sidebarBorderContrastRows`) -- tighter than `--composer-selection-
+   * fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on its own selection
+   * highlight over the command pill, Nordic Frost 5.82:1, the tightest ENFORCED pair.
    * Every alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
    * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
    * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
@@ -893,12 +893,12 @@
    * 11.71:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
    * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
    * foreground` ALIAS cascade itself is 6.34:1 against `--surface-2`/popover (the 60%-alpha
-   * `--muted-foreground` tier). Gate-fix (round 1, corrected): the real binding case across
-   * this whole story is tighter still and lives on a DIFFERENT, independent token --
-   * `--composer-selection-fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on
-   * its own selection highlight over the command pill, 5.82:1 here -- THIS preset is the
-   * tightest of the five (`scripts/check-theme-contrast.mjs`'s live measured numbers). Every
-   * alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * `--muted-foreground` tier). Gate-fix (round 2, corrected again): the real binding case
+   * across this whole story is Obsidian's OWN `muted-foreground` on `sidebar-border`-hover,
+   * 5.64:1 (informational, `sidebarBorderContrastRows`) -- tighter than `--composer-selection-
+   * fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on its own selection
+   * highlight over the command pill, THIS preset 5.82:1, the tightest ENFORCED pair.
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
    * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
    * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
    * `.theme-dark`'s own comment explains in full. */

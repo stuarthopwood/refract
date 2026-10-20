@@ -142,6 +142,24 @@ font and code font stay with issue #4 and are out of scope here.
   (alongside its existing `swatch`/`swatchPrimary`/`titleBarOverlay.color` checks) so a future
   edit to either side cannot drift silently.
 
+### Session 2026-10-20 (#1074, gate round 3, Main's follow-up -- none deferred)
+
+- Q: `src/shared/mermaidThemeData.ts`'s per-theme `primaryTextColor` comments cite a measured
+  ratio against each theme's own `--card` literal -- is that the real backdrop Mermaid paints a
+  node's label against? -> A: No. Mermaid's bundled `'dark'` base theme
+  (`node_modules/mermaid`'s own `theme-dark.js`) hardcodes its real node fill
+  (`mainBkg`/`nodeBkg`) to a literal `#1f2020`, entirely independent of our own `primaryColor`
+  override -- confirmed by reading that source directly, not inferred. Every affected comment
+  (`DARK_FAMILY`, Obsidian, Nordic Frost) is corrected to cite the real `#1f2020` backdrop and
+  its real ratio (13.33:1/13.43:1/13.32:1 respectively); the existing literal hex values
+  themselves needed no change, since all three already clear 4.5:1 against the real backdrop too.
+- Q: Is Gantt/Journey task-text token coverage (`taskTextColor`, `sectionBkgColor`-family,
+  `critBkgColor`) ever confirmed against a real rendered diagram, the way flowchart nodes are?
+  -> A: No, and this story cannot fix that itself -- AGENTS.md's "no new fixtures while
+  prototyping" rule blocks adding a journey/Gantt-bearing fixture, and the one committed Mermaid
+  fixture every live-verify script reuses (`997-notice-severity.jsonl`) renders a `flowchart TD`
+  fence only. Logged as a tracked gap, issue #1108, not silently left unverified.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Opens in a sensible default preset on first launch (Priority: P1)
