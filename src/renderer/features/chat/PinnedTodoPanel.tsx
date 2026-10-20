@@ -96,16 +96,26 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     const list = listRef.current
     const el = list?.querySelector<HTMLElement>('[data-current-task="true"]')
     if (!list || !el) return
-    const elTop = el.offsetTop
-    const elBottom = elTop + el.offsetHeight
+    // Gate round 3 fix (Main's diagnosis, #700 E4, traced live): `el.offsetTop`/`offsetHeight`
+    // are relative to `el.offsetParent` -- the NEAREST POSITIONED ancestor (or <body>), never
+    // just "the nearest scrollable one". Nothing between this `<li>` and the list div carries a
+    // `position` utility, so `offsetParent` skipped the list entirely and landed on some distant
+    // ancestor; comparing that unrelated coordinate space against `list.scrollTop`/`clientHeight`
+    // produced a nonsense target (bigger than the list's own `scrollHeight`), which the browser
+    // then silently clamped to `scrollHeight - clientHeight` on write -- reproducing on every
+    // run regardless of which task was current. `getBoundingClientRect()` is always viewport-
+    // relative, so subtracting the list's own rect (plus its current scrollTop) gives the row's
+    // true offset within the LIST's own scrolled content, independent of any ancestor's position.
+    const listRect = list.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    const elTop = elRect.top - listRect.top + list.scrollTop
+    const elBottom = elTop + elRect.height
     if (elTop < list.scrollTop) list.scrollTop = elTop
     else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
-    // Gate round 3 fix (Main's diagnosis, #700 E4, traced live): marking a key "followed"
-    // BEFORE checking whether the row actually ended up in view let one render with
-    // momentarily-stale geometry (elBottom computed past the content's own current
-    // scrollHeight, silently clamped by the browser to scrollHeight - clientHeight) lock the
-    // scroll there PERMANENTLY -- the key-match guard above never let a later, correct render
-    // retry. Only commit `lastFollowedKeyRef` once the row genuinely landed in view.
+    // Gate round 3 fix (Main's diagnosis): marking a key "followed" BEFORE checking whether the
+    // row actually ended up in view let one render with bad geometry lock the scroll there
+    // permanently -- the key-match guard above never let a later, correct render retry. Only
+    // commit `lastFollowedKeyRef` once the row genuinely landed in view.
     if (elTop >= list.scrollTop && elBottom <= list.scrollTop + list.clientHeight) {
       lastFollowedKeyRef.current = currentTaskKey
     }
