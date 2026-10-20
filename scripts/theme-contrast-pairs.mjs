@@ -106,19 +106,20 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  // Issue #1050 (composer command pill, gate round 1 HIGH remediation): the pill's own fill is
-  // the dedicated `--command-pill-bg` token (not `--card` directly, decision 3 superseded) --
-  // the gate added a "visibly distinct from the composer surface" floor (>=1.4:1 against the
-  // effective composer backdrop) alongside the pre-existing accent-text-on-fill floor. Dark,
-  // Obsidian and Dark (high contrast) alias `--command-pill-bg` to `--card` (an accepted,
-  // documented gap on the NEW 1.4:1 floor -- see each theme's own comment in globals.css: no
-  // single colour clears both floors there, so the WCAG-mandated text floor was kept); Nordic
-  // Frost and Cyber Amber alias it to `--muted`, which clears both floors outright.
-  { fg: 'accent-text', bg: 'command-pill-bg', min: 4.5 },
-  { fg: 'accent-text', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['nordic-frost', 'cyber-amber'] },
-  { fg: 'command-pill-bg', bg: 'background', min: 1.4, informationalThemes: ['dark', 'obsidian'] },
-  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, informationalThemes: ['dark-high-contrast'] },
+  // Issue #1050 (composer command pill, gate round 2 remediation -- round 1's accent-text-on-
+  // command-pill-bg pairing is superseded, no accepted gap now): the pill's own fill
+  // (`--command-pill-bg`) and text (`--command-pill-fg`) are two INDEPENDENT dedicated tokens.
+  // Round 1 proved no single existing colour clears both the accent-text contrast floor and the
+  // gate's own "visibly distinct from the composer surface" floor (>=1.4:1 against the
+  // effective composer backdrop) in Dark/Obsidian/Dark (high contrast); `--command-pill-bg` is
+  // now a plain neutral step chosen only to clear 1.4:1, and `--command-pill-fg` is a lightened
+  // step of `--accent-text`'s own hue chosen only to clear 4.5:1 (7:1 in Dark high contrast) on
+  // THAT fill -- both pairs below are enforced in every preset, with margin, and neither
+  // conflicts with the other.
+  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 4.5 },
+  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now

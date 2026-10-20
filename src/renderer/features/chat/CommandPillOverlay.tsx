@@ -59,20 +59,25 @@ export function findRecognisedCommandToken(text: string, commands: readonly Slas
 export const COMPOSER_MIRROR_CLASS =
   'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base text-foreground [scrollbar-gutter:stable] md:text-sm'
 
-/** Decision 3's pill fill: a dedicated `--command-pill-bg` token (gate round 1 MEDIUM
- * remediation), not `--card` directly. Issue #610 already found `--accent-text` fails 4.5:1 on
- * `--muted` in some presets (TODO(#579), `Markdown.tsx`); this gate added a second floor on top
- * -- the fill itself must be visibly distinct from the composer surface (>=1.4:1 against the
- * effective composer backdrop). `--command-pill-bg` resolves per theme to whichever existing
- * surface step clears the most of both floors (`--card` for Dark/Obsidian/Dark (high contrast),
- * `--muted` for Nordic Frost/Cyber Amber which clears both outright) -- see each theme's own
- * comment in `globals.css` and the paired entries in `scripts/theme-contrast-pairs.mjs` for the
- * measured numbers and the three-theme gap that's an accepted, documented departure rather than
- * a silently-dropped ask. No border (decision 3); `rounded-sm` matches `--radius`'s own small
- * step, the same class `ChipOverlaySegments`'s own pill uses; no padding, so the pill never
- * widens past the token's own glyph box (no layout shift); `[box-decoration-break:clone]`
- * repeats the fill/rounding cleanly on every visual line fragment a wrapped token could cross. */
-const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-accent-text [box-decoration-break:clone]'
+/** Decision 3's pill colours: two INDEPENDENT dedicated tokens (gate round 2 remediation --
+ * round 1's single `--card`-or-`--muted`-aliased fill, paired with `--accent-text` directly, is
+ * superseded). Round 1 proved no single existing colour clears both the accent-text contrast
+ * floor (4.5:1, 7:1 in Dark high contrast) AND the gate's own "visibly distinct from the
+ * composer surface" floor (>=1.4:1 against the effective composer backdrop) in Dark/Obsidian/
+ * Dark (high contrast) -- `--accent-text` itself sits too close to those presets' near-black
+ * backgrounds. `--command-pill-bg` is now a plain neutral step chosen ONLY to clear 1.4:1 (no
+ * text-contrast constraint on it); `--command-pill-fg` is the SAME hue as `--accent-text`,
+ * lightened/desaturated only as far as needed to clear 4.5:1 (7:1 in Dark high contrast) on
+ * THIS fill -- a visibly lighter step of the same accent family, not a different colour. Nordic
+ * Frost/Cyber Amber need no lightened step at all (`--muted` already clears both floors against
+ * the existing `--accent-text`), so their `--command-pill-fg` is a plain alias of it. See each
+ * theme's own comment in `globals.css` and the enforced pairs in `scripts/theme-contrast-
+ * pairs.mjs` for the measured numbers -- no accepted gap in any preset now. No border (decision
+ * 3); `rounded-sm` matches `--radius`'s own small step, the same class `ChipOverlaySegments`'s
+ * own pill uses; no padding, so the pill never widens past the token's own glyph box (no layout
+ * shift); `[box-decoration-break:clone]` repeats the fill/rounding cleanly on every visual line
+ * fragment a wrapped token could cross. */
+const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg [box-decoration-break:clone]'
 
 /** `MessageInput.tsx`'s own `<textarea>` adds this ONLY while `commandToken` is truthy (gate
  * round 1 HIGH remediation, item 1). `relative z-[1]`: lifts the textarea above

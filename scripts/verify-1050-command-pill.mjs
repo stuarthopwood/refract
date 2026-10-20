@@ -25,7 +25,7 @@
 // skill name still pills correctly across two visual lines. (9) A pasted-text chip renders
 // beside the pill (ghost text is NOT exercised together with it -- see the `notExercised` entry).
 // (10) The pill stays aligned, with its own computed fill/text colour equal to
-// `--command-pill-bg`/`--accent-text` resolved live, across all five theme presets. (11) A
+// `--command-pill-bg`/`--command-pill-fg` resolved live, across all five theme presets. (11) A
 // scrolled multi-line draft's overlay `scrollTop` tracks the textarea's own.
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -318,9 +318,9 @@ async function main() {
       assertClose(themeGeom.pillTop, themeGeom.expectedTop, 1.5, `${theme.name}: pill top edge still sits at the textarea's own padding-top corner`);
       const pillColors = await cdp.evaluate(`(() => { const s = getComputedStyle(${PILL}); return { bg: s.backgroundColor, color: s.color }; })()`);
       const expectedBg = await resolveCssVarColor(cdp, '--command-pill-bg', 'background-color');
-      const expectedColor = await resolveCssVarColor(cdp, '--accent-text', 'color');
+      const expectedColor = await resolveCssVarColor(cdp, '--command-pill-fg', 'color');
       assertEqual(pillColors.bg, expectedBg, `${theme.name}: pill background-color equals --command-pill-bg resolved live`);
-      assertEqual(pillColors.color, expectedColor, `${theme.name}: pill text colour equals --accent-text resolved live`);
+      assertEqual(pillColors.color, expectedColor, `${theme.name}: pill text colour equals --command-pill-fg resolved live`);
       const pageBg = await resolveCssVarColor(cdp, '--background', 'background-color');
       assertTrue(pillColors.bg !== pageBg, `${theme.name}: pill fill is a visibly different colour from the plain page background (fill-vs-composer, measured live)`);
       await cdp.screenshot(path.join(SHOTS_DIR, `theme-${theme.id}.png`));

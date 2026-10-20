@@ -997,6 +997,25 @@
   accent-text floor was kept over the newly-introduced visibility floor). Open for Stuart:
   retune `--accent-text` in those three presets, or accept the gap as-is.
 
+### Session 2026-10-20 (Composer command pill, gate round 2 remediation, #1050)
+
+- Q: Gate round 1's accepted 3-theme gap (Dark/Obsidian/Dark (high contrast) could not clear the
+  new 1.4:1 "distinct from composer" floor without dropping `--accent-text` below its own 4.5:1
+  floor) was not accepted. The conflict is between `--accent-text` and the fill -- what gives the
+  pill its own text colour instead, so both floors clear in every preset? -> A: Decided (Main,
+  2026-10-20): a second dedicated token, `--command-pill-fg`, independent of `--command-pill-bg`.
+  `--command-pill-bg` is now a plain neutral step in every preset, chosen ONLY to clear 1.4:1
+  against the effective composer backdrop (measured 1.50-1.52:1 in all five, comfortable
+  margin) -- no text-contrast constraint on it at all. `--command-pill-fg` is the SAME hue as
+  `--accent-text` (the theme's own indigo/cyan/orange-amber family), lightened and desaturated
+  only as far as needed to clear 4.5:1 (7:1 in Dark high contrast) on THIS fill: Dark 4.66:1,
+  Obsidian 4.54:1, Dark (high contrast) 7.26:1, all measured. Nordic Frost and Cyber Amber need
+  no lightened step at all (`--muted` already clears both floors against the existing
+  `--accent-text`), so their `--command-pill-fg` is a plain alias of it. Both pairs
+  (`command-pill-fg`/`command-pill-bg` and `command-pill-bg`/background-or-composer-background)
+  are now enforced in `scripts/theme-contrast-pairs.mjs` in every preset -- no accepted gap
+  remains.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1576,19 +1595,19 @@ The developer types a slash command and finds the ones the agent offers. If a se
   composer chip does, rather than four independent copies that could drift.
 - **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
   mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism; gate round 1
-  remediation 2026-10-20 corrected the mechanism and the fill, both below): while the draft's
-  own leading token (from `/` through the end of its name, including a `skill:` prefix) is a
-  command or skill the composer's own `commands` list recognises (the same exact-match logic
-  `chat.send`'s own refusal path already applies, never a hard-coded copy of the list or its
-  matching rules), the message box MUST show that token as a subtle pill -- a dedicated
-  `--command-pill-bg` fill (not `--card` directly, gate round 1 MEDIUM: the fill itself must
-  also be visibly distinct from the composer surface, >=1.4:1 against the effective composer
-  backdrop, a floor `--card` alone does not clear in Dark/Obsidian/Dark (high contrast) --
-  `--command-pill-bg` resolves to whichever existing surface step clears the most of both
-  floors per theme, an accepted, documented three-theme gap on the new floor rather than a
-  silently dropped ask; decided by measurement, not by eye), a small radius following
-  `--radius`, the token text in `--accent-text` (>=4.5:1 on the fill, 7:1 in Dark (high
-  contrast)), no border -- drawn by a mirror sitting UNDER the real `<textarea>` (the
+  remediation corrected the mechanism, gate round 2 corrected the fill/text tokens, both below):
+  while the draft's own leading token (from `/` through the end of its name, including a
+  `skill:` prefix) is a command or skill the composer's own `commands` list recognises (the same
+  exact-match logic `chat.send`'s own refusal path already applies, never a hard-coded copy of
+  the list or its matching rules), the message box MUST show that token as a subtle pill -- a
+  dedicated `--command-pill-bg` fill (gate round 1 MEDIUM: the fill itself must also be visibly
+  distinct from the composer surface, >=1.4:1 against the effective composer backdrop; gate
+  round 2: `--command-pill-bg` is a plain neutral step in every preset, chosen only to clear
+  that floor, with NO text-contrast constraint on it), a small radius following `--radius`, the
+  token text in a SEPARATE `--command-pill-fg` token (gate round 2: the same hue as
+  `--accent-text`, lightened/desaturated only as far as needed to clear 4.5:1 on the fill, 7:1 in
+  Dark (high contrast); a plain alias of `--accent-text` itself in presets where that already
+  clears both floors), no border -- drawn by a mirror sitting UNDER the real `<textarea>` (the
   "highlight-within-textarea" technique, gate round 1 HIGH: the mirror renders the WHOLE draft
   visibly, the textarea itself goes `text-transparent` with an explicit `caret-color` and a
   `::selection` text-colour override ONLY while a token is present, so the native caret, the

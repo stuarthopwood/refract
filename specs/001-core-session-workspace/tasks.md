@@ -4773,3 +4773,23 @@ requests + 24/24 events (the +2 requests are Main's own unrelated #1063 merge, n
 `check:drag-regions` 0 violations. **A fresh FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs
 && verify-1050-command-pill.mjs` run) is pending the next build slot** -- not yet run; the
 paragraph above this one is round 0's own build, superseded by this remediation.
+
+**Gate round 2 remediation (2026-10-20, Main)**: round 1's accepted 3-theme gap (Dark/Obsidian/
+Dark (high contrast) could not clear the new 1.4:1 fill-vs-composer floor without dropping
+`--accent-text` below its own 4.5:1 floor) was not accepted -- the conflict is `--accent-text`
+against the fill, so the pill now gets its OWN text token too. `globals.css`: `--command-pill-bg`
+is a plain neutral step in every preset now (Dark `oklch(0.31 0 0)`, Obsidian `oklch(0.32 0.02
+255)`, Dark high contrast `oklch(0.30 0 0)`, Nordic Frost/Cyber Amber unchanged `var(--muted)`),
+chosen only to clear 1.4:1 against the effective composer backdrop (measured 1.50-1.52:1 in all
+five); `--command-pill-fg` (new) is the same hue as `--accent-text`, lightened/desaturated only
+as far as needed to clear 4.5:1 (7:1 Dark high contrast) on that fill (Dark 4.66:1, Obsidian
+4.54:1, Dark high contrast 7.26:1, all measured) -- a plain alias of `--accent-text` in Nordic
+Frost/Cyber Amber, which already cleared both floors. `CommandPillOverlay.tsx`'s `PILL_CLASS`
+now reads `text-command-pill-fg` (was `text-accent-text`). `theme-contrast-pairs.mjs`: the
+informational exception is gone -- `command-pill-fg`/`command-pill-bg` (4.5:1, 7:1 HC) and
+`command-pill-bg`/background-or-composer-background (1.4:1) are BOTH enforced in every preset
+now, measured via `node scripts/check-theme-contrast.mjs`: **all 840 pairs PASS, no gap, no
+informational exception.** `spec.md`'s new 2026-10-20 "gate round 2" Clarifications entry and
+FR-092's own amended text record the correction. Non-build checks re-run clean (unchanged file-
+size/indent/parity/drag-region numbers from round 1; theme-contrast now 840/840, was 837/837).
+**A fresh FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.

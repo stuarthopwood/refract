@@ -68,6 +68,7 @@
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
   --color-command-pill-bg: var(--command-pill-bg);
+  --color-command-pill-fg: var(--command-pill-fg);
   --color-severity-success: var(--severity-success);
   --color-severity-warning: var(--severity-warning);
   --color-severity-error: var(--severity-error);
@@ -322,16 +323,19 @@
    * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
    * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
   --accent-text: #7375F2;
-  /* Issue #1050 (composer command pill, gate round 1 HIGH remediation): a dedicated fill,
-   * distinct from `--accent-text`'s own rule above -- `--card` (first tried) clears 4.5:1 for
-   * `--accent-text` text (4.74:1) but only 1.10:1 against `--background`, under the gate's own
-   * 1.4:1 "visibly distinct from the composer surface" floor; `--muted` clears 1.4:1 (1.31:1,
-   * still short) but drops `--accent-text` to 4.00:1, under the WCAG floor. No single colour in
-   * this theme clears both at once (`--accent-text`'s own luminance leaves too narrow a gap
-   * above `--background`'s near-zero luminance) -- `--card` is kept, prioritising the WCAG-
-   * mandated text floor over the newly-introduced visibility floor. Flagged to Stuart on #1050:
-   * retune `--accent-text` or accept the gap. */
-  --command-pill-bg: var(--card);
+  /* Issue #1050 (composer command pill, gate round 2 remediation -- round 1's `--card`-aliased
+   * fill is superseded): `--accent-text` itself cannot be the pill's own text colour and still
+   * let ONE fill clear both the accent-text floor (4.5:1) and the gate's own "visibly distinct
+   * from the composer surface" floor (1.4:1 against the effective composer backdrop) -- proven
+   * in round 1 that no single colour here does both at once. Decided instead: two independent
+   * tokens. `--command-pill-bg` is a plain neutral step, lighter than `--card`/`--muted`,
+   * chosen ONLY to clear 1.4:1 against `--background` (1.50:1, comfortable margin) -- no accent-
+   * text constraint on it at all now. `--command-pill-fg` is the SAME hue as `--accent-text`
+   * (264, this theme's indigo), lightened and desaturated only as far as needed to clear 4.5:1
+   * on THIS fill (4.67:1, measured) -- a visibly lighter step of the same accent family, not a
+   * different colour. */
+  --command-pill-bg: oklch(0.31 0 0);
+  --command-pill-fg: oklch(0.69 0.162 264);
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
    * second set" rule). `--severity-info` was originally the one genuinely new colour with no
@@ -441,11 +445,13 @@
    * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
    * there). */
   --accent-text: #8588F4;
-  /* Issue #1050: same conflict as Dark (see that theme's own comment) -- `--card` clears 4.5:1
-   * for `--accent-text` (5.35:1) but only 1.16:1 against `--background`; `--muted` clears 1.4:1
-   * (1.44:1) but drops `--accent-text` to 4.28:1, under 4.5:1. `--card` kept for the same reason.
-   */
-  --command-pill-bg: var(--card);
+  /* Issue #1050 (gate round 2 remediation, see Dark's own comment for the full reasoning): two
+   * independent tokens. `--command-pill-bg` is a plain blue-grey neutral step clearing 1.4:1
+   * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
+   * (255, this theme's indigo), lightened/desaturated only as far as needed to clear 4.5:1 on
+   * this fill (4.57:1, measured). */
+  --command-pill-bg: oklch(0.32 0.02 255);
+  --command-pill-fg: oklch(0.69 0.166 255);
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
    * retuned specifically for this preset (lightness 0.74 vs Dark/HC's shared 0.704/0.78) so it
@@ -729,11 +735,13 @@
    * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
    * also cleared, incidentally, but is not the floor this story enforces -- see above). */
   --accent-text: oklch(0.75 0.17 264);
-  /* Issue #1050: same conflict (see `.theme-dark`'s own comment) -- `--card` clears this
-   * theme's own enhanced 7:1 floor for `--accent-text` (8.46:1) but only 1.04:1 against
-   * `--composer-background`; `--muted` clears 1.4:1 (1.34:1, itself short) but only 6.60:1 for
-   * `--accent-text`, under the 7:1 floor. `--card` kept. */
-  --command-pill-bg: var(--card);
+  /* Issue #1050 (gate round 2 remediation, see `.theme-dark`'s own comment for the full
+   * reasoning): two independent tokens. `--command-pill-bg` is a plain neutral step clearing
+   * 1.4:1 against `--composer-background` (1.52:1). `--command-pill-fg` is the same hue as
+   * `--accent-text` (264), lightened only as far as needed to clear this preset's own
+   * enhanced 7:1 floor on this fill (7.23:1, measured). */
+  --command-pill-bg: oklch(0.30 0 0);
+  --command-pill-fg: oklch(0.80 0.10 264);
   /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
    * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
    * verified >=3:1 against `--background` (12.45:1) and `--card`/`--popover` (11.80:1). */
@@ -865,10 +873,13 @@
   /* ---- Layer 2 continued: surface ladder, severity, accent-text ------------------------- */
   --surface-hover: var(--surface-3);
   --accent-text: #1ad1d1;
-  /* Issue #1050: `--muted` clears BOTH new floors here -- 1.50:1 against `--background` (>=1.4)
-   * and 6.73:1 for `--accent-text` on it (>=4.5) -- so this preset keeps the pill fill visibly
-   * distinct from the composer surface without the Dark/Obsidian/Dark-HC conflict. */
+  /* Issue #1050: `--muted` clears BOTH floors here -- 1.50:1 against `--background` (>=1.4)
+   * and 6.73:1 for `--accent-text` on it (>=4.5) -- so this preset's pill fill is visibly
+   * distinct from the composer surface with no Dark/Obsidian/Dark-HC-style conflict (gate round
+   * 2: `--command-pill-fg` is a plain alias of `--accent-text` itself -- already the right
+   * hue, lightness and contrast, no lightened step needed). */
   --command-pill-bg: var(--muted);
+  --command-pill-fg: var(--accent-text);
   /* Severity roles: success/warning/error share the same hue every other built-in theme uses
    * (#550's "do not create a second set"), lightness retuned for this preset's own darker navy
    * surfaces. Info is deliberately NOT this preset's own cyan accent hue (195) -- a periwinkle
@@ -1040,9 +1051,11 @@
 
   --surface-hover: var(--surface-3);
   --accent-text: #fcae93;
-  /* Issue #1050: same as Nordic Frost -- `--muted` clears both new floors (1.51:1 against
-   * `--background`, 7.31:1 for `--accent-text` on it). */
+  /* Issue #1050: same as Nordic Frost -- `--muted` clears both floors (1.51:1 against
+   * `--background`, 7.31:1 for `--accent-text` on it); gate round 2: `--command-pill-fg` is a
+   * plain alias of `--accent-text`, no lightened step needed. */
   --command-pill-bg: var(--muted);
+  --command-pill-fg: var(--accent-text);
   /* Severity roles: success/error keep the same green/red hue family every other built-in theme
    * uses. `--severity-warning` is the theme's own golden-amber (real hue ~73.8, distinct from
    * `--accent-text`'s orange-amber, real hue 39.9 -- see this block's header comment for the
