@@ -803,7 +803,19 @@ export function Transcript({
   React.useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
+    // THROWAWAY (Main's decisive-trace spec, #700 E1): logs every scrollTop change and every
+    // ResizeObserver tick, to find what resets the transcript's scrollTop to 0 when the pinned
+    // todo panel unmounts (a real container resize for this viewport's own flex sibling).
+    // eslint-disable-next-line no-console
+    console.log('[E1TRACE] viewport mounted, node identity logged, scrollTop=', viewport.scrollTop)
+    const onScroll = () => {
+      // eslint-disable-next-line no-console
+      console.log('[E1TRACE] scroll event scrollTop=', viewport.scrollTop, 'scrollHeight=', viewport.scrollHeight, 'clientHeight=', viewport.clientHeight)
+    }
+    viewport.addEventListener('scroll', onScroll)
     const observer = new ResizeObserver(() => {
+      // eslint-disable-next-line no-console
+      console.log('[E1TRACE] ResizeObserver tick, landingInProgress=', landingInProgressRef.current, 'scrollTop=', viewport.scrollTop, 'scrollHeight=', viewport.scrollHeight, 'clientHeight=', viewport.clientHeight)
       if (landingInProgressRef.current) return
       setIsAtEnd(
         isAtScrollEnd({
@@ -816,6 +828,9 @@ export function Transcript({
     observer.observe(viewport)
     if (contentRef.current) observer.observe(contentRef.current)
     return () => {
+      // eslint-disable-next-line no-console
+      console.log('[E1TRACE] viewport cleanup (unmount or effect re-run)')
+      viewport.removeEventListener('scroll', onScroll)
       observer.disconnect()
       // Gate round 4 fix (M1): stop any still-running jump on unmount.
       jumpCancelRef.current?.()
