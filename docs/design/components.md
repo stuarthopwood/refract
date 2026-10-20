@@ -65,7 +65,7 @@ For both kinds:
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
-Decided (Stuart, 2026-10-19, #1043): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small square chip after the name, never a round mark that could read as a radio. The swatch-versus-icon question for tokens and theming (#456, #458) is otherwise unchanged.
+Decided (Stuart, 2026-10-19, #1043; swatch ruling amended 2026-10-20, ui-architect-v3): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small two-colour chip (the theme's own `--background` and `--primary`, split down the middle) after the name, never a round mark that could read as a radio. The swatch-versus-icon question for tokens and theming (#456, #458) is otherwise unchanged.
 
 ## Tooltip
 

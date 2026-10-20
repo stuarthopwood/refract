@@ -94,6 +94,27 @@ export const PAIRS = [
   { fg: 'border', bg: 'card', min: 3 },
   { fg: 'border', bg: 'popover', min: 3 },
   { fg: 'border', bg: 'muted', min: 3 },
+  // #1043 (shared `DropdownMenuRadioItem`'s new leading ring-and-dot mark, `dropdown-menu.tsx`,
+  // `radio-group.tsx`'s `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`): the filled dot (`bg-foreground`)
+  // renders directly on `DropdownMenuContent`'s own `bg-popover`, a surface it was never
+  // checked against before, in its real WCAG 1.4.11 (3:1 non-text) role -- the Ask card/
+  // MergeDialog's identical dot renders on a dialog's `--background`/`--card`, a pre-existing,
+  // unrelated gap this issue's scope does not touch. The ring's UNCHECKED border
+  // (`border-muted-foreground`) needs no new entry either: `muted-foreground`/`popover` already
+  // exists above at the stricter 4.5:1 text floor (line ~138), which already implies 3:1.
+  { fg: 'foreground', bg: 'popover', min: 3 },
+  // Gate round 1 fix (PR #1057, Code/Test/UI High): the CHECKED ring's own border was
+  // `border-primary` (`--primary`/`--popover` measures only 2.92-2.99:1 in Obsidian/Nordic
+  // Frost/Cyber Amber -- under 3:1, and visibly INVERTED there since `--primary`'s own relative
+  // luminance is LOWER than `--muted-foreground`'s, so the checked row's ring read fainter than
+  // an unchecked one). This was never "the same pre-existing gap" an earlier cut of this comment
+  // claimed: `primary`/`card` and `primary`/`background` both clear 3:1 with margin (3.35-3.87:1
+  // measured) -- `--popover` specifically, the surface this ring is NEW to, was the one failure.
+  // Fixed by changing `RADIO_RING_CLASS`'s checked border to `border-foreground` instead
+  // (`radio-group.tsx`) -- `foreground`/`popover` above already covers the resting case;
+  // `foreground`/`accent` below covers the row's own `focus:bg-accent` fill (a focused AND
+  // checked row sits on `--accent`, never `--popover`, while focused).
+  { fg: 'foreground', bg: 'accent', min: 3 },
   // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode
   // pill's own `badgeVariants({variant: 'outline'})` used to render an opaque `border-border`
   // directly on `--composer-background` -- #927 moved the Approval pill, Model and Reasoning
@@ -544,4 +565,49 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
     }
   }
   return rows
+}
+
+// #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
+// same #806 file-size reason the composited checks above already were. Confirms
+// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color` literals never
+// silently drift from the preset's REAL resolved `--background`/`--primary` CSS tokens -- the
+// exact bug class that caused this PR's first two gate failures. Returns `{ checkedCount,
+// failCount, rows }`, not a plain row array, to match the caller's own pre-extraction counting
+// (one `checkedCount` per theme regardless of pass/fail, a row pushed only on failure).
+export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds) {
+  let checkedCount = 0
+  let failCount = 0
+  const rows = []
+  const fail = (id, fg, bg, note) => {
+    failCount++
+    rows.push({ themeId: id, fg, bg, min: 'n/a', ratio: null, pass: false, note })
+  }
+  for (const id of declaredThemeIds) {
+    if (!(id in themes)) continue // already reported as a missing block above
+    checkedCount++
+    const meta = themeMetadata[id]
+    const bgTag = `.theme-${id} --background`
+    if (!meta) {
+      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse 'swatch'/'titleBarOverlay.color' for '${id}' out of src/shared/themes.ts`)
+      continue
+    }
+    const bg = themes[id].background
+    if (!bg) {
+      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `'${id}' has no --background token in globals.css to compare against`)
+      continue
+    }
+    const primary = themes[id].primary
+    if (!primary) {
+      fail(id, 'themes.ts swatchPrimary', `.theme-${id} --primary`, `'${id}' has no --primary token in globals.css to compare against`)
+      continue
+    }
+    const actualBgHex = linearToHex(bg.linear)
+    const actualPrimaryHex = linearToHex(primary.linear)
+    const mismatches = []
+    if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
+    if (meta.swatchPrimary !== actualPrimaryHex) mismatches.push(`swatchPrimary '${meta.swatchPrimary}' != --primary '${actualPrimaryHex}'`)
+    if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
+    if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
+  }
+  return { checkedCount, failCount, rows }
 }
