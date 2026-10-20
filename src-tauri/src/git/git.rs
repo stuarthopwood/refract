@@ -109,6 +109,11 @@ const GIT_ENV_VARS_TO_STRIP: &[&str] = &[
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_NAMESPACE",
+    // Gate round 2 item 1 (#464), defense-in-depth alongside `changes_diff.rs::diff_text`'s own
+    // `--no-ext-diff`: no current or plausible future caller in this module ever wants a user's
+    // own `GIT_EXTERNAL_DIFF` env var honoured by any of this app's own git calls, the same
+    // reasoning every other entry in this list already gives for its own var.
+    "GIT_EXTERNAL_DIFF",
 ];
 
 fn is_stripped_env_var(key: &str) -> bool {

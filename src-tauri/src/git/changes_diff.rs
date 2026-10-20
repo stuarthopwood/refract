@@ -32,13 +32,21 @@ pub async fn diff_text(worktree_path: &Path, path: &str, staged: bool) -> Result
     // options before the subcommand, plus `--no-color`/`--no-optional-locks` on the `diff`
     // itself -- same hardening `changes_status.rs::build_groups`'s own numstat calls get, and
     // same `--no-optional-locks` reasoning as `status.rs`'s own status read (never block on a
-    // concurrent agent-held lock).
+    // concurrent agent-held lock). Gate round 2 item 1 (#464): `--no-ext-diff`/`--no-textconv`
+    // added on top -- without them a repo's own `diff.external`/`GIT_EXTERNAL_DIFF` config or a
+    // pathspec-matched `diff.<driver>.textconv` would run an arbitrary external command every
+    // time this panel opens a file's diff, never something a developer asked for just by
+    // clicking a changed file. `git.rs::GIT_ENV_VARS_TO_STRIP` strips `GIT_EXTERNAL_DIFF` from
+    // every invocation too (belt-and-braces); `--no-ext-diff` alone already suffices here, the
+    // env strip only guards a caller that forgets this flag.
     let mut args: Vec<&str> = vec![
         "--literal-pathspecs",
         "-c",
         "core.fsmonitor=false",
         "--no-optional-locks",
         "diff",
+        "--no-ext-diff",
+        "--no-textconv",
         "--no-color",
     ];
     if staged {

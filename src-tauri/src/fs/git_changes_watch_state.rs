@@ -67,11 +67,22 @@ fn notify_refresh(app_handle: &Arc<StdMutex<Option<AppHandle>>>, session_id: &st
 /// (the panel re-mounting, or simply being re-opened) retries rather than staying silently
 /// un-watched forever -- `gitChanges.list`/the mutating actions all still work regardless in the
 /// meantime; only the live auto-refresh (FR-015b) is lost until a fresh watcher starts.
+///
+/// Gate round 2 item 9 (#464): `archived` returns immediately, before even the busy check below
+/// -- mirrors `ipc::file_explorer::file_explorer_ensure_watching`'s own convention (via
+/// `explorer_watch_state::ensure_watcher`'s own `archived` early return), not
+/// `file_explorer_list_directory`'s DIFFERENT convention of an explicit `session-archived`
+/// error: `ensureWatching` for an archived Session is a normal, expected no-op (an archived
+/// Session's own panel can still be open read-only), never an error condition.
 pub fn ensure_watcher(
     app_handle: Arc<StdMutex<Option<AppHandle>>>,
     session_id: &str,
     worktree_path: &Path,
+    archived: bool,
 ) {
+    if archived {
+        return;
+    }
     // Gate round 1 item 1 (#464): reuses `explorer_watch_state`'s own busy-session claim --
     // `ipc::sessions_lifecycle`'s `.archive`/`.delete`/`.recreateWorktree` hold it (via
     // `begin_worktree_operation`) for the whole duration of a worktree mutation, after already
@@ -105,6 +116,23 @@ pub fn ensure_watcher(
         },
     );
     if let Some(handle) = handle {
+        // Gate round 2 item 8 (#464): the busy check above and this insert are two separate
+        // critical sections with real async-adjacent work in between (the call just above:
+        // spawns a `notify` watcher and a background thread) -- a worktree operation
+        // (`begin_worktree_operation`) can become busy for this exact Session in that window,
+        // after the first check already passed. Re-checking immediately before the insert
+        // shrinks that window to as small as this module alone can make it; true atomicity
+        // across both this module's own `WATCHERS` lock and `explorer_watch_state`'s own
+        // separate busy-claim lock would need a shared lock between the two modules, out of
+        // scope this round. If the recheck finds it busy, the just-created handle is stopped
+        // (`DirectoryWatchHandle::stop`'s own doc comment: "safe to call more than once") and
+        // discarded rather than inserted, so the panel's own next `ensureWatching` call (after
+        // the operation finishes and the explorer-reset event fires) retries cleanly instead of
+        // this watcher silently lingering mid-operation.
+        if crate::fs::explorer_watch_state::is_session_busy(session_id) {
+            handle.stop();
+            return;
+        }
         WATCHERS
             .lock()
             .expect("git changes watchers mutex poisoned")

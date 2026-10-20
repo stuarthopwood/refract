@@ -29,6 +29,7 @@ use crate::git::changes_diff::diff_text;
 use crate::git::changes_status::{
     commit as git_commit, read_changes_status, stage_files, unstage_files,
 };
+use crate::git::git::{GitError, GitErrorCode};
 use crate::session::readout::schedule_readout_update;
 
 use super::{
@@ -233,6 +234,17 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .await
                 .map_err(map_git_error)?;
             schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
+        } else {
+            // Gate round 2 item 13 (#464): `read_changes_status` returning `None` (not a repo, a
+            // git failure, or past the status size cap -- the same `None` `list`/`diff` treat as
+            // a normal non-error "not available" state for their own read-only purpose) means
+            // this action did precisely nothing; falling through to `Ok(Value::Null)` below
+            // would report success for a stageAll that never ran. Same `GitError`/`map_git_error`
+            // shape every other failure path in this file already uses.
+            return Err(map_git_error(GitError::new(
+                GitErrorCode::GitFailed,
+                "Couldn't read this worktree's Git status",
+            )));
         }
         Ok(Value::Null)
     })
@@ -259,6 +271,14 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
                 .await
                 .map_err(map_git_error)?;
             schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
+        } else {
+            // Gate round 2 item 13 (#464): same reasoning as `git_changes_stage_all`'s own
+            // `else` branch above -- a failed status read must not be reported as a successful
+            // no-op unstageAll.
+            return Err(map_git_error(GitError::new(
+                GitErrorCode::GitFailed,
+                "Couldn't read this worktree's Git status",
+            )));
         }
         Ok(Value::Null)
     })
@@ -333,8 +353,13 @@ pub fn git_changes_ensure_watching(state: AppState, args: Vec<Value>) -> Handler
             "gitChanges.ensureWatching expects a string sessionId",
             "gitChanges.ensureWatching rejected an oversized sessionId",
         )?;
-        let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        watch_state::ensure_watcher(state.app_handle.clone(), &session_id, &worktree_path);
+        let (worktree_path, _base_branch, archived) = session_context(&state, &session_id).await?;
+        watch_state::ensure_watcher(
+            state.app_handle.clone(),
+            &session_id,
+            &worktree_path,
+            archived,
+        );
         Ok(Value::Null)
     })
 }
