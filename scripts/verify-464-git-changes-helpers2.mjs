@@ -25,12 +25,21 @@ import {
  * background-refetch (gate round 2 item 2 fix) only shows `'loading'` for a genuinely NEW diff
  * (a different path or staged side); an unrelated snapshot refresh keeps the current patch
  * mounted (so scroll/focus survive) and swaps it only if the new text actually differs. Opens
- * README.md's own real unstaged diff again, writes an entirely unrelated new untracked file,
- * and polls for `.diff-view` to confirm it never once disappears (the `'loading'`/error swap)
+ * README.md's own real unstaged diff, writes an entirely unrelated new untracked file, and
+ * polls for `.diff-view` to confirm it never once disappears (the `'loading'`/error swap)
  * across that window -- then returns to the list and confirms the unrelated file really was
  * picked up, proving the refresh genuinely happened rather than merely having nothing to
- * observe. Assumes the panel is currently showing the groups list (not already in a diff). */
-export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, shot, findings, failures) {
+ * observe. Assumes the panel is currently showing the groups list (not already in a diff).
+ *
+ * Runs as Check 7b, between Check 7 (bulk Unstage all) and Check 8 -- NOT after Check 14 as
+ * gate round 2 first placed it: README.md is staged and committed for real by Check 12's
+ * Ctrl+Enter commit, so by Check 14 it has dropped out of every group entirely and
+ * `fileRowOpenButtonFinder(FIXTURE.readme)` has no row left to click (a real bug in this
+ * check's own placement, not a product bug -- falsified against the exact Check 7-14 state
+ * trace before moving it). `untrackedBaseline` is whatever Untracked already holds at the
+ * call site (Check 7 leaves it as `[FIXTURE.stagedNew, FIXTURE.untracked]`), so the expected
+ * post-write array is computed rather than hardcoded to a later check's own fixture state. */
+export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, untrackedBaseline, shot, findings, failures) {
   const unrelatedFileName = 'an-unrelated-external-change-for-verify-464.txt';
   await cdp.click(fileRowOpenButtonFinder(FIXTURE.readme));
   await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view reopened for README.md (item 2 stability check)' });
@@ -60,15 +69,15 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the item-2 stability check' });
   assertArrayEqual(
     await readGroupFileTitles(cdp, 'Untracked'),
-    [unrelatedFileName, FIXTURE.externalChange, FIXTURE.untracked],
+    [...untrackedBaseline, unrelatedFileName].sort(),
     'Item 2: the unrelated external file genuinely was picked up by the refresh once back at the list (proves the refresh happened at all, not just "nothing to observe")',
     findings,
     failures
   );
-  await shot('14b-diff-stability-external-write.png');
+  await shot('07b-diff-stability-external-write.png');
 
   // Fully torn down before returning, same posture as Checks 15/16 -- this fixture must never
-  // perturb Check 18's own fixed `Untracked, 2` expectation.
+  // perturb any later check's own fixed Untracked expectations (Check 14's, Check 18's).
   rmSync(path.join(worktreePath, unrelatedFileName));
   await cdp.waitFor(
     `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return false; return !Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(unrelatedFileName)}); })()`,

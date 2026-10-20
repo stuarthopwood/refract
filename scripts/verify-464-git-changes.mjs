@@ -43,12 +43,12 @@
 // fallback exists for this watcher anymore); Checks 15/16 (a partially-staged `MM` fixture, a
 // literal-bracket-filename fixture) built and FULLY TORN DOWN within their own check; Checks
 // 10/11 (conflict-priority disabled reason, "Mark as resolved" confirm-then-stage) moved BEFORE the conflict is actually resolved.
-// Gate round 2 (2026-10-20): Check 14b (item 2) proves an external write to an UNRELATED file
-// never tears an open diff down or steals focus; Check 15 (item 3) also opens the diff from the
-// partially-staged fixture's own Changes-half row and confirms Back lands focus in that SAME
-// half (group-scoped `data-git-group-list`); Check 16's sibling fixture renamed `i.txt` (the old
-// `[id]-other.txt` never actually discriminated literal-vs-glob pathspec matching); Checks 6/7
-// renamed to name the real "conflict wins" reason they show, not the old misleading names.
+// Gate round 2 (2026-10-20): Check 7b (item 2; relocated from "after Check 14", a bug in this
+// check's own placement -- see the helper's doc comment) proves an external write to an
+// UNRELATED file never tears an open diff down or steals focus; Check 15 (item 3) also opens
+// the diff from the partially-staged fixture's own Changes-half row, Back lands focus in that
+// SAME half (`data-git-group-list`); Check 16's sibling renamed `i.txt` (the old `[id]-other.txt`
+// never discriminated literal-vs-glob matching); Checks 6/7 renamed to name the real reason shown.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -373,6 +373,9 @@ async function main() {
     assertArrayEqual(await readGroupFileTitles(cdp, 'Conflicts'), [FIXTURE.conflict], 'Conflicts untouched by Unstage all', findings, failures);
     await shot('05-after-unstage-all.png');
 
+    // ---- Check 7b (item 2, gate round 2, relocated here from "after Check 14"): full detail in the helper's own doc comment. ----
+    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, [FIXTURE.stagedNew, FIXTURE.untracked], shot, findings, failures);
+
     // ---- Check 8: Commit button disabled-with-reason states, read via real CDP DOM reads (full
     // detail in the helper's own doc comment -- moved out of this file to stay under the
     // 600-line soft cap, #806). Leaves the panel staged with a typed message, enabled. ----
@@ -497,9 +500,6 @@ async function main() {
     );
     assertArrayEqual(await readGroupFileTitles(cdp, 'Untracked'), [FIXTURE.externalChange, FIXTURE.untracked], 'Untracked files after an external fs change', findings, failures);
     await shot('14-external-change-refresh.png');
-
-    // ---- Check 14b (item 2, gate round 2): full detail in the helper's own doc comment. ----
-    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, shot, findings, failures);
 
     // ---- Check 15 (item 4): a partially staged (`MM`) file renders as TWO separate rows for the
     // SAME path -- one in Staged (scored against the index, `git diff --cached`), one in Changes
