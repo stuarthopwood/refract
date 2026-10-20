@@ -22,7 +22,6 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ActivityIcon,
-  CheckIcon,
   DownloadIcon,
   ExternalLinkIcon,
   KeyboardIcon,
@@ -42,6 +41,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -83,27 +84,32 @@ export interface ProfileMenuContentProps {
   onThemeApplied(label: string): void
 }
 
-/** The Theme submenu (FR-019, T022): every built-in preset in `THEMES`' own declaration order,
- *  the active one marked by a trailing check icon plus the word "Current" -- the ONLY
- *  current-theme marker (gate round 6 fix, `agent://Arch877`: this row used to ALSO draw a
- *  permanent 2px `--active-indicator` bar, which clashed once every dropdown menu's own
- *  keyboard-focus cue became that SAME bar, gate round 5 -- "Decided (Skippy, delegated by
- *  Stuart 2026-10-15)": in a DROPDOWN MENU specifically, the bar means keyboard focus only;
- *  `docs/DESIGN.md`'s "Active/selected indicator" rule still covers every OTHER current/
- *  selected surface, e.g. the session list row and conversation-history entry, unchanged), with
- *  the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each
- *  theme's own real `--background` value, not an invented accent). Choosing a DIFFERENT preset
- *  saves it immediately via `useThemeStore.getState().save` (a menu is a transient overlay --
- *  Settings'
- *  own Appearance section is where a live preview with Save/Cancel belongs); choosing the
- *  already-active preset is a deliberate no-op, the same FR-002/FR-006 deviation note
- *  ThemePicker.tsx's own `choose` already documents. Selecting a preset closes the whole menu
- *  and returns focus to the profile item's name button via Radix's own default close-auto-focus
- *  (no `Trigger`-less dialog is opened here, so that default is exactly right); selecting
- *  "Appearance settings…" instead opens the Settings screen, which unmounts ProfileItem
- *  entirely, so focus goes to the Settings screen's own heading instead (SettingsScreen.tsx:66-68
- *  focuses it on mount, not any "first focusable control"). The submenu is
- *  controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
+/** The Theme submenu (FR-019/FR-030, T022, T031 -- #1043, grilled 2026-10-19): every built-in
+ *  preset in `THEMES`' own declaration order as a REAL `DropdownMenuRadioGroup`/`RadioItem`
+ *  (`menuitemradio`/`aria-checked`), bound to `activeId`. Replaces the former plain
+ *  `DropdownMenuItem` list whose only current-theme marker was a trailing check plus the word
+ *  "Current" -- every round swatch read as an unselected radio, including the active one, since
+ *  nothing on the row actually filled in when checked (#1043's reported bug). The shared
+ *  `DropdownMenuRadioItem` (`dropdown-menu.tsx`) now draws the Ask card's own leading
+ *  ring-and-dot mark, filled for the checked row, so THIS submenu carries no bespoke marker of
+ *  its own any more -- the colour swatch moves after the name as a small square chip
+ *  (`size-3 rounded-[2px] border-border`, decorative, never a round shape that could read as a
+ *  second radio), the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already
+ *  uses (each theme's own real `--background` value, not an invented accent); "Current" is
+ *  dropped -- the checked radio's filled dot plus the screen reader's own "checked" state carry
+ *  that now. Gate round 5/6 history (`agent://Arch877`): in a DROPDOWN MENU specifically, the
+ *  2px `--active-indicator` bar means keyboard focus only (Stuart, 2026-10-15) -- unchanged by
+ *  this fix, still `DropdownMenuRadioItem`'s own `focus:shadow-[...]`, never a current-theme
+ *  cue. Choosing a DIFFERENT preset saves it immediately via `useThemeStore.getState().save` (a
+ *  menu is a transient overlay -- Settings' own Appearance section is where a live preview with
+ *  Save/Cancel belongs); choosing the already-active preset is a deliberate no-op, the same
+ *  FR-002/FR-006 deviation note ThemePicker.tsx's own `choose` already documents. Selecting a
+ *  preset closes the whole menu and returns focus to the profile item's name button via Radix's
+ *  own default close-auto-focus (no `Trigger`-less dialog is opened here, so that default is
+ *  exactly right); selecting "Appearance settings…" instead opens the Settings screen, which
+ *  unmounts ProfileItem entirely, so focus goes to the Settings screen's own heading instead
+ *  (SettingsScreen.tsx:66-68 focuses it on mount, not any "first focusable control"). The submenu
+ *  is controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
  *  but only when the submenu was opened by keyboard (the `contains` check below leaves a
  *  pointer-hover open alone, since a mouse user never wants focus silently stolen). Radix alone
  *  would otherwise focus the first item in `THEME_LIST`, which only happened to be the active
@@ -140,36 +146,34 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
         Theme
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent ref={subContentRef} sideOffset={4} alignOffset={-4} collisionPadding={8}>
-        {THEME_LIST.map((theme) => {
-          const isActive = theme.id === activeId
-          return (
-            <DropdownMenuItem
-              key={theme.id}
-              ref={isActive ? activeItemRef : undefined}
-              onSelect={() => chooseTheme(theme.id, theme.name)}
-            >
-              {/* Gate round 6 fix (`agent://Arch877` Medium 2): this row used to ALSO draw a
-                  permanent 2px indigo bar plus a 4px ring-coloured focus override whenever this
-                  theme was the active one -- once the shared `DropdownMenuItem` focus cue became
-                  the SAME indigo `--active-indicator` (gate round 5), arrowing onto a DIFFERENT
-                  theme showed two visually identical indigo bars, with only a sub-1.3:1
-                  `bg-accent` telling them apart. The trailing "Current" text below is the ONLY
-                  current-theme marker now; the bar means focus alone, same as every other menu. */}
-              <span
-                aria-hidden
-                className="size-4 shrink-0 rounded-full border border-border"
-                style={{ backgroundColor: theme.swatch }}
-              />
-              <span className="flex-1">{theme.name}</span>
-              {isActive && (
-                <span className="flex items-center gap-1 text-xs font-medium">
-                  <CheckIcon aria-hidden className="size-3.5" />
-                  Current
-                </span>
-              )}
-            </DropdownMenuItem>
-          )
-        })}
+        <DropdownMenuRadioGroup
+          value={activeId}
+          onValueChange={(value) => {
+            const theme = THEME_LIST.find((candidate) => candidate.id === value)
+            if (theme) chooseTheme(theme.id, theme.name)
+          }}
+        >
+          {THEME_LIST.map((theme) => {
+            const isActive = theme.id === activeId
+            return (
+              <DropdownMenuRadioItem
+                key={theme.id}
+                value={theme.id}
+                ref={isActive ? activeItemRef : undefined}
+              >
+                <span className="min-w-0 flex-1 truncate">{theme.name}</span>
+                {/* #1043: a small square chip, never round -- a round swatch is what read as an
+                    unselected radio in the first place. Decorative; the name plus the leading
+                    radio mark are the real identifiers. */}
+                <span
+                  aria-hidden
+                  className="size-3 shrink-0 rounded-[2px] border border-border"
+                  style={{ backgroundColor: theme.swatch }}
+                />
+              </DropdownMenuRadioItem>
+            )
+          })}
+        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => useViewStore.getState().openSettings('appearance')}>
           <SlidersHorizontalIcon aria-hidden />

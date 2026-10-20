@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronRightIcon } from "lucide-react"
+import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from "@/components/ui/radio-group"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 function DropdownMenu({
@@ -99,27 +100,38 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      // Gate round 5 fix (Visual Medium #11): the current-level check moves from a LEADING
-      // `absolute left-2` indicator to a TRAILING one at the row's far edge, matching the Model
-      // picker's own icon-only trailing check (this is the only consumer of this vendored
-      // component in the app today, so the change is scoped to exactly the one menu that needed
-      // it). Gate round 6 correction (`agent://Arch877` Layout, downgraded from Medium): the
-      // Approval pill's own current-item cue is a DIFFERENT convention (an inline "Current" word
-      // plus icon right after the label, not pushed to the row's far edge) -- this change was
-      // never meant to match that, only the Model picker's. The inset shadow also moves to
-      // `--active-indicator`, same as `DropdownMenuItem` above.
+      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` this gate round 5/6
+      // history above records read as an unselected radio with nothing marking the checked row
+      // (the round swatches in the Theme submenu, its first caller, looked identical whether
+      // checked or not). Moves to the SAME leading ring-and-dot mark the Ask card's radios use
+      // (`RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, `radio-group.tsx`'s own shared source, ADR 0003 --
+      // never a second hand-rolled copy), so the checked row is visibly filled, not merely
+      // inferred from a trailing glyph. `group/radio-item` plus Radix's own `data-state`
+      // attribute (set on every `RadioItem` root, checked/unchecked) is what the ring's
+      // `group-data-[state=checked]/radio-item:` selector keys off, the same mechanism
+      // `RadioGroupItem` uses for the identical selector. Unlike Ask card/MergeDialog (full
+      // bordered cards whose OWN border already carries a `forced-colors:data-[state=checked]:
+      // border-[Highlight]` override), a menu row has no bordered-card fallback, so the ring
+      // itself needs that override here, or a checked and an unchecked row would render
+      // identically under Windows High Contrast (the same failure mode `RadioGroupItem`'s own
+      // comment documents, just with no outer border to lean on this time). The inset shadow
+      // stays on `--active-indicator`, same as `DropdownMenuItem` above -- unrelated to this
+      // fix, that cue is keyboard focus only (2026-10-15 decision, unchanged).
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "group/radio-item relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <span className="min-w-0 flex-1 truncate">{children}</span>
-      <span className="pointer-events-none flex size-3.5 shrink-0 items-center justify-center">
+      <span
+        aria-hidden
+        className={cn(RADIO_RING_CLASS, "forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]")}
+      >
         <DropdownMenuPrimitive.ItemIndicator>
-          <CheckIcon aria-hidden className="size-3.5" />
+          <span className={RADIO_DOT_CLASS} />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
+      {children}
     </DropdownMenuPrimitive.RadioItem>
   )
 }
