@@ -18,7 +18,8 @@ import {
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph
 } from '../subagents/subagentStatus'
-import { extractResultSummary } from './stageMeta'
+import { extractResultSummary, extractTaskGoalPreview } from './stageMeta'
+import { InlineDisclosure } from '@/components/InlineDisclosure'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -497,32 +498,51 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
 
 interface SubagentRowProps {
   item: SubagentItem
+  /** Issue #1077: true shows this row's own goal (`item.task`'s first lines, clamped to 3
+   * lines) above the toggle -- the default, since a bare row has no Stage of its own to supply
+   * one. `SubagentChainRow.tsx`'s Stage call sites pass `false`: the Stage's own
+   * `StageContextBrief` already shows the shared goal, so a member must never duplicate it. */
+  showGoal?: boolean
 }
 
-// The expansion content for one subagent row (prompt, then result once known as plain text):
-// split out so `StageGroupRow` (`SubagentChainRow.tsx`) can reuse it for its own solo-of-the-turn
-// case without ever going through `SubagentRow`'s own `CollapsedLine` wrapper (#563 remediation,
-// H2/H3: a Stage's content must never switch element type between solo and multi members).
-export function SubagentBody({ item }: SubagentRowProps) {
+// The expansion content for one subagent row: the goal (when `showGoal`), then a "See input &
+// output" toggle (`InlineDisclosure`, ADR 0003, reusing `Markdown.tsx`'s `MermaidBlock` "Show
+// source" shape, issue #1077) revealing the prompt and result as plain text -- split out so
+// `StageGroupRow` (`SubagentChainRow.tsx`) can reuse it for its own solo-of-the-turn case
+// without going through `SubagentRow`'s own `CollapsedLine` wrapper (#563 remediation, H2/H3:
+// a Stage's content must never switch element type between solo and multi members). Starts
+// collapsed on every mount (a fresh `useState(false)`); this row never stays mounted while its
+// own Stage/CollapsedLine is collapsed, so no extra reset is needed for a fresh re-expand.
+export function SubagentBody({ item, showGoal = true }: SubagentRowProps) {
   const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
   const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
+  const goalPreview = React.useMemo(() => (showGoal ? extractTaskGoalPreview(item.task) : null), [showGoal, item.task])
+  const [open, setOpen] = React.useState(false)
+  const contentId = React.useId()
+  const hasResult = item.result != null
+  const label = `${open ? 'Hide' : 'See'} input${hasResult ? ' & output' : ''}`
   return (
-    <>
-      <div>
-        <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
-        <div className="max-h-64 overflow-auto rounded-lg">
-          <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
-        </div>
-      </div>
-      {resultBlock != null && (
+    <div className="space-y-1">
+      {goalPreview != null && (
+        <p className="line-clamp-3 text-xs whitespace-pre-line text-muted-foreground [overflow-wrap:anywhere]">{goalPreview}</p>
+      )}
+      <InlineDisclosure open={open} onOpenChange={setOpen} contentId={contentId} label={label}>
         <div>
-          <div className="mb-1 text-xs font-medium text-muted-foreground">Result</div>
+          <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
           <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
+            <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
           </div>
         </div>
-      )}
-    </>
+        {resultBlock != null && (
+          <div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">Result</div>
+            <div className="max-h-64 overflow-auto rounded-lg">
+              <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
+            </div>
+          </div>
+        )}
+      </InlineDisclosure>
+    </div>
   )
 }
 
@@ -536,7 +556,7 @@ export function SubagentBody({ item }: SubagentRowProps) {
 // (never visible, it would overflow the box and paint over the label); the visible word is
 // rendered HERE instead, in `meta`, ahead of the duration, gated off for `finished` (decision 14:
 // a quiet icon-plus-duration row, never a loud "Finished" claim).
-export function SubagentRow({ item }: SubagentRowProps) {
+export function SubagentRow({ item, showGoal = true }: SubagentRowProps) {
   const status = chatRowStatus(item.status)
   const duration =
     item.status !== 'running' && item.durationMs != null ? (
@@ -568,7 +588,7 @@ export function SubagentRow({ item }: SubagentRowProps) {
       meta={meta}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <SubagentBody item={item} />
+      <SubagentBody item={item} showGoal={showGoal} />
     </CollapsedLine>
   )
 }

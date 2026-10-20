@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { InlineDisclosure } from '@/components/InlineDisclosure'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -442,18 +443,14 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           {result.desc}
         </span>
       )}
-      <button
-        type="button"
-        aria-expanded={showSource}
-        aria-controls={sourceId}
-        onClick={() => setShowSource((value) => !value)}
-        className="-mx-1 px-1 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      <InlineDisclosure
+        open={showSource}
+        onOpenChange={setShowSource}
+        contentId={sourceId}
+        label={showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
       >
-        {showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
-      </button>
-      <div id={sourceId} hidden={!showSource}>
         <CodeBlock code={code} lang="mermaid" />
-      </div>
+      </InlineDisclosure>
     </div>
   )
 }

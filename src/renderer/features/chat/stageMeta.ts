@@ -57,6 +57,38 @@ export function extractContextLabel(context: string): string | null {
   return null
 }
 
+const GOAL_PREVIEW_MAX_CHARS = 240
+
+/** A single subagent's own goal when no Stage-level context exists to show instead (issue
+ * #1077): `item.task`'s own first non-blank lines, with the SAME heading/"Goal:" stripping
+ * `extractContextLabel` above applies to a Stage's own context (reusing its own line-finding
+ * loop), but keeping the line breaks that follow (rather than folding to one line) and capped
+ * by a character budget instead of a single-line one -- the caller clamps the remaining
+ * overflow visually (`line-clamp-3`); the untruncated task stays reachable via the row's own
+ * "See input & output" toggle, so this never needs a separate expand control of its own. Plain
+ * text only, same reasoning as `extractContextLabel`: `task` is untrusted agent-authored text.
+ * `null` when every line is empty or a bare "# Goal" heading with nothing after it (the whole
+ * task body was blank). */
+export function extractTaskGoalPreview(task: string): string | null {
+  const lines = task.split('\n')
+  let startIndex = -1
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim()
+    if (line.length === 0) continue
+    if (HEADING_ONLY_GOAL_RE.test(line)) continue
+    const stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
+    if (stripped.length === 0) continue
+    startIndex = i
+    break
+  }
+  if (startIndex === -1) return null
+  const firstLine = lines[startIndex]!.trim().replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
+  const rest = lines.slice(startIndex + 1).join('\n')
+  const combined = rest.length > 0 ? `${firstLine}\n${rest}`.trimEnd() : firstLine
+  if (combined.length <= GOAL_PREVIEW_MAX_CHARS) return combined
+  return `${combined.slice(0, GOAL_PREVIEW_MAX_CHARS).trimEnd()}\u2026`
+}
+
 /** The longest common prefix shared by every name in a Stage with 2+ agents (issue #941 grill
  * item 3's "no context" fallback, "Stage 1 · G923" from `G923Code`/`G923Tests`/`G923Security`/
  * `G923A11y`/`G923Arch`): `null` when fewer than 2 names are given (a single agent's own full
