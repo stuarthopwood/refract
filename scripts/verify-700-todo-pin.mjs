@@ -105,6 +105,18 @@ async function settleForScreenshot(cdp) {
   await cdp.evaluate(`document.getAnimations().forEach((a) => a.finish())`);
 }
 
+/** Gate round 2 fix (self-caught live-check bug, confirmed by diagnostics then reverted): a
+ * genuine duplicate-mount bug was found live -- two `[data-slot="pinned-todo-panel"]` elements,
+ * same id, same `[data-session-pane]`, BOTH connected, stacked in normal flow, one perpetually
+ * stale (never receives a live `readout:update`) while `document.querySelector` (used
+ * throughout this file) silently reads whichever one happens to be first -- the stale one.
+ * Asserted at every point the panel is expected to exist from here on so a recurrence fails
+ * loudly (a wrong assertion on stale data) rather than silently reading past it again. */
+async function assertSinglePanel(cdp, label) {
+  const count = await cdp.evaluate(`document.querySelectorAll('[data-slot="pinned-todo-panel"]').length`);
+  assertEqual(count, 1, `Exactly one pinned-todo-panel element exists (${label})`);
+}
+
 async function main() {
   const head = gitHead(REPO_ROOT);
   const dirtyLines = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true }).stdout.split('\n').filter(Boolean);
@@ -183,6 +195,7 @@ async function main() {
     // ---- Pin mid-turn (well before settle) ----
     await clickTodoPill(cdp);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Pinned panel mounts the instant the pill is clicked' });
+    await assertSinglePanel(cdp, 'right after the initial pin');
     assertTrue(!(await readUpNextVisible(cdp)), 'E8: Up next hides the instant the panel is pinned');
     const pillAfterPin = await readPill(cdp);
     assertEqual(pillAfterPin.ariaPressed, 'true', 'Pill aria-pressed is true once pinned');
@@ -209,6 +222,7 @@ async function main() {
     await cdp.waitFor(`document.activeElement === (${TODO_PILL_SELECTOR})`, { timeoutMs: 2_000, label: 'P3: focus lands on the pill after Unpin removes the focused button (never <body>)' });
     await clickTodoPill(cdp);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned' });
+    await assertSinglePanel(cdp, 'right after Unpin then re-pin');
 
     // ---- Live mid-turn updates ----
     await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Implement feature')`, { timeoutMs: 10_000, label: 'Panel header shows "Implement feature" as the live current task, mid-turn' });
@@ -226,6 +240,7 @@ async function main() {
     // ---- E2: an 8s hold is now in the tape (after todo-6) -- the turn is still genuinely
     // running while the panel already shows the live blocked state ----
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running (Stop control present) while the blocked state is already shown live, well before settle');
+    await assertSinglePanel(cdp, 'before the abandoned-status wait');
 
     // Gate round 2 fix (self-caught live-check timeout): 15s left only 7s of margin over the
     // tape's own scripted 8s delay -- too tight once real launch/render latency is added (the
