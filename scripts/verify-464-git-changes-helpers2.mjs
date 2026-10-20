@@ -49,21 +49,26 @@ import {
  * Gate round 3 fix (#1076 MEDIUM, Gate1076Test3): the Untracked-array assertion used to run
  * only AFTER clicking Back, so a refresh that landed late -- even one Back itself re-triggered
  * -- still passed vacuously; nothing proved the refresh happened WHILE the diff was open at
- * all. First attempt read `window.__refractStores` directly -- WRONG, falsified live (the build
- * failed with "Cannot read properties of undefined (reading 'gitChanges')"): that global is
- * DEV-only (`import.meta.env.DEV`), and a `tauri build --debug` still runs `vite build` in
- * PRODUCTION mode per `tauri.conf.json`'s own `beforeBuildCommand` -- the exact fact
- * `verify-tauri-569.mjs`/`verify-tauri-560-gate2.mjs`/`verify-672-start-message.mjs` already
- * each independently document. Proven instead via a REAL DOM signal that needs no store access:
- * `#panel-tab-git-changes`'s own additions/deletions badge (`usePanelCount`'s `'git-changes'`
- * branch, `panel-registry.ts`, FR-020) sums every group's entries INCLUDING Untracked, and that
- * tab stays mounted and reactive the whole time regardless of which content (groups list or
- * diff) the panel itself currently shows -- reading its own count text before/after the write,
- * entirely while the diff pane is still open, proves the refresh reached the renderer without
- * ever needing Back or store access. */
-export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, untrackedBaseline, shot, findings, failures) {
+ * all. Two false starts, both falsified live before being reported rather than after: (1)
+ * `window.__refractStores` -- absent from this build (`import.meta.env.DEV` is false; a `tauri
+ * build --debug` still runs `vite build` in PRODUCTION mode per `tauri.conf.json`'s own
+ * `beforeBuildCommand`, the same fact `verify-tauri-569.mjs`/`verify-tauri-560-gate2.mjs`/
+ * `verify-672-start-message.mjs` already each independently document); (2) `#panel-tab-git-
+ * changes`'s own additions badge -- `PanelTabBar.tsx` only renders a count in its MULTI-panel
+ * branch, and this script only ever opens the one `git-changes` panel, so the single-panel
+ * title-row branch renders instead, with no count at all (a "null to null" vacuous pass caught
+ * before reporting, not after).
+ *
+ * Proven for real with two independent, genuinely external checks: (a) a direct
+ * `gitChanges.list` IPC call (bypassing BOTH the DOM and the renderer's own store entirely)
+ * confirms the BACKEND already sees the unrelated file while the diff pane is still open; (b)
+ * `onBack` (`GitChangesPanel.tsx`) is a PURE local-state toggle (`setSelected(null)`) -- it
+ * fires no `load()` of its own, confirmed against every effect in that file -- so the single,
+ * un-retried `readGroupFileTitles` read immediately after Back can only be correct if the
+ * RENDERER's own store already held the unrelated file beforehand, i.e. no later than while the
+ * diff pane was still the active view. */
+export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, sessionId, untrackedBaseline, shot, findings, failures) {
   const unrelatedFileName = 'an-unrelated-external-change-for-verify-464.txt';
-  const TAB_COUNT_FINDER = `document.getElementById('panel-tab-git-changes')?.querySelector('span.tabular-nums')`;
   await cdp.click(fileRowOpenButtonFinder(FIXTURE.readme));
   await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view reopened for README.md (item 2 stability check)' });
   const diffTextBefore = await diffViewText(cdp);
@@ -72,7 +77,6 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   }
   assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2 setup: focus is on Back to changes before an unrelated external write', findings, failures);
 
-  const countBeforeWrite = await cdp.evaluate(`${TAB_COUNT_FINDER}?.textContent ?? null`);
   writeFileSync(path.join(worktreePath, unrelatedFileName), "an unrelated change while README.md's own diff is open, for verify-464\n");
 
   let diffViewDisappeared = false;
@@ -85,29 +89,29 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
     }
   }
   assertEqual(diffViewDisappeared, false, 'Item 2: the open README.md diff never disappeared (no "Loading diff…"/error swap) while an unrelated external file changed', findings, failures);
-  // Gate round 3 fix (#1076 MEDIUM, Gate1076Test3): proves the refresh genuinely reached the
-  // renderer WHILE the diff pane is still open -- not merely "eventually, by the time Back is
-  // clicked", which a late-arriving refresh (or one Back itself triggers) would pass vacuously.
-  // The tab's own additions badge is a real DOM signal, mounted the whole time regardless of
-  // which content the panel shows (see the doc comment for why this replaced a first attempt
-  // that read a dev-only global absent from this build).
-  await cdp.waitFor(
-    `${TAB_COUNT_FINDER}?.textContent !== ${JSON.stringify(countBeforeWrite)}`,
-    { timeoutMs: 2_000, label: 'Git changes tab count changed (FR-020 additions sum) while the diff pane is STILL open' }
-  );
-  const countAfterWrite = await cdp.evaluate(`${TAB_COUNT_FINDER}?.textContent ?? null`);
-  findings.push(`Item 2: Git changes tab count went from ${JSON.stringify(countBeforeWrite)} to ${JSON.stringify(countAfterWrite)} while the diff pane was still open (proves the refresh genuinely landed, not merely "eventually by Back time").`);
-  assertEqual(await cdp.evaluate(`!!document.querySelector('.diff-view')`), true, 'Item 2: the diff view is still mounted immediately after that tab-count refresh landed', findings, failures);
+  // Gate round 3 fix (#1076 MEDIUM, Gate1076Test3): a direct IPC call, bypassing the DOM and the
+  // renderer's own store entirely -- proves the BACKEND genuinely already sees the unrelated
+  // file, while the diff pane is still open.
+  const backendResult = await cdp.evaluate(`window.refract.gitChanges.list(${JSON.stringify(sessionId)})`);
+  const backendSeesItWhileOpen =
+    backendResult.ok && backendResult.value.snapshot
+      ? backendResult.value.snapshot.groups.untracked.some((f) => f.path === unrelatedFileName)
+      : false;
+  assertEqual(backendSeesItWhileOpen, true, 'Item 2: a direct gitChanges.list IPC call (bypassing the renderer) already sees the unrelated file while the diff pane is still open', findings, failures);
+  assertEqual(await cdp.evaluate(`!!document.querySelector('.diff-view')`), true, 'Item 2: the diff view is still mounted immediately after that direct backend check', findings, failures);
   const diffTextAfter = await diffViewText(cdp);
   assertEqual(diffTextAfter, diffTextBefore, "Item 2: README.md's own diff text is still mounted, byte-identical, after the unrelated external write", findings, failures);
   assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2: focus is still on Back to changes after the unrelated external write (never stolen by the background refresh)', findings, failures);
 
   await cdp.click(BACK_TO_CHANGES_FINDER);
   await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the item-2 stability check' });
+  // Back fires no fetch of its own (a pure `setSelected(null)`, see the doc comment) -- a single,
+  // un-retried read here can only be correct if the renderer's own store already held this
+  // before Back was clicked, i.e. no later than while the diff pane was still showing.
   assertArrayEqual(
     await readGroupFileTitles(cdp, 'Untracked'),
     [...untrackedBaseline, unrelatedFileName].sort(),
-    'Item 2: the unrelated external file genuinely was picked up by the refresh once back at the list (proves the refresh happened at all, not just "nothing to observe")',
+    'Item 2: the unrelated external file genuinely was picked up by the refresh once back at the list (Back itself fetches nothing, so this proves the refresh landed no later than while the diff was open)',
     findings,
     failures
   );

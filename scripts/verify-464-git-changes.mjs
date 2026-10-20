@@ -371,7 +371,7 @@ async function main() {
     await shot('05-after-unstage-all.png');
 
     // ---- Check 7b (item 2, gate round 2, relocated here from "after Check 14"): full detail in the helper's own doc comment. ----
-    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, [FIXTURE.stagedNew, FIXTURE.untracked], shot, findings, failures);
+    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, sessionId, [FIXTURE.stagedNew, FIXTURE.untracked], shot, findings, failures);
 
     // ---- Check 8: Commit button disabled-with-reason states, read via real CDP DOM reads (full
     // detail in the helper's own doc comment -- moved out of this file to stay under the
