@@ -10,10 +10,9 @@
 // fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn that
 // deterministically renders a real `--severity-warning`-coloured NoticeRow, with no dependence
 // on a real model ever choosing to emit a warning. The same turn's own echoed user message
-// renders through `UserMessageRow.tsx`'s `text-chat-foreground` Markdown, giving a real chat-
-// prose element too. EXTENDED (#1039 round-1 self-review, 2026-10-20): the fixture now also
-// carries one assistant message with a short Mermaid fence BEFORE the notices (its own
-// "EXTENDED" header comment) -- no second fixture needed for any of this check's assertions.
+// renders through `UserMessageRow.tsx`'s `text-chat-foreground` Markdown. EXTENDED (#1039
+// round-1 self-review): the fixture now also carries one assistant message with a short
+// Mermaid fence BEFORE the notices -- no second fixture needed for any assertion below.
 //
 // For each of Cyber Amber and Dark (Default Dark), switches via the real Profile-menu Theme
 // submenu (`switchTheme`, the same route `verify-551-presets.mjs` uses for Cyber Amber), then
@@ -85,6 +84,7 @@ import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
 import { parseComputedColorToEntry } from './contrast-math.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
+import { clearField } from './verify-464-git-changes-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -428,16 +428,13 @@ async function main() {
 
         // ---- Mermaid (#1039 round-1 self-review): the fixture's own assistant message (see
         // its own "EXTENDED" header comment) renders one real flowchart via Markdown.tsx's
-        // `MermaidBlock`, re-rendering on every theme switch. The result is an inert
-        // `<img role="img">` whose `src` is a `data:image/svg+xml` URI -- decode it and
-        // compare the SVG's own set of distinct hex colours against Dark's (Mermaid bakes
-        // `themeVariables` into the SVG directly, never through a CSS custom property to
-        // probe). Gate round 1 fix (self-caught live): a hardcoded expected literal for the
-        // node FILL measured wrong -- Mermaid derives that shade from `primaryColor`
-        // internally (`khroma`-adjusted, not the raw literal), so a cross-theme SET-equality
-        // check (same pattern as `DARK_EQUALITY_VARS`) is used instead of a hardcoded value:
-        // whatever hex Dark's real render uses, Cyber Amber's must match exactly (both reuse
-        // the SAME `DARK_FAMILY` object). Node TEXT (`MERMAID_NODE_TEXT`) IS a literal match.
+        // `MermaidBlock`. The result is an inert `<img role="img">` whose `src` is a
+        // `data:image/svg+xml` URI -- decode it and compare its own set of distinct hex
+        // colours against Dark's (Mermaid bakes `themeVariables` into the SVG, never through a
+        // probeable `var()`). Gate round 1 fix (self-caught live): a hardcoded node-FILL
+        // literal measured wrong -- Mermaid derives that shade from `primaryColor` internally
+        // (`khroma`-adjusted), so cross-theme SET-equality (same pattern as
+        // `DARK_EQUALITY_VARS`) replaces the hardcoded value. Node TEXT IS a literal match.
         await cdp.waitFor(`!!document.querySelector('img[role="img"]')`, { timeoutMs: 15_000, label: `${theme.name}: Mermaid diagram image rendered` });
         const mermaidSrc = await cdp.evaluate(`document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`);
         if (!mermaidSrc || !mermaidSrc.startsWith('data:image/svg+xml')) {
@@ -486,11 +483,9 @@ async function main() {
 
         await settleForScreenshot(cdp);
         // Gate round 1 fix (self-caught live): `button[aria-expanded="true"]` was ambiguous
-        // (could match a DIFFERENT already-expanded control) and Dark's own "hide" click never
-        // actually closed the panel, leaking `showSource` state into Cyber Amber's turn (no
-        // remount across a theme switch). The finder below matches this SPECIFIC toggle by its
-        // own accessible name regardless of state, and every wait reads THIS element's own
-        // `aria-expanded`, never a page-wide query.
+        // and Dark's own "hide" click never closed the panel, leaking `showSource` state into
+        // Cyber Amber's turn. The finder matches this SPECIFIC toggle by accessible name
+        // regardless of state; every wait reads THIS element's own `aria-expanded`.
         const mermaidToggleFinder = `Array.from(document.querySelectorAll('button')).find((el) => { const t = el.textContent.trim(); return t.startsWith('Show source for Mermaid') || t.startsWith('Hide source for Mermaid'); })`;
         await cdp.click(mermaidToggleFinder);
         await cdp.waitFor(`(() => { const el = ${mermaidToggleFinder}; return !!el && el.getAttribute('aria-expanded') === 'true'; })()`, { timeoutMs: 10_000, label: `${theme.name}: Mermaid source code block shown` });
@@ -532,6 +527,11 @@ async function main() {
         shotNames.push(toastShot);
         await cdp.click(`(${freshToastExpr})?.querySelector('[data-close-button]')`);
         await cdp.waitFor(`!(${freshToastExpr})`, { timeoutMs: 5_000, label: `${theme.name}: refusal toast dismissed` });
+        // Gate round 1 fix (self-caught live: leftover draft leaked into Cyber Amber's own
+        // shots): a refusal leaves the draft untouched (FR-019) and `Input.insertText` only
+        // inserts at the caret, never replaces -- `clearField` (Ctrl+A, Backspace) restores it.
+        await clearField(cdp, `document.querySelector('[aria-label="Message"]')`);
+        await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value === ''`, { timeoutMs: 5_000, label: `${theme.name}: composer draft cleared` });
 
         await settleForScreenshot(cdp);
         await openSettingsAppearance(cdp);
