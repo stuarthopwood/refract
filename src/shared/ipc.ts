@@ -38,6 +38,7 @@ import type {
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
+import type { HolidayTouches } from './holidayTouches';
 import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -377,6 +378,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
+  SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
+  DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -714,8 +717,18 @@ export interface RefractApi extends UpdatesApi {
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
+    setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
+  };
+
+  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs, always answerable (never
+   * `unsupported`) regardless of build -- a release build's own answer is simply always inert
+   * (`{ date: null, idleTimeoutMs: null, flightIntervalMs: null }`), the same posture
+   * `lib.rs::data_dir`'s `REFRACT_DATA_DIR` already sets for the equivalent Rust-only override.
+   * Read once at startup (`init-stores.ts`), never polled. */
+  debug: {
+    getOverrides(): Promise<Result<{ date: string | null; idleTimeoutMs: number | null; flightIntervalMs: number | null }>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
