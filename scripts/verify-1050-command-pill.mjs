@@ -369,15 +369,31 @@ async function main() {
       // any still-open tooltip can still be mid-transition at that exact instant -- wait for
       // the menu to be genuinely gone and let any transition settle before measuring/shooting.
       await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: `${theme.name}: profile menu fully closed before measuring` });
-      // Gate round 3 fix: the Profile name button this menu opens from ALSO carries its own
-      // Tooltip ("Stuart Hopwood") -- clicking it to open the menu can leave that tooltip stuck
-      // open afterward (a known Radix quirk with synthetic pointer events), bleeding into every
-      // later theme's own screenshot. Moving the pointer away to a neutral point (the textarea's
-      // own centre, nowhere near any tooltip trigger) and waiting for any open tooltip to
-      // genuinely close clears it before measuring or shooting.
+      // Gate round 3 fix, remediated gate round 4: the Profile name button this menu opens from
+      // ALSO carries its own Tooltip ("Stuart Hopwood"), which can stay open afterward. Gate
+      // round 4: a PURE `mouseMoved` dispatch is not enough to close it -- this is the SAME
+      // documented CDP/Radix limitation `verify-937-advisor-chip.mjs`'s own gate round 5 already
+      // found (confirmed there via a 3s poll of the tooltip's own `data-state`): Radix's
+      // open/close state is driven by a REAL `pointerleave`/blur DOM event on the trigger, which
+      // `Input.dispatchMouseEvent`'s synthetic `mouseMoved` does not reliably produce. Escape
+      // (Radix's own documented dismiss key for every DismissableLayer-based primitive,
+      // including Tooltip) plus a real click elsewhere (a genuine focus change, not just a
+      // pointer co-ordinate) are the two REAL dismiss paths Radix actually listens for, tried
+      // together for the best realistic chance; the wait itself stays best-effort (`.catch`),
+      // matching `verify-741-role-chip-helpers.mjs`'s own identical precedent -- a tooltip that
+      // survives both real dismiss attempts is this same pre-existing CDP limitation, not a
+      // product bug, and must never fail the whole run over a cosmetic screenshot detail.
+      await pressKey(cdp, 27, 'Escape', 'Escape');
       const neutralPoint = await cdp.evaluate(`(() => { const r = ${TEXTAREA}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: neutralPoint.x, y: neutralPoint.y });
-      await cdp.waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 5_000, label: `${theme.name}: any stuck tooltip closed before measuring` });
+      await cdp.click(TEXTAREA);
+      await cdp
+        .waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `${theme.name}: any stuck tooltip closed before measuring` })
+        .catch((err) => {
+          notExercised.push(
+            `${theme.name}: a stuck Profile-name tooltip did not close after Escape + a real click away (${err.message}) -- the same documented CDP/Radix limitation verify-937-advisor-chip.mjs's gate round 5 already found (synthetic events cannot reliably reproduce the real pointerleave/blur Radix's own close logic listens for); cosmetic only, the pill geometry/colour assertions below are unaffected.`
+          );
+        });
       await sleep(300);
       const themeGeom = await measurePillGeometry(cdp);
       assertTrue(themeGeom !== null, `${theme.name}: pill found`);
