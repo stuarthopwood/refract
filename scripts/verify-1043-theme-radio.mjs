@@ -105,15 +105,23 @@ const SHOTS_DIR = process.env.REFRACT_1043_SHOTS_DIR || path.join(tmpdir(), 'ref
 // guard, never a recursive delete of a variable-overridable folder), every name this script is
 // known to ever write: the per-theme Theme-submenu shots, the keyboard/reasoning shots, both
 // report files, and every retry attempt's own app log (`launchFresh`'s own 1-5 attempts x 2
-// labels, 'themes'/'reasoning').
+// labels, 'themes'/'reasoning'). The `*-zoom.png`/`*-theme-submenu-zoom2.png`/`*-reopen-*.log`
+// entries below are confirmed stale leftovers from an EARLIER, no-longer-existing cut of this
+// script (found still sitting in `refract-1043-shots` from a 03:49/06:26 run, untouched by the
+// THEN-current `clearKnownOutputFiles` call because that call's own list never named them) --
+// the exact "first-build zoom shots" this fix clears, listed for every theme/attempt so the
+// same dead-name problem cannot recur for THESE specific names again.
 const SHOT_NAMES_1043 = [
   ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu.png`),
+  ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu-zoom2.png`),
+  ...THEMES_1043.map((theme) => `${theme.id}-zoom.png`),
   'keyboard-selection-obsidian.png',
   'reasoning-picker-open.png',
   'reasoning-picker-medium.png',
   'report.json',
   'report.txt',
-  ...['themes', 'reasoning'].flatMap((label) => [1, 2, 3, 4, 5].map((attempt) => `app-run-${label}-attempt${attempt}.log`))
+  ...['themes', 'reasoning'].flatMap((label) => [1, 2, 3, 4, 5].map((attempt) => `app-run-${label}-attempt${attempt}.log`)),
+  ...['themes', 'reasoning'].flatMap((label) => [1, 2, 3, 4, 5].map((attempt) => `app-run-${label}-reopen-attempt${attempt}.log`))
 ];
 
 function spawnSync_(cmd, args, opts = {}) {
