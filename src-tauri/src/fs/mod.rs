@@ -3,6 +3,7 @@
 // #784, "Pre-declare per-lane Rust files").
 
 pub mod explorer_watch_state;
+pub mod git_changes_watch_state;
 pub mod leftover_summary;
 pub mod list_directory;
 pub mod paths;

@@ -166,7 +166,7 @@ export type { DiffStat } from './model';
  * data only) and re-exported here, the same reasoning `DiffStat` above already uses, so preload
  * can import it from `../../shared/ipc` alongside every other IPC-facing type instead of a
  * second import source. */
-export type { FileTreeNode, FilePreview, GitStatusMap } from './model';
+export type { FileTreeNode, FilePreview, GitStatusMap, GitChangesSnapshot } from './model';
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
 export interface SessionRuntimeView {
@@ -366,6 +366,16 @@ export const IPC_REQUESTS = {
   // expansion/scroll state) the moment one mounts again.
   FILE_EXPLORER_STOP_WATCHING: 'fileExplorer.stopWatching',
   FILE_EXPLORER_ENSURE_WATCHING: 'fileExplorer.ensureWatching',
+  // Spec 018 slice 1 (issue #464): the Git changes panel's own channels, mirroring
+  // `fileExplorer.*`'s own request/watcher shapes directly above.
+  GIT_CHANGES_LIST: 'gitChanges.list',
+  GIT_CHANGES_STAGE: 'gitChanges.stage',
+  GIT_CHANGES_UNSTAGE: 'gitChanges.unstage',
+  GIT_CHANGES_STAGE_ALL: 'gitChanges.stageAll',
+  GIT_CHANGES_UNSTAGE_ALL: 'gitChanges.unstageAll',
+  GIT_CHANGES_COMMIT: 'gitChanges.commit',
+  GIT_CHANGES_ENSURE_WATCHING: 'gitChanges.ensureWatching',
+  GIT_CHANGES_STOP_WATCHING: 'gitChanges.stopWatching',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -437,6 +447,7 @@ export const IPC_EVENTS = {
   SIDE_CHAT_CONVERSATION_CHANGED: 'side-chat:conversation-changed',
   FILE_EXPLORER_PATCH: 'file-explorer:patch',
   FILE_EXPLORER_RESET: 'file-explorer:reset',
+  GIT_CHANGES_REFRESH: 'git-changes:refresh',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
@@ -686,6 +697,42 @@ export interface RefractApi extends UpdatesApi {
     ensureWatching(sessionId: string): Promise<Result<void>>;
   };
 
+  /** Spec 018 contracts/ipc.md "Git changes" (issue #464, slice 1): the right-pane Git changes
+   * panel's own full per-Session surface -- `list` (FR-001, FR-002, FR-014), per-file `stage`/
+   * `unstage` (FR-006, FR-007), bulk `stageAll`/`unstageAll` (FR-004, re-reading the CURRENT
+   * status server-side rather than trusting a client-supplied path list, and deliberately
+   * excluding Conflicts from both), `commit` (FR-009 to FR-011), and the watcher lifecycle pair
+   * `ensureWatching`/`stopWatching` (FR-015b, FR-016) mirroring `fileExplorer`'s own pair above. */
+  gitChanges: {
+    /** `{ snapshot: null }` when the worktree is not a git repository, a git call failed, or the
+     * status read exceeded the same size cap `fileExplorer.getStatus` already enforces
+     * (FR-018) -- never thrown, mirrors `fileExplorer.getStatus`'s own never-throw-into-renderer
+     * convention. */
+    list(sessionId: string): Promise<Result<{ snapshot: GitChangesSnapshot | null }>>;
+    /** FR-007: `git add --`, every path a literal post-`--` argv entry sourced only from the
+     * current status map's own keys. */
+    stage(sessionId: string, paths: string[]): Promise<Result<void>>;
+    /** FR-007: `git restore --staged --`, same path-sourcing rule as `stage`. */
+    unstage(sessionId: string, paths: string[]): Promise<Result<void>>;
+    /** FR-004: stages every file CURRENTLY in the Changes and Untracked groups (re-read
+     * server-side at call time, never the renderer's own possibly-stale snapshot) -- Conflicts
+     * are never swept up by this bulk action. */
+    stageAll(sessionId: string): Promise<Result<void>>;
+    /** FR-004: unstages every file CURRENTLY in the Staged group (re-read server-side). */
+    unstageAll(sessionId: string): Promise<Result<void>>;
+    /** FR-011: `git commit -F -`, the composed message piped on stdin (never `-m`). Rejected
+     * locally with `invalid-argument` for a blank (after trimming) message before ever reaching
+     * git. FR-013: any failure (including an `index.lock` collision) is a typed `git-failed`
+     * error, never auto-retried. */
+    commit(sessionId: string, message: string): Promise<Result<void>>;
+    /** Mirrors `fileExplorer.stopWatching`/`.ensureWatching` exactly (research.md decision 6):
+     * the panel calls `ensureWatching` on mount/Session-focus and `stopWatching` on unmount/
+     * blur, so a closed panel's Session is never watched (FR-016). A no-op if already in the
+     * requested state. */
+    stopWatching(sessionId: string): Promise<Result<void>>;
+    ensureWatching(sessionId: string): Promise<Result<void>>;
+  };
+
   settings: {
     get(): Promise<Result<Settings>>;
     setApprovalMode(mode: ApprovalMode): Promise<Result<Settings>>;
@@ -896,6 +943,11 @@ export interface RefractApi extends UpdatesApi {
    * watcher is re-established on the next `listDirectory('')` -- without this the panel keeps
    * showing a stale tree forever with no watcher running underneath it. */
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
+  /** Spec 018 contracts/ipc.md "Git changes" `GIT_CHANGES_REFRESH` (research.md decision 6): a
+   * worktree file-system change under this Session's watch (FR-015b) -- a plain "something
+   * changed, refetch" ping with no diff content, matching `FILE_EXPLORER_RESET`'s own minimal
+   * payload; the store always calls `gitChanges.list` again itself rather than applying a patch. */
+  onGitChangesRefresh(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }
