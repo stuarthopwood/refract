@@ -61,15 +61,26 @@ function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-/** Gate round 3 fix: parses a resolved `rgb()`/`rgba()` colour string into its real OKLCH hue
- * (degrees, 0-360), via the standard sRGB -> linear -> OKLab -> OKLCH pipeline (Bjorn Ottosson's
- * reference matrices) -- the same direction `contrast-math.mjs` doesn't need (it only ever
- * composites OKLab/OKLCH INTO linear sRGB for luminance, never back out a hue), so this stays
- * local to the one caller that needs it instead of growing that shared module for a single use. */
-function rgbStringToOklchHue(rgbStr) {
-  const m = typeof rgbStr === 'string' && rgbStr.match(/rgba?\(([^)]+)\)/);
-  if (!m) return null;
-  const [r, g, b] = m[1].split(',').map((n) => parseFloat(n) / 255);
+/** Gate round 3 fix, remediated gate round 4: parses a resolved colour string into its real
+ * OKLCH hue (degrees, 0-360). A direct `oklch(...)`-declared token (e.g. `--command-pill-fg`)
+ * now resolves through `getComputedStyle()` AS `oklch(...)`, not `rgb()` (CSS Color 4: Chromium
+ * preserves a colour's own declared notation rather than always downgrading to legacy `rgb()`,
+ * confirmed live: `expectedColor` read the literal string `'oklch(0.695 0.162 279)'`, which the
+ * original `rgba?\(...\)`-only regex never matched, silently returning `null`) -- so `oklch()`
+ * is parsed FIRST and its own hue read directly, no sRGB round-trip needed (also more accurate:
+ * zero precision loss). `rgb()`/`rgba()` (e.g. `--accent-text`, declared as a hex literal, which
+ * DOES still serialize as legacy `rgb()`) falls back to the standard sRGB -> linear -> OKLab ->
+ * OKLCH pipeline (Bjorn Ottosson's reference matrices) -- the same direction `contrast-math.mjs`
+ * doesn't need (it only ever composites OKLab/OKLCH INTO linear sRGB for luminance, never back
+ * out a hue), so this stays local to the one caller that needs it instead of growing that shared
+ * module for a single use. */
+function rgbStringToOklchHue(colorStr) {
+  const str = typeof colorStr === 'string' ? colorStr.trim() : '';
+  const oklchMatch = str.match(/^oklch\(\s*[\d.]+%?\s+[\d.]+\s+([\d.]+)/);
+  if (oklchMatch) return parseFloat(oklchMatch[1]) % 360;
+  const rgbMatch = str.match(/rgba?\(([^)]+)\)/);
+  if (!rgbMatch) return null;
+  const [r, g, b] = rgbMatch[1].split(',').map((n) => parseFloat(n) / 255);
   const decode = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const [rl, gl, bl] = [decode(r), decode(g), decode(b)];
   const l = 0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl;
