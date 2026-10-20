@@ -9,10 +9,10 @@
 // (confirmed live: the caret at offset 3 in `02-pill-btw.png` was gone). Fixed with the standard
 // "highlight-within-textarea" technique instead: `CommandPillOverlay` below sits UNDER the real
 // textarea and renders the WHOLE draft visibly -- the recognised token as the pill, everything
-// else in plain `--foreground` text; `MessageInput.tsx`'s own `<textarea>` goes `relative z-[1]
-// [-webkit-text-fill-color:transparent] caret-foreground selection:bg-composer-selection-bg
-// selection:[-webkit-text-fill-color:...]` ONLY while a token is present
-// (`COMMAND_PILL_TEXTAREA_CLASS` below, full reasoning there): its own glyphs become invisible
+// else in plain `--foreground` text; `MessageInput.tsx`'s own `<textarea>` masks its own glyph
+// fill ONLY while a token is present (`COMMAND_PILL_TEXTAREA_CLASS` below has the exact classes
+// and the full reasoning for using a text-fill override there instead of the standard `color`
+// property): its own glyphs become invisible
 // (letting this mirror's coloured text show through underneath), but the native caret (an
 // explicit `caret-color`, independent of text colour), the native selection highlight (a real
 // `::selection` background now painted, gate round 3 HIGH fix: the round-1/2 cut only re-
@@ -162,8 +162,8 @@ export const COMMAND_PILL_TEXTAREA_CLASS =
  * tint lets whatever is underneath (the pill's own fill, or the plain composer surface) show
  * through, so it is visibly distinct from its own backdrop by construction, in every theme.
  *
- * `selection:text-composer-selection-fg selection:[-webkit-text-fill-color:currentColor]`: sets
- * `color` to a dedicated token AND re-asserts the fill to track it. Belt-and-braces for the same
+ * A selection-scoped `color` override (a dedicated token) AND a selection-scoped text-fill
+ * override re-asserting the fill to track it. Belt-and-braces for the same
  * WebView2 gap the base masking rule above already works around: `-webkit-text-fill-color`
  * cannot be relied on to track `color` through a `::selection` override in every engine, so both
  * are set explicitly rather than assuming one implies the other.
