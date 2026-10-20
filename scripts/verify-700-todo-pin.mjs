@@ -393,7 +393,9 @@ async function main() {
     assertTrue(!!(await cdp.evaluate(`!!(${PANEL_SELECTOR})`)), 'Panel stays mounted (still pinned) even though the pill itself is now hidden');
     await clickUnpinButton(cdp);
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts once Unpin is clicked from inside the panel, pill hidden' });
-    assertTrue(!!(await cdp.evaluate(`document.activeElement === document.querySelector('[aria-label="Message"]')`)), 'P3: focus lands on the composer after Unpin, with the pill itself hidden (never <body>)');
+    // Gate round 2's fix (self-caught, see the identical pill-visible case above): `waitFor`
+    // polls past the deferred rAF instead of racing it with a single synchronous read.
+    await cdp.waitFor(`document.activeElement === document.querySelector('[aria-label="Message"]')`, { timeoutMs: 2_000, label: 'P3: focus lands on the composer after Unpin, with the pill itself hidden (never <body>)' });
     await cdp.evaluate(`window.refract.settings.setReadoutVisibility('todo-progress', true)`);
     await cdp.waitFor(`!!(${TODO_PILL_SELECTOR})`, { timeoutMs: 5_000, label: 'Pill reappears once the readout setting is back on' });
 
@@ -405,7 +407,7 @@ async function main() {
     // Keyboard Unpin: focus the panel's own Unpin button directly and press Enter on it.
     await focusAndPress(cdp, `(${PANEL_SELECTOR}).querySelector('[aria-label="Unpin todo list"]')`, 13, 'Enter', 'Enter');
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Enter key on the focused Unpin button unpins the panel' });
-    assertTrue(!!(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`)), 'E6: keyboard Unpin leaves focus on the pill (never <body>)');
+    await cdp.waitFor(`document.activeElement === (${TODO_PILL_SELECTOR})`, { timeoutMs: 2_000, label: 'E6: keyboard Unpin leaves focus on the pill (never <body>)' });
     await focusAndPress(cdp, TODO_PILL_SELECTOR, 32, ' ', 'Space');
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Space key on the focused pill pins the panel' });
     assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Pill aria-pressed true after Space');
