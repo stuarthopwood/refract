@@ -1,10 +1,11 @@
-// Spec 018 slice 1 (issue #464), User Story 1: the Git changes panel's own assembly -- a
-// scrollable region that swaps between the four grouped file lists and a selected file's diff.
-// No independent Session binding of its own (FR-022): it always reflects whichever Session
-// `sessionId` names, the same pattern `FileExplorerPanel.tsx`/`SideChatPanel.tsx` already use --
-// a second Split pane renders its own `GitChangesPanel` instance with its own `sessionId` prop,
-// so two panes never share state. The branch/ahead-behind header (User Story 3) and the
-// commit-box footer (User Story 2) mount here in their own later commits.
+// Spec 018 slice 1 (issue #464), User Story 1/2: the Git changes panel's own assembly -- a
+// scrollable region that swaps between the four grouped file lists and a selected file's diff,
+// with the fixed commit-box footer (User Story 2) always mounted beneath it. No independent
+// Session binding of its own (FR-022): it always reflects whichever Session `sessionId` names,
+// the same pattern `FileExplorerPanel.tsx`/`SideChatPanel.tsx` already use -- a second Split
+// pane renders its own `GitChangesPanel` instance with its own `sessionId` prop, so two panes
+// never share state. The branch/ahead-behind header (User Story 3) mounts here in its own later
+// commit.
 //
 // Diff placement (worker brief correction, supersedes tasks.md T015/spec.md's "opens in the
 // main-area tab" wording only -- every other ruling in that consult stands): no cross-cutting
@@ -22,6 +23,7 @@ import { useGitChangesStore } from '@/state'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesGroup } from './GitChangesGroup'
+import { GitCommitBox } from './GitCommitBox'
 
 // FR-002's own order: Conflicts/Staged/Changes/Untracked.
 const GROUP_ORDER: readonly GitChangesGroupKind[] = ['conflicts', 'staged', 'changes', 'untracked']
@@ -110,6 +112,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
           </div>
         )}
       </div>
+      <GitCommitBox sessionId={sessionId} />
     </div>
   )
 }
