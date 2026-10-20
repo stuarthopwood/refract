@@ -45,7 +45,9 @@ import {
   SCROLLER_SELECTOR,
   readFirstMessageTop,
   readUpNextVisible,
-  readStillRunning
+  readStillRunning,
+  settleForScreenshot,
+  waitTwoFrames
 } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -95,48 +97,6 @@ async function setWidth(cdp, width) {
 async function clearWidth(cdp) {
   await cdp.send('Emulation.clearDeviceMetricsOverride', {});
   await sleep(300);
-}
-
-/** Gate round 1 (Main E7): move the pointer to a neutral spot and wait out any stray tooltip or
- * hover card before a screenshot that must be clean -- used for every theme shot, not only the
- * narrow-width ones. `.finish()` throws `InvalidStateError` on an animation with an infinite
- * target effect end (self-caught live-check failure, a looping spinner); caught per-animation
- * since it has no "final" state to settle to anyway.
- * Gate round 6 fixes (#700, Main MEDIUM 4): a hardcoded `(700, 50)` neutral point could sit
- * OUTSIDE a narrow (360px) viewport, landing on nothing (or something with its own tooltip);
- * clamped to the CURRENT viewport instead. A keyboard-focused Popover/Tooltip survives a pointer
- * move alone -- blur the active element and press Escape too. The stray-overlay wait no longer
- * swallows its own timeout (a `.catch(() => {})` let a screenshot with a visible hover card
- * silently pass) -- it now throws, which `main()`'s own outer catch records as a fatal
- * `ok:false` run-crashed step. `activeElement` is logged every call for the next failure's own
- * diagnosis. */
-async function settleForScreenshot(cdp) {
-  const { width } = await cdp.evaluate(`({ width: window.innerWidth })`);
-  // Gate round 7 fix (self-caught live-check failure, "Stuart Hopwood" profile-name tooltip
-  // still visible in a theme screenshot): a single CDP `mouseMoved` teleports the pointer with
-  // no intermediate path, unlike a real mouse -- genuinely fires `pointerleave` on whatever was
-  // last hovered/focused only if the browser treats the jump as leaving it, which is not
-  // reliable for a CDP-synthesised click at an earlier coordinate. Two real moves (an extreme
-  // corner, then the actual neutral point) force two distinct transitions. The stray-overlay
-  // check also now matches `[data-slot="tooltip-content"]` directly (`tooltip.tsx`'s own
-  // render marker), not only `[role="tooltip"]`, which Radix does not guarantee here.
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
-  await sleep(100);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width - 20, y: 450 });
-  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
-  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="tooltip-content"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' });
-  await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
-  const activeElement = await cdp.evaluate(`(() => { const el = document.activeElement; return el ? { tag: el.tagName, ariaLabel: el.getAttribute('aria-label') } : null; })()`);
-  console.log(`${LOG}: settleForScreenshot activeElement`, JSON.stringify(activeElement));
-}
-
-/** Gate round 6 fix (#700, Main MEDIUM 8): an E1/E4 "did not move" read taken the instant after
- * a click/dispatch can beat a correction that lands one or two frames later, same pattern as
- * `verify-941-stage-naming-helpers.mjs:152`'s own single-frame wait (doubled here). */
-async function waitTwoFrames(cdp) {
-  await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
 }
 
 /** Gate round 2 fix (self-caught live-check bug, confirmed by diagnostics then reverted): a
