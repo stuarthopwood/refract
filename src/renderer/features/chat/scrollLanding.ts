@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SessionScrollState } from '@/state/scroll-store'
 
 /** Issue #485: how far (in px) from the true bottom still counts as "at the end" when recording
@@ -193,4 +195,26 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     cancelled = true
     removeInputListeners()
   }
+}
+
+// Gate round 5 fix (#700 E1, Main's own correction of a round-4 `isTrusted` attempt -- true for
+// EVERY browser-fired scroll, including a programmatic write or the vendored scroller's own
+// corrective snap, so it filtered nothing): real user scroll-gesture intent (wheel, pointer,
+// touch, or a scroll key), tracked via a recency timestamp rather than `isTrusted`, shared
+// via a hook so `handleViewportScroll` can gate SET on "was this within the window" while LIFT
+// on `atEnd` stays unconditional. Same detection technique PinnedTodoPanel.tsx's own
+// `userScrolledRef` uses, but a recency window instead of a one-way latch: Transcript.tsx's
+// suppression flips in both directions repeatedly across a session, not once per mount/expand.
+const SCROLL_KEYS: Record<string, true> = { PageUp: true, PageDown: true, Home: true, End: true, ArrowUp: true, ArrowDown: true, ArrowLeft: true, ArrowRight: true, ' ': true }
+const GESTURE_RECENCY_MS = 500
+
+export function useScrollGestureTracking() {
+  const lastGestureAtRef = useRef(0)
+  const markGesture = () => { lastGestureAtRef.current = Date.now() }
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key in SCROLL_KEYS) markGesture()
+  }
+  const isRecentGesture = () => Date.now() - lastGestureAtRef.current <= GESTURE_RECENCY_MS
+  const gestureProps = { onWheel: markGesture, onPointerDown: markGesture, onTouchStart: markGesture, onTouchMove: markGesture, onKeyDown: handleKeyDown }
+  return { isRecentGesture, gestureProps }
 }

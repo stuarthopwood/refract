@@ -3,7 +3,8 @@
 // pinned todo panel appears above the message box with a live-updating tree. Driven by the
 // `todo-pin-700` fake-omp tape (`scripts/fixtures/omp-frames/todo-pin-700.jsonl`) -- four turns:
 // (1) a one-agent Stage plus Setup (2 tasks) and an overflowing 12-task Work phase through every
-// status, two 8s mid-turn holds, a long assistant reply, settling with a genuine live-vs-settle
+// status, two 8s mid-turn holds, a long assistant reply streamed in two deltas (gate round 5,
+// #700 E1: a 3s hold between them for the follow/no-snap-back proof), settling with a genuine live-vs-settle
 // divergence; (2) completes everything ("All N done"); (3) clears the plan entirely (panel
 // unmounts, pin stays); (4) re-creates a small follow-up plan with NO click, proving the pin
 // itself survived the gap. Selectors live in `verify-700-todo-pin-helpers.mjs` (#806 cap).
@@ -332,18 +333,25 @@ async function main() {
     // reach this setup step before that content has landed, leaving scrollHeight <= clientHeight
     // and `scrollTop = scrollHeight / 2` a no-op (still 0).
     await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > el.clientHeight; })()`, { timeoutMs: 60_000, label: 'Transcript genuinely overflows before the middle-scroll E1 check' });
-    // Gate round 4 fix (#700 E1, Main's own risk catch): a direct `el.scrollTop =` write fires a
-    // `scroll` event with `isTrusted: false` -- indistinguishable, to Transcript.tsx's own fix,
-    // from the vendored scroller's OWN internal corrective snap, so it could never register as
-    // "the user genuinely left the end". A real CDP-dispatched wheel event (same technique the
-    // todo-panel's own "real user scroll" check two sections below already uses) produces a
-    // trusted `scroll` event, matching what dispatching through actual OS input does.
+    // Gate round 5 fix (#700 E1, Main's own correction of a round-4 `isTrusted` attempt that
+    // filtered nothing): a direct `el.scrollTop =` write marks no real gesture, so Transcript.tsx's
+    // own fix would correctly ignore it. A real CDP-dispatched wheel event (same technique the
+    // todo-panel's own "real user scroll" check two sections below already uses) fires a genuine
+    // `wheel` event through the actual input pipeline, marking real gesture intent.
     const overflowMetrics = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }; })()`);
     const scrollerRect = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollerRect.x, y: scrollerRect.y, deltaX: 0, deltaY: -Math.floor((overflowMetrics.scrollHeight - overflowMetrics.clientHeight) / 2) });
     await sleep(200);
     const scrollAtMiddleBefore = await readScrollerScrollTop(cdp);
     assertTrue(scrollAtMiddleBefore !== null && scrollAtMiddleBefore > 0, 'E1 setup: transcript genuinely scrolled away from the bottom, to the middle');
+    // Gate round 5 (#700 E1, Main's own ask, direction (a)): the tape's long assistant reply
+    // streams in two deltas (`todo-pin-700.jsonl`, a 3s hold between them) specifically so the
+    // SECOND half can land here, after the wheel moved us away from the end -- proving the
+    // suppression set by that wheel genuinely holds against the vendored scroller's own
+    // follow-bottom behaviour while new content keeps arriving, not just against a static DOM.
+    const middleScrollHeight = (await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return el.scrollHeight; })()`));
+    await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > ${middleScrollHeight}; })()`, { timeoutMs: 10_000, label: 'E1: the rest of the assistant reply streams in while scrolled away' });
+    assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: a wheel away from the end, followed by streaming growth, does NOT snap back');
     const firstTopMiddleBefore = await readFirstMessageTop(cdp);
     await clickUnpinButton(cdp);
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Unpinned for the middle-scroll E1 check' });
