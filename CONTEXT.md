@@ -33,8 +33,12 @@ Hide a **Session** from the main list while keeping its **Worktree** and **Conve
 _Avoid_: Close, remove (ambiguous with delete)
 
 **Delete**:
-Permanently remove a **Session**, its **Worktree**, and its **Conversations**, only after a confirmation that names what will be lost (uncommitted changes, unpushed commits).
+Permanently remove a **Session**, its **Worktree**, and its **Conversations**. A manual Delete asks first, naming what will be lost (uncommitted changes, unpushed commits); **Session cleanup** deletes without asking, but only Sessions it archived itself and that pass the same safety checks (issue #476).
 _Avoid_: Remove, discard
+
+**Session cleanup**:
+The automatic housekeeping in Settings > Sessions: it **Archives** a **Session** whose pull request has merged once it has been inactive for a chosen number of days, and, if a delete period is chosen, later **Deletes** the Sessions it archived. It never touches a Session archived by hand (issue #476).
+_Avoid_: Auto-cleanup, garbage collection, reaping
 
 **Group header**:
 The collapsible header above one Project's Sessions in the session list, shared by the Archived group.
@@ -132,6 +136,10 @@ _Avoid_: Active pane, selected pane
 The left-nav entry and the main view that shows when no **Chat pane** is open: what needs the developer and their recent work across all **Projects** (Sessions waiting on them, recent **Sessions**, their pull requests and issues).
 _Avoid_: Home pane, dashboard, start page
 
+**Holiday touches**:
+Seasonal, purely decorative artwork (and, when allowed, gentle ambient motion) that Refract shows near a holiday, and the Appearance setting that controls it (Full, Artwork only, Off).
+_Avoid_: Easter eggs, seasonal theme, festive mode
+
 **Pull requests view**:
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
@@ -218,6 +226,10 @@ _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see
 **Advisor**:
 omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked separately as issue #937. That indicator (issue #937, follow-up to #917/PR #923) is the **Status line**'s own Advisor readout (**Readout**, zero-box convention): shown only while the advisor is on for that Session, hidden entirely while off, with no cost, spend, or token figures of its own; clicking it sends `/advisor off`. Its state comes from `/advisor on|off`'s own reply text (the only fully-trusted signal) plus a best-effort, silent `/advisor status` probe run once on Session attach/resume -- that probe's own reply never appears in the transcript, and its ambiguous wording (`session::advisor`'s own header comment) is never trusted for an "on" reading, only an unambiguous "Advisor is enabled"/"Advisor is disabled" substring is.
 _Avoid_: Advisory (the note the Advisor produces, not the subsystem itself), reviewer, chip (the React component and the issue title use that word informally; prose calls it the Advisor readout, per **Status line**/**Readout**/**Chip**'s own _Avoid_ notes)
+
+**Source tag**:
+A small muted icon-and-word label at the start of a transcript row naming who the row came from when it is neither the developer nor the main agent, for example "Advisor" on an **Advisory** (issue #1041). Shared by every such row.
+_Avoid_: Badge, chip, author label
 
 **Advisory accent bar**:
 The 3px left stripe on a BLOCKER row (always, even collapsed, error colour) or an EXPANDED concern row (warning colour) -- drawn as an absolutely-positioned `before:` pseudo-element on `AdvisoryRow`'s own local wrapper `div` (zero layout impact, so the icon stays on the shared 24px grid in every state); never a `CollapsedLine` primitive prop (issue #558, gate round 1).

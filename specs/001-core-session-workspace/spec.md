@@ -898,6 +898,42 @@
 - Q: Deleting a session whose worktree held a full `node_modules` tree (156k files, paths over 260 characters) dead-ended, and a worktree still held open by a terminal or File Explorer window left Delete stuck. What should the Delete dialog show, and when? → A: Decided (Stuart, 2026-10-19, issue #891): a background filesystem walk starts the instant the dialog opens. It lists generated folders (for example `node_modules`) by name with file counts, and other files by path, capped with "and N more"; the dialog shows "Checking files…" until it finishes, and Delete stays enabled throughout regardless of the walk's own state.
 - Q: Should Refract check for a program still holding the worktree open, and if so when relative to stopping the session's agent? → A: Decided (Stuart, 2026-10-19, issue #891): yes, and the check runs before the agent is stopped, so a refused Delete leaves the session running. Windows Restart Manager names a program and pid holding a file open, excluding this session's own recorded agent process ids; only if Restart Manager finds nobody does a safe rename probe (renaming the worktree folder to a sibling name inside the worktrees root and straight back) run, to catch a folder held only as a working directory, which Restart Manager cannot see. A named holder, or an in-use folder with no named holder, refuses the delete — naming the holder where known, otherwise "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry." — deleting nothing; a holder that cannot be detected does not block, and Retry is the same Delete button. The session's branch is still always deleted the same way as before.
 - Q: `git worktree remove --force` could not reliably remove a full Windows `node_modules` tree. What replaces it? → A: Decided (Stuart, 2026-10-19, issue #891): Refract's own long-path-safe recursive walker, not `git worktree remove` or `std::fs::remove_dir_all`. It uses verbatim `\\?\`-prefixed paths over 260 characters, clears read-only attributes, and removes a junction or symlink as a link without ever descending into or deleting its target. Only this worktree's own git admin entry is removed (never `git worktree prune`, which would also drop every other stale admin entry), and the result is verified with `git worktree list --porcelain`.
+### Session 2026-10-19 (Composer role chip, pin persistence, fallback signal, #741)
+
+- Q: Issue #741 (P0): the composer strip shows the current role, and the provider is dropped
+  from the model name. The code state was checked first (PR #836 already landed `currentRole`/
+  `pinned` in `sessions.list()`, and `ModelPicker.tsx` already strips the provider from its
+  VISIBLE text). What is still open, and how is each part decided? -> A: Decided (Stuart,
+  2026-10-19, grill before build; `issuecomment-6266024041`). Four points:
+  1. **Pinned reads Custom, and the pin survives a restart.** A hand-picked model
+     (`set_model`/`cycle_model`/a direct `/switch <model>` token) pins the Session; the chip
+     reads **Custom** while pinned. The pin is now persisted in the Session registry
+     (`registry.json`'s `pinnedModel` field, written on every pin/un-pin), not only in-memory --
+     before this, a restart reset a hand-picked model back to `role: "default"`, which a later
+     Settings role change would then silently move. An old registry with no `pinnedModel` field
+     reads as not pinned.
+  2. **Fallback is probed, then shipped code-verified either way.** If OMP marks a `model_change`
+     entry with `resolvedModelIsFallback: true` (FINDINGS item 51/341: the field exists, never
+     observed `true`), the chip reads **Fallback** with a tooltip explaining OMP switched models
+     after repeated failures. A dedicated isolated probe (FINDINGS item 61,
+     `docs/spike/fallback-probe-741.mjs`) could not force a genuine `true` within 90 seconds
+     against a connection-refused model; the rule ships code-verified against the documented
+     field regardless, and forcing/confirming the live transition is deferred to #650.
+  3. **Chip placement, look, and provisional icons.** The chip sits in the composer's bottom row
+     immediately before the Model picker, as a small ghost button: the role's name as text plus
+     a provisional per-role lucide icon (#717 makes the final choice by eye in screenshots); no
+     role colour yet (#714 adds it), and colour is never the only cue. It is inert today (no
+     click handler) -- #766 makes it the role switcher's own trigger. Role names, icons, and a
+     friendly provider map live in one new shared module (`src/renderer/lib/modelRoles.ts`) so
+     Settings (#714), #717, and #766 all reuse the same data instead of four local copies.
+  4. **The details card gets a provider line.** The model's display name shows with a muted
+     second line, "via GitHub Copilot" (the SAME friendly provider map, the raw id as fallback,
+     built from fields never a string split). Unchanged from the issue: an unestablished role
+     shows no chip at all, never a guess; no new IPC (the registry already carries
+     `currentRole`/`pinned`); the WCAG notes as written (icon `aria-hidden`, an `sr-only` "Role: "
+     prefix, a hoverable/focusable tooltip). Per the prototyping-phase rule, the issue's
+     requested unit tests are skipped; verification is the live CDP check this issue's own
+     acceptance criteria describe.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -1004,7 +1040,7 @@ The developer runs a long task in one session, switches to another to start a se
 3. **Given** the developer switches between sessions, **When** they return to a session, **Then** its in-progress text and pending requests are as they left them, and the transcript is scrolled to the end unless the developer had scrolled away from the end before leaving, in which case it returns to that exact position (Clarification, issue #485).
 4. **Given** a session finishes while the developer is viewing a different session, **When** they return to the list, **Then** that session shows the Unread response status in place of Idle, which clears once they open it.
 5. **Given** Refract is not the focused window, **When** a session starts needing the developer or finishes, **Then** a Windows notification appears; clicking it opens that session. **Given** any other change happens in a session, **Then** no notification fires.
-6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then**, after a short delay, a details card shows its status, the time since its last activity, its repository, its branch, the folder where its worktree lives, the model and reasoning effort (the last known values when its agent is not running), and the files changed with additions and deletions, with Copy path and Open in file explorer buttons; the card stays readable, can be hovered, and can be dismissed with Esc without moving the pointer. **Given** the same session, **When** the developer opens its row menu, **Then** the same two actions are available there, so they work from the keyboard.
+6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then**, after a short delay, a details card shows its status, the time since its last activity, its repository, its branch, the folder where its worktree lives, the model name with a muted "via {provider}" line and the reasoning effort (the last known values when its agent is not running), and the files changed with additions and deletions, with Copy path and Open in file explorer buttons; the card stays readable, can be hovered, and can be dismissed with Esc without moving the pointer. **Given** the same session, **When** the developer opens its row menu, **Then** the same two actions are available there, so they work from the keyboard. **Given** a session whose current role is established, **When** the composer renders its bottom row, **Then** a role chip (text plus icon, no colour) sits immediately before the Model picker, reading the role's name, **Custom** while a model was hand-picked for this session, or **Fallback** with an explanatory tooltip once OMP reports it switched models after repeated failures; **Given** the role cannot be established, **Then** no chip is shown at all (issue #741).
 7. **Given** the session list, **When** the developer uses the Collapse all / Expand all toolbar above the list, **Then** every Repository group and the Archived group (while shown) collapse or expand together, the choice persists across an app restart, and a collapsed group whose non-archived Sessions include one needing the developer, or one that terminated unexpectedly, or one with an Unread response, shows a single marker naming the most urgent of those three states in that order (issue #735).
 8. **Given** the session list's search field, **When** the developer types a query matching a Session's name, branch, or Project name, **Then** only Project groups and Archived rows with a match remain visible, every matching group shows open regardless of its own saved collapsed state, and the result count is announced; **When** they clear the field (the in-field button or Esc), **Then** every group returns to exactly its own saved collapsed or expanded state (issue #559).
 
@@ -1049,6 +1085,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 ### Edge Cases
 
 - The chosen folder is not a git repository, has no commits, or the chosen Base branch (including the default branch used by one-click creation) no longer exists: Refract refuses to create a session and says why.
+- A session with a hand-picked model (pinned) is reopened after a full app restart: the chip still reads **Custom**, not the role OMP's own Session file happens to record for the pin (`role: "default"`) -- the pin is persisted in the Session registry, not only held in memory for the process's life (issue #741).
+- OMP marks a `model_change` entry `resolvedModelIsFallback: true` for a Session the developer had already pinned to a hand-picked model: the chip reads **Fallback**, not Custom -- OMP's own automatic recovery after repeated failures is never the user's saved choice (issue #741).
 - The worktree cannot be created (name clash, disk full, path too long on Windows): no half-created session is left in the list, and the reason is shown.
 - The agent's answer is very long or contains extremely large tool output: the chat stays responsive and scrolls smoothly.
 - A question is a single short line: it renders as one line of normal weight, with no separate heading.
@@ -1451,6 +1489,29 @@ The developer types a slash command and finds the ones the agent offers. If a se
   MUST be moved synchronously (no externally observable frame where `document.activeElement` is
   `<body>`) the instant the transition is observed with focus known to have been inside the
   removed content.
+- **FR-091** (new, 2026-10-19, issue #741, Stuart's own decision record,
+  `issuecomment-6266024041`; amends FR-041/FR-064): The message box's bottom row MUST show a
+  role chip immediately before the Model picker (FR-064): a small ghost button naming the
+  Session's current OMP model role as text plus a provisional per-role icon (`aria-hidden`, an
+  `sr-only` "Role: " prefix, a hoverable/focusable tooltip, colour never the only cue -- no role
+  colour at all until #714). The chip MUST read **Custom** while the Session is pinned to a
+  hand-picked model (`set_model`/`cycle_model`/a direct `/switch <model>` token), and that pin
+  MUST be persisted (the Session registry's own `pinnedModel` field, not only held in memory)
+  so it survives a full app restart with the same data directory; an old registry with no such
+  field reads as not pinned. The chip MUST read **Fallback**, with a tooltip stating OMP
+  switched models after repeated failures and this is not the user's saved choice, whenever the
+  Session's latest `model_change` entry carries `resolvedModelIsFallback: true` -- this MUST
+  outrank a stale pin (a Session OMP has since moved off its hand-picked model is no longer
+  showing the user's own choice, whatever the in-memory pin flag still says). The chip MUST
+  show nothing at all when the role cannot be established, never a guess. It MUST refresh after
+  any model change and after a fallback, not only at attach. It is inert today (no click
+  handler; #766 wires it up as the role switcher's own trigger). The Session details card's
+  model row (part of FR-041's last-known-values row) MUST additionally show a muted "via
+  {provider}" second line under the model name, a friendly map of known provider ids with the
+  raw id as fallback, built from the `provider` field, never by splitting a display string on
+  `/`. Role names, icons, and the provider map MUST live in one shared module so Settings
+  (#714), the icon choice (#717), and the role switcher (#766) read the same data Refract's
+  composer chip does, rather than four independent copies that could drift.
 
 ### Key Entities
 

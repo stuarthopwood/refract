@@ -61,11 +61,11 @@ For both kinds:
 - The shortcut, when one exists, is a right-aligned `Kbd`.
 - Groups are split by separators.
 - The destructive item is last, after a separator, in the destructive colour.
-- Check marks and radio marks are allowed.
+- Check marks and radio marks are allowed. **A single-choice menu is a real radio group** (`DropdownMenuRadioGroup`/`DropdownMenuRadioItem`, `menuitemradio` with `aria-checked`) whose leading radio mark is the same ring-and-dot indicator the Ask card's radios use, filled for the selected item; never a trailing check standing in for a radio (Stuart, 2026-10-19, #1043).
 
 Evidence at `origin/main` 9f23d22: action-menu items carry no icons today (`SessionList.tsx:309-327` and `:420-422`, `ManageSessionRow.tsx:422-439`); the Profile and Approval mode menus already have a leading icon on nearly every item.
 
-Open: the Profile menu's theme submenu uses colour swatches, not icons, to be settled under tokens and theming (#456, #458).
+Decided (Stuart, 2026-10-19, #1043): the Profile menu's theme submenu is a radio group; each theme's colour swatch is a small square chip after the name, never a round mark that could read as a radio. The swatch-versus-icon question for tokens and theming (#456, #458) is otherwise unchanged.
 
 ## Tooltip
 

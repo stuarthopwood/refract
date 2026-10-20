@@ -508,6 +508,7 @@ mod tests {
             current_turn_subagents: None,
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,
+            pinned_model: false,
         }
     }
 
@@ -516,12 +517,11 @@ mod tests {
     /// Session in a repository with 3 registry-only Sessions sharing it -- one healthy, one
     /// with its `.git` pointer hand-deleted, one whose worktree folder was removed entirely
     /// (the same three states the old per-Session `worktree_is_valid` call covered). The
-    /// call-count claim itself ("once per repository, not once per Session") is enforced by
-    /// this file's own structure, not re-proved here: `fetch_worktree_lists` calls
-    /// `list_registered_worktrees` exactly once per distinct repository id in its `repo_ids`
-    /// slice (see its own doc comment) -- all 3 Sessions below share that one repository id, so
-    /// this test is proving the single shared fetch result was looked up correctly for all
-    /// three, not silently re-fetched or mixed up between Sessions.
+    /// call-count claim ("once per repository, not once per Session") is enforced by this
+    /// file's own structure, not re-proved here: `fetch_worktree_lists` calls
+    /// `list_registered_worktrees` exactly once per distinct repository id (see its own doc
+    /// comment) -- all 3 Sessions below share one repository id, so this test proves the single
+    /// shared fetch result was looked up correctly for all three, never re-fetched or mixed up.
     #[tokio::test]
     async fn summaries_reports_the_right_stop_reason_for_every_session_sharing_one_repository() {
         let repo = init_repo().await;

@@ -55,6 +55,15 @@ pub struct Session {
     pub stopped_on_request_conversation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_on_request_at_size: Option<i64>,
+    /// Lane RM (#741 decision 1): persisted mirror of `session::model::State.pinned` -- the
+    /// in-memory flag alone reset to `false` on every restart, so a hand-picked model
+    /// (`set_model`/`cycle_model`/a direct `/switch <model>` token) read back as the `default`
+    /// role (and a later Settings role change could move it) the moment the app relaunched.
+    /// `#[serde(default)]` only (no `skip_serializing_if`): an old `registry.json` written
+    /// before this field existed deserialises it as `false` ("not pinned"), and every write
+    /// from here on always includes it explicitly.
+    #[serde(default)]
+    pub pinned_model: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +98,10 @@ pub struct SessionPatch {
     pub stopped_on_request_conversation: Option<Option<String>>,
     pub stopped_on_request_at_size: Option<Option<i64>>,
     pub archived_at: Option<Option<String>>,
+    /// Lane RM (#741 decision 1): set on every `set_model`/`cycle_model`/`handle_switch_text`
+    /// pin and every `apply_role_now` un-pin -- a plain `Option<bool>` (no tri-state) since a
+    /// bool has no "unset" state to preserve across patches.
+    pub pinned_model: Option<bool>,
 }
 
 /// The full contents of `registry.json`.
@@ -407,6 +420,9 @@ impl RegistryStore {
             }
             if let Some(value) = patch.archived_at {
                 session.archived_at = value;
+            }
+            if let Some(value) = patch.pinned_model {
+                session.pinned_model = value;
             }
         }
         if let Err(err) = self.persist().await {
