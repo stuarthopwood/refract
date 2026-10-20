@@ -1,0 +1,50 @@
+// Fixture for issue #1067 (Enter sends the oldest queued follow-up on a blank composer, FR-094).
+// Hand-written against contracts/omp-usage.md ("Send a message, working", "Send now (steer)")
+// and session.jsonl's own standard start-up preamble -- not a sanitised real recording (no live
+// turn needs to run this long or queue this much on purpose). The turn deliberately never
+// settles (no `agent_end`/`prompt_result`): the Session stays `working` for the whole script so
+// every later `prompt(streamingBehavior:'followUp')` genuinely queues instead of starting a new
+// turn, and `promote_queued_message` genuinely steers instead of erroring not-idle.
+//
+// Wire shapes: `{type:'prompt', message, streamingBehavior:'followUp'}` while working queues
+// (ack via the standard `response` frame, then a `queue_update`); `{type:'promote_queued_message',
+// message}` is "Send now" (ack `data.promoted`, then a `queue_update` reflecting the move from
+// `followUp` to `steering`). Message texts below are plain placeholders, chosen to read clearly
+// in assertions, not sanitised real chat content.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\session\\conversation.json","sessionId":"sess-1067","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"},{"name":"tools","description":"List available tools"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"__wait__":["prompt"]}
+{"id":"$lastId","type":"response","command":"prompt","success":true}
+{"type":"queue_update","followUp":["First queued message"],"steering":[]}
+{"__wait__":["prompt"]}
+{"id":"$lastId","type":"response","command":"prompt","success":true}
+{"type":"queue_update","followUp":["First queued message","Second queued message"],"steering":[]}
+{"__wait__":["promote_queued_message"]}
+{"id":"$lastId","type":"response","command":"promote_queued_message","success":true,"data":{"promoted":true}}
+{"type":"queue_update","followUp":["Second queued message"],"steering":["First queued message"]}
+{"__wait__":["promote_queued_message"]}
+{"id":"$lastId","type":"response","command":"promote_queued_message","success":true,"data":{"promoted":true}}
+{"type":"queue_update","followUp":[],"steering":["First queued message","Second queued message"]}
+{"__wait__":["prompt"]}
+{"id":"$lastId","type":"response","command":"prompt","success":true}
+{"type":"queue_update","followUp":["Third queued message"],"steering":["First queued message","Second queued message"]}
+{"__wait__":["prompt"]}
+{"id":"$lastId","type":"response","command":"prompt","success":true}
+{"type":"queue_update","followUp":["Third queued message","Explicit typed text"],"steering":["First queued message","Second queued message"]}
+{"__wait__":["promote_queued_message"]}
+{"__delay__":900}
+{"id":"$lastId","type":"response","command":"promote_queued_message","success":true,"data":{"promoted":true}}
+{"type":"queue_update","followUp":["Explicit typed text"],"steering":["First queued message","Second queued message","Third queued message"]}
