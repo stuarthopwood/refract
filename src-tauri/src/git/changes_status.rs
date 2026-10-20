@@ -42,6 +42,7 @@ use serde::Serialize;
 
 use crate::fs::paths::contains_git_segment;
 
+use super::changes_score::{parse_numstat_map, score_untracked_file};
 use super::git::{git, git_raw, git_raw_with_stdin, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
 use super::status::GitStatusMark;
@@ -79,10 +80,6 @@ const OVERALL_TIMEOUT: Duration = Duration::from_secs(10);
 const STATUS_MAX_BUFFER_BYTES: usize = 32 * 1024 * 1024;
 /// Mirrors `diff_stat.rs`'s own `MAX_FILES` (FR-019): re-declared for the same reason.
 const MAX_FILES: usize = 200;
-/// Mirrors `diff_stat.rs`'s own `MAX_FILE_BYTES`.
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
-/// Mirrors `diff_stat.rs`'s own `BINARY_SNIFF_BYTES`.
-const BINARY_SNIFF_BYTES: usize = 8000;
 
 /// One of the four fixed buckets every non-ignored status entry sorts into exactly once
 /// (FR-002, data-model.md "Git changes group"). Internal to this module's own parsing/grouping
@@ -342,84 +339,6 @@ fn folder_for(path: &str) -> String {
     }
 }
 
-/// Port of `diff_stat.rs`'s own `is_binary` (re-declared, see this module's header comment).
-fn is_binary(buf: &[u8]) -> bool {
-    let len = buf.len().min(BINARY_SNIFF_BYTES);
-    buf[..len].contains(&0)
-}
-
-/// Port of `diff_stat.rs`'s own `count_lines` (re-declared, see this module's header comment).
-fn count_lines(text: &str) -> i64 {
-    if text.is_empty() {
-        return 0;
-    }
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let trimmed = normalized.strip_suffix('\n').unwrap_or(&normalized);
-    if trimmed.is_empty() {
-        return 0;
-    }
-    trimmed.split('\n').count() as i64
-}
-
-/// Parses `git diff [--cached] --no-renames --numstat` output into a path -> (additions,
-/// deletions) map. `--no-renames` means a rename/copy always reports as a plain delete (old
-/// path) plus add (new path) rather than an `old => new` arrow notation -- a path this map has
-/// no entry for (e.g. the discarded old half of a rename) simply scores 0/0/not-partial below,
-/// same as any other path git's numstat happens not to mention.
-fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
-    let mut map = HashMap::new();
-    for line in stdout.split('\n') {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let mut columns = line.splitn(3, '\t');
-        let add_raw = columns.next().unwrap_or("");
-        let del_raw = columns.next().unwrap_or("");
-        let path = columns.next().unwrap_or("").trim();
-        if path.is_empty() {
-            continue;
-        }
-        let additions = if add_raw != "-" {
-            add_raw.parse::<i64>().unwrap_or(0)
-        } else {
-            0
-        };
-        let deletions = if del_raw != "-" {
-            del_raw.parse::<i64>().unwrap_or(0)
-        } else {
-            0
-        };
-        map.insert(path.to_string(), (additions, deletions));
-    }
-    map
-}
-
-/// Scores one untracked file directly from its own content (there is no index/HEAD side to diff
-/// against): every line counts as an addition, 0 deletions, `partial: true` instead of reading
-/// the content at all once its size exceeds `MAX_FILE_BYTES` -- mirrors `diff_stat.rs`'s own
-/// `score_untracked_file`, adapted to read straight from disk (this module has no existing
-/// `ls-files`-sourced byte buffer to score against).
-async fn score_untracked_file(worktree_path: &Path, relative_path: &str) -> (i64, i64, bool) {
-    let absolute_path = worktree_path.join(relative_path);
-    let metadata = match tokio::fs::metadata(&absolute_path).await {
-        Ok(metadata) => metadata,
-        // Vanished between the status read and this scoring pass; 0/0, not partial -- the row
-        // itself still came from a real status entry and stays operable.
-        Err(_) => return (0, 0, false),
-    };
-    if metadata.len() > MAX_FILE_BYTES {
-        return (0, 0, true);
-    }
-    let content = match tokio::fs::read(&absolute_path).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (0, 0, false),
-    };
-    if is_binary(&content) {
-        return (0, 0, false);
-    }
-    (count_lines(&String::from_utf8_lossy(&content)), 0, false)
-}
-
 /// FR-019: scores every parsed entry's additions/deletions and sorts each of the four groups by
 /// path. Two `git diff --numstat` calls (unstaged, cached) run once each, concurrently, covering
 /// every tracked entry regardless of group; an untracked entry is scored from its own content
@@ -476,7 +395,9 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
         } else {
             files_counted += 1;
             match parsed.group {
-                GitChangesGroup::Untracked => score_untracked_file(worktree_path, &parsed.path).await,
+                GitChangesGroup::Untracked => {
+                    score_untracked_file(worktree_path, &parsed.path).await
+                }
                 GitChangesGroup::Staged => staged_map
                     .get(&parsed.path)
                     .map(|&(a, d)| (a, d, false))
@@ -513,7 +434,10 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
     groups
 }
 
-async fn compute_changes_status(worktree_path: &Path, base_branch: &str) -> Option<GitChangesSnapshot> {
+async fn compute_changes_status(
+    worktree_path: &Path,
+    base_branch: &str,
+) -> Option<GitChangesSnapshot> {
     let result = git_raw(worktree_path, CHANGES_STATUS_GIT_ARGS, Some(STATUS_TIMEOUT)).await;
     if result.code != 0 {
         return None;
@@ -536,13 +460,19 @@ async fn compute_changes_status(worktree_path: &Path, base_branch: &str) -> Opti
 /// repository, a git call fails, the status read exceeds `STATUS_MAX_BUFFER_BYTES` (FR-018), or
 /// the overall budget runs out -- never thrown, mirrors `diff_stat.rs`'s own never-throw
 /// convention; the panel shows a not-available state rather than hanging or crashing (SC-006).
-pub async fn read_changes_status(worktree_path: &Path, base_branch: &str) -> Option<GitChangesSnapshot> {
+pub async fn read_changes_status(
+    worktree_path: &Path,
+    base_branch: &str,
+) -> Option<GitChangesSnapshot> {
     if tokio::fs::metadata(worktree_path).await.is_err() {
         return None;
     }
-    tokio::time::timeout(OVERALL_TIMEOUT, compute_changes_status(worktree_path, base_branch))
-        .await
-        .unwrap_or_default()
+    tokio::time::timeout(
+        OVERALL_TIMEOUT,
+        compute_changes_status(worktree_path, base_branch),
+    )
+    .await
+    .unwrap_or_default()
 }
 
 /// `git add --`, every path a literal post-`--` argv entry (FR-007) -- `paths` must already come
@@ -584,7 +514,13 @@ pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(),
 /// `GitFailed` error, exactly like any other git failure (FR-013), never a Refract-side override.
 pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError> {
     let args = ["commit", "-F", "-"];
-    let result = git_raw_with_stdin(worktree_path, &args, message.as_bytes(), Some(COMMIT_TIMEOUT)).await;
+    let result = git_raw_with_stdin(
+        worktree_path,
+        &args,
+        message.as_bytes(),
+        Some(COMMIT_TIMEOUT),
+    )
+    .await;
     if result.code != 0 {
         let detail = if !result.stderr.trim().is_empty() {
             result.stderr.trim()

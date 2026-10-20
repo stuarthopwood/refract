@@ -18,9 +18,14 @@ use serde_json::{json, Value};
 
 use crate::fs::git_changes_watch_state as watch_state;
 use crate::git::changes_diff::diff_text;
-use crate::git::changes_status::{commit as git_commit, read_changes_status, stage_files, unstage_files};
+use crate::git::changes_status::{
+    commit as git_commit, read_changes_status, stage_files, unstage_files,
+};
 
-use super::{arg_str, invalid_argument, map_git_error, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
+use super::{
+    arg_str, invalid_argument, map_git_error, not_found, AppState, Dispatcher, HandlerFuture,
+    IpcError,
+};
 
 const MAX_SESSION_ID_LENGTH: usize = 256;
 /// Matches `ipc::file_explorer`'s own `MAX_RELATIVE_PATH_LENGTH` (a single path, not a whole
@@ -62,13 +67,19 @@ fn require_str(
     }
 }
 
-fn require_paths(args: &[Value], index: usize, type_msg: &'static str) -> Result<Vec<String>, IpcError> {
+fn require_paths(
+    args: &[Value],
+    index: usize,
+    type_msg: &'static str,
+) -> Result<Vec<String>, IpcError> {
     let raw = args
         .get(index)
         .and_then(Value::as_array)
         .ok_or_else(|| invalid_argument(type_msg))?;
     if raw.len() > MAX_PATHS_PER_CALL {
-        return Err(invalid_argument("This request named too many paths at once"));
+        return Err(invalid_argument(
+            "This request named too many paths at once",
+        ));
     }
     let mut paths = Vec::with_capacity(raw.len());
     for value in raw {
@@ -85,7 +96,10 @@ fn require_paths(args: &[Value], index: usize, type_msg: &'static str) -> Result
 /// `SessionDetailsCard.tsx`'s own shape, FR-014) -- `Err(not_found)` only when the Session
 /// itself no longer exists. Mirrors `ipc::file_explorer::session_context`, minus the
 /// repository-path/`worktree_is_valid` plumbing this panel's own slice 1 scope does not need.
-async fn session_context(state: &AppState, session_id: &str) -> Result<(PathBuf, String, bool), IpcError> {
+async fn session_context(
+    state: &AppState,
+    session_id: &str,
+) -> Result<(PathBuf, String, bool), IpcError> {
     let registry = state.registry.lock().await;
     let session = registry
         .get_session(session_id)
@@ -130,7 +144,9 @@ pub fn git_changes_stage(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.stage expects a string sessionId and a string[] paths",
         )?;
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        stage_files(&worktree_path, &paths).await.map_err(map_git_error)?;
+        stage_files(&worktree_path, &paths)
+            .await
+            .map_err(map_git_error)?;
         Ok(Value::Null)
     })
 }
@@ -150,7 +166,9 @@ pub fn git_changes_unstage(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.unstage expects a string sessionId and a string[] paths",
         )?;
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        unstage_files(&worktree_path, &paths).await.map_err(map_git_error)?;
+        unstage_files(&worktree_path, &paths)
+            .await
+            .map_err(map_git_error)?;
         Ok(Value::Null)
     })
 }
@@ -175,7 +193,9 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .chain(snapshot.groups.untracked)
                 .map(|entry| entry.path)
                 .collect();
-            stage_files(&worktree_path, &paths).await.map_err(map_git_error)?;
+            stage_files(&worktree_path, &paths)
+                .await
+                .map_err(map_git_error)?;
         }
         Ok(Value::Null)
     })
@@ -192,8 +212,15 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
         )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
         if let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await {
-            let paths: Vec<String> = snapshot.groups.staged.into_iter().map(|entry| entry.path).collect();
-            unstage_files(&worktree_path, &paths).await.map_err(map_git_error)?;
+            let paths: Vec<String> = snapshot
+                .groups
+                .staged
+                .into_iter()
+                .map(|entry| entry.path)
+                .collect();
+            unstage_files(&worktree_path, &paths)
+                .await
+                .map_err(map_git_error)?;
         }
         Ok(Value::Null)
     })
@@ -216,10 +243,14 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.commit rejected an oversized message",
         )?;
         if message.trim().is_empty() {
-            return Err(invalid_argument("gitChanges.commit requires a non-empty message"));
+            return Err(invalid_argument(
+                "gitChanges.commit requires a non-empty message",
+            ));
         }
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        git_commit(&worktree_path, &message).await.map_err(map_git_error)?;
+        git_commit(&worktree_path, &message)
+            .await
+            .map_err(map_git_error)?;
         Ok(Value::Null)
     })
 }
@@ -247,7 +278,9 @@ pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
         )?;
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        let patch = diff_text(&worktree_path, &path, staged).await.map_err(map_git_error)?;
+        let patch = diff_text(&worktree_path, &path, staged)
+            .await
+            .map_err(map_git_error)?;
         Ok(json!({ "patch": patch }))
     })
 }

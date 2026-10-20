@@ -67,9 +67,15 @@ fn notify_refresh(app_handle: &Arc<StdMutex<Option<AppHandle>>>, session_id: &st
 /// (the panel re-mounting, or simply being re-opened) retries rather than staying silently
 /// un-watched forever -- `gitChanges.list`/the mutating actions all still work regardless in the
 /// meantime; only the live auto-refresh (FR-015b) is lost until a fresh watcher starts.
-pub fn ensure_watcher(app_handle: Arc<StdMutex<Option<AppHandle>>>, session_id: &str, worktree_path: &Path) {
+pub fn ensure_watcher(
+    app_handle: Arc<StdMutex<Option<AppHandle>>>,
+    session_id: &str,
+    worktree_path: &Path,
+) {
     {
-        let watchers = WATCHERS.lock().expect("git changes watchers mutex poisoned");
+        let watchers = WATCHERS
+            .lock()
+            .expect("git changes watchers mutex poisoned");
         if watchers.contains_key(session_id) {
             return;
         }

@@ -27,7 +27,12 @@ use super::git::{GitError, GitErrorCode};
 /// symlink pointing outside the worktree is not a threat this check needs to cover either way --
 /// `git add`/`restore`/`diff` all operate on the symlink's own blob, never read through it.
 pub(super) fn validate_pathspec(worktree_path: &Path, path: &str) -> Result<(), GitError> {
-    let refuse = || GitError::new(GitErrorCode::OutsideWorktree, format!("refused unsafe path: {path}"));
+    let refuse = || {
+        GitError::new(
+            GitErrorCode::OutsideWorktree,
+            format!("refused unsafe path: {path}"),
+        )
+    };
     if path.is_empty()
         || path.starts_with('-')
         || path.starts_with('/')
