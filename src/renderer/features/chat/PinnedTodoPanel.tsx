@@ -96,11 +96,19 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     const list = listRef.current
     const el = list?.querySelector<HTMLElement>('[data-current-task="true"]')
     if (!list || !el) return
-    lastFollowedKeyRef.current = currentTaskKey
     const elTop = el.offsetTop
     const elBottom = elTop + el.offsetHeight
     if (elTop < list.scrollTop) list.scrollTop = elTop
     else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
+    // Gate round 3 fix (Main's diagnosis, #700 E4, traced live): marking a key "followed"
+    // BEFORE checking whether the row actually ended up in view let one render with
+    // momentarily-stale geometry (elBottom computed past the content's own current
+    // scrollHeight, silently clamped by the browser to scrollHeight - clientHeight) lock the
+    // scroll there PERMANENTLY -- the key-match guard above never let a later, correct render
+    // retry. Only commit `lastFollowedKeyRef` once the row genuinely landed in view.
+    if (elTop >= list.scrollTop && elBottom <= list.scrollTop + list.clientHeight) {
+      lastFollowedKeyRef.current = currentTaskKey
+    }
   })
 
   // Decision item 5: "When everything is done, it collapses to... All N done". A ONE-TIME
