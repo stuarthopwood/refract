@@ -81,7 +81,12 @@ async function settleForScreenshot(cdp) {
 }
 
 async function pressShiftEnter(cdp) {
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: 8, windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
+  // `text`/`unmodifiedText` (same fields `CdpSession.pressEnter` sets) are what makes Chromium
+  // treat this as a real keystroke that inserts a character -- a bare keyDown/keyUp pair with
+  // no `text` reaches the textarea's own `onKeyDown` but inserts nothing, since the component
+  // deliberately never calls `preventDefault` for Shift+Enter (it relies on the browser's own
+  // native "Enter inserts a newline in a textarea" behaviour, same as a real keystroke would).
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: 8, windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 8, windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
 }
 
@@ -104,17 +109,19 @@ function readChips(cdp) {
   })()`);
 }
 
-/** The composer's own hint while blank: the visible lead span inside the empty-state hint
- * overlay (`text-muted-foreground`, distinct from the ghost-text/chip mirror overlays which use
- * `text-foreground`), plus every id the textarea's `aria-describedby` names and each one's own
- * sr-only text -- the real screen-reader-reachable path issue #533 established. */
-function readHint(cdp) {
+/** The composer's own hint while blank: a genuinely VISIBLE span whose exact trimmed text
+ * matches `expectedText` (not inside any `.sr-only` ancestor, which carries the same text for
+ * screen readers via a separate element -- `closest` tells the two apart without depending on
+ * the hint overlay's own class list, which could drift independently of this check), plus every
+ * id the textarea's `aria-describedby` names and each one's own sr-only text -- the real
+ * screen-reader-reachable path issue #533 established. */
+function readHint(cdp, expectedText) {
   return cdp.evaluate(`(() => {
     const textarea = document.querySelector('[aria-label="Message"]');
     const describedBy = (textarea?.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
     const describedByText = describedBy.map((id) => (document.getElementById(id)?.textContent ?? null)).filter((t) => t !== null && t !== '');
-    const overlay = document.querySelector('[aria-hidden="true"].text-muted-foreground');
-    const visibleLead = overlay ? (overlay.querySelector('span')?.textContent ?? null) : null;
+    const visibleMatch = Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === ${JSON.stringify(expectedText)} && !el.closest('.sr-only'));
+    const visibleLead = visibleMatch ? visibleMatch.textContent.trim() : null;
     return { describedBy, describedByText, visibleLead, value: textarea?.value ?? null };
   })()`);
 }
@@ -249,13 +256,19 @@ async function main() {
     await cdp.waitFor(`document.querySelector('[aria-label="Message"]').value === ''`, { timeoutMs: 5_000, label: 'Composer cleared after queueing' });
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
-      const hint = await readHint(cdp);
+      const hint = await readHint(cdp, 'Enter sends the next queued message');
       assertEqual(hint.visibleLead, 'Enter sends the next queued message', `${theme.name}: visible hint reads "Enter sends the next queued message"`);
       assertTrue(hint.describedByText.includes('Enter sends the next queued message'), `${theme.name}: aria-describedby includes the hint text`, hint);
       await settleForScreenshot(cdp);
       await cdp.screenshot(path.join(SHOTS_DIR, `hint-${theme.id}.png`));
     }
     await switchTheme(cdp, 'dark', 'Dark');
+    // `settleForScreenshot` blurs the active element and `switchTheme` leaves focus inside the
+    // profile menu's own trigger -- a bare `pressEnter()` dispatches to whatever (if anything)
+    // currently has focus, never to the textarea by selector, so every later bare Enter in this
+    // script would otherwise land nowhere. Re-click the composer once here; every later step
+    // that types first (`typeIntoByLabel`) already refocuses it via its own click.
+    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
 
     // (3) Enter on the blank composer sends the OLDEST queued follow-up via the same wire call
     // "Send now" uses; a repeat Enter sends the next one. (The "Sending now…" announcement
@@ -297,7 +310,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', 'Third queued message');
     await cdp.pressEnter();
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 3 && li[2].querySelector('span.truncate')?.textContent === 'Third queued message'; })()`,
+      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 3 && li[0].querySelector('span.truncate')?.textContent === 'Third queued message'; })()`,
       { timeoutMs: 15_000, label: 'Third follow-up queued' }
     );
     const beforeTypedText = debugLogContent(debugLogPath);
@@ -346,8 +359,8 @@ async function main() {
       label: 'Sending announces "Sending now…" while the promote is in flight'
     });
     await cdp.waitFor(
-      `(() => { const li = document.querySelectorAll('ul[aria-label="Queued messages"] > li'); return li.length === 4 && Array.from(li).every((el) => el.querySelector('[data-chip-action="send"]') === null); })()`,
-      { timeoutMs: 15_000, label: 'Fast double Enter settled: the queued chip is now steering' }
+      `(() => { const li = Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] > li')); const target = li.find((el) => el.querySelector('span.truncate')?.textContent === 'Third queued message'); return li.length === 4 && target && target.querySelector('[data-chip-action="send"]') === null; })()`,
+      { timeoutMs: 15_000, label: 'Fast double Enter settled: Third queued message is now steering' }
     );
     const afterDouble = debugLogContent(debugLogPath);
     assertEqual(

@@ -5010,17 +5010,30 @@ record.
   `aria-describedby`, issue #533) both read "Enter sends the next queued message" while the rule
   applies, in place of the default "Message the agent"/"Markdown is supported..." wording.
   IME composition and Shift+Enter are unaffected (both already gated before this branch runs).
-- [ ] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
-  `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`): written, not yet run -- pending the
-  next build slot. Covers: two queued follow-ups mid-turn, Enter on a blank composer sends the
-  oldest then the next; the placeholder text and `aria-describedby` while the rule applies, in
-  two themes; a fast double Enter sends exactly once (proven by an exact fake-omp debug-log RECV
-  count); steering-only queued, Enter is a genuine no-op; Enter with typed text still sends that
-  text even with a follow-up queued; opening the slash menu on an unmatched command suppresses
-  the rule entirely; Shift+Enter inserts a newline and sends nothing. `report.json` records
-  `gitHead`, `dirty`, failures and `notExercised` (a ghost suggestion showing at the same instant
-  as a blank composer is structurally unreachable, so not live-exercised; neither is an
-  attachment/file-only blank composer, out of this issue's own acceptance list).
+- [X] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
+  `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`). Covers: two queued follow-ups mid-turn,
+  Enter on a blank composer sends the oldest then the next; the placeholder text and
+  `aria-describedby` while the rule applies, in two themes; a fast double Enter sends exactly
+  once (proven by an exact fake-omp debug-log RECV count); steering-only queued, Enter is a
+  genuine no-op; Enter with typed text still sends that text even with a follow-up queued;
+  opening the slash menu on an unmatched command suppresses the rule entirely; Shift+Enter
+  inserts a newline and sends nothing. `report.json` records `gitHead`, `dirty`, failures and
+  `notExercised` (a ghost suggestion showing at the same instant as a blank composer is
+  structurally unreachable, so not live-exercised; neither is an attachment/file-only blank
+  composer, out of this issue's own acceptance list). Three script bugs found and fixed while
+  getting this green, none a product defect: the visible-hint selector matched zero elements (a
+  generic `[aria-hidden="true"].text-muted-foreground` class selector was too fragile; replaced
+  with a search for a genuinely visible span carrying the exact expected text, excluding
+  `.sr-only` duplicates); two chip-index assertions assumed insertion order instead of the real
+  render order (`chips` always lists every follow-up chip before any steering chip, regardless
+  of when each was queued); `pressShiftEnter`'s synthesized CDP key event carried no `text`
+  payload, so Chromium never ran the native "insert a newline" edit command the production code
+  deliberately relies on (mirrors the bug class `verify-1077-agent-goal.mjs`'s own gate-round-1
+  remediation already warns about -- a synthetic key dispatch with no `text` field reaches
+  `onKeyDown` but inserts nothing). Also found and fixed: a bare `pressEnter()` after the
+  theme-switch screenshot loop landed on nothing (`settleForScreenshot` blurs the active element
+  and `switchTheme` leaves focus inside the profile menu), fixed with an explicit re-click of the
+  composer textarea before relying on any later bare Enter.
 
 **Non-build checks** (run against the renderer changes alone, before any build slot): `pnpm
 typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping-phase rule);
@@ -5031,4 +5044,17 @@ typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping
 scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
 change); `node scripts/check-drag-regions.mjs` 0 violations across 153 files.
 
-**FINAL LIVE-VERIFIED PASS is pending the next build slot** -- not yet run.
+**FINAL LIVE-VERIFIED PASS**: branch merged with `origin/main` (v0.7.0 release, #1039 Cyber
+Amber retune) first; non-build checks re-run clean on the merged tree (`pnpm typecheck`; `pnpm
+test` 148/148; `check:indent` 0/458; `check:file-size` 0/523, `MessageInput.tsx` unchanged at
+1632/1632; `check:theme-contrast` 872/872; `check:parity` 115/115 requests, 25/25 events;
+`check:drag-regions` 0/153). `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest, indent, theme-contrast,
+drag-regions, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1067-enter-queued.mjs` against the just-built exe: **gitHead
+`965184456b5d50c8d0d5b76c2f1c1dd065016b8e`, dirty: true (the verify script's own in-flight fixes
+were uncommitted at run time, now committed in this same change), 0 failures, 2 notExercised,
+all 14 assertions PASS**. Screenshots viewed directly (`hint-dark.png`, `hint-obsidian.png`):
+both queued follow-up chips show with their own "Send now" buttons, and the composer's hint
+overlay reads "Enter sends the next queued message" in place of "Message the agent", the "/ for
+commands" and "Markdown supported" hints unchanged beside it, in both themes.
