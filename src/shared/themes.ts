@@ -124,11 +124,15 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   'cyber-amber': {
     id: 'cyber-amber',
     name: 'Cyber Amber',
-    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a warm near-black canvas.
-    swatch: '#0f0703',
-    swatchPrimary: '#c14100',
+    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
+    // `.theme-dark`'s own near-black canvas (#1039, 2026-10-20: every surface is pure neutral,
+    // chroma 0, no warm tint anywhere; text was retuned softer then fully reverted the same
+    // day -- Stuart moved text softening to a separate, app-wide issue -- so `--foreground`/
+    // `symbolColor` below are back to byte-identical with Dark's own, unretuned by #1039).
+    swatch: '#0a0a0a',
+    swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0f0703', symbolColor: '#faf4ef' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
   }
 }
 

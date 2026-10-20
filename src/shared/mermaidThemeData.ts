@@ -377,36 +377,20 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     cScaleInv10: '#92a1a9',
     cScaleInv11: '#92a1a9'
   },
-  'cyber-amber': {
-    ...DARK_FAMILY,
-    background: '#0f0703', // `--background`
-    primaryColor: '#22160e', // `--card`
-    primaryTextColor: '#faf4ef', // `--card-foreground`/`--foreground`
-    primaryBorderColor: '#887e78', // `--border`
-    lineColor: '#bb9679', // `--muted-foreground` (retuned, gate round 1)
-    secondaryColor: '#382e28', // `--muted`/`--accent`/`--secondary` (`--surface-hover`, retuned)
-    tertiaryColor: '#453b34', // one step lighter, same reasoning as DARK_FAMILY's own comment
-    textColor: '#faf4ef',
-    altSectionBkgColor: '#382e28',
-    sectionBkgColor: '#382e28',
-    sectionBkgColor2: '#382e28',
-    noteBkgColor: '#2c221b', // `--popover` (retuned)
-    noteTextColor: '#faf4ef',
-    taskTextOutsideColor: '#faf4ef',
-    taskTextClickableColor: '#faf4ef',
-    taskTextColor: '#faf4ef',
-    pieOuterStrokeColor: '#bb9679',
-    cScaleInv0: '#bb9679',
-    cScaleInv1: '#bb9679',
-    cScaleInv2: '#bb9679',
-    cScaleInv3: '#bb9679',
-    cScaleInv4: '#bb9679',
-    cScaleInv5: '#bb9679',
-    cScaleInv6: '#bb9679',
-    cScaleInv7: '#bb9679',
-    cScaleInv8: '#bb9679',
-    cScaleInv9: '#bb9679',
-    cScaleInv10: '#bb9679',
-    cScaleInv11: '#bb9679'
-  }
+  // #1039 gate round 1 fix (Code/Test HIGH): Cyber Amber's own surfaces, text and border are now
+  // byte-identical to Default Dark's (globals.css's own `.theme-cyber-amber` header comment),
+  // so its Mermaid palette reuses `DARK_FAMILY` directly -- the SAME object Dark itself uses,
+  // not a per-field copy that could silently drift. The brown literals this entry used to
+  // override (`#0f0703`/`#22160e`/`#faf4ef`/`#887e78`/`#bb9679`/`#382e28`/`#2c221b`) predate
+  // #1039's retune and are gone; only the accent family (`--accent-text`, `--primary`/`--send`),
+  // the warning hue, `--severity-error`/`--pr-closed` (hue 22, retuned for the accent-vs-error
+  // distinctness floor), and `themes.ts`'s own `swatchPrimary` still differ from Dark, none of
+  // which Mermaid's own `themeVariables` read. Live-verified (`scripts/verify-1039-amber-
+  // retune.mjs`, round-2 gate fix): a real rendered Mermaid flowchart's own SVG (decoded from
+  // its `data:image/svg+xml` `<img>` source) is byte-for-byte identical to Dark's own render,
+  // after normalising the per-mount id both sides share --
+  // Mermaid derives its node FILL internally (never the raw `primaryColor` literal verbatim),
+  // so this is a full-string equality check, not a hardcoded-literal match; `textColor`
+  // (`#fafafa`) IS a literal match, confirmed separately.
+  'cyber-amber': DARK_FAMILY
 }

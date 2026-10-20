@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.7.0 (2026-10-20)
+
+### Features
+
+- feat(#1050): composer command pill, spellcheck off for recognised commands (https://github.com/stuarthopwood/refract/pull/1064)
+- feat(#700,#701): slice (a) pinned todo panel + pin-toggle readout (https://github.com/stuarthopwood/refract/pull/1054)
+- feat(464): Git changes panel, slice 1 of 3 (changes list, stage/unstage, commit, auto-refresh) (https://github.com/stuarthopwood/refract/pull/1076)
+- feat(1077): collapse Stage/subagent rows to goal + See input & output toggle (https://github.com/stuarthopwood/refract/pull/1095)
+- feat(#1039): Cyber Amber retuned onto Default Dark's surfaces, vivid orange accent (https://github.com/stuarthopwood/refract/pull/1094)
+
+### Other
+
+- docs: PLAN.md row for #1067 Enter sends queued follow-up (https://github.com/stuarthopwood/refract/pull/1068)
+- docs: PLAN.md row for #1069 Model roles overhaul (https://github.com/stuarthopwood/refract/pull/1071)
+- docs: PLAN row for #1070 (Settings theme picker swatch chip) (https://github.com/stuarthopwood/refract/pull/1072)
+- docs: PLAN rows for #1073 (Settings dividers) and #1074 (app-wide text opacity) (https://github.com/stuarthopwood/refract/pull/1075)
+- docs: PLAN row for issue #1077 (agent rows show only the goal) (https://github.com/stuarthopwood/refract/pull/1078)
+- docs(gate): risk-tiered review gate design (https://github.com/stuarthopwood/refract/pull/1079)
+- docs(plan): place #1080 Tab indent, #1081 slash recents, #1082 context heatmap (https://github.com/stuarthopwood/refract/pull/1083)
+- docs(plan): place #1085 finished subagent cleanup (https://github.com/stuarthopwood/refract/pull/1086)
+- docs(plan): #766 combined Role·Model pill, Ctrl+R cycling, change any time (https://github.com/stuarthopwood/refract/pull/1088)
+- docs(plan): place #1089 Prism (https://github.com/stuarthopwood/refract/pull/1090)
+- docs(plan): #691 OMP settings in Settings (read live, curated rows) (https://github.com/stuarthopwood/refract/pull/1092)
+- docs(gate): review gate contracts and core implementation plan (https://github.com/stuarthopwood/refract/pull/1096)
+- docs: PLAN.md row for #1098 Agent list parked status (https://github.com/stuarthopwood/refract/pull/1099)
+
 ## v0.6.0 (2026-10-20)
 
 ### Features

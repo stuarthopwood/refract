@@ -7,6 +7,15 @@
 // `session.jsonl`'s own genuinely-recorded shapes verbatim (this README's "every Session-shaped
 // tape" note). The two `notice` frames are built directly from the documented wire contract
 // (src/shared/frames.ts's `NoticeFrame`). See README.md's provenance table.
+// EXTENDED (#1039 round-1 self-review, 2026-10-20): one assistant message added before the
+// notice frames, a FIXED hand-written reply (not a real model's own wording, same convention
+// `code-surface-975.jsonl` uses for its own JS fence) containing one short ` ```mermaid ` fence
+// -- so `scripts/verify-1039-amber-retune.mjs` can assert a real rendered Mermaid diagram's own
+// SVG is byte-identical between Default Dark and Cyber Amber (a round-trip through Obsidian
+// first proves a genuine re-render, not a stale cached image) (AGENTS.md "no new fixtures":
+// extending this already-committed, already-reused tape, not adding a new one).
+// `verify-997-notice-severity.mjs`'s own assertions are unaffected: it only reads NoticeRow
+// styling, never asserts message content or count.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -22,6 +31,9 @@
 {"type":"agent_start"}
 {"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
