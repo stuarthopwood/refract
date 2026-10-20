@@ -1,8 +1,6 @@
 // Shared constants and DOM-driving/reading helpers for verify-1043-theme-radio.mjs, split out
 // (#806 file-size cap) the same way verify-741-role-chip.mjs/verify-569 etc. split their own
 // bulk check bodies into a companion `-helpers.mjs` file.
-import { readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { sleep } from './verify-tauri-cdp.mjs';
 import { pressKey, pressEscape, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 
@@ -109,18 +107,31 @@ export async function openReasoningPicker(cdp) {
   });
 }
 
-/** Seeds `registry.json`'s own `lastThinkingLevel` for `sessionId` directly on disk, the same
- * approach `verify-564-gate2-live-check.mjs` already established for this exact field: OMP's own
- * `get_state` never echoes a concrete thinking level back for this isolated, credential-free
- * harness, so there is no real way to CONFIRM one through live use -- only read with no instance
- * running (the file is read once, at `RegistryStore::open`, process startup). */
-export function seedLastThinkingLevel(dataDir, sessionId, level) {
-  const registryPath = path.join(dataDir, 'registry.json');
-  const registryJson = JSON.parse(readFileSync(registryPath, 'utf8'));
-  const seededSession = (registryJson.sessions ?? []).find((s) => s.id === sessionId);
-  if (!seededSession) throw new Error(`seedLastThinkingLevel: session ${sessionId} not found in ${registryPath}`);
-  seededSession.lastThinkingLevel = level;
-  writeFileSync(registryPath, JSON.stringify(registryJson, null, 2));
+/** Navigates an already-open `[role="menuitemradio"]` group by keyboard from WHEREVER focus
+ * currently sits to the row labelled `targetLabel`, then presses Enter to select it. Radix does
+ * NOT reliably refocus the CHECKED item on a plain menu reopen -- only `ProfileMenu.tsx`'s
+ * `ThemeSubmenu` has its own bespoke `activeItemRef`/`requestAnimationFrame` logic for that,
+ * which `ComposerPickers.tsx`'s Reasoning picker does not duplicate -- so this reads the real
+ * current focus via the AX tree and computes the exact arrow-press count, rather than assuming
+ * a fixed starting row (a fixed assumption is what made an earlier cut of this script seed
+ * `registry.json` directly instead; dropped once that seed turned out to race the real
+ * session-settle resync that persists `lastThinkingLevel` back onto the Session row -- a real
+ * pointer/keyboard selection through the actual UI has no such race). `labels` is the group's
+ * rows in on-screen order. */
+export async function navigateRadioGroupByKeyboardTo(cdp, labels, targetLabel) {
+  const focused = await getActiveElementAccessibleName(cdp);
+  const fromIdx = labels.indexOf(focused.name);
+  const toIdx = labels.indexOf(targetLabel);
+  if (fromIdx === -1 || toIdx === -1) {
+    throw new Error(`navigateRadioGroupByKeyboardTo: could not locate "${focused.name}" -> "${targetLabel}" in ${JSON.stringify(labels)}`);
+  }
+  const steps = toIdx - fromIdx;
+  const direction = steps > 0 ? 'Down' : 'Up';
+  for (let i = 0; i < Math.abs(steps); i++) {
+    await pressArrow(cdp, direction);
+    await sleep(100);
+  }
+  await pressEnterKey(cdp);
 }
 
 /** Focuses the active radio row's own leading ring, reads its computed `border-color`

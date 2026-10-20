@@ -33,15 +33,19 @@
 // Then, the shared `DropdownMenuRadioItem`'s OTHER caller:
 //   - The composer's Reasoning picker (`ComposerPickers.tsx:114-120`, needed NO code change for
 //     #1043): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
-//     the Session's seeded `lastThinkingLevel`, the same dot-on-checked-only structural proof,
-//     and a real keyboard selection through the real `model.setThinkingLevel` IPC.
+//     the Session's real selected `lastThinkingLevel` (set through a real click/keyboard
+//     selection in the UI, never a seed -- see the exception note below), the same
+//     dot-on-checked-only structural proof, and a real keyboard selection through the real
+//     `model.setThinkingLevel` IPC.
 //
 // Exceptions to "never a shortcut": `window.refract.theme.set`/`window.refract.sessions.list()`
 // read-only calls (confirming a real store round trip after a UI-driven action, not driving the
-// UI itself) and `seedLastThinkingLevel` (`registry.json`, written with no instance running,
-// read once at process startup) -- OMP's own `get_state` never echoes a concrete thinking level
-// back for this isolated, credential-free harness, so there is no live way to CONFIRM one
-// through real use; `verify-564-gate2-live-check.mjs` established this exact same seed.
+// UI itself). An earlier cut of this script seeded `registry.json`'s `lastThinkingLevel`
+// directly (the same approach `verify-564-gate2-live-check.mjs` established for that exact
+// field) -- dropped once that seed turned out to race the real post-attach session-settle
+// resync that persists `lastThinkingLevel` back onto the Session row, silently overwriting it
+// before this script ever read it back. A real pointer click (then a real keyboard selection)
+// has no such race, so Part B below drives both through the actual UI instead.
 //
 // Every launched app instance (and its CDP connection) is registered in `openHandles` the
 // instant it is created and torn down in ONE top-level `finally`-equivalent, regardless of which
@@ -74,7 +78,7 @@ import {
   closeAllMenus,
   readRadioRows,
   openReasoningPicker,
-  seedLastThinkingLevel,
+  navigateRadioGroupByKeyboardTo,
   ringCarriesForcedColorsOverride
 } from './verify-1043-theme-radio-helpers.mjs';
 
@@ -312,7 +316,7 @@ async function main() {
     const repoParentB = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoB-'));
     track(() => safeRmSync(repoParentB));
     const repoDirB = makeScratchRepo(path.join(repoParentB, 'repo'), 'refract-1043-repoB');
-    const { cdp: cdpB, dataDir: dataDirB, teardown: teardownB } = await launchFresh('reasoning');
+    const { cdp: cdpB, teardown: teardownB } = await launchFresh('reasoning');
     await addRepository(cdpB, repoDirB);
     await createSessionViaQuickCreate(cdpB, 'refract-1043-repoB');
     const list = await cdpB.evaluate('window.refract.sessions.list()');
@@ -322,47 +326,48 @@ async function main() {
       `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.status === 'idle')`,
       { timeoutMs: 60_000, label: 'Session reached idle (Reasoning picker enabled)' }
     );
-    await teardownB();
 
-    // registry.json is read once at process startup (no instance running while it is edited) --
-    // seed `lastThinkingLevel` now and relaunch against the SAME dataDir to pick it up, the same
-    // established pattern `verify-564-gate2-live-check.mjs` uses for this exact field (OMP's own
-    // get_state never echoes a concrete thinking level back for this isolated harness).
-    seedLastThinkingLevel(dataDirB, sessionId, 'low');
-    const { cdp: cdpB2, teardown: teardownB2 } = await launchFresh('reasoning-reopen', { reuseDataDir: dataDirB });
-    await cdpB2.waitFor(`!!document.querySelector('[data-session-open]')`, { timeoutMs: 30_000, label: 'Session row rendered after relaunch' });
-    await cdpB2.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`);
-    await cdpB2.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 30_000, label: 'Composer mounted' });
+    const REASONING_LABELS = THINKING_LEVELS_1043.map((level) => THINKING_LEVEL_LABEL_1043[level]);
 
-    await openReasoningPicker(cdpB2);
-    const reasoningRows = await readRadioRows(cdpB2);
+    // Pointer selection: click "Low" directly -- the real model.setThinkingLevel IPC, never a
+    // UI-bypassing shortcut (and no registry seed: a fresh Session's real post-attach resync can
+    // clobber a seeded lastThinkingLevel before this script ever reads it back).
+    await openReasoningPicker(cdpB);
+    await cdpB.click(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim() === 'Low')`);
+    await cdpB.waitFor(
+      `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.lastThinkingLevel === 'low')`,
+      { timeoutMs: 15_000, label: 'Pointer selection (click "Low") calls the real model.setThinkingLevel IPC' }
+    );
+    checkPass('Reasoning picker: pointer selection (click "Low") calls the real model.setThinkingLevel IPC');
+
+    await openReasoningPicker(cdpB);
+    const reasoningRows = await readRadioRows(cdpB);
     const reasoningChecked = reasoningRows.filter((r) => r.ariaChecked === 'true');
-    const reasoningOk = reasoningRows.length === THINKING_LEVELS_1043.length && reasoningChecked.length === 1 && reasoningChecked[0].label === THINKING_LEVEL_LABEL_1043.low;
-    if (reasoningOk) checkPass('Reasoning picker: menuitemradio x8 (every THINKING_LEVELS entry), exactly one aria-checked=true matching the seeded level (Low)', JSON.stringify(reasoningRows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked }))));
-    else checkFail('Reasoning picker: menuitemradio x8, exactly one aria-checked=true matching the seeded level (Low)', JSON.stringify(reasoningRows));
+    const reasoningOk = reasoningRows.length === THINKING_LEVELS_1043.length && reasoningChecked.length === 1 && reasoningChecked[0].label === 'Low';
+    if (reasoningOk) checkPass('Reasoning picker: menuitemradio x8 (every THINKING_LEVELS entry), exactly one aria-checked=true matching the selected level (Low)', JSON.stringify(reasoningRows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked }))));
+    else checkFail('Reasoning picker: menuitemradio x8, exactly one aria-checked=true matching the selected level (Low)', JSON.stringify(reasoningRows));
     const reasoningDotOk = reasoningChecked[0]?.hasDot && reasoningRows.filter((r) => r.ariaChecked !== 'true').every((r) => !r.hasDot);
     if (reasoningDotOk) checkPass('Reasoning picker: the same radio dot is visible on the checked row only');
     else checkFail('Reasoning picker: the same radio dot is visible on the checked row only', JSON.stringify(reasoningRows));
-    await cdpB2.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-open.png'));
+    await cdpB.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-open.png'));
 
-    // Keyboard selection: ArrowDown from Low (index 3) to Medium (index 4), Enter -- the real
-    // model.setThinkingLevel IPC, never a UI-bypassing shortcut.
-    await pressArrow(cdpB2, 'Down');
-    await sleep(100);
-    await pressEnterKey(cdpB2);
-    await cdpB2.waitFor(
+    // Keyboard selection: navigate from WHEREVER focus actually lands (Radix does not reliably
+    // refocus the checked item on a plain reopen) to "Medium", then Enter.
+    await navigateRadioGroupByKeyboardTo(cdpB, REASONING_LABELS, 'Medium');
+    await cdpB.waitFor(
       `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.lastThinkingLevel === 'medium')`,
       { timeoutMs: 15_000, label: 'Keyboard selection calls the real setThinkingLevel IPC (level becomes "medium")' }
     );
-    checkPass('Reasoning picker: keyboard (ArrowDown + Enter) selects the next level via the real model.setThinkingLevel IPC');
-    await openReasoningPicker(cdpB2);
-    const reasoningRowsAfter = await readRadioRows(cdpB2);
+    checkPass('Reasoning picker: keyboard navigation + Enter selects Medium via the real model.setThinkingLevel IPC');
+    await openReasoningPicker(cdpB);
+    const reasoningRowsAfter = await readRadioRows(cdpB);
     const checkedAfter = reasoningRowsAfter.find((r) => r.ariaChecked === 'true');
-    if (checkedAfter?.label === THINKING_LEVEL_LABEL_1043.medium) checkPass('Reasoning picker: the checked radio moved to Medium after the keyboard selection');
+    if (checkedAfter?.label === 'Medium') checkPass('Reasoning picker: the checked radio moved to Medium after the keyboard selection');
     else checkFail('Reasoning picker: the checked radio moved to Medium after the keyboard selection', JSON.stringify(reasoningRowsAfter));
-    await cdpB2.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-medium.png'));
-    await closeAllMenus(cdpB2);
-    await teardownB2();
+    await cdpB.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-medium.png'));
+    await closeAllMenus(cdpB);
+    await teardownB();
+
 
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     if (report.failures.length > 0) {
