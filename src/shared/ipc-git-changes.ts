@@ -23,10 +23,11 @@ export interface GitChangesApi {
   stage(sessionId: string, paths: string[]): Promise<Result<void>>;
   /** FR-007: `git restore --staged --`, same path-sourcing rule as `stage`. */
   unstage(sessionId: string, paths: string[]): Promise<Result<void>>;
-  /** FR-004: stages every file CURRENTLY in the Changes and Untracked groups (re-read
-   * server-side at call time, never the renderer's own possibly-stale snapshot) -- Conflicts
-   * are never swept up by this bulk action. */
-  stageAll(sessionId: string): Promise<Result<void>>;
+  /** FR-004, 2026-10-20 fix: stages every file CURRENTLY in just the named group ("changes" or
+   * "untracked", re-read server-side at call time, never the renderer's own possibly-stale
+   * snapshot) -- the two groups used to be chained into one combined stage regardless of which
+   * group's own "Stage all" button was clicked; Conflicts is never an eligible group here. */
+  stageAll(sessionId: string, group: 'changes' | 'untracked'): Promise<Result<void>>;
   /** FR-004: unstages every file CURRENTLY in the Staged group (re-read server-side). */
   unstageAll(sessionId: string): Promise<Result<void>>;
   /** FR-008: one file's diff body, `git diff` / `git diff --cached` by whether `staged` is

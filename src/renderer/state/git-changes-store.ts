@@ -49,11 +49,10 @@ interface GitChangesStoreState {
    * visible rather than silently vanishing). */
   stage(sessionId: string, paths: string[]): Promise<void>
   unstage(sessionId: string, paths: string[]): Promise<void>
-  /** FR-004: bulk actions take no path list at all -- the IPC handler re-reads the CURRENT
-   * status server-side and excludes Conflicts itself (contracts/ipc.md), so this store never
-   * needs to compute "every path in the Changes/Untracked group" from its own (possibly stale)
-   * snapshot. */
-  stageAll(sessionId: string): Promise<void>
+  /** FR-004, 2026-10-20 fix: `group` scopes this to just that group's CURRENT status (re-read
+   * server-side, never a client-supplied path list) -- the two Stage-all buttons used to be
+   * wired to one combined action regardless of which group's own button was clicked. */
+  stageAll(sessionId: string, group: 'changes' | 'untracked'): Promise<void>
   unstageAll(sessionId: string): Promise<void>
   /** FR-009 to FR-011: `message` is the already-composed subject+body text; this store does not
    * trim or validate it beyond what `gitChanges.commit` itself rejects (a blank message,
@@ -174,8 +173,8 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
     await runAction(sessionId, set, get, () => window.refract.gitChanges.unstage(sessionId, paths))
   },
 
-  async stageAll(sessionId) {
-    await runAction(sessionId, set, get, () => window.refract.gitChanges.stageAll(sessionId))
+  async stageAll(sessionId, group) {
+    await runAction(sessionId, set, get, () => window.refract.gitChanges.stageAll(sessionId, group))
   },
 
   async unstageAll(sessionId) {

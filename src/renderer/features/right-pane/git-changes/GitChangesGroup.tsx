@@ -48,7 +48,9 @@ export function GitChangesGroup({
 
   function runBulkAction(): void {
     if (kind === 'staged') void useGitChangesStore.getState().unstageAll(sessionId)
-    else void useGitChangesStore.getState().stageAll(sessionId)
+    // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked' (BULK_ACTION
+    // above has no entry for 'conflicts'), so this narrowing is exhaustive in practice.
+    else if (kind === 'changes' || kind === 'untracked') void useGitChangesStore.getState().stageAll(sessionId, kind)
   }
 
   return (

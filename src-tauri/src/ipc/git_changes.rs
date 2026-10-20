@@ -1,8 +1,9 @@
 // IPC handlers for `gitChanges.*` (spec 018 slice 1, issue #464): `list` (the panel's full
 // snapshot -- header plus four grouped file lists), per-file `stage`/`unstage` (FR-006/FR-007),
-// bulk `stageAll`/`unstageAll` (FR-004, re-reading the CURRENT status server-side rather than
-// trusting a client-supplied path list, and deliberately excluding Conflicts from both -- a
-// developer resolves a conflict per-file, never swept up by a bulk click), `commit` (FR-009 to
+// bulk `stageAll` (FR-004, group-scoped to "changes" or "untracked", re-reading the CURRENT
+// status server-side rather than trusting a client-supplied path list) and `unstageAll` (always
+// the whole Staged group, the only group it ever applies to) -- Conflicts is excluded from both:
+// a developer resolves a conflict per-file, never swept up by a bulk click), `commit` (FR-009 to
 // FR-011), `diff` (FR-008: one file's patch body, `git diff`/`git diff --cached` by whether it
 // is staged -- added alongside the renderer lane's own US1, no design doc of its own beyond that
 // FR), and the watcher lifecycle pair `ensureWatching`/`stopWatching` (FR-015b/FR-016),
@@ -40,6 +41,9 @@ const MAX_PATHS_PER_CALL: usize = 10_000;
 /// A commit message has no git-enforced length limit when piped on stdin (FR-011's whole reason
 /// to use `-F -` over `-m`); this is purely a sanity ceiling against a pathological request body.
 const MAX_COMMIT_MESSAGE_LENGTH: usize = 100_000;
+/// `"changes"`/`"untracked"` are the only two valid `gitChanges.stageAll` group values -- a
+/// generous ceiling, not a tight one, since the exact match below rejects anything else anyway.
+const MAX_GROUP_LENGTH: usize = 32;
 
 pub fn register(d: &mut Dispatcher) {
     d.register("gitChanges.list", git_changes_list);
@@ -173,26 +177,48 @@ pub fn git_changes_unstage(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
+/// FR-004: `group` ('changes' or 'untracked' only -- 'conflicts'/'staged' are rejected, matching
+/// the renderer's own `BULK_ACTION` map, which never offers a Stage-all button for either) picks
+/// which group's CURRENT status (re-read server-side, never a client-supplied path list) this
+/// call stages. 2026-10-20 fix: the two groups used to be chained into one combined stage,
+/// something a developer clicking the OTHER group's own "Stage all" button never asked for.
 pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(
             &args,
             0,
             MAX_SESSION_ID_LENGTH,
-            "gitChanges.stageAll expects a string sessionId",
+            "gitChanges.stageAll expects a string sessionId and a string group",
             "gitChanges.stageAll rejected an oversized sessionId",
         )?;
+        let group = require_str(
+            &args,
+            1,
+            MAX_GROUP_LENGTH,
+            "gitChanges.stageAll expects a string sessionId and a string group",
+            "gitChanges.stageAll rejected an oversized group",
+        )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
-        // FR-004: re-reads the CURRENT status rather than trusting a client-supplied path list
-        // -- Conflicts are deliberately excluded, resolved only per-file.
         if let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await {
-            let paths: Vec<String> = snapshot
-                .groups
-                .changes
-                .into_iter()
-                .chain(snapshot.groups.untracked)
-                .map(|entry| entry.path)
-                .collect();
+            let paths: Vec<String> = match group.as_str() {
+                "changes" => snapshot
+                    .groups
+                    .changes
+                    .into_iter()
+                    .map(|entry| entry.path)
+                    .collect(),
+                "untracked" => snapshot
+                    .groups
+                    .untracked
+                    .into_iter()
+                    .map(|entry| entry.path)
+                    .collect(),
+                _ => {
+                    return Err(invalid_argument(
+                        "gitChanges.stageAll group must be \"changes\" or \"untracked\"",
+                    ))
+                }
+            };
             stage_files(&worktree_path, &paths)
                 .await
                 .map_err(map_git_error)?;
