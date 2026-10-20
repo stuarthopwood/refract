@@ -45,6 +45,12 @@ interface GitChangesSessionState {
    * own persistent state claiming nothing is wrong (same reasoning `file-explorer-store.ts`'s
    * own root-load error state uses). */
   actionError: string | null
+  /** Gate round 2 item 6 (#464): the commit box's own in-progress subject/body text, kept here
+   * (not local `useState` in `GitCommitBox.tsx`) so it survives that component unmounting --
+   * the panel now keeps it mounted once a snapshot has ever loaded even if one later goes null,
+   * but a Session SWITCH away and back still remounts `GitChangesPanel` itself -- and so a
+   * developer's half-typed commit message is never silently discarded either way. */
+  commitDraft: { subject: string; body: string }
 }
 
 interface GitChangesStoreState {
@@ -85,6 +91,16 @@ interface GitChangesStoreState {
   /** Explicit dismiss for `actionError` (the other way it can be cleared, besides starting a
    * new action) -- a no-op for an unknown Session or one with no current `actionError`. */
   dismissActionError(sessionId: string): void
+  /** Gate round 2 item 6: the whole `commitDraft` object replaces the previous one -- the caller
+   * (`GitCommitBox.tsx`) always passes both fields, merging in whichever one did not change
+   * itself, so a stale half-update can never silently drop the other field. */
+  setCommitDraft(sessionId: string, draft: { subject: string; body: string }): void
+  /** Gate round 2 item 14 (FR-016): drops `sessionId`'s entire entry -- called once the LAST
+   * mount of its panel unmounts (`GitChangesPanel.tsx`'s own watcher-refcount effect reaching
+   * zero, i.e. nothing else is watching it either), so a Session whose panel is fully closed
+   * does not hold stale snapshot/draft/error state in memory forever. A no-op for an unknown
+   * Session. */
+  forgetSession(sessionId: string): void
 }
 
 /** FR-015a's own "previous status" record: `useSessionsStore`'s own per-Session `status` field
@@ -108,6 +124,11 @@ const lastKnownStatus = new Map<string, SessionStatus>()
 const loadInFlight = new Map<string, Promise<void>>()
 const loadRerunRequested = new Set<string>()
 const loadGeneration = new Map<string, number>()
+
+/** Gate round 2 item 6: the empty `commitDraft` every brand-new session entry starts from --
+ * one shared, frozen-shape literal (never mutated in place; every write replaces the whole
+ * object) so every one of `performLoad`'s four branches below can fall back to it identically. */
+const DEFAULT_COMMIT_DRAFT = { subject: '', body: '' }
 
 /** Shared by every mutating action (`stage`/`unstage`/`stageAll`/`unstageAll`/`commit`): clears
  * any previous `actionError` up front (starting a new action is one of the two ways it is
@@ -166,7 +187,8 @@ async function performLoad(
           snapshot: existing?.snapshot ?? null,
           loading: true,
           loadError: null,
-          actionError: existing?.actionError ?? null
+          actionError: existing?.actionError ?? null,
+          commitDraft: existing?.commitDraft ?? DEFAULT_COMMIT_DRAFT
         }
       }
     }
@@ -185,7 +207,8 @@ async function performLoad(
             snapshot: existing?.snapshot ?? null,
             loading: false,
             loadError: `Couldn't load this Session's Git changes`,
-            actionError: existing?.actionError ?? null
+            actionError: existing?.actionError ?? null,
+            commitDraft: existing?.commitDraft ?? DEFAULT_COMMIT_DRAFT
           }
         }
       }
@@ -203,7 +226,8 @@ async function performLoad(
             snapshot: existing?.snapshot ?? null,
             loading: false,
             loadError: result.error.message,
-            actionError: existing?.actionError ?? null
+            actionError: existing?.actionError ?? null,
+            commitDraft: existing?.commitDraft ?? DEFAULT_COMMIT_DRAFT
           }
         }
       }
@@ -219,7 +243,8 @@ async function performLoad(
           snapshot: result.value.snapshot,
           loading: false,
           loadError: null,
-          actionError: existing?.actionError ?? null
+          actionError: existing?.actionError ?? null,
+          commitDraft: existing?.commitDraft ?? DEFAULT_COMMIT_DRAFT
         }
       }
     }
@@ -284,6 +309,23 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
       const existing = state.bySession[sessionId]
       if (!existing || existing.actionError === null) return state
       return { bySession: { ...state.bySession, [sessionId]: { ...existing, actionError: null } } }
+    })
+  },
+
+  setCommitDraft(sessionId, draft) {
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing) return state
+      return { bySession: { ...state.bySession, [sessionId]: { ...existing, commitDraft: draft } } }
+    })
+  },
+
+  forgetSession(sessionId) {
+    set((state) => {
+      if (!(sessionId in state.bySession)) return state
+      const bySession = { ...state.bySession }
+      delete bySession[sessionId]
+      return { bySession }
     })
   }
 }))

@@ -73,7 +73,14 @@ export function GitChangesGroup({
     else if (kind === 'changes' || kind === 'untracked') await useGitChangesStore.getState().stageAll(sessionId, kind)
     else return
     // Item 7 (gate round 1): "Stage all"/"Unstage all" focuses the NEXT group's own trigger.
-    focusNearestGroupTrigger(sessionId, kind)
+    // Gate round 2 item 10: only when the action actually succeeded -- a failure leaves
+    // `actionError` set (GitCommitBox's own role="alert" announces it), and yanking focus away
+    // from the bulk-action button the developer just clicked would both lose their place and
+    // read as though nothing happened. Focus naturally stays on that same button by simply
+    // skipping the restore call, no extra bookkeeping needed.
+    if (useGitChangesStore.getState().bySession[sessionId]?.actionError === null) {
+      focusNearestGroupTrigger(sessionId, kind)
+    }
   }
 
   return (
@@ -99,7 +106,7 @@ export function GitChangesGroup({
           )}
         </div>
         <CollapsibleContent>
-          <ul aria-label={`${label} files`} className="flex flex-col gap-0 py-0.5">
+          <ul data-git-group-list={kind} aria-label={`${label} files`} className="flex flex-col gap-0 py-0.5">
             {entries.map((entry) => (
               <li key={entry.path}>
                 <GitChangesFileRow

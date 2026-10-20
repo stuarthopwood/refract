@@ -1,10 +1,11 @@
 // Spec 018 slice 1 (issue #464), User Story 2: the panel's fixed, non-scrolling commit-box
 // footer (FR-009 to FR-013, FR-023, FR-024) -- a subject field with a live character counter, a
-// body field, and a Commit button, disabled with exactly one visible reason whenever a conflict
-// is unresolved, nothing is staged, or the message is empty (`aria-disabled` + `title` + a
-// visible reason line, the same disabled-with-reason convention `PullRequestDetail.tsx`'s own
-// Merge button already uses -- never the native `disabled` attribute, which would drop focus to
-// `<body>` the moment the last staged file is unstaged out from under a focused Commit button).
+// body field, and a Commit button, disabled with exactly one visible reason whenever the Git
+// status itself is unavailable, a conflict is unresolved, nothing is staged, or the message is
+// empty (`aria-disabled` + `title` + a visible reason line, the same disabled-with-reason
+// convention `PullRequestDetail.tsx`'s own Merge button already uses -- never the native
+// `disabled` attribute, which would drop focus to `<body>` the moment the last staged file is
+// unstaged out from under a focused Commit button).
 // Ctrl/Cmd+Enter from anywhere in either field commits (matching the composer's own send
 // shortcut), skipped while an IME composition is in progress so a composing Enter never fires a
 // commit early. A quiet inline warning shows whenever the focused Session's status is `working`,
@@ -13,6 +14,19 @@
 // background refresh can never silently clear an unacknowledged action failure) surfaces here as
 // a plain inline `role="alert"` (FR-013), the one place this panel announces an alert so a load
 // failure and an action failure are never double-announced in two places at once.
+//
+// Gate round 2 fixes (2026-10-20):
+// - Item 4: dismissing an action error refocuses the subject field (same landing spot a
+//   successful commit already uses) and the dismiss control is labelled "Dismiss error" (not a
+//   bare, context-free "Dismiss").
+// - Item 6: `GitChangesPanel.tsx` now keeps this component mounted once a snapshot has ever
+//   loaded for this Session, even if a LATER load reverts it to `null` (the worktree became
+//   genuinely unavailable mid-Session) -- `!entry?.snapshot` is therefore its own top-priority
+//   disabled reason ("Git status unavailable"), ahead of conflicts/staged/message, since without
+//   a snapshot this component cannot know whether any of those are even true. The subject/body
+//   draft itself moved from local `useState` into the store's own per-Session `commitDraft` (set
+//   via `setCommitDraft`), so it survives this remount-avoidance AND a Session switch away and
+//   back (which still remounts `GitChangesPanel` itself).
 import { useId, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
@@ -24,14 +38,18 @@ import { useGitChangesStore, useSessionsStore } from '@/state'
 export function GitCommitBox({ sessionId }: { sessionId: string }) {
   const entry = useGitChangesStore((s) => s.bySession[sessionId])
   const sessionStatus = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
-  const [subject, setSubject] = useState('')
-  const [body, setBody] = useState('')
+  const subject = entry?.commitDraft.subject ?? ''
+  const body = entry?.commitDraft.body ?? ''
   const [committing, setCommitting] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const subjectId = useId()
   const bodyId = useId()
   const warningId = useId()
   const reasonId = useId()
+
+  function updateDraft(partial: Partial<{ subject: string; body: string }>): void {
+    useGitChangesStore.getState().setCommitDraft(sessionId, { subject, body, ...partial })
+  }
 
   const conflictCount = entry?.snapshot?.groups.conflicts.length ?? 0
   const stagedCount = entry?.snapshot?.groups.staged.length ?? 0
@@ -40,11 +58,14 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
   // FR-009: subject + blank line + body, the conventional git shape -- FR-024 still holds (no
   // format is ENFORCED; a bare body with no subject, or vice versa, is composed as-is below).
   const message = trimmedSubject && trimmedBody ? `${trimmedSubject}\n\n${trimmedBody}` : trimmedSubject || trimmedBody
-  // Gate round 1 fix (item 11): a conflict blocks Commit outright, checked BEFORE "Nothing
-  // staged"/"Write a message" -- git itself refuses to commit any staged changes while a
-  // conflict remains anywhere in the worktree, regardless of what else is staged or typed.
-  const disabledReason =
-    conflictCount > 0
+  // Gate round 1 item 11: a conflict blocks Commit outright, checked BEFORE "Nothing staged"/
+  // "Write a message" -- git itself refuses to commit any staged changes while a conflict
+  // remains anywhere in the worktree, regardless of what else is staged or typed. Gate round 2
+  // item 6: a missing snapshot outranks even that -- without one this component cannot know
+  // whether there IS a conflict, so it must not claim any of the more specific reasons below.
+  const disabledReason = !entry?.snapshot
+    ? 'Git status unavailable'
+    : conflictCount > 0
       ? 'Resolve conflicts first'
       : stagedCount === 0
         ? 'Nothing staged'
@@ -63,8 +84,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
     // flag, is how a real failure is told apart from success without the store returning a
     // redundant boolean of its own.
     if (useGitChangesStore.getState().bySession[sessionId]?.actionError === null) {
-      setSubject('')
-      setBody('')
+      useGitChangesStore.getState().setCommitDraft(sessionId, { subject: '', body: '' })
       setAnnouncement(`Committed: ${committedSubject}`)
       document.getElementById(subjectId)?.focus()
     }
@@ -94,7 +114,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
         <Input
           id={subjectId}
           value={subject}
-          onChange={(event) => setSubject(event.target.value)}
+          onChange={(event) => updateDraft({ subject: event.target.value })}
           onKeyDown={handleKeyDown}
           placeholder="Commit subject"
           className="flex-1"
@@ -109,7 +129,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
       <Textarea
         id={bodyId}
         value={body}
-        onChange={(event) => setBody(event.target.value)}
+        onChange={(event) => updateDraft({ body: event.target.value })}
         onKeyDown={handleKeyDown}
         placeholder="Description (optional)"
         className="max-h-32 min-h-12 overflow-y-auto text-sm"
@@ -122,9 +142,12 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
           <button
             type="button"
             className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => useGitChangesStore.getState().dismissActionError(sessionId)}
+            onClick={() => {
+              useGitChangesStore.getState().dismissActionError(sessionId)
+              document.getElementById(subjectId)?.focus()
+            }}
           >
-            Dismiss
+            Dismiss error
           </button>
         </div>
       )}

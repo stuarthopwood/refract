@@ -26,35 +26,29 @@
 //     which this script deliberately never does (no model tokens spent, matching every other
 //     `verify-5xx+` script's own posture) -- recorded in `notExercised`, not silently skipped.
 //   - Ahead/behind (FR-014): grounded in `worktrees.rs`'s own `git branch -- <candidate>
-//     <base_branch>` (no `--track`), a freshly created Session branch carries NO upstream
-//     tracking at all in this scratch, remote-less repo -- so `ahead_behind` is correctly
-//     `None`/omitted, not a figure this script could honestly produce without fabricating an
-//     upstream. Checked as "correctly absent", via the real IPC response and the DOM.
-//   - Containment refusal: NOT independently reachable via the real UI (paths only ever come
-//     from the panel's own already-validated snapshot) -- exercised by calling
-//     `window.refract.gitChanges.*` directly via CDP `Runtime.evaluate` instead, the same
-//     real-IPC-bridge-bypassing-the-UI precedent `verify-926-attach-any-file.mjs` already
-//     established. A Rust-side `validate_pathspec` gate (`src-tauri/src/git/pathspec.rs`) now
-//     refuses an absolute/outside-worktree path before it ever reaches a `git` subprocess.
+//     <base_branch>` (no `--track`) -- a freshly created Session branch carries NO upstream
+//     tracking at all here, so `ahead_behind` is correctly `None`/omitted, checked as
+//     "correctly absent" via both the real IPC response and the DOM.
+//   - Containment refusal: NOT reachable via the real UI (paths only ever come from the panel's
+//     own already-validated snapshot) -- exercised via `window.refract.gitChanges.*` directly
+//     (CDP `Runtime.evaluate`), the same precedent `verify-926-attach-any-file.mjs` established.
+//     A Rust-side `validate_pathspec` gate (`src-tauri/src/git/pathspec.rs`) refuses an
+//     absolute/outside-worktree path before it ever reaches a `git` subprocess.
 //
-// Gate round 1 live-check additions (2026-10-20), threaded into the checks above rather than
-// bolted on at the end (each proof sits right next to the real user action it proves):
-//   - Focus restoration (`focus.ts`): `document.activeElement` read immediately after each real
-//     action that should move focus -- open diff / Back / Escape / per-file Stage / per-file
-//     Unstage / bulk Stage-all / a successful commit (subject input + its sr-only announcement).
-//   - Readout-chip proof: a real `window.refract.onReadoutUpdate` listener, registered before any
-//     mutating action, proves a fresh event for THIS Session arrives after a real commit
-//     (`schedule_readout_update`, gate round 1 item 13) -- never asserts `readout.changes`
-//     ITSELF differs (an ordinary commit of already-tracked content provably does not).
-//   - Check 14 (external fs change) tightened to 1.5s: the old ~2.2s liveness-ping fallback no
-//     longer exists for this watcher at all -- a pass this tight only happens if fs-watcher fired.
-//   - Checks 15/16: a partially-staged (`MM`) fixture and a literal-bracket-filename fixture, each
-//     built and FULLY TORN DOWN within their own check so neither perturbs any other check's own
-//     group-count expectations (Check 18's theme loop in particular).
-//   - Checks 10/11: commit's own "Resolve conflicts first" priority (over staged files AND a
-//     typed message) and the Conflicts row's "Mark as resolved" confirm-then-stage dialog, both
-//     run BEFORE the conflict is actually resolved (moved earlier than the original fixture-fix
-//     step, which now runs after them).
+// Gate round 1 (2026-10-20) live-check additions, threaded into the checks above: focus
+// restoration (`document.activeElement` after each action that should move it -- open diff /
+// Back / Escape / per-file Stage/Unstage / bulk Stage-all / a successful commit); a real
+// `onReadoutUpdate` listener proving a fresh event arrives after a commit (never asserting
+// `readout.changes` itself differs); Check 14 tightened to 1.5s (no slower liveness-ping
+// fallback exists for this watcher anymore); Checks 15/16 (a partially-staged `MM` fixture, a
+// literal-bracket-filename fixture) built and FULLY TORN DOWN within their own check; Checks
+// 10/11 (conflict-priority disabled reason, "Mark as resolved" confirm-then-stage) moved BEFORE the conflict is actually resolved.
+// Gate round 2 (2026-10-20): Check 14b (item 2) proves an external write to an UNRELATED file
+// never tears an open diff down or steals focus; Check 15 (item 3) also opens the diff from the
+// partially-staged fixture's own Changes-half row and confirms Back lands focus in that SAME
+// half (group-scoped `data-git-group-list`); Check 16's sibling fixture renamed `i.txt` (the old
+// `[id]-other.txt` never actually discriminated literal-vs-glob pathspec matching); Checks 6/7
+// renamed to name the real "conflict wins" reason they show, not the old misleading names.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -105,10 +99,13 @@ import {
   readCommitAnnouncementText,
   runCommitDisabledReasonCheck,
   runMarkAsResolvedCheck,
-  runPartialStagedDualGroupingCheck,
+  runPartialStagedDualGroupingCheck
+} from './verify-464-git-changes-helpers.mjs';
+import {
+  runDiffStabilityDuringExternalWriteCheck,
   runBracketLiteralPathCheck,
   runContainmentRefusalCheck
-} from './verify-464-git-changes-helpers.mjs';
+} from './verify-464-git-changes-helpers2.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -500,6 +497,9 @@ async function main() {
     );
     assertArrayEqual(await readGroupFileTitles(cdp, 'Untracked'), [FIXTURE.externalChange, FIXTURE.untracked], 'Untracked files after an external fs change', findings, failures);
     await shot('14-external-change-refresh.png');
+
+    // ---- Check 14b (item 2, gate round 2): full detail in the helper's own doc comment. ----
+    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, shot, findings, failures);
 
     // ---- Check 15 (item 4): a partially staged (`MM`) file renders as TWO separate rows for the
     // SAME path -- one in Staged (scored against the index, `git diff --cached`), one in Changes

@@ -64,8 +64,17 @@ export const FIXTURE = {
   partialStagedBaseline: 'partial baseline line\n',
   partialStagedFirstEdit: 'partial baseline line\nfirst edit appended\n',
   partialStagedSecondEdit: 'partial baseline line\nfirst edit appended\nsecond edit appended\n',
+  // Gate round 2 fix (item 15, 2026-10-20): the sibling MUST be `i.txt`, not `[id]-other.txt` --
+  // `[id].txt` interpreted as a GLOB bracket expression (the exact bug `--literal-pathspecs`
+  // exists to prevent) matches a SINGLE character from the set {i, d} followed by literally
+  // ".txt", i.e. it matches a file named "i.txt" or "d.txt", but it does NOT match
+  // "[id]-other.txt" (the trailing "-other" never matches that pattern at all, glob or
+  // literal) -- the old sibling would therefore have passed this check even with
+  // `--literal-pathspecs` silently removed, proving nothing. "i.txt" is the one sibling name a
+  // broken (non-literal) pathspec interpretation would actually sweep up alongside the real
+  // target, so it is the only name that genuinely discriminates the two behaviours.
   bracketFile: '[id].txt',
-  bracketSibling: '[id]-other.txt',
+  bracketSibling: 'i.txt',
   bracketFileContent: 'literal bracket file content for verify-464\n',
   bracketSiblingContent: 'sibling must remain untouched for verify-464\n'
 };
@@ -465,76 +474,28 @@ export async function runPartialStagedDualGroupingCheck(cdp, worktreePath, shot,
   else findings.push(`partial-staged.txt's own Changes-row diff-stat badge: "${badgeInChanges}".`);
   await shot('15-partial-staged-dual-rows.png');
 
+  // Item 3 (gate round 2): opening the diff from the CHANGES-half row specifically (scoped via
+  // `data-git-group-list="changes"`, since both halves share the identical `data-git-row-path`),
+  // then returning, must land focus on that SAME half's row -- never the Staged-half row
+  // sharing its path (`focus.ts`'s own group-scoped `focusGitRowInGroup`, `GitChangesPanel.tsx`'s
+  // `lastSelectionRef.current.group`).
+  await cdp.click(`document.querySelector('[data-git-group-list="changes"] span[title=${JSON.stringify(FIXTURE.partialStaged)}]')?.closest('button')`);
+  await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: "Diff view opened from partial-staged.txt's own Changes-half row" });
+  await cdp.click(BACK_TO_CHANGES_FINDER);
+  await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: "Back to changes from partial-staged.txt's own Changes-half diff" });
+  const focusedRowIsInChangesGroup = await cdp.evaluate(`!!document.activeElement?.closest('[data-git-group-list="changes"]')`);
+  assertEqual(
+    focusedRowIsInChangesGroup,
+    true,
+    "Item 3: Back from partial-staged.txt's own Changes-half diff lands focus on that SAME half's row (group-scoped), not the Staged-half row sharing its path",
+    findings,
+    failures
+  );
+
   runGit(worktreePath, ['reset', '--', FIXTURE.partialStaged]);
   writeFileSync(path.join(worktreePath, FIXTURE.partialStaged), FIXTURE.partialStagedBaseline);
   const neitherRowPresent = `(() => { const staged = document.querySelector('[aria-label="Staged files"]'); const changes = document.querySelector('[aria-label="Changes files"]'); const inStaged = !!staged && Array.from(staged.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(FIXTURE.partialStaged)}); const inChanges = !!changes && Array.from(changes.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(FIXTURE.partialStaged)}); return !inStaged && !inChanges; })()`;
   await cdp.waitFor(neitherRowPresent, { timeoutMs: 1_500, intervalMs: 100, label: 'partial-staged.txt fixture torn down: gone from both Staged and Changes' });
-}
-
-/** Check (item 5): a literal bracket filename stages ONLY itself -- proves `--literal-pathspecs`
- * (gate round 1 items 9/10) protects it end-to-end, not merely that the Rust code compiles. Two
- * untracked siblings differing only by a bracket vs. a plain `-other` suffix; staging the
- * bracketed one via its OWN kebab "Stage" item must never touch the other. Builds, asserts, and
- * FULLY TEARS DOWN its own fixture before returning. */
-export async function runBracketLiteralPathCheck(cdp, worktreePath, shot, findings, failures) {
-  writeFileSync(path.join(worktreePath, FIXTURE.bracketFile), FIXTURE.bracketFileContent);
-  writeFileSync(path.join(worktreePath, FIXTURE.bracketSibling), FIXTURE.bracketSiblingContent);
-  await cdp.waitFor(
-    `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return false; const titles = Array.from(ul.querySelectorAll('li span[title]')).map((el) => el.getAttribute('title')); return titles.includes(${JSON.stringify(FIXTURE.bracketFile)}) && titles.includes(${JSON.stringify(FIXTURE.bracketSibling)}); })()`,
-    { timeoutMs: 1_500, intervalMs: 100, label: 'Both bracket-named fixture files rendered as Untracked, within 1.5s' }
-  );
-  const untrackedBefore = await readGroupFileTitles(cdp, 'Untracked');
-  assertEqual(Array.isArray(untrackedBefore) && untrackedBefore.includes(FIXTURE.bracketFile) && untrackedBefore.includes(FIXTURE.bracketSibling), true, 'Untracked files include both bracket-named fixtures', findings, failures);
-  await clickRowMenuItem(cdp, FIXTURE.bracketFile, `Stage ${FIXTURE.bracketFile}`);
-  await cdp.waitFor(
-    `(() => { const staged = document.querySelector('[aria-label="Staged files"]'); if (!staged) return false; return Array.from(staged.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(FIXTURE.bracketFile)}); })()`,
-    { timeoutMs: 15_000, label: `${FIXTURE.bracketFile} moved to Staged` }
-  );
-  assertArrayEqual(await readGroupFileTitles(cdp, 'Staged'), [FIXTURE.bracketFile], `Staged holds ONLY ${FIXTURE.bracketFile} -- its sibling was never touched`, findings, failures);
-  const untrackedAfter = await readGroupFileTitles(cdp, 'Untracked');
-  assertEqual(
-    Array.isArray(untrackedAfter) && !untrackedAfter.includes(FIXTURE.bracketFile) && untrackedAfter.includes(FIXTURE.bracketSibling),
-    true,
-    `Untracked no longer includes ${FIXTURE.bracketFile}, but ${FIXTURE.bracketSibling} is still exactly where it was`,
-    findings,
-    failures
-  );
-  const siblingContentUnchanged = readFileSync(path.join(worktreePath, FIXTURE.bracketSibling), 'utf8') === FIXTURE.bracketSiblingContent;
-  assertEqual(siblingContentUnchanged, true, `${FIXTURE.bracketSibling}'s own real file content untouched on disk`, findings, failures);
-  const siblingStatus = gitStatusPorcelain(worktreePath, FIXTURE.bracketSibling);
-  assertEqual(siblingStatus, `?? ${FIXTURE.bracketSibling}`, `${FIXTURE.bracketSibling}'s real git status is still plain untracked (never staged)`, findings, failures);
-  await shot('16-bracket-literal-path-stage.png');
-
-  runGit(worktreePath, ['reset', '--', FIXTURE.bracketFile]);
-  rmSync(path.join(worktreePath, FIXTURE.bracketFile));
-  rmSync(path.join(worktreePath, FIXTURE.bracketSibling));
-  await cdp.waitFor(
-    `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return false; const titles = Array.from(ul.querySelectorAll('li span[title]')).map((el) => el.getAttribute('title')); return !titles.includes(${JSON.stringify(FIXTURE.bracketFile)}) && !titles.includes(${JSON.stringify(FIXTURE.bracketSibling)}); })()`,
-    { timeoutMs: 1_500, intervalMs: 100, label: 'Both bracket-named fixture files torn down, gone from Untracked' }
-  );
-}
-
-/** Check (pre-existing, moved here purely for the 600-line soft cap, #806): containment refusal,
- * via the real IPC bridge directly (no UI path exists -- `window.refract.gitChanges.*` is called
- * directly, the same real-IPC-bridge-bypassing-the-UI precedent `verify-926-attach-any-file.mjs`
- * already established). A Rust-side `validate_pathspec` gate (`src-tauri/src/git/pathspec.rs`)
- * refuses an absolute/outside-worktree path before it ever reaches a `git` subprocess, wire code
- * `outside-worktree`. `outsideMarkerFile` must already exist on disk with `markerContent`. */
-export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFile, markerContent, findings, failures) {
-  const diffAttempt = await cdp.evaluate(
-    `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
-  );
-  if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
-  else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
-  else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
-  const stageAttempt = await cdp.evaluate(
-    `window.refract.gitChanges.stage(${JSON.stringify(sessionId)}, [${JSON.stringify(outsideMarkerFile)}]).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
-  );
-  if (stageAttempt.ok) failures.push(`Containment refusal: gitChanges.stage against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
-  else if (stageAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.stage refused the outside-worktree path, but with code "${stageAttempt.code}" -- message: ${stageAttempt.message}`);
-  else findings.push(`Containment refusal (gitChanges.stage): refused with code "outside-worktree" (${stageAttempt.message}).`);
-  const outsideMarkerUnchanged = readFileSync(outsideMarkerFile, 'utf8') === markerContent;
-  assertEqual(outsideMarkerUnchanged, true, 'Outside-worktree marker file untouched after both refused attempts', findings, failures);
 }
 
 /** Check (pre-existing, moved here purely for the 600-line soft cap, #806; expectations fixed
@@ -548,7 +509,13 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
  * a rewrite of the check's own intent). Leaves the panel staged (Staged, 2: the re-staged
  * Changes group) with a real subject/body typed in, the state the caller's own next checks
  * (conflict-priority, Ctrl+Enter commit) rely on. Returns the same subject/body strings the
- * caller needs later for its own `git log` assertions. */
+ * caller needs later for its own `git log` assertions. Gate round 2 fix (item 15): every state
+ * this function exercises shows "Resolve conflicts first" (the conflict fixture is still
+ * unresolved throughout) -- its own screenshots are named for that REAL displayed reason, not
+ * the misleading "nothing-staged"/"write-message" names a round-1 pass gave them (the conflict
+ * always wins here, so neither of those two reasons is ever genuinely ON SCREEN in this
+ * function; `main()`'s own post-resolution flow never re-derives them live either, so this
+ * rename -- not fabricating a new, unverified check sequencing -- is this round's own fix). */
 export async function runCommitDisabledReasonCheck(cdp, shot, findings, failures) {
   let commitState = await readCommitButtonState(cdp);
   assertEqual(commitState?.disabled, true, 'Commit disabled with 0 staged (no message yet)', findings, failures);
@@ -558,7 +525,7 @@ export async function runCommitDisabledReasonCheck(cdp, shot, findings, failures
   commitState = await readCommitButtonState(cdp);
   assertEqual(commitState?.reasonText, 'Resolve conflicts first', 'Conflict still wins over a typed message when 0 staged (priority order)', findings, failures);
   await clearField(cdp, SUBJECT_FINDER);
-  await shot('06-commit-box-disabled-nothing-staged.png');
+  await shot('06-commit-box-disabled-conflict-wins-no-message.png');
 
   await clickBulkAction(cdp, 'Stage all in Changes');
   await cdp.waitFor(
@@ -568,7 +535,7 @@ export async function runCommitDisabledReasonCheck(cdp, shot, findings, failures
   commitState = await readCommitButtonState(cdp);
   assertEqual(commitState?.disabled, true, 'Commit disabled with staged files but no message (conflict still wins)', findings, failures);
   assertEqual(commitState?.reasonText, 'Resolve conflicts first', 'Commit disabled reason with staged files but no message -- conflict still wins', findings, failures);
-  await shot('07-commit-box-disabled-write-message.png');
+  await shot('07-commit-box-disabled-conflict-wins-staged.png');
 
   const ctrlEnterSubject = 'Commit via Ctrl+Enter (verify-464)';
   const ctrlEnterBody = 'Body composed for the Ctrl+Enter commit path.';

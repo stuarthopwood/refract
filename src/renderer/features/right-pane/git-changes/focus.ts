@@ -18,9 +18,29 @@ function gitChangesRoot(sessionId: string): ParentNode | null {
 
 /** Focuses the row for `path` within this Session's own panel, if it is currently rendered
  * (its group may have changed, but `data-git-row-path` is set on every group's own rows the
- * same way). Returns whether a row was found and focused. */
+ * same way) -- UNSCOPED by group, since a single-file stage/unstage's own destination group
+ * genuinely differs from its source (this is the right lookup for that case: `GitChangesFileRow
+ * .tsx`'s own `handleStage`/`handleUnstage`). Returns whether a row was found and focused. */
 export function focusGitRow(sessionId: string, path: string): boolean {
   const el = gitChangesRoot(sessionId)?.querySelector<HTMLElement>(`[data-git-row-path="${CSS.escape(path)}"]`)
+  if (!el) return false
+  el.focus()
+  return true
+}
+
+/** Gate round 2 item 3: a group-SCOPED row lookup, via each group's own `data-git-group-list`
+ * wrapper (`GitChangesGroup.tsx`'s own `<ul>`). Needed because a partially staged file (gate
+ * round 1 item 5) renders the SAME path as two independent rows, one per group, both carrying
+ * the identical `data-git-row-path` -- the unscoped `focusGitRow` above always finds whichever
+ * one happens to come first in DOM order (Staged, since it renders before Changes in
+ * `GROUP_ORDER`), which is wrong when "Back"/Escape from an open diff needs to return to the
+ * SPECIFIC half (`group`) that diff was actually opened from (`GitChangesPanel.tsx`'s own
+ * `lastSelectionRef.current.group`). Returns whether a row was found, in THAT group, and
+ * focused -- never silently falls through to the other group's own matching row. */
+export function focusGitRowInGroup(sessionId: string, group: GitChangesGroupKind, path: string): boolean {
+  const el = gitChangesRoot(sessionId)?.querySelector<HTMLElement>(
+    `[data-git-group-list="${CSS.escape(group)}"] [data-git-row-path="${CSS.escape(path)}"]`
+  )
   if (!el) return false
   el.focus()
   return true

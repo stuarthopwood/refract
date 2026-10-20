@@ -110,7 +110,11 @@ export function GitChangesFileRow({
         </span>
       </button>
       <DiffStatCounts added={entry.additions} removed={entry.deletions} compact accessibleLabel />
-      {entry.partial && <span className="shrink-0 text-xs text-muted-foreground">(partial)</span>}
+      {/* Gate round 2 item 12: "(partial)" read as "partially staged" now that a genuinely
+          partially staged (MM) file is its own real concept in this panel (gate round 1 item 5)
+          -- this badge means something unrelated: the additions/deletions count itself hit the
+          `MAX_FILES`/per-file byte cap and stopped short, not that the STAGE state is split. */}
+      {entry.partial && <span className="shrink-0 text-xs text-muted-foreground">(counts capped)</span>}
       {vscodeNotFound && (
         <span role="status" className="shrink-0 text-xs text-muted-foreground">
           VS Code not found
