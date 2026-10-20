@@ -29,7 +29,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use serde_json::json;
 use tauri::AppHandle;
 
-use crate::fs::watch::{watch_directory, DirectoryWatchHandle};
+use crate::fs::watch::{watch_directory_without_liveness_requeue, DirectoryWatchHandle};
 
 static WATCHERS: LazyLock<StdMutex<HashMap<String, DirectoryWatchHandle>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
@@ -72,6 +72,15 @@ pub fn ensure_watcher(
     session_id: &str,
     worktree_path: &Path,
 ) {
+    // Gate round 1 item 1 (#464): reuses `explorer_watch_state`'s own busy-session claim --
+    // `ipc::sessions_lifecycle`'s `.archive`/`.delete`/`.recreateWorktree` hold it (via
+    // `begin_worktree_operation`) for the whole duration of a worktree mutation, after already
+    // stopping any watcher this module itself was running. Refusing here closes the race a
+    // still-mounted panel's own `ensureWatching` call would otherwise win: without this check it
+    // could restart a watcher mid-operation, immediately after the lifecycle handler stopped it.
+    if crate::fs::explorer_watch_state::is_session_busy(session_id) {
+        return;
+    }
     {
         let watchers = WATCHERS
             .lock()
@@ -83,7 +92,7 @@ pub fn ensure_watcher(
     let changed_app_handle = app_handle.clone();
     let changed_session_id = session_id.to_string();
     let fatal_session_id = session_id.to_string();
-    let handle = watch_directory(
+    let handle = watch_directory_without_liveness_requeue(
         worktree_path,
         move |_relative_directory| {
             notify_refresh(&changed_app_handle, &changed_session_id);

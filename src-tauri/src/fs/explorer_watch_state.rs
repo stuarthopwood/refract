@@ -155,7 +155,11 @@ fn unmark_session_busy(session_id: &str) {
     }
 }
 
-fn is_session_busy(session_id: &str) -> bool {
+/// Gate round 1 item 1 (#464 git-changes watcher lifecycle): widened to `pub(crate)` so
+/// `fs::git_changes_watch_state::ensure_watcher` can refuse to (re)start its own per-Session
+/// watcher while a lifecycle operation (archive/delete/recreateWorktree) holds this same busy
+/// claim, rather than inventing a second busy-session mechanism.
+pub(crate) fn is_session_busy(session_id: &str) -> bool {
     BUSY_SESSIONS
         .lock()
         .expect("busy mutex poisoned")

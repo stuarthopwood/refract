@@ -31,21 +31,30 @@ fn count_lines(text: &str) -> i64 {
     trimmed.split('\n').count() as i64
 }
 
-/// Parses `git diff [--cached] --no-renames --numstat` output into a path -> (additions,
-/// deletions) map. `--no-renames` means a rename/copy always reports as a plain delete (old
-/// path) plus add (new path) rather than an `old => new` arrow notation -- a path this map has
-/// no entry for (e.g. the discarded old half of a rename) simply scores 0/0/not-partial, same as
-/// any other path git's numstat happens not to mention.
+/// Parses `git diff [--cached] --no-renames --numstat -z` output into a path -> (additions,
+/// deletions) map (gate round 1 item 10, issue #464): records are NUL-terminated, not
+/// newline-terminated, in the shape `<added>\t<deleted>\t<path>\0` -- `-z` disables git's own
+/// C-style quoting of a path with unusual bytes (a literal `[id].txt`, or a non-ASCII name), so
+/// the raw bytes between NULs ARE the real path verbatim; the path field is therefore never
+/// `.trim()`ed here (the whole point of `-z` would otherwise be defeated). A genuine `-z`
+/// RENAME numstat record has a SECOND NUL-terminated field (`<old-path>\0`) right after the
+/// first -- but every caller of this function already passes `--no-renames`, so that second-field
+/// shape can never occur; this parser trusts that convention rather than defensively sniffing
+/// for it, same as `--no-renames`'s own existing doc comment below. `--no-renames` means a
+/// rename/copy always reports as a plain delete (old path) plus add (new path) rather than an
+/// `old => new` arrow notation -- a path this map has no entry for (e.g. the discarded old half
+/// of a rename) simply scores 0/0/not-partial, same as any other path git's numstat happens not
+/// to mention.
 pub(super) fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
     let mut map = HashMap::new();
-    for line in stdout.split('\n') {
-        if line.trim().is_empty() {
+    for record in stdout.split('\0') {
+        if record.is_empty() {
             continue;
         }
-        let mut columns = line.splitn(3, '\t');
+        let mut columns = record.splitn(3, '\t');
         let add_raw = columns.next().unwrap_or("");
         let del_raw = columns.next().unwrap_or("");
-        let path = columns.next().unwrap_or("").trim();
+        let path = columns.next().unwrap_or("");
         if path.is_empty() {
             continue;
         }

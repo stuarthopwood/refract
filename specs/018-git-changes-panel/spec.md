@@ -239,10 +239,22 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   `Modified | Added | Untracked | Deleted | Ignored | Renamed | Conflicted | Staged` values) and
   the header lines carrying current branch, upstream branch (if any), and ahead/behind counts, in
   one call.
-- **FR-002**: The system MUST group every non-ignored status entry into exactly one of four
+- **FR-002**: The system MUST group every non-ignored status entry into one or more of four
   groups -- Conflicts, Staged, Changes (modified/deleted/renamed, unstaged), Untracked -- with a
   conflicted entry always sorted into Conflicts regardless of any other mark it might otherwise
-  also carry.
+  also carry. **Amended (gate round 1 item 5, issue #464; decision recorded by Skippy on behalf
+  of Stuart, 2026-10-20)**: a PARTIALLY STAGED file -- an ordinary or rename porcelain v2 record
+  where both the X (index) column and the Y (worktree) column are non-`.` (for example `MM`,
+  `AM`, `RM`) -- MUST appear as TWO SEPARATE rows for the same path, like VS Code: one in Staged
+  (mark driven by the X column: `D`->Deleted, `A`->Added, else `Staged`) and one in Changes (mark
+  driven by the Y column: `D`->Deleted, else `Modified` -- Y is only ever `M`/`D`/`T` for an
+  ordinary entry per git's own porcelain v2 format, never `A`/`R`). A record whose Y column is
+  `.` (nothing further pending in the worktree) still produces exactly one Staged row, X-column
+  mark (a rename with Y == `.` keeps its `Renamed` mark here, unlike the dual-membership case
+  above, where the Staged half always reads its generic X-driven mark instead). A record whose X
+  column is `.` (nothing staged at all) still produces exactly one Changes/Untracked row. Every
+  bulk/count figure elsewhere in this spec (FR-003's group counts, FR-004's bulk actions, any
+  `MAX_FILES`-style cap) counts each PRODUCED ROW, not each underlying status line.
 - **FR-003**: Each group header MUST show the group's name, its current file count, and a
   reserved actions-column slot for a bulk action, reusing `GroupHeaderTrigger`'s exact shape
   (leading chevron, trailing `(N)`).

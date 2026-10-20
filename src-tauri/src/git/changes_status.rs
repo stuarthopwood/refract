@@ -12,15 +12,22 @@
 // NUL-delimited, `get`-based-slicing pattern (never indexed directly) rather than its literal
 // function body.
 //
-// Grouping (FR-002) is computed directly from each entry's own XY pair, not from the collapsed
-// `GitStatusMark` alone: an entry with a non-`.` Y column (a further, unstaged worktree edit on
-// top of whatever the X column already represents) always groups as Changes; otherwise, a
-// non-`.` X column groups as Staged. This stays correct for every record type, including a
-// staged add/rename with an additional unstaged edit on top (`AM`-equivalent in v1 terms) --
-// deriving the group from the already-collapsed mark instead (which lets a Delete/Add/Rename
-// precedence check win over the Y-column check, matching `status.rs`'s own single-badge
-// precedence) would wrongly file such a file as Staged even though it still has pending unstaged
-// work. An unmerged (`u`) entry is always Conflicts regardless of its own XY (FR-002).
+// Grouping (FR-002, amended by gate round 1 item 5 / issue #464, Skippy's decision on behalf of
+// Stuart): computed directly from each entry's own XY pair, not from the collapsed
+// `GitStatusMark` alone. A record whose Y column is `.` groups as Staged only; a record whose X
+// column is `.` groups as Changes/Untracked only -- both exactly as before. A record with BOTH
+// columns non-`.` (partially staged -- `MM`/`AM`/`RM` and friends) now produces TWO separate
+// rows for the SAME path, like VS Code: one in Staged (scored against the `--cached` numstat
+// map, mark driven by the X column alone: `D`->Deleted, `A`->Added, else `Staged`) and one in
+// Changes (scored against the plain numstat map, mark driven by the Y column alone: `D`->
+// Deleted, else `Modified` -- Y is only ever `M`/`D`/`T` for an ordinary entry per git's own
+// porcelain v2 format, never `A`/`R`). This applies uniformly to ordinary (`1`) AND rename/copy
+// (`2`) records alike -- a partially-staged rename's own Staged-half mark is therefore `Staged`
+// (X is `R`, never `D`/`A`), not `Renamed`; the `Renamed` mark survives only for a rename with
+// nothing further pending in the worktree (Y == `.`, still a single Staged-only row, unchanged).
+// An unmerged (`u`) entry is always exactly one Conflicts row regardless of its own XY (FR-002,
+// unchanged). See `ParsedGroups`/`group_marks_for_xy` for the implementation and
+// `specs/018-git-changes-panel/spec.md`'s own FR-002 for the amended requirement text.
 //
 // Per-file additions/deletions (FR-019) follow `diff_stat.rs`'s own `MAX_FILES`/partial
 // convention (the exact constant values are re-declared here rather than imported: both are
@@ -32,7 +39,18 @@
 // approach, re-declared locally for the same reason). `--no-renames` is passed to both numstat
 // calls so a rename always reports as a plain delete (old path) plus add (new path) rather than
 // the `old => new` arrow notation -- this panel only ever needs the counts for the path status
-// parsing already resolved, not a second rename-aware path-matching pass.
+// parsing already resolved, not a second rename-aware path-matching pass. `MAX_FILES` counts
+// each produced ROW, not each parsed status line (gate round 1 item 5): a partially-staged file
+// producing two rows counts as 2 toward the cap.
+//
+// Hardened invocation flags (gate round 1 items 9/10, issue #464): every `git` call this module
+// makes gets `--literal-pathspecs` (every pathspec argument matched literally, never
+// glob-interpreted) and `-c core.fsmonitor=false` as global options before the subcommand,
+// mirroring `status.rs`'s own `STATUS_GIT_ARGS` convention. Every numstat call additionally gets
+// `--no-color`, `--no-optional-locks` (never block on a concurrent agent-held lock; read a
+// possibly-slightly-stale index instead of hanging, same reasoning as `status.rs`'s own
+// read), and `-z` (NUL-delimited records, so a quoted/non-ASCII path is never silently
+// corrupted by `.trim()`ing a C-quoted string -- see `changes_score::parse_numstat_map`'s own
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -40,8 +58,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::fs::paths::contains_git_segment;
-
+use super::changes_parse::{folder_for, parse_porcelain_v2, GitChangesGroup, ParsedEntry};
 use super::changes_score::{parse_numstat_map, score_untracked_file};
 use super::git::{git, git_raw, git_raw_with_stdin, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
@@ -53,6 +70,7 @@ use super::status::GitStatusMark;
 // untracked directory must still explode into one row per individual file inside it, or none of
 // those files could ever be staged/diffed individually (FR-005, FR-006).
 const CHANGES_STATUS_GIT_ARGS: &[&str] = &[
+    "--literal-pathspecs",
     "-c",
     "core.fsmonitor=false",
     "-c",
@@ -68,7 +86,6 @@ const CHANGES_STATUS_GIT_ARGS: &[&str] = &[
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
-const COMMIT_TIMEOUT: Duration = Duration::from_secs(10);
 /// The overall budget for one `read_changes_status` call (status read + two numstat reads +
 /// every untracked file's own content read) -- mirrors `diff_stat.rs`'s own `TIMEOUT` wrapping
 /// the whole of `compute_diff_stat`: the in-flight work is dropped, never left running, past
@@ -80,18 +97,6 @@ const OVERALL_TIMEOUT: Duration = Duration::from_secs(10);
 const STATUS_MAX_BUFFER_BYTES: usize = 32 * 1024 * 1024;
 /// Mirrors `diff_stat.rs`'s own `MAX_FILES` (FR-019): re-declared for the same reason.
 const MAX_FILES: usize = 200;
-
-/// One of the four fixed buckets every non-ignored status entry sorts into exactly once
-/// (FR-002, data-model.md "Git changes group"). Internal to this module's own parsing/grouping
-/// step -- never serialised on its own; group membership reaches the wire purely as which list
-/// (`GitChangesGroups`'s own fields) a `GitChangesFileEntry` appears in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GitChangesGroup {
-    Conflicts,
-    Staged,
-    Changes,
-    Untracked,
-}
 
 /// data-model.md "Git changes file row": one path's display state for this panel. `folder` is
 /// the path's own POSIX-relative containing directory (`''` for a top-level entry), matching
@@ -153,198 +158,16 @@ pub struct GitChangesSnapshot {
     pub groups: GitChangesGroups,
 }
 
-/// One already-classified status entry, before its own additions/deletions are scored --
-/// `build_groups` fills those in with a second pass (the two numstat reads it needs run once
-/// each for every entry, not once per entry).
-struct ParsedEntry {
-    path: String,
-    mark: GitStatusMark,
-    group: GitChangesGroup,
-}
-
-/// Mark/group for an ordinary ("1") entry: never conflict or rename (those are their own record
-/// types, `u`/`2`), so the only remaining precedence is delete, then add, then the generic
-/// modified-or-staged split on the Y column -- the same shape `status.rs::mark_from_code` uses
-/// for its own non-conflict/non-rename branch, adapted to v2's `.`-for-unchanged convention.
-fn mark_for_ordinary(xy: &[u8]) -> GitStatusMark {
-    let (x, y) = (xy[0], xy[1]);
-    if x == b'D' || y == b'D' {
-        GitStatusMark::Deleted
-    } else if x == b'A' {
-        GitStatusMark::Added
-    } else if y != b'.' {
-        GitStatusMark::Modified
-    } else {
-        GitStatusMark::Staged
-    }
-}
-
-/// FR-002's own grouping rule, independent of the (lossy, precedence-collapsed) `GitStatusMark`
-/// value: a non-`.` Y column means there is still a pending UNSTAGED edit on top of whatever the
-/// X column represents, which always groups as Changes regardless of record type; otherwise a
-/// non-`.` X column groups as Staged. Applies uniformly to ordinary and rename/copy entries
-/// alike (a rename is always carried by the index, per git's own porcelain v2 format -- a
-/// worktree-only move is reported as a plain delete+untracked-add pair, never a `2` record).
-fn group_for_xy(xy: &[u8]) -> GitChangesGroup {
-    let (x, y) = (xy[0], xy[1]);
-    if y != b'.' {
-        GitChangesGroup::Changes
-    } else if x != b'.' {
-        GitChangesGroup::Staged
-    } else {
-        // Should not occur for a listed entry (both columns unchanged); Changes is the safer
-        // default -- it still shows the row rather than silently dropping it.
-        GitChangesGroup::Changes
-    }
-}
-
-fn parse_ahead_behind(value: &str) -> Option<AheadBehind> {
-    let mut parts = value.split_whitespace();
-    let ahead_raw = parts.next()?;
-    let behind_raw = parts.next()?;
-    let ahead = ahead_raw.strip_prefix('+')?.parse::<i64>().ok()?;
-    let behind = behind_raw.strip_prefix('-')?.parse::<i64>().ok()?;
-    Some(AheadBehind { ahead, behind })
-}
-
-/// `1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>`: 7 space-separated fields before `path`, which
-/// is the remainder (never re-split -- a path itself may contain spaces).
-fn parse_ordinary_entry(entry: &str) -> Option<ParsedEntry> {
-    let rest = entry.strip_prefix("1 ")?;
-    let mut parts = rest.splitn(8, ' ');
-    let xy = parts.next()?;
-    for _ in 0..6 {
-        parts.next()?; // sub, mH, mI, mW, hH, hI
-    }
-    let path = parts.next()?;
-    if xy.len() != 2 || contains_git_segment(path) {
-        return None;
-    }
-    let xy_bytes = xy.as_bytes();
-    Some(ParsedEntry {
-        path: path.to_string(),
-        mark: mark_for_ordinary(xy_bytes),
-        group: group_for_xy(xy_bytes),
-    })
-}
-
-/// `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>`, with `<origPath>` as its own
-/// SEPARATE NUL-terminated token right after (consumed by the caller's own `tokens.next()`,
-/// mirroring `status.rs::parse_status`'s identical handling of a v1 rename's extra field) --
-/// always `Renamed`, since record type `2` itself is git's own signal for a rename or copy.
-fn parse_rename_entry(entry: &str) -> Option<ParsedEntry> {
-    let rest = entry.strip_prefix("2 ")?;
-    let mut parts = rest.splitn(9, ' ');
-    let xy = parts.next()?;
-    for _ in 0..7 {
-        parts.next()?; // sub, mH, mI, mW, hH, hI, Xscore
-    }
-    let path = parts.next()?;
-    if xy.len() != 2 || contains_git_segment(path) {
-        return None;
-    }
-    Some(ParsedEntry {
-        path: path.to_string(),
-        mark: GitStatusMark::Renamed,
-        group: group_for_xy(xy.as_bytes()),
-    })
-}
-
-/// `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`: always Conflicts/Conflicted
-/// regardless of its own XY (FR-002: "a conflicted entry always sorted into Conflicts
-/// regardless of any other mark it might otherwise also carry").
-fn parse_unmerged_entry(entry: &str) -> Option<ParsedEntry> {
-    let rest = entry.strip_prefix("u ")?;
-    let mut parts = rest.splitn(10, ' ');
-    let xy = parts.next()?;
-    for _ in 0..8 {
-        parts.next()?; // sub, m1, m2, m3, mW, h1, h2, h3
-    }
-    let path = parts.next()?;
-    if xy.len() != 2 || contains_git_segment(path) {
-        return None;
-    }
-    Some(ParsedEntry {
-        path: path.to_string(),
-        mark: GitStatusMark::Conflicted,
-        group: GitChangesGroup::Conflicts,
-    })
-}
-
-/// Parses `-z`-delimited `status --porcelain=v2 --branch` output: header lines into the branch
-/// name and ahead/behind pair, and `1`/`2`/`u`/`?` entry lines into `ParsedEntry`s. `!` (ignored)
-/// lines are skipped outright (FR-002 "every non-ignored status entry") -- none are expected
-/// since `--ignored` is never passed, but a line in that shape is still defensively dropped
-/// rather than misparsed. Every slice is `get`/`strip_prefix`-based (never indexed directly,
-/// matching `status.rs::parse_status`'s own discipline): a malformed or truncated entry is
-/// skipped, never a panic.
-fn parse_porcelain_v2(stdout: &str) -> (Option<String>, Option<AheadBehind>, Vec<ParsedEntry>) {
-    let mut branch: Option<String> = None;
-    let mut ahead_behind: Option<AheadBehind> = None;
-    let mut entries = Vec::new();
-
-    let mut tokens = stdout.split('\0');
-    while let Some(entry) = tokens.next() {
-        if entry.is_empty() {
-            continue;
-        }
-        if let Some(header) = entry.strip_prefix("# ") {
-            if let Some(value) = header.strip_prefix("branch.head ") {
-                if value != "(detached)" {
-                    branch = Some(value.to_string());
-                }
-            } else if let Some(value) = header.strip_prefix("branch.ab ") {
-                ahead_behind = parse_ahead_behind(value);
-            }
-            continue;
-        }
-        match entry.get(0..1) {
-            Some("1") => {
-                if let Some(parsed) = parse_ordinary_entry(entry) {
-                    entries.push(parsed);
-                }
-            }
-            Some("2") => {
-                if let Some(parsed) = parse_rename_entry(entry) {
-                    entries.push(parsed);
-                }
-                tokens.next(); // origPath: never a row of its own, discarded
-            }
-            Some("u") => {
-                if let Some(parsed) = parse_unmerged_entry(entry) {
-                    entries.push(parsed);
-                }
-            }
-            Some("?") => {
-                if let Some(path) = entry.get(2..) {
-                    if !contains_git_segment(path) {
-                        entries.push(ParsedEntry {
-                            path: path.to_string(),
-                            mark: GitStatusMark::Untracked,
-                            group: GitChangesGroup::Untracked,
-                        });
-                    }
-                }
-            }
-            _ => {} // "!" (ignored, not requested) or malformed -- skipped
-        }
-    }
-    (branch, ahead_behind, entries)
-}
-
-fn folder_for(path: &str) -> String {
-    match path.rfind('/') {
-        Some(idx) => path[..idx].to_string(),
-        None => String::new(),
-    }
-}
-
 /// FR-019: scores every parsed entry's additions/deletions and sorts each of the four groups by
 /// path. Two `git diff --numstat` calls (unstaged, cached) run once each, concurrently, covering
 /// every tracked entry regardless of group; an untracked entry is scored from its own content
-/// instead (see `score_untracked_file`). The `MAX_FILES` cap applies across every group combined
-/// (matching `diff_stat.rs`'s own single running counter) -- once reached, every further entry
-/// still gets its own row, just with `partial: true` and no attempt to compute its score.
+/// instead (see `score_untracked_file`). The `MAX_FILES` cap applies across every ROW produced
+/// (gate round 1 item 5: a partially-staged entry producing two rows counts as 2) -- once
+/// reached, every further row still gets its own entry, just with `partial: true` and no attempt
+/// to compute its score. Both numstat calls are hardened (gate round 1 items 9/10, issue #464):
+/// `--literal-pathspecs`/`-c core.fsmonitor=false` as global options, `--no-color`/
+/// `--no-optional-locks` alongside the already-present `--no-ext-diff --no-textconv`, and `-z`
+/// so `parse_numstat_map` never has to `.trim()` a C-quoted path.
 async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitChangesGroups {
     let mut groups = GitChangesGroups::default();
     if entries.is_empty() {
@@ -355,23 +178,35 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
         git_raw(
             worktree_path,
             &[
+                "--literal-pathspecs",
+                "-c",
+                "core.fsmonitor=false",
+                "--no-optional-locks",
                 "diff",
                 "--no-ext-diff",
                 "--no-textconv",
+                "--no-color",
                 "--no-renames",
-                "--numstat"
+                "--numstat",
+                "-z"
             ],
             Some(DIFF_TIMEOUT)
         ),
         git_raw(
             worktree_path,
             &[
+                "--literal-pathspecs",
+                "-c",
+                "core.fsmonitor=false",
+                "--no-optional-locks",
                 "diff",
                 "--cached",
                 "--no-ext-diff",
                 "--no-textconv",
+                "--no-color",
                 "--no-renames",
-                "--numstat"
+                "--numstat",
+                "-z"
             ],
             Some(DIFF_TIMEOUT)
         ),
@@ -390,37 +225,39 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
     let mut files_counted: usize = 0;
     for parsed in entries {
         let folder = folder_for(&parsed.path);
-        let (additions, deletions, partial) = if files_counted >= MAX_FILES {
-            (0, 0, true)
-        } else {
-            files_counted += 1;
-            match parsed.group {
-                GitChangesGroup::Untracked => {
-                    score_untracked_file(worktree_path, &parsed.path).await
+        for (group, mark) in parsed.groups.iter() {
+            let (additions, deletions, partial) = if files_counted >= MAX_FILES {
+                (0, 0, true)
+            } else {
+                files_counted += 1;
+                match group {
+                    GitChangesGroup::Untracked => {
+                        score_untracked_file(worktree_path, &parsed.path).await
+                    }
+                    GitChangesGroup::Staged => staged_map
+                        .get(&parsed.path)
+                        .map(|&(a, d)| (a, d, false))
+                        .unwrap_or((0, 0, false)),
+                    GitChangesGroup::Conflicts | GitChangesGroup::Changes => unstaged_map
+                        .get(&parsed.path)
+                        .map(|&(a, d)| (a, d, false))
+                        .unwrap_or((0, 0, false)),
                 }
-                GitChangesGroup::Staged => staged_map
-                    .get(&parsed.path)
-                    .map(|&(a, d)| (a, d, false))
-                    .unwrap_or((0, 0, false)),
-                GitChangesGroup::Conflicts | GitChangesGroup::Changes => unstaged_map
-                    .get(&parsed.path)
-                    .map(|&(a, d)| (a, d, false))
-                    .unwrap_or((0, 0, false)),
+            };
+            let entry = GitChangesFileEntry {
+                path: parsed.path.clone(),
+                folder: folder.clone(),
+                mark,
+                additions,
+                deletions,
+                partial,
+            };
+            match group {
+                GitChangesGroup::Conflicts => groups.conflicts.push(entry),
+                GitChangesGroup::Staged => groups.staged.push(entry),
+                GitChangesGroup::Changes => groups.changes.push(entry),
+                GitChangesGroup::Untracked => groups.untracked.push(entry),
             }
-        };
-        let entry = GitChangesFileEntry {
-            path: parsed.path,
-            folder,
-            mark: parsed.mark,
-            additions,
-            deletions,
-            partial,
-        };
-        match parsed.group {
-            GitChangesGroup::Conflicts => groups.conflicts.push(entry),
-            GitChangesGroup::Staged => groups.staged.push(entry),
-            GitChangesGroup::Changes => groups.changes.push(entry),
-            GitChangesGroup::Untracked => groups.untracked.push(entry),
         }
     }
     for list in [
@@ -485,7 +322,7 @@ pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), G
     for path in paths {
         validate_pathspec(worktree_path, path)?;
     }
-    let mut args: Vec<&str> = vec!["add", "--"];
+    let mut args: Vec<&str> = vec!["--literal-pathspecs", "-c", "core.fsmonitor=false", "add", "--"];
     args.extend(paths.iter().map(String::as_str));
     git(worktree_path, &args).await?;
     Ok(())
@@ -501,7 +338,14 @@ pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(),
     for path in paths {
         validate_pathspec(worktree_path, path)?;
     }
-    let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
+    let mut args: Vec<&str> = vec![
+        "--literal-pathspecs",
+        "-c",
+        "core.fsmonitor=false",
+        "restore",
+        "--staged",
+        "--",
+    ];
     args.extend(paths.iter().map(String::as_str));
     git(worktree_path, &args).await?;
     Ok(())
@@ -513,14 +357,19 @@ pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(),
 /// user.name`/`user.email` (FR-025); an unconfigured identity surfaces here as git's own plain
 /// `GitFailed` error, exactly like any other git failure (FR-013), never a Refract-side override.
 pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError> {
-    let args = ["commit", "-F", "-"];
-    let result = git_raw_with_stdin(
-        worktree_path,
-        &args,
-        message.as_bytes(),
-        Some(COMMIT_TIMEOUT),
-    )
-    .await;
+    let args = [
+        "--literal-pathspecs",
+        "-c",
+        "core.fsmonitor=false",
+        "commit",
+        "-F",
+        "-",
+    ];
+    // Gate round 1 item 4 (#464): no timeout -- a commit hook (pre-commit, commit-msg) can
+    // legitimately run long, and killing it mid-hook is unsafe (an interrupted hook can leave
+    // repo state inconsistent). The renderer's own `committing` boolean is the only
+    // double-submit guard going forward, not a server-side timeout.
+    let result = git_raw_with_stdin(worktree_path, &args, message.as_bytes(), None).await;
     if result.code != 0 {
         let detail = if !result.stderr.trim().is_empty() {
             result.stderr.trim()

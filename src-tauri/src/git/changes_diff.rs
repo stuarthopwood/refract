@@ -28,7 +28,19 @@ const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
 /// empty string -- the renderer's own "No changes" fallback covers that display case.
 pub async fn diff_text(worktree_path: &Path, path: &str, staged: bool) -> Result<String, GitError> {
     validate_pathspec(worktree_path, path)?;
-    let mut args: Vec<&str> = vec!["diff"];
+    // Gate round 1 items 9/10 (#464): `--literal-pathspecs`/`-c core.fsmonitor=false` as global
+    // options before the subcommand, plus `--no-color`/`--no-optional-locks` on the `diff`
+    // itself -- same hardening `changes_status.rs::build_groups`'s own numstat calls get, and
+    // same `--no-optional-locks` reasoning as `status.rs`'s own status read (never block on a
+    // concurrent agent-held lock).
+    let mut args: Vec<&str> = vec![
+        "--literal-pathspecs",
+        "-c",
+        "core.fsmonitor=false",
+        "--no-optional-locks",
+        "diff",
+        "--no-color",
+    ];
     if staged {
         args.push("--cached");
     }

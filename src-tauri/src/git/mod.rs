@@ -10,6 +10,7 @@
 // `clippy::module_inception` would otherwise flag `git::git` as a module sharing its parent's
 // name.
 pub mod changes_diff;
+pub mod changes_parse;
 pub mod changes_score;
 pub mod changes_status;
 pub mod diff_stat;

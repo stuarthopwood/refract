@@ -12,6 +12,13 @@
 // panel's own much-smaller analogue of `fs::explorer_watch_state`, see that module's own header
 // comment for why a full tree-diff watcher is not needed here); this file is the thin IPC-shaped
 // wiring over it.
+//
+// Gate round 1 item 13 (issue #464): every mutating handler (`stage`/`unstage`/`stageAll`/
+// `unstageAll`/`commit` -- NOT `list`/`diff`, which are read-only) also calls
+// `session::readout::schedule_readout_update` right after its own git operation succeeds, so the
+// readout's own `changes` chip (a DIFFERENT figure, `diff_stat` against Base) never goes stale
+// through a stage/unstage/commit this panel's own watcher ping would otherwise be the only thing
+// to catch.
 
 use std::path::PathBuf;
 
@@ -22,6 +29,7 @@ use crate::git::changes_diff::diff_text;
 use crate::git::changes_status::{
     commit as git_commit, read_changes_status, stage_files, unstage_files,
 };
+use crate::session::readout::schedule_readout_update;
 
 use super::{
     arg_str, invalid_argument, map_git_error, not_found, AppState, Dispatcher, HandlerFuture,
@@ -151,6 +159,7 @@ pub fn git_changes_stage(state: AppState, args: Vec<Value>) -> HandlerFuture {
         stage_files(&worktree_path, &paths)
             .await
             .map_err(map_git_error)?;
+        schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
 }
@@ -173,6 +182,7 @@ pub fn git_changes_unstage(state: AppState, args: Vec<Value>) -> HandlerFuture {
         unstage_files(&worktree_path, &paths)
             .await
             .map_err(map_git_error)?;
+        schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
 }
@@ -222,6 +232,7 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
             stage_files(&worktree_path, &paths)
                 .await
                 .map_err(map_git_error)?;
+            schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         }
         Ok(Value::Null)
     })
@@ -247,6 +258,7 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
             unstage_files(&worktree_path, &paths)
                 .await
                 .map_err(map_git_error)?;
+            schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         }
         Ok(Value::Null)
     })
@@ -277,6 +289,7 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
         git_commit(&worktree_path, &message)
             .await
             .map_err(map_git_error)?;
+        schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
 }
