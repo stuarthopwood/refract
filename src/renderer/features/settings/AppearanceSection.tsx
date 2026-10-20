@@ -8,9 +8,11 @@
 // firing it unconditionally on unmount never fights a Save that just completed.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
-import { useChatWidthStore, useSettingsStore, useThemeStore } from '@/state'
+import { HOLIDAY_CONTENT } from '@/features/holidays/holidayContent'
+import { useChatWidthStore, useHolidayStore, useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 import { ChatWidthPicker } from './ChatWidthPicker'
 
@@ -22,6 +24,10 @@ export function AppearanceSection() {
   const isDirty = themeDirty || chatWidthDirty
   const watermarkEnabled = useSettingsStore((state) => state.settings.watermarkEnabled)
   const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
+  const holidayTouches = useSettingsStore((state) => state.settings.holidayTouches)
+  const setHolidayTouches = useSettingsStore((state) => state.setHolidayTouches)
+  const activeHolidayId = useHolidayStore((state) => state.activeHoliday)
+  const holidayEntry = holidayTouches !== 'off' && activeHolidayId ? HOLIDAY_CONTENT[activeHolidayId] : null
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
   // Issue #554 gate round 2 (H1): tracks which group's dirty flag most recently went
@@ -196,7 +202,9 @@ export function AppearanceSection() {
             announces the title as the name and the description separately, once, as a hint. */}
         <div className="flex flex-col gap-0.5">
           <label htmlFor="watermark-toggle" className="text-sm font-medium">Background watermark</label>
-          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">A faint Refract mark shown in the corner of the chat area.</span>
+          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">
+            {holidayEntry ? 'A faint mark shown in the corner of the chat area — a seasonal glyph while a holiday is active.' : 'A faint Refract mark shown in the corner of the chat area.'}
+          </span>
         </div>
         <Switch
           id="watermark-toggle"
@@ -207,6 +215,24 @@ export function AppearanceSection() {
       </div>
       <div className="mt-3 flex size-28 items-center justify-center rounded-md border border-border">
         <BrandWatermark variant="preview" />
+      </div>
+      {/* Issue #1048 (Holiday touches): applies live, next to the watermark switch, the same
+          "no Save/Cancel" posture spec 012's own control above uses. */}
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <label htmlFor="holiday-touches-select" className="text-sm font-medium">Holiday touches</label>
+          <span id="holiday-touches-description" className="text-xs text-muted-foreground">Seasonal artwork and ambient motion near a holiday.</span>
+        </div>
+        <Select value={holidayTouches} onValueChange={(value) => void setHolidayTouches(value as typeof holidayTouches)}>
+          <SelectTrigger id="holiday-touches-select" aria-describedby="holiday-touches-description" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="full">Full</SelectItem>
+            <SelectItem value="artwork">Artwork only</SelectItem>
+            <SelectItem value="off">Off</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   )
