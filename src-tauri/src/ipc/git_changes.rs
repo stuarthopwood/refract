@@ -314,11 +314,14 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `gitChanges.diff(sessionId, path, staged)` (FR-008): one file's diff body, by whether it is
-/// currently staged -- `git diff --cached` vs the plain worktree `git diff`. `path` is checked
-/// only for length here (the same bound `stage`/`unstage` apply to each path in their own list);
-/// the real containment rule is git's own `--` argv-literal diff against this Session's worktree,
-/// never a filesystem read outside it.
+/// `gitChanges.diff(sessionId, path, staged, untracked)` (FR-008): one file's diff body, by
+/// whether it is currently staged -- `git diff --cached` vs the plain worktree `git diff`.
+/// `untracked` (#1101, item 4): true for a file with no index/HEAD side to diff against at all
+/// (the renderer already knows this from the row's own group) -- the Rust side synthesises the
+/// whole file as added lines instead of an empty patch. `path` is checked only for length here
+/// (the same bound `stage`/`unstage` apply to each path in their own list); the real containment
+/// rule is git's own `--` argv-literal diff against this Session's worktree, never a filesystem
+/// read outside it.
 pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(
@@ -336,8 +339,9 @@ pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.diff rejected an oversized path",
         )?;
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
+        let untracked = args.get(3).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        let patch = diff_text(&worktree_path, &path, staged)
+        let patch = diff_text(&worktree_path, &path, staged, untracked)
             .await
             .map_err(map_git_error)?;
         Ok(json!({ "patch": patch }))
