@@ -101,11 +101,32 @@ async function clearWidth(cdp) {
  * hover card before a screenshot that must be clean -- used for every theme shot, not only the
  * narrow-width ones. `.finish()` throws `InvalidStateError` on an animation with an infinite
  * target effect end (self-caught live-check failure, a looping spinner); caught per-animation
- * since it has no "final" state to settle to anyway. */
+ * since it has no "final" state to settle to anyway.
+ * Gate round 6 fixes (#700, Main MEDIUM 4): a hardcoded `(700, 50)` neutral point could sit
+ * OUTSIDE a narrow (360px) viewport, landing on nothing (or something with its own tooltip);
+ * clamped to the CURRENT viewport instead. A keyboard-focused Popover/Tooltip survives a pointer
+ * move alone -- blur the active element and press Escape too. The stray-overlay wait no longer
+ * swallows its own timeout (a `.catch(() => {})` let a screenshot with a visible hover card
+ * silently pass) -- it now throws, which `main()`'s own outer catch records as a fatal
+ * `ok:false` run-crashed step. `activeElement` is logged every call for the next failure's own
+ * diagnosis. */
 async function settleForScreenshot(cdp) {
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 50 });
-  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' }).catch(() => {});
+  const { width } = await cdp.evaluate(`({ width: window.innerWidth })`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width - 20, y: 450 });
+  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' });
   await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
+  const activeElement = await cdp.evaluate(`(() => { const el = document.activeElement; return el ? { tag: el.tagName, ariaLabel: el.getAttribute('aria-label') } : null; })()`);
+  console.log(`${LOG}: settleForScreenshot activeElement`, JSON.stringify(activeElement));
+}
+
+/** Gate round 6 fix (#700, Main MEDIUM 8): an E1/E4 "did not move" read taken the instant after
+ * a click/dispatch can beat a correction that lands one or two frames later, same pattern as
+ * `verify-941-stage-naming-helpers.mjs:152`'s own single-frame wait (doubled here). */
+async function waitTwoFrames(cdp) {
+  await cdp.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
 }
 
 /** Gate round 2 fix (self-caught live-check bug, confirmed by diagnostics then reverted): a
@@ -186,7 +207,6 @@ async function main() {
     assertTrue(!!(await cdp.evaluate(PANEL_SELECTOR.replace('document.querySelector', '!!document.querySelector'))) === false, 'Pinned panel is not yet mounted (not pinned yet)');
 
     // ---- E8: Up next, unpinned, with a real Stage and a real pending phase ----
-    await cdp.waitFor(`true`, { timeoutMs: 500 }).catch(() => {});
     assertTrue(await readUpNextVisible(cdp), 'E8: Up next renders while UNPINNED (a real one-agent Stage plus a pending phase exist)');
 
     const pillBeforePin = await readPill(cdp);
@@ -228,7 +248,7 @@ async function main() {
     await assertSinglePanel(cdp, 'right after Unpin then re-pin');
 
     // ---- Live mid-turn updates ----
-    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Implement feature')`, { timeoutMs: 10_000, label: 'Panel header shows "Implement feature" as the live current task, mid-turn' });
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Task 9')`, { timeoutMs: 10_000, label: 'Panel header shows "Task 9" as the live current task, mid-turn' });
     const midTurnRead = await readPanel(cdp);
     assertTrue(midTurnRead.phaseHeaders.some((h) => h.startsWith('Setup')), 'Setup phase header visible mid-turn (2 phases, so headers show)');
     assertTrue(midTurnRead.phaseHeaders.some((h) => h.startsWith('Work')), 'Work phase header visible mid-turn');
@@ -292,20 +312,37 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, 'e4-follow-diagnostic.png'));
     }
     assertTrue(e4Diag.inView === true, 'E4: the in-progress row is actually within the scrolled list\'s own visible bounds (followed into view)', e4Diag);
-    // A real wheel scroll by the user, dispatched at the list's own centre point.
+    // Gate round 6 fix (#700, Main HIGH 2): the tape now puts the in-progress task far enough
+    // down the Work phase that landing it in view genuinely REQUIRES scrolling -- confirms the
+    // follow actually moved the list, not merely that the row happened to already be visible.
+    assertTrue(e4Diag.listScrollTop > 0, 'E4: the follow genuinely scrolled the list (listScrollTop > 0), not a no-op on an already-visible row', e4Diag);
+    // A real wheel scroll by the user, dispatched at the list's own centre point -- far enough
+    // (Main HIGH 2) that `scrollTop` actually changes, unlike the old fixed `-40` (which could
+    // be a no-op once the follow had already landed close to the top of its own scroll range).
     const listRect = await cdp.evaluate(`(() => { const l = (${PANEL_SELECTOR}).querySelector('[role="group"]'); const r = l.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: listRect.x, y: listRect.y, deltaX: 0, deltaY: -40 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: listRect.x, y: listRect.y, deltaX: 0, deltaY: -200 });
     await sleep(200);
+    await waitTwoFrames(cdp);
     const scrollTopAfterUserScroll = await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').scrollTop`);
+    assertTrue(scrollTopAfterUserScroll !== e4Diag.listScrollTop, 'E4: the real wheel scroll genuinely changed listScrollTop', { before: e4Diag.listScrollTop, after: scrollTopAfterUserScroll });
 
-    // ---- A SECOND current-task change (todo-8: Implement feature done, Clean up starts) lands
-    // after the user's own scroll -- the list must NOT auto-follow it (E4's own "stops" half). ----
+    // ---- A SECOND current-task change (todo-8: Task 9 done, Task 11 starts) lands after the
+    // user's own scroll -- the list must NOT auto-follow it (E4's own "stops" half). ----
     // Gate round 2 fix (self-caught live-check timeout): same reasoning as the abandoned-status
     // wait above -- this also spans a full scripted 8s delay (todo-7 -> todo-8).
-    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Clean up')`, { timeoutMs: 20_000, label: 'The second current-task change (Clean up) lands live' });
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('Task 11')`, { timeoutMs: 20_000, label: 'The second current-task change (Task 11) lands live' });
     await sleep(300);
-    const scrollTopAfterSecondChange = await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').scrollTop`);
-    assertEqual(scrollTopAfterSecondChange, scrollTopAfterUserScroll, 'E4: the list did NOT auto-scroll back to the new current task after a real user scroll (follow genuinely stopped)');
+    await waitTwoFrames(cdp);
+    const afterSecondChange = await cdp.evaluate(`(() => {
+      const panel = ${PANEL_SELECTOR};
+      const list = panel.querySelector('[role="group"]');
+      const row = panel.querySelector('[data-current-task="true"]');
+      const rowRect = row ? row.getBoundingClientRect() : null;
+      const listRect = list.getBoundingClientRect();
+      return { scrollTop: list.scrollTop, outOfView: row ? !(rowRect.top >= listRect.top && rowRect.bottom <= listRect.bottom) : null };
+    })()`);
+    assertEqual(afterSecondChange.scrollTop, scrollTopAfterUserScroll, 'E4: the list did NOT auto-scroll back to the new current task after a real user scroll (follow genuinely stopped)');
+    assertTrue(afterSecondChange.outOfView === true, 'E4: the new current task (Task 11) is genuinely OUT of the scrolled list\'s own visible bounds (follow did not silently bring it into view)', afterSecondChange);
 
     // ---- E1: the transcript's own real scroller never jumps when the panel mounts/resizes,
     // read via its real viewport, at both "scrolled to the bottom" and "scrolled to the middle" ----
@@ -313,9 +350,11 @@ async function main() {
     const scrollAtBottomBefore = await readScrollerScrollTop(cdp);
     const firstTopBefore = await readFirstMessageTop(cdp);
     await clickCollapseButton(cdp);
+    await waitTwoFrames(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: collapsing the panel (bottom-scrolled transcript) does not move the real scroller');
     assertEqual(await readFirstMessageTop(cdp), firstTopBefore, 'E1: collapsing the panel does not move the first message\'s own on-screen position');
     await clickCollapseButton(cdp);
+    await waitTwoFrames(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: expanding the panel again (bottom-scrolled transcript) does not move the real scroller');
 
     // Gate round 4 fix (#700, Main's own ask): proves streaming still follows the bottom while
@@ -346,21 +385,26 @@ async function main() {
     await sleep(200);
     const scrollAtMiddleBefore = await readScrollerScrollTop(cdp);
     assertTrue(scrollAtMiddleBefore !== null && scrollAtMiddleBefore > 0, 'E1 setup: transcript genuinely scrolled away from the bottom, to the middle');
-    // Gate round 5 (#700 E1, Main's own ask, direction (a)): the tape's long assistant reply
-    // streams in two deltas (`todo-pin-700.jsonl`, a 3s hold between them) specifically so the
-    // SECOND half can land here, after the wheel moved us away from the end -- proving the
-    // suppression set by that wheel genuinely holds against the vendored scroller's own
-    // follow-bottom behaviour while new content keeps arriving, not just against a static DOM.
+    // Gate round 5 (#700 E1, direction (a)): the tape's long assistant reply streams in two
+    // deltas (`todo-pin-700.jsonl`, a 3s hold between them) specifically so the SECOND half can
+    // land here, after the wheel moved us away from the end. Gate round 6 fix (Main MEDIUM 8):
+    // the earlier wording overclaimed this as proving "the suppression" in general -- a
+    // dispatched wheel event exercises the vendored scroller's own FREE-SCROLLING path, not a
+    // scrollbar drag (a different pointerdown/move/up path through the same library); that gap
+    // is recorded below, not silently implied as covered.
+    notExercised.push('A scrollbar drag (rather than a wheel scroll) while the vendored scroller is actively auto-scrolling streamed content -- a different input path through the same library, not exercised by this tape.');
     const middleScrollHeight = (await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return el.scrollHeight; })()`));
     await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > ${middleScrollHeight}; })()`, { timeoutMs: 10_000, label: 'E1: the rest of the assistant reply streams in while scrolled away' });
     assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: a wheel away from the end, followed by streaming growth, does NOT snap back');
     const firstTopMiddleBefore = await readFirstMessageTop(cdp);
     await clickUnpinButton(cdp);
     await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Unpinned for the middle-scroll E1 check' });
+    await waitTwoFrames(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: unpinning (mid-scrolled transcript) does not move the real scroller');
     assertEqual(await readFirstMessageTop(cdp), firstTopMiddleBefore, 'E1: unpinning does not move the first message\'s own on-screen position');
     await clickTodoPill(cdp);
     await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned for the middle-scroll E1 check' });
+    await waitTwoFrames(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtMiddleBefore, 'E1: re-pinning (mid-scrolled transcript) does not move the real scroller');
 
     // ---- Settle, then confirm the panel RECONCILES to the settle tree, which genuinely
@@ -375,7 +419,7 @@ async function main() {
     await cdp.waitFor(`(() => { const panel = ${PANEL_SELECTOR}; const list = panel?.querySelector('div.overflow-y-auto'); return !!list && !/Blocked:/.test(list.textContent); })()`, { timeoutMs: 10_000, label: 'E2: settle tree reconciles away the Blocked line' });
     const settledRead = await readPanel(cdp);
     assertTrue(!settledRead.rows.some((r) => r.hasBlockedLine), 'E2: settle tree reconciles "Update docs" from blocked (last live) to completed -- no Blocked line remains');
-    assertTrue(/Todo 5\/13/.test(settledRead.header ?? ''), 'E2: header reads "Todo 5\\/13" at settle, differing from the pre-settle "Todo 4\\/13" (the reconciled Update docs now also counts as done)', settledRead.header);
+    assertTrue(/Todo 4\/13/.test(settledRead.header ?? ''), 'E2: header reads "Todo 4\\/13" at settle, differing from the pre-settle "Todo 3\\/13" (the reconciled Update docs now also counts as done)', settledRead.header);
 
     // ---- Collapse control ----
     await clickCollapseButton(cdp);

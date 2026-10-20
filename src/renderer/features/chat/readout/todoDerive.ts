@@ -46,18 +46,21 @@ export function isPhaseFinished(phase: TodoPhase): boolean {
   return totals.total > 0 && totals.done === totals.total
 }
 
-/** The one `in_progress` task, in phase then task order, WITH its own phase -- the pill's
- * "current task" word, the panel header's "· <current task>", the panel's own manual
- * scroll-follow, and the per-task dedup key (`<phase.name>\0<task.content>`, two phases can
- * legitimately name an identical task) all need the phase alongside the task itself (gate round
- * 1 fix, Main P5: returning only the bare task forced `PinnedTodoPanel.tsx` to keep its own
- * duplicate `findCurrentTask`, which this replaces). `null` when nothing is in progress (nothing
+/** The one `in_progress` task, in phase then task order, WITH its own phase and the indices of
+ * both -- the pill's "current task" word, the panel header's "· <current task>", the panel's
+ * own manual scroll-follow, and the per-task dedup key all need the phase alongside the task
+ * itself (gate round 1 fix, Main P5). Indices (gate round 3 fix, Main F9): two tasks can
+ * legitimately share identical `content` text within the SAME phase (a repeated step name), in
+ * which case a key built from `phase.name`/`task.content` alone would match BOTH rows, marking
+ * every one of them "current" even though only one is genuinely `in_progress` -- the index pair
+ * is the only collision-free identity a task has. `null` when nothing is in progress (nothing
  * started yet, or everything is done/abandoned). */
-export function deriveCurrentTask(todoTree: TodoPhase[] | null): { phase: TodoPhase; task: TodoTask } | null {
+export function deriveCurrentTask(todoTree: TodoPhase[] | null): { phase: TodoPhase; task: TodoTask; phaseIndex: number; taskIndex: number } | null {
   if (!todoTree) return null
-  for (const phase of todoTree) {
-    const task = phase.tasks.find((t) => t.status === 'in_progress')
-    if (task) return { phase, task }
+  for (const [phaseIndex, phase] of todoTree.entries()) {
+    for (const [taskIndex, task] of phase.tasks.entries()) {
+      if (task.status === 'in_progress') return { phase, task, phaseIndex, taskIndex }
+    }
   }
   return null
 }

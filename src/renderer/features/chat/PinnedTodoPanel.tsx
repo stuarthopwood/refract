@@ -7,7 +7,8 @@
 // ['todo-progress']`). Unmounts entirely once there is no plan at all (`hasTodoPlan` false), but
 // the pin flag itself survives into the next plan (decision item 5: "the pin stays") -- this
 // component only ever reads `pinned`, never clears it. `ChatPane.tsx` renders this with
-// `key={sessionId}`, so every ref below starts fresh on a Session switch (gate round 1, Main P1).
+// `key={`todo-${sessionId}`}`, so every ref below starts fresh on a Session switch (gate round
+// 1, Main P1).
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { CheckCircle2Icon, ChevronDownIcon, CircleAlertIcon, CircleDotIcon, CircleIcon, CircleSlashIcon, PinOffIcon } from 'lucide-react'
@@ -42,8 +43,8 @@ function statusGlyph(status: TodoTaskStatus) {
   return TASK_STATUS_GLYPH[status] ?? TASK_STATUS_GLYPH.pending
 }
 
-function currentTaskKeyOf(phase: TodoPhase, task: TodoTask): string {
-  return `${phase.name}\u0000${task.content}`
+function currentTaskKeyOf(phaseIndex: number, taskIndex: number): string {
+  return `${phaseIndex}\u0000${taskIndex}`
 }
 
 export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
@@ -65,9 +66,16 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   const userScrolledRef = useRef(false)
   const lastFollowedKeyRef = useRef<string | null>(null)
   const found = deriveCurrentTask(todoTree)
-  const currentTaskKey = found ? currentTaskKeyOf(found.phase, found.task) : null
+  const currentTaskKey = found ? currentTaskKeyOf(found.phaseIndex, found.taskIndex) : null
 
-  const active = pinned && hasTodoPlan(todoTree) && !collapsed
+  const panelRenders = pinned && hasTodoPlan(todoTree)
+  // Gate round 6 fix (#700, Main HIGH 1): kept in sync with the LATEST render's own
+  // `panelRenders` by a plain write during render (not inside an effect) -- React always runs
+  // render before any effect or cleanup for the SAME commit, so both focus-restore effects'
+  // cleanups below see this commit's true value, never a stale one from the previous render.
+  const panelRendersRef = useRef(panelRenders)
+  panelRendersRef.current = panelRenders
+  const active = panelRenders && !collapsed
 
   // Gate round 1 fix (Main P1): "re-run the follow on mount, expand and re-pin" -- this component
   // never fully unmounts between pin/unpin or collapse/expand (the SAME instance just returns
@@ -110,14 +118,23 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     const elRect = el.getBoundingClientRect()
     const elTop = elRect.top - listRect.top + list.scrollTop
     const elBottom = elTop + elRect.height
-    if (elTop < list.scrollTop) list.scrollTop = elTop
-    else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
-    // Gate round 3 fix (Main's diagnosis): marking a key "followed" BEFORE checking whether the
-    // row actually ended up in view let one render with bad geometry lock the scroll there
-    // permanently -- the key-match guard above never let a later, correct render retry. Only
-    // commit `lastFollowedKeyRef` once the row genuinely landed in view.
-    if (elTop >= list.scrollTop && elBottom <= list.scrollTop + list.clientHeight) {
+    // Gate round 6 fix (#700, Main MEDIUM 5): a row taller than the list itself (a long wrapped
+    // blocker line) can never satisfy the full-containment check below -- aligning its own top
+    // and marking it followed immediately, rather than leaving `lastFollowedKeyRef` unset,
+    // stops this effect from re-attempting (and jittering `scrollTop`) on every later render.
+    if (elRect.height > list.clientHeight) {
+      list.scrollTop = elTop
       lastFollowedKeyRef.current = currentTaskKey
+    } else {
+      if (elTop < list.scrollTop) list.scrollTop = elTop
+      else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
+      // Gate round 3 fix (Main's diagnosis): marking a key "followed" BEFORE checking whether
+      // the row actually ended up in view let one render with bad geometry lock the scroll
+      // there permanently -- the key-match guard above never let a later, correct render retry.
+      // Only commit `lastFollowedKeyRef` once the row genuinely landed in view.
+      if (elTop >= list.scrollTop && elBottom <= list.scrollTop + list.clientHeight) {
+        lastFollowedKeyRef.current = currentTaskKey
+      }
     }
   })
 
@@ -130,6 +147,11 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   const wasAllDoneRef = useRef(false)
   useLayoutEffect(() => {
     if (allDone && !wasAllDoneRef.current) setCollapsed(sessionId, true)
+    // Gate round 6 fix (#700, Main MEDIUM 6): the all-done auto-collapse must not stay sticky
+    // once the plan genuinely changes (a new task added, or a task leaving done re-extends the
+    // plan) -- the false -> true edge above re-collapses; this expands it back on the
+    // true -> false edge, so a new or extended plan is never left silently hidden.
+    if (!allDone && wasAllDoneRef.current) setCollapsed(sessionId, false)
     wasAllDoneRef.current = allDone
   }, [allDone, sessionId, setCollapsed])
 
@@ -169,16 +191,23 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     return () => document.removeEventListener('focusin', onFocusIn, true)
   }, [sessionId])
 
-  // A `useLayoutEffect` cleanup keyed on `active` fires exactly on the true -> false edge (both
-  // causes above collapse to the SAME transition, since `active` already requires `pinned &&
-  // hasTodoPlan`). Deferred one rAF so the commit settles first, then `isFocusStranded` guards
-  // against stealing focus from anywhere it validly already moved to in that same frame.
+  // Gate round 6 fix (#700, Main HIGH 1, self-caught by the final gate's own A11y review):
+  // unpinning from a COLLAPSED panel (including right after the "All N done" auto-collapse)
+  // read `active` as ALREADY false, so the single effect this used to be never fired at all --
+  // focus fell straight to `<body>`. Split into two edge-triggered effects instead of one keyed
+  // on `active` (which conflated "the panel itself disappeared" with "only the list closed"):
+  // this one fires only on the panel's OWN true -> false edge (Unpin, or the plan vanishing),
+  // restoring focus to the pill -- or, if the pill itself is hidden in Settings, THIS pane's own
+  // composer (MEDIUM 3: scoped by `data-session-pane`, never a different split pane's). LOW 10:
+  // finds the pill via a stable `data-` hook, not `aria-controls` -- that attribute is now only
+  // rendered while pinned (`ReadoutChip.tsx`), so by the time this cleanup runs, `pinned` has
+  // already flipped and `aria-controls` is already gone from the DOM.
   useLayoutEffect(() => {
     return () => {
       if (!focusWasInsideRef.current) return
       requestAnimationFrame(() => {
         if (!isFocusStranded(document.activeElement, null)) return
-        const pill = document.querySelector(`[aria-controls="todo-panel-${sessionId}"]`)
+        const pill = document.querySelector(`[data-todo-pin-hook="${CSS.escape(sessionId)}"]`)
         if (pill instanceof HTMLElement) {
           // Gate round 3 fix (Main's diagnosis, #700 E4): a plain `.focus()` here (no
           // `preventScroll`) lets the browser scroll this focus target into view, which can
@@ -187,7 +216,22 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
           pill.focus({ preventScroll: true })
           return
         }
-        document.querySelector<HTMLElement>('[aria-label="Message"]')?.focus({ preventScroll: true })
+        document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"] [aria-label="Message"]`)?.focus({ preventScroll: true })
+      })
+    }
+  }, [panelRenders, sessionId])
+
+  // The list closing while the panel ITSELF stays mounted (a manual Collapse, or the "All N
+  // done" auto-collapse) -- focus the panel's own Collapse chevron instead, never the pill
+  // (nothing here removed it). Skips entirely when the panel is ALSO disappearing in the SAME
+  // commit (the effect above owns that case), read from `panelRendersRef`'s just-rendered value.
+  useLayoutEffect(() => {
+    return () => {
+      if (!focusWasInsideRef.current) return
+      if (!panelRendersRef.current) return
+      requestAnimationFrame(() => {
+        if (!isFocusStranded(document.activeElement, null)) return
+        document.getElementById(`todo-panel-${sessionId}`)?.querySelector<HTMLElement>('[aria-label="Todo list details"]')?.focus({ preventScroll: true })
       })
     }
   }, [active, sessionId])
@@ -207,7 +251,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
       data-slot="pinned-todo-panel"
       aria-label="Todo list"
       aria-live="off"
-      className="shrink-0 border-t border-divider px-4 py-1.5"
+      className="shrink-0 border-t border-divider px-4 py-2"
     >
       <div className="flex h-6 items-center gap-1">
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" title={currentTask ? currentTask.content : undefined}>
@@ -294,7 +338,7 @@ function TodoPhaseGroup({
   const folded = showHeader && isPhaseFinished(phase)
   const phaseTotals = derivePhaseTotals(phase)
   return (
-    <div className="py-0.5">
+    <div className="py-1">
       {showHeader && (
         <div className="flex items-center gap-1 px-1 text-[11px] font-medium text-muted-foreground">
           {folded && <CheckCircle2Icon aria-hidden className="size-3 shrink-0" />}
@@ -304,14 +348,14 @@ function TodoPhaseGroup({
         </div>
       )}
       {!folded && (
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {phase.tasks.map((task, taskIndex) => (
             // Gate round 2 fix (Main, security-reviewer concern): the key must never derive
             // solely from agent-controlled text (`task.content`) -- two tasks can legitimately
             // share wording (same name in two phases, or a repeated step), and `phaseIndex`
             // alone does not disambiguate within a phase either. `phaseIndex`+`taskIndex` is
             // stable and unique regardless of task content, immune to any content collision.
-            <TodoTaskRow key={`${phaseIndex}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phase, task) === currentTaskKey} />
+            <TodoTaskRow key={`${phaseIndex}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phaseIndex, taskIndex) === currentTaskKey} />
           ))}
         </ul>
       )}
@@ -322,8 +366,8 @@ function TodoPhaseGroup({
 function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: boolean }) {
   const { Icon, className, word, srOnly, muteText } = statusGlyph(task.status)
   return (
-    <li data-current-task={isCurrent || undefined} className="flex items-start gap-1.5 px-1 py-0.5 text-xs">
-      <Icon aria-hidden className={cn('mt-0.5 size-3.5 shrink-0', className)} />
+    <li data-current-task={isCurrent || undefined} className="flex items-start gap-2 px-1 py-1 text-xs">
+      <Icon aria-hidden className={cn('mt-1 size-3.5 shrink-0', className)} />
       <div className="min-w-0 flex-1">
         <span
           className={cn(

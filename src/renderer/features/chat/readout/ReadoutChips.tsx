@@ -271,6 +271,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
       accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
       pressed={pinned}
       controls={`todo-panel-${sessionId}`}
+      pinHookId={sessionId}
       className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
     >
       {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same

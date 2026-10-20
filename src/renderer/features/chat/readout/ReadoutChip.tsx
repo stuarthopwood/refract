@@ -52,13 +52,19 @@ export interface ReadoutChipProps {
    * `className` (decision record item 1: "a pin glyph plus a pressed border... never the open-
    * card background"), not baked in here -- every other chip keeps today's hover-only styling. */
   pressed?: boolean
-  /** Names the region `pressed` toggles (WCAG 4.1.2 `aria-controls`); meaningful only
-   * alongside `pressed`. */
+  /** Names the region `pressed` toggles (WCAG 4.1.2 `aria-controls`) -- gate round 6 fix (#700,
+   * Main LOW 10): rendered only while `pressed` is true, since the region does not exist at all
+   * otherwise; pointing `aria-controls` at a non-existent id outside that state is invalid. */
   controls?: string
+  /** A stable `data-` hook, rendered regardless of `pressed` (gate round 6 fix, #700 Main LOW
+   * 10): `PinnedTodoPanel.tsx`'s own focus-restore effect needs to find the Todo pill by the
+   * time its OWN `pinned` has already flipped and `aria-controls` is already gone -- `controls`
+   * alone cannot survive that moment. */
+  pinHookId?: string
   className?: string
 }
 
-export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls }: ReadoutChipProps) {
+export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId }: ReadoutChipProps) {
   const baseClasses = cn(READOUT_CHIP_BASE_CLASS, className)
   const interactiveClasses = cn(baseClasses, READOUT_CHIP_INTERACTIVE_ADDITIONS)
 
@@ -77,7 +83,7 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   if (onActivate) {
     return (
-      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} aria-pressed={pressed} aria-controls={controls} className={interactiveClasses}>
+      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} aria-pressed={pressed} aria-controls={pressed ? controls : undefined} data-todo-pin-hook={pinHookId} className={interactiveClasses}>
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>

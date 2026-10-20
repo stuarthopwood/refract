@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SessionScrollState } from '@/state/scroll-store'
 
@@ -210,11 +210,42 @@ const GESTURE_RECENCY_MS = 500
 
 export function useScrollGestureTracking() {
   const lastGestureAtRef = useRef(0)
+  // Gate round 6 fix (#700 F1 item 4, Main): a scrollbar drag can run far longer than
+  // `GESTURE_RECENCY_MS` below -- tracked on `window`, not the viewport, since the pointer can
+  // leave the element mid-drag and still be "held" from the user's own perspective.
+  const pointerHeldRef = useRef(false)
+  useEffect(() => {
+    const onPointerUp = () => { pointerHeldRef.current = false }
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+    return () => {
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+    }
+  }, [])
   const markGesture = () => { lastGestureAtRef.current = Date.now() }
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key in SCROLL_KEYS) markGesture()
+  const markPointerDown = () => {
+    pointerHeldRef.current = true
+    markGesture()
   }
-  const isRecentGesture = () => Date.now() - lastGestureAtRef.current <= GESTURE_RECENCY_MS
-  const gestureProps = { onWheel: markGesture, onPointerDown: markGesture, onTouchStart: markGesture, onTouchMove: markGesture, onKeyDown: handleKeyDown }
-  return { isRecentGesture, gestureProps }
+  // Gate round 6 fix (#700 F1 item 2, Main): a scroll key bubbling up from an editable
+  // descendant (defensive -- nothing editable lives inside this viewport today) must never
+  // count as scroll intent unless the viewport itself was the direct target.
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!(event.key in SCROLL_KEYS)) return
+    const target = event.target
+    const isEditable = target instanceof HTMLElement && (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+    if (target !== event.currentTarget && isEditable) return
+    markGesture()
+  }
+  const isRecentGesture = () => pointerHeldRef.current || Date.now() - lastGestureAtRef.current <= GESTURE_RECENCY_MS
+  // Gate round 6 fix (#700 F1 item 3, Main): a landing effect starting must invalidate any
+  // stale gesture -- its own corrective `scrollTop` write must never be misread as the SET this
+  // gesture would otherwise still be "recent" enough to justify.
+  const resetGesture = () => {
+    lastGestureAtRef.current = 0
+    pointerHeldRef.current = false
+  }
+  const gestureProps = { onWheel: markGesture, onPointerDown: markPointerDown, onTouchStart: markGesture, onTouchMove: markGesture, onKeyDown: handleKeyDown }
+  return { isRecentGesture, resetGesture, gestureProps }
 }
