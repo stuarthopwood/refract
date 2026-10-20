@@ -68,6 +68,28 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   const currentTaskKey = found ? currentTaskKeyOf(found.phase, found.task) : null
 
   const active = pinned && hasTodoPlan(todoTree) && !collapsed
+
+  // Gate round 1 fix (Main P1): "re-run the follow on mount, expand and re-pin" -- this component
+  // never fully unmounts between pin/unpin or collapse/expand (the SAME instance just returns
+  // `null` or stale state), so a stale `userScrolledRef`/`lastFollowedKeyRef` from a PRIOR pinned-
+  // and-expanded stretch would otherwise silently suppress the very first follow of a fresh one.
+  // Resets both exactly on the false -> true edge of `active` (covers mount, expand, and re-pin
+  // in one place, never on every render). Gate round 3 fix (Main's diagnosis, #700 E4 self-caught
+  // live-check failure): declared BEFORE the follow effect below (was after) -- both are plain
+  // `useLayoutEffect`s in this SAME component, so React runs them in declaration order within one
+  // commit; the OLD order let the follow effect below read `lastFollowedKeyRef` BEFORE this reset
+  // cleared it, on the exact commit a re-pin flips `active` false -> true, silently skipping that
+  // commit's own re-follow whenever the current task's key happened to already match the stale
+  // ref value left over from the prior pinned stretch.
+  const wasActiveRef = useRef(false)
+  useLayoutEffect(() => {
+    if (active && !wasActiveRef.current) {
+      userScrolledRef.current = false
+      lastFollowedKeyRef.current = null
+    }
+    wasActiveRef.current = active
+  }, [active])
+
   useLayoutEffect(() => {
     if (userScrolledRef.current) return
     if (currentTaskKey === null || currentTaskKey === lastFollowedKeyRef.current) return
@@ -80,21 +102,6 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     if (elTop < list.scrollTop) list.scrollTop = elTop
     else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
   })
-
-  // Gate round 1 fix (Main P1): "re-run the follow on mount, expand and re-pin" -- this component
-  // never fully unmounts between pin/unpin or collapse/expand (the SAME instance just returns
-  // `null` or stale state), so a stale `userScrolledRef`/`lastFollowedKeyRef` from a PRIOR pinned-
-  // and-expanded stretch would otherwise silently suppress the very first follow of a fresh one.
-  // Resets both exactly on the false -> true edge of `active` (covers mount, expand, and re-pin
-  // in one place, never on every render).
-  const wasActiveRef = useRef(false)
-  useLayoutEffect(() => {
-    if (active && !wasActiveRef.current) {
-      userScrolledRef.current = false
-      lastFollowedKeyRef.current = null
-    }
-    wasActiveRef.current = active
-  }, [active])
 
   // Decision item 5: "When everything is done, it collapses to... All N done". A ONE-TIME
   // automatic action (gate round 1 fix, Main P2: the render must actually HIDE the list, not
