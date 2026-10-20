@@ -110,11 +110,23 @@ async function measureCaretPixel(cdp, charOffset) {
   })()`);
 }
 
-/** Reads back one pixel's RGBA from a REAL `Page.captureScreenshot` -- decoded entirely inside
- * the page via an offscreen `<canvas>` (`drawImage` + `getImageData`), so no Node-side PNG
- * decoder dependency is needed. */
-async function capturePixel(cdp, x, y) {
+/** Reads back a small region's RGBA pixels from a REAL `Page.captureScreenshot` -- decoded
+ * entirely inside the page via an offscreen `<canvas>` (`drawImage` + `getImageData`), so no
+ * Node-side PNG decoder dependency is needed. A REGION, not a single pixel (gate round 3 fix):
+ * the native caret is only 1-2 real screen px wide, and two independent geometric estimates of
+ * its own x position (a canvas text-metrics measurement, then a mirror `Range`) each landed
+ * within a pixel or two of it but not exactly ON it -- real browser caret placement and a
+ * same-font-same-classes-but-separate-element geometric estimate can legitimately differ by a
+ * sub-pixel amount from independent font rasterisation, even with identical CSS. Sampling a
+ * small window around the estimate (not the whole pill, so a quiet, unchanging fill still
+ * correctly reads "no difference" everywhere outside the caret's own column) absorbs that
+ * estimation slack while staying a genuine, local, blink-timed pixel comparison. */
+async function capturePixelRegion(cdp, x, y, halfWidth = 3, halfHeight = 2) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  const left = Math.max(0, x - halfWidth);
+  const top = Math.max(0, y - halfHeight);
+  const width = halfWidth * 2 + 1;
+  const height = halfHeight * 2 + 1;
   return cdp.evaluate(`new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -123,31 +135,37 @@ async function capturePixel(cdp, x, y) {
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(${x}, ${y}, 1, 1).data;
-      resolve([d[0], d[1], d[2], d[3]]);
+      const d = ctx.getImageData(${left}, ${top}, ${width}, ${height}).data;
+      resolve(Array.from(d));
     };
     img.onerror = reject;
     img.src = 'data:image/png;base64,${data}';
   })`);
 }
 
-/** Gate round 1 HIGH remediation (item 5): pixel-proof the native caret is actually visible at
- * `charOffset`, blink-safe -- two REAL screenshots ~600ms apart (Chromium/Windows' own caret-
- * blink interval), decoded to one pixel each at the caret's own measured position. A
- * permanently-hidden caret (the original bug: an opaque pill painted over it) reads the SAME
- * pixel in both samples regardless of timing; a genuinely blinking, visible caret reads
- * differently in at least one of the two (on vs off), which is what this asserts. */
+/** Gate round 1 HIGH remediation (item 5), widened gate round 3: pixel-proof the native caret is
+ * actually visible at `charOffset`, blink-safe -- two REAL screenshots ~600ms apart (Chromium/
+ * Windows' own caret-blink interval), decoded to a small region around the caret's own
+ * estimated position. A permanently-hidden caret (the original bug: an opaque pill painted over
+ * it) reads the SAME region in both samples regardless of timing; a genuinely blinking, visible
+ * caret reads differently SOMEWHERE in that region in at least one of the two (on vs off).
+ * Supplemented by a deterministic, non-timing-based fact: `caret-color` itself is a real,
+ * non-transparent colour (the style half of "the caret can render at all", independent of
+ * exactly where this script's own estimate landed within a couple of pixels). */
 export async function assertCaretVisible(cdp, sleep, charOffset, label, report) {
   await cdp.evaluate(`${TEXTAREA}.focus(); ${TEXTAREA}.setSelectionRange(${charOffset}, ${charOffset})`);
+  const caretColor = await cdp.evaluate(`getComputedStyle(${TEXTAREA}).caretColor`);
+  const hasRealCaretColor = caretColor !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)/.test(caretColor);
+  if (!hasRealCaretColor) throw new Error(`FAIL: ${label} (caret-color is not a real colour: ${caretColor})`);
   const pixelPos = await measureCaretPixel(cdp, charOffset);
   if (!pixelPos) throw new Error(`FAIL: ${label} (measureCaretPixel found no mirror text node at offset ${charOffset} -- is a recognised token showing?)`);
   const { x, y } = pixelPos;
-  const sample1 = await capturePixel(cdp, x, y);
+  const sample1 = await capturePixelRegion(cdp, x, y);
   await sleep(600);
-  const sample2 = await capturePixel(cdp, x, y);
+  const sample2 = await capturePixelRegion(cdp, x, y);
   const differs = sample1.some((value, index) => Math.abs(value - sample2[index]) > 10);
-  report.push({ step: label, ok: differs, sample1, sample2, x, y });
-  if (!differs) throw new Error(`FAIL: ${label} (caret pixel identical at both 600ms-apart samples: ${JSON.stringify(sample1)})`);
+  report.push({ step: label, ok: differs, caretColor, x, y, sample1Hash: sample1.join(','), sample2Hash: sample2.join(',') });
+  if (!differs) throw new Error(`FAIL: ${label} (caret region pixels identical at both 600ms-apart samples around (${x},${y}), caret-color ${caretColor})`);
   console.log(`verify-1050: PASS ${label}`);
 }
 
@@ -159,9 +177,9 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, report) {
   const geom = await measurePillGeometry(cdp);
   const x = Math.round(geom.pillLeft + geom.pillWidth / 2);
   const y = Math.round(geom.pillTop + geom.pillHeight / 2);
-  const before = await capturePixel(cdp, x, y);
+  const before = await capturePixelRegion(cdp, x, y);
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, including the pill
-  const after = await capturePixel(cdp, x, y);
+  const after = await capturePixelRegion(cdp, x, y);
   const differs = before.some((value, index) => Math.abs(value - after[index]) > 10);
   report.push({ step: 'Ctrl+A: selection highlight visibly paints over the pilled token', ok: differs, before, after, x, y });
   if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight pixel identical before/after (${JSON.stringify(before)})`);
