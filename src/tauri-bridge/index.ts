@@ -17,6 +17,7 @@ import type {
   FilePreview,
   FileTreeNode,
   GitStatusMap,
+  GitChangesSnapshot,
   LeftoverSummary,
   LowMemoryWarning,
   MergeInput,
@@ -217,6 +218,21 @@ const refract: RefractApi = {
     ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.FILE_EXPLORER_ENSURE_WATCHING, sessionId)
   },
 
+  // Spec 018 slice 1 (issue #464): was missing from this bridge entirely (the Rust dispatcher,
+  // `shared/ipc.ts`'s `RefractApi` contract, and the renderer store all already assumed this
+  // existed) -- added here, same `request`/channel-constant pattern as `fileExplorer` above.
+  gitChanges: {
+    list: (sessionId) => request<{ snapshot: GitChangesSnapshot | null }>(IPC_REQUESTS.GIT_CHANGES_LIST, sessionId),
+    stage: (sessionId, paths) => request<void>(IPC_REQUESTS.GIT_CHANGES_STAGE, sessionId, paths),
+    unstage: (sessionId, paths) => request<void>(IPC_REQUESTS.GIT_CHANGES_UNSTAGE, sessionId, paths),
+    stageAll: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_STAGE_ALL, sessionId),
+    unstageAll: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_UNSTAGE_ALL, sessionId),
+    diff: (sessionId, path, staged) => request<{ patch: string }>(IPC_REQUESTS.GIT_CHANGES_DIFF, sessionId, path, staged),
+    commit: (sessionId, message) => request<void>(IPC_REQUESTS.GIT_CHANGES_COMMIT, sessionId, message),
+    stopWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_STOP_WATCHING, sessionId),
+    ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_ENSURE_WATCHING, sessionId)
+  },
+
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
@@ -352,6 +368,7 @@ const refract: RefractApi = {
   onFileExplorerPatch: (handler) =>
     on<{ sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
   onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
+  onGitChangesRefresh: (handler) => on<{ sessionId: string }>(IPC_EVENTS.GIT_CHANGES_REFRESH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
   onReadinessInstallProgress: (handler) =>

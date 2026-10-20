@@ -374,6 +374,7 @@ export const IPC_REQUESTS = {
   GIT_CHANGES_STAGE_ALL: 'gitChanges.stageAll',
   GIT_CHANGES_UNSTAGE_ALL: 'gitChanges.unstageAll',
   GIT_CHANGES_COMMIT: 'gitChanges.commit',
+  GIT_CHANGES_DIFF: 'gitChanges.diff',
   GIT_CHANGES_ENSURE_WATCHING: 'gitChanges.ensureWatching',
   GIT_CHANGES_STOP_WATCHING: 'gitChanges.stopWatching',
   SETTINGS_GET: 'settings.get',
@@ -720,6 +721,11 @@ export interface RefractApi extends UpdatesApi {
     stageAll(sessionId: string): Promise<Result<void>>;
     /** FR-004: unstages every file CURRENTLY in the Staged group (re-read server-side). */
     unstageAll(sessionId: string): Promise<Result<void>>;
+    /** FR-008: one file's diff body, `git diff` / `git diff --cached` by whether `staged` is
+     * true -- the hunk-only patch text `DiffViewFromPatch` (`DiffView.tsx`) already expects (no
+     * `diff --git`/`---`/`+++` header lines), never rendered inline inside the hosted pane
+     * (the panel's own content area swaps to a diff view, still inside the pane). */
+    diff(sessionId: string, path: string, staged: boolean): Promise<Result<{ patch: string }>>;
     /** FR-011: `git commit -F -`, the composed message piped on stdin (never `-m`). Rejected
      * locally with `invalid-argument` for a blank (after trimming) message before ever reaching
      * git. FR-013: any failure (including an `index.lock` collision) is a typed `git-failed`

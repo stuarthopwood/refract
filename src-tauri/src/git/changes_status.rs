@@ -591,3 +591,38 @@ pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError>
     }
     Ok(())
 }
+
+/// FR-008: `git diff` / `git diff --cached` for one file's diff body, by whether it is staged.
+/// `path` is a literal post-`--` argv entry, sourced only from the current status map's own keys
+/// (same rule as `stage_files`/`unstage_files`). Returns just the hunk-only patch text (from the
+/// first `@@` line onward) -- the same shape GitHub's REST `patch` field already uses -- so the
+/// renderer's existing `DiffViewFromPatch` (`src/renderer/features/chat/DiffView.tsx`, which
+/// rebuilds its own `diff --git`/`---`/`+++` header from the path directly) can render it
+/// unchanged; the `diff --git`/`index`/`---`/`+++` header lines git itself prints are stripped
+/// here so that rebuild is never doubled. An untracked file (no index/HEAD side to diff against)
+/// or a binary file (git prints "Binary files ... differ", no `@@` line at all) both score an
+/// empty string -- the renderer's own "No changes" fallback covers that display case.
+pub async fn diff_text(worktree_path: &Path, path: &str, staged: bool) -> Result<String, GitError> {
+    let mut args: Vec<&str> = vec!["diff"];
+    if staged {
+        args.push("--cached");
+    }
+    args.push("--");
+    args.push(path);
+    let result = git_raw(worktree_path, &args, Some(DIFF_TIMEOUT)).await;
+    if result.code != 0 {
+        let detail = if !result.stderr.trim().is_empty() {
+            result.stderr.trim()
+        } else {
+            result.stdout.trim()
+        };
+        return Err(GitError::new(
+            GitErrorCode::GitFailed,
+            format!("git {} failed: {detail}", args.join(" ")),
+        ));
+    }
+    match result.stdout.find("\n@@") {
+        Some(at) => Ok(result.stdout[at + 1..].to_string()),
+        None => Ok(String::new()),
+    }
+}

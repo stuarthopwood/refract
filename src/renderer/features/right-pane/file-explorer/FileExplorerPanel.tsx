@@ -48,8 +48,10 @@ interface FileExplorerPanelProps {
 }
 
 /** FR-010/FR-024: icon-plus-text-equivalent per status mark, never colour alone (reuses already-
- * gated tokens); `renamed`/`conflicted`/`staged` (R7 #790/#768) keep this exhaustive, #768 designs them. */
-const STATUS_MARKS: Record<GitStatusMark, { Icon: LucideIcon; className: string; label: string }> = {
+ * gated tokens); `renamed`/`conflicted`/`staged` (R7 #790/#768) keep this exhaustive, #768 designs
+ * them. Exported (spec 018 research.md decision 2) so the Git changes panel's own
+ * `GitChangesFileRow.tsx` reuses this exact map rather than a second copy. */
+export const STATUS_MARKS: Record<GitStatusMark, { Icon: LucideIcon; className: string; label: string }> = {
   modified: { Icon: PencilIcon, className: 'text-state-needs-you', label: 'Modified' },
   added: { Icon: FilePlus2Icon, className: 'text-state-working', label: 'Added' },
   untracked: { Icon: CircleDashedIcon, className: 'text-state-working', label: 'Untracked' },

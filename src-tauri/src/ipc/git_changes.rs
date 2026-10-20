@@ -3,7 +3,9 @@
 // bulk `stageAll`/`unstageAll` (FR-004, re-reading the CURRENT status server-side rather than
 // trusting a client-supplied path list, and deliberately excluding Conflicts from both -- a
 // developer resolves a conflict per-file, never swept up by a bulk click), `commit` (FR-009 to
-// FR-011), and the watcher lifecycle pair `ensureWatching`/`stopWatching` (FR-015b/FR-016),
+// FR-011), `diff` (FR-008: one file's patch body, `git diff`/`git diff --cached` by whether it
+// is staged -- added alongside the renderer lane's own US1, no design doc of its own beyond that
+// FR), and the watcher lifecycle pair `ensureWatching`/`stopWatching` (FR-015b/FR-016),
 // mirroring `ipc/file_explorer.rs`'s own `session_context`/watcher-lifecycle pattern (research.md
 // decision 6). The per-session watcher bookkeeping lives in `fs::git_changes_watch_state` (this
 // panel's own much-smaller analogue of `fs::explorer_watch_state`, see that module's own header
@@ -15,7 +17,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::fs::git_changes_watch_state as watch_state;
-use crate::git::changes_status::{commit as git_commit, read_changes_status, stage_files, unstage_files};
+use crate::git::changes_status::{commit as git_commit, diff_text, read_changes_status, stage_files, unstage_files};
 
 use super::{arg_str, invalid_argument, map_git_error, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -40,6 +42,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("gitChanges.stageAll", git_changes_stage_all);
     d.register("gitChanges.unstageAll", git_changes_unstage_all);
     d.register("gitChanges.commit", git_changes_commit);
+    d.register("gitChanges.diff", git_changes_diff);
     d.register("gitChanges.ensureWatching", git_changes_ensure_watching);
     d.register("gitChanges.stopWatching", git_changes_stop_watching);
 }
@@ -217,6 +220,34 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
         git_commit(&worktree_path, &message).await.map_err(map_git_error)?;
         Ok(Value::Null)
+    })
+}
+
+/// `gitChanges.diff(sessionId, path, staged)` (FR-008): one file's diff body, by whether it is
+/// currently staged -- `git diff --cached` vs the plain worktree `git diff`. `path` is checked
+/// only for length here (the same bound `stage`/`unstage` apply to each path in their own list);
+/// the real containment rule is git's own `--` argv-literal diff against this Session's worktree,
+/// never a filesystem read outside it.
+pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let session_id = require_str(
+            &args,
+            0,
+            MAX_SESSION_ID_LENGTH,
+            "gitChanges.diff expects a string sessionId, a string path and a boolean staged",
+            "gitChanges.diff rejected an oversized sessionId",
+        )?;
+        let path = require_str(
+            &args,
+            1,
+            MAX_PATH_LENGTH,
+            "gitChanges.diff expects a string sessionId, a string path and a boolean staged",
+            "gitChanges.diff rejected an oversized path",
+        )?;
+        let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
+        let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
+        let patch = diff_text(&worktree_path, &path, staged).await.map_err(map_git_error)?;
+        Ok(json!({ "patch": patch }))
     })
 }
 
