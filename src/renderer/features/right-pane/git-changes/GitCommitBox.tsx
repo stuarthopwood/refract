@@ -43,11 +43,13 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
   const subject = draft.subject
   const body = draft.body
   const [committing, setCommitting] = useState(false)
-  // Gate round 3 fix (#1076 LOW item 5, HIGH item 1): `seq` forces a genuine DOM remount of the
-  // `role="status"` node below on every announcement (via `key`), so a REPEATED identical
-  // subject still re-announces -- a plain text swap to the same string is not a DOM mutation an
-  // assistive tech live region would ever notice.
-  const [announcement, setAnnouncement] = useState({ text: '', seq: 0 })
+  // Gate round 3 fix (#1076 LOW item 5): a single ALWAYS-MOUNTED `role="status"` node (below,
+  // no `key`) -- a screen reader can skip a live region whose text is already present the
+  // instant it mounts, which is exactly what forcing a remount via `key` did (Main's
+  // correction). `announce()` below clears the text, then sets the real text on the NEXT
+  // animation frame, so an already-mounted node gets a genuine two-step mutation instead --
+  // reliably announced even for a REPEATED identical subject.
+  const [announcement, setAnnouncement] = useState('')
   const subjectId = useId()
   const bodyId = useId()
   const warningId = useId()
@@ -55,6 +57,11 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
 
   function updateDraft(partial: Partial<{ subject: string; body: string }>): void {
     useGitChangesStore.getState().setCommitDraft(sessionId, { subject, body, ...partial })
+  }
+
+  function announce(text: string): void {
+    setAnnouncement('')
+    requestAnimationFrame(() => setAnnouncement(text))
   }
 
   const conflictCount = entry?.snapshot?.groups.conflicts.length ?? 0
@@ -100,7 +107,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
       if (currentDraft && currentDraft.subject === submittedDraft.subject && currentDraft.body === submittedDraft.body) {
         useGitChangesStore.getState().setCommitDraft(sessionId, { subject: '', body: '' })
       }
-      setAnnouncement((prev) => ({ text: `Committed: ${committedSubject}`, seq: prev.seq + 1 }))
+      announce(`Committed: ${committedSubject}`)
       document.getElementById(subjectId)?.focus()
     }
   }
@@ -168,11 +175,12 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
       )}
       {/* Item 8: a commit success is announced once, same `role="status"` pattern as the
           agent-working warning above -- visually empty (`sr-only`), so it never shifts layout.
-          Gate round 3 fix (#1076 LOW 5): `key={announcement.seq}` forces a genuine remount on
-          every announcement, so a REPEATED identical subject still re-announces -- an unchanged
-          text node is not a DOM mutation a live region would ever notice. */}
-      <p key={announcement.seq} role="status" className="sr-only">
-        {announcement.text}
+          Gate round 3 fix (#1076 LOW 5, Main's correction): a single ALWAYS-MOUNTED node, never
+          `key`-remounted -- a screen reader can skip a live region whose text is already present
+          the instant it mounts. `announce()` above clears then sets on the next frame instead,
+          a genuine two-step mutation of this SAME node. */}
+      <p role="status" className="sr-only">
+        {announcement}
       </p>
       <div className="flex items-center justify-end gap-1.5">
         {disabledReason && (
