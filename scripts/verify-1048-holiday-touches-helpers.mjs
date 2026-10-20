@@ -135,6 +135,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
       await sleep(2000);
     }
     const after = processTreeCpuSeconds(pid);
+    if (keepAwake) await tap(cdp);
     const pausedAtEnd = mode === 'full' ? await cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`) : null;
     const flightCountAtEnd = mode === 'full' ? await readFlightCount() : null;
     const flightCount = flightCountAtStart !== null && flightCountAtEnd !== null ? flightCountAtEnd - flightCountAtStart : null;
