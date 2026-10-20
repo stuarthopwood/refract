@@ -112,11 +112,21 @@ async function clearWidth(cdp) {
  * diagnosis. */
 async function settleForScreenshot(cdp) {
   const { width } = await cdp.evaluate(`({ width: window.innerWidth })`);
+  // Gate round 7 fix (self-caught live-check failure, "Stuart Hopwood" profile-name tooltip
+  // still visible in a theme screenshot): a single CDP `mouseMoved` teleports the pointer with
+  // no intermediate path, unlike a real mouse -- genuinely fires `pointerleave` on whatever was
+  // last hovered/focused only if the browser treats the jump as leaving it, which is not
+  // reliable for a CDP-synthesised click at an earlier coordinate. Two real moves (an extreme
+  // corner, then the actual neutral point) force two distinct transitions. The stray-overlay
+  // check also now matches `[data-slot="tooltip-content"]` directly (`tooltip.tsx`'s own
+  // render marker), not only `[role="tooltip"]`, which Radix does not guarantee here.
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
+  await sleep(100);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width - 20, y: 450 });
   await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
-  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' });
+  await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="tooltip-content"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' });
   await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
   const activeElement = await cdp.evaluate(`(() => { const el = document.activeElement; return el ? { tag: el.tagName, ariaLabel: el.getAttribute('aria-label') } : null; })()`);
   console.log(`${LOG}: settleForScreenshot activeElement`, JSON.stringify(activeElement));
