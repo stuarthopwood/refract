@@ -823,3 +823,59 @@ contrast.mjs` re-running their other pairs unchanged inside the new 726-pair tot
   every existing caller (`ipc/theme.rs`, `settings.rs` itself) is unaffected.
   `check:file-size`: 0 cap violations (398 files scanned, `settings.rs` back under cap,
   `theme_id.rs` far under it). Code-only, no cargo run.
+
+---
+
+## Phase 9: Convergence — #1039 Cyber Amber retune and softer text (append-only, `/speckit.converge`)
+
+Amends spec.md with a new Clarifications session (2026-10-20) and FR-020/FR-021, per the #1039
+grill (2026-10-19, Stuart, "not what I was expecting, needs to be more like the default dark
+but with orange/amber accents; main font colour should be less of a bright white, and a bit
+more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-contrast`,
+`obsidian` and `nordic-frost` stay byte-identical; only `.theme-dark` (text tokens) and
+`.theme-cyber-amber` (every token) are retuned.
+
+- [X] T034 Add spec.md Clarifications session 2026-10-20 and FR-020 (accent-vs-warning hue
+  distinctness)/FR-021 (softer text in Dark and Cyber Amber) (depends on nothing).
+  **Done**: `specs/007-app-themes/spec.md`.
+- [X] T035 Soften `.theme-dark`'s `--foreground` (0.985 -> `oklch(0.90 0 0)`) and
+  `--chat-foreground` (0.90 -> `oklch(0.86 0 0)`); update every literal (not `var()`-aliased)
+  copy of the old `--foreground` value in the same block: `--card-foreground`,
+  `--popover-foreground`, `--secondary-foreground`, `--accent-foreground`,
+  `--sidebar-foreground`, `--sidebar-accent-foreground` (depends on T034).
+  **Done**: `src/renderer/styles/globals.css` `.theme-dark`. `--sidebar-primary-foreground` and
+  every `--state-*-foreground`/`--pr-*-foreground` token left untouched (text on a *coloured*
+  fill, not a general UI-text role, so out of FR-021's scope).
+- [X] T036 Retune `.theme-cyber-amber` in full: surfaces onto Default Dark's own lightness
+  ladder plus a barely-visible warm tint (chroma 0.005, hue 50); accent to vivid orange
+  (`--accent-text`/`--active-indicator` `#fb923c`, `--primary`/`--send` `#c2410c` with white
+  text); `--severity-warning` retuned from hue 75 to hue 88 (FR-020: the new accent's real hue,
+  55.9, sits closer to the OLD warning hue, 73.8, than the old accent's did, 39.9 -- retuning
+  warning restores the margin); `--muted-foreground` de-browned (hue 60/chroma 0.06 ->
+  chroma 0.01/hue 50); `--foreground`/`--chat-foreground` per FR-021 (depends on T035).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber`, full header comment with
+  every measured ratio. `--sidebar-primary` (shared indigo, never carried the peach/orange)
+  left unchanged.
+- [X] T037 Update `src/shared/themes.ts`: Cyber Amber's `swatch`/`swatchPrimary`/
+  `titleBarOverlay` to match the retuned `--background`/`--primary`; Dark's
+  `titleBarOverlay.symbolColor` to match its own retuned `--foreground` (established
+  exact-match-to-foreground convention, confirmed from the pre-#1039 literals) (depends on T036).
+  **Done**: `src/shared/themes.ts`. `node scripts/check-theme-contrast.mjs`: **839/839 pairs
+  across 5 themes PASS** (`swatchMetadataDriftCheck`'s own cross-check included).
+- [X] T038 Amend `docs/design/product-look-and-feel.md`'s #1039 placeholder bullet (left by the
+  2026-10-19 grill) with the final shipped values and measured ratios; update
+  `docs/design/foundations-tokens-theming.md`'s surface-ladder/border/divider tables for Cyber
+  Amber's new numbers (depends on T036).
+  **Done**: both docs.
+- [ ] T039 Write `scripts/verify-1039-amber-retune.mjs` (live Tauri CDP check: switch to Cyber
+  Amber and Default Dark, read real computed colours for background/card/sidebar/foreground/
+  chat prose/muted text/accent-or-link/Send/a warning, assert accent-vs-warning hue distance,
+  screenshot chat/Session list/Settings/a warning in both themes) (depends on T036, T037).
+  (#1039)
+- [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
+  report/screenshots in the PR body (depends on T039).
+
+T034–T038 keep `dark-high-contrast`/`obsidian`/`nordic-frost` byte-identical to `origin/main`;
+confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged inside the new
+839-pair total (up from 733 at Phase 8, +106 pairs: Cyber Amber's full re-check plus Dark's
+newly-touched literal-copy foreground pairs).

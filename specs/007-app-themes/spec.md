@@ -30,6 +30,22 @@ font and code font stay with issue #4 and are out of scope here.
   preset; there is no light theme, and no OS-follow/System mode, since there is nothing to follow
   between.
 
+### Session 2026-10-20 (#1039, grilled 2026-10-19, none deferred)
+
+- Q: What should Cyber Amber's surfaces look like? -> A: Default Dark's own lightness ladder,
+  each surface carrying only a barely-visible warm tint (chroma about 0.005, hue about 50); no
+  more distinct, browner canvas of its own.
+- Q: What is Cyber Amber's accent? -> A: A vivid orange, settling the preset's own open
+  question (peach or amber) as neither: accent text and links are about `#fb923c`; the filled
+  Send/primary button is about `#c2410c` with white text.
+- Q: Does Cyber Amber's warning colour change? -> A: No -- it stays golden amber, and MUST stay
+  visually distinct from the new accent by hue, so a warning never reads as an accent
+  (`docs/design/foundations-icons.md:53`, "colour is meaning").
+- Q: Does the softer-text change apply to every built-in theme? -> A: No -- only Default Dark
+  and Cyber Amber. `--foreground` moves from near-white to about `oklch(0.90 0 0)`;
+  `--chat-foreground` goes a step softer, to about `oklch(0.86 0 0)`; muted text stays a clear
+  step below both, and every text pair keeps 4.5:1 or better.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Opens in a sensible default preset on first launch (Priority: P1)
@@ -228,6 +244,13 @@ side panel and confirm both show the same theme.
   in the default dark preset (the existing dark theme).
 - **FR-019**: Closing Refract while an unsaved theme is being previewed MUST NOT persist that
   preview; the next launch MUST show whatever was last saved.
+- **FR-020** (#1039): Within any single built-in theme, the active accent colour (`--accent-text`,
+  `--primary`, `--send`) MUST stay visually distinct in hue from that theme's own warning colour
+  (`--severity-warning`), so a warning never reads as an accent.
+- **FR-021** (#1039): `--foreground` and `--chat-foreground` MUST read as a soft grey rather than
+  near-white in Default Dark and in Cyber Amber, with `--chat-foreground` staying one step
+  dimmer than `--foreground` and `--muted-foreground` staying a clear step below both, in both
+  themes; every one of these pairs MUST still clear FR-008's contrast floor.
 
 ### Key Entities
 
