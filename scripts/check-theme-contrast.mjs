@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
+import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -291,8 +292,10 @@ checkedCount += swatchDrift.checkedCount
 failCount += swatchDrift.failCount
 rows.push(...swatchDrift.rows)
 
+// #1050: `COMMAND_PILL_PAIRS` lives in composer-selection-contrast.mjs, not PAIRS above (that
+// module's own header comment explains why) -- merged into the same per-theme loop here.
 for (const [themeId, props] of Object.entries(themes)) {
-  for (const { fg, bg, min, onlyThemes, informationalThemes } of PAIRS) {
+  for (const { fg, bg, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS]) {
     // #927 (quiet composer): `onlyThemes`/`informationalThemes` (theme-contrast-pairs.mjs's own
     // comment documents both) restrict a pair to the named theme ids; `informationalThemes`
     // additionally means "never enforced" -- computed and printed, tagged, but never counted
@@ -668,7 +671,9 @@ for (const [themeId, props] of Object.entries(themes)) {
 // #975 (Shiki token colours vs the new `--card` code-block background): all four composited
 // checks live in `theme-contrast-pairs.mjs`, not inline here, to keep this file at its own #806
 // baseline; merged into one loop for the same reason.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+// Gate round 5 (#1050, test review): `composerSelectionContrastRows` lives in its own module
+// (composer-selection-contrast.mjs's own comment explains why), merged into this same loop.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)

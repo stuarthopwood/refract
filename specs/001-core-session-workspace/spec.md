@@ -935,6 +935,160 @@
      requested unit tests are skipped; verification is the live CDP check this issue's own
      acceptance criteria describe.
 
+### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)
+
+- Q: Issue #1050 (UI polish, filed 2026-10-19 during away mode): a recognised command or skill
+  at the start of the composer's draft should get a subtle accent styling and stop triggering a
+  spelling underline. What counts as "recognised", how does spellcheck toggle, how is it drawn,
+  and what is the pill fill (since issue #610 already found `--accent-text` fails 4.5:1 on
+  `--muted` in some presets)? -> A: Decided (Skippy, delegated by Stuart 2026-10-19, away mode;
+  reversible on the issue). Six points:
+  1. **What counts.** Only a recognised command or skill token at the very start of the draft --
+     a name in the composer's own command list (built-ins, `/skill:<name>`, and custom commands
+     as they land with #760), read the same way `chat.send`'s own refusal path already matches
+     one (`parseSlashCommand`/`classifySlashInvocation` against the composer's own `commands`
+     list), never a hard-coded copy of either the list or its matching rules. An unknown `/zzz`
+     stays plain, so the styling doubles as a "this command exists" cue.
+  2. **Spelling.** While the draft starts with a recognised command, `spellCheck={false}` on the
+     whole box -- a `<textarea>` cannot exclude part of its own text, so the trade-off is that
+     arguments after a command (`/btw <text>`) go unchecked too; accepted, since command lines
+     are short and mostly names. Spellcheck returns the instant the leading token stops matching.
+  3. **Styling.** The recognised token gets a subtle pill: a neutral fill, a small radius
+     following `--radius`, the token text in `--accent-text`, no border, no line-height change,
+     no caret movement; arguments after the token stay normal text. **Fill, decided by
+     measurement (not #610's first-drafted `--muted`):** `--accent-text` still fails 4.5:1 on
+     `--muted` in Dark (4.00:1) and Obsidian (4.28:1), and clears only 6.60:1 on it in Dark (high
+     contrast) -- short of this issue's own enhanced 7:1 ask there. `--card` (the issue's own
+     named fallback) clears 4.5:1 in every preset and clears 7:1 in Dark (high contrast)
+     (8.46:1), so the pill's fill is `--card`, not `--muted`.
+  4. **Mechanism.** Reuses the composer's existing mirror pattern (the inert, scroll-synced,
+     `aria-hidden` overlay `ChipOverlaySegments`/the ghost-text overlay already use, T103/
+     FR-058), but as a "highlight-within-textarea" (gate round 1 HIGH correction, 2026-10-20):
+     the mirror sits UNDER the real `<textarea>` and renders the whole draft visibly, with the
+     real textarea going `[-webkit-text-fill-color:transparent]` (gate round 3 fix: NOT the
+     `color` property, which also hides anything else that reads it, such as an IME composition
+     underline) plus an explicit `caret-color` and a real `::selection` fill, so the native
+     caret, native selection highlight and IME composition keep painting on the real control, on
+     top of the mirror --
+     the first draft instead painted an opaque pill ON TOP of the textarea, which hid all three
+     for any character inside the token (found by all four reviewers in gate round 1, confirmed
+     from the round's own screenshot: the caret at offset 3 was gone). `MessageInput.tsx` is at
+     its file-size cap (working rule 11), so the logic lives in `CommandPillOverlay.tsx`.
+  5. **Scope.** The composer only; the same pill on the sent user bubble is a possible follow-up
+     (proposal), not part of this issue.
+  6. **Accessibility.** No change to the accessible name or value; the pill is a visual-only
+     `aria-hidden` overlay, so a screen reader reads the draft text exactly as today.
+
+### Session 2026-10-20 (Composer command pill, gate round 1 remediation, #1050)
+
+- Q: Gate round 1 (Code/Test/A11y/UI reviewers, all four independently; Sec passed) found one
+  HIGH: the opaque pill overlay painted over the real textarea, hiding the caret, native
+  selection highlight and IME composition inside the recognised token. What replaces it, and
+  what does the new dedicated pill-fill token resolve to, given `--card` cannot clear both the
+  existing accent-text floor AND a new "visibly distinct from the composer surface" floor in
+  every preset? -> A: Decided (the gate's own recorded fixes, confirmed against the measured
+  numbers): the mirror moves UNDER the textarea (the "highlight-within-textarea" technique,
+  FR-092's own amended text has the mechanism in full) so the native caret/selection/IME paint on
+  top as before this issue touched anything. The new `--command-pill-bg` token resolves to
+  `--muted` in Nordic Frost/Cyber Amber (clears both the >=1.4:1 "distinct from composer" floor
+  and the accent-text floor outright) and to `--card` in Dark/Obsidian/Dark (high contrast) (an
+  accepted, documented gap on the new 1.4:1 floor only: no single colour in those three presets
+  clears both floors at once, since `--accent-text`'s own luminance leaves too narrow a margin
+  above each preset's near-black background for any fill to sit far enough from one end without
+  falling short of the other -- proven analytically, not just by search; the WCAG-mandated
+  accent-text floor was kept over the newly-introduced visibility floor). Open for Stuart:
+  retune `--accent-text` in those three presets, or accept the gap as-is.
+
+### Session 2026-10-20 (Composer command pill, gate round 2 remediation, #1050)
+
+- Q: Gate round 1's accepted 3-theme gap (Dark/Obsidian/Dark (high contrast) could not clear the
+  new 1.4:1 "distinct from composer" floor without dropping `--accent-text` below its own 4.5:1
+  floor) was not accepted. The conflict is between `--accent-text` and the fill -- what gives the
+  pill its own text colour instead, so both floors clear in every preset? -> A: Decided (Main,
+  2026-10-20): a second dedicated token, `--command-pill-fg`, independent of `--command-pill-bg`.
+  `--command-pill-bg` is now a plain neutral step in every preset, chosen ONLY to clear 1.4:1
+  against the effective composer backdrop (measured 1.50-1.52:1 in all five, comfortable
+  margin) -- no text-contrast constraint on it at all. `--command-pill-fg` is the SAME hue as
+  `--accent-text` (the theme's own indigo/cyan/orange-amber family), lightened and desaturated
+  only as far as needed to clear 4.5:1 (7:1 in Dark high contrast) on THIS fill: Dark 4.66:1,
+  Obsidian 4.54:1, Dark (high contrast) 7.26:1, all measured. Nordic Frost and Cyber Amber need
+  no lightened step at all (`--muted` already clears both floors against the existing
+  `--accent-text`), so their `--command-pill-fg` is a plain alias of it. Both pairs
+  (`command-pill-fg`/`command-pill-bg` and `command-pill-bg`/background-or-composer-background)
+  are now enforced in `scripts/theme-contrast-pairs.mjs` in every preset -- no accepted gap
+  remains.
+
+### Session 2026-10-20 (Composer command pill, gate round 3 remediation, #1050)
+
+- Q: Round 2's delta gate (Sec PASS; Code/Test/A11y FAIL) found one CRITICAL (Send/Stop cannot
+  be clicked while a pill shows: the textarea's own `relative z-[1]` painted above the Send/Stop
+  button container, which had no z-index at all, proven live via `elementFromPoint`), two HIGHs
+  (the selection highlight painted nothing at all -- `selection:text-foreground` set only a text
+  colour with no background, and CSS gives an author `::selection` rule's own UNSET properties
+  the element's ordinary value, never the UA's special highlight; and the IME composition
+  underline would go invisible too, since masking via `color` hides anything else that reads
+  `color`, underlines included) and two MEDIUMs (a ~150ms flicker from the shared `Textarea`
+  primitive's own `transition-colors` fading the mask on/off out of sync with the mirror's
+  instant mount/unmount; Dark/Obsidian's `--command-pill-fg` hue had drifted 15-25 degrees off
+  `--accent-text`'s own real measured hue, reading as a visibly different blue) -- how to fix
+  all five without reopening round 2's already-enforced contrast floors? -> A: Decided (Main,
+  2026-10-20): (1) Send/Stop container gets its own `z-[3]`, above the textarea's `z-[1]` and the
+  ghost-text/chip mirrors' `z-[2]`, below `SlashMenu.tsx`'s `z-10`. (2) The masking property moves
+  from `color` to `-webkit-text-fill-color` (keeping `color` real, so anything that reads it
+  stays correct); `::selection` now also overrides `-webkit-text-fill-color` (not `color`, which
+  no longer needs masking) to a dedicated `--composer-selection-fg` AND paints a real
+  `--composer-selection-bg` fill -- both plain aliases of the existing, already-enforced
+  `accent-foreground`/`accent` pair, not new colour decisions; forced-colours gets its own
+  `Highlight`/`HighlightText` fallback pair on both the base and the selection rule (this
+  property is not one of the UA's own forced-colours overrides, unlike `color`, so the old
+  safety net had to be re-asserted explicitly). (3) The composer's own `<textarea>` narrows its
+  `transition-colors` down to `transition-[border-color,box-shadow]` (merged via `cn`'s
+  tailwind-merge, same class group) -- the shared `Textarea` primitive itself is untouched. (4)
+  `--command-pill-fg`'s hue is retuned to the real measured accent hue in both drifted presets
+  (Dark 264 -> 279, Obsidian 255 -> 280), re-lightened to keep clearing 4.5:1 (7:1 Dark high
+  contrast, unaffected): Dark 4.65:1, Obsidian 4.75:1, Dark (high contrast) 7.26:1 (corrects
+  round 2's own 7.23:1 transcription), all measured; the live theme loop now also asserts the
+  OKLCH hue difference from `--accent-text` is <=5 degrees in every preset. (5) UI Medium: the
+  pill's own fill now extends 2px past the token's glyph box on every side via `box-shadow`
+  (which never reserves layout space, unlike `padding`), so `/`/the token's own edge glyphs no
+  longer sit flush against the fill.
+
+### Session 2026-10-20 (Composer command pill, gate round 5 remediation, #1050)
+
+- Q: The test review found `--composer-selection-bg`'s round-3 opaque `var(--accent)` alias
+  measured EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber (both resolve `--accent`/
+  `--muted` to the same colour there), painting a completely invisible selection highlight over
+  a selected pill; the UI review separately found the live check's own "chip clickable" test
+  targeted the real, ABOVE-composer `AttachmentStrip` (nothing there could ever be occluded by
+  the pill) instead of the in-composer chip mirror that actually sits beside it; Obsidian's
+  `--command-pill-fg` (`oklch(0.715 0.166 280)`) was also found to sit outside the sRGB gamut.
+  How to fix all three? -> A: Decided (Main, 2026-10-20): (1) `--composer-selection-bg` becomes
+  a TRANSLUCENT accent-text tint, `color-mix(in oklab, var(--accent-text) 34%, transparent)`,
+  not a second opaque colour per theme that could drift the same way again -- a translucent fill
+  always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+  through, so it is visibly distinct from its own backdrop by construction. Applied
+  UNCONDITIONALLY now (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, moved out of the
+  pill-only `COMMAND_PILL_TEXTAREA_CLASS`), so the selection never changes look the instant a
+  recognised command's own leading token appears or disappears. 34% clears every theme's own
+  `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high contrast) AND a new
+  >=1.5:1 "visibly distinct from the pill" floor at once (worst case Dark, 1.52:1; Dark high
+  contrast's own 7:1 floor is the other binding constraint, 7.22:1) -- both enforced in
+  `scripts/composer-selection-contrast.mjs`'s new `composerSelectionContrastRows` (a dedicated
+  module, not a `theme-contrast-pairs.mjs` PAIRS entry: that file sits at its own #806 baseline
+  with no headroom, and a plain two-operand pair cannot correctly composite a translucent `bg`
+  operand over a REAL backdrop rather than itself). Against the near-black `--background`/
+  `--composer-background` themselves, no alpha near this window reaches 3:1 without exceeding
+  the text floor above, so that comparison stays informational only, the same accepted-gap shape
+  this spec's `sidebarBorderContrastRows` precedent already uses. (2) The live check's chip-
+  clickable assertion now targets `ChipOverlaySegments`'s own `span[role="button"]` (the in-
+  composer mirror; the real strip only ever renders real `<button>`s, so the selector is
+  unambiguous) with both an `elementFromPoint` reachability check and a real dispatched click
+  that opens and closes its preview dialog. (3) Obsidian's `--command-pill-fg` chroma is lowered
+  from 0.166 to 0.14 (same lightness 0.715, same hue 280) -- comfortably inside gamut rather
+  than at its boundary, clearing 4.5:1 at 4.86:1 measured from a colour that needs no clipping;
+  the round-2/3 comment's claim that the check's own 4.75:1 was simply "measured" is corrected
+  to note that number was real for the CLIPPED colour, not the authored (unreachable) literal.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1512,6 +1666,49 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `/`. Role names, icons, and the provider map MUST live in one shared module so Settings
   (#714), the icon choice (#717), and the role switcher (#766) read the same data Refract's
   composer chip does, rather than four independent copies that could drift.
+- **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
+  mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism; gate round 1
+  remediation corrected the mechanism, gate round 2 corrected the fill/text tokens, gate round 3
+  corrected the masking property, the selection highlight and the stacking order, all below):
+  while the draft's own leading token (from `/` through the end of its name, including a
+  `skill:` prefix) is a command or skill the composer's own `commands` list recognises (the same
+  exact-match logic `chat.send`'s own refusal path already applies, never a hard-coded copy of
+  the list or its matching rules), the message box MUST show that token as a subtle pill -- a
+  dedicated `--command-pill-bg` fill (gate round 1 MEDIUM: the fill itself must also be visibly
+  distinct from the composer surface, >=1.4:1 against the effective composer backdrop; gate
+  round 2: `--command-pill-bg` is a plain neutral step in every preset, chosen only to clear
+  that floor, with NO text-contrast constraint on it), a small radius following `--radius`, the
+  token text in a SEPARATE `--command-pill-fg` token (gate round 2: the same hue as
+  `--accent-text`, lightened/desaturated only as far as needed to clear 4.5:1 on the fill, 7:1 in
+  Dark (high contrast); a plain alias of `--accent-text` itself in presets where that already
+  clears both floors; gate round 3: Dark/Obsidian's own hue had drifted 15-25 degrees off
+  `--accent-text`'s real measured hue, corrected), no border -- drawn by a mirror sitting UNDER
+  the real `<textarea>` (the "highlight-within-textarea" technique, gate round 1 HIGH: the
+  mirror renders the WHOLE draft visibly, the textarea itself goes `[-webkit-text-fill-color:
+  transparent]` (gate round 3 HIGH, IME: NOT the `color` property -- masking via `color` also
+  hid anything else that reads it, such as an IME composition underline; `color` itself stays
+  real) with an explicit `caret-color` and a real `::selection` fill (dedicated `--composer-
+  selection-bg`/`-fg` tokens; gate round 3 HIGH: round 1/2's `::selection` rule set only a text
+  colour with NO background, which left the highlight completely invisible -- an author
+  `::selection` rule leaves any UNSET property at the element's own ordinary value, never the
+  UA's special highlight; gate round 5, test review: `--composer-selection-bg` is a TRANSLUCENT
+  accent-text tint, not an opaque alias of `--accent` -- the opaque fill happened to measure
+  EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber, painting an invisible highlight over
+  a selected pill; `--composer-selection-fg` stays a plain alias of `--accent-foreground`,
+  restored via `color` plus `-webkit-text-fill-color: currentColor`) UNCONDITIONALLY, not only
+  while a token is present, so the native caret, the native selection highlight and IME
+  composition keep painting on the real control, on top of the mirror -- the original opaque-
+  overlay-on-top design hid all three. The Send/Stop button container MUST stay clickable while
+  the pill shows (gate round 3 CRITICAL: it previously had no `z-index`, so the textarea's own
+  positioned stacking context painted over it); it now carries its own `z-[3]`, above the
+  textarea's `z-[1]` and the ghost-text/chip mirrors' `z-[2]`. No line-height change and no caret
+  movement; text after the token (the command's own arguments) MUST stay plain. The message box
+  MUST also set `spellCheck={false}` for as long as that leading token is recognised, reverting
+  the instant it stops matching (deleted, edited into an unrecognised name, or the draft no
+  longer starts with `/`) -- a `<textarea>` cannot exclude part of its own text from spellcheck,
+  so a recognised command's own arguments go unchecked too while it shows. An unrecognised
+  leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged. This is visual
+  only: the textarea's own accessible name and value are unaffected.
 
 ### Key Entities
 
