@@ -11,7 +11,9 @@
 // deterministically renders a real `--severity-warning`-coloured NoticeRow, with no dependence
 // on a real model ever choosing to emit a warning. The same turn's own echoed user message
 // renders through `UserMessageRow.tsx`'s `text-chat-foreground` Markdown, giving a real chat-
-// prose element too -- no second fixture needed for this check's own text-token assertions.
+// prose element too. EXTENDED (#1039 round-1 self-review, 2026-10-20): the fixture now also
+// carries one assistant message with a short Mermaid fence BEFORE the notices (its own
+// "EXTENDED" header comment) -- no second fixture needed for any of this check's assertions.
 //
 // For each of Cyber Amber and Dark (Default Dark), switches via the real Profile-menu Theme
 // submenu (`switchTheme`, the same route `verify-551-presets.mjs` uses for Cyber Amber), then
@@ -45,11 +47,18 @@
 // `--scrollbar-thumb-hover`/`--composer-focus` (real resolved values, `THEMES` puts Dark
 // first) and asserts Cyber Amber's reading of the SAME tokens is byte-identical -- the chroma
 // check above cannot catch a lightness mismatch between two achromatic values, which is
-// exactly what these six tokens had before that gate round.
+// exactly what these six tokens had before that gate round. A further round-1 assertion reads
+// the real rendered Mermaid diagram's own `<img>` (`data:image/svg+xml` src, decoded) and
+// checks for Dark's own node fill/text literals (`MERMAID_NODE_FILL`/`MERMAID_NODE_TEXT`) --
+// Mermaid bakes `themeVariables` straight into the SVG, never through a CSS custom property,
+// so a per-field copy of Cyber Amber's own Mermaid palette silently drifting off `DARK_FAMILY`
+// could not be caught any other way.
 //
-// Screenshots per theme: the chat view (the warning NoticeRow is inline in it, so one shot
-// covers both "chat" and "a warning"), the Manage sessions screen (the Session list), and the
-// Settings Appearance section.
+// Screenshots per theme (gate round 1 added three): the chat view (the warning NoticeRow is
+// inline in it, so one shot covers both "chat" and "a warning"), the Mermaid diagram's own
+// "Show source" code block, the Profile menu as an open dropdown, the Manage sessions screen
+// (the Session list), an unknown-command refusal toast, and Settings Appearance. Every shot is
+// preceded by `settleForScreenshot` (see that call's own first-use comment below).
 //
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
 // scripts/verify-1039-amber-retune.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
@@ -78,7 +87,7 @@ import {
 import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
-import { parseComputedColorToEntry } from './contrast-math.mjs';
+import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -144,6 +153,23 @@ const DARK_EQUALITY_VARS = [
   ['--scrollbar-thumb-hover', 'color'],
   ['--composer-focus', 'color']
 ];
+
+// #1039 round-1 self-review (Main, 2026-10-20): Cyber Amber's own Mermaid palette
+// (`src/shared/mermaidThemeData.ts`) used to be the old brown literals; it now reuses
+// `DARK_FAMILY` directly, the SAME object Dark itself uses. A real rendered diagram's node
+// fill/text colours are these two literals verbatim in BOTH themes -- not read via a CSS
+// custom property (Mermaid bakes its own `themeVariables` straight into the generated SVG's
+// `fill`/`style` attributes, never through `var()`), so this is the only way to catch a
+// per-field copy silently drifting back apart from Dark's.
+const MERMAID_NODE_FILL = '#1f1f1f'; // DARK_FAMILY.primaryColor (`--card`)
+const MERMAID_NODE_TEXT = '#fafafa'; // DARK_FAMILY.primaryTextColor (`--card-foreground`)
+
+// #1039 round-1 self-review (Main, 2026-10-20): an unknown-command refusal toast, the same
+// client-side mechanism `verify-997-notice-severity.mjs` uses (never touches the fake-omp
+// tape -- `MessageInput.tsx` intercepts and refuses before ever calling `prompt`), gives a
+// real toast screenshot per theme with no new fixture needed.
+const UNKNOWN_COMMAND = '/zzznotarealcommand1039';
+const TOAST_SEEN_ATTR = 'data-1039-seen';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -212,7 +238,7 @@ async function main() {
   clearKnownOutputFiles(
     SHOTS_DIR,
     'refract-1039-amber-retune-shots',
-    [...THEMES.flatMap((t) => [`${t.id}-00-chat-with-warning.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
+    [...THEMES.flatMap((t) => [`${t.id}-00-chat-with-warning.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-code-block.png`, `${t.id}-04-profile-dropdown.png`, `${t.id}-05-toast-warning.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
   );
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1039-data-'));
@@ -406,34 +432,97 @@ async function main() {
           }
         }
 
-        // ---- Screenshots: chat (the warning NoticeRow is inline in it), Manage sessions (the
-        // Session list), Settings Appearance. ----
+        // ---- Mermaid (#1039 round-1 self-review): the fixture's own assistant message (see
+        // its own "EXTENDED" header comment) renders one real flowchart via Markdown.tsx's
+        // `MermaidBlock`, re-rendering on every theme switch (`useEffect`'s own
+        // `activeThemeId` dependency). The result is an inert `<img role="img">` whose `src` is
+        // a `data:image/svg+xml` URI -- decode it and check the REAL rendered SVG text for
+        // Dark's own literal node fill/text colours (Mermaid bakes `themeVariables` straight
+        // into the SVG, never through a CSS custom property, so there is no `var()` to probe). ----
+        await cdp.waitFor(`!!document.querySelector('img[role="img"]')`, { timeoutMs: 15_000, label: `${theme.name}: Mermaid diagram image rendered` });
+        const mermaidSrc = await cdp.evaluate(`document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`);
+        if (!mermaidSrc || !mermaidSrc.startsWith('data:image/svg+xml')) {
+          failures.push(`${theme.name}: Mermaid diagram image has no real data: URI src (got ${JSON.stringify(mermaidSrc)}).`);
+        } else {
+          const svgText = decodeURIComponent(mermaidSrc.slice(mermaidSrc.indexOf(',') + 1));
+          const hasFill = svgText.includes(MERMAID_NODE_FILL);
+          const hasText = svgText.includes(MERMAID_NODE_TEXT);
+          if (!hasFill || !hasText) {
+            failures.push(`${theme.name}: real rendered Mermaid SVG is missing Dark's own node fill ${MERMAID_NODE_FILL} (found: ${hasFill}) and/or node text ${MERMAID_NODE_TEXT} (found: ${hasText}) -- Cyber Amber's own Mermaid palette may have drifted off DARK_FAMILY.`);
+          } else {
+            findings.push(`${theme.name}: real rendered Mermaid SVG contains Dark's own node fill (${MERMAID_NODE_FILL}) and node text (${MERMAID_NODE_TEXT}) colours.`);
+          }
+        }
+
+        // ---- Screenshots: chat (the warning NoticeRow is inline in it), a code block (the
+        // Mermaid diagram's own "Show source" toggle), an open dropdown (the Profile menu),
+        // Manage sessions (the Session list), a toast (an unknown-command refusal, the same
+        // client-side mechanism as `verify-997-notice-severity.mjs`), and Settings Appearance.
+        // Gate round 1 (self-review, 2026-10-20): `settleForScreenshot` (imported from
+        // `verify-700-todo-pin-helpers.mjs`, the same fix issue #700's own gate round 7 self-
+        // caught failure landed) runs before EVERY shot below -- moves the pointer, blurs,
+        // presses Escape, and THROWS (fails this run fatally, not a soft skip) if a stray
+        // tooltip/hover card is still open. It always runs BEFORE the action that produces the
+        // state a given shot captures (opening the dropdown, showing the code block, sending
+        // the refusal), never after, so it can never dismiss the very overlay a shot exists to
+        // capture. ----
+        await settleForScreenshot(cdp);
         const chatShot = `${theme.id}-00-chat-with-warning.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, chatShot));
         shotNames.push(chatShot);
 
+        await settleForScreenshot(cdp);
+        await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim().startsWith('Show source for'))`);
+        await cdp.waitFor(`!!document.querySelector('button[aria-expanded="true"]')`, { timeoutMs: 10_000, label: `${theme.name}: Mermaid source code block shown` });
+        const codeBlockShot = `${theme.id}-03-code-block.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, codeBlockShot));
+        shotNames.push(codeBlockShot);
+        await cdp.click(`document.querySelector('button[aria-expanded="true"]')`);
+        await cdp.waitFor(`!document.querySelector('button[aria-expanded="true"]')`, { timeoutMs: 10_000, label: `${theme.name}: Mermaid source code block hidden again` });
+
+        await settleForScreenshot(cdp);
         await cdp.click(`document.querySelector('[data-profile-name-button]')`);
         await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions'))`, {
           timeoutMs: 10_000,
           label: 'Profile dropdown menu open (containing Manage sessions)'
         });
+        const dropdownShot = `${theme.id}-04-profile-dropdown.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, dropdownShot));
+        shotNames.push(dropdownShot);
         await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Manage sessions')`);
         await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Manage sessions screen opened' });
         await sleep(200);
+        await settleForScreenshot(cdp);
         const manageShot = `${theme.id}-01-manage-sessions.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, manageShot));
         shotNames.push(manageShot);
         await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
         await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Manage sessions closed, back in chat' });
 
+        await settleForScreenshot(cdp);
+        const toastSelector = `document.querySelectorAll('[data-sonner-toast]:not([data-removed="true"])')`;
+        const freshToastExpr = `Array.from(${toastSelector}).find((el) => !el.hasAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}))`;
+        await cdp.evaluate(`Array.from(${toastSelector}).forEach((el) => el.setAttribute(${JSON.stringify(TOAST_SEEN_ATTR)}, 'true'))`);
+        await cdp.typeIntoByLabel('Message', UNKNOWN_COMMAND);
+        await cdp.clickByLabel('Send message');
+        await cdp.waitFor(`!!(${freshToastExpr})`, { timeoutMs: 15_000, label: `${theme.name}: unknown-command refusal toast mounted` });
+        await sleep(400);
+        const toastShot = `${theme.id}-05-toast-warning.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, toastShot));
+        shotNames.push(toastShot);
+        await cdp.click(`(${freshToastExpr})?.querySelector('[data-close-button]')`);
+        await cdp.waitFor(`!(${freshToastExpr})`, { timeoutMs: 5_000, label: `${theme.name}: refusal toast dismissed` });
+
+        await settleForScreenshot(cdp);
         await openSettingsAppearance(cdp);
         await sleep(200);
+        await settleForScreenshot(cdp);
         const settingsShot = `${theme.id}-02-settings-appearance.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, settingsShot));
         shotNames.push(settingsShot);
         await closeSettingsBackToChat(cdp);
 
-        findings.push(`${theme.name}: screenshots captured (chat+warning, Manage sessions, Settings Appearance).`);
+        findings.push(`${theme.name}: screenshots captured (chat+warning, code block, profile dropdown, Manage sessions, toast, Settings Appearance).`);
       } catch (err) {
         failures.push(`${theme.name}: ${err.message}`);
       }

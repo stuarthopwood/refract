@@ -66,11 +66,12 @@ const NEW_THEMES = [
   { id: 'cyber-amber', name: 'Cyber Amber', switchVia: 'profile-menu' }
 ];
 
-// Gate round 3 item 6: named thresholds, not magic numbers -- both decided and documented in
-// globals.css's own `.theme-cyber-amber` header comment. The swatch floor is #551's own gate
-// round 1 decision; the hue floor is new this round, set below round 1's own failed 16-17-degree
-// first candidate with margin, so that exact regression would fail here, not pass silently.
-const CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR = 1.5;
+// Gate round 3 item 6: named thresholds (globals.css's own `.theme-cyber-amber` comment); hue
+// floor below round 1's failed 16-17-degree candidate, with margin. #1039 round-1 self-review
+// (Main, 2026-10-20): new accent hue (55.9) closed the swatch gap to `--severity-error` below
+// 1.5:1; no point clears that AND error-text->=4.5:1-everywhere -- text contrast won (1.42:1
+// best achievable), an accepted departure for Cyber Amber only (accessibility.md), floor lowered.
+const CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR = 1.4;
 const CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR = 30;
 
 // Items 10/12 (missing-token guard, real OKLab hue/lightness distance): `linearSrgbToOklab`/
@@ -351,8 +352,7 @@ async function main() {
             findings.push(`${theme.name}: --accent-text and --severity-error measure ${swatchRatio.toFixed(2)}:1 apart (swatch contrast), clearing the decided ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 separation.`);
           }
 
-          // Gate round 3 item 1: live accent-vs-warning hue distance -- the first gate round 2
-          // candidate measured only 16-17 degrees after clipping; this would now fail it.
+          // Gate round 3 item 1: live accent-vs-warning hue distance (the first gate round 2 candidate measured only 16-17 degrees after clipping; this would now fail it).
           const warningRaw = await requireResolvedCssVarColor(cdp, '--severity-warning', 'color');
           const warningHL = describeHueLightness(warningRaw);
           if (!accentHL || !warningHL) {

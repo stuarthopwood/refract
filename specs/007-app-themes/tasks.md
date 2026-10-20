@@ -958,7 +958,7 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
   anywhere. Draft PR #1094 opened (`Closes #1039`).
 - [X] T044 Post-draft-PR self-review against the issue body's own grill decisions and the
   Mission's stated watch-items (depends on T040).
-  **Done (8 findings, all fixed):**
+  **Done (11 findings, all fixed):**
   1. [High] Mermaid's own `MERMAID_THEME_VARIABLES['cyber-amber']` was still the old brown
      palette (`src/shared/mermaidThemeData.ts`) -- now reuses `DARK_FAMILY` directly, the same
      object Dark itself uses.
@@ -971,13 +971,23 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
      unchanged (the 2026-10-09 achromatic-ring decision); now byte-identical to Dark's literal,
      and spec.md/the verify script/the globals.css header comment/`product-look-and-feel.md`
      all corrected.
-  4. [Decided, PARTIAL -- flagged to Main]: #1039's new accent hue (55.9) also closes the gap to
-     Cyber Amber's own `--severity-error` (hue 12, unchanged since #551): the swatches now
-     measure only 1.23:1 apart, under the 1.5:1 distinctness floor. No single `--severity-error`
-     lightness (same hue/chroma) clears both that floor (needs L<=~0.662) and the error-text-
-     on-`--muted` floor (needs L>=~0.665) at once -- the two windows do not overlap. Flagging
-     the exact numbers to Main; `--severity-error` left UNCHANGED pending a decision (chroma
-     change, a relaxed floor, or an accepted gap).
+  4. [Decided, RESOLVED]: #1039's new accent hue (55.9) closed the gap to Cyber Amber's own
+     `--severity-error` (hue 12, unchanged since #551) to 1.23:1, under the 1.5:1 distinctness
+     floor. Flagged to Main; decision (2026-10-20): grid search L 0.655-0.675/chroma 0.15-
+     0.24/hue 5-25 for a point clearing BOTH 1.5:1 AND error-text->=4.5:1-everywhere; none found
+     (confirmed, no point in that space clears both -- the two floors' lightness windows do not
+     overlap at any hue/chroma in range). Per Main's fallback: WCAG text contrast wins.
+     `--severity-error` retuned to `oklch(0.67 0.14 8)` -- the best accent-vs-error swatch ratio
+     achievable (1.42:1) while keeping every error-text pair >=4.5:1 (5.90:1/`--background`,
+     5.59:1/`--card`-`--popover`, 4.71:1/`--muted`, 4.52:1 on the composited `destructive/80`
+     hover fill over the dialog footer -- a real constraint only discovered by running
+     `check-theme-contrast.mjs` for real, since near-black `destructive-foreground` text sits
+     on that composited fill too). Recorded as a named accepted departure,
+     `docs/design/accessibility.md` "Accepted departures" (the error row also carries its own
+     icon and word, WCAG 1.4.1); `scripts/verify-551-presets.mjs`'s own
+     `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` lowered from 1.5 to 1.4 for Cyber Amber only, with
+     a comment pointing at the departure. `check-theme-contrast.mjs` re-run: 872/872 pairs
+     across 5 themes PASS (the hover-fill failure this retune first introduced is gone).
   5. FR-022 amended to the full wording (surface AND text tokens, plus `--input`/scrollbar/
      `--composer-focus`, equal Default Dark; the status palette keeps the preset's own values,
      with the one exception above); a new Clarifications session records the correction; this
@@ -996,13 +1006,39 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
      Dark's own turn (`THEMES` reordered to put Dark first), then compared against Cyber
      Amber's own reading of the SAME token; catches a lightness mismatch between two achromatic
      values that the existing chroma-only check could not.
-  **NOT run** (no-build remediation lane, held for the next build slot): item 8's new
-  assertion is code-verified only (`node --check` clean, matches the committed script's own
-  token/property pairing); `check:theme-contrast` 872/872 pairs across 5 themes PASS (unchanged
-  total -- no new PAIRS entries, only Cyber Amber's own literal values changed);
-  `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/`check:drag-regions` all
-  green. Actually live-running item 8's new assertion (switching themes, reading the real
-  tokens) is deferred to the next build slot, alongside the rest of T040's own re-run.
+  9. [High] `scripts/verify-1039-amber-retune.mjs` extended: the existing `997-notice-severity`
+     fixture now also carries one assistant message with a short Mermaid fence (its own
+     "EXTENDED" header comment, README.md's provenance table updated -- not a new fixture per
+     AGENTS.md). A real step reads the rendered Mermaid `<img>`'s `data:image/svg+xml` src,
+     decodes it, and asserts the real SVG text contains Dark's own node fill/text literals
+     (`MERMAID_NODE_FILL`/`MERMAID_NODE_TEXT`, `#1f1f1f`/`#fafafa`) in both Dark and Cyber
+     Amber -- Mermaid bakes `themeVariables` straight into the SVG, never through a CSS custom
+     property, so item 1's fix could not be verified any other way.
+  10. [Medium] Screenshots extended: a code block (the Mermaid diagram's own "Show source"
+      toggle), an open dropdown (the Profile menu, captured before clicking through to Manage
+      sessions) and a toast (an unknown-command refusal, the same client-side mechanism
+      `verify-997-notice-severity.mjs` uses, no fake-omp tape involved) added per theme.
+      `settleForScreenshot` (imported from `verify-700-todo-pin-helpers.mjs`, the fix issue
+      #700's own gate round 7 self-caught failure landed) now runs before EVERY shot: moves the
+      pointer, blurs, presses Escape, and THROWS (fails the run, not a soft skip) if a stray
+      tooltip/hover card is still open -- always called BEFORE the action that produces a
+      shot's own state (opening the dropdown, showing the code block, sending the refusal),
+      never after, so it cannot dismiss the very overlay a shot exists to capture. `dirty` in
+      `report.json` is unchanged (already honest).
+  11. [Low] PR #1094's own body corrected: dropped the "active Settings row" accent-outline
+      claim (both themes render the identical plain muted-background highlight, no outline in
+      either); noted the focus ring stays achromatic in both; noted the Settings theme picker
+      shows no colour swatch chip at all yet (plain radio list) -- #1070 adds the two-colour
+      swatch chip later. Evidence section updated for items 1-10 above.
+  **NOT run** (no-build remediation lane, held for the next build slot): items 8, 9 and 10's
+  own new/extended assertions and screenshots are code-verified only (`node --check` clean,
+  matches the committed script's own token/property pairing and selectors); `check:theme-
+  contrast` 872/872 pairs across 5 themes PASS (item 4's retune fixed the one real failure it
+  introduced, `destructive-foreground`/`destructive-fill-hover`, 4.33:1 -> now clears 4.5:1);
+  `pnpm typecheck`/`vitest run` (148/148)/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions` all green. Actually live-running the extended script (switching themes,
+  reading real tokens, rendering the Mermaid diagram, capturing every screenshot) is deferred
+  to the next build slot, alongside the rest of T040's own re-run.
 
 T034–T038 keep `dark-high-contrast`/`obsidian`/`nordic-frost` byte-identical to `origin/main`;
 confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged inside the

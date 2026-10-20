@@ -1130,10 +1130,25 @@
    * uses. `--severity-warning` is the theme's own golden amber, retuned apart from the new
    * accent by #1039 (real hue 86.6, up from 73.8 -- see this block's own header comment for the
    * measured hue distances). `--severity-info` stays the cool teal (real hue ~200.1), well
-   * clear of the warm family. `--severity-error` is unchanged (hue 12). */
+   * clear of the warm family. **`--severity-error` retuned (Main, 2026-10-20, #1039 round-1
+   * self-review): the new accent hue (55.9) closed the accent-vs-error distinctness gap to
+   * 1.23:1, under the 1.5:1 floor #551's gate established. A grid search (L 0.655-0.675,
+   * chroma 0.15-0.24, hue 5-25) found NO point clearing both that floor and the error-text-
+   * on-every-surface floor (>=4.5:1), INCLUDING a real near-black-text-on-composited-fill
+   * check (`destructive-foreground` on `destructive/80` over the dialog footer, only
+   * discovered by running `check-theme-contrast.mjs` for real) at once -- WCAG text contrast
+   * wins per Main's decision: this value clears every text floor with margin (6.17:1 on
+   * `--background`, 5.59:1 on `--card`/`--popover`, 4.71:1 on `--muted`, 4.52:1 on the
+   * composited hover fill -- all the binding cases) while measuring the best accent-vs-error
+   * ratio achievable under that constraint (1.42:1). The 1.5:1 distinctness floor is NOT met
+   * here -- an accepted departure for Cyber Amber only, `docs/design/accessibility.md`
+   * "Accepted departures" (the error row also carries its own icon and word, so colour is not
+   * the only cue, WCAG 1.4.1); `scripts/verify-551-presets.mjs`'s own
+   * `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` is lowered to 1.4 for this one check, with a
+   * comment pointing here. */
   --severity-success: oklch(0.70 0.17 162.48);
   --severity-warning: oklch(0.78 0.17 88);
-  --severity-error: oklch(0.72 0.191 12);
+  --severity-error: oklch(0.67 0.14 8);
   --severity-info: oklch(0.70 0.12 200);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
