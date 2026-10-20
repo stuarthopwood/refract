@@ -366,7 +366,13 @@ async function main() {
     // ---- Settle, then confirm the panel RECONCILES to the settle tree, which genuinely
     // DIFFERS from the last live frame (E2) ----
     await cdp.waitFor(`document.querySelector('[aria-label="Message"]') && !document.querySelector('[aria-label="Message"]').disabled`, { timeoutMs: 60_000, label: 'Turn 1 settled, composer re-enabled' });
-    await sleep(500);
+    // Gate round 6 fix (#700 E2, self-caught live-check failure): the composer re-enables
+    // SYNCHRONOUSLY on `session_settled` (frame.rs `handle_turn_settled`'s own `set_status`),
+    // but the settle-time `get_state` round trip that actually reconciles `todoPhases` runs as
+    // a SEPARATE SPAWNED task (`on_session_settled`, up to the full RPC timeout) -- a fixed
+    // sleep after the composer re-enables races that reply. Poll for the real DOM effect
+    // instead, the same pattern the 8s mid-turn holds above already use.
+    await cdp.waitFor(`(() => { const panel = ${PANEL_SELECTOR}; const list = panel?.querySelector('div.overflow-y-auto'); return !!list && !/Blocked:/.test(list.textContent); })()`, { timeoutMs: 10_000, label: 'E2: settle tree reconciles away the Blocked line' });
     const settledRead = await readPanel(cdp);
     assertTrue(!settledRead.rows.some((r) => r.hasBlockedLine), 'E2: settle tree reconciles "Update docs" from blocked (last live) to completed -- no Blocked line remains');
     assertTrue(/Todo 5\/13/.test(settledRead.header ?? ''), 'E2: header reads "Todo 5\\/13" at settle, differing from the pre-settle "Todo 4\\/13" (the reconciled Update docs now also counts as done)', settledRead.header);
