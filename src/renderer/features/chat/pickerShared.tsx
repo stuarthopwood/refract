@@ -124,6 +124,16 @@ export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-accent t
  * pill row and ghost-text overlay share that same box; the commit box has no such siblings, so
  * the identical tokens are applied straight to each field's own `focus-visible` state, replacing
  * `Input`/`Textarea`'s generic `border-input`/`--ring` defaults with the composer's instead of
- * re-deriving a third set of tokens. */
+ * re-deriving a third set of tokens.
+ * Live-check fix (verify-1101, 2026-10-20): `Input`/`Textarea`'s own `dark:bg-input/30` is a
+ * DIFFERENT variant group from a bare `bg-composer-background` (no `dark:` prefix), so `cn`
+ * cannot recognise them as conflicting and never drops the stale one -- in Dark/Obsidian/Dark
+ * high contrast the real DOM ends up carrying BOTH classes, and `dark:bg-input/30` wins the CSS
+ * cascade (declared later in the generated stylesheet), confirmed live via a real computed-style
+ * read (`oklab(1 0 0 / 0.108)`, exactly `--input`'s 36% alpha times Tailwind's own `/30` modifier
+ * -- never `--composer-background` at all). An explicit `dark:bg-composer-background` gives
+ * `cn` a same-variant competitor to actually dedupe against, the same fix this file's own
+ * `text-readout` precedent (`src/renderer/lib/utils.ts`) already documents for an unrelated
+ * custom-token collision. */
 export const COMPOSER_INPUT_SURFACE_CLASS =
-  'border-composer-border bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'
+  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'

@@ -421,13 +421,24 @@ async function main() {
     const backAriaLabel = await activeElementAriaLabel(cdp);
     assertEqual(backAriaLabel, `Back to changes from ${FIXTURE.longTracked}`, "Back button's aria-label names the real open file", findings, failures);
 
-    // Settles 300ms before the FIRST rect capture: the diff's own content (syntax highlighting,
-    // font metrics) can still be reflowing immediately after `.diff-view` first mounts, which
-    // would otherwise make `rectBefore` an unstable baseline to compare `rectAfter` against.
+    // Settles 300ms before the first scroll: the diff's own content (syntax highlighting, font
+    // metrics) can still be reflowing immediately after `.diff-view` first mounts.
     await sleep(300);
     const scrollRegionFinder = `document.querySelector('.diff-view')?.closest('.overflow-auto')`;
-    const rectBefore = await cdp.evaluate(`(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); return { top: r.top, left: r.left }; })()`);
     const scrollPoint = await cdp.evaluate(`(() => { const r = (${scrollRegionFinder}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    // Live-check fix (verify-1101, 2026-10-20): `rectBefore` used to be captured at `scrollTop`
+    // 0 (unscrolled) -- a real, harmless CSS characteristic of `position: sticky` under a padded
+    // parent (`GitChangesDiffPane`'s own `p-1` root) makes the element's NORMAL-FLOW resting
+    // position (inset by that 4px padding) differ from its STUCK position (flush with the
+    // scrollport's own padding edge, which carries no padding of its own) by exactly that one
+    // discrete jump the INSTANT scrolling starts -- a one-time, imperceptible transition, never
+    // a continuous drift. The real acceptance criterion is "stays in place WHILE scrolling", so
+    // the baseline is captured AFTER a small scroll has already engaged sticky mode, compared
+    // against the position after scrolling much further -- genuinely testing "stays stuck",
+    // not "identical to the unscrolled start".
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollPoint.x, y: scrollPoint.y, deltaX: 0, deltaY: 60 });
+    await sleep(150);
+    const rectBefore = await cdp.evaluate(`(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); return { top: r.top, left: r.left }; })()`);
     for (let i = 0; i < 6; i += 1) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollPoint.x, y: scrollPoint.y, deltaX: 0, deltaY: 400 });
       await sleep(80);
@@ -437,7 +448,7 @@ async function main() {
     await shot('06-long-diff-scrolled-sticky-back.png');
     const rectAfter = await cdp.evaluate(`(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); return { top: r.top, left: r.left }; })()`);
     const stuckInPlace = Math.abs(rectAfter.top - rectBefore.top) < 2 && Math.abs(rectAfter.left - rectBefore.left) < 2;
-    assertEqual(stuckInPlace, true, `Back button's own bounding rect is unchanged after scrolling (sticky) -- before=${JSON.stringify(rectBefore)}, after=${JSON.stringify(rectAfter)}`, findings, failures);
+    assertEqual(stuckInPlace, true, `Back button's own bounding rect stays the same WHILE scrolling, once already stuck -- before=${JSON.stringify(rectBefore)}, after=${JSON.stringify(rectAfter)}`, findings, failures);
     const coveredByOther = await cdp.evaluate(
       `(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!hit && !btn.contains(hit) && hit !== btn; })()`
     );
