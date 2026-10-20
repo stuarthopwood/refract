@@ -2,10 +2,9 @@
 // Live CDP check for issue #1039 (Cyber Amber retuned onto Default Dark's own surfaces -- PURE
 // neutral, chroma 0 -- with a vivid orange accent, a warning hue moved to 88, and the Send
 // button following the accent family (never `--ring`, which stays achromatic). Text softening,
-// tried as part of #1039 through
-// three same-day corrections, 2026-10-20, was reverted entirely the same day: Stuart moved it
-// to a new, separate, app-wide issue, so `--foreground`/`--chat-foreground`/
-// `--muted-foreground` are untouched by #1039 in both Cyber Amber and Default Dark).
+// tried as part of #1039 through three same-day corrections, 2026-10-20, was reverted entirely
+// the same day: Stuart moved it to a new, separate, app-wide issue, so `--foreground`/
+// `--chat-foreground`/`--muted-foreground` are untouched by #1039 in both Cyber Amber and Dark).
 //
 // Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
 // fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn
@@ -13,7 +12,6 @@
 // turn's echoed user message renders through `UserMessageRow.tsx`'s own `text-chat-foreground`
 // Markdown. EXTENDED (#1039 round-1 self-review): the fixture also carries one assistant
 // message with a short Mermaid fence BEFORE the notices -- no second fixture needed below.
-//
 // For each of Cyber Amber and Dark (Default Dark), switches via the real Profile-menu Theme
 // submenu (`switchTheme`, the same route `verify-551-presets.mjs` uses for Cyber Amber), then
 // reads REAL rendered surfaces (never a hidden probe alone) and asserts each equals the matching
@@ -150,6 +148,9 @@ const DARK_EQUALITY_VARS = [
 // hsl()) below is informational only, not the pass/fail driver.
 const MERMAID_COLOUR_REGEX = /#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b|rgba?\([^)]*\)|hsla?\([^)]*\)/g;
 const MERMAID_NODE_TEXT = '#fafafa'; // DARK_FAMILY.primaryTextColor (`--card-foreground`)
+// #1039 round-3 gate fix: `Markdown.tsx`'s own per-MOUNT `id="mermaid-${reactId}"` legitimately
+// differs across this check's own navigation (see the Mermaid check comment below).
+const normalizeMermaidId = (svgText) => svgText.replace(/mermaid-_r_[a-z0-9]+_/g, 'mermaid-ID');
 
 // An unknown-command refusal toast, the same client-side mechanism `verify-997-notice-
 // severity.mjs` uses (never touches the fake-omp tape), gives a real toast screenshot per
@@ -378,11 +379,9 @@ async function main() {
         }
         findings.push(`${theme.name}: --accent-text resolved colour: ${accentRaw} (probe only -- this fixture's one turn renders no Markdown link).`);
 
-        // ---- 2026-10-20 amendments: every Cyber Amber surface AND text token is a PURE
-        // neutral grey (chroma <=0.002, spec 007 FR-022) -- the first #1039 cut's own barely-
-        // visible warm tint (chroma 0.005-0.01) would fail this floor. Dark (an achromatic
-        // ladder by construction) is checked too, as a baseline sanity read, not the regression
-        // this floor targets. ----
+        // ---- 2026-10-20 amendments: every Cyber Amber surface AND text token is a PURE neutral
+        // grey (chroma <=0.002, spec 007 FR-022) -- the first cut's barely-visible warm tint
+        // (chroma 0.005-0.01) would now fail this floor. Dark is checked too, as a baseline. ----
         for (const [varName, property] of [...CYBER_AMBER_SURFACE_VARS, ...CYBER_AMBER_TEXT_VARS]) {
           const raw = await requireResolvedCssVarColor(cdp, varName, property);
           const entry = parseComputedColorToEntry(raw);
@@ -399,11 +398,10 @@ async function main() {
           }
         }
 
-        // ---- Gate round 1 (self-review, 2026-10-20): `--ring`/`--sidebar-ring`/`--input`/
-        // `--scrollbar-thumb`/`--scrollbar-thumb-hover`/`--composer-focus` must be BYTE-
-        // IDENTICAL to Dark's own literal, not merely achromatic (a chroma-only check cannot
-        // catch a lightness mismatch between two achromatic values). Dark's own turn captures
-        // each token's real resolved value; Cyber Amber's turn asserts equality against it. ----
+        // ---- Gate round 1 (self-review): `--ring`/`--sidebar-ring`/`--input`/`--scrollbar-
+        // thumb`/`--scrollbar-thumb-hover`/`--composer-focus` must be BYTE-IDENTICAL to Dark's
+        // own literal (achromatic alone cannot catch a lightness mismatch). Dark's own turn
+        // captures each; Cyber Amber's turn asserts equality against it. ----
         if (theme.id === 'dark') {
           for (const [varName, property] of DARK_EQUALITY_VARS) {
             darkCaptured[varName] = await requireResolvedCssVarColor(cdp, varName, property);
@@ -422,12 +420,15 @@ async function main() {
         }
 
         // ---- Mermaid (#1039 round-2 gate fix): renders one real flowchart via Markdown.tsx's
-        // `MermaidBlock`, an inert `<img role="img">` whose `src` is a `data:image/svg+xml`
-        // URI. Round-1's cross-theme hex-colour-SET equality could pass on a STALE Dark image
-        // if the `<img>` never re-rendered on switch -- round-2 proves a real re-render twice
-        // (Dark -> Obsidian -> Cyber Amber, asserting `src` changes both times) before reading
-        // Cyber Amber's own state, then compares the WHOLE decoded SVG against Dark's own: the
-        // render id is stable across a switch, so equal palettes give byte-identical SVGs. ----
+        // `MermaidBlock`, an inert `<img role="img">` whose `src` is a `data:image/svg+xml` URI.
+        // Round-1's cross-theme hex-colour-SET equality could pass on a STALE Dark image if the
+        // `<img>` never re-rendered -- round-2 proves a real re-render twice (Dark -> Obsidian ->
+        // Cyber Amber, asserting `src` changes both times), then compares the decoded SVG
+        // against Dark's own, id-normalized (round-3, self-caught live): `MermaidBlock`'s own
+        // `id="mermaid-${reactId}"` is per-MOUNT, and this check's screenshot section remounts
+        // the chat view in between (Manage sessions/Settings Appearance), so the id substring
+        // legitimately differs even when the rendered content is identical; `normalizeMermaidId`
+        // strips it before comparing, so the check verifies the real target (palette/text). ----
         const mermaidImgSrcExpr = `document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`;
         if (theme.id === 'cyber-amber') {
           const darkSrc = await cdp.evaluate(mermaidImgSrcExpr);
@@ -454,14 +455,14 @@ async function main() {
           const colours = new Set((svgText.match(MERMAID_COLOUR_REGEX) ?? []).map((c) => c.toLowerCase()));
           findings.push(`${theme.name}: real rendered Mermaid SVG contains ${colours.size} distinct colour token(s) (informational, hex/rgb()/hsl()).`);
           if (theme.id === 'dark') {
-            darkMermaidSvgText = svgText;
-            findings.push(`Dark: captured the real rendered Mermaid SVG's own full decoded text (${svgText.length} chars) as the cross-theme equality baseline.`);
+            darkMermaidSvgText = normalizeMermaidId(svgText);
+            findings.push(`Dark: captured the real rendered Mermaid SVG's own full decoded text (${svgText.length} chars, id-normalized) as the cross-theme equality baseline.`);
           } else if (!darkMermaidSvgText) {
             failures.push(`${theme.name}: no Dark Mermaid SVG baseline was captured to compare against (Dark's own turn must run first).`);
-          } else if (svgText !== darkMermaidSvgText) {
-            failures.push(`${theme.name}: real rendered Mermaid SVG differs from Dark's own byte-for-byte (same render id, so equal palettes must give byte-identical SVGs) -- Cyber Amber's own Mermaid palette may have drifted off DARK_FAMILY.`);
+          } else if (normalizeMermaidId(svgText) !== darkMermaidSvgText) {
+            failures.push(`${theme.name}: real rendered Mermaid SVG differs from Dark's own (id-normalized full-string compare) -- Cyber Amber's own Mermaid palette may have drifted off DARK_FAMILY.`);
           } else {
-            findings.push(`${theme.name}: real rendered Mermaid SVG is byte-identical to Dark's own full decoded text.`);
+            findings.push(`${theme.name}: real rendered Mermaid SVG is byte-identical to Dark's own full decoded text (after normalizing the volatile per-mount React useId substring).`);
           }
         }
 
