@@ -66,23 +66,47 @@ export async function overlayStructure(cdp) {
   })()`);
 }
 
-/** Measures the real pixel position of the caret at `charOffset` on the FIRST line only (no
- * newline before it) -- an in-page `<canvas>` with the textarea's own computed font measures the
- * exact glyph-prefix width, so this is never a guessed column-to-pixel ratio. */
+/** Measures the real pixel position of the caret at `charOffset` (first line only, no newline
+ * before it) via a `Range` against `CommandPillOverlay`'s own REAL rendered mirror DOM -- not a
+ * separate offscreen `<canvas>` measurement. A canvas re-implementing text metrics in isolation
+ * can legitimately disagree with the browser's own real text layout (font loading timing,
+ * kerning, ligatures, subpixel rounding), which is exactly what caused this check's own first
+ * draft to fail: the canvas-measured x for a mid-token offset landed on a glyph stroke instead
+ * of the real caret column, so both "blink" samples read the same (correct, but static) glyph
+ * pixel, not the (absent, in that draft's measurement) caret -- a script bug, not a product bug,
+ * confirmed by this fix reusing the SAME mirror the real textarea is already proven (by the
+ * geometry checks above) to align with pixel-for-pixel. The mirror must be mounted (a recognised
+ * token showing) for this to find anything. */
 async function measureCaretPixel(cdp, charOffset) {
   return cdp.evaluate(`(() => {
-    const ta = ${TEXTAREA};
-    const style = getComputedStyle(ta);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.font = \`\${style.fontStyle} \${style.fontWeight} \${style.fontSize} \${style.fontFamily}\`;
-    const prefix = ta.value.slice(0, ${charOffset});
-    const width = ctx.measureText(prefix).width;
-    const rect = ta.getBoundingClientRect();
-    return {
-      x: Math.round(rect.left + parseFloat(style.paddingLeft) + width),
-      y: Math.round(rect.top + parseFloat(style.paddingTop) + parseFloat(style.fontSize) * 0.6)
-    };
+    const overlay = ${OVERLAY};
+    if (!overlay) return null;
+    let remaining = ${charOffset};
+    let targetNode = null;
+    let targetOffset = 0;
+    (function visit(node) {
+      if (targetNode) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const len = node.textContent.length;
+        if (remaining <= len) {
+          targetNode = node;
+          targetOffset = remaining;
+          return;
+        }
+        remaining -= len;
+      } else {
+        for (const child of node.childNodes) {
+          visit(child);
+          if (targetNode) return;
+        }
+      }
+    })(overlay);
+    if (!targetNode) return null;
+    const range = document.createRange();
+    range.setStart(targetNode, targetOffset);
+    range.setEnd(targetNode, targetOffset);
+    const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+    return { x: Math.round(rect.left), y: Math.round(rect.top + rect.height / 2) };
   })()`);
 }
 
@@ -115,7 +139,9 @@ async function capturePixel(cdp, x, y) {
  * differently in at least one of the two (on vs off), which is what this asserts. */
 export async function assertCaretVisible(cdp, sleep, charOffset, label, report) {
   await cdp.evaluate(`${TEXTAREA}.focus(); ${TEXTAREA}.setSelectionRange(${charOffset}, ${charOffset})`);
-  const { x, y } = await measureCaretPixel(cdp, charOffset);
+  const pixelPos = await measureCaretPixel(cdp, charOffset);
+  if (!pixelPos) throw new Error(`FAIL: ${label} (measureCaretPixel found no mirror text node at offset ${charOffset} -- is a recognised token showing?)`);
+  const { x, y } = pixelPos;
   const sample1 = await capturePixel(cdp, x, y);
   await sleep(600);
   const sample2 = await capturePixel(cdp, x, y);
