@@ -4975,3 +4975,117 @@ files; `check:file-size` 0 violations (`ToolRow.tsx` 599/600, `SubagentChainRow.
 `SubagentGoalPreview.tsx`/`linkStyles.ts` new, both small); `check:theme-contrast`/`check:
 parity`/`check:drag-regions` unaffected (no new token, no IPC/drag-region change). **A fresh
 FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+## Phase 73: Enter sends queued follow-up (#1067, FR-094)
+
+(Next free numbers against `origin/main` at this branch's own cut, `a5e3ff7b`: Phase 72/T350-T355
+claimed by #1077 above, so this phase claims Phase 73/T356 onward; the highest FR in this spec is
+FR-093, so this phase claims FR-094.)
+
+**Goal**: Enter on a blank composer with at least one queued follow-up sends the oldest one,
+exactly as its own "Send now" chip would. Decided (Stuart, `grill-with-docs`, 2026-10-20, issue
+#1067; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the decision
+record.
+
+- [X] T356 Docs convergence: this phase, `spec.md` FR-094 (new, amends FR-011/FR-012) and its
+  dated `### Session 2026-10-20 (Enter sends queued follow-up, #1067)` Clarifications entry
+  recording the decided rule, the "blank" definition, and the discoverability/single-flight
+  details. `docs/PLAN.md`'s "Enter sends queued follow-up" row status.
+- [X] T357 `src/renderer/features/chat/enterSendsQueuedFollowUp.ts` (new, small helper --
+  `MessageInput.tsx` is at its own `check:file-size` baseline cap; renamed from
+  `useEnterSendsQueuedFollowUp.ts` in gate round 1, DECIDED item 4: not a hook, no `use*` prefix):
+  `computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)`
+  derives whether a plain Enter should steer the oldest queued follow-up instead of calling the
+  ordinary `handleSend()`, returning a discriminated `{ applies: true; chip: DerivedChip } | {
+  applies: false }` union (gate round 1, DECIDED item 4: replaces a plain `{ applies: boolean;
+  chip: DerivedChip | undefined }` shape that forced callers to assert `chip!`). "Blank" (amended
+  gate round 1, DECIDED item 1) is `text === ''` exactly, not merely whitespace-only -- a single
+  space or a Shift+Enter-inserted newline is a real draft -- with no pending images, text chips,
+  or file attachments, AND no attachment read still in flight (gate round 1, DECIDED item 3:
+  `pendingAttachmentReads`, PR #723's own guard; this is deliberately distinct from issue #744's
+  still-open `hasSendableContent`, which asks the opposite question for the Send button). The
+  oldest follow-up is `chips.find`'s first `queue === 'followUp'` entry (follow-ups list before
+  any steering chip, in `followUp` array/FIFO order); a steering-only queue yields no match. The
+  rule is suppressed while the slash menu is open, a live ghost-text suggestion is showing, or
+  the composer is `disabled` (gate round 2, Main, MEDIUM item b: the helper used to ignore
+  `disabled` entirely; now short-circuits to `applies: false` before any other check). Neither
+  slash-menu nor ghost-text can actually coexist with a blank draft today -- `showSlashMenu`
+  requires `text` to start with `/`, `isGhostTextEligible` requires text already on the line --
+  but both guards are explicit anyway.
+- [X] T358 `src/renderer/features/chat/MessageInput.tsx`: the Enter branch of `handleKeyDown`
+  calls `handleSendNow(enterQueuedFollowUp.chip)` instead of `handleSend()` when
+  `enterQueuedFollowUp.applies` (gate round 1, DECIDED item 4: the discriminated union above
+  removes the need for a `chip!` non-null assertion), reusing its existing `inFlightChips`
+  single-flight guard unchanged (a fast double Enter resolves to the same chip key on both
+  presses, so the second call is a no-op) and its existing "Sending now…" announcement. The
+  empty-state hint overlay's lead text reads the shortened "Enter: send next queued" (gate round
+  2, LOW item 5: the original full sentence still truncated at the 360px panel floor; shortened
+  to fit) while the rule applies, in place of the default "Message the agent" wording; the
+  `composerHintId` sr-only description (already wired into the textarea's `aria-describedby`,
+  issue #533) keeps the FULL "Enter sends the next queued message" sentence, with the ordinary
+  "Markdown is supported. Type slash for commands." text appended after it (gate round 1, DECIDED
+  item 5). The Send button's own `aria-keyshortcuts="Enter"` is dropped while the rule applies
+  (gate round 1, DECIDED item 6: the button must never claim Enter sends the empty draft while
+  Enter actually steers the queue instead); its tooltip reads plain "Send" instead of
+  `<Kbd>Enter</Kbd>` (gate round 2, UI review (a): the button is unconditionally `aria-disabled`
+  while the rule applies, so the tooltip -- wired into the button's own `aria-describedby` by
+  Radix -- must not describe an action, the queued send, the disabled button itself cannot
+  perform). IME composition and Shift+Enter are unaffected (both already gated before this branch
+  runs).
+- [X] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
+  `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`). Covers: two queued follow-ups mid-turn,
+  chips render oldest-first; the hint and `aria-describedby` while the rule applies, in two
+  themes, plus one 360px-wide screenshot proving the hint fits without horizontal overflow; an
+  attachment-only "blank" composer (text === '', a real pasted file attachment, follow-up queued)
+  does NOT promote the queued follow-up and the hint stays the DEFAULT wording (gate round 1,
+  Code1/Test1 HIGH: live-exercised via a synthetic clipboard file paste, no longer merely reasoned
+  about); Enter on a blank composer sends the oldest queued follow-up then the next, with the
+  composer's own focus confirmed before the steering-only no-op check (gate round 1 LOW item);
+  Enter with typed text still sends that text even with a follow-up queued; opening the slash
+  menu on an unmatched command sends no command (the composer's ordinary unknown-command
+  refusal, honestly relabelled in gate round 1 as NOT a live test of FR-094's own slash-menu guard
+  -- see `notExercised` below for why that combination is unreachable); a fast double Enter sends
+  exactly once (proven by an exact fake-omp debug-log RECV count), with its own "Sending now…"
+  announcement recorded via `assertTrue` (gate round 1 LOW item) rather than merely waited for;
+  Shift+Enter inserts a newline and sends nothing. `report.json` records `gitHead`, `dirty`,
+  failures and `notExercised` (a ghost suggestion showing at the same instant as a blank composer;
+  the slash menu open at the same instant as an otherwise-blank composer; an IME composition in
+  progress at the same instant as a blank composer -- all three structurally unreachable, per
+  their own doc comments in the script). Four script bugs were found and fixed while getting this
+  green, none a product defect: the visible-hint selector matched zero elements (a generic
+  `[aria-hidden="true"].text-muted-foreground` class selector was too fragile; replaced with a
+  search for a genuinely visible span carrying the exact expected text, excluding `.sr-only`
+  duplicates); two chip-index assertions assumed insertion order instead of the real render order
+  (`chips` always lists every follow-up chip before any steering chip, regardless of when each
+  was queued); `pressShiftEnter`'s synthesized CDP key event carried no `text` payload, so
+  Chromium never ran the native "insert a newline" edit command the production code deliberately
+  relies on (mirrors the bug class `verify-1077-agent-goal.mjs`'s own gate-round-1 remediation
+  already warns about -- a synthetic key dispatch with no `text` field reaches `onKeyDown` but
+  inserts nothing); a bare `pressEnter()` after the theme-switch screenshot loop landed on nothing
+  (`settleForScreenshot` blurs the active element and `switchTheme` leaves focus inside the
+  profile menu), fixed with an explicit re-click of the composer textarea before relying on any
+  later bare Enter.
+
+**Non-build checks** (run against the renderer changes alone, before any build slot): `pnpm
+typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping-phase rule);
+`node scripts/check-indent.mjs` 0 odd-indent lines across 457 files scanned (3 allow-listed);
+`node scripts/check-file-size.mjs` 0 cap violations across 522 files scanned (`MessageInput.tsx`
+1632/1632 baseline, unchanged -- new logic lives in `enterSendsQueuedFollowUp.ts` instead);
+`node scripts/check-theme-contrast.mjs` all 872 pairs across 5 themes PASS (no new token); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 153 files.
+
+**FINAL LIVE-VERIFIED PASS**: branch merged with `origin/main` (v0.7.0 release, #1039 Cyber
+Amber retune) first; non-build checks re-run clean on the merged tree (`pnpm typecheck`; `pnpm
+test` 148/148; `check:indent` 0/458; `check:file-size` 0/523, `MessageInput.tsx` unchanged at
+1632/1632; `check:theme-contrast` 872/872; `check:parity` 115/115 requests, 25/25 events;
+`check:drag-regions` 0/153). `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest, indent, theme-contrast,
+drag-regions, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1067-enter-queued.mjs` against the just-built exe: **gitHead
+`965184456b5d50c8d0d5b76c2f1c1dd065016b8e`, dirty: true (the verify script's own in-flight fixes
+were uncommitted at run time, now committed in this same change), 0 failures, 2 notExercised,
+all 14 assertions PASS**. Screenshots viewed directly (`hint-dark.png`, `hint-obsidian.png`):
+both queued follow-up chips show with their own "Send now" buttons, and the composer's hint
+overlay reads "Enter sends the next queued message" in place of "Message the agent", the "/ for
+commands" and "Markdown supported" hints unchanged beside it, in both themes.

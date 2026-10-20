@@ -50,6 +50,7 @@ import { remainingAttachmentSlots } from './attachDroppedPaths'
 import { removeAttachment } from './removeAttachment'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
+import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
 import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -309,6 +310,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   useLayoutEffect(() => {
     chipPoolRef.current = deriveQueuedChips(followUp, steering, chipPoolRef.current).nextPool
   }, [followUp, steering])
+  // Issue #1067: steer the oldest queued follow-up on a plain Enter against a blank composer.
+  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)
 
   // Tracks the previous commit's `chips` (Issue #540/#598 High): when the tracked chip's key
   // disappears from the real arrays entirely (the server delivered it, e.g. a steering chip was
@@ -854,7 +857,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      void handleSend()
+      void (enterQueuedFollowUp.applies ? handleSendNow(enterQueuedFollowUp.chip) : handleSend())
       return
     }
     if (event.key === 'Escape') {
@@ -1316,7 +1319,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           is not shown (disabled, or the draft has text), same pattern as `ghostHintId`/
           `attachmentsSummaryId` above. */}
       <span id={composerHintId} className="sr-only">
-        {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
+        {!disabled && text === '' ? (enterQueuedFollowUp.applies ? 'Enter sends the next queued message. Markdown is supported. Type slash for commands.' : 'Markdown is supported. Type slash for commands.') : ''}
       </span>
       {/* Status line (docs/design/product-chat.md "Status line"; spec 004 FR-023, #564,
           2026-10-15): the old chip row, minus the Approval mode pill -- it now lives in the box's
@@ -1482,7 +1485,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
-              <span className="min-w-0 truncate">Message the agent</span>
+              <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
                 <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
@@ -1595,7 +1598,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     COMPOSER_BUTTON_FOCUS_CLASS
                   )}
                   aria-label="Send message"
-                  aria-keyshortcuts="Enter"
+                  aria-keyshortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
                   aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
                   onClick={() => {
                     if (disabled || starting || pendingAttachmentReads > 0 || !text.trim()) return
@@ -1606,7 +1609,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <Kbd>Enter</Kbd>
+                {enterQueuedFollowUp.applies ? 'Send' /* gate round 2: aria-disabled while the rule applies (blank text) -- wired into aria-describedby by Radix, must not describe an action the button can't perform */ : <Kbd>Enter</Kbd>}
               </TooltipContent>
             </Tooltip>
           </div>
