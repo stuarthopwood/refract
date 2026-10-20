@@ -462,6 +462,11 @@ async function main() {
         const journeyShot = `${theme.id}-08-journey-diagram.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, journeyShot));
         shotNames.push(journeyShot);
+        // Restores the scroll position the later "selected chat-prose text" check (below) relies
+        // on -- it recomputes `chatProseCentre` from the chat-prose element's own bounding rect
+        // AT THE TIME it runs, which would be wrong (or off-screen) if left scrolled down here.
+        await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (el) el.scrollIntoView({ block: 'center' }); })()`);
+        await settleForScreenshot(cdp);
 
         // ---- Screenshots: chat (header, chat prose and Send button all visible), a popover
         // menu, selected chat-prose text, Settings Appearance (Manage sessions already shot
