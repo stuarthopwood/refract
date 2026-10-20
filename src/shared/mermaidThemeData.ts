@@ -383,10 +383,12 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // not a per-field copy that could silently drift. The brown literals this entry used to
   // override (`#0f0703`/`#22160e`/`#faf4ef`/`#887e78`/`#bb9679`/`#382e28`/`#2c221b`) predate
   // #1039's retune and are gone; only the accent family (`--accent-text`, `--primary`/`--send`),
-  // the warning hue, and `themes.ts`'s own `swatchPrimary` still differ from Dark, none of
+  // the warning hue, `--severity-error`/`--pr-closed` (hue 22, retuned for the accent-vs-error
+  // distinctness floor), and `themes.ts`'s own `swatchPrimary` still differ from Dark, none of
   // which Mermaid's own `themeVariables` read. Live-verified (`scripts/verify-1039-amber-
   // retune.mjs`, round-2 gate fix): a real rendered Mermaid flowchart's own SVG (decoded from
-  // its `data:image/svg+xml` `<img>` source) is byte-for-byte identical to Dark's own render --
+  // its `data:image/svg+xml` `<img>` source) is byte-for-byte identical to Dark's own render,
+  // after normalising the per-mount id both sides share --
   // Mermaid derives its node FILL internally (never the raw `primaryColor` literal verbatim),
   // so this is a full-string equality check, not a hardcoded-literal match; `textColor`
   // (`#fafafa`) IS a literal match, confirmed separately.

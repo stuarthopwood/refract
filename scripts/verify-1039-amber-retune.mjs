@@ -41,8 +41,9 @@
 // chroma check cannot catch a lightness mismatch, which is what these six had before that
 // round. A round-2 assertion rounds Cyber Amber's turn through Obsidian first (proving the
 // Mermaid `<img>` genuinely re-renders, not a stale image), then compares the whole decoded
-// SVG string against Dark's own byte-for-byte (`data:image/svg+xml` src, decoded; the render
-// id is stable across a switch, so equal palettes give byte-identical SVGs).
+// SVG string against Dark's own, byte-identical after id normalisation (`data:image/svg+xml`
+// src, decoded; `normalizeMermaidId` strips the one volatile per-mount React `useId` substring
+// from both sides first -- see that check's own comment below for why it legitimately differs).
 //
 // Screenshots per theme (gate round 1 added three): the chat view (the warning NoticeRow is
 // inline in it, so one shot covers both "chat" and "a warning"), the Mermaid diagram's own
@@ -53,8 +54,7 @@
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
 // scripts/verify-1039-amber-retune.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
 // the convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs`/`verify-10xx-*.mjs` script
-// documents). Live-run twice already on earlier rounds (0 failures both times); the round-2
-// gate fixes in this version await this lane's own next build slot.
+// documents). Live-run clean (0 failures) on this lane's own build slot, gitHead `898a0797`.
 
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -431,9 +431,9 @@ async function main() {
         // strips it before comparing, so the check verifies the real target (palette/text). ----
         const mermaidImgSrcExpr = `document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`;
         if (theme.id === 'cyber-amber') {
-          const darkSrc = await cdp.evaluate(mermaidImgSrcExpr);
+          const preObsidianSrc = await cdp.evaluate(mermaidImgSrcExpr);
           await switchTheme(cdp, 'obsidian', 'Obsidian');
-          await cdp.waitFor(`(${mermaidImgSrcExpr}) !== ${JSON.stringify(darkSrc)}`, { timeoutMs: 15_000, label: 'Mermaid image src changed after switching Dark -> Obsidian' });
+          await cdp.waitFor(`(${mermaidImgSrcExpr}) !== ${JSON.stringify(preObsidianSrc)}`, { timeoutMs: 15_000, label: 'Mermaid image src changed after switching Cyber Amber -> Obsidian' });
           findings.push('Mermaid image src genuinely changed after switching to Obsidian, proving a real re-render, not a stale cached image.');
           const obsidianSrc = await cdp.evaluate(mermaidImgSrcExpr);
           await switchTheme(cdp, 'cyber-amber', 'Cyber Amber');

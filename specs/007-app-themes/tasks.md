@@ -1016,7 +1016,9 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
      real SVG text contains Dark's own node text literal (`MERMAID_NODE_TEXT`, `#fafafa`) in
      both Dark and Cyber Amber; Mermaid derives node FILL internally rather than emitting
      `primaryColor` verbatim, so fill equality is instead proven by a full-string SVG
-     comparison -- Cyber Amber's turn round-trips through Obsidian first (proving a genuine
+     comparison (round-3 gate fix, self-caught live: id-normalised, since `MermaidBlock`'s own
+     per-mount `id="mermaid-${reactId}"` legitimately differs across this check's own screen
+     navigation) -- Cyber Amber's turn round-trips through Obsidian first (proving a genuine
      re-render, not a stale cached image), then its final SVG is asserted byte-identical to
      Dark's own captured SVG.
   10. [Medium] Screenshots extended: a code block (the Mermaid diagram's own "Show source"

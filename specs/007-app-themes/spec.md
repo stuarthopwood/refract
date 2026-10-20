@@ -105,7 +105,8 @@ font and code font stay with issue #4 and are out of scope here.
   no point clearing both that floor and the error-text-everywhere floor (>=4.5:1) at once; the
   search was widened (kept redder, hue 22, the family every other theme's own `--severity-
   error` already uses; the winning chroma, 0.12, sits outside the original 0.15-0.24 band) --
-  `oklch(0.665 0.12 22)` clears every text floor with margin while measuring the best
+  `oklch(0.665 0.12 22)` clears every text floor (binding case 4.50:1 on the composited hover
+  fill) while measuring the best
   accent-vs-error ratio achievable (1.42:1); the 1.5:1 distinctness floor is NOT met, an
   accepted departure recorded in `docs/design/accessibility.md` "Accepted departures".
   `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` (a literal
