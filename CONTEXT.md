@@ -223,6 +223,14 @@ _Avoid_: Filter (see **Filter tab**), section
 A compact, glanceable display of one live fact about something elsewhere in the app -- the **Status line**'s own entries (for example, Changes, Pull request, Subagents). Most readouts are plain text; some are also the entry point to an action, in which case they behave like a quiet text button rather than a chip (for example, one that opens an external link or a panel).
 _Avoid_: Display, indicator, Readout chip (retired 2026-10-15, issue #564 -- see **Status line**)
 
+**Role·Model pill**:
+The composer control showing the **Session**'s current role and the model it runs on ("Default · Sonnet 5.5"), or "Pinned" and the model when a model was chosen directly. It opens one switcher for both; the thinking level has its own pill (issue #766).
+_Avoid_: Role chip, model badge, model picker (for the combined control)
+
+**Pending change**:
+A role, model or thinking-level choice made while a turn runs or the agent is stopped. It shows at once with a "next turn" mark and is applied before the next prompt (or when the agent starts); the last choice wins (issue #766).
+_Avoid_: Queued change (a queued message is different), deferred setting
+
 **Advisor**:
 omp's optional watchdog subsystem that watches a Session's turns and emits advisories (blocker, concern and nit rows -- see **Advisory accent bar**/**Advisory location**/**Advisory concern run**), a distinct thing from those rows themselves. Runs on `modelRoles.advisor`, possibly a different provider than the primary model, and sees the Session's transcript. Toggled per Session, not persisted, with `/advisor on`, `/advisor off` and `/advisor status` (issue #917); no Settings toggle. Decided (Stuart, 2026-10-16): no cost readout (`advisor_cost_changed` stays unread); `/advisor status` reports spend on demand instead; a persistent on/off indicator is tracked separately as issue #937. That indicator (issue #937, follow-up to #917/PR #923) is the **Status line**'s own Advisor readout (**Readout**, zero-box convention): shown only while the advisor is on for that Session, hidden entirely while off, with no cost, spend, or token figures of its own; clicking it sends `/advisor off`. Its state comes from `/advisor on|off`'s own reply text (the only fully-trusted signal) plus a best-effort, silent `/advisor status` probe run once on Session attach/resume -- that probe's own reply never appears in the transcript, and its ambiguous wording (`session::advisor`'s own header comment) is never trusted for an "on" reading, only an unambiguous "Advisor is enabled"/"Advisor is disabled" substring is.
 _Avoid_: Advisory (the note the Advisor produces, not the subsystem itself), reviewer, chip (the React component and the issue title use that word informally; prose calls it the Advisor readout, per **Status line**/**Readout**/**Chip**'s own _Avoid_ notes)
