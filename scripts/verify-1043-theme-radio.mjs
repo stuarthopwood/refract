@@ -272,6 +272,16 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, 'keyboard-selection-obsidian.png'));
 
     // ---- Focus-bar vs checked-state: the 2026-10-15 "bar means keyboard focus only" rule. ----
+    // Pointer-driven open does not reliably land focus on a row inside the submenu (the same
+    // Radix quirk `navigateRadioGroupByKeyboardTo`'s own comment documents for the Reasoning
+    // picker's trigger -- confirmed live here too: an ArrowDown from an unfocused SubTrigger
+    // escapes to the NEXT ROOT menu item instead of moving within the submenu, closing it).
+    // Focus the checked row explicitly first, so ArrowDown moves within the submenu for real.
+    const onThemeRow = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio'`);
+    if (!onThemeRow) {
+      await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim() === 'Obsidian')?.focus()`);
+      await sleep(100);
+    }
     await pressArrow(cdp, 'Down'); // off Obsidian onto Nordic Frost
     await sleep(150);
     const focusBarState = await cdp.evaluate(`
@@ -288,7 +298,7 @@ async function main() {
         };
       })()
     `);
-    const focusBarOk = !focusBarState.focusedIsChecked && focusBarState.focusedShadow && focusBarState.focusedShadow !== 'none' &&
+    const focusBarOk = focusBarState.focusedLabel === 'Nordic Frost' && !focusBarState.focusedIsChecked && focusBarState.focusedShadow && focusBarState.focusedShadow !== 'none' &&
       (focusBarState.checkedShadowWhenNotFocused === 'none' || focusBarState.checkedShadowWhenNotFocused == null);
     if (focusBarOk) checkPass('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
     else checkFail('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
