@@ -1405,9 +1405,16 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           }
         />
       </div>
-      <PinnedTodoPanel key={sessionId} sessionId={sessionId} />
+      {/* Gate round 2 fix (self-caught live-check flake, Main's diagnosis): these two were both
+          `key={sessionId}` -- identical keys on two SIBLING elements, a classic React footgun
+          (production gives no dev-only "duplicate key" warning and throws nothing, so the
+          corrupted key map silently either leaves a stale copy mounted or misapplies an update
+          to the wrong fiber instead). Each keeps its own "remount on session switch" behaviour
+          (PinnedTodoPanel.tsx's own top comment; MessageInput.tsx's `autoFocusRef` comment just
+          above `effectiveTerminatedUnexpectedly`), just with distinct key VALUES now. */}
+      <PinnedTodoPanel key={`todo-${sessionId}`} sessionId={sessionId} />
       <MessageInput
-        key={sessionId}
+        key={`composer-${sessionId}`}
         sessionId={sessionId}
         stopReason={effectiveStopReason}
         stopDetail={effectiveStopDetail}
