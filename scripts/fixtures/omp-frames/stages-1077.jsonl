@@ -1,37 +1,43 @@
 // SYNTHESIZED, not captured live: issue #1077 (expanded agent rows show only the goal; the
 // full Prompt/Result move behind a "See input & output" toggle). One user prompt, one agent
-// turn, TWO Stages (different owning assistant message ids, so `groupSubagentStages.ts` flushes
-// a new Stage on the `messageId` change even with nothing else between them):
+// turn, THREE Stages (different owning assistant message ids, so `groupSubagentStages.ts`
+// flushes a new Stage on the `messageId` change even with nothing else between them):
 //
 // Stage A ("solo-task", msg-a1): ONE agent ("SoloSweep"), NO batch `context` at all -- the
-// scenario `StageGroupRow`'s solo branch needs `group.context` falsy for (issue #1077's own
-// `showGoal={!group.context}` rule): `StageContextBrief` never renders (no context captured),
-// so `SubagentBody` itself must supply the goal from `item.task`. Its own task is deliberately
-// a MULTI-LINE brief with a leading "# Goal" heading (the same heading-only-line convention
-// `stageMeta.ts`'s own `extractContextLabel` already strips for a Stage's context) and several
-// further lines, long enough to genuinely overflow a `line-clamp-3` paragraph at a normal
-// composer width -- proves the clamp is a real CSS constraint, not a component that merely
-// never renders more than 3 lines of text in the first place. A deliberate `{"__delay__":2500}`
-// between the assistant-message echo and `tool_execution_end` keeps it OBSERVABLY running (no
-// `item.result` yet) for a live check to confirm the toggle link reads "See input" (not "...&
-// output") before it settles.
+// scenario `StageGroupRow`'s solo branch needs `group.context` falsy for: `StageContextBrief`
+// never renders, so the Stage level renders `SubagentGoalPreview` from `item.task` instead (gate
+// round 1 fix, item 7: ordered before "Uses:", the same position a context-bearing Stage's own
+// `StageContextBrief` takes). Its own task is deliberately a MULTI-LINE brief with a leading
+// "# Goal" heading (the same heading-only-line convention `stageMeta.ts`'s own
+// `extractContextLabel`/`extractTaskGoalPreview` already strip) and several further lines, long
+// enough to genuinely overflow a `line-clamp-3` paragraph at a normal composer width -- proves
+// the clamp is a real CSS constraint, not a component that merely never renders more than 3
+// lines of text in the first place. A deliberate `{"__delay__":2500}` between the assistant-
+// message echo and `tool_execution_end` keeps it OBSERVABLY running (no `item.result` yet) for a
+// live check to confirm the toggle link reads "See input" (not "...& output") before it settles.
 //
 // Stage B ("members-task", msg-a2): TWO agents ("MemberOne", "MemberTwo") sharing ONE batch
 // `context` -- the scenario a multi-agent Stage needs to prove no per-member goal duplication:
 // `StageContextBrief` shows the shared goal once, each member's own `SubagentBody` shows none of
-// its own (`showGoal={false}` unconditionally for a 2+-member Stage), and each member keeps its
-// own INDEPENDENT toggle open/closed state.
+// its own (`showGoal={!item.context}`, both members' own calls carry no context of their own,
+// gate round 1 fix item 1), and each member keeps its own INDEPENDENT toggle open/closed state.
+//
+// Stage C ("flat-task", msg-a3): TWO agents ("FlatOne", "FlatTwo"), NO batch `context` at all --
+// gate round 1 fix, item 1's own live step: "a context-less multi-agent Stage (a flat call)
+// shows each member's goal". With no shared context to lean on, `showGoal={!item.context}`
+// resolves `true` for BOTH members (neither has its own), so each shows its own goal from its
+// own distinct task, independently of its sibling.
+//
+// The final assistant text message includes a tiny Mermaid fenced block (gate round 1 fix, item
+// 8: "MermaidBlock now gets Escape and a focus ring" -- `Markdown.tsx`'s `MermaidBlock` was
+// ported onto the same shared `InlineDisclosure` this issue built, so its own "Show source"
+// toggle gains both for free; this live-checks that directly rather than only by inspection).
 //
 // Every boilerplate frame (ready/negotiate_protocol/get_state/set_ask_dialog/get_messages_page/
 // prompt ack) is copied verbatim from `stages-941.jsonl`'s own header, the same shared
 // conventions every `verify-941-*`/`verify-991-*`/`verify-1000-*`/`verify-1001-*` fixture
 // already follows (`scripts/fixtures/omp-frames/README.md`'s own "every fixture's second step"
-// notes); the two-Stage/one-job-then-two-job shape mirrors `stages-941.jsonl`'s own Stage
-// 1/Stage 2 pair (read in full while authoring this file).
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- hand-built
-// directly from the documented wire contract and `subagent_items.rs`'s own matching rules, not
-// yet replayed against a real built exe.
+// notes).
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -60,9 +66,16 @@
 {"type":"tool_execution_end","toolCallId":"members-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"MemberOne","status":"finished","task":"Confirm this member's own body never repeats the Stage's shared goal above it.","durationMs":1100},{"index":1,"id":"MemberTwo","status":"finished","task":"Confirm the sibling member behaves identically, independent open state included.","durationMs":1300}]}},"isError":false}
 {"type":"message_start","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"MemberOne","label":"MemberOne","status":"completed","resultText":"Confirmed: no duplicate goal text anywhere in this member's own body.","durationMs":1100},{"id":"MemberTwo","label":"MemberTwo","status":"completed","resultText":"Confirmed: this member's own toggle opens and closes independently of its sibling.","durationMs":1300}]},"timestamp":0}}
 {"type":"message_end","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"MemberOne","label":"MemberOne","status":"completed","resultText":"Confirmed: no duplicate goal text anywhere in this member's own body.","durationMs":1100},{"id":"MemberTwo","label":"MemberTwo","status":"completed","resultText":"Confirmed: this member's own toggle opens and closes independently of its sibling.","durationMs":1300}]},"timestamp":0}}
-{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
-{"type":"message_update","messageId":"msg-a3","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Both Stages settled; goal-only rows confirmed."}],"timestamp":0}}}
-{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":"Both Stages settled; goal-only rows confirmed."}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"flat-task","toolName":"task","args":{"tasks":[{"name":"FlatOne","task":"Confirm this member shows its own goal when the whole Stage has no context at all."},{"name":"FlatTwo","task":"Confirm the sibling member shows its own goal too, independently derived."}]},"intent":"Running the flat-call check"}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"flat-task","name":"task","arguments":{"tasks":[{"name":"FlatOne","task":"Confirm this member shows its own goal when the whole Stage has no context at all."},{"name":"FlatTwo","task":"Confirm the sibling member shows its own goal too, independently derived."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"flat-task","name":"task","arguments":{"tasks":[{"name":"FlatOne","task":"Confirm this member shows its own goal when the whole Stage has no context at all."},{"name":"FlatTwo","task":"Confirm the sibling member shows its own goal too, independently derived."}]}}],"timestamp":0}}
+{"__delay__":500}
+{"type":"tool_execution_end","toolCallId":"flat-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"FlatOne","status":"finished","task":"Confirm this member shows its own goal when the whole Stage has no context at all.","durationMs":300},{"index":1,"id":"FlatTwo","status":"finished","task":"Confirm the sibling member shows its own goal too, independently derived.","durationMs":350}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FlatOne","label":"FlatOne","status":"completed","resultText":"Confirmed: this member shows its own goal with no Stage context to lean on.","durationMs":300},{"id":"FlatTwo","label":"FlatTwo","status":"completed","resultText":"Confirmed: the sibling member's own goal is independently derived too.","durationMs":350}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FlatOne","label":"FlatOne","status":"completed","resultText":"Confirmed: this member shows its own goal with no Stage context to lean on.","durationMs":300},{"id":"FlatTwo","label":"FlatTwo","status":"completed","resultText":"Confirmed: the sibling member's own goal is independently derived too.","durationMs":350}]},"timestamp":0}}
+{"type":"message_start","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a4","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"All three Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":"All three Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}
 {"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
 {"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}

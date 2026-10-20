@@ -21,13 +21,15 @@ import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
 import { SubagentBody, SubagentRow } from './ToolRow'
+import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { formatElapsed } from './formatElapsed'
-import { stageHeading, extractContextLabel, stageRollupText } from './stageMeta'
+import { stageHeading, extractContextLabel, extractResultSummary, stageRollupText } from './stageMeta'
 import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import {
   chatRowStatus,
+  SUBAGENT_ERROR_TEXT_CLASS,
   SUBAGENT_STATUS_LABEL,
   SubagentStatusGlyph,
   subagentStatusTextClass,
@@ -243,6 +245,23 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   // the label, not merely on `total === 1`.
   const soloContextLabel = total === 1 && group.context ? extractContextLabel(group.context) : null
   const soloAgentName = soloContextLabel ? group.items[0]!.name : undefined
+  // Gate round 1 fix (issue #1077, item 6, MEDIUM): a solo Stage's own Prompt/Result now sit
+  // behind a toggle, same as every other Stage -- a multi-agent member already keeps its own
+  // failure reason visible unconditionally via `extractResultSummary` in its `summary` slot
+  // (issue #941 grill item 4); a solo Stage had no equivalent, so a failed/cancelled/exited
+  // one-agent Stage's own reason is restored here, next to its own goal, not only reachable
+  // behind the toggle.
+  const soloItem = total === 1 ? group.items[0]! : undefined
+  const soloStatus = soloItem ? chatRowStatus(soloItem.status) : undefined
+  const soloIsUnsettledBad = soloStatus === 'failed' || soloStatus === 'cancelled' || soloStatus === 'exited'
+  const soloFailureReason = soloItem && soloIsUnsettledBad && soloItem.result != null ? extractResultSummary(soloItem.result) : undefined
+  // Gate round 1 fix (issue #1077, item 1, HIGH): `item.context` ALONE is not reliable per
+  // member -- `subagent_items.rs` stamps a task() call's own `context` argument onto that
+  // call's spec-index-0 item ONLY (this file's own `flush()` comment above), so a call's 2nd+
+  // member carries no `item.context` of its own even when its OWN call genuinely had one.
+  // Correlated by `toolCallId` instead: a member's own goal is suppressed when ANY item sharing
+  // its `toolCallId` (its own call) carries a context, not only when THIS exact item does.
+  const toolCallIdsWithContext = new Set(group.items.filter((item) => item.context).map((item) => item.toolCallId))
   // Gate round 2 fix (item 5), gate round 3 fix: `joinMetaParts` (the shared `· `/sr-only-comma
   // separator every other meta slot in this codebase already uses) covers the ALWAYS-shown
   // core (the roll-up counts, then duration) -- the status word (shown only while running) and
@@ -348,29 +367,42 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             a real expand/collapse control past about 6 lines (`StageContextBrief`); absent when
             no item in the run captured a `context` (a flat call, or history from before #941). */}
         {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
+        {/* Gate round 1 fix (issue #1077, item 7, MEDIUM): a context-less solo Stage's own goal
+            renders HERE, at the Stage level -- the same position a context-bearing Stage's own
+            `StageContextBrief` takes, before "Uses:" -- rather than nested inside `SubagentBody`
+            (which would put it AFTER "Uses:", a different order than the context-bearing case). */}
+        {!group.context && soloItem && (
+          <div className={columnClassName}>
+            <SubagentGoalPreview task={soloItem.task} />
+          </div>
+        )}
+        {soloFailureReason != null && (
+          <p className={cn(columnClassName, 'text-xs', soloStatus === 'failed' ? SUBAGENT_ERROR_TEXT_CLASS : 'text-muted-foreground')}>
+            {soloFailureReason}
+          </p>
+        )}
         <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
         {/* Issue #1001: a stable wrapper scoped to ONLY the member content that actually swaps
             element type on a 1-to-2 members transition -- never the context brief/Uses line
             above, which do not unmount on it -- so the focus-tracking effect above never
             redirects focus away from one of THOSE while they stay mounted. */}
-        {/* Issue #1077: a multi-agent member (`showGoal={false}`) never shows its own goal --
-            2+ members share ONE Stage context, so no single member's own task can stand in for
-            it. A SOLO member instead shows its own goal (`showGoal={!group.context}`) only when
-            this Stage has no shared context of its own to lean on (`StageContextBrief` above is
-            the only other place a Stage's goal can come from); with a context, the solo member
-            suppresses its own goal exactly like a multi-agent member does, so it is never shown
-            twice over. */}
+        {/* Gate round 1 fix (issue #1077, item 1, HIGH): each member's own goal is suppressed
+            only when its OWN call (`toolCallIdsWithContext`, correlated above) had a context --
+            a joined Stage can hold several task() calls, each with its own distinct context or
+            none, so one member's own goal must never depend on a SIBLING call's context. A
+            solo Stage's own `SubagentBody` always passes `false`: its own goal (when it has
+            one) already rendered above, never shown twice over. */}
         <div ref={memberContentRef}>
           {total > 1 ? (
             <SpineList gap="member">
               {group.items.map((item) => (
                 <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                  <SubagentRow item={item} showGoal={false} />
+                  <SubagentRow item={item} showGoal={!toolCallIdsWithContext.has(item.toolCallId)} />
                 </SpineItem>
               ))}
             </SpineList>
           ) : (
-            <SubagentBody item={group.items[0]!} showGoal={!group.context} />
+            <SubagentBody item={group.items[0]!} showGoal={false} />
           )}
         </div>
       </div>

@@ -6,30 +6,52 @@
 // `InlineDisclosure`, ADR 0003, ported off `Markdown.tsx`'s `MermaidBlock` "Show source" shape)
 // revealing the Prompt/Result on demand.
 //
-// Uses a NEW fixture (`scripts/fixtures/omp-frames/stages-1077.jsonl`, its own header has the
-// full provenance note): Stage A ("solo-task") is ONE agent with NO batch `context` at all, so
-// `StageGroupRow`'s solo branch must fall back to `SubagentBody`'s own goal (`showGoal={!group.
-// context}`) -- its task is a deliberately long, multi-line brief (with a leading "# Goal"
-// heading) so the `line-clamp-3` goal paragraph genuinely overflows at a normal composer width.
-// Stage A stays OBSERVABLY running (no `item.result` yet) for about 2.5s before settling, the
-// window this check uses to prove the toggle reads "See input" (not "...& output") while
-// running. Stage B ("members-task") is TWO agents sharing ONE batch `context`, the scenario a
-// multi-agent Stage needs to prove no per-member goal duplication and independent per-member
-// toggle state.
+// Uses a fixture (`scripts/fixtures/omp-frames/stages-1077.jsonl`, its own header has the full
+// provenance note): Stage A ("solo-task") is ONE agent with NO batch `context` at all, so the
+// Stage level renders `SubagentGoalPreview` from `item.task` directly (ordered before "Uses:");
+// its task is a deliberately long, multi-line brief (a leading "# Goal" heading) so the
+// `line-clamp-3` goal paragraph genuinely overflows at a normal composer width. Stage A stays
+// OBSERVABLY running (no `item.result` yet) for about 2.5s before settling, the window this
+// check uses to prove the toggle reads "See input" (not "...& output") while running. Stage B
+// ("members-task") is TWO agents sharing ONE batch `context` (stamped on only the first item on
+// the wire -- `SubagentChainRow.tsx`'s own `toolCallIdsWithContext` correlation is what both
+// members must resolve through), the scenario a multi-agent Stage needs to prove no per-member
+// goal duplication and independent per-member toggle state. Stage C ("flat-task") is TWO agents
+// with NO context at all (gate round 1 fix, item 1's own live step): neither member has a Stage
+// goal to lean on, so each shows its own, independently derived. The final assistant message
+// includes a tiny Mermaid fenced block (gate round 1 fix, item 8: `MermaidBlock`'s own "Show
+// source" toggle was ported onto the same shared `InlineDisclosure`, so it gains Escape-to-close
+// and a correct focus ring for free -- proven directly here, not only by inspection).
 //
-// Eight things proved, in this order:
+// Gate round 1 (Main, 2026-10-20): Code FAIL on one High, fixed in this one round, plus the
+// Medium/Low findings below -- all fixed here too.
+//   1. HIGH: a context-less multi-agent Stage showed no goal anywhere (`showGoal={false}` was
+//      hardcoded for every member). Fixed: `SubagentChainRow.tsx` correlates by `toolCallId`
+//      (`item.context` alone is unreliable per member -- the wire stamps a call's own `context`
+//      argument onto only that call's spec-index-0 item); Stage C (new) live-checks the
+//      genuinely context-less case directly.
+//   2. MEDIUM: the goal preview's own character cap (240) was tighter than its visual
+//      `line-clamp-3` needed, `.slice()` could split a surrogate pair, and only the FIRST line
+//      had its heading/blank-line noise cleaned. Fixed: raised to 1500 (a DOM-size guard only,
+//      the visual clamp is CSS alone), a code-point-safe truncate, cleaning THROUGHOUT, and a
+//      shared `findFirstContentLine` helper (`stageMeta.ts`) replacing the copied loop.
+//   3-5, 7, 9-10: `InlineDisclosure.tsx` Escape/focus/style fixes, `SubagentChainRow.tsx`'s
+//      goal-before-"Uses:" ordering and solo failure-reason line, and `ToolRow.tsx`'s per-link
+//      `sr-only` name suffix -- see each file's own gate-round-1 comments for detail.
+//
+// Nine things proved, in this order:
 //   1. Stage A expanded shows ONLY the goal and the toggle link -- no Prompt/Result text is
 //      reachable (the toggle's own content stays `hidden`) until the toggle itself opens.
 //   2. While Stage A is still running (no result yet), the toggle link reads exactly
-//      "See input" (never "...& output").
+//      "See input for SoloSweep" (never "...& output").
 //   3. The goal paragraph genuinely overflows (`scrollHeight > clientHeight`, a real CSS
 //      `line-clamp-3`, not a component that merely never renders more than 3 lines), its own
 //      leading "# Goal" heading line is stripped, and later lines (never visible inside the
-//      3-line clamp) are still present in the DOM -- reachable by assistive tech, matching every
-//      other `line-clamp` precedent in this codebase.
-//   4. Once Stage A settles (`item.result` known), the toggle link reads "See input & output";
-//      opening it shows BOTH the Prompt and the Result, aria-expanded flips to "true", and the
-//      label flips to "Hide input & output".
+//      3-line clamp, but within the 1500-char DOM-size guard) are still present in the DOM --
+//      reachable by assistive tech, matching every other `line-clamp` precedent in this codebase.
+//   4. Once Stage A settles (`item.result` known), the toggle link reads "See input & output for
+//      SoloSweep"; opening it shows BOTH the Prompt and the Result, aria-expanded flips to
+//      "true", and the label flips to "Hide input & output for SoloSweep".
 //   5. Closing the toggle with keyboard focus placed deep inside its own content (a CodeBlock's
 //      own Copy button, a real Tab from the link) returns focus to the toggle link itself (Escape
 //      closes it) -- the WCAG 2.4.3 hazard issues #991/#1001 already fixed one level up, for a
@@ -38,17 +60,18 @@
 //      the toggle COLLAPSED again (`aria-expanded="false"`) -- no remembered state survives a
 //      fresh mount.
 //   7. Stage B's own shared goal shows once (`StageContextBrief`); NEITHER member's own body
-//      renders a goal paragraph of its own (`showGoal={false}` for every multi-agent member).
-//   8. Each member's own toggle opens and closes independently of its sibling.
+//      renders a goal paragraph of its own, each member's own toggle opens/closes independently.
+//   8. Stage C (a context-less multi-agent "flat call"): BOTH members show their own goal,
+//      independently derived -- the HIGH fix's own required live step.
+//   9. `Markdown.tsx`'s Mermaid "Show source" toggle: reached and opened via real keyboard input
+//      (Shift+Tab back from the composer, then a real Enter), a hard `:focus-visible` ring
+//      match (not only a screenshot), then Escape closes it -- the same shared `InlineDisclosure`
+//      every Stage/subagent toggle uses, gained for free.
 //
-// Every screenshot (two structural, two per-theme) is preceded by `settleForScreenshot` (neutral
-// pointer position, blurred active element, Escape, wait for no stray tooltip/hover card) --
-// fails if one is still open. 2 themes: Dark, Obsidian.
-//
-// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task (the lane's own
-// build-slot gating rule forbids any cargo/Tauri build until Main grants one) -- hand-built
-// directly against the documented wire contract and the product code this check targets, never
-// yet replayed against a real built exe.
+// Every screenshot is preceded by a stray-tooltip/hover-card check (`settleForScreenshot` for
+// every shot except the one deliberately keyboard-focused ring proof, which uses a lighter,
+// non-blurring equivalent so the very focus state being proven survives to the screenshot --
+// see that phase's own comment). 2 themes: Dark, Obsidian.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -67,18 +90,19 @@ import {
   clearKnownOutputFiles
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv, titleSelector, stageContentSelector, stageTriggerSelector, expandRow, clickScrolled } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape } from './verify-tauri-session-list-helpers.mjs';
-import { latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape, pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { latestSessionIdAndName, pressRealEnter } from './verify-tauri-560-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const PROMPT_MESSAGE = 'Run the two-Stage goal-only batch (issue #1077 live check).';
+const PROMPT_MESSAGE = 'Run the three-Stage goal-only batch (issue #1077 live check).';
 const SHOTS_DIR =
   process.env.REFRACT_1077_SHOTS_DIR || path.join(tmpdir(), `refract-1077-agent-goal-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   '01-stage-a-goal-only.png',
   '02-stage-a-toggle-open.png',
+  '03-mermaid-toggle-ring.png',
   '1077-agent-goal-dark.png',
   '1077-agent-goal-obsidian.png',
   'report.json',
@@ -96,7 +120,14 @@ const STAGE_A_TITLE = 'Stage 1 \u00b7 SoloSweep';
 // ellipsis rule applied to the fixture's own exact context string (computed once, by hand,
 // against `stageMeta.ts`'s own `truncateLabel`, not guessed).
 const STAGE_B_TITLE = "Stage 2 \u00b7 Confirm Stage members never duplicate the Stage's own shared\u2026";
+// Stage C: two agents, NO context -- `sharedNamePrefix(['FlatOne', 'FlatTwo'])` resolves to
+// their shared 4-character prefix "Flat" (computed by hand against `stageMeta.ts`'s own rule).
+const STAGE_C_TITLE = 'Stage 3 \u00b7 Flat';
 const TOGGLE_MARKER_ATTR = 'data-refract-1077-toggle';
+// Gate round 1 fix (item 8): any button whose own text starts with "Show source for"/"Hide
+// source for" -- `MermaidBlock`'s own accessible-name convention, unique in this fixture (one
+// diagram only).
+const MERMAID_TOGGLE_SELECTOR = `Array.from(document.querySelectorAll('button')).find((b) => /^(Show|Hide) source for /.test(b.textContent.trim()))`;
 
 function toggleButtonSelector(stageTitle) {
   return `(${stageContentSelector(stageTitle)})?.querySelector('button[aria-expanded][aria-controls]')`;
@@ -205,10 +236,10 @@ async function main() {
       findings.push("Stage A expanded shows only the goal and the toggle link -- its own Prompt/Result content stays hidden until the toggle opens.");
     }
     const runningLabel = await cdp.evaluate(`(${toggleButtonSelector(STAGE_A_TITLE)})?.textContent.trim() ?? null`);
-    if (runningLabel !== 'See input') {
-      failures.push(`Stage A's own toggle link reads ${JSON.stringify(runningLabel)} while still running (no result yet) -- expected exactly "See input" (no "& output").`);
+    if (runningLabel !== 'See input for SoloSweep') {
+      failures.push(`Stage A's own toggle link reads ${JSON.stringify(runningLabel)} while still running (no result yet) -- expected exactly "See input for SoloSweep" (no "& output").`);
     } else {
-      findings.push('Stage A, still running (no result yet): toggle link reads exactly "See input".');
+      findings.push('Stage A, still running (no result yet): toggle link reads exactly "See input for SoloSweep".');
     }
 
     // ---- Phase 2: the goal paragraph genuinely overflows its 3-line clamp, its own leading
@@ -229,9 +260,9 @@ async function main() {
         findings.push('Stage A\'s own goal text starts at the real first line, its leading "# Goal" heading marker stripped.');
       }
       if (!goalMeasure.text.includes('Final line, never meant to be readable')) {
-        notExercised.push("Stage A's own goal text does not retain the task's final line within the 240-char preview budget -- the clamp-overflow proof below still holds on the lines that are present.");
+        notExercised.push("Stage A's own goal text does not retain the task's final line within the 1500-char DOM-size guard -- the clamp-overflow proof below still holds on the lines that are present.");
       } else {
-        findings.push('Stage A\'s own goal text retains later lines (never visible inside the 3-line clamp) in the DOM, reachable by assistive tech.');
+        findings.push('Stage A\'s own goal text retains every line (within the 1500-char DOM-size guard, well inside its own ~400-char task), including the final one never visible inside the 3-line clamp -- reachable by assistive tech.');
       }
       if (goalMeasure.scrollHeight <= goalMeasure.clientHeight) {
         failures.push(`Stage A's own goal paragraph does not genuinely overflow its clamp (scrollHeight=${goalMeasure.scrollHeight}, clientHeight=${goalMeasure.clientHeight}) -- the 3-line clamp is not provably constraining real content.`);
@@ -243,25 +274,25 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-stage-a-goal-only.png'));
 
     // ---- Phase 3: Stage A settles (the fixture's own async-result frame) -- the toggle link
-    // flips to "See input & output". ----
-    await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.textContent.trim() === 'See input & output'`, {
+    // flips to "See input & output for SoloSweep". ----
+    await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.textContent.trim() === 'See input & output for SoloSweep'`, {
       timeoutMs: 15_000,
-      label: 'Stage A settles: toggle link reads "See input & output"'
+      label: 'Stage A settles: toggle link reads "See input & output for SoloSweep"'
     });
-    findings.push('Stage A, once settled (result known): toggle link reads "See input & output".');
+    findings.push('Stage A, once settled (result known): toggle link reads "See input & output for SoloSweep".');
 
     // ---- Phase 4: open the toggle -- Prompt AND Result both show, aria-expanded flips, label
-    // flips to "Hide input & output". ----
+    // flips to "Hide input & output for SoloSweep". ----
     await clickScrolled(cdp, toggleButtonSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, {
       timeoutMs: 10_000,
       label: "Stage A's own toggle opens (aria-expanded=true)"
     });
     const openedLabel = await cdp.evaluate(`(${toggleButtonSelector(STAGE_A_TITLE)})?.textContent.trim() ?? null`);
-    if (openedLabel !== 'Hide input & output') {
-      failures.push(`Stage A's own toggle link reads ${JSON.stringify(openedLabel)} once open -- expected exactly "Hide input & output".`);
+    if (openedLabel !== 'Hide input & output for SoloSweep') {
+      failures.push(`Stage A's own toggle link reads ${JSON.stringify(openedLabel)} once open -- expected exactly "Hide input & output for SoloSweep".`);
     } else {
-      findings.push('Stage A, open: toggle link reads exactly "Hide input & output".');
+      findings.push('Stage A, open: toggle link reads exactly "Hide input & output for SoloSweep".');
     }
     const openedContent = await cdp.evaluate(`(() => {
       const c = (${toggleContentSelector(STAGE_A_TITLE)});
@@ -321,7 +352,9 @@ async function main() {
     }
 
     // ---- Phase 7: Stage B (two members sharing one context) -- the shared goal shows ONCE,
-    // neither member's own body duplicates it. ----
+    // neither member's own body duplicates it (even though the wire only stamps `context` on
+    // MemberOne, the fixture's own spec-index-0 item -- `toolCallIdsWithContext` must correlate
+    // MemberTwo to the same call). ----
     await cdp.waitFor(`!!${titleSelector(STAGE_B_TITLE)}`, { timeoutMs: 15_000, label: 'Stage B row mounted' });
     await expandRow(cdp, STAGE_B_TITLE);
     await cdp.waitFor(
@@ -341,16 +374,16 @@ async function main() {
     }
     const memberGoalParagraphs = await cdp.evaluate(`(${stageContentSelector(STAGE_B_TITLE)})?.querySelectorAll('p.line-clamp-3').length ?? null`);
     if (memberGoalParagraphs !== 0) {
-      failures.push(`Stage B's own members rendered ${JSON.stringify(memberGoalParagraphs)} goal paragraph(s) of their own -- a multi-agent member must never show its own goal.`);
+      failures.push(`Stage B's own members rendered ${JSON.stringify(memberGoalParagraphs)} goal paragraph(s) of their own -- a multi-agent member sharing its Stage's own context must never show its own goal too, including MemberTwo (no context stamped on its own wire item, correlated to MemberOne's by toolCallId).`);
     } else {
-      findings.push("Neither of Stage B's own two members renders a goal paragraph of its own.");
+      findings.push("Neither of Stage B's own two members renders a goal paragraph of its own, including MemberTwo (correlated by toolCallId, not its own absent item.context).");
     }
     // Falsified live (first build-slot run): Phase 7's own wait above only confirms Stage B's
     // shared CONTEXT is visible (echoed immediately with the toolCall), not that it has
     // SETTLED -- the fixture's own 1500ms delay before `tool_execution_end` meant Phase 8 used
     // to open MemberOne's toggle before its own `item.result` existed, so the Result half of
     // its content was never rendered at all (`{resultBlock != null && (...)}`), a genuine
-    // Script race, not a product defect. Waits for MemberOne's own result text specifically
+    // script race, not a product defect. Waits for MemberOne's own result text specifically
     // (both members settle in the same `tool_execution_end` call in this fixture).
     await cdp.waitFor(`(${stageContentSelector(STAGE_B_TITLE)})?.textContent.includes('Confirmed: no duplicate goal text') ?? false`, {
       timeoutMs: 15_000,
@@ -377,12 +410,77 @@ async function main() {
       findings.push("MemberOne's own opened content shows its own Prompt and Result, scoped to itself only.");
     }
 
+    // ---- Phase 9 (gate round 1 fix, item 1's own required live step): a context-less MULTI-
+    // agent Stage (a flat call, no shared context at all) -- BOTH members show their OWN goal,
+    // since neither has a context of its own (nor a sibling's) to lean on. ----
+    await cdp.waitFor(`!!${titleSelector(STAGE_C_TITLE)}`, { timeoutMs: 15_000, label: 'Stage C row mounted' });
+    await expandRow(cdp, STAGE_C_TITLE);
+    await cdp.waitFor(`(${stageContentSelector(STAGE_C_TITLE)})?.textContent.includes('Confirmed: the sibling member') ?? false`, {
+      timeoutMs: 15_000,
+      label: 'Stage C settles'
+    });
+    await expandRow(cdp, 'FlatOne');
+    await expandRow(cdp, 'FlatTwo');
+    const stageCGoalParagraphs = await cdp.evaluate(`(${stageContentSelector(STAGE_C_TITLE)})?.querySelectorAll('p.line-clamp-3').length ?? null`);
+    if (stageCGoalParagraphs !== 2) {
+      failures.push(`Stage C (a context-less multi-agent "flat call") shows ${JSON.stringify(stageCGoalParagraphs)} goal paragraph(s), expected exactly 2 -- one per member, neither sharing a Stage context to lean on (issue #1077 gate round 1, item 1, HIGH).`);
+    } else {
+      findings.push('Stage C (a context-less multi-agent "flat call"): both members show their own goal paragraph -- the HIGH fix\'s own required live step.');
+    }
+    const flatOneGoal = await cdp.evaluate(`(${goalParagraphSelector('FlatOne')})?.textContent ?? null`);
+    const flatTwoGoal = await cdp.evaluate(`(${goalParagraphSelector('FlatTwo')})?.textContent ?? null`);
+    if (!flatOneGoal?.includes('Confirm this member shows its own goal') || !flatTwoGoal?.includes('Confirm the sibling member shows its own goal')) {
+      failures.push(`Stage C's own members show the wrong goal text (FlatOne=${JSON.stringify(flatOneGoal)}, FlatTwo=${JSON.stringify(flatTwoGoal)}) -- each member's own goal must come from its OWN task, never a shared or swapped one.`);
+    } else {
+      findings.push("Stage C's own two members each show their OWN, independently-derived goal text.");
+    }
+
+    // ---- Phase 10 (gate round 1 fix, item 8): the final message's own Mermaid diagram -- its
+    // "Show source" toggle (`Markdown.tsx`'s `MermaidBlock`) was ported onto the SAME shared
+    // `InlineDisclosure` every Stage/subagent toggle above uses, so it inherits Escape-to-close
+    // and a correct focus ring for free; proven directly via real keyboard input (Shift+Tab back
+    // from the composer, a real Enter), not only by code inspection. ----
+    await cdp.waitFor(`!!document.querySelector('img[role="img"]')`, { timeoutMs: 20_000, label: 'Mermaid diagram rendered' });
+    await clickScrolled(cdp, `document.querySelector('[aria-label="Message"]')`);
+    let mermaidFocused = false;
+    let shiftTabsUsed = 0;
+    for (let i = 0; i < 25 && !mermaidFocused; i++) {
+      await pressKey(cdp, 9, 'Tab', 'Tab', 8);
+      shiftTabsUsed++;
+      mermaidFocused = await cdp.evaluate(`(() => { const btn = (${MERMAID_TOGGLE_SELECTOR}); return !!btn && document.activeElement === btn; })()`);
+    }
+    if (!mermaidFocused) {
+      failures.push(`Could not reach the Mermaid "Show source" toggle via keyboard (real Shift+Tab, up to ${shiftTabsUsed} presses back from the composer).`);
+    } else {
+      findings.push(`Reached the Mermaid "Show source" toggle via ${shiftTabsUsed} real Shift+Tab press${shiftTabsUsed === 1 ? '' : 'es'} back from the composer.`);
+      await pressRealEnter(cdp);
+      await cdp.waitFor(`(${MERMAID_TOGGLE_SELECTOR})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Mermaid toggle opens via real keyboard activation' });
+      const ringMatch = await cdp.evaluate(`(() => { const btn = (${MERMAID_TOGGLE_SELECTOR}); return !!btn && btn.matches(':focus-visible'); })()`);
+      if (!ringMatch) {
+        failures.push('Mermaid "Show source" toggle opened via real keyboard activation, but does not match :focus-visible -- no real ring would show to a keyboard user.');
+      } else {
+        findings.push('Mermaid "Show source" toggle opens via real keyboard activation (Enter) and matches :focus-visible -- a hard ring proof, not only a screenshot.');
+      }
+      // A lighter, non-blurring stray-tooltip check (NOT the full `settleForScreenshot`, which
+      // blurs the active element -- doing so here would destroy the very focus-visible state
+      // this screenshot exists to show, the same reasoning `verify-1001-stage-focus-join.mjs`'s
+      // own Dark-theme "real proof" shot documents for an identical tension).
+      await cdp.waitFor(
+        `!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="tooltip-content"]') && !document.querySelector('[data-slot="hover-card-content"]')`,
+        { timeoutMs: 3_000, label: 'No stray tooltip/hover card before the ring screenshot' }
+      );
+      await cdp.screenshot(path.join(SHOTS_DIR, '03-mermaid-toggle-ring.png'));
+      await pressEscape(cdp);
+      await cdp.waitFor(`(${MERMAID_TOGGLE_SELECTOR})?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 5_000, label: 'Escape closes the Mermaid toggle' });
+      findings.push('Escape closes the Mermaid "Show source" toggle too -- the same shared Escape handler every InlineDisclosure caller gets for free.');
+    }
+
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       await settleForScreenshot(cdp);
       const shotName = `1077-agent-goal-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
-      findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}), no stray hover card or tooltip open.`);
+      findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}), no stray hover card or tooltip open (Stage B's two members, each opened, scoped correctly).`);
     }
 
     const report = {
