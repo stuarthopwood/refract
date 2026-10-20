@@ -246,44 +246,7 @@ async function main() {
     // tape's own scripted 8s delay -- too tight once real launch/render latency is added (the
     // same reasoning `verify-741-role-chip-helpers.mjs`'s own comment gives for its 3s-delay/45s
     // budget). 20s gives a real, comfortable margin without being excessive.
-    await sleep(12_000);
-    const __diagFiberWalk = await cdp.evaluate(`JSON.stringify((() => {
-      const panels = Array.from(document.querySelectorAll('[data-slot="pinned-todo-panel"]'));
-      function getFiber(el) {
-        const key = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
-        return key ? el[key] : null;
-      }
-      function nameOf(type, tag) {
-        if (typeof type === 'string') return type;
-        if (type && (type.displayName || type.name)) return type.displayName || type.name;
-        return tag === 5 ? 'host' : '?';
-      }
-      function fiberChain(fiber) {
-        const chain = [];
-        let f = fiber;
-        let guard = 0;
-        while (f && guard < 200) {
-          chain.push({ tag: f.tag, key: f.key, index: f.index, name: nameOf(f.type, f.tag) });
-          f = f.return;
-          guard++;
-        }
-        return chain;
-      }
-      function domChain(el) {
-        const chain = [];
-        let node = el;
-        let guard = 0;
-        while (node && node.nodeType === 1 && guard < 50) {
-          chain.push({ tag: node.tagName, dataSlot: node.getAttribute('data-slot'), firstClass: (node.className || '').split(' ')[0] || null, id: node.id || null });
-          if (node.hasAttribute && node.hasAttribute('data-session-pane')) break;
-          node = node.parentElement;
-          guard++;
-        }
-        return chain;
-      }
-      return panels.map((p) => ({ fiberChain: fiberChain(getFiber(p)), domChain: domChain(p) }));
-    })())`);
-    console.log('DIAG fiber + DOM ancestor chains for both panels:', __diagFiberWalk);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 20_000, label: 'Abandoned task strike-through appears live, mid-turn' });
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
