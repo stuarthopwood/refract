@@ -878,6 +878,24 @@ more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-con
   **Done, NOT run**: this is a no-build prep lane (held for the build slot); syntax-checked only
   (`node --check`, clean, 383 lines). Live run and its evidence are this story's own remaining
   step once the build slot opens.
+- [X] T041 Amend #1039 per Stuart's 2026-10-20 issue comment: Cyber Amber's surfaces
+  (`--background`, `--sidebar`, `--card`/`--popover`/`--surface-1`/`--surface-2`,
+  `--surface-3`/`--muted`/`--accent`/`--secondary`, `--border`) become PURE neutral (chroma 0,
+  byte-identical to `.theme-dark`'s own tokens), dropping the first #1039 cut's barely-visible
+  warm tint (chroma 0.005, hue 50) from every surface; the orange accent, the warning-hue move,
+  and the softer text (`--foreground`/`--chat-foreground`/`--muted-foreground`, TEXT tokens,
+  unaffected) stay as T034–T038 built them. Adds spec.md FR-022 and a follow-up Clarifications
+  session; adds a real OKLCH chroma (<=0.002) assertion per Cyber Amber surface token to
+  `scripts/verify-1039-amber-retune.mjs` (depends on T036, T039).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber` (surface tokens + header
+  comment), `src/shared/themes.ts` (swatch `#0c0a08` -> `#0a0a0a`, now byte-identical to Dark's
+  own swatch), `specs/007-app-themes/spec.md` (FR-022, follow-up Clarifications session),
+  `docs/design/product-look-and-feel.md`/`foundations-tokens-theming.md` (surface-ladder/border/
+  divider numbers), `scripts/verify-1039-amber-retune.mjs` (chroma assertion, `node --check`
+  clean, 418 lines). `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes
+  PASS** (unchanged total -- no new PAIRS entries, only Cyber Amber's own literal values
+  changed); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions`/`vitest run` (148/148) all green.
 - [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T039).
 

@@ -32,9 +32,9 @@ font and code font stay with issue #4 and are out of scope here.
 
 ### Session 2026-10-20 (#1039, grilled 2026-10-19, none deferred)
 
-- Q: What should Cyber Amber's surfaces look like? -> A: Default Dark's own lightness ladder,
-  each surface carrying only a barely-visible warm tint (chroma about 0.005, hue about 50); no
-  more distinct, browner canvas of its own.
+- Q: What should Cyber Amber's surfaces look like? -> A: Default Dark's own lightness ladder.
+  **Amended same day (Stuart, issue comment): PURE neutral greys, chroma 0 -- no warm tint on
+  any surface token.** No more distinct, browner canvas of its own.
 - Q: What is Cyber Amber's accent? -> A: A vivid orange, settling the preset's own open
   question (peach or amber) as neither: accent text and links are about `#fb923c`; the filled
   Send/primary button is about `#c2410c` with white text.
@@ -45,6 +45,15 @@ font and code font stay with issue #4 and are out of scope here.
   and Cyber Amber. `--foreground` moves from near-white to about `oklch(0.90 0 0)`;
   `--chat-foreground` goes a step softer, to about `oklch(0.86 0 0)`; muted text stays a clear
   step below both, and every text pair keeps 4.5:1 or better.
+
+### Session 2026-10-20 (later, #1039 issue comment amendment)
+
+- Q: The first #1039 cut gave Cyber Amber's surfaces a barely-visible warm tint (chroma 0.005,
+  hue 50) -- does that stay? -> A: No. Every surface token (`--background`, `--sidebar`,
+  `--card`/`--popover`, `--muted`/`--accent`/`--secondary`, `--border`, `--input`) becomes PURE
+  neutral (chroma 0), byte-identical to Default Dark's own surface tokens. The orange accent,
+  the warning-hue move, and the softer text (`--foreground`/`--chat-foreground`, which stay
+  warm-tinted as TEXT tokens, not surfaces) are unchanged.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -251,6 +260,11 @@ side panel and confirm both show the same theme.
   near-white in Default Dark and in Cyber Amber, with `--chat-foreground` staying one step
   dimmer than `--foreground` and `--muted-foreground` staying a clear step below both, in both
   themes; every one of these pairs MUST still clear FR-008's contrast floor.
+- **FR-022** (#1039, amended 2026-10-20): Every Cyber Amber surface token (`--background`,
+  `--sidebar`, `--card`/`--popover`, `--muted`/`--accent`/`--secondary`, `--border`, `--input`)
+  MUST be a pure neutral grey (OKLCH chroma ≤ 0.002), matching Default Dark's own surface
+  lightness ladder exactly; only the accent, the warning hue, and the text tokens
+  (`--foreground`/`--chat-foreground`/`--muted-foreground`) may carry a warm tint.
 
 ### Key Entities
 

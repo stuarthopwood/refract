@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1039 (Cyber Amber retuned onto Default Dark's own surfaces with a
-// vivid orange accent; softer `--foreground`/`--chat-foreground` in both Cyber Amber and Dark).
+// Live CDP check for issue #1039 (Cyber Amber retuned onto Default Dark's own surfaces -- PURE
+// neutral, chroma 0, amended 2026-10-20 -- with a vivid orange accent; softer
+// `--foreground`/`--chat-foreground` in both Cyber Amber and Dark).
 //
 // Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
 // fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn that
@@ -32,7 +33,11 @@
 // decision: the new orange accent sits closer to the OLD warning hue than the old accent did, so
 // `--severity-warning` was retuned apart from it -- this is the regression this floor exists to
 // catch, the same pattern `verify-551-presets.mjs`'s own `CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR`
-// established for the prior accent/warning retune).
+// established for the prior accent/warning retune). A further assertion (2026-10-20 amendment)
+// reads every Cyber Amber surface token's own resolved colour directly
+// (`requireResolvedCssVarColor`) and asserts its real OKLCH chroma is <=0.002 -- the first
+// #1039 cut's own barely-visible warm tint (chroma 0.005) would now fail this floor, proving
+// the regression this amendment exists to catch.
 //
 // Screenshots per theme: the chat view (the warning NoticeRow is inline in it, so one shot
 // covers both "chat" and "a warning"), the Manage sessions screen (the Session list), and the
@@ -64,7 +69,8 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
-import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor } from './verify-551-helpers.mjs';
+import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
+import { parseComputedColorToEntry } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -83,6 +89,15 @@ const THEMES = [
 // comment. Set below the measured value, same conservative-margin convention
 // `verify-551-presets.mjs`'s own `CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR` (30) used.
 const ACCENT_WARNING_HUE_FLOOR = 25;
+
+// 2026-10-20 amendment (Stuart, issue comment): every Cyber Amber surface token must be a PURE
+// neutral grey, byte-identical to Default Dark's own ladder -- no warm tint anywhere on a
+// surface (spec 007 FR-022). `--background`/`--sidebar`/`--card`/`--popover` are each a direct
+// literal in globals.css; `--muted`/`--accent`/`--secondary` all alias `--surface-hover`
+// (itself `--surface-3`), so checking `--surface-3` directly covers all three without a
+// redundant triple-read of what resolves to one literal.
+const CYBER_AMBER_SURFACE_VARS = ['--background', '--sidebar', '--card', '--popover', '--surface-3', '--border'];
+const SURFACE_CHROMA_CEILING = 0.002;
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -297,6 +312,26 @@ async function main() {
           }
         }
         findings.push(`${theme.name}: --accent-text resolved colour: ${accentRaw} (probe only -- this fixture's one turn renders no Markdown link).`);
+
+        // ---- 2026-10-20 amendment: every Cyber Amber surface token is a PURE neutral grey
+        // (chroma <=0.002, spec 007 FR-022) -- the first #1039 cut's own barely-visible warm
+        // tint (chroma 0.005) would fail this floor. Dark (an achromatic ladder by construction)
+        // is checked too, as a baseline sanity read, not the regression this floor targets. ----
+        for (const varName of CYBER_AMBER_SURFACE_VARS) {
+          const raw = await requireResolvedCssVarColor(cdp, varName, 'background-color');
+          const entry = parseComputedColorToEntry(raw);
+          if (!entry) {
+            failures.push(`${theme.name}: could not parse ${varName} (${raw}) for a real OKLCH chroma read.`);
+            continue;
+          }
+          const { a, b } = linearSrgbToOklab(entry.linear);
+          const chroma = Math.hypot(a, b);
+          if (chroma > SURFACE_CHROMA_CEILING) {
+            failures.push(`${theme.name}: ${varName} (${raw}) measures chroma ${chroma.toFixed(4)}, above the ${SURFACE_CHROMA_CEILING} pure-neutral ceiling.`);
+          } else {
+            findings.push(`${theme.name}: ${varName} (${raw}) measures chroma ${chroma.toFixed(4)} (<=${SURFACE_CHROMA_CEILING}, pure neutral).`);
+          }
+        }
 
         // ---- Screenshots: chat (the warning NoticeRow is inline in it), Manage sessions (the
         // Session list), Settings Appearance. ----

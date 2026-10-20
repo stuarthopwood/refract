@@ -896,17 +896,25 @@
  *
  * **Retuned #1039 (Stuart, grilled 2026-10-19, "not what I was expecting, needs to be more
  * like the default dark but with orange/amber accents; main font colour should be less of a
- * bright white, and a bit more grey"):** every surface now follows `.theme-dark`'s own
- * lightness ladder exactly (background 0.145, card/popover/sidebar 0.205, muted/accent/
- * secondary/sidebar-accent 0.269, border 0.56), each carrying only a barely-visible warm tint
- * (chroma 0.005, hue 50) -- "dark, slightly warm", never brown. `--card`/`--popover` collapse
+ * bright white, and a bit more grey"); amended #1039 (Stuart, 2026-10-20, issue comment):
+ * every surface now follows `.theme-dark`'s own lightness ladder EXACTLY -- background 0.145,
+ * card/popover/sidebar 0.205, muted/accent/secondary/sidebar-accent 0.269, border 0.56, each at
+ * chroma 0 (PURE neutral grey, byte-identical to `.theme-dark`'s own hex: `#0a0a0a`/`#171717`/
+ * `#262626`/`#747474`), never brown and never even a faint warm tint. The first #1039 cut
+ * shipped a barely-visible warm tint (chroma 0.005, hue 50) on every surface; Stuart's
+ * amendment removes it everywhere a surface token is read -- `--input`'s translucent white
+ * (`oklch(1 0 0 / 38%)`) was already chroma 0 and is unchanged. The softer text
+ * (`--foreground`/`--chat-foreground`) and `--muted-foreground`'s own de-browned retune are
+ * TEXT tokens, not surfaces, and keep their own faint warm tint (Stuart's instruction: "keep
+ * the orange accent, the warning hue move, and the softer text"). `--card`/`--popover` collapse
  * to one tier (0.205), the same two-tier-not-three structure `.theme-dark`'s own `--surface-1`/
  * `--surface-2` comment already documents for that theme.
  *
- * **Accent, per the grill's decided hex values:** `--accent-text`/`--active-indicator` move to
- * the vivid orange `#fb923c` (real hue 55.9); `--primary`/`--send` move to the deeper, filled
- * `#c2410c` (real hue 38.4) with white text. Measured: accent-text clears 4.5:1 against
- * `--background` (8.73:1), `--card`/`--popover` (7.90:1) AND `--surface-hover`/muted (6.72:1,
+ * **Accent, per the grill's decided hex values (unchanged by the 2026-10-20 surface amendment):**
+ * `--accent-text`/`--active-indicator` move to the vivid orange `#fb923c` (real hue 55.9);
+ * `--primary`/`--send` move to the deeper, filled `#c2410c` (real hue 38.4) with white text.
+ * Measured against the now-pure-neutral surfaces: accent-text clears 4.5:1 against
+ * `--background` (8.75:1), `--card`/`--popover` (7.92:1) AND `--surface-hover`/muted (6.69:1,
  * the binding case); white on `--primary`/`--send` clears 4.5:1 (5.18:1); the fill clears the
  * 3:1 non-text floor against `--background` (3.82:1, the quiet-composer backdrop, #927).
  * `--sidebar-primary` stays the shared indigo every other preset uses (never carried the old
@@ -922,39 +930,41 @@
  * `--severity-error`'s (hue 12, unchanged). `--severity-success`/`--severity-info` are
  * unchanged (green hue 162.48, cool teal hue 200).
  *
- * **Muted text, de-browned:** `--muted-foreground` moves from the old brown (hue 60, chroma
- * 0.06) to a near-neutral, faintly warm step (chroma 0.01, hue 50, same family as the surfaces)
- * at lightness 0.708 -- a clear step below the retuned `--foreground`'s 0.90, clearing 4.5:1
- * against `--background` (7.58:1), `--surface-1`/card (6.86:1) AND `--surface-2`/`--surface-3`/
- * popover/muted/accent/sidebar-accent (5.83:1, the binding case).
+ * **Muted text, de-browned (unchanged by the 2026-10-20 surface amendment -- `--muted-
+ * foreground` is a text token, not a surface):** moves from the old brown (hue 60, chroma
+ * 0.06) to a near-neutral, faintly warm step (chroma 0.01, hue 50) at lightness 0.708 -- a
+ * clear step below the retuned `--foreground`'s 0.90, clearing 4.5:1 against the now-pure-
+ * neutral `--background` (7.59:1), `--surface-1`/card (6.88:1) AND `--surface-2`/`--surface-3`/
+ * popover/muted/accent/sidebar-accent (5.80:1, the binding case).
  *
- * **Text, both this theme and Default Dark (decision 3):** `--foreground` moves from near-white
- * to a soft light grey, `oklch(0.90 0.005 50)` here (the same 0.90 lightness as `.theme-dark`,
- * with this theme's own faint warm tint) -- 14.65:1 against `--background`, 13.25:1 against
- * `--card`/`--popover`/`--sidebar`, 11.28:1 against `--surface-3`/muted/accent (the narrowest
- * case). `--chat-foreground` goes a step softer again, `oklch(0.86 0.005 50)` (12.91:1 against
- * `--background`), keeping the prose-dimmer-than-UI split. `--card-foreground`/
- * `--popover-foreground`/`--accent-foreground`/`--sidebar-foreground`/`--secondary-foreground`/
- * `--sidebar-accent-foreground` all already alias `--foreground` via `var()`, so they move with
- * it automatically -- no separate literal to retune. Every pair re-verified by
- * `scripts/check-theme-contrast.mjs`. */
+ * **Text, both this theme and Default Dark (decision 3, unchanged by the surface amendment):**
+ * `--foreground` moves from near-white to a soft light grey, `oklch(0.90 0.005 50)` here (the
+ * same 0.90 lightness as `.theme-dark`, with this theme's own faint warm tint -- a text token,
+ * kept per Stuart's "keep... the softer text") -- 14.68:1 against the now-pure-neutral
+ * `--background`, 13.29:1 against `--card`/`--popover`/`--sidebar`, 11.22:1 against
+ * `--surface-3`/muted/accent (the narrowest case). `--chat-foreground` goes a step softer
+ * again, `oklch(0.86 0.005 50)` (12.93:1 against `--background`), keeping the prose-dimmer-
+ * than-UI split. `--card-foreground`/`--popover-foreground`/`--accent-foreground`/
+ * `--sidebar-foreground`/`--secondary-foreground`/`--sidebar-accent-foreground` all already
+ * alias `--foreground` via `var()`, so they move with it automatically -- no separate literal
+ * to retune. Every pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
   color-scheme: dark;
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
 
-  --background: oklch(0.145 0.005 50);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.90 0.005 50);
   --muted-foreground: oklch(0.708 0.01 50);
-  --sidebar: oklch(0.205 0.005 50);
-  --surface-1: oklch(0.205 0.005 50);
-  --surface-2: oklch(0.205 0.005 50);
-  --surface-3: oklch(0.269 0.005 50);
-  /* Clears 3:1 against `--background` (4.26:1), `--surface-1`/`--surface-2`/card/popover
-   * (3.85:1) AND `--surface-3`/muted (3.28:1, the binding case) -- same lightness (0.56) as
-   * `.theme-dark`'s own `--border`, only the faint warm tint differs. */
-  --border: oklch(0.56 0.005 50);
+  --sidebar: oklch(0.205 0 0);
+  --surface-1: oklch(0.205 0 0);
+  --surface-2: oklch(0.205 0 0);
+  --surface-3: oklch(0.269 0 0);
+  /* Clears 3:1 against `--background` (4.24:1), `--surface-1`/`--surface-2`/card/popover
+   * (3.84:1) AND `--surface-3`/muted (3.24:1, the binding case) -- byte-identical to
+   * `.theme-dark`'s own `--border` (2026-10-20 amendment: pure neutral, chroma 0). */
+  --border: oklch(0.56 0 0);
   --border-strong: var(--border);
   --divider: oklch(1 0 0 / 16%);
   --primary: #c2410c;
