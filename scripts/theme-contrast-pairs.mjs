@@ -94,6 +94,24 @@ export const PAIRS = [
   { fg: 'border', bg: 'card', min: 3 },
   { fg: 'border', bg: 'popover', min: 3 },
   { fg: 'border', bg: 'muted', min: 3 },
+  // #1043 (shared `DropdownMenuRadioItem`'s new leading ring-and-dot mark, `dropdown-menu.tsx`,
+  // `radio-group.tsx`'s `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`): the filled dot (`bg-foreground`)
+  // renders directly on `DropdownMenuContent`'s own `bg-popover`, a surface it was never
+  // checked against before, in its real WCAG 1.4.11 (3:1 non-text) role -- the Ask card/
+  // MergeDialog's identical dot renders on a dialog's `--background`/`--card`, a pre-existing,
+  // unrelated gap this issue's scope does not touch. The ring's UNCHECKED border
+  // (`border-muted-foreground`) needs no new entry either: `muted-foreground`/`popover` already
+  // exists above at the stricter 4.5:1 text floor (line ~138), which already implies 3:1.
+  { fg: 'foreground', bg: 'popover', min: 3 },
+  // NOT added as a PAIRS entry: the CHECKED ring's own border (`border-primary`) measures only
+  // 2.92-2.99:1 against `--popover` in Obsidian/Nordic Frost/Cyber Amber (just under the 3:1
+  // floor) -- `radio-group.tsx`'s own `RadioGroupIndicator` doc comment already records exactly
+  // this (#572 decision D10): "the dot uses `--foreground`, not `--primary` -- Obsidian's
+  // `--primary` measures too low a contrast on the row's own hover surface; the row edge
+  // (`border-primary` above) stays as reinforcement, only the glyph itself moved." No
+  // `primary`/`card` or `primary`/`background` PAIRS entry exists either, for the same reason --
+  // the ring border was never the WCAG-load-bearing element in this mark, the dot is, and it
+  // passes with margin in every theme (`foreground`/`popover` above).
   // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode
   // pill's own `badgeVariants({variant: 'outline'})` used to render an opaque `border-border`
   // directly on `--composer-background` -- #927 moved the Approval pill, Model and Reasoning
