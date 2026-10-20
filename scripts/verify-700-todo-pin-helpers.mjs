@@ -42,7 +42,7 @@ export async function readPanel(cdp) {
           hasBlockedLine: /Blocked:/.test(li.textContent)
         }))
       : null;
-    const phaseHeaders = Array.from(panel.querySelectorAll('div.py-0\\\\.5 > div')).map((d) => d.textContent.trim());
+    const phaseHeaders = Array.from(panel.querySelectorAll('div.py-1 > div')).map((d) => d.textContent.trim());
     return {
       tagName: panel.tagName,
       id: panel.id,
