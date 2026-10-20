@@ -9,23 +9,35 @@
 //
 // Covers, in order: (1) queue two follow-ups mid-turn, chips render oldest-first; (2) the
 // composer hint and `aria-describedby` read "Enter sends the next queued message" while the rule
-// applies, in two themes; (3) Enter on the blank composer sends the OLDEST queued follow-up
+// applies, in two themes, plus one 360px-wide screenshot proving the hint fits without
+// overflowing; (3) an attachment-only "blank" composer (text === '', a real pending file
+// attachment, follow-up queued) does NOT promote the queued follow-up on Enter, and the hint
+// stays the DEFAULT "Message the agent" wording (gate round 1, Code1/Test1 HIGH: live-exercised,
+// not merely reasoned about); (4) Enter on the blank composer sends the OLDEST queued follow-up
 // (same wire call "Send now" uses, `promote_queued_message`), a repeat Enter sends the next one;
-// (4) once both are promoted (steering-only, no follow-up left), Enter on the blank composer is a
-// genuine no-op (no new command reaches the fake omp at all); (5) a third follow-up is queued,
-// then Enter WITH TYPED TEXT still sends that typed text as an ordinary follow-up (not a steer),
-// even though a follow-up is sitting in the queue; (6) opening the slash menu with an unmatched
-// command suppresses the rule entirely (refused locally, no wire command at all); (7) a fast
-// double Enter against the same oldest chip steers it exactly once (the fixture's own 900ms
-// `__delay__` before its ack keeps `inFlightChips` busy long enough for the second Enter to land
-// inside that window, proven by an exact fake-omp debug-log line count, not merely by watching
-// the UI); (8) Shift+Enter inserts a newline and sends nothing.
+// (5) once both are promoted (steering-only, no follow-up left), Enter on the blank composer is a
+// genuine no-op (no new command reaches the fake omp at all) -- with the composer's own focus
+// confirmed first, so a silently-unfocused textarea could never pass this step by accident; (6) a
+// third follow-up is queued, then Enter WITH TYPED TEXT still sends that typed text as an
+// ordinary follow-up (not a steer), even though a follow-up is sitting in the queue; (7) opening
+// the slash menu on an unmatched command and pressing Enter sends no command at all -- this is
+// the composer's ordinary unknown-command refusal, NOT a live test of FR-094's own slash-menu
+// guard (see `notExercised` below for why that combination cannot be reached); (8) a fast double
+// Enter against the same oldest chip steers it exactly once (the fixture's own 900ms `__delay__`
+// before its ack keeps `inFlightChips` busy long enough for the second Enter to land inside that
+// window, proven by an exact fake-omp debug-log line count, not merely by watching the UI), and
+// the "Sending now…" announcement itself is asserted (not merely waited for); (9) Shift+Enter
+// inserts a newline and sends nothing.
 //
 // Not exercised live (documented, not fabricated): a ghost-text suggestion showing at the same
 // moment the composer is blank -- `isGhostTextEligible` requires text already on the line, so
 // this combination cannot occur in the shipped build at all (the guard in
-// `useEnterSendsQueuedFollowUp.ts` is defensive only); an attachment/file-only "blank" composer
-// (images, text chips, file attachments) -- out of scope for this issue's own acceptance list.
+// `enterSendsQueuedFollowUp.ts` is defensive only); the slash menu open AND the composer
+// otherwise blank at the same time -- `showSlashMenu` requires `text` to start with `/`, so text
+// can never simultaneously be the empty string FR-094 requires; an IME composition in progress
+// at the same moment the composer is blank -- CDP has no native IME composition-event API, and a
+// composing draft is, by definition, non-empty text on the line, so this is structurally
+// unreachable for the same reason the slash-menu and ghost-text guards are.
 //
 // Every screenshot is preceded by `settleForScreenshot` (move the pointer inside the viewport,
 // blur, press Escape, fail if a tooltip or hover card is still open) -- same hygiene rule every
@@ -143,12 +155,13 @@ async function main() {
   const dirtyLines = spawnSync_('git', ['-C', REPO_ROOT, 'status', '--porcelain']).stdout.split('\n').filter(Boolean);
   const dirty = dirtyLines.length > 0;
   console.log(`${LOG}: git HEAD ${head}${dirty ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
-  clearKnownOutputFiles(SHOTS_DIR, 'refract-1067-enter-queued-shots', [...THEMES.map((t) => `hint-${t.id}.png`), 'report.json']);
+  clearKnownOutputFiles(SHOTS_DIR, 'refract-1067-enter-queued-shots', [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png', 'report.json']);
 
   const report = [];
   const notExercised = [
     'A ghost-text suggestion showing at the same instant the composer is blank: structurally unreachable (isGhostTextEligible requires text already on the line), guarded defensively only.',
-    'Attachment/file-only "blank" composer (images, text chips, file attachments): out of scope for issue #1067\'s own acceptance list.'
+    'The slash menu open at the same instant the composer is otherwise blank (FR-094\'s own slash-menu guard): structurally unreachable -- showSlashMenu requires text to start with \'/\', so text can never simultaneously be the empty string FR-094 requires. The step below that opens the slash menu and presses Enter exercises the composer\'s ordinary unknown-command refusal instead (a real, separate behaviour), not this guard.',
+    'An IME composition in progress at the same instant the composer is blank: CDP has no native IME composition-event API to dispatch, and a composing draft is non-empty text on the line by definition, so this combination is structurally unreachable for the same reason the slash-menu and ghost-text guards are.'
   ];
 
   function assertEqual(actual, expected, label) {
@@ -268,11 +281,76 @@ async function main() {
     // currently has focus, never to the textarea by selector, so every later bare Enter in this
     // script would otherwise land nowhere. Re-click the composer once here; every later step
     // that types first (`typeIntoByLabel`) already refocuses it via its own click.
+
+    // 360px-wide screenshot (gate round 1 LOW item): the hint must fit without triggering
+    // horizontal overflow at the narrowest width this app supports -- same
+    // `Emulation.setDeviceMetricsOverride` technique every other narrow-width check in this repo
+    // uses (CDP has no OS window-resize control; this is a genuine viewport override, not a
+    // guess). Dark only: the two-theme contrast comparison already happened above.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const narrowOverflow = await cdp.evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 2`);
+    assertEqual(narrowOverflow, false, 'at 360px width: the queued-follow-up hint does not cause horizontal overflow');
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, 'hint-360px.png'));
+    await cdp.send('Emulation.clearDeviceMetricsOverride', {});
+    await sleep(300);
+    // Re-click the composer: `clearDeviceMetricsOverride` repaints the page, same focus-loss
+    // risk `settleForScreenshot`'s own blur left above.
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
 
-    // (3) Enter on the blank composer sends the OLDEST queued follow-up via the same wire call
+    // (3) HIGH gate round 1 fix (Code1/Test1): an attachment-only "blank" composer -- text ===
+    // '', a REAL pending file attachment, a follow-up still queued -- must NOT promote the
+    // queued follow-up on Enter, and the hint must stay the DEFAULT "Message the agent" wording,
+    // not the queued-follow-up one. Live-exercised via a synthetic clipboard paste carrying a
+    // real `File` (same technique `verify-926-attach-any-file.mjs` uses), not merely reasoned
+    // about from `computeEnterSendsQueuedFollowUp`'s own `attachments.files.length === 0` guard.
+    const beforeAttachmentOnly = debugLogContent(debugLogPath);
+    await cdp.evaluate(
+      `(() => {
+        const file = new File(['hello'], 'attachment-only-1067.txt', { type: 'text/plain' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+        document.querySelector('[aria-label="Message"]').dispatchEvent(ev);
+        return true;
+      })()`
+    );
+    await cdp.waitFor(
+      `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length === 1`,
+      { timeoutMs: 10_000, label: 'Pasted file attached (attachment-only blank composer)' }
+    );
+    assertEqual(
+      await cdp.evaluate(`document.querySelector('[aria-label="Message"]').value`),
+      '',
+      'attachment-only blank composer: the composer TEXT is still the empty string (the attachment, not typed text, is what makes this draft non-blank)'
+    );
+    const attachmentOnlyHint = await readHint(cdp, 'Message the agent');
+    assertEqual(attachmentOnlyHint.visibleLead, 'Message the agent', 'attachment-only blank composer: the hint stays the DEFAULT wording, not "Enter sends the next queued message"');
+    await cdp.pressEnter();
+    await sleep(500);
+    assertEqual(
+      debugLogContent(debugLogPath),
+      beforeAttachmentOnly,
+      'attachment-only blank composer: Enter sends no command at all (no promote_queued_message over a real pending attachment)'
+    );
+    assertEqual(
+      (await readChips(cdp)).map((c) => [c.text, c.queue]),
+      [['First queued message', 'followUp'], ['Second queued message', 'followUp']],
+      'attachment-only blank composer: both follow-ups are still queued, untouched'
+    );
+    // Clean-up: remove the pasted attachment so the Enter-promotes-the-queue steps below see an
+    // actually blank composer again, same selector `verify-926-attach-any-file.mjs` uses.
+    await cdp.click(`document.querySelector('[role="group"][aria-label="Pending attachments"] button[aria-label^="Remove"]')`);
+    await cdp.waitFor(
+      `document.querySelectorAll('[role="group"][aria-label="Pending attachments"] [data-slot="badge"]').length === 0`,
+      { timeoutMs: 5_000, label: 'Pasted attachment removed, attachment-only check cleaned up' }
+    );
+    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
+
+    // (4) Enter on the blank composer sends the OLDEST queued follow-up via the same wire call
     // "Send now" uses; a repeat Enter sends the next one. (The "Sending now…" announcement
-    // itself is asserted in step (7) below, where the fixture's own 900ms ack delay gives a
+    // itself is asserted in step (8) below, where the fixture's own 900ms ack delay gives a
     // non-racy window to observe it -- this first promote's ack is immediate, so polling for
     // that transient text here could flip to the post-success announcement before a poll ever
     // caught it.)
@@ -297,15 +375,23 @@ async function main() {
       'after a repeat Enter: both chips are now steering, none a follow-up'
     );
 
-    // (4) Steering-only: Enter on the blank composer is a genuine no-op -- nothing reaches the
+    // (5) Steering-only: Enter on the blank composer is a genuine no-op -- nothing reaches the
     // fake omp at all (exact debug-log byte-for-byte equality, not merely "the UI looks idle").
+    // The composer's own FOCUS is confirmed first (round-1 LOW item): a bare `pressEnter()`
+    // dispatches to whatever currently has focus, so an unfocused textarea would make this step
+    // pass for the wrong reason (Enter landing nowhere at all, not the rule's own no-op path).
+    assertEqual(
+      await cdp.evaluate(`document.activeElement === document.querySelector('[aria-label="Message"]')`),
+      true,
+      'before the steering-only no-op check: the composer textarea itself has focus'
+    );
     const beforeNoop = debugLogContent(debugLogPath);
     await cdp.pressEnter();
     await sleep(600);
     const afterNoop = debugLogContent(debugLogPath);
     assertEqual(afterNoop, beforeNoop, 'steering-only queued: Enter on the blank composer sends no command at all (debug log unchanged)');
 
-    // (5) Queue a third follow-up, then Enter WITH TYPED TEXT still sends that typed text as an
+    // (6) Queue a third follow-up, then Enter WITH TYPED TEXT still sends that typed text as an
     // ordinary follow-up (not a steer), even though a follow-up is queued and available.
     await cdp.typeIntoByLabel('Message', 'Third queued message');
     await cdp.pressEnter();
@@ -331,15 +417,19 @@ async function main() {
       'Enter with typed text sent no new promote_queued_message command'
     );
 
-    // (6) Opening the slash menu (an unmatched command) suppresses the rule entirely: refused
-    // locally as unknown-command, no wire command reaches the fake omp at all.
+    // (7) Opening the slash menu on an unmatched command and pressing Enter sends no command at
+    // all. NOT a live test of FR-094's own slash-menu guard -- see `notExercised` above for why
+    // that specific combination (slash menu open AND composer otherwise blank) is structurally
+    // unreachable. This exercises the composer's ordinary, separate "unknown command" refusal
+    // instead; kept because it is the honest, real behaviour this script can actually reach, not
+    // a claim about the FR-094 guard.
     const beforeSlash = debugLogContent(debugLogPath);
     await cdp.typeIntoByLabel('Message', '/zzz1067notarealcommand');
     await cdp.waitFor(`!!document.querySelector('ul[role="listbox"]') || !!document.querySelector('[aria-hidden="true"].bg-popover')`, { timeoutMs: 5_000, label: 'Slash menu open (unmatched command)' });
     await cdp.pressEnter();
     await sleep(500);
     const afterSlash = debugLogContent(debugLogPath);
-    assertEqual(afterSlash, beforeSlash, 'slash menu open: Enter sends no command at all (refused locally, debug log unchanged)');
+    assertEqual(afterSlash, beforeSlash, 'unknown slash command: Enter sends no command at all (refused locally, debug log unchanged; unrelated to FR-094\'s own guard)');
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     await cdp.waitFor(`!document.querySelector('ul[role="listbox"]') && !document.querySelector('[aria-hidden="true"].bg-popover')`, { timeoutMs: 5_000, label: 'Slash menu dismissed' });
@@ -347,17 +437,24 @@ async function main() {
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     await cdp.waitFor(`document.querySelector('[aria-label="Message"]').value === ''`, { timeoutMs: 5_000, label: 'Composer cleared after dismissing the slash draft' });
 
-    // (7) A fast double Enter against the same oldest chip (Third queued message) steers it
+    // (8) A fast double Enter against the same oldest chip (Third queued message) steers it
     // exactly once. The fixture's own 900ms delay before its ack keeps the chip's own
     // `inFlightChips` busy long enough for the second Enter to land inside that window; proven
     // by an exact fake-omp debug-log RECV count, not merely by watching the UI settle.
     const beforeDouble = debugLogContent(debugLogPath);
     await cdp.pressEnter();
     await cdp.pressEnter();
-    await cdp.waitFor(`(document.querySelector('[id$="-attachments-status"] span')?.textContent ?? '') === 'Sending now\u2026'`, {
-      timeoutMs: 2_000,
-      label: 'Sending announces "Sending now…" while the promote is in flight'
-    });
+    // Round-1 LOW item: the "Sending now…" announcement is RECORDED with assertTrue (so a
+    // regression shows up as a reported FAIL, not a bare timeout), not merely waited for and
+    // discarded -- polls for up to 2s, then asserts on whatever text was actually observed.
+    let sendingNowText = '';
+    const sendingNowDeadline = Date.now() + 2_000;
+    while (Date.now() < sendingNowDeadline) {
+      sendingNowText = await cdp.evaluate(`document.querySelector('[id$="-attachments-status"] span')?.textContent ?? ''`);
+      if (sendingNowText === 'Sending now\u2026') break;
+      await sleep(50);
+    }
+    assertTrue(sendingNowText === 'Sending now\u2026', 'Sending announces "Sending now…" while the promote is in flight', { observedText: sendingNowText });
     await cdp.waitFor(
       `(() => { const li = Array.from(document.querySelectorAll('ul[aria-label="Queued messages"] > li')); const target = li.find((el) => el.querySelector('span.truncate')?.textContent === 'Third queued message'); return li.length === 4 && target && target.querySelector('[data-chip-action="send"]') === null; })()`,
       { timeoutMs: 15_000, label: 'Fast double Enter settled: Third queued message is now steering' }
@@ -369,7 +466,7 @@ async function main() {
       'fast double Enter sent exactly ONE promote_queued_message command (inFlightChips guard shared with the chip\'s own Send now button)'
     );
 
-    // (8) Shift+Enter inserts a newline and sends nothing.
+    // (9) Shift+Enter inserts a newline and sends nothing.
     const beforeShiftEnter = debugLogContent(debugLogPath);
     await cdp.typeIntoByLabel('Message', 'line one');
     await pressShiftEnter(cdp);
@@ -379,7 +476,7 @@ async function main() {
     await sleep(400);
     assertEqual(debugLogContent(debugLogPath), beforeShiftEnter, 'Shift+Enter sent no command at all');
 
-    report.push({ step: 'screenshots', ok: true, screenshots: citeScreenshots(SHOTS_DIR, THEMES.map((t) => `hint-${t.id}.png`)) });
+    report.push({ step: 'screenshots', ok: true, screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png']) });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;

@@ -1149,9 +1149,9 @@
   now" chip were clicked, matching OMP's FIFO `promote_queued_message`; a repeat Enter sends the
   next one. Queued `steering` messages are skipped (follow-ups only, matching FR-012's existing
   chip rule); if only steering is queued, Enter on a blank composer does nothing.
-- Q: How is "blank" defined for this rule, and is it discoverable? -> A: Blank means
-  whitespace-only text, no pending images, no pending text chips, and no pending file
-  attachments (independent of, and not to be confused with, issue #744's still-open
+- Q: How is "blank" defined for this rule, and is it discoverable? -> A: Blank means the
+  composer's text is the exact empty string, no pending images, no pending text chips, and no
+  pending file attachments (independent of, and not to be confused with, issue #744's still-open
   `hasSendableContent` proposal, which asks the opposite question for the Send button). While the
   rule applies (composer blank, at least one follow-up queued), the composer's hint reads "Enter
   sends the next queued message", reachable through the textarea's existing `aria-describedby`
@@ -1161,6 +1161,23 @@
   reimplementing it, so a fast double Enter cannot double-send. Enter is never hijacked by this
   rule while the slash menu is open, an IME composition is in progress, or a ghost-text
   suggestion is showing; Shift+Enter is unaffected.
+
+### Session 2026-10-20 (Enter sends queued follow-up, gate round 1, #1067)
+
+- Q: Gate round 1 (Main, 2026-10-20; Sec/A11y/UI PASS, Code/Test FAIL): the original answer
+  above said "blank" means whitespace-only text, which left a gap -- the hint overlay only ever
+  renders for `text === ''` (issue #533's own gate), so a whitespace-only draft had the rule
+  genuinely applying (Enter would promote a queued follow-up) while the hint stayed hidden,
+  silently steering over what a developer could reasonably read as a real (if blank-looking)
+  draft. Redefine? -> A: DECIDED. "Blank" now means `text === ''` exactly, not merely
+  whitespace-only after trimming: a single space, or a newline inserted by Shift+Enter, is a real
+  draft, and Enter must never promote a queued follow-up over it -- it falls through to the
+  ordinary `handleSend()` (which refuses an all-whitespace send today, unchanged). This also pulls
+  the hint and the rule back into lockstep, since both now gate on the identical `text === ''`
+  check. Also folded in explicitly (already true structurally, now stated): the same guard
+  requires no attachment read still in flight (`pendingAttachmentReads`, PR #723's own guard) --
+  while a background path/drop image read for this session is pending, the draft is not blank
+  either, matching `handleSend`'s own existing refusal for that race.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -1821,17 +1838,21 @@ The developer types a slash command and finds the ones the agent offers. If a se
   one level up, for a Stage's own trigger); a nested control's own Escape handling (a Tooltip's
   own dismiss, WCAG 1.4.13) MUST win the first press.
 - **FR-094** (new, 2026-10-20, issue #1067, Stuart's own `grill-with-docs` session, 2026-10-20;
-  amends FR-011/FR-012): With the composer blank (whitespace-only text, no pending images, text
-  chips, or file attachments) and at least one queued `followUp` message, Enter (no Shift, not
-  composing) MUST send the oldest queued follow-up exactly as its own "Send now" chip (FR-012)
-  would, reusing the same single-flight guard so a fast double Enter cannot double-send; a
-  repeat Enter MUST send the next queued follow-up. Queued `steering` messages MUST be skipped;
-  with only steering queued, Enter on a blank composer MUST do nothing. This rule MUST NOT apply
-  while the slash menu is open, an IME composition is in progress, or a ghost-text suggestion
-  (FR-058) is showing. While the rule applies, the composer's hint MUST read "Enter sends the
-  next queued message", reachable through the textarea's `aria-describedby`, and sending this
-  way MUST announce "Sending now…" exactly as the chip's own button does. Shift+Enter is
-  unaffected.
+  amends FR-011/FR-012; amended gate round 1, Main, 2026-10-20, DECIDED item 1: "blank" now means
+  `text === ''` exactly, not merely whitespace-only -- a space or a Shift+Enter-inserted newline
+  is a real draft, so Enter never promotes over it): With the composer blank (the exact empty
+  string, no pending images, text chips, or file attachments, and no attachment read still in
+  flight, PR #723's `pendingAttachmentReads` guard) and at least one queued `followUp` message,
+  Enter (no Shift, not composing) MUST send the oldest queued follow-up exactly as its own "Send
+  now" chip (FR-012) would, reusing the same single-flight guard so a fast double Enter cannot
+  double-send; a repeat Enter MUST send the next queued follow-up. Queued `steering` messages
+  MUST be skipped; with only steering queued, Enter on a blank composer MUST do nothing. This
+  rule MUST NOT apply while the slash menu is open, an IME composition is in progress, or a
+  ghost-text suggestion (FR-058) is showing. While the rule applies, the composer's hint MUST
+  read "Enter sends the next queued message" followed by the ordinary hint text, reachable
+  through the textarea's `aria-describedby`, and sending this way MUST announce "Sending now…"
+  exactly as the chip's own button does. The Send button's own `aria-keyshortcuts` and tooltip
+  MUST NOT claim Enter sends the (empty) draft while the rule applies. Shift+Enter is unaffected.
 
 ### Key Entities
 
