@@ -201,7 +201,13 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
         <DropdownMenuRadioGroup value={session?.lastThinkingLevel ?? undefined} onValueChange={(value) => void handleSelect(value as ThinkingLevel)}>
           {THINKING_LEVELS.map((level) => (
             <DropdownMenuRadioItem key={level} value={level}>
-              {THINKING_LEVEL_LABEL[level]}
+              {/* LOW fix (#1043): the shared `DropdownMenuRadioItem` now draws a leading
+                  ring-and-dot mark before `children`, the same as the Theme submenu's own row
+                  (`ProfileMenu.tsx`'s `ThemeSubmenu`, which wraps its own label the same way) --
+                  wrapped in a truncating `min-w-0 flex-1` span for the same reason: a bare text
+                  child has no element to apply `truncate` to if a future label ever grows long
+                  enough to risk overflow against the row's own fixed-width menu. */}
+              <span className="min-w-0 flex-1 truncate">{THINKING_LEVEL_LABEL[level]}</span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
