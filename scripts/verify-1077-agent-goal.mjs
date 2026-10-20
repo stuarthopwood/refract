@@ -39,7 +39,7 @@
 //      goal-before-"Uses:" ordering and solo failure-reason line, and `ToolRow.tsx`'s per-link
 //      `sr-only` name suffix -- see each file's own gate-round-1 comments for detail.
 //
-// Nine things proved, in this order:
+// Ten things proved, in this order:
 //   1. Stage A expanded shows ONLY the goal and the toggle link -- no Prompt/Result text is
 //      reachable (the toggle's own content stays `hidden`) until the toggle itself opens.
 //   2. While Stage A is still running (no result yet), the toggle link reads exactly
@@ -54,8 +54,9 @@
 //      "true", and the label flips to "Hide input & output for SoloSweep".
 //   5. Closing the toggle with keyboard focus placed deep inside its own content (a CodeBlock's
 //      own Copy button, a real Tab from the link) returns focus to the toggle link itself (Escape
-//      closes it) -- the WCAG 2.4.3 hazard issues #991/#1001 already fixed one level up, for a
-//      Stage's own trigger.
+//      closes it, the first press first dismissing the Copy button's own focus-triggered Tooltip
+//      per FR-093's "nested control wins the first press" rule) -- the WCAG 2.4.3 hazard issues
+//      #991/#1001 already fixed one level up, for a Stage's own trigger.
 //   6. Re-opening the toggle, then collapsing and re-expanding Stage A's own OUTER row, leaves
 //      the toggle COLLAPSED again (`aria-expanded="false"`) -- no remembered state survives a
 //      fresh mount.
@@ -63,7 +64,10 @@
 //      renders a goal paragraph of its own, each member's own toggle opens/closes independently.
 //   8. Stage C (a context-less multi-agent "flat call"): BOTH members show their own goal,
 //      independently derived -- the HIGH fix's own required live step.
-//   9. `Markdown.tsx`'s Mermaid "Show source" toggle: reached and opened via real keyboard input
+//   9. Stage D (a FAILED solo Stage): its own one-line failure reason renders next to its own
+//      goal, reachable WITHOUT opening the toggle -- the MEDIUM fix (item 6) Stage A alone
+//      (which only ever succeeds) could never exercise.
+//   10. `Markdown.tsx`'s Mermaid "Show source" toggle: reached and opened via real keyboard input
 //      (Shift+Tab back from the composer, then a real Enter), a hard `:focus-visible` ring
 //      match (not only a screenshot), then Escape closes it -- the same shared `InlineDisclosure`
 //      every Stage/subagent toggle uses, gained for free.
@@ -93,16 +97,24 @@ import { buildOmpShim, launchBuiltExeWithEnv, titleSelector, stageContentSelecto
 import { addRepository, createSessionViaQuickCreate, pressTab, pressEscape, pressKey } from './verify-tauri-session-list-helpers.mjs';
 import { latestSessionIdAndName, pressRealEnter } from './verify-tauri-560-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
+import {
+  toggleButtonSelector,
+  toggleContentSelector,
+  goalParagraphSelector,
+  clickClearOfHeader,
+  assertStageDFailureReason
+} from './verify-1077-agent-goal-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const PROMPT_MESSAGE = 'Run the three-Stage goal-only batch (issue #1077 live check).';
+const PROMPT_MESSAGE = 'Run the four-Stage goal-only batch (issue #1077 live check).';
 const SHOTS_DIR =
   process.env.REFRACT_1077_SHOTS_DIR || path.join(tmpdir(), `refract-1077-agent-goal-shots-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 const SHOT_NAMES = [
   '01-stage-a-goal-only.png',
   '02-stage-a-toggle-open.png',
   '03-mermaid-toggle-ring.png',
+  '04-stage-d-failure-reason.png',
   '1077-agent-goal-dark.png',
   '1077-agent-goal-obsidian.png',
   'report.json',
@@ -123,23 +135,14 @@ const STAGE_B_TITLE = "Stage 2 \u00b7 Confirm Stage members never duplicate the 
 // Stage C: two agents, NO context -- `sharedNamePrefix(['FlatOne', 'FlatTwo'])` resolves to
 // their shared 4-character prefix "Flat" (computed by hand against `stageMeta.ts`'s own rule).
 const STAGE_C_TITLE = 'Stage 3 \u00b7 Flat';
+// Stage D: solo, NO context, FAILS -- gate round 1 fix item 6's own live step: a failed/
+// cancelled/exited solo Stage's own one-line failure reason is restored next to its goal.
+const STAGE_D_TITLE = 'Stage 4 \u00b7 FailSweep';
 const TOGGLE_MARKER_ATTR = 'data-refract-1077-toggle';
 // Gate round 1 fix (item 8): any button whose own text starts with "Show source for"/"Hide
 // source for" -- `MermaidBlock`'s own accessible-name convention, unique in this fixture (one
 // diagram only).
 const MERMAID_TOGGLE_SELECTOR = `Array.from(document.querySelectorAll('button')).find((b) => /^(Show|Hide) source for /.test(b.textContent.trim()))`;
-
-function toggleButtonSelector(stageTitle) {
-  return `(${stageContentSelector(stageTitle)})?.querySelector('button[aria-expanded][aria-controls]')`;
-}
-
-function toggleContentSelector(stageTitle) {
-  return `(() => { const btn = (${toggleButtonSelector(stageTitle)}); if (!btn) return null; return document.getElementById(btn.getAttribute('aria-controls')); })()`;
-}
-
-function goalParagraphSelector(stageTitle) {
-  return `(${stageContentSelector(stageTitle)})?.querySelector('p.line-clamp-3')`;
-}
 
 async function main() {
   let shimDir, dataDir, importSourceDir, repoDir, exeDir, launcherDir;
@@ -322,6 +325,24 @@ async function main() {
       failures.push(`Could not place keyboard focus (real Tab, up to ${tabsUsed} presses) inside Stage A's own opened content -- the focus-return proof could not be set up.`);
     } else {
       findings.push(`Keyboard focus placed (${tabsUsed} real Tab press${tabsUsed === 1 ? '' : 'es'} from the toggle link) inside Stage A's own opened content (a CodeBlock's own Copy button or region).`);
+      // The content's first Tab stop is a CodeBlock's own Copy button, whose Radix Tooltip
+      // opens on keyboard focus (not only hover). If so, the FIRST Escape press MUST dismiss
+      // only that nested Tooltip (FR-093, gate round 1 item 3, WCAG 1.4.13) -- proved directly
+      // here, rather than merely assumed -- before a SECOND press closes the disclosure itself.
+      const tooltipOpenedOnFocus = await cdp.evaluate(`!!document.querySelector('[data-slot="tooltip-content"]')`);
+      if (tooltipOpenedOnFocus) {
+        await pressEscape(cdp);
+        await cdp.waitFor(`!document.querySelector('[data-slot="tooltip-content"]')`, {
+          timeoutMs: 5_000,
+          label: "First Escape press dismisses the Copy button's own focus-triggered Tooltip"
+        });
+        const stillOpenAfterFirstEscape = await cdp.evaluate(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`);
+        if (!stillOpenAfterFirstEscape) {
+          failures.push('The first Escape press closed the whole disclosure instead of only the nested Tooltip -- the nested control did not win the first press (FR-093).');
+        } else {
+          findings.push("The first Escape press dismissed only the Copy button's own Tooltip, leaving the disclosure itself open -- the nested control won the first press (FR-093).");
+        }
+      }
       await pressEscape(cdp);
       await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'false'`, {
         timeoutMs: 5_000,
@@ -339,9 +360,9 @@ async function main() {
     // SubagentBody), re-expand it, and confirm the toggle is COLLAPSED again. ----
     await clickScrolled(cdp, toggleButtonSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: 'Toggle re-opened before the outer collapse/reopen cycle' });
-    await clickScrolled(cdp, stageTriggerSelector(STAGE_A_TITLE));
+    await clickClearOfHeader(cdp, stageTriggerSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${stageTriggerSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 5_000, label: "Stage A's own outer row collapses" });
-    await clickScrolled(cdp, stageTriggerSelector(STAGE_A_TITLE));
+    await clickClearOfHeader(cdp, stageTriggerSelector(STAGE_A_TITLE));
     await cdp.waitFor(`(${stageTriggerSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 5_000, label: "Stage A's own outer row re-expands" });
     await cdp.waitFor(`!!(${toggleButtonSelector(STAGE_A_TITLE)})`, { timeoutMs: 5_000, label: "Stage A's own toggle link remounts" });
     const resetState = await cdp.evaluate(`(${toggleButtonSelector(STAGE_A_TITLE)})?.getAttribute('aria-expanded') ?? null`);
@@ -435,7 +456,12 @@ async function main() {
       findings.push("Stage C's own two members each show their OWN, independently-derived goal text.");
     }
 
-    // ---- Phase 10 (gate round 1 fix, item 8): the final message's own Mermaid diagram -- its
+    // ---- Phase 10 (gate round 1 fix, item 6's own required live step): a failed SOLO Stage's
+    // own one-line failure reason shows next to its goal, reachable without opening the toggle --
+    // Stage A (above) only ever succeeds, so it alone never exercises this path. ----
+    await assertStageDFailureReason(cdp, findings, failures, STAGE_D_TITLE, { titleSelector, expandRow, settleForScreenshot, SHOTS_DIR });
+
+    // ---- Phase 11 (gate round 1 fix, item 8): the final message's own Mermaid diagram -- its
     // "Show source" toggle (`Markdown.tsx`'s `MermaidBlock`) was ported onto the SAME shared
     // `InlineDisclosure` every Stage/subagent toggle above uses, so it inherits Escape-to-close
     // and a correct focus ring for free; proven directly via real keyboard input (Shift+Tab back

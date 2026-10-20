@@ -1,6 +1,6 @@
 // SYNTHESIZED, not captured live: issue #1077 (expanded agent rows show only the goal; the
 // full Prompt/Result move behind a "See input & output" toggle). One user prompt, one agent
-// turn, THREE Stages (different owning assistant message ids, so `groupSubagentStages.ts`
+// turn, FOUR Stages (different owning assistant message ids, so `groupSubagentStages.ts`
 // flushes a new Stage on the `messageId` change even with nothing else between them):
 //
 // Stage A ("solo-task", msg-a1): ONE agent ("SoloSweep"), NO batch `context` at all -- the
@@ -28,11 +28,16 @@
 // resolves `true` for BOTH members (neither has its own), so each shows its own goal from its
 // own distinct task, independently of its sibling.
 //
+// Stage D ("solo-fail-task", msg-a4): ONE agent ("FailSweep") that FAILS -- gate round 1 fix,
+// item 6's own live step: a failed/cancelled/exited SOLO Stage's own one-line failure reason
+// (`SubagentChainRow.tsx`'s `soloFailureReason`, `extractResultSummary` of the wire's own
+// `errorText`) is restored next to its goal, not only reachable behind the toggle -- Stage A
+// (above) never exercises this, since it succeeds.
+//
 // The final assistant text message includes a tiny Mermaid fenced block (gate round 1 fix, item
 // 8: "MermaidBlock now gets Escape and a focus ring" -- `Markdown.tsx`'s `MermaidBlock` was
 // ported onto the same shared `InlineDisclosure` this issue built, so its own "Show source"
 // toggle gains both for free; this live-checks that directly rather than only by inspection).
-//
 // Every boilerplate frame (ready/negotiate_protocol/get_state/set_ask_dialog/get_messages_page/
 // prompt ack) is copied verbatim from `stages-941.jsonl`'s own header, the same shared
 // conventions every `verify-941-*`/`verify-991-*`/`verify-1000-*`/`verify-1001-*` fixture
@@ -73,9 +78,15 @@
 {"type":"tool_execution_end","toolCallId":"flat-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"FlatOne","status":"finished","task":"Confirm this member shows its own goal when the whole Stage has no context at all.","durationMs":300},{"index":1,"id":"FlatTwo","status":"finished","task":"Confirm the sibling member shows its own goal too, independently derived.","durationMs":350}]}},"isError":false}
 {"type":"message_start","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FlatOne","label":"FlatOne","status":"completed","resultText":"Confirmed: this member shows its own goal with no Stage context to lean on.","durationMs":300},{"id":"FlatTwo","label":"FlatTwo","status":"completed","resultText":"Confirmed: the sibling member's own goal is independently derived too.","durationMs":350}]},"timestamp":0}}
 {"type":"message_end","messageId":"msg-ar3","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FlatOne","label":"FlatOne","status":"completed","resultText":"Confirmed: this member shows its own goal with no Stage context to lean on.","durationMs":300},{"id":"FlatTwo","label":"FlatTwo","status":"completed","resultText":"Confirmed: the sibling member's own goal is independently derived too.","durationMs":350}]},"timestamp":0}}
-{"type":"message_start","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
-{"type":"message_update","messageId":"msg-a4","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"All three Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}}
-{"type":"message_end","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":"All three Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"solo-fail-task","toolName":"task","args":{"tasks":[{"name":"FailSweep","task":"Run a probe for issue #1077 deliberately made to fail, to prove a solo Stage's own one-line failure reason is restored next to its goal."}]},"intent":"Running the deliberately failing solo probe"}
+{"type":"message_start","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-fail-task","name":"task","arguments":{"tasks":[{"name":"FailSweep","task":"Run a probe for issue #1077 deliberately made to fail, to prove a solo Stage's own one-line failure reason is restored next to its goal."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-fail-task","name":"task","arguments":{"tasks":[{"name":"FailSweep","task":"Run a probe for issue #1077 deliberately made to fail, to prove a solo Stage's own one-line failure reason is restored next to its goal."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"solo-fail-task","toolName":"task","result":{"content":[{"type":"text","text":"0 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"FailSweep","status":"failed","task":"Run a probe for issue #1077 deliberately made to fail.","durationMs":400}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar4","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FailSweep","label":"FailSweep","status":"failed","errorText":"Probe failed: deliberately failing solo probe for issue #1077.","durationMs":400}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar4","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"FailSweep","label":"FailSweep","status":"failed","errorText":"Probe failed: deliberately failing solo probe for issue #1077.","durationMs":400}]},"timestamp":0}}
+{"type":"message_start","messageId":"msg-a5","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a5","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"All four Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a5","message":{"role":"assistant","content":[{"type":"text","text":"All four Stages settled; goal-only rows confirmed.\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```"}],"timestamp":0}}
 {"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
 {"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
