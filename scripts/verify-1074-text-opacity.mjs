@@ -367,10 +367,24 @@ async function main() {
         }
 
         // ---- Real painted pixel luminance of the chat-prose paragraph: proves the opacity
-        // genuinely composites on screen, not only in computed style. ----
-        const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`);
-        if (!chatRect || chatRect.width < 1 || chatRect.height < 1) {
-          failures.push(`${theme.name}: chat-prose element has no real paintable rect to sample (${JSON.stringify(chatRect)}).`);
+        // genuinely composites on screen, not only in computed style. Gate-fix (caught live
+        // 2026-10-20): the echoed user message (DOM-first `.text-chat-foreground`) sits ABOVE
+        // the scrolled-to-bottom transcript view (the fixture's own Mermaid diagram pushes it
+        // off-screen), so its raw `getBoundingClientRect()` has a NEGATIVE `y`;
+        // `samplePixelRegion`'s `Math.max(0, ...)` clamp then silently samples whatever real
+        // chrome sits at the TOP of the viewport instead (sidebar/header text) -- a false
+        // failure for Dark specifically (first theme iterated, so nothing has yet scrolled the
+        // element further into negative territory the way later iterations' extra round-trips
+        // do) and a false PASS for every other theme only because that unrelated chrome text
+        // happens to also read bright. `scrollIntoView` + a real two-frame settle, then a fresh
+        // `getBoundingClientRect()`, so the rect genuinely points at the chat-prose element --
+        // and the check below now fails loudly (not silently mis-samples) if it ever isn't
+        // fully inside the viewport after that.
+        await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); })()`);
+        await waitTwoFrames(cdp);
+        const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, viewportHeight: window.innerHeight }; })()`);
+        if (!chatRect || chatRect.width < 1 || chatRect.height < 1 || chatRect.y < 0 || chatRect.y + chatRect.height > chatRect.viewportHeight) {
+          failures.push(`${theme.name}: chat-prose element has no real, fully-in-viewport paintable rect to sample after scrollIntoView (${JSON.stringify(chatRect)}).`);
         } else {
           const bgRaw = await requireResolvedCssVarColor(cdp, '--background', 'background-color');
           const fgEntry = parseComputedColorToEntry(real.chat);
