@@ -27,6 +27,7 @@ import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker, RoleAndModelPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, COMPOSER_SELECTION_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -206,6 +207,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
   // lands exactly over its label's rendered position (research.md Decision 10).
   const chipOverlayRef = useRef<HTMLDivElement>(null)
+  const { commandToken, commandPillOverlayRef } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -1385,6 +1387,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
+          <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
           <Textarea
             ref={textareaRef}
             role="combobox"
@@ -1396,6 +1399,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : undefined
             }
             aria-describedby={describedByIds}
+            spellCheck={!commandToken} // FR-092, #1050: off while the draft starts with a recognised command
             value={text}
             onChange={(event) => {
               const value = event.target.value
@@ -1419,6 +1423,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               const scrollTop = (event.target as HTMLTextAreaElement).scrollTop
               if (overlayRef.current) overlayRef.current.scrollTop = scrollTop
               if (chipOverlayRef.current) chipOverlayRef.current.scrollTop = scrollTop
+              if (commandPillOverlayRef.current) commandPillOverlayRef.current.scrollTop = scrollTop // FR-092, #1050
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -1427,7 +1432,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
             // read the stop reason it carries -- `disabled:placeholder:text-foreground`
             // brightens the placeholder itself so the dim lands it back near readable.
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent"
+            // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
+            className={cn(
+              COMPOSER_SELECTION_CLASS,
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              commandToken && COMMAND_PILL_TEXTAREA_CLASS
+            )}
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1466,12 +1476,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               share under one sub-pixel layout step (1/64px) until the groups are fully at their
               floor, so it stays visually whole the entire time the labels are still truncating.
               Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
-              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis
-              from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
-              native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
-              pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
-              Contrast, where `text-muted-foreground` would otherwise resolve to the same
-              `CanvasText` as the real draft. */}
+              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
@@ -1496,11 +1501,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               that's since changed outside the normal onChange path must never render (#358
               remediation). */}
           {ghost && ghost.text === text && (
-            <div
-              ref={overlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={overlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <span className="invisible">{text.slice(0, ghost.cursor)}</span>
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
             </div>
@@ -1510,11 +1511,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               each pending chip's clickable, chip-styled label lands exactly over its own rendered
               position in the draft. Independent of `ghost`: both overlays can render at once. */}
           {attachments.textChips.length > 0 && (
-            <div
-              ref={chipOverlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={chipOverlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <ChipOverlaySegments
                 text={text}
                 occurrences={findChipOccurrences(text, attachments.textChips)}
@@ -1543,8 +1540,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               it is not destructive, and red is reserved for destructive and error states". The
               two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
               FR-011), a documented exception to "one filled button per surface": the two fills
-              are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-2">
+          are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
+          <div className="absolute right-1.5 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
