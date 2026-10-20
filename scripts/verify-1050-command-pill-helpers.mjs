@@ -116,23 +116,15 @@ async function findMirrorOffsetRect(cdp, startOffset, endOffset) {
   })()`);
 }
 
-/** The caret's own real pixel position at `charOffset` (a zero-width point, `startOffset ===
- * endOffset`). See `findMirrorOffsetRect` above for the full reasoning. */
-async function measureCaretPixel(cdp, charOffset) {
+/** The real pixel position of a zero-width character BOUNDARY at `charOffset` (`startOffset ===
+ * endOffset`) -- used both for the native caret's own position (`assertCaretVisible` below) and,
+ * reused gate round 4, for a genuinely ink-free sample point for the selection-highlight check
+ * (a letter-to-letter boundary inside plain argument text, comfortably far from the pill and its
+ * own box-shadow bleed). See `findMirrorOffsetRect` above for the full reasoning. */
+export async function measureCaretPixel(cdp, charOffset) {
   const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset);
   if (!rect) return null;
   return { x: Math.round(rect.left), y: Math.round(rect.top + rect.height / 2) };
-}
-
-/** Gate round 3 HIGH fix: the CENTRE of a single glyph-free character cell (`charOffset` to
- * `charOffset + 1`) -- unlike the caret's zero-width point above, this spans a whole character's
- * own rendered box, so a selection-highlight sample here is immune to the glyph-ink/anti-
- * aliasing noise a pixel landing ON a letter's stroke would introduce. The caller picks a
- * genuinely blank character (a space) so there is no ink to confuse with the highlight itself. */
-export async function measureCellCenter(cdp, charOffset) {
-  const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset + 1);
-  if (!rect) return null;
-  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
 }
 
 /** Reads back a small region's RGBA pixels from a REAL `Page.captureScreenshot` -- decoded
@@ -202,21 +194,26 @@ function parseRgbTriplet(rgbStr) {
   return m[1].split(',').map((n) => parseFloat(n)).slice(0, 3);
 }
 
-/** Gate round 3 HIGH fix: round 1's version sampled the PILL's own measured centre -- real ink
- * (the mirror's own coloured glyphs), so a "differs" reading there is confounded by ordinary
- * glyph-rendering/anti-aliasing noise and proves nothing specific about a selection background
- * actually painting (confirmed live: it read `differs: true` even with `::selection` having NO
- * authored `background-color` at all, i.e. a false pass). Fixed by sampling the CENTRE of a
- * genuinely glyph-free cell instead -- the space between `/btw` and `hi` (char offset 4) -- a
- * single real pixel there, unselected then selected, and asserting the selected reading matches
- * the LIVE-resolved `--composer-selection-bg`, not merely "differs by some threshold" (a
- * specific, false-positive-resistant assertion). Takes a resting (unselected) shot first,
- * matching `02-pill-btw.png` taken by the caller just before this runs, then its own
- * post-selection shot (`02b-selection-highlight.png`) as separate visual evidence. */
+/** Gate round 3 HIGH fix, remediated gate round 4: round 1's version sampled the PILL's own
+ * measured centre -- real ink (the mirror's own coloured glyphs), so a "differs" reading there
+ * is confounded by ordinary glyph-rendering/anti-aliasing noise and proves nothing specific
+ * about a selection background actually painting (confirmed live: it read `differs: true` even
+ * with `::selection` having NO authored `background-color` at all, i.e. a false pass). Round
+ * 3's fix (the space between `/btw` and `hi`) turned out to ALSO be wrong, for a different
+ * reason: the pill's own 2px `box-shadow` padding illusion bleeds into that narrow space cell,
+ * reading as the pill's own fill in BOTH samples regardless of selection state (confirmed live:
+ * identical `[48,48,48,255]`, exactly Dark's `--command-pill-bg`). Fixed by sampling the
+ * zero-width glyph BOUNDARY between 'h' and 'i' (offset 6 of "/btw hi") instead -- genuinely
+ * plain argument text, several character-widths clear of the pill and its 2px shadow bleed, the
+ * same zero-width-boundary technique already proven reliable for every caret check above -- and
+ * asserting the selected reading matches the LIVE-resolved `--composer-selection-bg`, not merely
+ * "differs by some threshold" (a specific, false-positive-resistant assertion). Takes a resting
+ * (unselected) shot first, matching `02-pill-btw.png` taken by the caller just before this runs,
+ * then its own post-selection shot (`02b-selection-highlight.png`) as separate visual evidence. */
 export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, shotsDir) {
-  const cell = await measureCellCenter(cdp, 4); // "/btw hi": the space right after the pilled token
-  if (!cell) throw new Error('FAIL: Ctrl+A selection highlight (measureCellCenter found no mirror text node at the glyph-free space, offset 4)');
-  const { x, y } = cell;
+  const point = await measureCaretPixel(cdp, 6); // "/btw hi": the h/i boundary, plain argument text
+  if (!point) throw new Error('FAIL: Ctrl+A selection highlight (measureCaretPixel found no mirror text node at the h/i boundary, offset 6)');
+  const { x, y } = point;
   const before = await capturePixelRegion(cdp, x, y, 0, 0);
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, including the pill
   const after = await capturePixelRegion(cdp, x, y, 0, 0);
@@ -225,10 +222,10 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssV
   const expectedRgb = parseRgbTriplet(expectedBgRaw);
   const differs = before.some((value, index) => Math.abs(value - after[index]) > 10);
   const matchesExpected = !!expectedRgb && expectedRgb.every((v, i) => Math.abs(v - after[i]) <= 10);
-  report.push({ step: 'Ctrl+A: selection highlight paints a real background at a glyph-free cell', ok: differs && matchesExpected, before, after, expectedBgRaw, x, y });
-  if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight (glyph-free cell (${x},${y}) identical before/after: ${JSON.stringify(before)})`);
+  report.push({ step: 'Ctrl+A: selection highlight paints a real background over plain argument text', ok: differs && matchesExpected, before, after, expectedBgRaw, x, y });
+  if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight (h/i boundary (${x},${y}) identical before/after: ${JSON.stringify(before)})`);
   if (!matchesExpected) throw new Error(`FAIL: Ctrl+A selection highlight (selected pixel ${JSON.stringify(after)} does not match resolved --composer-selection-bg ${expectedBgRaw})`);
-  console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background at a glyph-free cell');
+  console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background over plain argument text');
 }
 
 export function shotPath(shotsDir, name) {
