@@ -32,6 +32,8 @@ import type {
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
+import type { DebugApi } from './ipc-debug';
+import type { LeftoverSummary } from './ipc-sessions';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
@@ -277,23 +279,10 @@ export interface MergeInput {
   expectedHeadSha: string;
 }
 
-/** `sessions.deleteLeftoverSummary` (issue #891): a background `git status --ignored` read of
- * the worktree (gate round 1: not a raw filesystem walk -- tracked files and `.git` are never
- * listed), separate from `deleteCheck`'s own uncommitted/unpushed stats. Lists generated
- * folders (e.g. `node_modules`) by name with a combined file count, and other files by path,
- * capped with `moreCount` once there are too many to list individually. `rootName` (gate round,
- * M3) is the worktree folder's own basename, so the renderer can lead each displayed path with
- * which Session it belongs to. `unavailable` (gate round 2, H2) is true when the underlying
- * `git status` call failed, timed out, or its own join failed -- distinct from a genuinely
- * empty worktree; the dialog must show "Couldn't list the folder's files." in that case, never
- * fold it into "Nothing left in the worktree". */
-export interface LeftoverSummary {
-  rootName: string;
-  generatedFolders: { name: string; fileCount: number }[];
-  otherFiles: string[];
-  moreCount: number;
-  unavailable: boolean;
-}
+/** `ipc-sessions.ts`'s own `LeftoverSummary` has the full reasoning -- split out there (issue
+ * #891) to keep this file at its own file-size baseline (issue #806), re-exported here so every
+ * existing import from `../../shared/ipc` keeps working unchanged. */
+export type { LeftoverSummary } from './ipc-sessions';
 
 // ---------------------------------------------------------------------------
 // Channel names
@@ -722,14 +711,10 @@ export interface RefractApi extends UpdatesApi {
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
 
-  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs, always answerable (never
-   * `unsupported`) regardless of build -- a release build's own answer is simply always inert
-   * (`{ date: null, idleTimeoutMs: null, flightIntervalMs: null }`), the same posture
-   * `lib.rs::data_dir`'s `REFRACT_DATA_DIR` already sets for the equivalent Rust-only override.
-   * Read once at startup (`init-stores.ts`), never polled. */
-  debug: {
-    getOverrides(): Promise<Result<{ date: string | null; idleTimeoutMs: number | null; flightIntervalMs: number | null }>>;
-  };
+  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs (`ipc-debug.ts`'s own
+   * `DebugApi` has the full reasoning) -- split out there to keep this file at its own
+   * file-size baseline (issue #806). */
+  debug: DebugApi;
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
    * never a file Refract edits itself -- always OMP's GLOBAL config.yml, never a project override. */
