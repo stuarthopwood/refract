@@ -556,7 +556,7 @@ export function Transcript({
       clientHeight: viewport.clientHeight
     })
     useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-    if (autoScrollSuppressed !== !atEnd) setAutoScrollSuppressed(!atEnd)
+    if (atEnd !== !autoScrollSuppressed && (atEnd || event.nativeEvent.isTrusted)) setAutoScrollSuppressed(!atEnd)
     setIsAtEnd(atEnd)
   }
 

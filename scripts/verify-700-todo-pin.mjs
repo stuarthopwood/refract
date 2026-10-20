@@ -315,6 +315,15 @@ async function main() {
     await clickCollapseButton(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: expanding the panel again (bottom-scrolled transcript) does not move the real scroller');
 
+    // Gate round 4 fix (#700, Main's own ask): proves streaming still follows the bottom while
+    // genuinely at the end -- the long assistant reply is still streaming in at this exact
+    // point (no scripted delay after todo-8), so waiting for scrollHeight to grow further
+    // exercises a real content-growth tick, independent of any panel mount/unmount.
+    const streamFollowBefore = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }; })()`);
+    await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > ${streamFollowBefore.scrollHeight}; })()`, { timeoutMs: 60_000, label: 'E1: more assistant content streams in while still at the end' });
+    const streamFollowAfter = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }; })()`);
+    // 48 matches Transcript.tsx's own SCROLL_END_TOLERANCE_PX (scrollLanding.ts).
+    assertTrue(streamFollowAfter.scrollHeight - streamFollowAfter.scrollTop - streamFollowAfter.clientHeight <= 48, 'E1: the transcript auto-follows newly streamed content while still at the end', streamFollowAfter);
     // Gate round 3 fix (self-caught live-check failure, now that E4 finally runs far enough to
     // reach this section): nothing here previously waited for the transcript to have ENOUGH
     // content to genuinely overflow before scrolling it to "the middle" -- the long assistant
@@ -323,7 +332,15 @@ async function main() {
     // reach this setup step before that content has landed, leaving scrollHeight <= clientHeight
     // and `scrollTop = scrollHeight / 2` a no-op (still 0).
     await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > el.clientHeight; })()`, { timeoutMs: 60_000, label: 'Transcript genuinely overflows before the middle-scroll E1 check' });
-    await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; if (!el) return null; el.scrollTop = Math.floor(el.scrollHeight / 2); return el.scrollTop; })()`);
+    // Gate round 4 fix (#700 E1, Main's own risk catch): a direct `el.scrollTop =` write fires a
+    // `scroll` event with `isTrusted: false` -- indistinguishable, to Transcript.tsx's own fix,
+    // from the vendored scroller's OWN internal corrective snap, so it could never register as
+    // "the user genuinely left the end". A real CDP-dispatched wheel event (same technique the
+    // todo-panel's own "real user scroll" check two sections below already uses) produces a
+    // trusted `scroll` event, matching what dispatching through actual OS input does.
+    const overflowMetrics = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }; })()`);
+    const scrollerRect = await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: scrollerRect.x, y: scrollerRect.y, deltaX: 0, deltaY: -Math.floor((overflowMetrics.scrollHeight - overflowMetrics.clientHeight) / 2) });
     await sleep(200);
     const scrollAtMiddleBefore = await readScrollerScrollTop(cdp);
     assertTrue(scrollAtMiddleBefore !== null && scrollAtMiddleBefore > 0, 'E1 setup: transcript genuinely scrolled away from the bottom, to the middle');
