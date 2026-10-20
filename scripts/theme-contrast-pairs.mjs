@@ -106,6 +106,13 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
+  // Issue #1050 (composer command pill, decision 3): the pill's own fill is `--card`, not
+  // `--muted` as first drafted -- `--accent-text` fails 4.5:1 on `--muted` in Dark/Obsidian (the
+  // TODO(#579) note just above), and Dark (high contrast) alone clears only 6.60:1 on `--muted`,
+  // short of this issue's own enhanced 7:1 ask there. `--card` clears 4.5:1 everywhere already
+  // (the generic pair above) and clears this enhanced 7:1 floor in Dark (high contrast) too
+  // (8.46:1) -- decided by measurement, not by eye, per the issue's own instruction.
+  { fg: 'accent-text', bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] },
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now

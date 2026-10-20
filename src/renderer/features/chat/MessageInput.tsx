@@ -26,7 +26,7 @@ import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker, RoleAndModelPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
-import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'; import { CommandPillSegments, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -206,6 +206,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
   // lands exactly over its label's rendered position (research.md Decision 10).
   const chipOverlayRef = useRef<HTMLDivElement>(null)
+  const { commandToken, commandPillOverlayRef } = useCommandPillOverlay(text, commands, textareaRef) // FR-092, #1050
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -1396,6 +1397,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : undefined
             }
             aria-describedby={describedByIds}
+            spellCheck={!commandToken} // FR-092, #1050: off while the draft starts with a recognised command
             value={text}
             onChange={(event) => {
               const value = event.target.value
@@ -1419,6 +1421,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               const scrollTop = (event.target as HTMLTextAreaElement).scrollTop
               if (overlayRef.current) overlayRef.current.scrollTop = scrollTop
               if (chipOverlayRef.current) chipOverlayRef.current.scrollTop = scrollTop
+              if (commandPillOverlayRef.current) commandPillOverlayRef.current.scrollTop = scrollTop // FR-092, #1050
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -1466,12 +1469,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               share under one sub-pixel layout step (1/64px) until the groups are fully at their
               floor, so it stays visually whole the entire time the labels are still truncating.
               Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
-              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis
-              from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
-              native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
-              pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
-              Contrast, where `text-muted-foreground` would otherwise resolve to the same
-              `CanvasText` as the real draft. */}
+              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
+          {commandToken && <div ref={commandPillOverlayRef} aria-hidden="true" data-command-pill-overlay className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"><CommandPillSegments text={text} token={commandToken} /></div> /* FR-092, #1050, see CommandPillOverlay.tsx */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
