@@ -5,9 +5,8 @@
 // `verify-464-git-changes-helpers.mjs` to stay under `check-file-size.mjs`'s 600-line soft cap.
 //
 // Precedent check (explicitly asked for in this script's brief): `verify-991-stage-focus.mjs`/
-// `verify-1001-stage-focus-join.mjs` are NOT relevant precedent despite the name -- their "Stage"
-// is the chat transcript's Subagent disclosure row (`StageGroupRow`), an unrelated UI concept; a
-// red herring for this panel's git stage/unstage. Nothing from either file is reused here.
+// `verify-1001-stage-focus-join.mjs` are NOT relevant precedent -- their "Stage" is the chat
+// transcript's Subagent disclosure row, an unrelated UI concept. Nothing from either is reused.
 //
 // Isolation posture: a scratch `REFRACT_DATA_DIR`/worktree/repo, same as every `verify-tauri-5xx+`
 // script -- never touches Stuart's real Session list.
@@ -21,34 +20,30 @@
 // scripts/verify-464-git-changes.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
 //
 // Checks exercised (see the brief's own numbered list for full detail); honestly-flagged gaps:
-//   - FR-012's inline "Agent is working -- review before committing" banner is NOT exercised:
-//     reaching a real `working` session status needs sending a real prompt to the real agent,
-//     which this script deliberately never does (no model tokens spent, matching every other
-//     `verify-5xx+` script's own posture) -- recorded in `notExercised`, not silently skipped.
-//   - Ahead/behind (FR-014): grounded in `worktrees.rs`'s own `git branch -- <candidate>
-//     <base_branch>` (no `--track`) -- a freshly created Session branch carries NO upstream
-//     tracking at all here, so `ahead_behind` is correctly `None`/omitted, checked as
-//     "correctly absent" via both the real IPC response and the DOM.
-//   - Containment refusal: NOT reachable via the real UI (paths only ever come from the panel's
-//     own already-validated snapshot) -- exercised via `window.refract.gitChanges.*` directly
-//     (CDP `Runtime.evaluate`), the same precedent `verify-926-attach-any-file.mjs` established.
-//     A Rust-side `validate_pathspec` gate (`src-tauri/src/git/pathspec.rs`) refuses an
-//     absolute/outside-worktree path before it ever reaches a `git` subprocess.
+//   - FR-012's "Agent is working" banner: NOT exercised -- needs a real prompt to the real
+//     agent, which this script deliberately never does (no model tokens spent); recorded in
+//     `notExercised`, not silently skipped.
+//   - Ahead/behind (FR-014): a freshly created Session branch carries no upstream tracking
+//     (`worktrees.rs`'s own `git branch` has no `--track`), so `ahead_behind` is correctly
+//     `None`/omitted, checked via both the IPC response and the DOM.
+//   - Containment refusal: NOT reachable via the real UI (paths only come from the panel's own
+//     already-validated snapshot) -- exercised via `window.refract.gitChanges.*` directly (CDP
+//     `Runtime.evaluate`, `verify-926-attach-any-file.mjs`'s own precedent). A Rust-side
+//     `validate_pathspec` gate refuses an absolute/outside-worktree path before it reaches git.
 //
-// Gate round 1 (2026-10-20) live-check additions, threaded into the checks above: focus
-// restoration (`document.activeElement` after each action that should move it -- open diff /
-// Back / Escape / per-file Stage/Unstage / bulk Stage-all / a successful commit); a real
-// `onReadoutUpdate` listener proving a fresh event arrives after a commit (never asserting
-// `readout.changes` itself differs); Check 14 tightened to 1.5s (no slower liveness-ping
-// fallback exists for this watcher anymore); Checks 15/16 (a partially-staged `MM` fixture, a
-// literal-bracket-filename fixture) built and FULLY TORN DOWN within their own check; Checks
-// 10/11 (conflict-priority disabled reason, "Mark as resolved" confirm-then-stage) moved BEFORE the conflict is actually resolved.
-// Gate round 2 (2026-10-20): Check 7b (item 2; relocated from "after Check 14", a bug in this
-// check's own placement -- see the helper's doc comment) proves an external write to an
-// UNRELATED file never tears an open diff down or steals focus; Check 15 (item 3) also opens
-// the diff from the partially-staged fixture's own Changes-half row, Back lands focus in that
-// SAME half (`data-git-group-list`); Check 16's sibling renamed `i.txt` (the old `[id]-other.txt`
-// never discriminated literal-vs-glob matching); Checks 6/7 renamed to name the real reason shown.
+// Gate round 1 (2026-10-20): focus restoration after every action that should move it; a real
+// `onReadoutUpdate` listener proving a fresh event arrives after a commit; Check 14 tightened to
+// 1.5s; Checks 15/16 (MM + bracket-filename fixtures) built/torn down within their own check;
+// Checks 10/11 moved BEFORE the conflict is resolved; Gate round 2 (2026-10-20): Check 7b (item 2) proves an external write to an UNRELATED file
+// never tears an open diff down; Check 15 (item 3) opens the diff from the partially-staged
+// fixture's own Changes-half row, Back lands focus in that SAME half; Check 16's sibling renamed
+// `i.txt`; Checks 6/7 renamed to name the real reason shown.
+// Gate round 3 (#1076, 2026-10-20): Check 7b relocated from "after Check 14" (a bug in its own
+// placement, not the product -- see the helper's doc comment) and its vacuous-pass path fixed;
+// Checks 12/13 wait on the subject genuinely clearing, never "Staged gone"; Check 12 presses from
+// the BODY field so the focus assertion can fail; Checks 13a/13b (draft-survives-tab-switch,
+// commit-clears-under-churn) added; focus restore (bulk action, per-row stage/unstage) and Back's
+// fallback now gate on the real result/every surviving group, not a re-read `actionError`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -104,7 +99,9 @@ import {
 import {
   runDiffStabilityDuringExternalWriteCheck,
   runBracketLiteralPathCheck,
-  runContainmentRefusalCheck
+  runContainmentRefusalCheck,
+  runDraftPersistsAcrossTabSwitchCheck,
+  runCommitClearsDuringExternalChurnCheck
 } from './verify-464-git-changes-helpers2.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -374,7 +371,7 @@ async function main() {
     await shot('05-after-unstage-all.png');
 
     // ---- Check 7b (item 2, gate round 2, relocated here from "after Check 14"): full detail in the helper's own doc comment. ----
-    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, [FIXTURE.stagedNew, FIXTURE.untracked], shot, findings, failures);
+    await runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath, sessionId, [FIXTURE.stagedNew, FIXTURE.untracked], shot, findings, failures);
 
     // ---- Check 8: Commit button disabled-with-reason states, read via real CDP DOM reads (full
     // detail in the helper's own doc comment -- moved out of this file to stay under the
@@ -440,18 +437,16 @@ async function main() {
     writeFileSync(path.join(worktreePath, FIXTURE.conflict), 'worktree change\n');
     runGit(worktreePath, ['add', '--', FIXTURE.conflict]);
 
-    // ---- Check 12: commit via a REAL Ctrl+Enter keypress (not a button click) -- verified via
-    // `git log` against the scratch worktree. A real click into the subject field first:
-    // `handleKeyDown` is per-field, not wherever Check 11's dialog last left focus -- the real
-    // shortcut only fires from inside a composer field, same as a real user. ----
-    await cdp.click(SUBJECT_FINDER);
+    // ---- Check 12: commit via a REAL Ctrl+Enter keypress -- verified via `git log`. Gate round
+    // 3 (#1076 HIGH): pressed from BODY (not subject, already focused) so "focus moves to
+    // subject" can fail; waits on the subject genuinely emptying, never "Staged gone" (a
+    // load-loop refresh can land that DOM change before the success branch has run). ----
+    await cdp.click(BODY_FINDER);
     const readoutEventsBeforeCtrlEnterCommit = await cdp.evaluate(`window.__verify464ReadoutEvents.filter((e) => e.sessionId === ${JSON.stringify(sessionId)}).length`);
     await pressCtrlEnter(cdp);
-    await cdp.waitFor(`!Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Staged, '))`, { timeoutMs: 15_000, label: 'Staged group gone after Ctrl+Enter commit' });
+    await cdp.waitFor(`(() => { const subj = ${SUBJECT_FINDER}; return !!subj && subj.value === ''; })()`, { timeoutMs: 15_000, label: 'Commit subject genuinely cleared after Ctrl+Enter commit' });
     assertEqual(gitLogField(worktreePath, '%s'), ctrlEnterSubject, 'git log subject after Ctrl+Enter commit', findings, failures);
     assertEqual(gitLogField(worktreePath, '%b'), ctrlEnterBody, 'git log body after Ctrl+Enter commit', findings, failures);
-    const subjectClearedAfterCommit = await cdp.evaluate(`${SUBJECT_FINDER}?.value ?? null`);
-    assertEqual(subjectClearedAfterCommit, '', 'Subject field cleared after a successful commit', findings, failures);
     // Item 7 focus restoration: a successful commit focuses the Commit subject input and
     // announces it once via a (visually `sr-only`) `role="status"` element.
     assertEqual(await activeElementIs(cdp, SUBJECT_FINDER), true, 'Focus after Ctrl+Enter commit: the Commit subject input', findings, failures);
@@ -477,12 +472,17 @@ async function main() {
     await typeIntoField(cdp, SUBJECT_FINDER, buttonCommitSubject);
     await typeIntoField(cdp, BODY_FINDER, buttonCommitBody);
     await cdp.click(COMMIT_BUTTON_FINDER);
-    await cdp.waitFor(`!Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Staged, '))`, { timeoutMs: 15_000, label: 'Staged group gone after button-click commit' });
+    await cdp.waitFor(`(() => { const subj = ${SUBJECT_FINDER}; return !!subj && subj.value === ''; })()`, { timeoutMs: 15_000, label: 'Commit subject genuinely cleared after button-click commit (gate round 3, #1076: never "Staged gone")' });
     assertEqual(gitLogField(worktreePath, '%s'), buttonCommitSubject, 'git log subject after button-click commit', findings, failures);
     assertEqual(gitLogField(worktreePath, '%b'), buttonCommitBody, 'git log body after button-click commit', findings, failures);
     assertEqual(await activeElementIs(cdp, SUBJECT_FINDER), true, 'Focus after button-click commit: the Commit subject input', findings, failures);
     assertEqual(await readCommitAnnouncementText(cdp), `Committed: ${buttonCommitSubject}`, 'Commit announcement text after button-click commit', findings, failures);
     await shot('13-post-button-commit.png');
+
+    // ---- Check 13a (#1076 MEDIUM 4): draft survives a tab switch -- helper's own doc comment. ----
+    await runDraftPersistsAcrossTabSwitchCheck(cdp, findings, failures);
+    // ---- Check 13b (#1076 HIGH 1 proof): commit clears within 2s under sustained churn -- helper's own doc comment. ----
+    await runCommitClearsDuringExternalChurnCheck(cdp, worktreePath, shot, findings, failures);
 
     // ---- Check 14 (FR-015b, item 3): an external file-system change (written from Node, outside
     // any UI action) triggers the panel to refresh. Deliberately TIGHT (well under 2s): the gate

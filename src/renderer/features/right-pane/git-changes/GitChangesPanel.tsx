@@ -60,7 +60,7 @@ import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../share
 import { GitChangesGroup } from './GitChangesGroup'
 import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
-import { focusGitRowInGroup, focusNearestGroupTrigger, GROUP_ORDER } from './focus'
+import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger, GROUP_ORDER } from './focus'
 
 // Mirrors `FileExplorerPanel.tsx`'s own `watcherRefCounts` map exactly (PR #671 gate round 7's
 // own reasoning: this effect's mount/unmount net out to zero across React StrictMode's dev-time
@@ -147,6 +147,13 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   // stays mounted even if a later load reverts it to `null` -- reset alongside everything else
   // below the moment `sessionId` itself changes.
   const [hasEverLoadedSnapshot, setHasEverLoadedSnapshot] = useState(false)
+  // Gate round 3 fix (#1076 HIGH 2): true once the FIRST load for this Session has settled
+  // (regardless of outcome) -- "Loading…" below only ever shows before this flips, so a LATER
+  // background refresh (watcher ping, post-action refetch, status transition) that also ends
+  // with `snapshot: null` never swaps the Not-available `Empty`/`role="alert"` node back out for
+  // "Loading…" and in again, which re-mounted (and so re-announced) that `role="alert"` on every
+  // single such refresh even when the error text never actually changed.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   // Item 7 (gate round 1): which row opened the currently (or most recently) selected diff --
   // read when `selected` transitions back to `null` (Back, or Escape inside the diff pane) so
   // focus can return to that same row, wherever it ended up.
@@ -158,6 +165,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
     lastSelectionRef.current = null
     setGroupOpen(DEFAULT_GROUP_OPEN)
     setHasEverLoadedSnapshot(false)
+    setHasLoadedOnce(false)
   }, [sessionId])
 
   useEffect(() => {
@@ -166,7 +174,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
     // Item 3 (gate round 2): group-scoped -- a partially staged file's Staged/Changes halves
     // share the same `data-git-row-path`; landing back in the SAME half this diff was opened
     // from is the whole point, never whichever half happens to come first in DOM order.
-    if (!focusGitRowInGroup(sessionId, group, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    if (!focusGitRowInGroup(sessionId, group, entry.path) && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
     lastSelectionRef.current = null
   }, [selected, sessionId])
 
@@ -175,6 +183,10 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     if (snapshot) setHasEverLoadedSnapshot(true)
   }, [snapshot])
+
+  useEffect(() => {
+    if (sessionEntry && !sessionEntry.loading) setHasLoadedOnce(true)
+  }, [sessionEntry])
 
   function openDiff(entry: GitChangesFileEntry, group: GitChangesGroupKind): void {
     lastSelectionRef.current = { entry, group }
@@ -213,7 +225,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
         {selected ? (
           <GitChangesDiffPane sessionId={sessionId} selection={selected} onBack={() => setSelected(null)} />
         ) : !snapshot ? (
-          loading ? (
+          loading && !hasLoadedOnce ? (
             <p role="status" className="p-2 text-sm text-muted-foreground">
               Loading…
             </p>
@@ -329,9 +341,13 @@ function GitChangesDiffPane({
     <div
       // Item 11 (gate round 2): focusable so a click on non-interactive diff text (which would
       // otherwise leave focus on `<body>`, where this div's own Escape handler below can never
-      // receive the keydown) still keeps keyboard focus somewhere inside this subtree.
+      // receive the keydown) still keeps keyboard focus somewhere inside this subtree. Gate
+      // round 3 fix (#1076 MEDIUM c, UI review): `min-h-full` -- a SHORT diff's own content was
+      // shorter than the scrollable region around it, so a click in the empty space below it
+      // landed on that outer scroll container instead of this div, leaving focus stranded where
+      // Escape could never reach this div's own handler below.
       tabIndex={-1}
-      className="flex flex-col gap-1.5 p-1 outline-none"
+      className="flex min-h-full flex-col gap-1.5 p-1 outline-none"
       onKeyDown={(event) => {
         // Item 14 (gate round 1): Escape returns to the list, same as the explicit Back button.
         if (event.key === 'Escape') {

@@ -67,20 +67,26 @@ export function GitChangesGroup({
   }, [kind])
 
   async function runBulkAction(): Promise<void> {
-    if (kind === 'staged') await useGitChangesStore.getState().unstageAll(sessionId)
-    // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked' (BULK_ACTION
-    // above has no entry for 'conflicts'), so this narrowing is exhaustive in practice.
-    else if (kind === 'changes' || kind === 'untracked') await useGitChangesStore.getState().stageAll(sessionId, kind)
-    else return
+    // Gate round 3 fix (#1076 HIGH 1): reads the `Result<void>` each action returns DIRECTLY --
+    // never re-reads `actionError` from the store after the fact, which raced an unrelated
+    // in-flight refresh (Gate1076Test3).
+    const result =
+      kind === 'staged'
+        ? await useGitChangesStore.getState().unstageAll(sessionId)
+        // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked'
+        // (BULK_ACTION above has no entry for 'conflicts'), so this narrowing is exhaustive in
+        // practice.
+        : kind === 'changes' || kind === 'untracked'
+          ? await useGitChangesStore.getState().stageAll(sessionId, kind)
+          : null
+    if (result === null) return
     // Item 7 (gate round 1): "Stage all"/"Unstage all" focuses the NEXT group's own trigger.
     // Gate round 2 item 10: only when the action actually succeeded -- a failure leaves
     // `actionError` set (GitCommitBox's own role="alert" announces it), and yanking focus away
     // from the bulk-action button the developer just clicked would both lose their place and
     // read as though nothing happened. Focus naturally stays on that same button by simply
     // skipping the restore call, no extra bookkeeping needed.
-    if (useGitChangesStore.getState().bySession[sessionId]?.actionError === null) {
-      focusNearestGroupTrigger(sessionId, kind)
-    }
+    if (result.ok) focusNearestGroupTrigger(sessionId, kind)
   }
 
   return (

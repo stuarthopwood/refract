@@ -34,14 +34,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useGitChangesStore, useSessionsStore } from '@/state'
+import { DEFAULT_COMMIT_DRAFT } from '@/state/git-changes-store'
 
 export function GitCommitBox({ sessionId }: { sessionId: string }) {
   const entry = useGitChangesStore((s) => s.bySession[sessionId])
+  const draft = useGitChangesStore((s) => s.commitDraftsBySession[sessionId] ?? DEFAULT_COMMIT_DRAFT)
   const sessionStatus = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
-  const subject = entry?.commitDraft.subject ?? ''
-  const body = entry?.commitDraft.body ?? ''
+  const subject = draft.subject
+  const body = draft.body
   const [committing, setCommitting] = useState(false)
-  const [announcement, setAnnouncement] = useState('')
+  // Gate round 3 fix (#1076 LOW item 5, HIGH item 1): `seq` forces a genuine DOM remount of the
+  // `role="status"` node below on every announcement (via `key`), so a REPEATED identical
+  // subject still re-announces -- a plain text swap to the same string is not a DOM mutation an
+  // assistive tech live region would ever notice.
+  const [announcement, setAnnouncement] = useState({ text: '', seq: 0 })
   const subjectId = useId()
   const bodyId = useId()
   const warningId = useId()
@@ -76,16 +82,25 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
   async function handleCommit(): Promise<void> {
     if (disabledReason || committing) return
     const committedSubject = trimmedSubject || trimmedBody
+    const submittedDraft = { subject, body }
     setCommitting(true)
-    await useGitChangesStore.getState().commit(sessionId, message)
+    // Gate round 3 fix (#1076 HIGH 1, falsified by Gate1076Test3): reads the result `commit()`
+    // returns DIRECTLY -- this resolves the instant the commit IPC call itself settles (the
+    // refetch it fires is `void`d inside the store, never awaited here), never by re-reading
+    // `actionError` from the store after the fact, which raced an unrelated in-flight refresh
+    // (a watcher ping landing mid-refresh could set or clear that field for reasons that had
+    // nothing to do with THIS commit, and the whole coalesced drain loop this used to also wait
+    // on had no upper bound while an agent kept touching files).
+    const result = await useGitChangesStore.getState().commit(sessionId, message)
     setCommitting(false)
-    // `runAction` (git-changes-store.ts) clears `actionError` up front and only sets it again on
-    // a genuine failure -- reading it fresh here, rather than trusting a local "it resolved"
-    // flag, is how a real failure is told apart from success without the store returning a
-    // redundant boolean of its own.
-    if (useGitChangesStore.getState().bySession[sessionId]?.actionError === null) {
-      useGitChangesStore.getState().setCommitDraft(sessionId, { subject: '', body: '' })
-      setAnnouncement(`Committed: ${committedSubject}`)
+    if (result.ok) {
+      // Only clear the draft if it still equals what was actually submitted -- a developer may
+      // have started typing a NEW message during the async commit window, and that must survive.
+      const currentDraft = useGitChangesStore.getState().commitDraftsBySession[sessionId]
+      if (currentDraft && currentDraft.subject === submittedDraft.subject && currentDraft.body === submittedDraft.body) {
+        useGitChangesStore.getState().setCommitDraft(sessionId, { subject: '', body: '' })
+      }
+      setAnnouncement((prev) => ({ text: `Committed: ${committedSubject}`, seq: prev.seq + 1 }))
       document.getElementById(subjectId)?.focus()
     }
   }
@@ -152,9 +167,12 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
         </div>
       )}
       {/* Item 8: a commit success is announced once, same `role="status"` pattern as the
-          agent-working warning above -- visually empty (`sr-only`), so it never shifts layout. */}
-      <p role="status" className="sr-only">
-        {announcement}
+          agent-working warning above -- visually empty (`sr-only`), so it never shifts layout.
+          Gate round 3 fix (#1076 LOW 5): `key={announcement.seq}` forces a genuine remount on
+          every announcement, so a REPEATED identical subject still re-announces -- an unchanged
+          text node is not a DOM mutation a live region would ever notice. */}
+      <p key={announcement.seq} role="status" className="sr-only">
+        {announcement.text}
       </p>
       <div className="flex items-center justify-end gap-1.5">
         {disabledReason && (

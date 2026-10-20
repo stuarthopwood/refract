@@ -78,15 +78,18 @@ export function GitChangesFileRow({
   // Item 7 (gate round 1): after a single-file stage/unstage (or a conflict's own "mark as
   // resolved", which is a stage under the hood), focus the SAME row again wherever it ended up
   // (it may have moved to a different group) -- falling back to the nearest surviving group
-  // trigger only in the rare case the row cannot be found anywhere afterward.
+  // trigger only in the rare case the row cannot be found anywhere afterward. Gate round 3 fix
+  // (#1076 MEDIUM b, UI review): gated on the action's own directly-returned result -- a FAILED
+  // stage/unstage must never move focus away from the control the developer just activated
+  // (the kebab item stays in place, same as the group's own bulk-action already did).
   async function handleStage(): Promise<void> {
-    await useGitChangesStore.getState().stage(sessionId, [entry.path])
-    if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    const result = await useGitChangesStore.getState().stage(sessionId, [entry.path])
+    if (result.ok && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
   }
 
   async function handleUnstage(): Promise<void> {
-    await useGitChangesStore.getState().unstage(sessionId, [entry.path])
-    if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    const result = await useGitChangesStore.getState().unstage(sessionId, [entry.path])
+    if (result.ok && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
   }
 
   async function handleConfirmResolve(): Promise<void> {
