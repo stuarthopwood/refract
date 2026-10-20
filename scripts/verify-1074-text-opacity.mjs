@@ -127,9 +127,11 @@ const PIXEL_TOLERANCE = 4; // per sRGB byte channel, 0-255.
 // `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`) -- Journey/Gantt's own "solid on
 // a coloured task-bar fill" FR-023 exception token. Hardcoded here, not imported, the same way
 // verify-1039-amber-retune.mjs's own `MERMAID_NODE_TEXT` is (no cross-file TS import from a
-// plain .mjs script). Gate round 3 fix (Main, #1074 follow-up, item 1): the real check below is
-// case-insensitive, since Mermaid embeds this file's own CSS string verbatim into the rendered
-// SVG's `<style>` block, preserving whatever case each theme's own literal happens to use.
+// plain .mjs script). Gate round 3 fix (Main, #1074 follow-up, item 1): Mermaid's own per-mount
+// stylesheet scoping re-serializes every colour value in our custom `themeCSS` string to
+// `rgb(r, g, b)` notation before embedding it (confirmed live: a real decoded Journey SVG), so
+// the real check below converts this hex literal to that form first, rather than searching for
+// the hex text verbatim (which never matches post-scoping).
 const JOURNEY_TASK_TEXT_COLOUR = {
   dark: '#fafafa',
   'dark-high-contrast': '#ffffff',
@@ -137,6 +139,13 @@ const JOURNEY_TASK_TEXT_COLOUR = {
   'nordic-frost': '#eff7fb',
   'cyber-amber': '#fafafa'
 };
+function hexToRgbString(hex) {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -417,8 +426,14 @@ async function main() {
         // source directly -- see mermaidTheme.ts's own comment on the fix), so the embedded
         // `<style>` block this file's getMermaidThemeCSS generates is what actually governs
         // them. Asserts the real rendered SVG's own decoded text contains this theme's solid
-        // `taskTextColor` literal, proving the override genuinely reached the page, not only
-        // the CSS source. ----
+        // `taskTextColor`, proving the override genuinely reached the page, not only the CSS
+        // source. Gate-fix (live debug, this run): Mermaid's own per-mount stylesheet scoping
+        // re-serializes every colour value to `rgb(r, g, b)` notation (confirmed live: a real
+        // decoded SVG showed `color:rgb(250, 250, 250)!important` for Dark's `#fafafa`, with the
+        // exact selector `.task~switch .label` present and correct) -- searching for the plain
+        // hex literal verbatim, as the gitGraph/flowchart checks elsewhere in this file do
+        // against THEIR OWN already-hex `themeVariables` strings, never matches here; this one
+        // checks the `rgb()` form instead. ----
         const mermaidImgs = await cdp.evaluate(`Array.from(document.querySelectorAll('img[role="img"]')).map((el) => el.getAttribute('src'))`);
         if (!Array.isArray(mermaidImgs) || mermaidImgs.length < 2 || !mermaidImgs[1]) {
           failures.push(`${theme.name}: expected 2 real rendered Mermaid diagrams (flowchart then journey), found ${Array.isArray(mermaidImgs) ? mermaidImgs.length : 0}.`);
@@ -428,11 +443,11 @@ async function main() {
             failures.push(`${theme.name}: second Mermaid diagram (journey) has no real data: URI src (got ${JSON.stringify(journeySrc)}).`);
           } else {
             const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
-            const expectedTaskText = JOURNEY_TASK_TEXT_COLOUR[theme.id];
-            if (!journeySvgText.toLowerCase().includes(expectedTaskText.toLowerCase())) {
-              failures.push(`${theme.name}: real rendered Journey SVG is missing the solid taskTextColor literal ${expectedTaskText} -- labels may still be using the softened textColor.`);
+            const expectedTaskRgb = hexToRgbString(JOURNEY_TASK_TEXT_COLOUR[theme.id]);
+            if (!journeySvgText.includes(expectedTaskRgb)) {
+              failures.push(`${theme.name}: real rendered Journey SVG is missing the solid taskTextColor ${expectedTaskRgb} (${JOURNEY_TASK_TEXT_COLOUR[theme.id]}) -- labels may still be using the softened textColor.`);
             } else {
-              findings.push(`${theme.name}: real rendered Journey SVG contains the solid taskTextColor literal ${expectedTaskText} -- task/section labels stay solid on their coloured fillType fill.`);
+              findings.push(`${theme.name}: real rendered Journey SVG contains the solid taskTextColor ${expectedTaskRgb} (${JOURNEY_TASK_TEXT_COLOUR[theme.id]}) -- task/section labels stay solid on their coloured fillType fill.`);
             }
           }
         }
