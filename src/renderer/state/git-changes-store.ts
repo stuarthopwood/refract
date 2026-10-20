@@ -166,18 +166,26 @@ export const DEFAULT_COMMIT_DRAFT = { subject: '', body: '' }
 /** Shared by every mutating action (`stage`/`unstage`/`stageAll`/`unstageAll`/`commit`): clears
  * any previous `actionError` up front (starting a new action is one of the two ways it is
  * cleared, FR-013), runs `run`, sets `actionError` to a plain message on failure (never
- * auto-retried), fires (never awaits) a refetch on success (FR-015c, gate round 3 #1076 HIGH 1 --
- * the caller must resolve the instant the action ITSELF succeeds, not whenever the subsequent
- * list refresh happens to finish), and returns the action's own `Result<void>` directly so a
- * caller never has to infer success by re-reading `actionError` after an await (the exact race
- * Gate1076Test3 falsified: an unrelated in-flight refresh can set or clear that field for
- * reasons that have nothing to do with THIS call). A no-op `Result<void>` success for an unknown
- * Session (nothing to update, nothing failed either). */
+ * auto-retried), and returns the action's own `Result<void>` directly so a caller never has to
+ * infer success by re-reading `actionError` after an await (the exact race Gate1076Test3
+ * falsified: an unrelated in-flight refresh can set or clear that field for reasons that have
+ * nothing to do with THIS call). On success, refetches (FR-015c) -- AWAITED by default, so a
+ * caller relying on the fresh snapshot right after (stage/unstage/stageAll/unstageAll's own
+ * per-row/bulk focus restore, which looks up DOM elements by the NEW group membership) can
+ * trust it is already there; `awaitRefresh: false` fires it instead (`void get().load(...)`,
+ * never awaited) for `commit()` ONLY (gate round 3, #1076 HIGH 1) -- a commit's own success
+ * feedback (clear draft, announce, re-enable Commit) must resolve the instant the commit ITSELF
+ * succeeds, never wait on however many more passes a continuously-churning worktree queues
+ * behind it. Safe to await for the other four regardless of churn: `load()` itself now resolves
+ * after the next pass that starts after the call, never an open-ended drain (see `load()`'s own
+ * doc comment) -- awaiting it adds one bounded round trip, not an unbounded wait. A no-op
+ * `Result<void>` success for an unknown Session (nothing to update, nothing failed either). */
 async function runAction(
   sessionId: string,
   set: (fn: (state: GitChangesStoreState) => Partial<GitChangesStoreState>) => void,
   get: () => GitChangesStoreState,
-  run: () => Promise<Result<void>>
+  run: () => Promise<Result<void>>,
+  options: { awaitRefresh?: boolean } = {}
 ): Promise<Result<void>> {
   set((state) => {
     const existing = state.bySession[sessionId]
@@ -206,7 +214,8 @@ async function runAction(
     })
     return result
   }
-  void get().load(sessionId)
+  if (options.awaitRefresh === false) void get().load(sessionId)
+  else await get().load(sessionId)
   return result
 }
 
@@ -345,7 +354,7 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
   },
 
   async commit(sessionId, message) {
-    return runAction(sessionId, set, get, () => window.refract.gitChanges.commit(sessionId, message))
+    return runAction(sessionId, set, get, () => window.refract.gitChanges.commit(sessionId, message), { awaitRefresh: false })
   },
 
   handleStatusTransition(sessionId, status) {
