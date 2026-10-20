@@ -1016,6 +1016,41 @@
   are now enforced in `scripts/theme-contrast-pairs.mjs` in every preset -- no accepted gap
   remains.
 
+### Session 2026-10-20 (Composer command pill, gate round 3 remediation, #1050)
+
+- Q: Round 2's delta gate (Sec PASS; Code/Test/A11y FAIL) found one CRITICAL (Send/Stop cannot
+  be clicked while a pill shows: the textarea's own `relative z-[1]` painted above the Send/Stop
+  button container, which had no z-index at all, proven live via `elementFromPoint`), two HIGHs
+  (the selection highlight painted nothing at all -- `selection:text-foreground` set only a text
+  colour with no background, and CSS gives an author `::selection` rule's own UNSET properties
+  the element's ordinary value, never the UA's special highlight; and the IME composition
+  underline would go invisible too, since masking via `color` hides anything else that reads
+  `color`, underlines included) and two MEDIUMs (a ~150ms flicker from the shared `Textarea`
+  primitive's own `transition-colors` fading the mask on/off out of sync with the mirror's
+  instant mount/unmount; Dark/Obsidian's `--command-pill-fg` hue had drifted 15-25 degrees off
+  `--accent-text`'s own real measured hue, reading as a visibly different blue) -- how to fix
+  all five without reopening round 2's already-enforced contrast floors? -> A: Decided (Main,
+  2026-10-20): (1) Send/Stop container gets its own `z-[3]`, above the textarea's `z-[1]` and the
+  ghost-text/chip mirrors' `z-[2]`, below `SlashMenu.tsx`'s `z-10`. (2) The masking property moves
+  from `color` to `-webkit-text-fill-color` (keeping `color` real, so anything that reads it
+  stays correct); `::selection` now also overrides `-webkit-text-fill-color` (not `color`, which
+  no longer needs masking) to a dedicated `--composer-selection-fg` AND paints a real
+  `--composer-selection-bg` fill -- both plain aliases of the existing, already-enforced
+  `accent-foreground`/`accent` pair, not new colour decisions; forced-colours gets its own
+  `Highlight`/`HighlightText` fallback pair on both the base and the selection rule (this
+  property is not one of the UA's own forced-colours overrides, unlike `color`, so the old
+  safety net had to be re-asserted explicitly). (3) The composer's own `<textarea>` narrows its
+  `transition-colors` down to `transition-[border-color,box-shadow]` (merged via `cn`'s
+  tailwind-merge, same class group) -- the shared `Textarea` primitive itself is untouched. (4)
+  `--command-pill-fg`'s hue is retuned to the real measured accent hue in both drifted presets
+  (Dark 264 -> 279, Obsidian 255 -> 280), re-lightened to keep clearing 4.5:1 (7:1 Dark high
+  contrast, unaffected): Dark 4.65:1, Obsidian 4.75:1, Dark (high contrast) 7.26:1 (corrects
+  round 2's own 7.23:1 transcription), all measured; the live theme loop now also asserts the
+  OKLCH hue difference from `--accent-text` is <=5 degrees in every preset. (5) UI Medium: the
+  pill's own fill now extends 2px past the token's glyph box on every side via `box-shadow`
+  (which never reserves layout space, unlike `padding`), so `/`/the token's own edge glyphs no
+  longer sit flush against the fill.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1595,7 +1630,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
   composer chip does, rather than four independent copies that could drift.
 - **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
   mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism; gate round 1
-  remediation corrected the mechanism, gate round 2 corrected the fill/text tokens, both below):
+  remediation corrected the mechanism, gate round 2 corrected the fill/text tokens, gate round 3
+  corrected the masking property, the selection highlight and the stacking order, all below):
   while the draft's own leading token (from `/` through the end of its name, including a
   `skill:` prefix) is a command or skill the composer's own `commands` list recognises (the same
   exact-match logic `chat.send`'s own refusal path already applies, never a hard-coded copy of
@@ -1607,19 +1643,30 @@ The developer types a slash command and finds the ones the agent offers. If a se
   token text in a SEPARATE `--command-pill-fg` token (gate round 2: the same hue as
   `--accent-text`, lightened/desaturated only as far as needed to clear 4.5:1 on the fill, 7:1 in
   Dark (high contrast); a plain alias of `--accent-text` itself in presets where that already
-  clears both floors), no border -- drawn by a mirror sitting UNDER the real `<textarea>` (the
-  "highlight-within-textarea" technique, gate round 1 HIGH: the mirror renders the WHOLE draft
-  visibly, the textarea itself goes `text-transparent` with an explicit `caret-color` and a
-  `::selection` text-colour override ONLY while a token is present, so the native caret, the
-  native selection highlight and IME composition keep painting on the real control, on top of
-  the mirror -- the original opaque-overlay-on-top design hid all three), with no line-height
-  change and no caret movement; text after the token (the command's own arguments) MUST stay
-  plain. The message box MUST also set `spellCheck={false}` for as long as that leading token is
-  recognised, reverting the instant it stops matching (deleted, edited into an unrecognised
-  name, or the draft no longer starts with `/`) -- a `<textarea>` cannot exclude part of its own
-  text from spellcheck, so a recognised command's own arguments go unchecked too while it shows.
-  An unrecognised leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged.
-  This is visual only: the textarea's own accessible name and value are unaffected.
+  clears both floors; gate round 3: Dark/Obsidian's own hue had drifted 15-25 degrees off
+  `--accent-text`'s real measured hue, corrected), no border -- drawn by a mirror sitting UNDER
+  the real `<textarea>` (the "highlight-within-textarea" technique, gate round 1 HIGH: the
+  mirror renders the WHOLE draft visibly, the textarea itself goes `[-webkit-text-fill-color:
+  transparent]` (gate round 3 HIGH, IME: NOT the `color` property -- masking via `color` also
+  hid anything else that reads it, such as an IME composition underline; `color` itself stays
+  real) with an explicit `caret-color` and a real `::selection` fill (dedicated `--composer-
+  selection-bg`/`-fg` tokens, plain aliases of the existing `accent-foreground`/`accent` pair;
+  gate round 3 HIGH: round 1/2's `::selection` rule set only a text colour with NO background,
+  which left the highlight completely invisible -- an author `::selection` rule leaves any
+  UNSET property at the element's own ordinary value, never the UA's special highlight) ONLY
+  while a token is present, so the native caret, the native selection highlight and IME
+  composition keep painting on the real control, on top of the mirror -- the original opaque-
+  overlay-on-top design hid all three. The Send/Stop button container MUST stay clickable while
+  the pill shows (gate round 3 CRITICAL: it previously had no `z-index`, so the textarea's own
+  positioned stacking context painted over it); it now carries its own `z-[3]`, above the
+  textarea's `z-[1]` and the ghost-text/chip mirrors' `z-[2]`. No line-height change and no caret
+  movement; text after the token (the command's own arguments) MUST stay plain. The message box
+  MUST also set `spellCheck={false}` for as long as that leading token is recognised, reverting
+  the instant it stops matching (deleted, edited into an unrecognised name, or the draft no
+  longer starts with `/`) -- a `<textarea>` cannot exclude part of its own text from spellcheck,
+  so a recognised command's own arguments go unchecked too while it shows. An unrecognised
+  leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged. This is visual
+  only: the textarea's own accessible name and value are unaffected.
 
 ### Key Entities
 

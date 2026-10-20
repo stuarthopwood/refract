@@ -61,6 +61,35 @@ function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
+/** Gate round 3 fix: parses a resolved `rgb()`/`rgba()` colour string into its real OKLCH hue
+ * (degrees, 0-360), via the standard sRGB -> linear -> OKLab -> OKLCH pipeline (Bjorn Ottosson's
+ * reference matrices) -- the same direction `contrast-math.mjs` doesn't need (it only ever
+ * composites OKLab/OKLCH INTO linear sRGB for luminance, never back out a hue), so this stays
+ * local to the one caller that needs it instead of growing that shared module for a single use. */
+function rgbStringToOklchHue(rgbStr) {
+  const m = typeof rgbStr === 'string' && rgbStr.match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const [r, g, b] = m[1].split(',').map((n) => parseFloat(n) / 255);
+  const decode = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [rl, gl, bl] = [decode(r), decode(g), decode(b)];
+  const l = 0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl;
+  const m_ = 0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl;
+  const s = 0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl;
+  const [l_, m2, s_] = [Math.cbrt(l), Math.cbrt(m_), Math.cbrt(s)];
+  const a = 1.9779984951 * l_ - 2.428592205 * m2 + 0.4505937099 * s_;
+  const bb = 0.0259040371 * l_ + 0.7827717662 * m2 - 0.808675766 * s_;
+  let hue = (Math.atan2(bb, a) * 180) / Math.PI;
+  if (hue < 0) hue += 360;
+  return hue;
+}
+
+/** The shorter-arc angular difference between two hues (0-360 each), e.g. `circularHueDiff(2,
+ * 358) === 4`, never the naive `356` a plain subtraction would give. */
+function circularHueDiff(h1, h2) {
+  const diff = Math.abs(h1 - h2) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
 async function main() {
   const head = gitHead(REPO_ROOT);
   const dirtyLines = spawnSync_('git', ['-C', REPO_ROOT, 'status', '--porcelain']).stdout.split('\n').filter(Boolean);
@@ -70,6 +99,7 @@ async function main() {
     'report.json',
     '01-no-pill-zzz.png',
     '02-pill-btw.png',
+    '02b-selection-highlight.png',
     '03-pill-skill.png',
     '04-spellcheck-returns.png',
     '05-scrolled-multiline.png',
@@ -90,10 +120,12 @@ async function main() {
       "The code's own alignment argument (identical box-model classes on the mirror and the " +
       'textarea, so the UA\'s forced CanvasText remap lands both renderings on the same pixels) ' +
       'is reasoned in CommandPillOverlay.tsx\'s own header comment, not live-proven.',
-    'Real IME composition (an actual CJK/dead-key input method): no IME harness exists here; the ' +
-      "caret-visibility and selection-highlight pixel checks below prove the REAL textarea paints " +
-      "on top at both an empty-selection caret and a real Ctrl+A selection, which is the same " +
-      "paint-order guarantee IME composition underlines rely on, but IME itself is not driven live.",
+    'Real IME composition (an actual CJK/dead-key input method): no IME harness exists here. ' +
+      "Proven: composed text shows through the mirror correctly, because the masking moved from " +
+      "`color` to `-webkit-text-fill-color` specifically so anything reading `color` (a " +
+      "composition underline included, drawn in `currentColor` by default) keeps a real, visible " +
+      "value (CommandPillOverlay.tsx's own comment has the full reasoning). NOT verified: the " +
+      "underline's own actual rendered colour/visibility, which needs a real IME session to confirm.",
     'Real display zoom (OS/browser zoom level changed mid-session): not driven live; the caret/' +
       'geometry checks below run at the default 100% zoom only.'
   ];
@@ -212,8 +244,10 @@ async function main() {
 
     await assertCaretVisible(cdp, sleep, 0, '/btw hi: caret pixel-visible at offset 0 (start of the pilled token)', report);
     await assertCaretVisible(cdp, sleep, 2, '/btw hi: caret pixel-visible at offset 2 (mid-token, inside the pill)', report);
-    await assertSelectionHighlightVisible(cdp, pressKey, report);
+    // Gate round 3 fix: the resting (unselected) shot now comes BEFORE Ctrl+A below, not after --
+    // the previous order left the draft already selected by the time this frame was captured.
     await cdp.screenshot(path.join(SHOTS_DIR, '02-pill-btw.png'));
+    await assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, SHOTS_DIR);
 
     // ---- 3. Height/caret identical with and without the pill (both exactly 7 characters) ---
     await clearAndType(cdp, pressKey, '/btw hi');
@@ -281,6 +315,10 @@ async function main() {
       return { taWidth: ta.getBoundingClientRect().width, pillLineCount: pillRects.length, pillRects: Array.from(pillRects).map((r) => ({ left: r.left, top: r.top, width: r.width })) };
     })()`);
     assertTrue(wrappingGeom.pillLineCount >= 2, `long skill name: the pill's own [box-decoration-break:clone] rounding renders across ${wrappingGeom.pillLineCount} visual line fragment(s), confirming it actually wrapped`, wrappingGeom);
+    // Gate round 3 fix: every earlier caret check landed on the FIRST (unwrapped) line -- offset
+    // 150 sits well past the ~90-char first line this token wraps at, proving caret alignment
+    // survives onto a SECOND/THIRD wrapped visual line too, not just the simple unwrapped case.
+    await assertCaretVisible(cdp, sleep, 150, 'long skill name: caret pixel-visible mid-token on a wrapped visual line', report);
     await cdp.screenshot(path.join(SHOTS_DIR, '07-wrapping-token.png'));
 
     // ---- 9. A pasted-text chip renders beside the pill (ghost text: see notExercised) -----
@@ -299,6 +337,15 @@ async function main() {
       label: 'chip+pill: the large paste collapsed into a pending text chip'
     });
     assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the leading command pill is still shown alongside the new pasted-text chip');
+    const chipHit = await cdp.evaluate(`(() => {
+      const chip = document.querySelector('[role="group"][aria-label="Pending attachments"] button');
+      if (!chip) return null;
+      const r = chip.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return { reachable: hit === chip || chip.contains(hit) };
+    })()`);
+    assertTrue(!!chipHit && chipHit.reachable, "chip+pill: the pasted-text chip is actually hit-testable (elementFromPoint at its own centre), not occluded by the pill's mirror or the textarea", chipHit);
     await cdp.screenshot(path.join(SHOTS_DIR, '08-chip-plus-pill.png'));
 
     // ---- 10. Pill stays aligned across all five theme presets, fill/text colour verified --
@@ -311,6 +358,15 @@ async function main() {
       // any still-open tooltip can still be mid-transition at that exact instant -- wait for
       // the menu to be genuinely gone and let any transition settle before measuring/shooting.
       await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: `${theme.name}: profile menu fully closed before measuring` });
+      // Gate round 3 fix: the Profile name button this menu opens from ALSO carries its own
+      // Tooltip ("Stuart Hopwood") -- clicking it to open the menu can leave that tooltip stuck
+      // open afterward (a known Radix quirk with synthetic pointer events), bleeding into every
+      // later theme's own screenshot. Moving the pointer away to a neutral point (the textarea's
+      // own centre, nowhere near any tooltip trigger) and waiting for any open tooltip to
+      // genuinely close clears it before measuring or shooting.
+      const neutralPoint = await cdp.evaluate(`(() => { const r = ${TEXTAREA}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: neutralPoint.x, y: neutralPoint.y });
+      await cdp.waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 5_000, label: `${theme.name}: any stuck tooltip closed before measuring` });
       await sleep(300);
       const themeGeom = await measurePillGeometry(cdp);
       assertTrue(themeGeom !== null, `${theme.name}: pill found`);
@@ -323,6 +379,17 @@ async function main() {
       assertEqual(pillColors.color, expectedColor, `${theme.name}: pill text colour equals --command-pill-fg resolved live`);
       const pageBg = await resolveCssVarColor(cdp, '--background', 'background-color');
       assertTrue(pillColors.bg !== pageBg, `${theme.name}: pill fill is a visibly different colour from the plain page background (fill-vs-composer, measured live)`);
+      // Gate round 3 fix: `--command-pill-fg` must read as "the SAME accent hue, just lightened",
+      // never a visibly different colour -- Dark/Obsidian's own hue had drifted 15-25 degrees off
+      // `--accent-text`'s real hue before this round. Computed live from the two RESOLVED colours
+      // (never the source CSS, which could itself drift unnoticed) via the standard sRGB ->
+      // linear -> OKLab -> OKLCH pipeline, same formulas `contrast-math.mjs` already uses for the
+      // forward direction.
+      const accentTextColor = await resolveCssVarColor(cdp, '--accent-text', 'color');
+      const pillHue = rgbStringToOklchHue(expectedColor);
+      const accentHue = rgbStringToOklchHue(accentTextColor);
+      const hueDiff = pillHue !== null && accentHue !== null ? circularHueDiff(pillHue, accentHue) : null;
+      assertTrue(hueDiff !== null && hueDiff <= 5, `${theme.name}: --command-pill-fg's own hue (${pillHue?.toFixed(1)}) is within 5 degrees of --accent-text's (${accentHue?.toFixed(1)})`, { pillHue, accentHue, hueDiff });
       await cdp.screenshot(path.join(SHOTS_DIR, `theme-${theme.id}.png`));
     }
     await switchTheme(cdp, 'dark', 'Dark');
@@ -336,9 +403,35 @@ async function main() {
       timeoutMs: 3_000,
       label: 'scrolled draft: command-pill overlay scrollTop synced to the textarea after scrolling to the bottom'
     });
+    // Gate round 3 fix: proves caret alignment survives scrolling, not just wrapping -- the end
+    // of the draft is now the last visible line after scrolling to the bottom, so a caret placed
+    // there must still land at its own correct, currently-ON-SCREEN pixel position.
+    const endOffset = await cdp.evaluate(`${TEXTAREA}.value.length`);
+    await assertCaretVisible(cdp, sleep, endOffset, 'scrolled draft: caret pixel-visible at the end of the draft after scrolling to the bottom', report);
     await cdp.screenshot(path.join(SHOTS_DIR, '05-scrolled-multiline.png'));
     await cdp.evaluate(`${TEXTAREA}.scrollTop = 0`);
     await cdp.waitFor(`${OVERLAY}.scrollTop === 0`, { timeoutMs: 3_000, label: 'scrolled draft: overlay scrollTop synced back to 0 after scrolling to the top' });
+
+    // ---- 12. Send/Stop clickable while a pill shows (gate round 3 CRITICAL fix) ------------
+    // The code reviewer proved this live: the composer textarea's own `relative z-[1]` (added
+    // ONLY while a pill shows) used to paint ABOVE the Send/Stop button container, which had no
+    // z-index at all -- `elementFromPoint` at Send's own centre resolved to the textarea, so a
+    // real pointer click there never reached the button. Run LAST (not alongside the earlier
+    // checks above): a real click genuinely sends through the fake-omp tape's own single
+    // scripted `prompt` reply, which nothing after this point depends on.
+    await clearAndType(cdp, pressKey, '/btw hi');
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'Send/Stop clickability: pill shown before the click' });
+    const sendHit = await cdp.evaluate(`(() => {
+      const send = document.querySelector('[aria-label="Send message"]');
+      if (!send) return null;
+      const r = send.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return { x, y, reachable: hit === send || send.contains(hit) };
+    })()`);
+    assertTrue(!!sendHit && sendHit.reachable, "Send/Stop clickability: elementFromPoint at Send's own centre returns Send while a pill shows (not the textarea its z-[1] used to paint over)", sendHit);
+    await cdp.click(`document.querySelector('[aria-label="Send message"]')`);
+    await cdp.waitFor(`${TEXTAREA}.value === ''`, { timeoutMs: 5_000, label: 'Send/Stop clickability: a real pointer click on Send actually sent (draft cleared)' });
 
     report.push({
       step: 'screenshots',
@@ -346,6 +439,7 @@ async function main() {
       screenshots: citeScreenshots(SHOTS_DIR, [
         '01-no-pill-zzz.png',
         '02-pill-btw.png',
+        '02b-selection-highlight.png',
         '03-pill-skill.png',
         '04-spellcheck-returns.png',
         '05-scrolled-multiline.png',

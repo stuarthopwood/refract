@@ -132,14 +132,14 @@ export const PAIRS = [
   { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
-  // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
-  // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
-  // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
-  // (`Markdown.tsx`'s `linkClassName`), but never on `surface-hover`: every link/file-link
-  // surface it renders on -- the plain chat background/card/popover, and the composited user
-  // message bubble checked below -- is covered by a real gate entry. Before #579 migrates a
-  // link/text colour onto a hover row, either lighten `accent-text` further (it already has
-  // margin to spare against background/card/popover) or add this pair here once it passes.
+  // Gate round 3 HIGH fix (#1050): the composer's selection highlight now paints a real fill (CommandPillOverlay.tsx's own comment has the full reasoning) -- plain aliases of the already-enforced accent-foreground/accent pair above, checked again under their own name.
+  { fg: 'composer-selection-fg', bg: 'composer-selection-bg', min: 4.5 },
+  { fg: 'composer-selection-fg', bg: 'composer-selection-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  // TODO(#579): `accent-text` on `surface-hover` (muted/accent hover fill) measures only 4.00:1
+  // in Dark and 4.28:1 in Obsidian, under the 4.5:1 floor -- not added as a PAIRS entry (would
+  // fail both today). Issue #610 reads `accent-text` via `Markdown.tsx`'s `linkClassName`, but
+  // never on `surface-hover` (every surface it DOES render on is covered below). Before #579
+  // migrates a link/text colour onto a hover row: lighten `accent-text` further, or add this pair.
   { fg: 'severity-success', bg: 'background', min: 3 },
   { fg: 'severity-success', bg: 'card', min: 3 },
   { fg: 'severity-success', bg: 'popover', min: 3 },

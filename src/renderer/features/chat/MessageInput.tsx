@@ -1432,8 +1432,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
             // read the stop reason it carries -- `disabled:placeholder:text-foreground`
             // brightens the placeholder itself so the dim lands it back near readable.
+            // Gate round 3 fix (#1050, Medium, flicker): the shared `Textarea` primitive's own `transition-colors` fades a 150ms colour change on ANY toggle, including this textarea's own fill-colour swap the instant a pill mounts/unmounts -- while the mirror underneath mounts instantly, visibly desyncing the two for ~150ms. `transition-[border-color,box-shadow]` (merged over `transition-colors` by `cn`'s tailwind-merge, same class group) narrows this textarea to border/ring-only transitions, without touching the shared primitive.
             className={cn(
-              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none transition-[border-color,box-shadow] focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
               commandToken && COMMAND_PILL_TEXTAREA_CLASS
             )}
           />
@@ -1538,8 +1539,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               it is not destructive, and red is reserved for destructive and error states". The
               two do coexist on screen while a turn runs (Send stays usable to queue a follow-up,
               FR-011), a documented exception to "one filled button per surface": the two fills
-              are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-2">
+          are visually distinct colours conveying different intents, not a duplicated weight (round 6: `gap-2`, was `gap-1`). Gate round 3 CRITICAL fix (#1050): `z-[3]`, above the `relative z-[1]` the composer textarea gains ONLY while a pill shows (`CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`, full stacking order there) and the mirrors' `z-[2]` -- this container had NO z-index before, so the textarea painted over it (`elementFromPoint` at Send's centre resolved to the textarea), making Send/Stop unclickable. */}
+          <div className="absolute right-1.5 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>

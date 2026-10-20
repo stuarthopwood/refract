@@ -69,6 +69,8 @@
   --color-accent-text: var(--accent-text);
   --color-command-pill-bg: var(--command-pill-bg);
   --color-command-pill-fg: var(--command-pill-fg);
+  --color-composer-selection-bg: var(--composer-selection-bg);
+  --color-composer-selection-fg: var(--composer-selection-fg);
   --color-severity-success: var(--severity-success);
   --color-severity-warning: var(--severity-warning);
   --color-severity-error: var(--severity-error);
@@ -331,11 +333,23 @@
    * tokens. `--command-pill-bg` is a plain neutral step, lighter than `--card`/`--muted`,
    * chosen ONLY to clear 1.4:1 against `--background` (1.50:1, comfortable margin) -- no accent-
    * text constraint on it at all now. `--command-pill-fg` is the SAME hue as `--accent-text`
-   * (264, this theme's indigo), lightened and desaturated only as far as needed to clear 4.5:1
-   * on THIS fill (4.67:1, measured) -- a visibly lighter step of the same accent family, not a
-   * different colour. */
+   * (279, measured from its own hex `#7375F2` -- gate round 3 fix: round 2's hue 264 was a
+   * transcription drift, 15 degrees off the real accent hue, which read as a visibly different
+   * blue), lightened and desaturated only as far as needed to clear 4.5:1 on THIS fill (4.65:1,
+   * measured) -- a visibly lighter step of the same accent family, not a different colour. */
   --command-pill-bg: oklch(0.31 0 0);
-  --command-pill-fg: oklch(0.69 0.162 264);
+  --command-pill-fg: oklch(0.695 0.162 279);
+  /* Gate round 3 HIGH fix (#1050): the composer's own text-selection highlight, while a
+   * recognised command/skill pill shows -- `selection:text-foreground` alone left `::selection`
+   * with NO authored `background-color`, and an author `::selection` rule with a property
+   * unset falls back to the ELEMENT's own ordinary (unselected) value for that property, not
+   * the UA's special highlight colour -- so the textarea's own `bg-transparent` left the
+   * "highlight" completely invisible. Plain aliases of the EXISTING, already-enforced
+   * `accent-foreground`/`accent` pair (14.48:1 here) -- the same "this row/item is
+   * highlighted" surface already used for hover/active menu rows, reused rather than inventing
+   * a new untested colour. */
+  --composer-selection-bg: var(--accent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
    * second set" rule). `--severity-info` was originally the one genuinely new colour with no
@@ -448,10 +462,17 @@
   /* Issue #1050 (gate round 2 remediation, see Dark's own comment for the full reasoning): two
    * independent tokens. `--command-pill-bg` is a plain blue-grey neutral step clearing 1.4:1
    * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
-   * (255, this theme's indigo), lightened/desaturated only as far as needed to clear 4.5:1 on
-   * this fill (4.57:1, measured). */
+   * (280, measured from its own hex `#8588F4` -- gate round 3 fix: round 2's hue 255 was a
+   * transcription drift, 25 degrees off the real accent hue, which read as a visibly different
+   * blue), lightened/desaturated only as far as needed to clear 4.5:1 on this fill (4.75:1,
+   * measured). */
   --command-pill-bg: oklch(0.32 0.02 255);
-  --command-pill-fg: oklch(0.69 0.166 255);
+  --command-pill-fg: oklch(0.715 0.166 280);
+  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
+   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
+   * `--foreground` here, the same hover/active row surface used elsewhere). */
+  --composer-selection-bg: var(--accent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
    * retuned specifically for this preset (lightness 0.74 vs Dark/HC's shared 0.704/0.78) so it
@@ -739,9 +760,15 @@
    * reasoning): two independent tokens. `--command-pill-bg` is a plain neutral step clearing
    * 1.4:1 against `--composer-background` (1.52:1). `--command-pill-fg` is the same hue as
    * `--accent-text` (264), lightened only as far as needed to clear this preset's own
-   * enhanced 7:1 floor on this fill (7.23:1, measured). */
+   * enhanced 7:1 floor on this fill (7.26:1, measured; gate round 3 fix: this comment's own
+   * number was stale at 7.23, drifted from the spec's recorded 7.26). */
   --command-pill-bg: oklch(0.30 0 0);
   --command-pill-fg: oklch(0.80 0.10 264);
+  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
+   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (15.54:1 here,
+   * comfortably above this preset's own enhanced 7:1 floor). */
+  --composer-selection-bg: var(--accent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
    * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
    * verified >=3:1 against `--background` (12.45:1) and `--card`/`--popover` (11.80:1). */
@@ -880,6 +907,11 @@
    * hue, lightness and contrast, no lightened step needed). */
   --command-pill-bg: var(--muted);
   --command-pill-fg: var(--accent-text);
+  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
+   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
+   * `--foreground` here, the same hover/active row surface used elsewhere). */
+  --composer-selection-bg: var(--accent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: success/warning/error share the same hue every other built-in theme uses
    * (#550's "do not create a second set"), lightness retuned for this preset's own darker navy
    * surfaces. Info is deliberately NOT this preset's own cyan accent hue (195) -- a periwinkle
@@ -1056,6 +1088,11 @@
    * plain alias of `--accent-text`, no lightened step needed. */
   --command-pill-bg: var(--muted);
   --command-pill-fg: var(--accent-text);
+  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
+   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
+   * `--foreground` here, the same hover/active row surface used elsewhere). */
+  --composer-selection-bg: var(--accent);
+  --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: success/error keep the same green/red hue family every other built-in theme
    * uses. `--severity-warning` is the theme's own golden-amber (real hue ~73.8, distinct from
    * `--accent-text`'s orange-amber, real hue 39.9 -- see this block's header comment for the

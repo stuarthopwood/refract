@@ -66,48 +66,73 @@ export async function overlayStructure(cdp) {
   })()`);
 }
 
-/** Measures the real pixel position of the caret at `charOffset` (first line only, no newline
- * before it) via a `Range` against `CommandPillOverlay`'s own REAL rendered mirror DOM -- not a
- * separate offscreen `<canvas>` measurement. A canvas re-implementing text metrics in isolation
- * can legitimately disagree with the browser's own real text layout (font loading timing,
- * kerning, ligatures, subpixel rounding), which is exactly what caused this check's own first
- * draft to fail: the canvas-measured x for a mid-token offset landed on a glyph stroke instead
- * of the real caret column, so both "blink" samples read the same (correct, but static) glyph
- * pixel, not the (absent, in that draft's measurement) caret -- a script bug, not a product bug,
- * confirmed by this fix reusing the SAME mirror the real textarea is already proven (by the
- * geometry checks above) to align with pixel-for-pixel. The mirror must be mounted (a recognised
- * token showing) for this to find anything. */
-async function measureCaretPixel(cdp, charOffset) {
+/** Finds the real client rect of the range `[startOffset, endOffset)` against
+ * `CommandPillOverlay`'s own REAL rendered mirror DOM -- not a separate offscreen `<canvas>`
+ * measurement. A canvas re-implementing text metrics in isolation can legitimately disagree
+ * with the browser's own real text layout (font loading timing, kerning, ligatures, subpixel
+ * rounding), which is exactly what caused this check's own first draft to fail: the canvas-
+ * measured x for a mid-token offset landed on a glyph stroke instead of the real caret column --
+ * a script bug, not a product bug, confirmed by this fix reusing the SAME mirror the real
+ * textarea is already proven (by the geometry checks above) to align with pixel-for-pixel.
+ * Works for any visual line (wrapped or not) and any scroll position: `Range.getClientRects()`
+ * returns real viewport-relative coordinates that already account for both, unlike the original
+ * canvas measurement (which only ever handled the first, unwrapped, unscrolled line). The
+ * mirror must be mounted (a recognised token showing) for this to find anything. */
+async function findMirrorOffsetRect(cdp, startOffset, endOffset) {
   return cdp.evaluate(`(() => {
     const overlay = ${OVERLAY};
     if (!overlay) return null;
-    let remaining = ${charOffset};
-    let targetNode = null;
-    let targetOffset = 0;
-    (function visit(node) {
-      if (targetNode) return;
-      if (node.nodeType === Node.TEXT_NODE) {
-        const len = node.textContent.length;
-        if (remaining <= len) {
-          targetNode = node;
-          targetOffset = remaining;
-          return;
+    function locate(offset) {
+      let remaining = offset;
+      let targetNode = null;
+      let targetOffset = 0;
+      (function visit(node) {
+        if (targetNode) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const len = node.textContent.length;
+          if (remaining <= len) {
+            targetNode = node;
+            targetOffset = remaining;
+            return;
+          }
+          remaining -= len;
+        } else {
+          for (const child of node.childNodes) {
+            visit(child);
+            if (targetNode) return;
+          }
         }
-        remaining -= len;
-      } else {
-        for (const child of node.childNodes) {
-          visit(child);
-          if (targetNode) return;
-        }
-      }
-    })(overlay);
-    if (!targetNode) return null;
+      })(overlay);
+      return targetNode ? { node: targetNode, offset: targetOffset } : null;
+    }
+    const start = locate(${startOffset});
+    const end = locate(${endOffset});
+    if (!start || !end) return null;
     const range = document.createRange();
-    range.setStart(targetNode, targetOffset);
-    range.setEnd(targetNode, targetOffset);
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
     const rect = range.getClientRects()[0] || range.getBoundingClientRect();
-    return { x: Math.round(rect.left), y: Math.round(rect.top + rect.height / 2) };
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   })()`);
+}
+
+/** The caret's own real pixel position at `charOffset` (a zero-width point, `startOffset ===
+ * endOffset`). See `findMirrorOffsetRect` above for the full reasoning. */
+async function measureCaretPixel(cdp, charOffset) {
+  const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset);
+  if (!rect) return null;
+  return { x: Math.round(rect.left), y: Math.round(rect.top + rect.height / 2) };
+}
+
+/** Gate round 3 HIGH fix: the CENTRE of a single glyph-free character cell (`charOffset` to
+ * `charOffset + 1`) -- unlike the caret's zero-width point above, this spans a whole character's
+ * own rendered box, so a selection-highlight sample here is immune to the glyph-ink/anti-
+ * aliasing noise a pixel landing ON a letter's stroke would introduce. The caller picks a
+ * genuinely blank character (a space) so there is no ink to confuse with the highlight itself. */
+export async function measureCellCenter(cdp, charOffset) {
+  const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset + 1);
+  if (!rect) return null;
+  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
 }
 
 /** Reads back a small region's RGBA pixels from a REAL `Page.captureScreenshot` -- decoded
@@ -169,21 +194,41 @@ export async function assertCaretVisible(cdp, sleep, charOffset, label, report) 
   console.log(`verify-1050: PASS ${label}`);
 }
 
-/** Gate round 1 HIGH remediation (item 5): proves Ctrl+A's native selection highlight actually
- * paints over the pilled token -- captures the SAME pixel (the pill's own measured centre)
- * unselected, then selected, and asserts the two differ (a real highlight tint was applied,
- * not merely an invisible selection the transparent text would otherwise hide entirely). */
-export async function assertSelectionHighlightVisible(cdp, pressKey, report) {
-  const geom = await measurePillGeometry(cdp);
-  const x = Math.round(geom.pillLeft + geom.pillWidth / 2);
-  const y = Math.round(geom.pillTop + geom.pillHeight / 2);
-  const before = await capturePixelRegion(cdp, x, y);
+/** Parses a `getComputedStyle()`/`resolveCssVarColor` `rgb()`/`rgba()` string into its `[r, g,
+ * b]` triplet, for comparing against raw `getImageData` bytes. */
+function parseRgbTriplet(rgbStr) {
+  const m = typeof rgbStr === 'string' && rgbStr.match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  return m[1].split(',').map((n) => parseFloat(n)).slice(0, 3);
+}
+
+/** Gate round 3 HIGH fix: round 1's version sampled the PILL's own measured centre -- real ink
+ * (the mirror's own coloured glyphs), so a "differs" reading there is confounded by ordinary
+ * glyph-rendering/anti-aliasing noise and proves nothing specific about a selection background
+ * actually painting (confirmed live: it read `differs: true` even with `::selection` having NO
+ * authored `background-color` at all, i.e. a false pass). Fixed by sampling the CENTRE of a
+ * genuinely glyph-free cell instead -- the space between `/btw` and `hi` (char offset 4) -- a
+ * single real pixel there, unselected then selected, and asserting the selected reading matches
+ * the LIVE-resolved `--composer-selection-bg`, not merely "differs by some threshold" (a
+ * specific, false-positive-resistant assertion). Takes a resting (unselected) shot first,
+ * matching `02-pill-btw.png` taken by the caller just before this runs, then its own
+ * post-selection shot (`02b-selection-highlight.png`) as separate visual evidence. */
+export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, shotsDir) {
+  const cell = await measureCellCenter(cdp, 4); // "/btw hi": the space right after the pilled token
+  if (!cell) throw new Error('FAIL: Ctrl+A selection highlight (measureCellCenter found no mirror text node at the glyph-free space, offset 4)');
+  const { x, y } = cell;
+  const before = await capturePixelRegion(cdp, x, y, 0, 0);
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, including the pill
-  const after = await capturePixelRegion(cdp, x, y);
+  const after = await capturePixelRegion(cdp, x, y, 0, 0);
+  await cdp.screenshot(path.join(shotsDir, '02b-selection-highlight.png'));
+  const expectedBgRaw = await resolveCssVarColor(cdp, '--composer-selection-bg', 'background-color');
+  const expectedRgb = parseRgbTriplet(expectedBgRaw);
   const differs = before.some((value, index) => Math.abs(value - after[index]) > 10);
-  report.push({ step: 'Ctrl+A: selection highlight visibly paints over the pilled token', ok: differs, before, after, x, y });
-  if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight pixel identical before/after (${JSON.stringify(before)})`);
-  console.log('verify-1050: PASS Ctrl+A: selection highlight visibly paints over the pilled token');
+  const matchesExpected = !!expectedRgb && expectedRgb.every((v, i) => Math.abs(v - after[i]) <= 10);
+  report.push({ step: 'Ctrl+A: selection highlight paints a real background at a glyph-free cell', ok: differs && matchesExpected, before, after, expectedBgRaw, x, y });
+  if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight (glyph-free cell (${x},${y}) identical before/after: ${JSON.stringify(before)})`);
+  if (!matchesExpected) throw new Error(`FAIL: Ctrl+A selection highlight (selected pixel ${JSON.stringify(after)} does not match resolved --composer-selection-bg ${expectedBgRaw})`);
+  console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background at a glyph-free cell');
 }
 
 export function shotPath(shotsDir, name) {

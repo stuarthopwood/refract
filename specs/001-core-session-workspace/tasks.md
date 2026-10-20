@@ -4793,3 +4793,52 @@ informational exception.** `spec.md`'s new 2026-10-20 "gate round 2" Clarificati
 FR-092's own amended text record the correction. Non-build checks re-run clean (unchanged file-
 size/indent/parity/drag-region numbers from round 1; theme-contrast now 840/840, was 837/837).
 **A fresh FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+**Gate round 3 remediation (2026-10-20, Main)**: round 2's delta gate found one CRITICAL (Send/
+Stop unclickable while a pill shows, `MessageInput.tsx`'s Send/Stop button container had no
+z-index at all so the pill-only textarea `z-[1]` painted over it -- fixed with its own `z-[3]`,
+full stacking order documented in `CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`
+comment), two HIGHs (the selection highlight painted nothing -- `selection:text-foreground` set
+only a text colour, and CSS falls an author `::selection` rule's unset properties back to the
+element's ordinary value, never the UA's special highlight; fixed with a real
+`selection:bg-composer-selection-bg` fill, new `--composer-selection-bg`/`-fg` tokens that are
+plain aliases of the already-enforced `accent-foreground`/`accent` pair -- and an IME
+composition underline would have gone invisible too under the old `color`-based masking, since
+anything reading `color` was hidden along with the glyphs; fixed by masking via
+`[-webkit-text-fill-color:transparent]` instead, which leaves `color` itself real, with its own
+`::selection`/`forced-colors` overrides since that property doesn't inherit the UA's forced-
+colours safety net the way `color` does) and two MEDIUMs (a ~150ms flicker from the shared
+`Textarea` primitive's own `transition-colors` fading the mask on/off out of sync with the
+mirror's instant mount/unmount -- fixed by narrowing the composer's OWN textarea to
+`transition-[border-color,box-shadow]`, not touching the shared primitive; Dark/Obsidian's
+`--command-pill-fg` hue had drifted 15-25 degrees off `--accent-text`'s real measured hue --
+retuned to 279/280 respectively, Dark 4.65:1/Obsidian 4.75:1/Dark high contrast 7.26:1, all
+measured, `check:theme-contrast` 856/856 PASS including two new enforced `composer-selection-
+fg`/`composer-selection-bg` pairs). Plus a UI Low (the pill's own fill now extends 2px past the
+token's glyph box via `box-shadow`, which never reserves layout space, so edge glyphs no longer
+sit flush against the fill) and a spec/notExercised Low (the IME `notExercised` entry narrowed to
+what is actually proven: composed text shows through the mirror correctly; the underline's own
+colour is still not live-verified, no IME harness built).
+
+`scripts/verify-1050-command-pill.mjs` gained: a real `elementFromPoint` + pointer-click proof
+that Send reaches the button while a pill shows (run LAST, since a real click genuinely consumes
+the fake-omp tape's one scripted `prompt` reply); the selection-highlight check rewritten to
+sample a GLYPH-FREE cell (the space after the token, not the pill's own inked centre, which gave
+a false pass from ordinary glyph-rendering noise) and assert the selected pixel matches the
+live-resolved `--composer-selection-bg`, not merely "differs"; the resting `02-pill-btw.png`
+shot now taken BEFORE Ctrl+A (it used to capture the already-selected state); a new
+`02b-selection-highlight.png` for the selected state; an OKLCH hue-difference assertion (<=5
+degrees from `--accent-text`) in the theme loop; a stuck Profile-name tooltip now explicitly
+dismissed (pointer moved to a neutral point, waited for `[role="tooltip"]` to clear) before each
+theme's own measurement/screenshot; a caret-visibility check on a WRAPPED visual line of the
+long skill name (offset 150, past the first line) and another after scrolling a long draft to
+its own bottom (previously every caret check only ever covered the unwrapped, unscrolled first
+line); a pasted-text chip's own `elementFromPoint` clickability check beside the pill.
+
+Non-build checks re-run clean: `pnpm typecheck`; `pnpm test` 148/148 (no new tests); `check:
+indent` 0/429; `check:file-size` 0 violations (`MessageInput.tsx` and `theme-contrast-pairs.mjs`
+both condensed back to their own baselines after this round's comments); `check:theme-contrast`
+all 856/856 pairs PASS; `check:parity` 106/106 + 24/24 (unaffected); `check:drag-regions` 0
+violations. `spec.md`'s new 2026-10-20 "gate round 3" Clarifications entry and FR-092's own
+amended text record every correction. **A fresh FINAL LIVE-VERIFIED PASS is still pending the
+next build slot** -- not yet run.
