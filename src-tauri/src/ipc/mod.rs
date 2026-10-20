@@ -30,6 +30,7 @@ pub mod attachments;
 pub mod chat;
 pub mod clipboard;
 pub mod conversations;
+pub mod debug;
 pub mod file_attachments;
 pub mod file_explorer;
 pub mod files;
@@ -164,6 +165,7 @@ impl Dispatcher {
 /// an empty, pre-declared stub: its `register` is a no-op until that lane lands.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings::register(dispatcher);
+    debug::register(dispatcher);
     readiness::register(dispatcher);
     repositories::register(dispatcher);
     sessions_lifecycle::register(dispatcher);

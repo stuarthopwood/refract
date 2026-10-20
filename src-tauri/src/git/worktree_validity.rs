@@ -192,6 +192,34 @@ pub async fn worktree_is_valid(repo: &Path, worktree_path: &Path) -> WorktreeVal
     registered_validity(worktree_path, registered.as_deref()).await
 }
 
+/// Issue #891 gate round (S4): `is_worktree_registered`'s own bool contract is documented as
+/// safe ONLY for its one external caller (`delete_check_for_session`, a confirmation-text-only
+/// read where collapsing a timeout to "not registered" costs nothing worse than slightly
+/// different wording). `remove_session_worktree` decides a DESTRUCTIVE branch (registered vs.
+/// orphan removal path) from the same underlying signal, where that same collapse would
+/// misroute an actually-registered-but-slow-to-confirm worktree down the orphan path, silently
+/// skipping the git metadata contract (resolving and removing its own admin entry) and leaving
+/// a dangling stale entry behind. This three-state version keeps `Unknown` distinct so that
+/// caller can refuse and ask for a Retry instead of guessing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RegistrationState {
+    Registered,
+    NotRegistered,
+    Unknown,
+}
+
+pub(crate) async fn worktree_registration_state(
+    repo: &Path,
+    worktree_path: &Path,
+) -> RegistrationState {
+    let target = canonical_comparable_path(worktree_path).await;
+    match list_registered_worktrees(repo).await {
+        None => RegistrationState::Unknown,
+        Some(list) if list.contains(&target) => RegistrationState::Registered,
+        Some(_) => RegistrationState::NotRegistered,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -32,12 +32,15 @@ import type {
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
+import type { DebugApi } from './ipc-debug';
+import type { LeftoverSummary } from './ipc-sessions';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth';
+import type { HolidayTouches } from './holidayTouches';
 import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -95,6 +98,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
+  | 'worktree-held'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
@@ -275,6 +279,11 @@ export interface MergeInput {
   expectedHeadSha: string;
 }
 
+/** `ipc-sessions.ts`'s own `LeftoverSummary` has the full reasoning -- split out there (issue
+ * #891) to keep this file at its own file-size baseline (issue #806), re-exported here so every
+ * existing import from `../../shared/ipc` keeps working unchanged. */
+export type { LeftoverSummary } from './ipc-sessions';
+
 // ---------------------------------------------------------------------------
 // Channel names
 // ---------------------------------------------------------------------------
@@ -296,6 +305,7 @@ export const IPC_REQUESTS = {
   SESSIONS_ARCHIVE: 'sessions.archive',
   SESSIONS_RESTORE: 'sessions.restore',
   SESSIONS_DELETE_CHECK: 'sessions.deleteCheck',
+  SESSIONS_DELETE_LEFTOVER_SUMMARY: 'sessions.deleteLeftoverSummary',
   SESSIONS_DELETE: 'sessions.delete',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
@@ -357,6 +367,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'settings.setSessionListCollapse',
   SETTINGS_SET_PULL_REQUESTS_LIST_WIDTH: 'settings.setPullRequestsListWidth',
   SETTINGS_SET_CHAT_WIDTH: 'settings.setChatWidth',
+  SETTINGS_SET_HOLIDAY_TOUCHES: 'settings.setHolidayTouches',
+  DEBUG_GET_OVERRIDES: 'debug.getOverrides',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -474,6 +486,11 @@ export interface RefractApi extends UpdatesApi {
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
+    /** Issue #891: a background filesystem walk, separate from `deleteCheck`, listing generated
+     * folders and other files the delete would remove. Can take real time against a large
+     * worktree -- the Delete dialog shows "Checking files…" until it resolves and never gates
+     * Delete on it. */
+    deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>;
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
@@ -689,9 +706,15 @@ export interface RefractApi extends UpdatesApi {
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772: absent means enabled on Electron (no Electron implementation).
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
+    setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setPullRequestsListWidth(widthPx: number): Promise<Result<Settings>>; // #930: one width for every Project; clamped, never rejected, by SettingsStore itself. Pushes settings:changed, no new event.
   };
+
+  /** Issue #1048 (R-lane live-check harness): debug-build-only knobs (`ipc-debug.ts`'s own
+   * `DebugApi` has the full reasoning) -- split out there to keep this file at its own
+   * file-size baseline (issue #806). */
+  debug: DebugApi;
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,
    * never a file Refract edits itself -- always OMP's GLOBAL config.yml, never a project override. */

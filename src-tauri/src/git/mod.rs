@@ -18,5 +18,6 @@ pub mod status;
 pub(crate) mod test_support;
 pub mod worktree_delete;
 pub mod worktree_delete_check;
+pub mod worktree_holders;
 pub mod worktree_validity;
 pub mod worktrees;

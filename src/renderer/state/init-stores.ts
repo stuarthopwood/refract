@@ -10,6 +10,7 @@ import { useAskPicksStore } from './ask-picks-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
+import { initHolidayOverrides } from './holiday-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
@@ -387,5 +388,9 @@ export function initStores(): void {
   void (async () => {
     const result = await window.refract.updates.getState()
     if (result.ok) useUpdateStore.getState().setState(result.value)
+  })()
+
+  void (async () => {
+    await initHolidayOverrides()
   })()
 }

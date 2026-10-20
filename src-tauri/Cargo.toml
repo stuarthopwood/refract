@@ -119,4 +119,8 @@ windows = { version = "0.62.2", features = [
   # no public Tauri/tao API reaches on Windows (that function's own doc comment).
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
+  # Issue #891: `RmStartSession`/`RmRegisterResources`/`RmGetList`/`RmEndSession`
+  # (`git/worktree_holders.rs`) name a program (and pid) holding a file open inside a Session's
+  # worktree before Delete touches anything.
+  "Win32_System_RestartManager",
 ] }
