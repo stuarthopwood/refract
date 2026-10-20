@@ -4668,3 +4668,177 @@ test`, `cargo clippy -D warnings`, Tauri debug build); `verify-891-delete-leftov
 failures, 3 honest `notExercised`**, `gitHead` matches, `dirty: false`. All acceptance scenarios
 PASS, including (c) and (d)'s Retry succeeding on a single click (the real `fs/worktree_access.rs`
 read/write-lock fix, not a retry-loop band-aid). All five screenshots viewed directly.
+
+## Phase 71: Composer command pill, no spelling underline (#1050, FR-092)
+
+(Next free numbers against `origin/main` at this branch's own cut, b29367aa: Phase 70/T339-T344
+claimed by #891 above, so this phase claims Phase 71/T345 onward; the highest FR in this spec is
+FR-091, so this phase claims FR-092.)
+
+**Goal**: a recognised leading command or skill token in the composer's draft gets a subtle
+accent pill (`--card` fill, `--accent-text` glyphs) and the box turns spellcheck off while it
+shows; an unrecognised token (`/zzz`) gets neither. Decided (Skippy, delegated by Stuart
+2026-10-19, away mode, issue #1050; reversible on the issue) -- see spec.md's own 2026-10-20
+Clarifications entry for the six-point decision record.
+
+- [X] T345 Docs convergence: this phase, `spec.md` FR-092 (new, amends FR-032/FR-033) and its
+  dated `### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)`
+  Clarifications entry recording all six decided points, including the `--muted` -> `--card`
+  pill-fill correction found by measurement (not by eye, per the issue's own instruction).
+  `docs/PLAN.md`'s "Composer command pill" row.
+- [X] T346 `src/renderer/features/chat/CommandPillOverlay.tsx` (new): `findRecognisedCommandToken`
+  (reuses `parseSlashCommand`/`classifySlashInvocation` from `shared/slash-commands.ts` against
+  the composer's own `commands` list -- never a hard-coded copy of either), `CommandPillSegments`
+  (the invisible-gap/pill/invisible-gap render, same shape `ChipOverlaySegments` already uses,
+  `rounded-sm bg-card text-accent-text [box-decoration-break:clone]`, no border, no padding so no
+  layout shift), and `useCommandPillOverlay` (the memo/ref/scroll-sync-on-mount hook) --
+  `MessageInput.tsx`'s own file-size baseline (1632 lines) had zero headroom, so every piece of
+  logic beyond the bare integration call lives here.
+- [X] T347 `src/renderer/features/chat/MessageInput.tsx`: wires `useCommandPillOverlay`, the new
+  overlay div (same inert/`aria-hidden`/scroll-synced box-model-matching pattern as the ghost-
+  text/chip overlays beside it) and `spellCheck={!commandToken}` on the `<textarea>`, plus the
+  overlay's own scroll sync in the existing `onScroll` handler -- net file-size growth kept at
+  zero against the baseline (condensed one pre-existing wrapped comment by the same margin the
+  new wiring needed; `pnpm check:file-size` confirms 1631/1632, 0 cap violations).
+- [X] T348 `scripts/theme-contrast-pairs.mjs`: new `{ fg: 'accent-text', bg: 'card', min: 7,
+  onlyThemes: ['dark-high-contrast'] }` pair (the generic `accent-text`/`card` 4.5:1 pair already
+  existed and already covers every preset's own baseline floor for this pill). `pnpm check:
+  theme-contrast` confirms all 830 pairs PASS across all five presets.
+- [X] T349 Live CDP verification (`scripts/verify-1050-command-pill.mjs`, fake-omp tape
+  `1050-command-pill.jsonl` carrying the native `/btw` built-in plus one tape-provided
+  `source: 'skill'` descriptor): `/btw hi` and `/skill:demo-review do it` show the pill and
+  `spellCheck === false`; `/zzz` shows neither; the pill's own rect sits over the token's own
+  glyph box (measured against the textarea's own padding, not a guessed selector); the textarea's
+  own `getBoundingClientRect().height`/`scrollHeight` and `selectionStart`/`selectionEnd` after
+  an identical keystroke sequence are identical with and without the pill; spellcheck returns the
+  instant the leading slash is deleted; arguments render as plain invisible-gap text (asserted
+  structurally, not by pixel guess); the pill stays aligned across all five theme presets and in
+  a scrolled multi-line draft (`scrollTop` sync asserted directly); screenshots per state.
+
+**Non-build checks** (re-run after merging `origin/main` twice, `3140b87c`): `pnpm typecheck`
+clean; `pnpm test` 148/148 passed (no new renderer tests, per the prototyping-phase rule); `node
+scripts/check-indent.mjs` (0 odd-indent lines across 426 files); `node scripts/check-file-
+size.mjs` (0 cap violations, `MessageInput.tsx` 1631/1632); `node scripts/check-theme-
+contrast.mjs` (all 830 pairs PASS); `node scripts/check-parity.mjs` (104/104 requests, 24/24
+events, unaffected by this issue); `node scripts/check-drag-regions.mjs` (0 violations).
+
+**FINAL LIVE-VERIFIED PASS, clean HEAD `3140b87c`**: full chained `ci-local.mjs &&
+verify-1050-command-pill.mjs` -- `ci-local.mjs` all 16 steps PASS (`cargo fmt --check`, `cargo
+test` 731 passed/0 failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build, check:ui-text
+0 leaks); `verify-1050-command-pill.mjs`: **48/48 checks PASS, 0 failures, 0 notExercised**,
+`gitHead` matches, `dirty: false`. Screenshots viewed directly, zoomed 4-8x on the composer: the
+pill renders with a rounded, borderless fill (`--card`) and `--accent-text` glyphs exactly over
+the token in every one of the five presets, no doubled or ghost text anywhere (the real
+textarea's own plain glyphs are fully masked), arguments stay plain, the real caret is visible
+and correctly positioned (end of draft for `/skill:demo-review do it`, position 0 after the
+slash is deleted), and the scrolled-draft screenshot shows the pilled token correctly out of
+view with nothing duplicated at the wrong scroll offset. Draft PR #1064 (`Closes #1050`).
+
+**Gate round 1 remediation (2026-10-20, Code/Test/A11y/UI reviewers, all four independently;
+Sec PASS)**: one HIGH, found by all four -- the opaque pill overlay painted ON TOP of the real
+`<textarea>` (confirmed from `02-pill-btw.png`: the caret at offset 3 was gone), hiding the
+native caret, selection highlight and IME composition inside the recognised token. Fixed with
+the standard "highlight-within-textarea" technique: `CommandPillOverlay` (renamed from
+`CommandPillSegments`) now renders the WHOLE draft as a mirror sitting UNDER the textarea; the
+textarea itself goes `relative z-[1] text-transparent caret-foreground selection:text-foreground`
+(`COMMAND_PILL_TEXTAREA_CLASS`) ONLY while a token is present, so the native caret/selection/IME
+keep painting on the real control, on top of the mirror. `useCommandPillOverlay`'s own scroll
+sync moved from `useEffect` to `useLayoutEffect` (no one-frame flash of the mirror at `scrollTop:
+0` on mount). One MEDIUM: the pill's fill is now a dedicated `--command-pill-bg` token (not
+`--card` directly) -- the gate added a "visibly distinct from the composer surface" floor
+(>=1.4:1) alongside the existing accent-text floor; `--command-pill-bg` resolves to `--muted` in
+Nordic Frost/Cyber Amber (clears both outright) and to `--card` in Dark/Obsidian/Dark (high
+contrast) (an accepted, documented gap on the new floor only -- proven analytically that no
+single colour clears both there, see `globals.css`'s own per-theme comment and spec.md's new
+2026-10-20 gate-round-1 Clarifications entry). One file-organisation fix (no separate severity,
+bundled with the HIGH): `COMPOSER_MIRROR_CLASS` is now a shared constant (`CommandPillOverlay.tsx`)
+used by the ghost-text, chip AND pill mirrors (was three verbatim copies of the same className
+string in `MessageInput.tsx`); `[scrollbar-gutter:stable]` added to it and to the textarea
+unconditionally (a scrolled draft's real content width must match every mirror's own wrapping
+width exactly); a trailing `\n` gets a zero-width-space line-box fix. `MessageInput.tsx`'s own
+earlier single-line-squashed import/render (a mis-aimed attempt to protect its file-size cap)
+reverted to normally-formatted code -- the real saving comes from `COMPOSER_MIRROR_CLASS`
+deduplication instead, landing at **1627/1632**, five lines BELOW the cap, not merely at it.
+`scripts/verify-1050-command-pill.mjs` gained: pixel-level, blink-safe caret-visibility checks at
+offset 0 and mid-token; a real Ctrl+A selection-highlight pixel check; completing a partial
+command via a real slash-menu click; `/btw` -> `/btwx` (an unrecognised edit) dropping the pill;
+a long wrapping skill name; a pasted-text chip beside the pill (ghost text recorded
+`notExercised`: no scripted `predict_word` reply exists in this tape, and FR-058 degrades
+silently on no reply); the overlay's own structural proof that arguments stay plain, rewritten
+for the new whole-draft mirror shape. Split into `verify-1050-command-pill-helpers.mjs` (both
+under the 600-line cap, no baseline needed). Non-build checks re-run clean: `pnpm typecheck`;
+`pnpm test` 148/148; `check:indent` 0/427 files; `check:file-size` 0 violations
+(`MessageInput.tsx` 1627/1632); `check:theme-contrast` all 837 pairs PASS; `check:parity` 106/106
+requests + 24/24 events (the +2 requests are Main's own unrelated #1063 merge, not this issue);
+`check:drag-regions` 0 violations. **A fresh FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs
+&& verify-1050-command-pill.mjs` run) is pending the next build slot** -- not yet run; the
+paragraph above this one is round 0's own build, superseded by this remediation.
+
+**Gate round 2 remediation (2026-10-20, Main)**: round 1's accepted 3-theme gap (Dark/Obsidian/
+Dark (high contrast) could not clear the new 1.4:1 fill-vs-composer floor without dropping
+`--accent-text` below its own 4.5:1 floor) was not accepted -- the conflict is `--accent-text`
+against the fill, so the pill now gets its OWN text token too. `globals.css`: `--command-pill-bg`
+is a plain neutral step in every preset now (Dark `oklch(0.31 0 0)`, Obsidian `oklch(0.32 0.02
+255)`, Dark high contrast `oklch(0.30 0 0)`, Nordic Frost/Cyber Amber unchanged `var(--muted)`),
+chosen only to clear 1.4:1 against the effective composer backdrop (measured 1.50-1.52:1 in all
+five); `--command-pill-fg` (new) is the same hue as `--accent-text`, lightened/desaturated only
+as far as needed to clear 4.5:1 (7:1 Dark high contrast) on that fill (Dark 4.66:1, Obsidian
+4.54:1, Dark high contrast 7.26:1, all measured) -- a plain alias of `--accent-text` in Nordic
+Frost/Cyber Amber, which already cleared both floors. `CommandPillOverlay.tsx`'s `PILL_CLASS`
+now reads `text-command-pill-fg` (was `text-accent-text`). `theme-contrast-pairs.mjs`: the
+informational exception is gone -- `command-pill-fg`/`command-pill-bg` (4.5:1, 7:1 HC) and
+`command-pill-bg`/background-or-composer-background (1.4:1) are BOTH enforced in every preset
+now, measured via `node scripts/check-theme-contrast.mjs`: **all 840 pairs PASS, no gap, no
+informational exception.** `spec.md`'s new 2026-10-20 "gate round 2" Clarifications entry and
+FR-092's own amended text record the correction. Non-build checks re-run clean (unchanged file-
+size/indent/parity/drag-region numbers from round 1; theme-contrast now 840/840, was 837/837).
+**A fresh FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+**Gate round 3 remediation (2026-10-20, Main)**: round 2's delta gate found one CRITICAL (Send/
+Stop unclickable while a pill shows, `MessageInput.tsx`'s Send/Stop button container had no
+z-index at all so the pill-only textarea `z-[1]` painted over it -- fixed with its own `z-[3]`,
+full stacking order documented in `CommandPillOverlay.tsx`'s `COMMAND_PILL_TEXTAREA_CLASS`
+comment), two HIGHs (the selection highlight painted nothing -- `selection:text-foreground` set
+only a text colour, and CSS falls an author `::selection` rule's unset properties back to the
+element's ordinary value, never the UA's special highlight; fixed with a real
+`selection:bg-composer-selection-bg` fill, new `--composer-selection-bg`/`-fg` tokens that are
+plain aliases of the already-enforced `accent-foreground`/`accent` pair -- and an IME
+composition underline would have gone invisible too under the old `color`-based masking, since
+anything reading `color` was hidden along with the glyphs; fixed by masking via
+`[-webkit-text-fill-color:transparent]` instead, which leaves `color` itself real, with its own
+`::selection`/`forced-colors` overrides since that property doesn't inherit the UA's forced-
+colours safety net the way `color` does) and two MEDIUMs (a ~150ms flicker from the shared
+`Textarea` primitive's own `transition-colors` fading the mask on/off out of sync with the
+mirror's instant mount/unmount -- fixed by narrowing the composer's OWN textarea to
+`transition-[border-color,box-shadow]`, not touching the shared primitive; Dark/Obsidian's
+`--command-pill-fg` hue had drifted 15-25 degrees off `--accent-text`'s real measured hue --
+retuned to 279/280 respectively, Dark 4.65:1/Obsidian 4.75:1/Dark high contrast 7.26:1, all
+measured, `check:theme-contrast` 856/856 PASS including two new enforced `composer-selection-
+fg`/`composer-selection-bg` pairs). Plus a UI Low (the pill's own fill now extends 2px past the
+token's glyph box via `box-shadow`, which never reserves layout space, so edge glyphs no longer
+sit flush against the fill) and a spec/notExercised Low (the IME `notExercised` entry narrowed to
+what is actually proven: composed text shows through the mirror correctly; the underline's own
+colour is still not live-verified, no IME harness built).
+
+`scripts/verify-1050-command-pill.mjs` gained: a real `elementFromPoint` + pointer-click proof
+that Send reaches the button while a pill shows (run LAST, since a real click genuinely consumes
+the fake-omp tape's one scripted `prompt` reply); the selection-highlight check rewritten to
+sample a GLYPH-FREE cell (the space after the token, not the pill's own inked centre, which gave
+a false pass from ordinary glyph-rendering noise) and assert the selected pixel matches the
+live-resolved `--composer-selection-bg`, not merely "differs"; the resting `02-pill-btw.png`
+shot now taken BEFORE Ctrl+A (it used to capture the already-selected state); a new
+`02b-selection-highlight.png` for the selected state; an OKLCH hue-difference assertion (<=5
+degrees from `--accent-text`) in the theme loop; a stuck Profile-name tooltip now explicitly
+dismissed (pointer moved to a neutral point, waited for `[role="tooltip"]` to clear) before each
+theme's own measurement/screenshot; a caret-visibility check on a WRAPPED visual line of the
+long skill name (offset 150, past the first line) and another after scrolling a long draft to
+its own bottom (previously every caret check only ever covered the unwrapped, unscrolled first
+line); a pasted-text chip's own `elementFromPoint` clickability check beside the pill.
+
+Non-build checks re-run clean: `pnpm typecheck`; `pnpm test` 148/148 (no new tests); `check:
+indent` 0/429; `check:file-size` 0 violations (`MessageInput.tsx` and `theme-contrast-pairs.mjs`
+both condensed back to their own baselines after this round's comments); `check:theme-contrast`
+all 856/856 pairs PASS; `check:parity` 106/106 + 24/24 (unaffected); `check:drag-regions` 0
+violations. `spec.md`'s new 2026-10-20 "gate round 3" Clarifications entry and FR-092's own
+amended text record every correction. **A fresh FINAL LIVE-VERIFIED PASS is still pending the
+next build slot** -- not yet run.
