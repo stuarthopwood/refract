@@ -181,6 +181,47 @@ function brightestPixel(rgba) {
   return best;
 }
 
+/** The transcript's vendored message-scroller (`Transcript.tsx`) sticks to the bottom and
+ * silently re-snaps any plain `scrollTop`/`scrollIntoView` write straight back to the end --
+ * its own `handleViewportScroll` only disengages follow-bottom when it sees the scroll move up
+ * AND `useScrollGestureTracking().isRecentGesture()` is true, which ONLY a real `wheel`/
+ * pointer/touch/key DOM event sets (confirmed live: a `scrollIntoView` call measurably moved
+ * `scrollTop` to its OWN requested value for one frame, then the vendored scroller snapped it
+ * straight back to `scrollHeight - clientHeight` by the time this script's own two-frame
+ * settle read it back). CDP's `Input.dispatchMouseEvent` `mouseWheel` type dispatches a
+ * trusted wheel event the real `onWheel` listener sees, so the resulting scroll-up genuinely
+ * sticks instead of being fought. Returns false (caller fails loudly) if no scrollable
+ * ancestor is found at all even after retrying (the scrollable transcript container's own
+ * `scrollHeight`/`clientHeight` can transiently read equal for a frame or two right after the
+ * Manage-sessions-closed navigation settles -- `Transcript.tsx`'s own "landing" effect comment
+ * describes the same still-settling `content-visibility:auto` window). */
+async function scrollTranscriptToShow(cdp, finderExpr) {
+  let viewportCentre = null;
+  for (let attempt = 0; attempt < 10 && !viewportCentre; attempt++) {
+    if (attempt > 0) await waitTwoFrames(cdp);
+    viewportCentre = await cdp.evaluate(`(() => {
+      const el = ${finderExpr};
+      if (!el) return null;
+      let anc = el.parentElement;
+      while (anc) {
+        const cs = getComputedStyle(anc);
+        if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && anc.scrollHeight > anc.clientHeight) {
+          const r = anc.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }
+        anc = anc.parentElement;
+      }
+      return null;
+    })()`);
+  }
+  if (!viewportCentre) return false;
+  for (let i = 0; i < 8; i++) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: viewportCentre.x, y: viewportCentre.y, deltaX: 0, deltaY: -2000 });
+    await waitTwoFrames(cdp);
+  }
+  return true;
+}
+
 async function main() {
   const findings = [];
   const failures = []; // Wrong measured values, or a target genuinely missing -- ALWAYS fails the run.
@@ -371,20 +412,23 @@ async function main() {
         // 2026-10-20): the echoed user message (DOM-first `.text-chat-foreground`) sits ABOVE
         // the scrolled-to-bottom transcript view (the fixture's own Mermaid diagram pushes it
         // off-screen), so its raw `getBoundingClientRect()` has a NEGATIVE `y`;
-        // `samplePixelRegion`'s `Math.max(0, ...)` clamp then silently samples whatever real
-        // chrome sits at the TOP of the viewport instead (sidebar/header text) -- a false
-        // failure for Dark specifically (first theme iterated, so nothing has yet scrolled the
-        // element further into negative territory the way later iterations' extra round-trips
-        // do) and a false PASS for every other theme only because that unrelated chrome text
-        // happens to also read bright. `scrollIntoView` + a real two-frame settle, then a fresh
-        // `getBoundingClientRect()`, so the rect genuinely points at the chat-prose element --
-        // and the check below now fails loudly (not silently mis-samples) if it ever isn't
-        // fully inside the viewport after that.
-        await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); })()`);
-        await waitTwoFrames(cdp);
+        // `samplePixelRegion`'s `Math.max(0, ...)` clamp then silently sampled whatever real
+        // chrome sat at the TOP of the viewport instead (sidebar/header text) -- a false
+        // failure for Dark specifically (first theme iterated) and a false PASS for every other
+        // theme only because that unrelated chrome text also happened to read bright.
+        // `scrollTranscriptToShow` (real trusted wheel events -- see its own header comment for
+        // why a plain `scrollTop`/`scrollIntoView` write does not stick here) scrolls the
+        // transcript up for real, then a fresh `getBoundingClientRect()` confirms it -- and the
+        // check below now fails loudly (not silently mis-samples) if it is ever not fully
+        // inside the viewport afterwards.
+        const scrolled = await scrollTranscriptToShow(cdp, CHAT_PROSE_FINDER);
+        if (!scrolled) {
+          failures.push(`${theme.name}: chat-prose element has no scrollable ancestor to scroll it into view.`);
+          continue;
+        }
         const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, viewportHeight: window.innerHeight }; })()`);
         if (!chatRect || chatRect.width < 1 || chatRect.height < 1 || chatRect.y < 0 || chatRect.y + chatRect.height > chatRect.viewportHeight) {
-          failures.push(`${theme.name}: chat-prose element has no real, fully-in-viewport paintable rect to sample after scrollIntoView (${JSON.stringify(chatRect)}).`);
+          failures.push(`${theme.name}: chat-prose element has no real, fully-in-viewport paintable rect to sample after scrolling (${JSON.stringify(chatRect)}).`);
         } else {
           const bgRaw = await requireResolvedCssVarColor(cdp, '--background', 'background-color');
           const fgEntry = parseComputedColorToEntry(real.chat);
