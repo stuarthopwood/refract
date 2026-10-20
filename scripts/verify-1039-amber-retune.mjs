@@ -87,6 +87,7 @@ import {
 import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
+import { parseComputedColorToEntry } from './contrast-math.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -136,6 +137,7 @@ const CYBER_AMBER_TEXT_VARS = [
   ['--chat-foreground', 'color'],
   ['--muted-foreground', 'color']
 ];
+const SURFACE_CHROMA_CEILING = 0.002;
 // Gate round 1 (self-review against the issue body's own grill decisions, 2026-10-20): these
 // four were still Cyber Amber's own independent literals (achromatic, but not literally Dark's
 // -- `--ring` in particular was a different lightness, and an earlier draft of this comment
