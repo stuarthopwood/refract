@@ -327,14 +327,17 @@ async function main() {
     await sleep(150);
     const onThemeTrigger = (await getActiveElementAccessibleName(cdp)).name?.startsWith('Theme') ?? false;
     await pressArrow(cdp, 'Right');
-    await cdp.waitFor(`!!document.querySelector('[role="menu"] [role="menuitem"] span')`, { timeoutMs: 5_000, label: 'Theme submenu opened via ArrowRight' }).catch(() => {});
+    await cdp.waitFor(`!!document.querySelector('[role="menu"] [role="menuitemradio"] span')`, { timeoutMs: 5_000, label: 'Theme submenu opened via ArrowRight' }).catch(() => {});
     await sleep(300);
-    const currentMarkerPresent = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.includes('Current'))`);
-    const focusInSubmenu = (await getActiveElementAccessibleName(cdp)).name?.includes('Current') ?? false;
+    // #1043: the Theme submenu is now a real DropdownMenuRadioGroup -- the active preset is the
+    // ONE checked `menuitemradio`, not a row whose textContent happens to include the word
+    // "Current" (that trailing marker is gone, per #1043's own fix).
+    const currentMarkerPresent = await cdp.evaluate(`!!Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.getAttribute('aria-checked') === 'true')`);
+    const focusInSubmenu = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio' && document.activeElement?.getAttribute('aria-checked') === 'true'`);
     if (onThemeTrigger && currentMarkerPresent) {
-      checkPass('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with a "Current" marker visible', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
+      checkPass('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with one checked menuitemradio', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
     } else {
-      checkFail('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with a "Current" marker visible', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
+      checkFail('Keyboard: ArrowDown x2 + ArrowRight opens the Theme submenu with one checked menuitemradio', JSON.stringify({ onThemeTrigger, currentMarkerPresent, focusInSubmenu }));
     }
     await pressArrow(cdp, 'Left');
     await sleep(200);

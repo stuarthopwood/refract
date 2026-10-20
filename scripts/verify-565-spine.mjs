@@ -217,7 +217,10 @@ async function getAccessibleNameAndRole(cdp, selectorExpr) {
  * moves the title-bar overlay colour, never the renderer's `<html>` class the CSS tokens key off
  * -- `theme-store.ts`'s own CRITICAL-remediation comment). A real `mouseMoved` hover before the
  * click matches how Radix's own `DropdownMenuSub` actually opens (pointer-enter, not just a bare
- * click), which the previous attempt's click-only sequence apparently missed. */
+ * click), which the previous attempt's click-only sequence apparently missed. #1043 fix: each
+ * theme row is now a real `role="menuitemradio"` (`DropdownMenuRadioItem`), never
+ * `role="menuitem"` -- the two row-finding selectors below widen to match either role; the
+ * submenu TRIGGER itself (`themeTriggerFinder`) is untouched, still `role="menuitem"`. */
 async function switchTheme(cdp, themeId, themeName) {
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile dropdown menu open' });
@@ -228,11 +231,11 @@ async function switchTheme(cdp, themeId, themeName) {
   await sleep(400);
   await cdp.click(themeTriggerFinder);
   await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
+    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1, [role="menuitemradio"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
     { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` },
   );
   await cdp.click(
-    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`,
+    `Array.from(document.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`,
   );
   await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
     timeoutMs: 15_000,

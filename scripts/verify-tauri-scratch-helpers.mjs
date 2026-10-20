@@ -255,7 +255,12 @@ export async function axText(cdp, selectorExpr) {
  * callout.mjs`, `verify-570-tool-colours.mjs`, `verify-925-924-polish.mjs`, `verify-926-attach-
  * any-file.mjs`, `verify-927-928-quiet-composer.mjs`, `verify-937-advisor-chip.mjs`,
  * `verify-938-slash-rest.mjs`, `verify-941-part2.mjs`, `verify-941-stage-naming.mjs`, `verify-
- * 980-toast-send.mjs`, `verify-991-stage-focus.mjs`, `verify-tauri-569.mjs`). */
+ * 980-toast-send.mjs`, `verify-991-stage-focus.mjs`, `verify-tauri-569.mjs`).
+ *
+ * #1043 fix: each theme row is now a real `role="menuitemradio"` (`DropdownMenuRadioItem`),
+ * never `role="menuitem"` -- the two row-finding selectors below (visibility wait, click) widen
+ * to match either role; the submenu TRIGGER itself (`themeTriggerFinder`) is untouched, still a
+ * plain `DropdownMenuSubTrigger`, still `role="menuitem"`. */
 export async function switchTheme(cdp, themeId, themeName) {
   await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Every menu closed before switching theme' });
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
@@ -270,11 +275,11 @@ export async function switchTheme(cdp, themeId, themeName) {
   await sleep(400);
   await cdp.click(themeTriggerFinder);
   await cdp.waitFor(
-    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
+    `!!Array.from(document.querySelectorAll('[role="menuitem"] span.flex-1, [role="menuitemradio"] span.flex-1')).find((el) => el.textContent.trim() === ${JSON.stringify(themeName)})`,
     { timeoutMs: 10_000, label: `Theme submenu open, "${themeName}" item visible` }
   );
   await cdp.click(
-    `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`
+    `Array.from(document.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')).find((el) => { const span = el.querySelector('span.flex-1'); return span && span.textContent.trim() === ${JSON.stringify(themeName)}; })`
   );
   await cdp.waitFor(`document.documentElement.classList.contains(${JSON.stringify(`theme-${themeId}`)})`, {
     timeoutMs: 15_000,
