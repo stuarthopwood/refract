@@ -162,10 +162,14 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
         if (!isFocusStranded(document.activeElement, null)) return
         const pill = document.querySelector(`[aria-controls="todo-panel-${sessionId}"]`)
         if (pill instanceof HTMLElement) {
-          pill.focus()
+          // Gate round 3 fix (Main's diagnosis, #700 E4): a plain `.focus()` here (no
+          // `preventScroll`) lets the browser scroll this focus target into view, which can
+          // disturb an unrelated scrollable ancestor's own position -- neither focus-restore
+          // target is inside the todo list itself, so nothing here should ever move ITS scroll.
+          pill.focus({ preventScroll: true })
           return
         }
-        document.querySelector<HTMLElement>('[aria-label="Message"]')?.focus()
+        document.querySelector<HTMLElement>('[aria-label="Message"]')?.focus({ preventScroll: true })
       })
     }
   }, [active, sessionId])
@@ -242,7 +246,7 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
           onKeyDown={() => {
             userScrolledRef.current = true
           }}
-          className="mt-1 max-h-[min(12rem,30vh)] overflow-y-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+          className="mt-1 max-h-[min(12rem,30vh)] overflow-y-auto [overflow-anchor:none] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
           {todoTree.map((phase, phaseIndex) => (
             <TodoPhaseGroup key={phaseIndex} phase={phase} phaseIndex={phaseIndex} showHeader={todoTree.length > 1} currentTaskKey={currentTaskKey} />
