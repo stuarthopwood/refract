@@ -136,7 +136,17 @@ gate config, so it needs a human.
 - The agent session runs the classify, review, and fix loop locally, in any harness.
 - A small required CI check recomputes the rule floor from the diff without a model. It fails when
   the gate record is missing or stale, or when the record's ratings are below the floor.
+- The check runs from the base branch, never from the PR. The workflow uses
+  `pull_request_target`, so GitHub runs the base branch's copy of the workflow. It checks out the
+  base ref and runs the base copy of the config and scripts. It reads the PR's diff through the
+  API and never executes PR code. Branch protection on main requires the check. A PR that
+  changes the config, the scripts, or the workflow is rated by the old rules, which flag it as
+  human-required (gate self-files), so a PR cannot weaken the rules it is checked against.
 - A human-authored PR requests a gate run the same way.
+- Human approval (Q17): in Refract the agent acts with Stuart's GitHub identity, so the
+  `review-gate:human-approved` label is an honour system there. A repository with several people
+  (RepeatPlus) uses branch protection's required approval from a reviewer who is not the PR
+  author instead of the label.
 
 ## App-wide audit
 
@@ -192,6 +202,7 @@ These are the interfaces the core, each repository, and the CI check share. Valu
   "testPolicy": "no-new-tests",
   "bots": [],
   "mergeAuthority": { "Trivial": "auto", "Standard": "auto", "Elevated": "human", "Severe": "human" },
+  "humanApproval": "label",
   "auditEveryMerges": 10,
   "auditMarker": "docs/audit/last-app-wide.md"
 }
@@ -199,7 +210,8 @@ These are the interfaces the core, each repository, and the CI check share. Valu
 
 - `acSource.kind`: `spec-md`, `github-issue`, or `jira`. `testPolicy`: `no-new-tests` or
   `tests-expected`. Each `bots` entry: `name`, `login`, `timeoutMin` (default 15), and
-  `blocksIfMissing`. Size thresholds are defaults.
+  `blocksIfMissing`. `humanApproval`: `label` (Refract) or `required-review` (branch protection
+  requires a non-author approval). Size thresholds are defaults.
 - The script has core defaults built in for the CI, migration, dependency-manifest, and gate
   self-file categories (`.github/**`, `**/migrations/**`, package manifests and lockfiles,
   `scripts/review-gate/**`). Repository `pathRules` map the categories that depend on layout,
@@ -254,8 +266,10 @@ These are the interfaces the core, each repository, and the CI check share. Valu
   any rating is below the floor, or when a floor human-required category is missing from the
   record.
 - `PASS` succeeds. `NEEDS_HUMAN` succeeds only while the PR carries the
-  `review-gate:human-approved` label (default: a solo maintainer cannot approve their own PR on
-  GitHub, so a label stands in for the approval). `FAIL` fails.
+  `review-gate:human-approved` label, in repositories configured for the label (a solo
+  maintainer cannot approve their own PR on GitHub). Repositories that use required approvals
+  leave `NEEDS_HUMAN` to branch protection. `FAIL` fails.
+- The check runs the base branch's copy of this script and the config (see Enforcement).
 
 ## Where it lives
 
@@ -312,3 +326,4 @@ These are the interfaces the core, each repository, and the CI check share. Valu
 | Q14 | Bots in Refract | None for the trial |
 | Q15 | Home | User-level core; repository holds config (refined by Q16) |
 | Q16 | Floor logic home | Vendor a copy into each repository; canonical copy in the core |
+| Q17 | Proof of human approval | Shared identity; the label is an honour system in Refract; RepeatPlus uses required approvals from a non-author |
