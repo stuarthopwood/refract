@@ -4,6 +4,7 @@
 import type { ThemeId } from './themes';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches';
 import type { TranscriptDisplaySettings } from './transcriptDisplay';
+import type { TodoPhase } from './todo';
 
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
@@ -322,8 +323,7 @@ export interface DiffStat {
 }
 
 /** Spec 004 FR-002 to FR-008, FR-021: the chip row's live data, assembled in main
- * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately
- * absent: it is a pure client clock the renderer computes itself (FR-005). */
+ * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately absent: it is a pure client clock the renderer computes itself (FR-005). */
 export interface SessionReadout {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
@@ -334,7 +334,7 @@ export interface SessionReadout {
   // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
   // "0 finished" (SubagentsChip, ReadoutChips.tsx); `cancelled` (issue #563) is its own count too.
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null; // null = turn has started none (chip hidden)
-  todoProgress: { done: number; total: number } | null; branch?: { name: string; detached: boolean } | null; // todoProgress: null = no task list; branch (#724/R5): live branch or (detached) sha
+  todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null; // todoTree: null = no task list; the shared pure derive (readout/todoDerive.ts) computes done/total/current task from it (decision record item 4, issue #700/#701); branch (#724/R5): live branch or (detached) sha
   todoPhases: Array<{ name: string; pendingCount: number }> | null; // Issue #941 "Up next": pending Todo phases (name, outstanding task count); null = no task list or every phase finished (Rust-only field)
 }
 

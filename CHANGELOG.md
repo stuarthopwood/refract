@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.6.0 (2026-10-20)
+
+### Features
+
+- feat(#741): composer role chip, pin persistence, provider-friendly details card (https://github.com/stuarthopwood/refract/pull/1037)
+- feat(#1048): Holiday touches -- framework + Halloween (https://github.com/stuarthopwood/refract/pull/1053)
+
+### Fixes
+
+- fix(#891): Delete handles full/long-path worktrees and holder preflight (https://github.com/stuarthopwood/refract/pull/1038)
+- fix(#1043): Theme submenu is a real radio list on the shared DropdownMenuRadioItem (https://github.com/stuarthopwood/refract/pull/1057)
+
+### Other
+
+- docs(plan): place #1039 (Cyber Amber retune, softer text) and amend the chat text colour rule (https://github.com/stuarthopwood/refract/pull/1040)
+- docs(plan): place #1041 Advisor source tag (https://github.com/stuarthopwood/refract/pull/1042)
+- docs(plan): place #1043 Theme submenu radios; record the menu radio rule (https://github.com/stuarthopwood/refract/pull/1044)
+- docs(plan): OMP 18.10.2-18.12.2 review; retarget #520 to 18.12.2 (https://github.com/stuarthopwood/refract/pull/1045)
+- docs(plan): #476 Session cleanup grilled; glossary Delete and Session cleanup (https://github.com/stuarthopwood/refract/pull/1046)
+- docs(plan): #456 amended, Markdown and syntax tokens take each theme's accent (https://github.com/stuarthopwood/refract/pull/1047)
+- docs(plan): place #1048 Holiday touches, add the decorative-motion exception and glossary term (https://github.com/stuarthopwood/refract/pull/1049)
+- docs(plan): place #1050 composer command pill (https://github.com/stuarthopwood/refract/pull/1051)
+- docs(plan): place #1055 Delete dialog follow-ups (https://github.com/stuarthopwood/refract/pull/1056)
+- docs: plan update for #1048 slice 1 and #1058 follow-ups (https://github.com/stuarthopwood/refract/pull/1059)
+- docs(plan): #464 slice map, slice 1 in-flight, #1060/#1061 rows (https://github.com/stuarthopwood/refract/pull/1062)
+- chore: move holiday IPC types out of ipc.ts to clear the file-size cap (https://github.com/stuarthopwood/refract/pull/1063)
+- docs(plan): #1043 done, #1065 follow-ups placed (https://github.com/stuarthopwood/refract/pull/1066)
+
 ## v0.5.0 (2026-10-19)
 
 ### Features

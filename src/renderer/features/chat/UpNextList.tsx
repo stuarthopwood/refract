@@ -16,17 +16,20 @@
 // `stagesCount === 0` also hides it: "below the Subagent chain" has no anchor point in a turn
 // that never ran a `task()` call at all. A sibling of `SubagentChainRow` (`Transcript.tsx`), not
 // nested inside its own collapsible content -- always visible regardless of whether the chain
-// row itself is expanded or collapsed.
+// row itself is expanded or collapsed. Hidden entirely while this Session's todo list is
+// PINNED (issue #700/#701 decision record item 2: "the in-transcript Up next list hides, so the
+// plan never shows twice") -- `PinnedTodoPanel.tsx` shows the same live tree in full.
 import { useId } from 'react'
-import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, useReadoutStore, useTodoPinStore } from '@/state'
 
 export function UpNextList({ sessionId, stagesCount, isLastTurn }: { sessionId: string | null; stagesCount: number; isLastTurn: boolean }) {
   const todoPhases = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoPhases : null))
+  const pinned = useTodoPinStore((s) => (sessionId ? (s.pinnedBySession[sessionId] ?? false) : false))
   // Gate round 1 fix (issue #941 part 2, item 4, HIGH): a labelled list (`useId`, the heading's
   // own `id`, `aria-labelledby` on the `<ul>`) -- a screen reader now reads "Up next, list, N
   // items" the moment focus or a linear read reaches it, not a bare, unnamed list.
   const headingId = useId()
-  if (!isLastTurn || stagesCount === 0 || !todoPhases || todoPhases.length === 0) return null
+  if (!isLastTurn || stagesCount === 0 || !todoPhases || todoPhases.length === 0 || pinned) return null
   return (
     // Gate round 3 fix (issue #941 part 2, item 4, MEDIUM): explicit `aria-live="off"` -- this
     // renders inside `Transcript.tsx`'s own `role="log"` region, whose implicit live-region
