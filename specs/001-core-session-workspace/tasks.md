@@ -4842,3 +4842,136 @@ all 856/856 pairs PASS; `check:parity` 106/106 + 24/24 (unaffected); `check:drag
 violations. `spec.md`'s new 2026-10-20 "gate round 3" Clarifications entry and FR-092's own
 amended text record every correction. **A fresh FINAL LIVE-VERIFIED PASS is still pending the
 next build slot** -- not yet run.
+
+## Phase 72: Agent rows show only the goal (#1077, FR-093)
+
+(Next free numbers against `origin/main` at this branch's own cut, `4996ede9`: Phase 71/
+T345-T349 claimed by #1050 above, so this phase claims Phase 72/T350 onward; the highest FR in
+this spec is FR-092, so this phase claims FR-093.)
+
+**Goal**: an expanded Stage row or subagent row shows only the goal; the full Prompt/Result
+move behind a "See input & output" toggle. Decided (Stuart, `grill-with-docs`, 2026-10-20,
+issue #1077; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the
+four-point decision record.
+
+- [X] T350 Docs convergence: this phase, `spec.md` FR-093 (new, amends FR-067/FR-068) and its
+  dated `### Session 2026-10-20 (Agent rows show only the goal, #1077)` Clarifications entry
+  recording the four decided points. `docs/PLAN.md`'s "Agent rows show only the goal" row status.
+- [X] T351 `src/renderer/components/InlineDisclosure.tsx` (new, ADR 0003): the shared text-link
+  disclosure shape lifted out of `Markdown.tsx`'s `MermaidBlock` "Show source" toggle -- a
+  caller-controlled `open`/`onOpenChange`, `aria-expanded`/`aria-controls`, and an Escape
+  handler that closes and returns focus to the trigger whether focus sits on the trigger
+  itself or deep inside (a CodeBlock's own Copy button) -- the WCAG 2.4.3 hazard issues
+  #991/#1001 fixed one level up for a Stage's own trigger. `Markdown.tsx`'s `MermaidBlock`
+  ported onto it unchanged (net line reduction) -- it gains both Escape-to-close and a correct
+  `:focus-visible` ring for free, live-checked directly (gate round 1 fix, item 8).
+- [X] T352 `src/renderer/features/chat/stageMeta.ts`: a shared `findFirstContentLine` helper
+  (gate round 1 fix, item 2) replaces the copied line-finding loop in both `extractContextLabel`
+  and the new `extractTaskGoalPreview` -- `item.task`'s own first non-blank lines, heading
+  markers and blank lines cleaned THROUGHOUT (not only the first line), capped at 1500
+  code-points (`GOAL_PREVIEW_MAX_CHARS`, a code-point-safe `truncateByCodePoint`, never
+  `.slice()`, which can split a surrogate pair) as a DOM-size guard only -- the visible clamp is
+  the caller's own `line-clamp-3`.
+- [X] T353 `src/renderer/features/chat/ToolRow.tsx`/`SubagentGoalPreview.tsx` (new, own file,
+  file-size): `SubagentRowProps.showGoal` is required (no implicit default, gate round 1 fix,
+  item 10); `SubagentGoalPreview` (exported) renders the clamped goal paragraph alone, reused by
+  both `SubagentBody` (a Stage member's own goal) and `StageGroupRow` directly (a context-less
+  solo Stage's own goal, item 7); `SubagentBody` wraps its existing Prompt/Result blocks in the
+  new `InlineDisclosure` ("See input"/"See input & output", gated on `item.result`'s own
+  presence, flipping to "Hide ..." once open), its own label carrying an `sr-only` suffix naming
+  the agent (item 9, every sibling link otherwise reads identical visible text).
+- [X] T354 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own direct
+  `SubagentBody` call (solo Stage) passes `showGoal={!group.context}`; each multi-agent member's
+  own `SubagentRow` call passes `showGoal={!toolCallIdsWithContext.has(item.toolCallId)}` (gate
+  round 1 fix, item 1: `item.context` alone is unreliable per member -- the wire stamps a call's
+  own `context` argument onto only that call's spec-index-0 item, so a correlation by
+  `toolCallId` is required for a call's 2nd+ member to resolve correctly). A context-less solo
+  Stage's own goal renders at the Stage level, before "Uses:" (item 7); a failed/cancelled/
+  exited solo Stage also keeps its own one-line failure reason visible there (item 6).
+- [X] T355 Live CDP verification (`scripts/verify-1077-agent-goal.mjs`, new fake-omp tape
+  `stages-1077.jsonl`): an expanded Stage row shows the goal and the toggle link with no Prompt/
+  Result visible; the link opens and closes input/output with the correct labels and
+  `aria-expanded`/`aria-controls`; a still-running agent shows "See input" (no "& output"); a
+  single subagent row (no Stage goal) shows its own task as the goal, clamped to 3 lines;
+  closing the toggle (Escape, focus deep inside) returns focus to the link; reopening starts
+  collapsed again (no remembered state); screenshots in 2 themes with no stray hover card/
+  tooltip open. `report.json` records `gitHead`, `dirty`, failures and `notExercised`.
+
+**Non-build checks**: `pnpm typecheck` clean; `pnpm test` 148/148 passed (no new renderer
+tests, prototyping-phase rule); `node scripts/check-indent.mjs` 0 odd-indent lines across 451
+files scanned (3 allow-listed); `node scripts/check-file-size.mjs` 0 cap violations across 516
+files scanned (`ToolRow.tsx` 594/600, `Markdown.tsx` 994/997 baseline, both within cap, no
+growth past Markdown.tsx's own baseline); `node scripts/check-theme-contrast.mjs` all 872 pairs
+across 5 themes PASS (no new token, reuses `--muted-foreground`/`--foreground`/`--ring`); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 152 files.
+
+**FINAL LIVE-VERIFIED PASS**: `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest 148/148, indent, theme-
+contrast, drag-regions, parity, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1077-agent-goal.mjs` against the just-built exe: **gitHead
+`1f775683e761c0a2e4f66642ed54205c87b69237`, dirty: false, exeSha256 `601c930a0656…`, 0 failures,
+1 notExercised, exitCode 0**. Two script bugs found and fixed first, neither a product defect:
+Phase 8 opened a member's own toggle before its owning Stage had settled (a missing wait); a
+plain `cdp.click` on a nested member toggle landed off-screen (fixed with the established
+`clickScrolled` helper, same fix `verify-941-stage-naming-helpers.mjs` already carries for this
+exact class of bug). Screenshots viewed directly: a solo Stage (no context) shows only its own
+goal, genuinely clamped (`scrollHeight=64 > clientHeight=48`), its leading "# Goal" heading
+stripped, the toggle reading "See input" while running then "See input & output" once settled;
+opening reveals both Prompt and Result; Escape with focus deep inside returns it to the link;
+collapsing/re-expanding the Stage resets the toggle; Stage B's own shared goal shows once with
+neither member duplicating it, each member's own toggle independent. The Dark and Obsidian
+screenshots were captured with Stage B's two members already expanded (not the pristine
+goal-only state shots 01/02 prove) -- both confirmed to show no stray hover card or tooltip,
+and Stage B's two members' own opened Prompt/Result each correctly scoped to itself.
+
+**Gate round 1 remediation (2026-10-20, Main; Sec/Test/A11y/UI PASS, Code FAIL on one High)**:
+one HIGH, four MEDIUM, five LOW, all fixed in this one round.
+- **HIGH (item 1)**: a context-less multi-agent Stage showed no goal anywhere --
+  `SubagentChainRow.tsx:368`'s member call was hardcoded `showGoal={false}`. Fixed with a
+  `toolCallIdsWithContext` correlation by `toolCallId` (`item.context` alone is unreliable per
+  member -- the wire stamps a call's own `context` argument onto only that call's spec-index-0
+  item, per `groupSubagentStages.ts`'s own `flush()` comment, so a call's 2nd+ member carries no
+  `item.context` of its own even when its OWN call genuinely had one). New fixture Stage C
+  (`flat-task`, two agents, no context) live-checks the genuinely context-less case directly.
+- **MEDIUM (item 2)**: the goal preview's own 240-char cap was tighter than its visual
+  `line-clamp-3` needed, `.slice()` could split a surrogate pair, and only the FIRST line had
+  its heading/blank-line noise cleaned. Fixed: raised to 1500 code points (a DOM-size guard
+  only), a code-point-safe `truncateByCodePoint`, cleaning THROUGHOUT via a new shared
+  `findFirstContentLine` helper (replacing the copied loop); FR-093 and the stale `notExercised`
+  wording both corrected.
+- **MEDIUM (item 3)**: Escape now also bails on `event.defaultPrevented` (a nested Tooltip's own
+  dismiss gets the first press, WCAG 1.4.13) and the listener moved to the OUTER wrapper so
+  Escape also works when focus sits on the trigger itself, not only deep inside the content.
+- **MEDIUM (item 4)**: dropped `preventScroll` on the focus-return `.focus()` call -- a focused
+  element deep inside a long, internally-scrolled `CodeBlock` now comes back into view.
+- **MEDIUM (item 5)**: `InlineDisclosure`'s content div regained its own `space-y-2` (the 8px
+  Prompt/Result gap `CollapsibleContent`'s own ambient spacing used to supply for free); the
+  trigger now uses the shared `mutedLinkClassName` (extracted into a new `linkStyles.ts` to
+  avoid an import cycle back through `Markdown.tsx`), matching "Show full brief" exactly.
+- **MEDIUM (item 6)**: a failed/cancelled/exited solo Stage's own one-line failure reason
+  (`extractResultSummary`, the same mechanism a multi-agent member's own `summary` slot already
+  used) is restored next to its own goal, not only reachable behind the toggle.
+- **MEDIUM (item 7)**: a context-less solo Stage's own goal now renders at the Stage level,
+  before "Uses:" -- the same order a context-bearing Stage's own `StageContextBrief` already
+  used -- instead of nested inside `SubagentBody`, after "Uses:".
+- **MEDIUM (item 8)**: `Markdown.tsx`'s `MermaidBlock` "Show source" toggle, already ported onto
+  the shared `InlineDisclosure`, gains Escape-to-close and a correct focus ring for free; T351
+  and the PR body corrected to say so, and a new live-check phase opens it via real keyboard
+  input (Shift+Tab back from the composer, a real Enter), asserts a hard `:focus-visible` match,
+  screenshots the ring, then confirms Escape closes it too.
+- **MEDIUM (item 9)**: each toggle's own label now carries an `sr-only` suffix naming its agent
+  (`"See input & output for MemberOne"`) -- every sibling link otherwise read identical visible
+  text, ambiguous to a screen reader user tabbing between them.
+- **LOW (item 10)**: `showGoal` is now required (no implicit default); `InlineDisclosureProps`
+  dropped its unused `className`/`buttonClassName` (neither caller ever used one); this script's
+  own header corrected from a stale "WRITTEN, NOT RUN" claim to describe the real first
+  build-slot run above; T354's text and the Dark-screenshot claim above both corrected; every
+  screenshot (including the new Mermaid ring shot, via a lighter non-blurring equivalent that
+  preserves the very focus state it proves) confirms no stray tooltip first, fatally.
+
+Non-build checks re-run clean: `pnpm typecheck`; `pnpm test` 148/148; `check:indent` 0/454
+files; `check:file-size` 0 violations (`ToolRow.tsx` 599/600, `SubagentChainRow.tsx` 588/600,
+`SubagentGoalPreview.tsx`/`linkStyles.ts` new, both small); `check:theme-contrast`/`check:
+parity`/`check:drag-regions` unaffected (no new token, no IPC/drag-region change). **A fresh
+FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.

@@ -1089,6 +1089,56 @@
   the round-2/3 comment's claim that the check's own 4.75:1 was simply "measured" is corrected
   to note that number was real for the CLIPPED colour, not the authored (unreachable) literal.
 
+### Session 2026-10-20 (Agent rows show only the goal, #1077)
+
+- Q: Issue #1077 (Stuart, `grill-with-docs`, 2026-10-20): expanding a Stage row or a solo
+  subagent row shows its full Prompt and Result inline, each in its own tall scrollable
+  `max-h-64` code block, crowding out the one thing worth a quick read -- the goal. Scope,
+  content, toggle shape and running-state wording? -> A: All four resolved, none deferred. (1)
+  Scope: every agent row in the chat wherever `SubagentBody` renders -- a Stage row (multi-agent
+  or solo), each member row inside a multi-agent Stage, and a row with no enclosing Stage goal
+  of its own. (2) Content: only the goal shows once expanded. A Stage (solo or multi-agent
+  member) shows the Stage's own existing Goal/context text (`StageContextBrief`); `SubagentBody`
+  itself never repeats it there. A row with no Stage goal to lean on shows its own goal instead
+  -- the first lines of its own task, clamped to 3 lines, with the full text reachable once the
+  toggle opens. (3) Toggle: a text link under the goal reading "See input & output" collapsed,
+  "Hide input & output" open, with `aria-expanded`/`aria-controls`; starts collapsed every time
+  its own row (re)expands, with no remembered state. (4) While running (no result yet) the label
+  drops "& output", matching whatever state actually exists (reusing `resultBlock`'s own
+  existing gate for today's "Result" heading). Reuses `Markdown.tsx`'s `MermaidBlock` "Show
+  source" disclosure shape (ADR 0003) rather than a new one; closing the toggle while focus
+  sits inside its own content returns focus to the toggle link, the same WCAG 2.4.3 hazard
+  issues #991/#1001 already fixed one level up for a Stage's own trigger.
+
+### Session 2026-10-20 (Agent rows show only the goal, gate round 1, #1077)
+
+- Q: Gate round 1 (Main, 2026-10-20; Sec/Test/A11y/UI PASS, Code FAIL on one High): a
+  context-less multi-agent Stage showed no goal anywhere (the member call was hardcoded
+  `showGoal={false}`); the goal preview's own 240-char cap, `.slice()`-based truncation and
+  first-line-only cleanup; Escape not covering a Tooltip's own dismiss nor the trigger itself;
+  `preventScroll` on the focus return; a missing 8px Prompt/Result gap and a one-off trigger
+  style instead of the shared link class; no visible failure reason for a failed solo Stage;
+  solo goal ordered after "Uses:" instead of before; identical visible link text per member;
+  an optional default and two unused props. Fix? -> A: All ten fixed in one round. A member's
+  own goal is suppressed only when its OWN task() call genuinely carried a context, correlated
+  by that call's own id (the wire stamps a shared context onto only a call's first-listed item,
+  so a later member of the SAME call must still resolve through that correlation, never through
+  checking its own item alone) -- a context-less multi-agent Stage's members now each show their
+  own goal, independently. The goal preview's cap rises to 1500 Unicode code points (a DOM-size
+  guard only, the visible clamp is `line-clamp-3` alone), truncated code-point-safe, with
+  heading markers and blank lines cleaned on every line, not only the first, via one shared
+  `findFirstContentLine` helper. `InlineDisclosure`'s Escape handler also bails on
+  `event.defaultPrevented` (a nested Tooltip's own dismiss wins the first press) and listens on
+  its own outer wrapper (Escape now works from the trigger itself, not only deep inside); its
+  focus-return call drops `preventScroll`; its content regains its own 8px gap; its trigger
+  reuses the shared `mutedLinkClassName` instead of a one-off style. A failed/cancelled/exited
+  solo Stage's own one-line failure reason (the same text a multi-agent member's own row already
+  shows) is restored next to its goal. A context-less solo Stage's own goal renders at the Stage
+  level, before "Uses:" -- the same position a context-bearing Stage's own goal already takes.
+  Each toggle's own label carries an `sr-only` suffix naming its agent. `showGoal` is required
+  (no implicit default); `InlineDisclosure`'s unused `className`/`buttonClassName` props are
+  dropped.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1713,6 +1763,40 @@ The developer types a slash command and finds the ones the agent offers. If a se
   so a recognised command's own arguments go unchecked too while it shows. An unrecognised
   leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged. This is visual
   only: the textarea's own accessible name and value are unaffected.
+- **FR-093** (new, 2026-10-20, issue #1077, Stuart's own grill session, 2026-10-20; amended
+  2026-10-20, gate round 1, Main, items 1-2/6-7/9; amends FR-067/FR-068's own Subagent chain and
+  Stage rendering, and `SubagentBody`'s own Prompt/Result rendering unchanged by FR-008/FR-061,
+  which never applied to subagents): Expanding a Stage row (solo or multi-agent) or a subagent
+  row's own member content, wherever `SubagentBody` renders, MUST show only the goal, not the
+  full Prompt/Result inline. Inside a Stage, a member's own goal is suppressed only when its OWN
+  task() call genuinely carried a batch context (correlated by that call's own id, not by
+  checking the member's own item alone -- the wire stamps a call's shared context onto only that
+  call's first-listed item, so a later member of the SAME context-bearing call must still
+  resolve to "has a context" through that correlation); a Stage with a context MUST show it once
+  via `StageContextBrief` (FR-067), ordered before its own "Uses:" line, never duplicated per
+  member. A context-less solo Stage's own goal instead renders at the Stage level, in that SAME
+  position (before "Uses:") -- the first lines of its own task, Markdown heading markers and a
+  leading "Goal:" prefix stripped on the first line, heading markers and blank lines stripped
+  throughout every later line, clamped visually to 3 lines (`line-clamp-3`) and capped at 1500
+  Unicode code points (a DOM-size guard only, never splitting a multi-code-unit character) --
+  with the untruncated task reachable once the toggle below is open. A context-less
+  multi-agent Stage's own member likewise shows its own goal, independently of its siblings. A
+  failed, cancelled or exited solo Stage MUST additionally keep its own one-line failure reason
+  visible next to its goal (the same result-summary text a multi-agent member's own row already
+  shows unconditionally), not only reachable behind the toggle. The Prompt and (once known)
+  Result MUST sit behind a text link reading "See input & output", "Hide input & output" once
+  open, each with an `aria-expanded` and `aria-controls` pointing at their container, and an
+  `sr-only` suffix naming the owning agent (every sibling link otherwise reads identical visible
+  text, ambiguous to a screen reader user) -- `Markdown.tsx`'s `MermaidBlock` "Show source"
+  toggle is the cited, reused disclosure shape (ADR 0003), and gains the same Escape-to-close
+  and correct focus ring as every other caller of it. While the agent still has no result, the
+  link reads "See input"/"Hide input" (no "& output") instead, matching `resultBlock`'s own
+  existing presence gate for the "Result" heading. The toggle MUST start collapsed every time
+  its own row (re)mounts, with no remembered state across a collapse-then-reopen. Closing the
+  toggle (Escape) while keyboard focus sits on the trigger itself OR deep inside its own content
+  MUST move focus back to the toggle link (the same WCAG 2.4.3 hazard issues #991/#1001 fixed
+  one level up, for a Stage's own trigger); a nested control's own Escape handling (a Tooltip's
+  own dismiss, WCAG 1.4.13) MUST win the first press.
 
 ### Key Entities
 

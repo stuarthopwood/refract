@@ -18,6 +18,8 @@ import { toast } from 'sonner'
 import { useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { InlineDisclosure } from '@/components/InlineDisclosure'
+import { linkClassName, mutedLinkClassName } from './linkStyles'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -442,18 +444,14 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           {result.desc}
         </span>
       )}
-      <button
-        type="button"
-        aria-expanded={showSource}
-        aria-controls={sourceId}
-        onClick={() => setShowSource((value) => !value)}
-        className="-mx-1 px-1 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      <InlineDisclosure
+        open={showSource}
+        onOpenChange={setShowSource}
+        contentId={sourceId}
+        label={showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
       >
-        {showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
-      </button>
-      <div id={sourceId} hidden={!showSource}>
         <CodeBlock code={code} lang="mermaid" />
-      </div>
+      </InlineDisclosure>
     </div>
   )
 }
@@ -495,16 +493,11 @@ const InsideLinkContext = React.createContext(false)
 // bubble's own composited `accent/50`-on-`background` fill (verified 4.69:1 in Dark, the binding
 // theme -- see that script's own `user-bubble` pair). `rounded-sm` plus the achromatic
 // `focus-visible` ring matches every other control in the app; `[overflow-wrap:anywhere]` stops a
-// long URL/path from forcing the row to scroll sideways.
-export const linkClassName =
-  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-
-// Issue #610, decision 9: `--accent-text` does not clear 4.5:1 on `bg-muted` (check-theme-
-// contrast.mjs's own TODO(#579) note records 4.00:1 Dark/4.28:1 Obsidian) -- every `bg-muted`
-// surface (inline code, `DiffView`'s header) gets the underline only, in whatever text colour it
-// already inherits, instead.
-export const mutedLinkClassName =
-  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+// long URL/path from forcing the row to scroll sideways. Moved to `./linkStyles.ts` (issue #1077,
+// gate round 1 fix) so `InlineDisclosure` can reuse `mutedLinkClassName` without an import cycle
+// back through this file (which itself imports `InlineDisclosure` for `MermaidBlock`); re-exported
+// here unchanged so every existing caller of `./Markdown` keeps working with no other change.
+export { linkClassName, mutedLinkClassName }
 
 // Quality-gate fix (Verif Low, round 2): the streaming-inert state is plain text that cannot be
 // activated -- it must never carry the active state's `hover:`/`focus-visible:` classes, which
