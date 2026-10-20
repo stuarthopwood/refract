@@ -88,7 +88,11 @@ fn resolve_overrides() -> DebugOverrides {
 /// `runInvalidDateOverrideCheck` launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts
 /// the override resolves to `null`).
 #[cfg(debug_assertions)]
-fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>, raw_flight_interval_ms: Option<String>) -> DebugOverrides {
+fn resolve_overrides_from(
+    raw_date: Option<String>,
+    raw_idle_ms: Option<String>,
+    raw_flight_interval_ms: Option<String>,
+) -> DebugOverrides {
     let date = raw_date
         .as_deref()
         .map(str::trim)
