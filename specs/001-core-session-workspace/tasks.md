@@ -4704,7 +4704,7 @@ Clarifications entry for the six-point decision record.
   onlyThemes: ['dark-high-contrast'] }` pair (the generic `accent-text`/`card` 4.5:1 pair already
   existed and already covers every preset's own baseline floor for this pill). `pnpm check:
   theme-contrast` confirms all 830 pairs PASS across all five presets.
-- [ ] T349 Live CDP verification (`scripts/verify-1050-command-pill.mjs`, fake-omp tape
+- [X] T349 Live CDP verification (`scripts/verify-1050-command-pill.mjs`, fake-omp tape
   `1050-command-pill.jsonl` carrying the native `/btw` built-in plus one tape-provided
   `source: 'skill'` descriptor): `/btw hi` and `/skill:demo-review do it` show the pill and
   `spellCheck === false`; `/zzz` shows neither; the pill's own rect sits over the token's own
@@ -4713,13 +4713,23 @@ Clarifications entry for the six-point decision record.
   an identical keystroke sequence are identical with and without the pill; spellcheck returns the
   instant the leading slash is deleted; arguments render as plain invisible-gap text (asserted
   structurally, not by pixel guess); the pill stays aligned across all five theme presets and in
-  a scrolled multi-line draft (`scrollTop` sync asserted directly); screenshots per state. Queued
-  behind other lanes for its build slot; this task's own FINAL LIVE-VERIFIED PASS paragraph is
-  appended once `ci-local.mjs && verify-1050-command-pill.mjs` actually run.
+  a scrolled multi-line draft (`scrollTop` sync asserted directly); screenshots per state.
 
-**Non-build checks** (run before the build slot, clean tree at this phase's own HEAD): `pnpm
-typecheck` clean; `pnpm test` unaffected (no new renderer tests added, per the prototyping-phase
-rule); `node scripts/check-indent.mjs` (0 odd-indent lines across 413 files); `node scripts/
-check-file-size.mjs` (0 cap violations, `MessageInput.tsx` 1631/1632); `node scripts/check-
-theme-contrast.mjs` (all 830 pairs PASS); `node scripts/check-parity.mjs` (104/104 requests,
-24/24 events, unaffected by this issue); `node scripts/check-drag-regions.mjs` (0 violations).
+**Non-build checks** (re-run after merging `origin/main` twice, `3140b87c`): `pnpm typecheck`
+clean; `pnpm test` 148/148 passed (no new renderer tests, per the prototyping-phase rule); `node
+scripts/check-indent.mjs` (0 odd-indent lines across 426 files); `node scripts/check-file-
+size.mjs` (0 cap violations, `MessageInput.tsx` 1631/1632); `node scripts/check-theme-
+contrast.mjs` (all 830 pairs PASS); `node scripts/check-parity.mjs` (104/104 requests, 24/24
+events, unaffected by this issue); `node scripts/check-drag-regions.mjs` (0 violations).
+
+**FINAL LIVE-VERIFIED PASS, clean HEAD `3140b87c`**: full chained `ci-local.mjs &&
+verify-1050-command-pill.mjs` -- `ci-local.mjs` all 16 steps PASS (`cargo fmt --check`, `cargo
+test` 731 passed/0 failed/1 ignored, `cargo clippy -D warnings`, Tauri debug build, check:ui-text
+0 leaks); `verify-1050-command-pill.mjs`: **48/48 checks PASS, 0 failures, 0 notExercised**,
+`gitHead` matches, `dirty: false`. Screenshots viewed directly, zoomed 4-8x on the composer: the
+pill renders with a rounded, borderless fill (`--card`) and `--accent-text` glyphs exactly over
+the token in every one of the five presets, no doubled or ghost text anywhere (the real
+textarea's own plain glyphs are fully masked), arguments stay plain, the real caret is visible
+and correctly positioned (end of draft for `/skill:demo-review do it`, position 0 after the
+slash is deleted), and the scrolled-draft screenshot shows the pilled token correctly out of
+view with nothing duplicated at the wrong scroll offset. Draft PR #1064 (`Closes #1050`).
