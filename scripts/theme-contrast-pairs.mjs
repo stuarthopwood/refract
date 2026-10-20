@@ -106,13 +106,19 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  // Issue #1050 (composer command pill, decision 3): the pill's own fill is `--card`, not
-  // `--muted` as first drafted -- `--accent-text` fails 4.5:1 on `--muted` in Dark/Obsidian (the
-  // TODO(#579) note just above), and Dark (high contrast) alone clears only 6.60:1 on `--muted`,
-  // short of this issue's own enhanced 7:1 ask there. `--card` clears 4.5:1 everywhere already
-  // (the generic pair above) and clears this enhanced 7:1 floor in Dark (high contrast) too
-  // (8.46:1) -- decided by measurement, not by eye, per the issue's own instruction.
-  { fg: 'accent-text', bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] },
+  // Issue #1050 (composer command pill, gate round 1 HIGH remediation): the pill's own fill is
+  // the dedicated `--command-pill-bg` token (not `--card` directly, decision 3 superseded) --
+  // the gate added a "visibly distinct from the composer surface" floor (>=1.4:1 against the
+  // effective composer backdrop) alongside the pre-existing accent-text-on-fill floor. Dark,
+  // Obsidian and Dark (high contrast) alias `--command-pill-bg` to `--card` (an accepted,
+  // documented gap on the NEW 1.4:1 floor -- see each theme's own comment in globals.css: no
+  // single colour clears both floors there, so the WCAG-mandated text floor was kept); Nordic
+  // Frost and Cyber Amber alias it to `--muted`, which clears both floors outright.
+  { fg: 'accent-text', bg: 'command-pill-bg', min: 4.5 },
+  { fg: 'accent-text', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['nordic-frost', 'cyber-amber'] },
+  { fg: 'command-pill-bg', bg: 'background', min: 1.4, informationalThemes: ['dark', 'obsidian'] },
+  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, informationalThemes: ['dark-high-contrast'] },
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
   // entry (it would fail both themes today). Issue #610 reads `--accent-text` now

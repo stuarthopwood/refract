@@ -1,39 +1,32 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1050 (composer command pill, no spelling underline). Decided
-// (Skippy, delegated by Stuart 2026-10-19, away mode); FR-092, spec 001 Phase 71. Modelled on
-// `verify-997-notice-severity.mjs` (single launch, fake-omp tape, five-theme loop) and
-// `verify-741-role-chip.mjs` (geometry/contrast proof style), not `verify-947-938-slash-menu.mjs`'s
-// ambient-real-omp pattern: that pattern exists specifically for OMP BUILTIN subcommands, which
-// need a real probe to verify (FR-032); a `source: 'skill'` descriptor needs no such probe --
-// Refract's own classification treats any non-builtin-sourced entry identically regardless of
-// whether a skill by that name exists on disk (`filter_supported_commands`/
-// `classifySlashInvocation`) -- so the fake-omp tape (`1050-command-pill.jsonl`, this README row)
-// carries one deterministic `source: 'skill'` descriptor instead, avoiding the flakiness of
-// depending on whichever skills happen to be installed in this harness's own ambient ~/.omp.
-// `/btw` needs no tape entry at all: `NATIVE_BUILT_COMMANDS` is unconditionally prepended
-// Rust-side regardless of what any tape lists.
+// (Skippy, delegated by Stuart 2026-10-19, away mode); FR-092, spec 001 Phase 71.
 //
-// Checks, in order:
-//   1. `/zzz hi` (unrecognised): no pill, `spellcheck` stays `true`.
-//   2. `/btw hi` (native, recognised): pill with text `/btw`; `spellcheck === false`; the
-//      overlay's own two children are exactly [the pill, an invisible gap covering ` hi`]
-//      (arguments stay plain, asserted structurally, not by pixel guess).
-//   3. Pill geometry: the pill's own rect sits at the textarea's own content-box top-left corner
-//      (`getBoundingClientRect()` plus the textarea's own real `getComputedStyle()` padding --
-//      never a guessed offset), with a plausible width/height for a 4-character token.
-//   4. Height/caret identical with and without the pill: `/zzz hi` and `/btw hi` are both exactly
-//      7 characters; `getBoundingClientRect().height`/`scrollHeight` and `selectionStart`/
-//      `selectionEnd` after an identical Home+3xArrowRight sequence are compared between them.
-//   5. `/skill:demo-review do it` (tape-provided skill, recognised): pill text is the whole
-//      `/skill:demo-review` token (including the prefix); arguments (` do it`) stay in the
-//      trailing invisible gap, asserted the same structural way as item 2.
-//   6. Spellcheck returns the instant the leading slash is deleted (Home, then a forward
-//      Delete removes just the `/`), leaving `btw hi` -- an ordinary word, not a command.
-//   7. The pill stays aligned (geometry re-measured) across all five theme presets, with the
-//      pill's own computed `background-color`/`color` equal to `--card`/`--accent-text` resolved
-//      live (`resolveCssVarColor`, never a hand-copied hex) -- screenshotted every preset.
-//   8. A scrolled multi-line draft: the command-pill overlay's own `scrollTop` is asserted equal
-//      to the textarea's real `scrollTop` after scrolling to the bottom, then back to the top.
+// Gate round 1 HIGH remediation: the ORIGINAL design painted an opaque pill overlay ON TOP of the
+// real textarea, hiding the caret/selection/IME inside the token (all four reviewers found it,
+// confirmed from `02-pill-btw.png`). Fixed with the "highlight-within-textarea" technique
+// (`CommandPillOverlay.tsx`'s own header comment has the full design). This script's own checks
+// below are the round-1 superset: everything the original script asserted, plus pixel-level caret
+// visibility, a real selection-highlight check, slash-menu completion, an unrecognised-edit drop,
+// a long wrapping token, and a pasted-text chip beside the pill.
+//
+// Modelled on `verify-997-notice-severity.mjs` (single launch, fake-omp tape, five-theme loop).
+// Reuses a tape-provided `source: 'skill'` descriptor (not an ambient real omp, unlike
+// `verify-947-938-slash-menu.mjs`'s pattern): see `scripts/fixtures/omp-frames/README.md`'s own
+// row for why that's a faithful stand-in here, not a fabricated builtin allow-list entry.
+//
+// Checks, in order: (1) `/zzz hi` unrecognised -- no pill, spellcheck on. (2) `/btw hi` --
+// pill text, spellcheck off, the overlay's own structure proves arguments stay plain, geometry,
+// pixel-visible caret at offset 0 and mid-token (blink-safe), a real Ctrl+A selection highlight.
+// (3) Height/caret identity between `/btw hi` and `/zzz hi` (both 7 chars). (4)
+// `/skill:demo-review do it` -- whole-prefix pill, arguments plain. (5) Completing `/bt` via a
+// real slash-menu click produces the pill. (6) `/btw` -> `/btwx` (an edit into an unrecognised
+// name) drops it. (7) The leading slash deleted -> spellcheck returns. (8) A long wrapping
+// skill name still pills correctly across two visual lines. (9) A pasted-text chip renders
+// beside the pill (ghost text is NOT exercised together with it -- see the `notExercised` entry).
+// (10) The pill stays aligned, with its own computed fill/text colour equal to
+// `--command-pill-bg`/`--accent-text` resolved live, across all five theme presets. (11) A
+// scrolled multi-line draft's overlay `scrollTop` tracks the textarea's own.
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -55,71 +48,17 @@ import {
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { TEXTAREA, PILL, OVERLAY, THEMES, clearAndType, measurePillGeometry, overlayStructure, assertCaretVisible, assertSelectionHighlightVisible, defaultShotsDir } from './verify-1050-command-pill-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1050';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_1050_SHOTS_DIR || path.join(tmpdir(), 'refract-1050-command-pill-shots');
-
-// All five built-in theme presets (`src/shared/themes.ts`); decision 3's contrast fix and the
-// pill's own accent/fill both genuinely differ per preset, so every one is checked and shot.
-const THEMES = [
-  { id: 'dark', name: 'Dark' },
-  { id: 'obsidian', name: 'Obsidian' },
-  { id: 'dark-high-contrast', name: 'Dark (high contrast)' },
-  { id: 'nordic-frost', name: 'Nordic Frost' },
-  { id: 'cyber-amber', name: 'Cyber Amber' }
-];
-
-const TEXTAREA = `document.querySelector('[aria-label="Message"]')`;
-const PILL = `document.querySelector('[data-command-pill-token]')`;
-const OVERLAY = `document.querySelector('[data-command-pill-overlay]')`;
+const SHOTS_DIR = process.env.REFRACT_1050_SHOTS_DIR || defaultShotsDir();
+const LONG_SKILL = 'skill:demo-review-with-a-very-long-name-used-only-to-force-the-recognised-token-to-wrap-across-two-or-more-visual-lines';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
-}
-
-async function clearAndType(cdp, text) {
-  await cdp.click(TEXTAREA);
-  await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select all existing text
-  await pressKey(cdp, 8, 'Backspace', 'Backspace'); // delete the selection
-  await cdp.waitFor(`${TEXTAREA}.value === ''`, { timeoutMs: 5_000, label: 'composer cleared before typing' });
-  await cdp.send('Input.insertText', { text });
-}
-
-/** The pill's own rect against the textarea's REAL `getComputedStyle()` padding -- never a
- * guessed offset -- so this proves the pill lands exactly over the token's own glyphs in the
- * real control the user types into, not merely inside the inert overlay's own copied box model. */
-async function measurePillGeometry(cdp) {
-  return cdp.evaluate(`(() => {
-    const ta = ${TEXTAREA};
-    const pill = ${PILL};
-    if (!ta || !pill) return null;
-    const taRect = ta.getBoundingClientRect();
-    const pillRect = pill.getBoundingClientRect();
-    const style = getComputedStyle(ta);
-    return {
-      expectedLeft: taRect.left + parseFloat(style.paddingLeft),
-      expectedTop: taRect.top + parseFloat(style.paddingTop),
-      pillLeft: pillRect.left,
-      pillTop: pillRect.top,
-      pillWidth: pillRect.width,
-      pillHeight: pillRect.height
-    };
-  })()`);
-}
-
-async function overlaySegments(cdp) {
-  return cdp.evaluate(`(() => {
-    const overlay = ${OVERLAY};
-    if (!overlay) return null;
-    return Array.from(overlay.children).map((el) => ({
-      isPill: el.hasAttribute('data-command-pill-token'),
-      isInvisible: el.classList.contains('invisible'),
-      text: el.textContent
-    }));
-  })()`);
 }
 
 async function main() {
@@ -134,11 +73,30 @@ async function main() {
     '03-pill-skill.png',
     '04-spellcheck-returns.png',
     '05-scrolled-multiline.png',
+    '06-slash-menu-completion.png',
+    '07-wrapping-token.png',
+    '08-chip-plus-pill.png',
     ...THEMES.map((t) => `theme-${t.id}.png`)
   ]);
 
   const report = [];
-  const notExercised = [];
+  const notExercised = [
+    'Ghost text shown at the SAME TIME as the leading command pill: this harness has no scripted ' +
+      "predict_word response (chat.predictWord degrades silently to no suggestion on no reply, " +
+      'per FR-058), so forcing a live ghost suggestion to coexist with the pill was not reachable ' +
+      'this round without adding a second RPC channel to the fake-omp tape. The OTHER half of this ' +
+      'combination (a pasted-text chip beside the pill) is exercised below.',
+    'Real OS Windows High Contrast / forced-colours mode: no forced-colours harness exists here. ' +
+      "The code's own alignment argument (identical box-model classes on the mirror and the " +
+      'textarea, so the UA\'s forced CanvasText remap lands both renderings on the same pixels) ' +
+      'is reasoned in CommandPillOverlay.tsx\'s own header comment, not live-proven.',
+    'Real IME composition (an actual CJK/dead-key input method): no IME harness exists here; the ' +
+      "caret-visibility and selection-highlight pixel checks below prove the REAL textarea paints " +
+      "on top at both an empty-selection caret and a real Ctrl+A selection, which is the same " +
+      "paint-order guarantee IME composition underlines rely on, but IME itself is not driven live.",
+    'Real display zoom (OS/browser zoom level changed mid-session): not driven live; the caret/' +
+      'geometry checks below run at the default 100% zoom only.'
+  ];
 
   function assertEqual(actual, expected, label) {
     const ok = actual === expected;
@@ -196,8 +154,6 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
 
-    // Real UI flow (same convention every Tauri live check uses): readiness, Add repository,
-    // New session, wait for the composer against the fake omp's scripted tape.
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
@@ -222,9 +178,10 @@ async function main() {
     await cdp.waitFor(`(() => { const el = ${TEXTAREA}; return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session composer enabled' });
 
     // ---- 1. /zzz (unrecognised): no pill, spellcheck stays on ------------------------------
-    await clearAndType(cdp, '/zzz hi');
+    await clearAndType(cdp, pressKey, '/zzz hi');
     await sleep(300);
     assertEqual(await cdp.evaluate(`document.querySelectorAll('[data-command-pill-token]').length`), 0, '/zzz hi: no pill rendered');
+    assertEqual(await cdp.evaluate(`document.querySelectorAll('[data-command-pill-overlay]').length`), 0, '/zzz hi: no mirror overlay mounted at all');
     assertEqual(await cdp.evaluate(`${TEXTAREA}.spellcheck`), true, '/zzz hi: spellcheck stays on');
     const noPillRect = await cdp.evaluate(`(() => { const ta = ${TEXTAREA}; const r = ta.getBoundingClientRect(); return { height: r.height, scrollHeight: ta.scrollHeight }; })()`);
     await cdp.evaluate(`${TEXTAREA}.focus()`);
@@ -235,17 +192,17 @@ async function main() {
     const noPillCaret = await cdp.evaluate(`({ start: ${TEXTAREA}.selectionStart, end: ${TEXTAREA}.selectionEnd })`);
     await cdp.screenshot(path.join(SHOTS_DIR, '01-no-pill-zzz.png'));
 
-    // ---- 2. /btw hi (native, recognised): pill, spellcheck off, arguments stay plain -------
-    await clearAndType(cdp, '/btw hi');
+    // ---- 2. /btw hi (native, recognised): pill, spellcheck off, arguments stay plain,
+    //         pixel-visible caret, real selection highlight --------------------------------
+    await clearAndType(cdp, pressKey, '/btw hi');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: '/btw hi: pill appears' });
     assertEqual(await cdp.evaluate(`${PILL}.textContent`), '/btw', '/btw hi: pill text is exactly the token');
     assertEqual(await cdp.evaluate(`${TEXTAREA}.spellcheck`), false, '/btw hi: spellcheck off');
-    const btwSegs = await overlaySegments(cdp);
-    assertEqual(btwSegs?.length, 2, '/btw hi: overlay has exactly 2 segments (pill + trailing gap)');
-    assertTrue(btwSegs[0].isPill && btwSegs[0].text === '/btw', '/btw hi: first segment is the pill holding just the token');
-    assertTrue(btwSegs[1].isInvisible && btwSegs[1].text === ' hi', '/btw hi: second segment is an invisible gap covering the arguments exactly (arguments stay plain)');
+    const btwStruct = await overlayStructure(cdp);
+    assertEqual(btwStruct.textContent, '/btw hi', '/btw hi: overlay textContent equals the whole draft (nothing swallowed)');
+    assertEqual(btwStruct.elementChildCount, 1, '/btw hi: the overlay has exactly one element child (the pill) -- arguments are bare, unwrapped text');
+    assertEqual(btwStruct.pillText, '/btw', '/btw hi: that one element child is the pill, holding just the token');
 
-    // ---- 3. Pill geometry: sits at the textarea's own real content-box corner --------------
     const geom = await measurePillGeometry(cdp);
     assertTrue(geom !== null, '/btw hi: textarea and pill both found for geometry');
     assertClose(geom.pillLeft, geom.expectedLeft, 1.5, "/btw hi: pill's left edge sits at the textarea's own real padding-left corner");
@@ -253,7 +210,14 @@ async function main() {
     assertTrue(geom.pillWidth > 10 && geom.pillWidth < 60, `/btw hi: pill width (${geom.pillWidth}px) plausible for a 4-character token, not the whole line`);
     assertTrue(geom.pillHeight > 10 && geom.pillHeight < 40, `/btw hi: pill height (${geom.pillHeight}px) is one text line, not the whole box`);
 
-    // ---- 4. Height/caret identical with and without the pill (both exactly 7 characters) ---
+    await assertCaretVisible(cdp, sleep, 0, '/btw hi: caret pixel-visible at offset 0 (start of the pilled token)', report);
+    await assertCaretVisible(cdp, sleep, 2, '/btw hi: caret pixel-visible at offset 2 (mid-token, inside the pill)', report);
+    await assertSelectionHighlightVisible(cdp, pressKey, report);
+    await cdp.screenshot(path.join(SHOTS_DIR, '02-pill-btw.png'));
+
+    // ---- 3. Height/caret identical with and without the pill (both exactly 7 characters) ---
+    await clearAndType(cdp, pressKey, '/btw hi');
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: '/btw hi: pill re-shown for the height/caret identity check' });
     const pillRect = await cdp.evaluate(`(() => { const ta = ${TEXTAREA}; const r = ta.getBoundingClientRect(); return { height: r.height, scrollHeight: ta.scrollHeight }; })()`);
     await cdp.evaluate(`${TEXTAREA}.focus()`);
     await pressKey(cdp, 36, 'Home', 'Home');
@@ -265,19 +229,39 @@ async function main() {
     assertEqual(pillRect.scrollHeight, noPillRect.scrollHeight, 'textarea scrollHeight identical with and without the pill');
     assertEqual(pillCaret.start, noPillCaret.start, 'caret selectionStart identical with and without the pill after an identical Home+3xArrowRight sequence');
     assertEqual(pillCaret.end, noPillCaret.end, 'caret selectionEnd identical with and without the pill after an identical Home+3xArrowRight sequence');
-    await cdp.screenshot(path.join(SHOTS_DIR, '02-pill-btw.png'));
 
-    // ---- 5. /skill:demo-review (tape-provided skill, recognised) ---------------------------
-    await clearAndType(cdp, '/skill:demo-review do it');
+    // ---- 4. /skill:demo-review (tape-provided skill, recognised) ---------------------------
+    await clearAndType(cdp, pressKey, '/skill:demo-review do it');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: '/skill:demo-review do it: pill appears' });
     assertEqual(await cdp.evaluate(`${PILL}.textContent`), '/skill:demo-review', '/skill:demo-review do it: pill text is the whole token including the skill: prefix');
     assertEqual(await cdp.evaluate(`${TEXTAREA}.spellcheck`), false, '/skill:demo-review do it: spellcheck off');
-    const skillSegs = await overlaySegments(cdp);
-    assertEqual(skillSegs?.length, 2, '/skill:demo-review do it: overlay has exactly 2 segments');
-    assertTrue(skillSegs[1].isInvisible && skillSegs[1].text === ' do it', '/skill:demo-review do it: arguments (" do it") stay in the invisible gap, plain text');
+    const skillStruct = await overlayStructure(cdp);
+    assertEqual(skillStruct.textContent, '/skill:demo-review do it', '/skill:demo-review do it: overlay textContent equals the whole draft');
+    assertEqual(skillStruct.elementChildCount, 1, '/skill:demo-review do it: exactly one element child (the pill); " do it" is bare text');
     await cdp.screenshot(path.join(SHOTS_DIR, '03-pill-skill.png'));
 
-    // ---- 6. Spellcheck returns the instant the leading slash is deleted -------------------
+    // ---- 5. Completing a partial command via a REAL slash-menu click produces the pill -----
+    await clearAndType(cdp, pressKey, '/bt');
+    const btwOptionFinder = `Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.toLowerCase().includes('btw'))`;
+    await cdp.waitFor(`!!(${btwOptionFinder})`, { timeoutMs: 5_000, label: 'slash menu lists a btw match for "/bt"' });
+    await cdp.click(btwOptionFinder);
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'completing /bt via a real slash-menu click produces the pill' });
+    assertEqual(await cdp.evaluate(`${PILL}.textContent`), '/btw', 'slash-menu completion: the resulting pill reads /btw');
+    await cdp.screenshot(path.join(SHOTS_DIR, '06-slash-menu-completion.png'));
+
+    // ---- 6. /btw -> /btwx (edited into an unrecognised name) drops the pill ----------------
+    await clearAndType(cdp, pressKey, '/btw');
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: '/btw: pill shown before the edit' });
+    await cdp.evaluate(`${TEXTAREA}.focus()`);
+    await pressKey(cdp, 35, 'End', 'End');
+    await cdp.send('Input.insertText', { text: 'x' });
+    await cdp.waitFor(`${PILL} === null`, { timeoutMs: 5_000, label: '/btw -> /btwx: pill drops the instant the name stops matching' });
+    assertEqual(await cdp.evaluate(`${TEXTAREA}.value`), '/btwx', "/btw -> /btwx: draft reads '/btwx'");
+    assertEqual(await cdp.evaluate(`${TEXTAREA}.spellcheck`), true, '/btw -> /btwx: spellcheck is back on');
+
+    // ---- 7. Spellcheck returns the instant the leading slash is deleted -------------------
+    await clearAndType(cdp, pressKey, '/skill:demo-review do it');
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'slash-delete test: pill shown before the edit' });
     await cdp.evaluate(`${TEXTAREA}.focus()`);
     await pressKey(cdp, 36, 'Home', 'Home');
     await pressKey(cdp, 46, 'Delete', 'Delete'); // forward-delete removes just the leading '/'
@@ -286,27 +270,66 @@ async function main() {
     assertEqual(await cdp.evaluate(`${TEXTAREA}.spellcheck`), true, 'slash deleted: spellcheck back on');
     await cdp.screenshot(path.join(SHOTS_DIR, '04-spellcheck-returns.png'));
 
-    // ---- 7. Pill stays aligned across all five theme presets, fill/text colour verified ---
-    await clearAndType(cdp, '/skill:demo-review do it');
+    // ---- 8. A long wrapping skill name still pills correctly across visual lines ----------
+    await clearAndType(cdp, pressKey, `/${LONG_SKILL} do it`);
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'long skill name: pill appears' });
+    assertEqual(await cdp.evaluate(`${PILL}.textContent`), `/${LONG_SKILL}`, 'long skill name: pill holds the whole (long) token');
+    const wrappingGeom = await cdp.evaluate(`(() => {
+      const ta = ${TEXTAREA};
+      const pill = ${PILL};
+      const pillRects = pill.getClientRects();
+      return { taWidth: ta.getBoundingClientRect().width, pillLineCount: pillRects.length, pillRects: Array.from(pillRects).map((r) => ({ left: r.left, top: r.top, width: r.width })) };
+    })()`);
+    assertTrue(wrappingGeom.pillLineCount >= 2, `long skill name: the pill's own [box-decoration-break:clone] rounding renders across ${wrappingGeom.pillLineCount} visual line fragment(s), confirming it actually wrapped`, wrappingGeom);
+    await cdp.screenshot(path.join(SHOTS_DIR, '07-wrapping-token.png'));
+
+    // ---- 9. A pasted-text chip renders beside the pill (ghost text: see notExercised) -----
+    await clearAndType(cdp, pressKey, '/btw ');
+    await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'chip+pill: pill shown before the paste' });
+    const longPasteText = 'x'.repeat(900);
+    await cdp.evaluate(`(() => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', ${JSON.stringify(longPasteText)});
+      const ta = ${TEXTAREA};
+      ta.focus();
+      ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    })()`);
+    await cdp.waitFor(`document.querySelectorAll('[role="group"][aria-label="Pending attachments"] button').length > 0`, {
+      timeoutMs: 5_000,
+      label: 'chip+pill: the large paste collapsed into a pending text chip'
+    });
+    assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the leading command pill is still shown alongside the new pasted-text chip');
+    await cdp.screenshot(path.join(SHOTS_DIR, '08-chip-plus-pill.png'));
+
+    // ---- 10. Pill stays aligned across all five theme presets, fill/text colour verified --
+    await clearAndType(cdp, pressKey, '/skill:demo-review do it');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'theme loop: pill re-shown' });
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
+      // Gate round 1 LOW remediation (item 6): `switchTheme` itself returns once the real
+      // `<html>` class has applied, but the Profile dropdown's own Radix close animation and
+      // any still-open tooltip can still be mid-transition at that exact instant -- wait for
+      // the menu to be genuinely gone and let any transition settle before measuring/shooting.
+      await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: `${theme.name}: profile menu fully closed before measuring` });
+      await sleep(300);
       const themeGeom = await measurePillGeometry(cdp);
       assertTrue(themeGeom !== null, `${theme.name}: pill found`);
       assertClose(themeGeom.pillLeft, themeGeom.expectedLeft, 1.5, `${theme.name}: pill left edge still sits at the textarea's own padding-left corner`);
       assertClose(themeGeom.pillTop, themeGeom.expectedTop, 1.5, `${theme.name}: pill top edge still sits at the textarea's own padding-top corner`);
       const pillColors = await cdp.evaluate(`(() => { const s = getComputedStyle(${PILL}); return { bg: s.backgroundColor, color: s.color }; })()`);
-      const expectedBg = await resolveCssVarColor(cdp, '--card', 'background-color');
+      const expectedBg = await resolveCssVarColor(cdp, '--command-pill-bg', 'background-color');
       const expectedColor = await resolveCssVarColor(cdp, '--accent-text', 'color');
-      assertEqual(pillColors.bg, expectedBg, `${theme.name}: pill background-color equals --card resolved live`);
+      assertEqual(pillColors.bg, expectedBg, `${theme.name}: pill background-color equals --command-pill-bg resolved live`);
       assertEqual(pillColors.color, expectedColor, `${theme.name}: pill text colour equals --accent-text resolved live`);
+      const pageBg = await resolveCssVarColor(cdp, '--background', 'background-color');
+      assertTrue(pillColors.bg !== pageBg, `${theme.name}: pill fill is a visibly different colour from the plain page background (fill-vs-composer, measured live)`);
       await cdp.screenshot(path.join(SHOTS_DIR, `theme-${theme.id}.png`));
     }
     await switchTheme(cdp, 'dark', 'Dark');
 
-    // ---- 8. Scrolled multi-line draft: overlay scrollTop tracks the textarea's own --------
+    // ---- 11. Scrolled multi-line draft: overlay scrollTop tracks the textarea's own --------
     const longLines = Array.from({ length: 25 }, (_, i) => `line ${i} of a long draft to force the textarea past its max height and scroll`);
-    await clearAndType(cdp, `/btw ${longLines.join('\n')}`);
+    await clearAndType(cdp, pressKey, `/btw ${longLines.join('\n')}`);
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'scrolled draft: pill still shown at the top of a long draft' });
     await cdp.evaluate(`${TEXTAREA}.scrollTop = ${TEXTAREA}.scrollHeight`);
     await cdp.waitFor(`${TEXTAREA}.scrollTop > 0 && ${OVERLAY}.scrollTop === ${TEXTAREA}.scrollTop`, {
@@ -326,6 +349,9 @@ async function main() {
         '03-pill-skill.png',
         '04-spellcheck-returns.png',
         '05-scrolled-multiline.png',
+        '06-slash-menu-completion.png',
+        '07-wrapping-token.png',
+        '08-chip-plus-pill.png',
         ...THEMES.map((t) => `theme-${t.id}.png`)
       ])
     });

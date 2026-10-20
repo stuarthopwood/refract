@@ -963,14 +963,39 @@
      (8.46:1), so the pill's fill is `--card`, not `--muted`.
   4. **Mechanism.** Reuses the composer's existing mirror pattern (the inert, scroll-synced,
      `aria-hidden` overlay `ChipOverlaySegments`/the ghost-text overlay already use, T103/
-     FR-058): the overlay draws the pill and the accent glyphs exactly over the token, masking
-     the textarea's own plain-coloured glyphs underneath the same way the chip overlay already
-     does, with no layout shift. `MessageInput.tsx` is at its file-size cap (working rule 11), so
-     the logic lives in a new `CommandPillOverlay.tsx`.
+     FR-058), but as a "highlight-within-textarea" (gate round 1 HIGH correction, 2026-10-20):
+     the mirror sits UNDER the real `<textarea>` and renders the whole draft visibly, with the
+     real textarea going `text-transparent` plus an explicit `caret-color` and a `::selection`
+     text-colour override ONLY while a token is present, so the native caret, native selection
+     highlight and IME composition keep painting on the real control, on top of the mirror --
+     the first draft instead painted an opaque pill ON TOP of the textarea, which hid all three
+     for any character inside the token (found by all four reviewers in gate round 1, confirmed
+     from the round's own screenshot: the caret at offset 3 was gone). `MessageInput.tsx` is at
+     its file-size cap (working rule 11), so the logic lives in `CommandPillOverlay.tsx`.
   5. **Scope.** The composer only; the same pill on the sent user bubble is a possible follow-up
      (proposal), not part of this issue.
   6. **Accessibility.** No change to the accessible name or value; the pill is a visual-only
      `aria-hidden` overlay, so a screen reader reads the draft text exactly as today.
+
+### Session 2026-10-20 (Composer command pill, gate round 1 remediation, #1050)
+
+- Q: Gate round 1 (Code/Test/A11y/UI reviewers, all four independently; Sec passed) found one
+  HIGH: the opaque pill overlay painted over the real textarea, hiding the caret, native
+  selection highlight and IME composition inside the recognised token. What replaces it, and
+  what does the new dedicated pill-fill token resolve to, given `--card` cannot clear both the
+  existing accent-text floor AND a new "visibly distinct from the composer surface" floor in
+  every preset? -> A: Decided (the gate's own recorded fixes, confirmed against the measured
+  numbers): the mirror moves UNDER the textarea (the "highlight-within-textarea" technique,
+  FR-092's own amended text has the mechanism in full) so the native caret/selection/IME paint on
+  top as before this issue touched anything. The new `--command-pill-bg` token resolves to
+  `--muted` in Nordic Frost/Cyber Amber (clears both the >=1.4:1 "distinct from composer" floor
+  and the accent-text floor outright) and to `--card` in Dark/Obsidian/Dark (high contrast) (an
+  accepted, documented gap on the new 1.4:1 floor only: no single colour in those three presets
+  clears both floors at once, since `--accent-text`'s own luminance leaves too narrow a margin
+  above each preset's near-black background for any fill to sit far enough from one end without
+  falling short of the other -- proven analytically, not just by search; the WCAG-mandated
+  accent-text floor was kept over the newly-introduced visibility floor). Open for Stuart:
+  retune `--accent-text` in those three presets, or accept the gap as-is.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -1550,24 +1575,32 @@ The developer types a slash command and finds the ones the agent offers. If a se
   (#714), the icon choice (#717), and the role switcher (#766) read the same data Refract's
   composer chip does, rather than four independent copies that could drift.
 - **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
-  mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism): while the draft's
+  mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism; gate round 1
+  remediation 2026-10-20 corrected the mechanism and the fill, both below): while the draft's
   own leading token (from `/` through the end of its name, including a `skill:` prefix) is a
   command or skill the composer's own `commands` list recognises (the same exact-match logic
   `chat.send`'s own refusal path already applies, never a hard-coded copy of the list or its
-  matching rules), the message box MUST show that token as a subtle pill -- a neutral `--card`
-  fill (decided by measurement: `--accent-text` fails 4.5:1 on `--muted` in Dark/Obsidian and
-  clears only 6.60:1 on it in Dark (high contrast), short of this requirement's own 7:1 there;
-  `--card` clears 4.5:1 everywhere and 7:1 in Dark (high contrast)), a small radius following
-  `--radius`, the token text in `--accent-text`, no border -- drawn by the same inert, scroll-
-  synced, `aria-hidden` overlay FR-058's ghost-text completion and the text-chip overlay already
-  use, with no line-height change and no caret movement; text after the token (the command's own
-  arguments) MUST stay plain. The message box MUST also set `spellCheck={false}` for as long as
-  that leading token is recognised, reverting the instant it stops matching (deleted, edited
-  into an unrecognised name, or the draft no longer starts with `/`) -- a `<textarea>` cannot
-  exclude part of its own text from spellcheck, so a recognised command's own arguments go
-  unchecked too while it shows. An unrecognised leading token (e.g. `/zzz`) MUST show no pill and
-  leave spellcheck unchanged. This is visual only: the textarea's own accessible name and value
-  are unaffected.
+  matching rules), the message box MUST show that token as a subtle pill -- a dedicated
+  `--command-pill-bg` fill (not `--card` directly, gate round 1 MEDIUM: the fill itself must
+  also be visibly distinct from the composer surface, >=1.4:1 against the effective composer
+  backdrop, a floor `--card` alone does not clear in Dark/Obsidian/Dark (high contrast) --
+  `--command-pill-bg` resolves to whichever existing surface step clears the most of both
+  floors per theme, an accepted, documented three-theme gap on the new floor rather than a
+  silently dropped ask; decided by measurement, not by eye), a small radius following
+  `--radius`, the token text in `--accent-text` (>=4.5:1 on the fill, 7:1 in Dark (high
+  contrast)), no border -- drawn by a mirror sitting UNDER the real `<textarea>` (the
+  "highlight-within-textarea" technique, gate round 1 HIGH: the mirror renders the WHOLE draft
+  visibly, the textarea itself goes `text-transparent` with an explicit `caret-color` and a
+  `::selection` text-colour override ONLY while a token is present, so the native caret, the
+  native selection highlight and IME composition keep painting on the real control, on top of
+  the mirror -- the original opaque-overlay-on-top design hid all three), with no line-height
+  change and no caret movement; text after the token (the command's own arguments) MUST stay
+  plain. The message box MUST also set `spellCheck={false}` for as long as that leading token is
+  recognised, reverting the instant it stops matching (deleted, edited into an unrecognised
+  name, or the draft no longer starts with `/`) -- a `<textarea>` cannot exclude part of its own
+  text from spellcheck, so a recognised command's own arguments go unchecked too while it shows.
+  An unrecognised leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged.
+  This is visual only: the textarea's own accessible name and value are unaffected.
 
 ### Key Entities
 

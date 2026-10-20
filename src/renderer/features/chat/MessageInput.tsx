@@ -26,7 +26,8 @@ import { ApprovalModePill } from './ApprovalModePill'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker, RoleAndModelPicker } from './ComposerPickers'
 import { COMPOSER_BUTTON_FOCUS_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
-import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'; import { CommandPillSegments, useCommandPillOverlay } from './CommandPillOverlay'
+import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import { CommandPillOverlay, COMMAND_PILL_TEXTAREA_CLASS, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import {
   buildChipLabel,
@@ -1386,6 +1387,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
+          <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} />
           <Textarea
             ref={textareaRef}
             role="combobox"
@@ -1430,7 +1432,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             // `placeholder:text-muted-foreground` colour around 3.4:1 while disabled, too low to
             // read the stop reason it carries -- `disabled:placeholder:text-foreground`
             // brightens the placeholder itself so the dim lands it back near readable.
-            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent"
+            className={cn(
+              'max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 disabled:placeholder:text-foreground dark:bg-transparent dark:disabled:bg-transparent [scrollbar-gutter:stable]',
+              commandToken && COMMAND_PILL_TEXTAREA_CLASS
+            )}
           />
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
@@ -1470,7 +1475,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               floor, so it stays visually whole the entire time the labels are still truncating.
               Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
               auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High Contrast, where `text-muted-foreground` would otherwise resolve to the same `CanvasText` as the real draft. */}
-          {commandToken && <div ref={commandPillOverlayRef} aria-hidden="true" data-command-pill-overlay className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"><CommandPillSegments text={text} token={commandToken} /></div> /* FR-092, #1050, see CommandPillOverlay.tsx */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
@@ -1495,11 +1499,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               that's since changed outside the normal onChange path must never render (#358
               remediation). */}
           {ghost && ghost.text === text && (
-            <div
-              ref={overlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={overlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <span className="invisible">{text.slice(0, ghost.cursor)}</span>
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
             </div>
@@ -1509,11 +1509,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               each pending chip's clickable, chip-styled label lands exactly over its own rendered
               position in the draft. Independent of `ghost`: both overlays can render at once. */}
           {attachments.textChips.length > 0 && (
-            <div
-              ref={chipOverlayRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
-            >
+            <div ref={chipOverlayRef} aria-hidden="true" className={cn(COMPOSER_MIRROR_CLASS, 'z-[2]')}>
               <ChipOverlaySegments
                 text={text}
                 occurrences={findChipOccurrences(text, attachments.textChips)}

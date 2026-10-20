@@ -4733,3 +4733,43 @@ textarea's own plain glyphs are fully masked), arguments stay plain, the real ca
 and correctly positioned (end of draft for `/skill:demo-review do it`, position 0 after the
 slash is deleted), and the scrolled-draft screenshot shows the pilled token correctly out of
 view with nothing duplicated at the wrong scroll offset. Draft PR #1064 (`Closes #1050`).
+
+**Gate round 1 remediation (2026-10-20, Code/Test/A11y/UI reviewers, all four independently;
+Sec PASS)**: one HIGH, found by all four -- the opaque pill overlay painted ON TOP of the real
+`<textarea>` (confirmed from `02-pill-btw.png`: the caret at offset 3 was gone), hiding the
+native caret, selection highlight and IME composition inside the recognised token. Fixed with
+the standard "highlight-within-textarea" technique: `CommandPillOverlay` (renamed from
+`CommandPillSegments`) now renders the WHOLE draft as a mirror sitting UNDER the textarea; the
+textarea itself goes `relative z-[1] text-transparent caret-foreground selection:text-foreground`
+(`COMMAND_PILL_TEXTAREA_CLASS`) ONLY while a token is present, so the native caret/selection/IME
+keep painting on the real control, on top of the mirror. `useCommandPillOverlay`'s own scroll
+sync moved from `useEffect` to `useLayoutEffect` (no one-frame flash of the mirror at `scrollTop:
+0` on mount). One MEDIUM: the pill's fill is now a dedicated `--command-pill-bg` token (not
+`--card` directly) -- the gate added a "visibly distinct from the composer surface" floor
+(>=1.4:1) alongside the existing accent-text floor; `--command-pill-bg` resolves to `--muted` in
+Nordic Frost/Cyber Amber (clears both outright) and to `--card` in Dark/Obsidian/Dark (high
+contrast) (an accepted, documented gap on the new floor only -- proven analytically that no
+single colour clears both there, see `globals.css`'s own per-theme comment and spec.md's new
+2026-10-20 gate-round-1 Clarifications entry). One file-organisation fix (no separate severity,
+bundled with the HIGH): `COMPOSER_MIRROR_CLASS` is now a shared constant (`CommandPillOverlay.tsx`)
+used by the ghost-text, chip AND pill mirrors (was three verbatim copies of the same className
+string in `MessageInput.tsx`); `[scrollbar-gutter:stable]` added to it and to the textarea
+unconditionally (a scrolled draft's real content width must match every mirror's own wrapping
+width exactly); a trailing `\n` gets a zero-width-space line-box fix. `MessageInput.tsx`'s own
+earlier single-line-squashed import/render (a mis-aimed attempt to protect its file-size cap)
+reverted to normally-formatted code -- the real saving comes from `COMPOSER_MIRROR_CLASS`
+deduplication instead, landing at **1627/1632**, five lines BELOW the cap, not merely at it.
+`scripts/verify-1050-command-pill.mjs` gained: pixel-level, blink-safe caret-visibility checks at
+offset 0 and mid-token; a real Ctrl+A selection-highlight pixel check; completing a partial
+command via a real slash-menu click; `/btw` -> `/btwx` (an unrecognised edit) dropping the pill;
+a long wrapping skill name; a pasted-text chip beside the pill (ghost text recorded
+`notExercised`: no scripted `predict_word` reply exists in this tape, and FR-058 degrades
+silently on no reply); the overlay's own structural proof that arguments stay plain, rewritten
+for the new whole-draft mirror shape. Split into `verify-1050-command-pill-helpers.mjs` (both
+under the 600-line cap, no baseline needed). Non-build checks re-run clean: `pnpm typecheck`;
+`pnpm test` 148/148; `check:indent` 0/427 files; `check:file-size` 0 violations
+(`MessageInput.tsx` 1627/1632); `check:theme-contrast` all 837 pairs PASS; `check:parity` 106/106
+requests + 24/24 events (the +2 requests are Main's own unrelated #1063 merge, not this issue);
+`check:drag-regions` 0 violations. **A fresh FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs
+&& verify-1050-command-pill.mjs` run) is pending the next build slot** -- not yet run; the
+paragraph above this one is round 0's own build, superseded by this remediation.
