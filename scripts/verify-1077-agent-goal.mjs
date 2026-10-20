@@ -480,7 +480,7 @@ async function main() {
       await settleForScreenshot(cdp);
       const shotName = `1077-agent-goal-${theme.id}.png`;
       await cdp.screenshot(path.join(SHOTS_DIR, shotName));
-      findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}), no stray hover card or tooltip open (Stage B's two members, each opened, scoped correctly).`);
+      findings.push(`Screenshot captured under the ${theme.name} theme (${shotName}), no stray hover card or tooltip open.`);
     }
 
     const report = {
