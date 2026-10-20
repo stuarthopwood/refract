@@ -63,6 +63,15 @@ export async function closeAllMenus(cdp) {
   await sleep(150);
   await pressEscape(cdp);
   await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'All menus closed' });
+  // #1043 fix: this script reopens/recloses the SAME profile menu far more densely than any
+  // existing caller of `switchTheme` (5x open+inspect+close per theme, then more for keyboard
+  // nav) -- `document.querySelector('[role="menu"]')` going away proves the ELEMENT unmounted,
+  // not that Radix's own closing transition/focus-return has genuinely finished settling, and a
+  // reopen fired immediately after could otherwise race it (a live failure this script actually
+  // hit: the very next `switchTheme` call's own click on the Theme trigger found nothing,
+  // despite an immediately-prior `waitFor` confirming the trigger existed). A short settle
+  // closes that gap.
+  await sleep(400);
 }
 
 /** Reads every `[role="menuitemradio"]` row currently in the DOM (used for BOTH the Theme
