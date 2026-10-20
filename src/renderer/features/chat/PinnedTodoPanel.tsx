@@ -292,15 +292,8 @@ function TodoPhaseGroup({
 
 function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: boolean }) {
   const { Icon, className, word, srOnly, muteText } = statusGlyph(task.status)
-  const liRef = useRef<HTMLLIElement>(null)
-  useLayoutEffect(() => {
-    const diagWin = window as typeof window & { __diagCommits?: Array<{ t: number; content: string; propStatus: string; committedText: string | null }> }
-    diagWin.__diagCommits = (diagWin.__diagCommits ?? []).concat([
-      { t: Date.now(), content: task.content, propStatus: task.status, committedText: liRef.current?.textContent ?? null }
-    ])
-  })
   return (
-    <li ref={liRef} data-current-task={isCurrent || undefined} className="flex items-start gap-1.5 px-1 py-0.5 text-xs">
+    <li data-current-task={isCurrent || undefined} className="flex items-start gap-1.5 px-1 py-0.5 text-xs">
       <Icon aria-hidden className={cn('mt-0.5 size-3.5 shrink-0', className)} />
       <div className="min-w-0 flex-1">
         <span

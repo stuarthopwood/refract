@@ -231,13 +231,7 @@ async function main() {
     // tape's own scripted 8s delay -- too tight once real launch/render latency is added (the
     // same reasoning `verify-741-role-chip-helpers.mjs`'s own comment gives for its 3s-delay/45s
     // budget). 20s gives a real, comfortable margin without being excessive.
-    await sleep(12_000);
-    const __diagPanelCount = await cdp.evaluate(`document.querySelectorAll('[data-slot="pinned-todo-panel"]').length`);
-    console.log('DIAG [data-slot="pinned-todo-panel"] count:', __diagPanelCount);
-    const __diagDeployLocations = await cdp.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent && el.textContent.includes('Deploy')).map((el) => ({ tag: el.tagName, text: el.textContent, closestSection: el.closest('section')?.getAttribute('aria-label') ?? null, closestDataSlot: el.closest('[data-slot]')?.getAttribute('data-slot') ?? null, role: el.closest('[role]')?.getAttribute('role') ?? null })))`);
-    console.log('DIAG every leaf element whose text includes "Deploy":', __diagDeployLocations);
-    const __diagCommits = await cdp.evaluate(`JSON.stringify((window.__diagCommits || []).filter((c) => c.content === 'Deploy'))`);
-    console.log('DIAG TodoTaskRow commit-phase trace for Deploy (committed renders only):', __diagCommits);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 20_000, label: 'Abandoned task strike-through appears live, mid-turn' });
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
