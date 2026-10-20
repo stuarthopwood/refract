@@ -1,11 +1,10 @@
-// Spec 018 slice 1 (issue #464), User Story 1/2: the Git changes panel's own assembly -- a
-// scrollable region that swaps between the four grouped file lists and a selected file's diff,
-// with the fixed commit-box footer (User Story 2) always mounted beneath it. No independent
-// Session binding of its own (FR-022): it always reflects whichever Session `sessionId` names,
-// the same pattern `FileExplorerPanel.tsx`/`SideChatPanel.tsx` already use -- a second Split
-// pane renders its own `GitChangesPanel` instance with its own `sessionId` prop, so two panes
-// never share state. The branch/ahead-behind header (User Story 3) mounts here in its own later
-// commit.
+// Spec 018 slice 1 (issue #464): the Git changes panel's own assembly -- the branch/ahead-behind
+// header (User Story 3) above a scrollable region that swaps between the four grouped file
+// lists (User Story 1) and a selected file's diff, with the fixed commit-box footer (User Story
+// 2) always mounted beneath it. No independent Session binding of its own (FR-022): it always
+// reflects whichever Session `sessionId` names, the same pattern `FileExplorerPanel.tsx`/
+// `SideChatPanel.tsx` already use -- a second Split pane renders its own `GitChangesPanel`
+// instance with its own `sessionId` prop, so two panes never share state.
 //
 // Diff placement (worker brief correction, supersedes tasks.md T015/spec.md's "opens in the
 // main-area tab" wording only -- every other ruling in that consult stands): no cross-cutting
@@ -23,10 +22,17 @@ import { useGitChangesStore } from '@/state'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesGroup } from './GitChangesGroup'
+import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
 
 // FR-002's own order: Conflicts/Staged/Changes/Untracked.
 const GROUP_ORDER: readonly GitChangesGroupKind[] = ['conflicts', 'staged', 'changes', 'untracked']
+
+// Mirrors `FileExplorerPanel.tsx`'s own `watcherRefCounts` map exactly (PR #671 gate round 7's
+// own reasoning: this effect's mount/unmount net out to zero across React StrictMode's dev-time
+// double-invoke before the real, lasting mount's `ensureWatching` runs) -- a separate map, since
+// `gitChanges.ensureWatching`/`stopWatching` is its own IPC pair, not `fileExplorer`'s.
+const watcherRefCounts = new Map<string, number>()
 
 interface DiffSelection {
   entry: GitChangesFileEntry
@@ -34,6 +40,36 @@ interface DiffSelection {
 }
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
+  // FR-015b/FR-016: watches this Session's worktree only while this panel is mounted for it.
+  useEffect(() => {
+    if (!sessionId) return
+    const id = sessionId
+    const count = (watcherRefCounts.get(id) ?? 0) + 1
+    watcherRefCounts.set(id, count)
+    if (count === 1) {
+      window.refract.gitChanges
+        .ensureWatching(id)
+        .then((result) => {
+          if (!result.ok) console.warn('GitChangesPanel: ensureWatching failed', result.error)
+        })
+        .catch((err) => console.warn('GitChangesPanel: ensureWatching rejected', err))
+    }
+    return () => {
+      const remaining = (watcherRefCounts.get(id) ?? 1) - 1
+      if (remaining <= 0) {
+        watcherRefCounts.delete(id)
+        window.refract.gitChanges
+          .stopWatching(id)
+          .then((result) => {
+            if (!result.ok) console.warn('GitChangesPanel: stopWatching failed', result.error)
+          })
+          .catch((err) => console.warn('GitChangesPanel: stopWatching rejected', err))
+      } else {
+        watcherRefCounts.set(id, remaining)
+      }
+    }
+  }, [sessionId])
+
   useEffect(() => {
     if (sessionId) void useGitChangesStore.getState().load(sessionId)
   }, [sessionId])
@@ -65,6 +101,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {snapshot && <GitChangesHeader header={snapshot.header} />}
       <div className="flex-1 overflow-auto">
         {selected ? (
           <GitChangesDiffPane sessionId={sessionId} selection={selected} onBack={() => setSelected(null)} />
