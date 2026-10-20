@@ -127,16 +127,7 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  // Issue #1050 (composer command pill, gate round 2 remediation -- round 1's accent-text-on-
-  // command-pill-bg pairing is superseded, no accepted gap now): the pill's own fill
-  // (`--command-pill-bg`) and text (`--command-pill-fg`) are two INDEPENDENT dedicated tokens.
-  // Round 1 proved no single existing colour clears both the accent-text contrast floor and the
-  // gate's own "visibly distinct from the composer surface" floor (>=1.4:1 against the
-  // effective composer backdrop) in Dark/Obsidian/Dark (high contrast); `--command-pill-bg` is
-  // now a plain neutral step chosen only to clear 1.4:1, and `--command-pill-fg` is a lightened
-  // step of `--accent-text`'s own hue chosen only to clear 4.5:1 (7:1 in Dark high contrast) on
-  // THAT fill -- both pairs below are enforced in every preset, with margin, and neither
-  // conflicts with the other.
+  // Issue #1050 (composer command pill, gate round 2): two independent tokens -- `--command-pill-bg` clears only 1.4:1 vs composer, `--command-pill-fg` (a lightened `--accent-text` hue) clears only the text floor on that fill; see globals.css for the measured numbers.
   { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 4.5 },
   { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
