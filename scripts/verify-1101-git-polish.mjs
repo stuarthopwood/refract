@@ -115,11 +115,17 @@ async function readSurfaceStyle(cdp, finderExpr) {
  * a pointer click for a text field, unlike a button), then reads `measureExpr`'s own computed
  * box-shadow/border colour -- a SEPARATE element for the composer, whose visual border/ring
  * lives on the wrapping `has-[textarea:focus-visible]:` div, never on the textarea itself (which
- * is never the thing `document.activeElement` can equal is a plain, unfocusable `<div>`). */
+ * is never the thing `document.activeElement` can equal is a plain, unfocusable `<div>`).
+ * Settles 300ms before measuring: the shared `Input`/`Textarea` primitives carry their own
+ * `transition-colors` (the composer's own wrapper div has none), so an immediate read races a
+ * real in-flight border/background colour transition and catches an interpolated mid-transition
+ * frame (confirmed live: an `oklab(...)` value strictly between the resting and focused literal
+ * `oklch(...)` tokens) -- a script timing bug, not a product one. */
 async function readFocusVisibleStyle(cdp, clickExpr, measureExpr, label, findings, failures) {
   await cdp.click(clickExpr);
   const isFocusVisible = await cdp.evaluate(`(() => { const el = ${clickExpr}; return document.activeElement === el && el.matches(':focus-visible'); })()`);
   assertEqual(isFocusVisible, true, `${label}: a real click left it genuinely :focus-visible`, findings, failures);
+  await sleep(300);
   return cdp.evaluate(
     `(() => { const el = ${measureExpr}; if (!el) return null; const s = getComputedStyle(el); return { borderTopColor: s.borderTopColor, boxShadow: s.boxShadow }; })()`
   );
@@ -312,8 +318,11 @@ async function main() {
     // =========================================================================================
     // The previous check's own final `clearField` left the Subject input focused -- blur
     // everything first so these "resting" reads are genuinely unfocused, not a stray leftover
-    // focus state from Check 1.
+    // focus state from Check 1. Settles 300ms: blurring itself re-triggers the `Input`
+    // primitive's own `transition-colors` fading BACK to its resting border/background, so an
+    // immediate read races that same transition (see `readFocusVisibleStyle`'s own doc comment).
     await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+    await sleep(300);
     const COMPOSER_WRAPPER = `document.querySelector('[aria-label="Message"]')?.closest('.border-composer-border')`;
     const composerRestingBefore = await readSurfaceStyle(cdp, COMPOSER_WRAPPER);
     const subjectResting = await readSurfaceStyle(cdp, SUBJECT_FINDER);
@@ -412,6 +421,10 @@ async function main() {
     const backAriaLabel = await activeElementAriaLabel(cdp);
     assertEqual(backAriaLabel, `Back to changes from ${FIXTURE.longTracked}`, "Back button's aria-label names the real open file", findings, failures);
 
+    // Settles 300ms before the FIRST rect capture: the diff's own content (syntax highlighting,
+    // font metrics) can still be reflowing immediately after `.diff-view` first mounts, which
+    // would otherwise make `rectBefore` an unstable baseline to compare `rectAfter` against.
+    await sleep(300);
     const scrollRegionFinder = `document.querySelector('.diff-view')?.closest('.overflow-auto')`;
     const rectBefore = await cdp.evaluate(`(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); return { top: r.top, left: r.left }; })()`);
     const scrollPoint = await cdp.evaluate(`(() => { const r = (${scrollRegionFinder}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
