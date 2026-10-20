@@ -92,9 +92,21 @@ export async function dispatchShiftKeyTap(cdp) {
  * `idleManagementBaselineS` (0.328s) is gate round 2's own measured cost of Full mode's
  * idle-management machinery (listeners, idle timer, MutationObserver) with ZERO flights running
  * -- measured before this debug override existed, when the real randomised gap essentially
- * never landed a flight inside a single 60s sample. A SEPARATE hard ceiling on the per-flight
- * excess itself (<= 0.6s, regardless of production rate) catches a regression in the flight's
- * own cost directly, not just diluted by the projection. Every input (both baselines, both
+ * never landed a flight inside a single 60s sample (`docs/PLAN.md`'s own round-2 status update,
+ * head `edcde895`: "Final budget: median active 0.328s/60s"). Gate round 4 fix (Main's decision
+ * on #1048): investigated re-measuring this LIVE in the same run instead of a hard-coded
+ * constant (a zero-flight Full sample, alternated against Artwork-only like the others) --
+ * not possible without a relaunch: `debug.rs::resolve_overrides` reads
+ * `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` live on every `debug.getOverrides()` call (never cached
+ * Rust-side), but that env var itself lives in the OS process's own environment block, fixed at
+ * launch by the parent process that spawned it -- there is no OS mechanism this script can use
+ * to mutate an ALREADY-RUNNING process's own environment from outside. Kept as a constant,
+ * `idleManagementBaselineSource` records its citation in `report.json` so a future reader (or a
+ * future "re-verify this" pass) knows exactly where to find the run that measured it, rather
+ * than trusting an uncited number.
+ * A SEPARATE hard ceiling on the per-flight excess itself (<= 0.6s, regardless of production
+ * rate) catches a regression in the flight's own cost directly, not just diluted by the
+ * projection. Every input (both baselines, both
  * medians, the worst-case rate, the projected total) is recorded in `report.json`, not just the
  * pass/fail.
  *
@@ -133,7 +145,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   const PRODUCTION_FLIGHT_DURATION_S = 4;
   const WORST_CASE_FLIGHTS_PER_MINUTE = 60 / (PRODUCTION_MIN_FLIGHT_GAP_S + PRODUCTION_FLIGHT_DURATION_S);
   const IDLE_MANAGEMENT_BASELINE_S = 0.328;
-  const PER_FLIGHT_EXCESS_CEILING_S = 0.6;
+  const IDLE_MANAGEMENT_BASELINE_SOURCE = 'docs/PLAN.md round-2 status update, head edcde895 ("Final budget: median active 0.328s/60s") -- not re-measured live this run: REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS is fixed in the OS process env block at launch, unreachable mid-run without a relaunch';
 
   const refreshRateHz = await cdp.evaluate(`new Promise((resolve) => {
     let frames = 0;
@@ -253,6 +265,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
     perFlightExcesses,
     medianPerFlightExcess,
     idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S,
+    idleManagementBaselineSource: IDLE_MANAGEMENT_BASELINE_SOURCE,
     worstCaseFlightsPerMinute: WORST_CASE_FLIGHTS_PER_MINUTE,
     perFlightExcessCeilingS: PER_FLIGHT_EXCESS_CEILING_S,
     projectedProductionCostS,
@@ -272,12 +285,12 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   assertTrue(
     medianPerFlightExcess !== null && medianPerFlightExcess <= PER_FLIGHT_EXCESS_CEILING_S,
     `Ambient loop CPU budget: median per-flight CPU excess is at most ${PER_FLIGHT_EXCESS_CEILING_S}s (actual ${medianPerFlightExcess}s)`,
-    { perFlightExcesses, medianPerFlightExcess, idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S }
+    { perFlightExcesses, medianPerFlightExcess, idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S, idleManagementBaselineSource: IDLE_MANAGEMENT_BASELINE_SOURCE }
   );
   assertTrue(
     projectedProductionCostS !== null && projectedProductionCostS <= 1.0,
     `Ambient loop CPU budget: projected production-rate cost (idle-management baseline + median per-flight excess x worst-case flights/min) is at most 1.0s per 60s (actual ${projectedProductionCostS}s)`,
-    { idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S, medianPerFlightExcess, worstCaseFlightsPerMinute: WORST_CASE_FLIGHTS_PER_MINUTE, projectedProductionCostS }
+    { idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S, idleManagementBaselineSource: IDLE_MANAGEMENT_BASELINE_SOURCE, medianPerFlightExcess, worstCaseFlightsPerMinute: WORST_CASE_FLIGHTS_PER_MINUTE, projectedProductionCostS }
   );
   assertTrue(
     medianPausedDelta !== null && medianPausedDelta <= 0.1,
