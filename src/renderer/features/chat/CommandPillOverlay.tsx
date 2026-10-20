@@ -32,8 +32,9 @@
 // `MessageInput.tsx`'s own `<textarea>` carries it regardless of whether a pill shows, so a
 // draft's selection looks identical whether or not the leading token happens to be a recognised
 // command. The previous opaque `var(--accent)` fill (round 3) measured EQUAL to
-// `--command-pill-bg` in Nordic Frost/Cyber Amber (both alias `--muted`/`--accent` to the same
-// resolved colour), so selecting the pilled token itself painted an invisible highlight --
+// `--command-pill-bg` in Nordic Frost (aliases `--muted`/`--accent` to the same resolved
+// colour there; Cyber Amber did too, until #1039, 2026-10-20, retuned it off that alias onto
+// its own literal), so selecting the pilled token itself painted an invisible highlight --
 // found in this round's test review. A translucent tint lets the pill's own fill show through
 // underneath it, so the highlight is always visibly distinct from whatever it sits on, by
 // construction, in every theme (`scripts/composer-selection-contrast.mjs`'s own
@@ -101,11 +102,17 @@ export const COMPOSER_MIRROR_CLASS =
  * (gate round 3 fix: Dark/Obsidian's own hue had drifted 15-25 degrees off the real accent hue,
  * see each theme's own comment in globals.css), lightened/desaturated only as far as needed to
  * clear 4.5:1 (7:1 in Dark high contrast) on THIS fill -- a visibly lighter step of the same
- * accent family, not a different colour. Nordic Frost/Cyber Amber need no lightened step at all
- * (`--muted` already clears both floors against the existing `--accent-text`), so their
- * `--command-pill-fg` is a plain alias of it. See each theme's own comment in `globals.css` and
- * the enforced pairs in `scripts/theme-contrast-pairs.mjs` for the measured numbers -- no
- * accepted gap in any preset now. No border (decision 3); `rounded-sm` matches `--radius`'s own
+ * accent family, not a different colour. Nordic Frost needs no lightened step at all (`--muted`
+ * already clears both floors against the existing `--accent-text`), so its `--command-pill-fg`
+ * is a plain alias of it. Cyber Amber did too originally, until #1039 (2026-10-20) retuned its
+ * surfaces to Default Dark's own pure-neutral values: the new, lighter `--muted` no longer
+ * clears the 1.4:1 floor against the new, darker-relative `--background` (1.31:1), so Cyber
+ * Amber's own `--command-pill-bg` is now a literal too (Dark's own `oklch(0.31 0 0)`, since its
+ * `--background` is now byte-identical to Dark's) -- `--command-pill-fg` still needs no
+ * lightened step (the vivid orange accent clears 4.5:1 on that fill directly, 5.83:1). See each
+ * theme's own comment in `globals.css` and the enforced pairs in `scripts/theme-contrast-
+ * pairs.mjs` for the measured numbers -- no accepted gap in any preset now.
+ * No border (decision 3); `rounded-sm` matches `--radius`'s own
  * small step, the same class `ChipOverlaySegments`'s own pill uses; no PADDING, so the pill
  * never widens the inline box past the token's own glyph width (no layout shift, no caret/
  * geometry drift against the real textarea). Gate round 3 fix (UI Medium): the "/" and the
@@ -157,7 +164,8 @@ export const COMMAND_PILL_TEXTAREA_CLASS =
  *
  * `selection:bg-composer-selection-bg`: a TRANSLUCENT accent-text tint (34% alpha,
  * `globals.css`), not an opaque fill -- round 3's opaque `var(--accent)` alias happened to
- * measure EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber, so selecting the pilled
+ * measure EQUAL to `--command-pill-bg` in Nordic Frost (Cyber Amber too, until #1039,
+ * 2026-10-20, retuned it off that same alias), so selecting the pilled
  * token itself painted an invisible highlight (this round's test-review finding). A translucent
  * tint lets whatever is underneath (the pill's own fill, or the plain composer surface) show
  * through, so it is visibly distinct from its own backdrop by construction, in every theme.

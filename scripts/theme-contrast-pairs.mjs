@@ -99,17 +99,17 @@ export const PAIRS = [
   // renders directly on `DropdownMenuContent`'s own `bg-popover`, a surface it was never
   // checked against before, in its real WCAG 1.4.11 (3:1 non-text) role -- the Ask card/
   // MergeDialog's identical dot renders on a dialog's `--background`/`--card`, a pre-existing,
-  // unrelated gap this issue's scope does not touch. The ring's UNCHECKED border
-  // (`border-muted-foreground`) needs no new entry either: `muted-foreground`/`popover` already
-  // exists above at the stricter 4.5:1 text floor (line ~138), which already implies 3:1.
+  // unrelated gap out of scope. The ring's UNCHECKED border (`border-muted-foreground`) needs
+  // no new entry: `muted-foreground`/`popover` already exists above at the stricter 4.5:1 floor.
   { fg: 'foreground', bg: 'popover', min: 3 },
   // Gate round 1 fix (PR #1057, Code/Test/UI High): the CHECKED ring's own border was
-  // `border-primary` (`--primary`/`--popover` measures only 2.92-2.99:1 in Obsidian/Nordic
-  // Frost/Cyber Amber -- under 3:1, and visibly INVERTED there since `--primary`'s own relative
-  // luminance is LOWER than `--muted-foreground`'s, so the checked row's ring read fainter than
-  // an unchecked one). This was never "the same pre-existing gap" an earlier cut of this comment
-  // claimed: `primary`/`card` and `primary`/`background` both clear 3:1 with margin (3.35-3.87:1
-  // measured) -- `--popover` specifically, the surface this ring is NEW to, was the one failure.
+  // `border-primary` (`--primary`/`--popover` measured only 2.92-2.99:1 in Obsidian/Nordic
+  // Frost/Cyber Amber at the time -- under 3:1, visibly INVERTED there since `--primary`'s own
+  // relative luminance was LOWER than `--muted-foreground`'s). Never "the same pre-existing
+  // gap" an earlier cut of this comment claimed: `primary`/`card` and `primary`/`background`
+  // both clear 3:1 with margin -- `--popover` was the one failure. #1039 (2026-10-20) retuned Cyber
+  // Amber's `--primary` to `#c2410c` (clears 3:1 on `--popover`, 3.46:1); Obsidian (2.99:1)/Nordic
+  // Frost (2.92:1) still measure under the floor, so the fix below applies to every theme.
   // Fixed by changing `RADIO_RING_CLASS`'s checked border to `border-foreground` instead
   // (`radio-group.tsx`) -- `foreground`/`popover` above already covers the resting case;
   // `foreground`/`accent` below covers the row's own `focus:bg-accent` fill (a focused AND
@@ -440,7 +440,8 @@ export function userBubbleLinkContrastRows(themes) {
 // fail Dark (high contrast) (`muted-foreground` on its own `--sidebar-border`/`--sidebar`
 // composite measures only ~2.50:1, a real, pre-existing gap unrelated to this story's own
 // scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1
-// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.39:1).
+// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.24:1 -- #1039
+// retuned this preset's `--sidebar`/`--muted-foreground`, 2026-10-20; was 5.39:1 before).
 export function sidebarBorderContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {

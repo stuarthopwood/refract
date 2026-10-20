@@ -14,7 +14,9 @@ export const THEMES_1043 = [
   { id: 'dark-high-contrast', name: 'Dark (high contrast)', swatch: '#000000', swatchPrimary: '#ffffff' },
   { id: 'obsidian', name: 'Obsidian', swatch: '#0F1014', swatchPrimary: '#5A5EEE' },
   { id: 'nordic-frost', name: 'Nordic Frost', swatch: '#060f1e', swatchPrimary: '#007a7c' },
-  { id: 'cyber-amber', name: 'Cyber Amber', swatch: '#0f0703', swatchPrimary: '#c14100' }
+  // #1039 (2026-10-20) retuned Cyber Amber's own swatch/swatchPrimary from the old brown
+  // `#0f0703`/`#c14100` to Default Dark's own `#0a0a0a` plus the new vivid orange `#c2410c`.
+  { id: 'cyber-amber', name: 'Cyber Amber', swatch: '#0a0a0a', swatchPrimary: '#c2410c' }
 ];
 
 // `src/shared/themes.ts`'s own literal hex values -- this live-check compares against the

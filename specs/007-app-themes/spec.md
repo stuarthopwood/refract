@@ -30,6 +30,88 @@ font and code font stay with issue #4 and are out of scope here.
   preset; there is no light theme, and no OS-follow/System mode, since there is nothing to follow
   between.
 
+### Session 2026-10-20 (#1039, grilled 2026-10-19, none deferred)
+
+- Q: What should Cyber Amber's surfaces look like? -> A: Default Dark's own lightness ladder.
+  **Amended same day (Stuart, issue comment): PURE neutral greys, chroma 0 -- no warm tint on
+  any surface token.** No more distinct, browner canvas of its own.
+- Q: What is Cyber Amber's accent? -> A: A vivid orange, settling the preset's own open
+  question (peach or amber) as neither: accent text and links are about `#fb923c`; the filled
+  Send/primary button is about `#c2410c` with white text.
+- Q: Does Cyber Amber's warning colour change? -> A: No -- it stays golden amber, and MUST stay
+  visually distinct from the new accent by hue, so a warning never reads as an accent
+  (`docs/design/foundations-icons.md:53`, "colour is meaning").
+- Q: Does the softer-text change apply to every built-in theme? -> A: No -- only Default Dark
+  and Cyber Amber. `--foreground` moves from near-white to about `oklch(0.90 0 0)`;
+  `--chat-foreground` goes a step softer, to about `oklch(0.86 0 0)`; muted text stays a clear
+  step below both, and every text pair keeps 4.5:1 or better. **Superseded the same day (see
+  the final 2026-10-20 session below): #1039 drops its own text softening entirely.**
+
+### Session 2026-10-20 (later, #1039 issue comment amendment)
+
+- Q: The first #1039 cut gave Cyber Amber's surfaces a barely-visible warm tint (chroma 0.005,
+  hue 50) -- does that stay? -> A: No. Every surface token (`--background`, `--sidebar`,
+  `--card`/`--popover`, `--muted`/`--accent`/`--secondary`, `--border`, `--input`) becomes PURE
+  neutral (chroma 0), byte-identical to Default Dark's own surface tokens. The orange accent
+  and the warning-hue move are unchanged. **Corrected same day (Stuart): the softer text
+  (`--foreground`/`--chat-foreground`/`--muted-foreground`) is ALSO pure neutral, byte-identical
+  to Default Dark's own text tokens -- see the follow-up session below.**
+
+### Session 2026-10-20 (later still, #1039 correction -- text tokens are neutral too)
+
+- Q: Round 1 of the 2026-10-20 amendment left Cyber Amber's text tokens
+  (`--foreground`/`--chat-foreground`/`--muted-foreground`) at the first #1039 cut's own faint
+  warm tint -- is that right? -> A: No. The original grill item 3 set `--foreground` ≈
+  `oklch(0.90 0 0)` and `--chat-foreground` ≈ `oklch(0.86 0 0)` -- chroma 0, in BOTH themes.
+  Every Cyber Amber text token (`--foreground`, `--chat-foreground`, `--muted-foreground`, and
+  every token that aliases `--foreground` -- `--card-foreground`, `--popover-foreground`,
+  `--accent-foreground`, `--sidebar-foreground`, `--secondary-foreground`,
+  `--sidebar-accent-foreground`) becomes chroma 0, byte-identical to Default Dark's own text
+  tokens. Only the accent family (`--accent-text`, `--primary`/`--send`, markdown links), the
+  warning hue, and `themes.ts`'s own `swatchPrimary` differ from Default Dark -- `--ring` is
+  NOT part of this family (the achromatic-ring decision, 2026-10-09, applies here too; gate
+  round 1 correction, 2026-10-20: an earlier draft of this session wrongly listed `--ring`
+  among the differing tokens).
+
+### Session 2026-10-20 (final, #1039 drops its own text softening)
+
+- Q: #1039's own text softening (`--foreground`/`--chat-foreground` retuned in Default Dark and
+  Cyber Amber) went through three same-day corrections (surfaces-only pure-neutral, then
+  text-pure-neutral-too, ...) -- is any of it kept? -> A: No. Stuart decided text softening
+  belongs to a NEW, separate, app-wide issue instead (white at opacity 0.9 for headers/UI, 0.78
+  for body/chat, 0.6 for muted, in every built-in preset except Dark (high contrast)) -- out of
+  this spec's scope. `--foreground`, `--chat-foreground` and `--muted-foreground` in both
+  Default Dark and Cyber Amber revert to `origin/main`'s own current values (`oklch(0.985 0 0)`/
+  `oklch(0.90 0 0)`/`oklch(0.708 0 0)`), untouched by #1039. #1039's final, settled shape:
+  Cyber Amber equals Default Dark (surfaces AND text) plus the orange accent and Send; `--ring`
+  stays achromatic and byte-identical to Default Dark's own (gate round 1 correction), and a
+  warning hue moved to 88.
+
+### Session 2026-10-20 (post-draft-PR self-review on PR #1094)
+
+- Q: A self-review against the issue body's own grill decisions, after draft PR #1094 opened,
+  found Cyber Amber still diverging from Default Dark in several places the earlier sessions
+  above missed -- Mermaid's own palette, `--input`,
+  `--scrollbar-thumb`/`--scrollbar-thumb-hover`, `--composer-focus`, and `--ring` (wrongly
+  documented as part of the accent family). Does Cyber Amber's "equals Default Dark" rule
+  extend to these? -> A: Yes. Mermaid's `MERMAID_THEME_VARIABLES['cyber-amber']` now reuses
+  `DARK_FAMILY` directly (`src/shared/mermaidThemeData.ts`); `--input`/`--scrollbar-thumb`/
+  `--scrollbar-thumb-hover`/`--composer-focus`/`--ring`/`--sidebar-ring` are now byte-identical
+  literals to Default Dark's own (not independent values, not aliases that happened to render
+  the same). The status palette (severity/state/PR-state tokens) stays Cyber Amber's own,
+  except that `--accent-text`'s new real hue (55.9) also closed the gap to `--severity-error`
+  (hue 12): the two swatches now measure only 1.23:1 apart, under the 1.5:1 distinctness floor
+  #551's own gate established. A grid search (L 0.655-0.675, chroma 0.15-0.24, hue 5-25) found
+  no point clearing both that floor and the error-text-everywhere floor (>=4.5:1) at once; the
+  search was widened (kept redder, hue 22, the family every other theme's own `--severity-
+  error` already uses; the winning chroma, 0.12, sits outside the original 0.15-0.24 band) --
+  `oklch(0.665 0.12 22)` clears every text floor (binding case 4.50:1 on the composited hover
+  fill) while measuring the best
+  accent-vs-error ratio achievable (1.42:1); the 1.5:1 distinctness floor is NOT met, an
+  accepted departure recorded in `docs/design/accessibility.md` "Accepted departures".
+  `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` (a literal
+  copy in every theme, #568/#529 decision 5) is updated to the same value too.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Opens in a sensible default preset on first launch (Priority: P1)
@@ -228,6 +310,23 @@ side panel and confirm both show the same theme.
   in the default dark preset (the existing dark theme).
 - **FR-019**: Closing Refract while an unsaved theme is being previewed MUST NOT persist that
   preview; the next launch MUST show whatever was last saved.
+- **FR-020** (#1039): Within any single built-in theme, the active accent colour (`--accent-text`,
+  `--primary`, `--send`) MUST stay visually distinct in hue from that theme's own warning colour
+  (`--severity-warning`), so a warning never reads as an accent.
+- **FR-022** (#1039, amended 2026-10-20 five times): Cyber Amber's surface and text tokens,
+  plus `--input`, `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus`, MUST
+  equal Default Dark's own tokens exactly (byte-identical, OKLCH chroma ≤ 0.002 where that
+  applies) -- `--ring`/`--sidebar-ring` too, achromatic per the 2026-10-09 decision and never
+  part of the accent family. The status palette (`--severity-success`/`--severity-warning`/
+  `--severity-error`/`--severity-info` and the state/PR-state tokens built from them) keeps
+  Cyber Amber's own preset values, EXCEPT where retuning the accent moved a distinctness floor
+  out of reach -- FR-020 covers the accent-vs-warning case; the accent-vs-error case has no
+  single value clearing both its own distinctness floor and the error-text floor at once, so
+  it is a named accepted departure instead (`docs/design/accessibility.md` "Accepted
+  departures"), not a functional requirement. Only the accent family (`--accent-text`,
+  `--primary`/`--send`, markdown links), the warning hue, the error family (`--severity-error`/
+  `--destructive`/`--state-stopped`/`--pr-closed`), and `themes.ts`'s own `swatchPrimary` may
+  differ from Default Dark.
 
 ### Key Entities
 
