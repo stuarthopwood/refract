@@ -4,7 +4,7 @@
 // pill/spellcheck/geometry/theme checks).
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { parseComputedColorToEntry, srgbGammaEncode } from './contrast-math.mjs';
+import { parseComputedColorToEntry, resolvedLinear, srgbGammaEncode } from './contrast-math.mjs';
 
 export const TEXTAREA = `document.querySelector('[aria-label="Message"]')`;
 export const PILL = `document.querySelector('[data-command-pill-token]')`;
@@ -194,11 +194,33 @@ export async function assertCaretVisible(cdp, sleep, charOffset, label, report) 
  * (confirmed live: `expectedBgRaw` read `'oklch(0.269 0 0)'`, which a plain `rgba?\(...\)` regex
  * never matches, so the comparison silently always failed). Reuses `contrast-math.mjs`'s own
  * `parseComputedColorToEntry` (already handles `rgb()`/`oklch()`/`oklab()`, the same parser
- * `check-theme-contrast.mjs` relies on) instead of a second, narrower regex here. */
-function expectedRgbBytes(rawColorString) {
-  const entry = parseComputedColorToEntry(rawColorString);
-  if (!entry) return null;
-  return entry.linear.map((c) => Math.round(srgbGammaEncode(c) * 255));
+ * `check-theme-contrast.mjs` relies on) instead of a second, narrower regex here.
+ *
+ * Gate round 5 fix (test review): `--composer-selection-bg` is now TRANSLUCENT (34% alpha,
+ * `color-mix`) -- parsing its raw `background-color` string and converting straight to bytes (as
+ * this function used to) treats it as if fully OPAQUE, which is the WRONG expected pixel: the
+ * real on-screen result is that translucent colour COMPOSITED over whatever is actually behind
+ * it (confirmed live: expected `oklab(0.62... / 0.34)` converted directly read nowhere near the
+ * real captured `[46,47,89,255]`, which is in fact an almost-exact match for the colour
+ * COMPOSITED over `--background`). Resolves `--composer-background` first (the textarea's own
+ * immediate backdrop) and falls back to `--background` if that reads fully transparent (alpha 0
+ * -- true in every preset except Dark high contrast, `globals.css`'s own `#927` comment has the
+ * reasoning), then composites via the SAME gamma-space math `check-theme-contrast.mjs`/
+ * `composerSelectionContrastRows` already share (`resolvedLinear`, `contrast-math.mjs`), instead
+ * of a second, independently-maintained compositing formula living only here. */
+async function expectedSelectionPixelBytes(cdp, resolveCssVarColor) {
+  const selectionBgRaw = await resolveCssVarColor(cdp, '--composer-selection-bg', 'background-color');
+  const selectionEntry = parseComputedColorToEntry(selectionBgRaw);
+  if (!selectionEntry) return null;
+  const composerBgRaw = await resolveCssVarColor(cdp, '--composer-background', 'background-color');
+  let backdropEntry = parseComputedColorToEntry(composerBgRaw);
+  if (!backdropEntry || backdropEntry.alpha === 0) {
+    const pageBgRaw = await resolveCssVarColor(cdp, '--background', 'background-color');
+    backdropEntry = parseComputedColorToEntry(pageBgRaw);
+  }
+  if (!backdropEntry) return null;
+  const composited = resolvedLinear(selectionEntry, backdropEntry);
+  return composited.map((c) => Math.round(srgbGammaEncode(c) * 255));
 }
 
 /** Gate round 3 HIGH fix, remediated gate round 4: round 1's version sampled the PILL's own
@@ -213,10 +235,11 @@ function expectedRgbBytes(rawColorString) {
  * zero-width glyph BOUNDARY between 'h' and 'i' (offset 6 of "/btw hi") instead -- genuinely
  * plain argument text, several character-widths clear of the pill and its 2px shadow bleed, the
  * same zero-width-boundary technique already proven reliable for every caret check above -- and
- * asserting the selected reading matches the LIVE-resolved `--composer-selection-bg`, not merely
- * "differs by some threshold" (a specific, false-positive-resistant assertion). Takes a resting
- * (unselected) shot first, matching `02-pill-btw.png` taken by the caller just before this runs,
- * then its own post-selection shot (`02b-selection-highlight.png`) as separate visual evidence. */
+ * asserting the selected reading matches the LIVE-resolved, properly COMPOSITED `--composer-
+ * selection-bg` (gate round 5 fix above), not merely "differs by some threshold" (a specific,
+ * false-positive-resistant assertion). Takes a resting (unselected) shot first, matching
+ * `02-pill-btw.png` taken by the caller just before this runs, then its own post-selection shot
+ * (`02b-selection-highlight.png`) as separate visual evidence. */
 export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, shotsDir) {
   const point = await measureCaretPixel(cdp, 6); // "/btw hi": the h/i boundary, plain argument text
   if (!point) throw new Error('FAIL: Ctrl+A selection highlight (measureCaretPixel found no mirror text node at the h/i boundary, offset 6)');
@@ -225,13 +248,12 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssV
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, including the pill
   const after = await capturePixelRegion(cdp, x, y, 0, 0);
   await cdp.screenshot(path.join(shotsDir, '02b-selection-highlight.png'));
-  const expectedBgRaw = await resolveCssVarColor(cdp, '--composer-selection-bg', 'background-color');
-  const expectedRgb = expectedRgbBytes(expectedBgRaw);
+  const expectedRgb = await expectedSelectionPixelBytes(cdp, resolveCssVarColor);
   const differs = before.some((value, index) => Math.abs(value - after[index]) > 10);
   const matchesExpected = !!expectedRgb && expectedRgb.every((v, i) => Math.abs(v - after[i]) <= 10);
-  report.push({ step: 'Ctrl+A: selection highlight paints a real background over plain argument text', ok: differs && matchesExpected, before, after, expectedBgRaw, x, y });
+  report.push({ step: 'Ctrl+A: selection highlight paints a real background over plain argument text', ok: differs && matchesExpected, before, after, expectedRgb, x, y });
   if (!differs) throw new Error(`FAIL: Ctrl+A selection highlight (h/i boundary (${x},${y}) identical before/after: ${JSON.stringify(before)})`);
-  if (!matchesExpected) throw new Error(`FAIL: Ctrl+A selection highlight (selected pixel ${JSON.stringify(after)} does not match resolved --composer-selection-bg ${expectedBgRaw})`);
+  if (!matchesExpected) throw new Error(`FAIL: Ctrl+A selection highlight (selected pixel ${JSON.stringify(after)} does not match the composited --composer-selection-bg ${JSON.stringify(expectedRgb)})`);
   console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background over plain argument text');
 }
 
