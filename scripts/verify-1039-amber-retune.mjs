@@ -7,12 +7,11 @@
 // `--muted-foreground` are untouched by #1039 in both Cyber Amber and Default Dark).
 //
 // Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
-// fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn that
-// deterministically renders a real `--severity-warning`-coloured NoticeRow, with no dependence
-// on a real model ever choosing to emit a warning. The same turn's own echoed user message
-// renders through `UserMessageRow.tsx`'s `text-chat-foreground` Markdown. EXTENDED (#1039
-// round-1 self-review): the fixture now also carries one assistant message with a short
-// Mermaid fence BEFORE the notices -- no second fixture needed for any assertion below.
+// fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn
+// renders a real `--severity-warning`-coloured NoticeRow with no model dependence; the same
+// turn's echoed user message renders through `UserMessageRow.tsx`'s own `text-chat-foreground`
+// Markdown. EXTENDED (#1039 round-1 self-review): the fixture also carries one assistant
+// message with a short Mermaid fence BEFORE the notices -- no second fixture needed below.
 //
 // For each of Cyber Amber and Dark (Default Dark), switches via the real Profile-menu Theme
 // submenu (`switchTheme`, the same route `verify-551-presets.mjs` uses for Cyber Amber), then
@@ -84,7 +83,6 @@ import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
 import { parseComputedColorToEntry } from './contrast-math.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
-import { clearField } from './verify-464-git-changes-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -528,9 +526,11 @@ async function main() {
         await cdp.click(`(${freshToastExpr})?.querySelector('[data-close-button]')`);
         await cdp.waitFor(`!(${freshToastExpr})`, { timeoutMs: 5_000, label: `${theme.name}: refusal toast dismissed` });
         // Gate round 1 fix (self-caught live: leftover draft leaked into Cyber Amber's own
-        // shots): a refusal leaves the draft untouched (FR-019) and `Input.insertText` only
-        // inserts at the caret, never replaces -- `clearField` (Ctrl+A, Backspace) restores it.
-        await clearField(cdp, `document.querySelector('[aria-label="Message"]')`);
+        // shots -- a refusal leaves the draft untouched, FR-019): `clearField`'s Ctrl+A/
+        // Backspace measured unreliable here (the slash-menu's own panel intercepts real key
+        // events over a recognised-looking draft) -- the native `<textarea>` value setter plus
+        // a real `input` event bypasses React's own short-circuit instead.
+        await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); if (!el) return; Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
         await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value === ''`, { timeoutMs: 5_000, label: `${theme.name}: composer draft cleared` });
 
         await settleForScreenshot(cdp);
