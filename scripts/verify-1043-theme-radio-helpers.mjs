@@ -2,17 +2,29 @@
 // (#806 file-size cap) the same way verify-741-role-chip.mjs/verify-569 etc. split their own
 // bulk check bodies into a companion `-helpers.mjs` file.
 import { sleep } from './verify-tauri-cdp.mjs';
+import { measuredContrastRatio } from './contrast-math.mjs';
 import { pressKey, pressEscape, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 
 // The 5 built-in presets (`src/shared/themes.ts`'s own declaration order) -- every one the
 // Theme submenu lists, each exercised as the "current" preset in turn.
 export const THEMES_1043 = [
-  { id: 'dark', name: 'Dark' },
-  { id: 'dark-high-contrast', name: 'Dark (high contrast)' },
-  { id: 'obsidian', name: 'Obsidian' },
-  { id: 'nordic-frost', name: 'Nordic Frost' },
-  { id: 'cyber-amber', name: 'Cyber Amber' }
+  { id: 'dark', name: 'Dark', swatch: '#0a0a0a', swatchPrimary: '#e5e5e5' },
+  { id: 'dark-high-contrast', name: 'Dark (high contrast)', swatch: '#000000', swatchPrimary: '#ffffff' },
+  { id: 'obsidian', name: 'Obsidian', swatch: '#0F1014', swatchPrimary: '#5A5EEE' },
+  { id: 'nordic-frost', name: 'Nordic Frost', swatch: '#060f1e', swatchPrimary: '#007a7c' },
+  { id: 'cyber-amber', name: 'Cyber Amber', swatch: '#0f0703', swatchPrimary: '#c14100' }
 ];
+
+// `src/shared/themes.ts`'s own literal hex values -- this live-check compares against the
+// REAL computed `background-image` (which Chromium normalises to `rgb(r, g, b)` regardless of
+// how the author wrote it), so the hex here must convert to that exact format to compare.
+export function hexToRgbTuple(hex) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 // A second hand-maintained copy of `src/renderer/lib/modelDisplay.ts`'s own `THINKING_LEVELS`/
 // `THINKING_LEVEL_LABEL` (a .mjs script cannot import a .ts module here) -- same convention
@@ -93,7 +105,7 @@ export const READ_RADIO_ROWS_EXPR = `
       hasDot: !!(ring && ring.querySelector('span')),
       childCount: row.children.length,
       swatchClass: swatch ? swatch.className : null,
-      swatchBg: swatch ? swatch.style.backgroundColor : null
+      swatchBackgroundImage: swatch ? getComputedStyle(swatch).backgroundImage : null
     };
   })
 `;
@@ -186,6 +198,80 @@ export async function ringCarriesForcedColorsOverride(cdp) {
         checkedHasOverride: !!(checkedRing && checkedRing.className.includes("forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]")),
         uncheckedHasOverride: !!(uncheckedRing && uncheckedRing.className.includes("forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]"))
       };
+    })()
+  `);
+}
+
+/** Gate finding (Main, live pixel sample, 2026-10-20): the dot used to mount structurally
+ * (`readRadioRows`'s own `hasDot` check passed) while painting at 0x0 -- a `<span>` nested one
+ * level inside `DropdownMenuPrimitive.ItemIndicator` stayed `display: inline` (never
+ * "blockified" the way a DIRECT CSS Grid item is), so its own `size-2` width/height never
+ * applied (CSS2.1 10.3.1/10.6.1: width/height do not apply to a non-replaced inline box) --
+ * invisible despite being mounted. Fixed in `dropdown-menu.tsx` by putting `RADIO_DOT_CLASS`
+ * directly on `ItemIndicator` itself. This reads the REAL computed style/rect/colour of the
+ * checked row's dot (never trusting mere DOM presence again) and the real contrast of its
+ * `background-color` against the open menu's own popover background, so a mounted-but-invisible
+ * dot fails here even if every structural check above still passes. */
+export async function readDotRenderState(cdp) {
+  return cdp.evaluate(`
+    (() => {
+      const rows = Array.from(document.querySelectorAll('[role="menuitemradio"]'));
+      const checkedRow = rows.find((r) => r.getAttribute('aria-checked') === 'true');
+      const uncheckedRow = rows.find((r) => r.getAttribute('aria-checked') !== 'true');
+      function describe(row) {
+        if (!row) return null;
+        const ring = row.children[0];
+        const dot = ring ? ring.querySelector('span') : null;
+        const ringCs = ring ? getComputedStyle(ring) : null;
+        if (!dot) return { present: false, ringBackgroundColor: ringCs ? ringCs.backgroundColor : null };
+        const rect = dot.getBoundingClientRect();
+        const cs = getComputedStyle(dot);
+        return {
+          present: true,
+          width: rect.width,
+          height: rect.height,
+          display: cs.display,
+          opacity: cs.opacity,
+          backgroundColor: cs.backgroundColor
+        };
+      }
+      const popoverEl = document.querySelector('[role="menu"][data-state="open"]') || document.body;
+      return {
+        checked: describe(checkedRow),
+        unchecked: describe(uncheckedRow),
+        popoverBackground: getComputedStyle(popoverEl).backgroundColor
+      };
+    })()
+  `);
+}
+
+/** `true` only when the checked row's dot genuinely PAINTS: a real rect (>2px either side, so a
+ * collapsed 0x0 box fails), `display` is not `none`, `opacity` is not transparent, and its own
+ * `background-color` clears a real 3:1 WCAG 1.4.11 non-text contrast against the popover it
+ * renders on (never just "some rgba() string exists" -- a fully transparent fill would still
+ * report SOME colour string and pass a bare truthiness check). */
+export function dotIsVisuallyVisible(dotState) {
+  const d = dotState?.checked;
+  if (!d || !d.present) return { visible: false, ratio: null, reason: 'not mounted' };
+  if (d.width <= 2 || d.height <= 2) return { visible: false, ratio: null, reason: `collapsed rect ${d.width}x${d.height}` };
+  if (d.display === 'none') return { visible: false, ratio: null, reason: 'display:none' };
+  if (parseFloat(d.opacity) < 0.5) return { visible: false, ratio: null, reason: `opacity ${d.opacity}` };
+  const ratio = measuredContrastRatio(d.backgroundColor, dotState.popoverBackground);
+  if (ratio === null) return { visible: false, ratio: null, reason: `unparseable colour ${d.backgroundColor}` };
+  return { visible: ratio >= 3, ratio, reason: ratio >= 3 ? null : `only ${ratio.toFixed(2)}:1 against popover` };
+}
+
+/** #1043 (ui-architect-v3 swatch ruling, 2026-10-20): the two-colour landscape chip
+ * (`ProfileMenu.tsx`) is a literal CSS `linear-gradient`, not two separate elements -- reads the
+ * SAME row's chip (the row's 3rd Element child: ring, name, swatch) and confirms its computed
+ * `background-image` contains both of the theme's own `swatch`/`swatchPrimary` hex values. */
+export async function readSwatchGradient(cdp, themeName) {
+  return cdp.evaluate(`
+    (() => {
+      const row = Array.from(document.querySelectorAll('[role="menuitemradio"]')).find((el) => el.textContent.trim().startsWith(${JSON.stringify(themeName)}));
+      const chip = row ? row.children[2] : null;
+      if (!chip) return { present: false };
+      return { present: true, backgroundImage: getComputedStyle(chip).backgroundImage };
     })()
   `);
 }

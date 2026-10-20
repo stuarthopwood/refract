@@ -15,6 +15,15 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 // their own pre-existing inline copy of the ring markup, unchanged by this issue's scope (#1043
 // is the shared `DropdownMenuRadioItem` only) -- a future touch of either file should migrate it
 // to `RADIO_RING_CLASS` too, so only one hand-rolled copy of the ring ever remains.
+// IMPORTANT for every consumer: `RADIO_DOT_CLASS` must land on the ring's own DIRECT child (the
+// Radix Indicator primitive itself), never on an extra nested `<span>` one level deeper. Both
+// `RadioGroupPrimitive.Indicator` and `DropdownMenuPrimitive.ItemIndicator` render a bare,
+// unstyled `<span>` (`display: inline` by the UA stylesheet); a grid item's own display is
+// "blockified" (CSS Display Level 3 2.7) so `size-2` applies when the class lands there directly
+// -- but blockification does NOT cascade to a grandchild, so a `size-2` dot nested one level
+// deeper silently collapses to 0x0 (width/height do not apply to non-replaced inline boxes,
+// CSS2.1 10.3.1/10.6.1) and never paints, confirmed live (#1043, Main's pixel sample caught the
+// Theme submenu's own first cut of this exact mistake, `dropdown-menu.tsx`'s own fix comment).
 export const RADIO_RING_CLASS = "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary"
 export const RADIO_DOT_CLASS = "size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]"
 

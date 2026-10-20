@@ -79,7 +79,11 @@ import {
   readRadioRows,
   openReasoningPicker,
   navigateRadioGroupByKeyboardTo,
-  ringCarriesForcedColorsOverride
+  ringCarriesForcedColorsOverride,
+  readDotRenderState,
+  dotIsVisuallyVisible,
+  readSwatchGradient,
+  hexToRgbTuple
 } from './verify-1043-theme-radio-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,14 +221,20 @@ async function main() {
         checkFail(`${theme.name}: Theme submenu is menuitemradio x${rows.length}, exactly one aria-checked=true matching the active preset`, JSON.stringify(rows));
       }
 
-      const checkedRow = rows.find((r) => r.ariaChecked === 'true');
-      const dotVisibleOnlyOnChecked = !!checkedRow?.hasDot && rows.filter((r) => r.ariaChecked !== 'true').every((r) => !r.hasDot);
-      if (dotVisibleOnlyOnChecked) checkPass(`${theme.name}: the radio dot is mounted on the checked row only (DropdownMenuPrimitive.ItemIndicator)`);
-      else checkFail(`${theme.name}: the radio dot is mounted on the checked row only`, JSON.stringify(rows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked, hasDot: r.hasDot }))));
+      const dotState = await readDotRenderState(cdp);
+      const dotCheck = dotIsVisuallyVisible(dotState);
+      if (dotCheck.visible) checkPass(`${theme.name}: the checked row's dot is PIXEL-VISIBLE (width ${dotState.checked.width}px, contrast ${dotCheck.ratio.toFixed(2)}:1 vs popover)`, JSON.stringify(dotState));
+      else checkFail(`${theme.name}: the checked row's dot is PIXEL-VISIBLE`, JSON.stringify({ dotState, reason: dotCheck.reason }));
+      const uncheckedIsBlank = !dotState.unchecked?.present;
+      if (uncheckedIsBlank) checkPass(`${theme.name}: an unchecked row's dot is not mounted at all (no fill to be invisible or visible)`);
+      else checkFail(`${theme.name}: an unchecked row's dot is not mounted at all`, JSON.stringify(dotState.unchecked));
 
-      const swatchOk = rows.every((r) => r.childCount === 3 && r.swatchClass && r.swatchClass.includes('rounded-[2px]') && !r.swatchClass.includes('rounded-full') && r.swatchBg);
-      if (swatchOk) checkPass(`${theme.name}: every row's colour swatch is a square chip (rounded-[2px]) AFTER the name, never round`);
-      else checkFail(`${theme.name}: every row's colour swatch is a square chip (rounded-[2px]) AFTER the name, never round`, JSON.stringify(rows));
+      const swatchGradient = await readSwatchGradient(cdp, theme.name);
+      const expectedBg = hexToRgbTuple(theme.swatch);
+      const expectedPrimary = hexToRgbTuple(theme.swatchPrimary);
+      const swatchOk = swatchGradient.present && swatchGradient.backgroundImage.includes('linear-gradient') && swatchGradient.backgroundImage.includes(expectedBg) && swatchGradient.backgroundImage.includes(expectedPrimary);
+      if (swatchOk) checkPass(`${theme.name}: swatch chip's computed background-image is a linear-gradient containing both --background and --primary`, JSON.stringify(swatchGradient));
+      else checkFail(`${theme.name}: swatch chip's computed background-image is a linear-gradient containing both --background and --primary`, JSON.stringify({ swatchGradient, expectedBg, expectedPrimary }));
 
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-theme-submenu.png`));
       await closeAllMenus(cdp);
@@ -356,9 +366,10 @@ async function main() {
     const reasoningOk = reasoningRows.length === THINKING_LEVELS_1043.length && reasoningChecked.length === 1 && reasoningChecked[0].label === 'Low';
     if (reasoningOk) checkPass('Reasoning picker: menuitemradio x8 (every THINKING_LEVELS entry), exactly one aria-checked=true matching the selected level (Low)', JSON.stringify(reasoningRows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked }))));
     else checkFail('Reasoning picker: menuitemradio x8, exactly one aria-checked=true matching the selected level (Low)', JSON.stringify(reasoningRows));
-    const reasoningDotOk = reasoningChecked[0]?.hasDot && reasoningRows.filter((r) => r.ariaChecked !== 'true').every((r) => !r.hasDot);
-    if (reasoningDotOk) checkPass('Reasoning picker: the same radio dot is visible on the checked row only');
-    else checkFail('Reasoning picker: the same radio dot is visible on the checked row only', JSON.stringify(reasoningRows));
+    const reasoningDotState = await readDotRenderState(cdpB);
+    const reasoningDotCheck = dotIsVisuallyVisible(reasoningDotState);
+    if (reasoningDotCheck.visible) checkPass(`Reasoning picker: the checked row's dot is PIXEL-VISIBLE (contrast ${reasoningDotCheck.ratio.toFixed(2)}:1 vs popover)`, JSON.stringify(reasoningDotState));
+    else checkFail(`Reasoning picker: the checked row's dot is PIXEL-VISIBLE`, JSON.stringify({ reasoningDotState, reason: reasoningDotCheck.reason }));
     await cdpB.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-open.png'));
 
     // Keyboard selection: navigate from WHEREVER focus actually lands (Radix does not reliably
@@ -377,7 +388,6 @@ async function main() {
     await cdpB.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-medium.png'));
     await closeAllMenus(cdpB);
     await teardownB();
-
 
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
     if (report.failures.length > 0) {

@@ -127,9 +127,23 @@ function DropdownMenuRadioItem({
         aria-hidden
         className={cn(RADIO_RING_CLASS, "forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]")}
       >
-        <DropdownMenuPrimitive.ItemIndicator>
-          <span className={RADIO_DOT_CLASS} />
-        </DropdownMenuPrimitive.ItemIndicator>
+        {/* Gate finding (Main, live pixel sample, 2026-10-20): the dot never painted -- a bare
+            `<span>` is `display: inline` by the UA stylesheet, and CSS explicitly says `width`/
+            `height` do NOT apply to a non-replaced inline box (CSS2.1 10.3.1/10.6.1), so the
+            dot's own `size-2` silently collapsed to a 0x0 box. `ItemIndicator` renders a BARE
+            `Primitive.span` (`@radix-ui/react-menu`), which becomes a direct CSS Grid item of
+            the ring above -- a grid item's `display` is "blockified" (CSS Display Level 3 2.7),
+            but ONLY for the item itself, never for a child nested one level deeper inside it.
+            The earlier code put `RADIO_DOT_CLASS` on an EXTRA nested `<span>` INSIDE
+            `ItemIndicator`, which stayed plain `inline` and never got blockified, so its own
+            `size-2` was ignored -- invisible despite being correctly mounted (every structural
+            DOM check this file's own live-check script ran still passed). `RadioGroupIndicator`
+            (`radio-group.tsx`) never hit this: `AskCard.tsx`/`MergeDialog.tsx` apply its class
+            directly to the ring's own sole child (also a bare `Primitive.span`, same package
+            family), which IS the blockified grid item. Fix: put `RADIO_DOT_CLASS` directly on
+            `ItemIndicator` itself -- it becomes the direct, blockified grid item, same as
+            `RadioGroupIndicator`, and `size-2` finally applies. */}
+        <DropdownMenuPrimitive.ItemIndicator className={RADIO_DOT_CLASS} />
       </span>
       {children}
     </DropdownMenuPrimitive.RadioItem>
