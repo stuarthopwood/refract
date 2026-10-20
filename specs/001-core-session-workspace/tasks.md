@@ -4895,7 +4895,19 @@ across 5 themes PASS (no new token, reuses `--muted-foreground`/`--foreground`/`
 scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
 change); `node scripts/check-drag-regions.mjs` 0 violations across 152 files.
 
-**Pending the next build slot**: `scripts/verify-1077-agent-goal.mjs` is written but not yet
-run (no cargo build in this turn, per the lane's own build-slot gating rule); its own tape
-`stages-1077.jsonl` is new. A FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs &&
-verify-1077-agent-goal.mjs` run) is outstanding.
+**FINAL LIVE-VERIFIED PASS**: `node scripts/ci-local.mjs` all steps PASS (`cargo fmt --check`,
+`cargo test`, `cargo clippy`, Tauri debug build, typecheck, vitest 148/148, indent, theme-
+contrast, drag-regions, parity, file-size, versions, omp-schema drift, check:ui-text).
+`scripts/verify-1077-agent-goal.mjs` against the just-built exe: **gitHead
+`1f775683e761c0a2e4f66642ed54205c87b69237`, dirty: false, exeSha256 `601c930a0656…`, 0 failures,
+1 notExercised, exitCode 0**. Two script bugs found and fixed first, neither a product defect:
+Phase 8 opened a member's own toggle before its owning Stage had settled (a missing wait); a
+plain `cdp.click` on a nested member toggle landed off-screen (fixed with the established
+`clickScrolled` helper, same fix `verify-941-stage-naming-helpers.mjs` already carries for this
+exact class of bug). Screenshots viewed directly: a solo Stage (no context) shows only its own
+goal, genuinely clamped (`scrollHeight=64 > clientHeight=48`), its leading "# Goal" heading
+stripped, the toggle reading "See input" while running then "See input & output" once settled;
+opening reveals both Prompt and Result; Escape with focus deep inside returns it to the link;
+collapsing/re-expanding the Stage resets the toggle; a multi-agent Stage's shared goal shows
+once with neither member duplicating it, each member's own toggle independent; Dark and
+Obsidian screenshots show no stray hover card or tooltip. Draft PR #1095 (`Closes #1077`).
