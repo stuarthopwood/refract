@@ -159,17 +159,30 @@
   --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
   --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): 0.90 lightness
-   * reads as a genuinely perceptible light grey against the dark background (contrast ratio
-   * ~14.7:1, computed via OKLab->linear-sRGB->WCAG relative luminance, comfortably above the
-   * 7:1 AAA threshold) while staying visibly dimmer than --foreground's 0.985 (~18.96:1, which
-   * reads as indistinguishable from pure white) and well short of --muted-foreground's 0.708
-   * (~7.6:1, reserved for secondary/meta text). Text-softening attempt (#1039, 2026-10-19 to
-   * 2026-10-20) retuned this and the literal copies below to 0.90/0.86, then was reverted the
-   * same day: Stuart moved text softening to a new app-wide text-opacity issue instead, so
-   * this theme's own `--foreground`/`--chat-foreground` are back to these original values. */
-  --chat-foreground: oklch(0.90 0 0);
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at 90%
+   * alpha composited over this theme's own `--background` (`oklch(0.145 0 0)`) -- 15.93:1
+   * against it (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above the
+   * 4.5:1 AA floor, reading as a softer near-white rather than pure white. Supersedes #1039's
+   * own abandoned text-softening attempt (that issue's grill item 3, moved here instead).
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`,
+   * `--popover-foreground`, `--secondary-foreground`, `--accent-foreground`,
+   * `--sidebar-foreground`, `--sidebar-accent-foreground`) picks up this same alpha
+   * automatically; a foreground that sits on a COLOURED fill instead
+   * (`--primary-foreground`, `--send-foreground`, `--destructive-foreground`,
+   * `--sidebar-primary-foreground`, the `--state-*-foreground` and `--pr-*-foreground`
+   * tokens) stays a solid, opaque literal, unaffected -- translucency there would risk
+   * dropping under 4.5:1 on a brighter fill. `.theme-dark-high-contrast` is untouched,
+   * keeping its own solid 7:1 text (#552). */
+  --foreground: oklch(1 0 0 / 90%);
+  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): dimmer than
+   * --foreground, reserved for body/chat prose. #1074: white at 78% alpha over this theme's
+   * own `--background` -- 11.97:1, comfortably above --muted-foreground's 60%-alpha 7.30:1
+   * (reserved for secondary/meta text) and visibly dimmer than --foreground's own 90%-alpha
+   * 15.93:1. Earlier history: an #1039 text-softening attempt (2026-10-19 to 2026-10-20)
+   * retuned this and the literal copies below to solid 0.90/0.86 lightness, then was reverted
+   * the same day when Stuart moved text softening to this new, separate, app-wide issue
+   * instead -- #1074 is that issue, landing the alpha-based version here. */
+  --chat-foreground: oklch(1 0 0 / 78%);
   /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill, "Composer tone" in product-chat.md) --
    * this theme's old `oklch(0.09 0 0)` solid fill (kept strictly darker than --background, the
    * original 2026-10-04 rule) is now transparent, so the composer shows the chat background
@@ -200,9 +213,9 @@
    * `border` unconditionally while only Dark high contrast's own value ever paints it. */
   --composer-control-border: transparent;
   --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
+  --card-foreground: var(--foreground);
   --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --popover-foreground: var(--foreground);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
   /* 2026-10-15 grill decision 5, gate round 1 fix: Send's own indigo fill (lifted a touch
@@ -214,11 +227,13 @@
   --send: #6D71F0;
   --send-foreground: #FFFFFF;
   --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --secondary-foreground: var(--foreground);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  /* #1074: white at 60% alpha over this theme's own `--background` -- 7.30:1, the dimmest of
+   * the three text tiers, reserved for low-emphasis/meta text. */
+  --muted-foreground: oklch(1 0 0 / 60%);
   --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent-foreground: var(--foreground);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
   /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
@@ -243,11 +258,11 @@
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-foreground: var(--foreground);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: var(--foreground);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
@@ -449,8 +464,17 @@
   /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
    * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
   --background: #0F1014;
-  --foreground: #F8FAFC;
-  --muted-foreground: #94A3B8;
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
+   * 90%/78%/60% alpha composited over this theme's own `--background` (`#0F1014`) -- 15.39:1/
+   * 11.65:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
+   * the 4.5:1 AA floor; worst case against `--surface-2`/popover is 6.26:1 (the 60%-alpha
+   * `--muted-foreground` tier, the binding case across every affected preset). Every alias
+   * that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+   * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
+   * `.theme-dark`'s own comment explains in full. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
   --sidebar: #14161E;
   --surface-1: #1C1F28;
   --surface-2: #242834;
@@ -525,7 +549,10 @@
   --scrollbar-thumb: var(--muted-foreground);
   --scrollbar-thumb-hover: var(--foreground);
   --scrollbar-track: transparent;
-  --chat-foreground: #DFE0E2;
+  /* #1074: white at 78% alpha over this theme's own `--background` -- 11.65:1, see
+   * `--foreground`'s own comment above for the full rationale and every tier's measured
+   * ratio. */
+  --chat-foreground: oklch(1 0 0 / 78%);
   /* Composer fill: SUPERSEDED 2026-10-16 (#927 grill) -- this preset's old near-black
    * `#08090C` solid fill (strictly darker than this canvas's 0.0052 relative luminance, the
    * original "Canvas colour" rule) is now transparent, matching Dark's own #927 change; the
@@ -849,8 +876,17 @@
   /* ---- Layer 2: semantic roles. Canonical here (same direction as Obsidian): --card/
    * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
   --background: #060f1e;
-  --foreground: #eff7fb;
-  --muted-foreground: #92a1a9;
+  /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
+   * 90%/78%/60% alpha composited over this theme's own `--background` (`#060f1e`) -- 15.50:1/
+   * 11.71:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
+   * the 4.5:1 AA floor; worst case against `--surface-2`/popover is 6.34:1 (the 60%-alpha
+   * `--muted-foreground` tier, the binding case across every affected preset). Every alias
+   * that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+   * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
+   * `.theme-dark`'s own comment explains in full. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
   --sidebar: #0c1626;
   --surface-1: #101b2b;
   --surface-2: #1c2738;
@@ -954,7 +990,10 @@
   --diff-removed: var(--destructive);
 
   /* ---- Layer 3: component tokens ---------------------------------------------------------- */
-  --chat-foreground: #d5e0e6;
+  /* #1074: white at 78% alpha over this theme's own `--background` -- 11.71:1, see
+   * `--foreground`'s own comment above for the full rationale and every tier's measured
+   * ratio. */
+  --chat-foreground: oklch(1 0 0 / 78%);
   /* Quiet composer (#927 pattern, same as Dark/Obsidian): transparent fill, demarcated by
    * `--composer-border` alone (faint, the `--divider` tone) -- the WCAG 1.4.11 departure Stuart
    * accepted for Dark/Obsidian (`docs/design/accessibility.md` "Accepted departures") applies
@@ -1047,11 +1086,12 @@
  * and is updated to the SAME value here, not left behind.
  *
  * **Text, foreground/chat/muted: byte-identical to Default Dark, not retuned by #1039 at
- * all** (see the third 2026-10-20 amendment above) -- `--foreground` is `oklch(0.985 0 0)`,
- * `--chat-foreground` is `oklch(0.90 0 0)`, `--muted-foreground` is `oklch(0.708 0 0)`, every
- * ratio identical to `.theme-dark`'s own, since both the tokens and their backdrop surfaces
- * are now literally the same between the two themes. Every pair re-verified by
- * `scripts/check-theme-contrast.mjs`. */
+ * all** (see the third 2026-10-20 amendment above) -- both themes' `--foreground`/
+ * `--chat-foreground`/`--muted-foreground` were further retuned by the separate, app-wide
+ * #1074 (alpha-based text softening, white at 90%/78%/60% alpha composited over each theme's
+ * own `--background`): since this theme's surfaces are themselves byte-identical to Dark's
+ * own (the retune above), the two themes' composited text colours stay identical too. Every
+ * pair re-verified by `scripts/check-theme-contrast.mjs`. */
 .theme-cyber-amber {
   color-scheme: dark;
   --scrollbar-thumb: #757575;
@@ -1059,8 +1099,11 @@
   --scrollbar-track: transparent;
 
   --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  /* #1074: see `.theme-dark`'s own `--foreground`/`--muted-foreground` comments for the full
+   * rationale -- byte-identical values and ratios here since this theme's background/card/
+   * popover are themselves byte-identical to Dark's own. */
+  --foreground: oklch(1 0 0 / 90%);
+  --muted-foreground: oklch(1 0 0 / 60%);
   --sidebar: oklch(0.205 0 0);
   --surface-1: oklch(0.205 0 0);
   --surface-2: oklch(0.205 0 0);
@@ -1168,7 +1211,8 @@
   --diff-added: var(--state-working);
   --diff-removed: var(--destructive);
 
-  --chat-foreground: oklch(0.90 0 0);
+  /* #1074: see `.theme-dark`'s own `--chat-foreground` comment for the full rationale. */
+  --chat-foreground: oklch(1 0 0 / 78%);
   --composer-background: transparent;
   --composer-border: var(--divider);
   --composer-focus: oklch(1 0 0 / 35%);

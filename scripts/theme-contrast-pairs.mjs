@@ -556,11 +556,13 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
 
 // #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
 // same #806 file-size reason the composited checks above already were. Confirms
-// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color` literals never
-// silently drift from the preset's REAL resolved `--background`/`--primary` CSS tokens -- the
-// exact bug class that caused this PR's first two gate failures. Returns `{ checkedCount,
-// failCount, rows }`, not a plain row array, to match the caller's own pre-extraction counting
-// (one `checkedCount` per theme regardless of pass/fail, a row pushed only on failure).
+// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color`/
+// `titleBarOverlay.symbolColor` literals never silently drift from the preset's REAL resolved
+// `--background`/`--primary`/`--foreground` CSS tokens. #1074: `symbolColor` is now a
+// composited check (`--foreground` alpha-blended over `--background`, `resolvedLinear`, a
+// pass-through when alpha is 1) rather than byte-equality, since `--foreground` is translucent
+// in every non-HC preset while `setTitleBarOverlay` takes an opaque hex. Returns
+// `{ checkedCount, failCount, rows }` (one count per theme, a row only on failure).
 export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds) {
   let checkedCount = 0
   let failCount = 0
@@ -575,25 +577,23 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
     const meta = themeMetadata[id]
     const bgTag = `.theme-${id} --background`
     if (!meta) {
-      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse 'swatch'/'titleBarOverlay.color' for '${id}' out of src/shared/themes.ts`)
+      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse swatch/titleBarOverlay fields for '${id}' out of src/shared/themes.ts`)
       continue
     }
-    const bg = themes[id].background
-    if (!bg) {
-      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `'${id}' has no --background token in globals.css to compare against`)
-      continue
-    }
-    const primary = themes[id].primary
-    if (!primary) {
-      fail(id, 'themes.ts swatchPrimary', `.theme-${id} --primary`, `'${id}' has no --primary token in globals.css to compare against`)
+    const { background: bg, primary, foreground } = themes[id]
+    const missing = ['background', 'primary', 'foreground'].find((name) => !themes[id][name])
+    if (missing) {
+      fail(id, `themes.ts (needs --${missing})`, bgTag, `'${id}' has no --${missing} token in globals.css to compare against`)
       continue
     }
     const actualBgHex = linearToHex(bg.linear)
     const actualPrimaryHex = linearToHex(primary.linear)
+    const actualSymbolColorHex = linearToHex(resolvedLinear(foreground, bg))
     const mismatches = []
     if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
     if (meta.swatchPrimary !== actualPrimaryHex) mismatches.push(`swatchPrimary '${meta.swatchPrimary}' != --primary '${actualPrimaryHex}'`)
     if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
+    if (meta.symbolColor !== actualSymbolColorHex) mismatches.push(`titleBarOverlay.symbolColor '${meta.symbolColor}' != --foreground composited over --background '${actualSymbolColorHex}'`)
     if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
   }
   return { checkedCount, failCount, rows }
