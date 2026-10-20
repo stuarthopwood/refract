@@ -51,10 +51,11 @@
 // real `/btw` command pill, Ctrl+A-selected -- round 3, Main's follow-up: proves
 // `--composer-selection-fg` stays legible under a real native selection highlight in every
 // preset, not only Dark), Manage sessions (the full Session list), Settings Appearance, and an
-// Off switch (the Appearance section's own watermark
-// toggle, clicked off then restored -- gate round 1, Low item 7). Every shot is preceded by
-// `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`): moves the pointer, blurs, presses
-// Escape, and THROWS if a stray tooltip/hover card is still open.
+// Off switch (the Appearance section's own watermark toggle, clicked off then restored --
+// gate round 1, Low item 7), and the Journey diagram itself scrolled into view (round 3, item
+// 1: visible evidence for the solid task/section labels the assertion above already proved).
+// Every shot is preceded by `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`): moves
+// the pointer, blurs, presses Escape, and THROWS if a stray tooltip/hover card is still open.
 //
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 node
 // scripts/verify-1074-text-opacity.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
@@ -174,7 +175,7 @@ async function main() {
   clearKnownOutputFiles(
     SHOTS_DIR,
     'refract-1074-text-opacity-shots',
-    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-popover-menu.png`, `${t.id}-04-selected-text.png`, `${t.id}-05-settings-appearance.png`, `${t.id}-06-switch-off.png`, `${t.id}-07-composer-selection.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
+    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-popover-menu.png`, `${t.id}-04-selected-text.png`, `${t.id}-05-settings-appearance.png`, `${t.id}-06-switch-off.png`, `${t.id}-07-composer-selection.png`, `${t.id}-08-journey-diagram.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
   );
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1074-data-'));
@@ -452,6 +453,16 @@ async function main() {
           }
         }
 
+        // Journey diagram screenshot (Main's request, this round): scrolls the second
+        // rendered Mermaid diagram (the Journey fence) into view and captures it directly, so
+        // the solid task/section labels asserted above are also visible evidence, not only a
+        // DOM/string assertion.
+        await cdp.evaluate(`(() => { const imgs = document.querySelectorAll('img[role="img"]'); const el = imgs[1]; if (el) el.scrollIntoView({ block: 'center' }); })()`);
+        await settleForScreenshot(cdp);
+        const journeyShot = `${theme.id}-08-journey-diagram.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, journeyShot));
+        shotNames.push(journeyShot);
+
         // ---- Screenshots: chat (header, chat prose and Send button all visible), a popover
         // menu, selected chat-prose text, Settings Appearance (Manage sessions already shot
         // above) and an Off switch (gate round 1, Low item 7). `settleForScreenshot` runs
@@ -530,7 +541,7 @@ async function main() {
 
         await closeSettingsBackToChat(cdp);
 
-        findings.push(`${theme.name}: screenshots captured (chat, popover menu, selected text, composer-selection pill, Manage sessions, Settings Appearance, Off switch).`);
+        findings.push(`${theme.name}: screenshots captured (chat, popover menu, selected text, composer-selection pill, Manage sessions, Settings Appearance, Off switch, Journey diagram).`);
       } catch (err) {
         failures.push(`${theme.name}: ${err.message}`);
       }
