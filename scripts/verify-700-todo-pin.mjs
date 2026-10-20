@@ -247,6 +247,7 @@ async function main() {
     // same reasoning `verify-741-role-chip-helpers.mjs`'s own comment gives for its 3s-delay/45s
     // budget). 20s gives a real, comfortable margin without being excessive.
     await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 20_000, label: 'Abandoned task strike-through appears live, mid-turn' });
+    await assertSinglePanel(cdp, 'right after the abandoned update');
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
