@@ -299,32 +299,40 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
     { pausedDeltas, medianPausedDelta }
   );
 
-  // ---- Mid-flight and post-flight proofs (gate round 3, item 1). ----
+  // ---- Mid-flight and post-flight proofs (gate round 3, item 1). Gate round 4 fix (script
+  // bug found live, gate round 4's own rebuild): `document.getAnimations()` is DOCUMENT-WIDE --
+  // it was returning the FIRST animation running ANYWHERE on the page (a stray Radix open/close
+  // CSS transition, a spinner's CSS keyframe, or any other unrelated running animation), not
+  // necessarily the flying bat, so `animations[0].effect.target` could be some other element
+  // entirely -- `willChange` genuinely read `''` on THAT element while the real flying bat's own
+  // `willChange` was `'transform'` the whole time, a false failure, not a product bug. Scoped to
+  // `.holiday-ambient-loop`'s own subtree (`getAnimations({ subtree: true })`, a real Web
+  // Animations API option), so only the loop's own bat animations are ever counted. ----
   await cdp.evaluate(`window.refract.settings.setHolidayTouches('full')`);
   await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop mounted before the mid-flight proof' });
   await tap(cdp);
-  await cdp.waitFor(`document.getAnimations().length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A flight starts (debug-shortened interval)' });
+  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A flight starts (debug-shortened interval)' });
   const midFlight = await cdp.evaluate(`(() => {
-    const animations = document.getAnimations();
+    const animations = document.querySelector('.holiday-ambient-loop').getAnimations({ subtree: true });
     const bat = animations[0] && animations[0].effect ? animations[0].effect.target : null;
-    return { animCount: animations.length, willChange: bat ? bat.style.willChange : null };
+    return { animCount: animations.length, willChange: bat ? bat.style.willChange : null, targetClassName: bat ? bat.className : null };
   })()`);
   report.push({ step: 'Mid-flight: exactly one running Animation, flying bat has inline style.willChange', ok: midFlight.animCount === 1 && midFlight.willChange === 'transform', midFlight });
-  assertEqual(midFlight.animCount, 1, 'Mid-flight: document.getAnimations().length is 1');
+  assertEqual(midFlight.animCount, 1, 'Mid-flight: document.querySelector(\'.holiday-ambient-loop\').getAnimations({ subtree: true }).length is 1');
   assertEqual(midFlight.willChange, 'transform', "Mid-flight: the flying bat's own inline style.willChange is 'transform'");
-  await cdp.waitFor(`document.getAnimations().length === 0`, { timeoutMs: 10_000, label: 'Flight finishes naturally (getAnimations back to 0)' });
+  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length === 0`, { timeoutMs: 10_000, label: 'Flight finishes naturally (getAnimations back to 0)' });
   const postFlight = await cdp.evaluate(`({
-    animCount: document.getAnimations().length,
+    animCount: document.querySelector('.holiday-ambient-loop').getAnimations({ subtree: true }).length,
     willChangeValues: Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)
   })`);
-  assertEqual(postFlight.animCount, 0, 'After the flight finishes: document.getAnimations().length is 0');
+  assertEqual(postFlight.animCount, 0, 'After the flight finishes: scoped getAnimations().length is 0');
   assertTrue(postFlight.willChangeValues.every((wc) => wc === ''), "After the flight finishes: every bat's own inline style.willChange is cleared ('')", postFlight);
 
   // ---- Blur mid-flight leaves the same 0/'' state (gate round 3, item 1). ----
   await tap(cdp);
-  await cdp.waitFor(`document.getAnimations().length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A second flight starts, for the blur-mid-flight proof' });
+  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A second flight starts, for the blur-mid-flight proof' });
   await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
-  await cdp.waitFor(`document.getAnimations().length === 0`, { timeoutMs: 2_000, label: 'Blur mid-flight cancels the running Animation (getAnimations back to 0 quickly)' });
+  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length === 0`, { timeoutMs: 2_000, label: 'Blur mid-flight cancels the running Animation (getAnimations back to 0 quickly)' });
   const afterBlurMidFlight = await cdp.evaluate(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)`);
   assertTrue(afterBlurMidFlight.every((wc) => wc === ''), "Blur mid-flight also clears every bat's own inline style.willChange", afterBlurMidFlight);
   await cdp.evaluate(`window.dispatchEvent(new Event('focus'))`);
@@ -337,8 +345,8 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   await cdp.clickByLabel('New session from a branch in ', { prefix: true });
   await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'A real dialog opens' });
   await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAttribute('data-paused') === 'true'`, { timeoutMs: 2_000, label: 'Opening a real dialog pauses the ambient loop' });
-  const dialogPauseAnimCount = await cdp.evaluate(`document.getAnimations().length`);
-  assertEqual(dialogPauseAnimCount, 0, 'No animation runs while a real dialog is open');
+  const dialogPauseAnimCount = await cdp.evaluate(`document.querySelector('.holiday-ambient-loop').getAnimations({ subtree: true }).length`);
+  assertEqual(dialogPauseAnimCount, 0, 'No animation runs (scoped to the ambient loop) while a real dialog is open');
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
   await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Dialog closed via Escape, no session created' });
