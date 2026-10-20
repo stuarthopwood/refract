@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1039 (Cyber Amber retuned onto Default Dark's own surfaces -- PURE
 // neutral, chroma 0 -- with a vivid orange accent, a warning hue moved to 88, and the Send
-// button/ring following the accent family. Text softening, tried as part of #1039 through
+// button following the accent family (never `--ring`, which stays achromatic). Text softening,
+// tried as part of #1039 through
 // three same-day corrections, 2026-10-20, was reverted entirely the same day: Stuart moved it
 // to a new, separate, app-wide issue, so `--foreground`/`--chat-foreground`/
 // `--muted-foreground` are untouched by #1039 in both Cyber Amber and Default Dark).
@@ -18,18 +19,15 @@
 // reads REAL rendered surfaces (never a hidden probe alone) and asserts each equals the matching
 // CSS custom property's own resolved colour (`requireResolvedCssVarColor`, `verify-551-
 // helpers.mjs`):
-//   - `document.body` (`bg-background text-foreground`, globals.css's own `@layer base`): real
-//     background/foreground vs `--background`/`--foreground`.
-//   - `SessionList.tsx`'s own root (`bg-sidebar text-sidebar-foreground`): real sidebar
-//     background/foreground vs `--sidebar`/`--sidebar-foreground`.
+//   - `document.body` (`bg-background text-foreground`): real background/foreground vs
+//     `--background`/`--foreground`. `SessionList.tsx`'s own root (`bg-sidebar text-sidebar-
+//     foreground`): real sidebar background/foreground vs `--sidebar`/`--sidebar-foreground`.
 //   - `StatusBar.tsx`'s `<footer>` (`bg-card ... text-muted-foreground`): real card background
-//     and real muted text vs `--card`/`--muted-foreground`.
-//   - The user message's own `.text-chat-foreground` Markdown root: real chat prose colour vs
-//     `--chat-foreground`.
-//   - The warning NoticeRow (`noticeFinder`, same two-parent-climb pattern
-//     `verify-997-notice-severity.mjs` already established): real colour vs `--severity-warning`.
-//   - The real Send button (`bg-send text-send-foreground`): real fill/text vs
-//     `--send`/`--send-foreground`.
+//     and real muted text vs `--card`/`--muted-foreground`. The user message's own `.text-
+//     chat-foreground` Markdown root: real chat prose colour vs `--chat-foreground`.
+//   - The warning NoticeRow (`noticeFinder`, same two-parent-climb pattern `verify-997-notice-
+//     severity.mjs` already established): real colour vs `--severity-warning`. The real Send
+//     button (`bg-send text-send-foreground`): real fill/text vs `--send`/`--send-foreground`.
 // `--accent-text` has no real rendered consumer in this fixture's own turn (no Markdown link),
 // so it is read via the probe only (`requireResolvedCssVarColor`) and used, alongside the real
 // warning colour above, for the accent-vs-warning real OKLab hue-distance assertion (#1039's own
@@ -43,10 +41,10 @@
 // `--input`/`--scrollbar-thumb`/`--scrollbar-thumb-hover`/`--composer-focus` (`THEMES` puts
 // Dark first) and asserts Cyber Amber's reading of the SAME tokens is byte-identical -- the
 // chroma check cannot catch a lightness mismatch, which is what these six had before that
-// round. A further round-1 assertion reads the rendered Mermaid diagram's `<img>`
-// (`data:image/svg+xml` src, decoded), checks Dark's own node text literal
-// (`MERMAID_NODE_TEXT`), and asserts cross-theme equality of every distinct hex colour the
-// render uses (Mermaid bakes `themeVariables` into the SVG, never through a probeable `var()`).
+// round. A round-2 assertion rounds Cyber Amber's turn through Obsidian first (proving the
+// Mermaid `<img>` genuinely re-renders, not a stale image), then compares the whole decoded
+// SVG string against Dark's own byte-for-byte (`data:image/svg+xml` src, decoded; the render
+// id is stable across a switch, so equal palettes give byte-identical SVGs).
 //
 // Screenshots per theme (gate round 1 added three): the chat view (the warning NoticeRow is
 // inline in it, so one shot covers both "chat" and "a warning"), the Mermaid diagram's own
@@ -57,8 +55,8 @@
 // Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 node
 // scripts/verify-1039-amber-retune.mjs (requires a prior `pnpm tauri build --debug --no-bundle`,
 // the convention every `verify-5xx-*.mjs`/`verify-9xx-*.mjs`/`verify-10xx-*.mjs` script
-// documents). NOT run by this prep lane (NO-BUILD; held for the build slot) -- syntax-checked
-// only (`node --check`).
+// documents). Live-run twice already on earlier rounds (0 failures both times); the round-2
+// gate fixes in this version await this lane's own next build slot.
 
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -82,7 +80,7 @@ import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { hueDistanceDegrees, describeHueLightness, requireResolvedCssVarColor, linearSrgbToOklab } from './verify-551-helpers.mjs';
 import { parseComputedColorToEntry } from './contrast-math.mjs';
-import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
+import { settleForScreenshot, waitTwoFrames } from './verify-700-todo-pin-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -147,10 +145,10 @@ const DARK_EQUALITY_VARS = [
   ['--composer-focus', 'color']
 ];
 
-// #1039 round-1 self-review: Cyber Amber's Mermaid palette now reuses `DARK_FAMILY` directly
-// (was the old brown literals). Node TEXT is this one literal verbatim in both themes
-// (confirmed live); node FILL is NOT a literal match to `primaryColor` (Mermaid derives the
-// real shade internally), so it's checked via cross-theme hex-colour-SET equality instead.
+// #1039 round-2 gate fix: see this file's own Mermaid check comment below for the full
+// stale-render-proof/full-string-equality rationale. The widened colour regex (hex/rgb()/
+// hsl()) below is informational only, not the pass/fail driver.
+const MERMAID_COLOUR_REGEX = /#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b|rgba?\([^)]*\)|hsla?\([^)]*\)/g;
 const MERMAID_NODE_TEXT = '#fafafa'; // DARK_FAMILY.primaryTextColor (`--card-foreground`)
 
 // An unknown-command refusal toast, the same client-side mechanism `verify-997-notice-
@@ -321,10 +319,9 @@ async function main() {
     // Populated on Dark's own turn (`THEMES` puts Dark first), read back on Cyber Amber's turn
     // for `DARK_EQUALITY_VARS`'s own cross-theme equality assertion below.
     const darkCaptured = {};
-    // Populated on Dark's own turn: the set of distinct hex colours the real rendered Mermaid
-    // SVG actually uses (gate round 1 fix -- a hardcoded expected literal measured wrong, see
-    // this file's own Mermaid check comment below for why).
-    let darkMermaidColors = null;
+    // Populated on Dark's own turn: the real rendered Mermaid SVG's full decoded text (see
+    // this file's own Mermaid check comment below).
+    let darkMermaidSvgText = null;
 
     for (const theme of THEMES) {
       try {
@@ -424,17 +421,26 @@ async function main() {
           }
         }
 
-        // ---- Mermaid (#1039 round-1 self-review): the fixture's own assistant message (see
-        // its own "EXTENDED" header comment) renders one real flowchart via Markdown.tsx's
-        // `MermaidBlock`. The result is an inert `<img role="img">` whose `src` is a
-        // `data:image/svg+xml` URI -- decode it and compare its own set of distinct hex
-        // colours against Dark's (Mermaid bakes `themeVariables` into the SVG, never through a
-        // probeable `var()`). Gate round 1 fix (self-caught live): a hardcoded node-FILL
-        // literal measured wrong -- Mermaid derives that shade from `primaryColor` internally
-        // (`khroma`-adjusted), so cross-theme SET-equality (same pattern as
-        // `DARK_EQUALITY_VARS`) replaces the hardcoded value. Node TEXT IS a literal match.
+        // ---- Mermaid (#1039 round-2 gate fix): renders one real flowchart via Markdown.tsx's
+        // `MermaidBlock`, an inert `<img role="img">` whose `src` is a `data:image/svg+xml`
+        // URI. Round-1's cross-theme hex-colour-SET equality could pass on a STALE Dark image
+        // if the `<img>` never re-rendered on switch -- round-2 proves a real re-render twice
+        // (Dark -> Obsidian -> Cyber Amber, asserting `src` changes both times) before reading
+        // Cyber Amber's own state, then compares the WHOLE decoded SVG against Dark's own: the
+        // render id is stable across a switch, so equal palettes give byte-identical SVGs. ----
+        const mermaidImgSrcExpr = `document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`;
+        if (theme.id === 'cyber-amber') {
+          const darkSrc = await cdp.evaluate(mermaidImgSrcExpr);
+          await switchTheme(cdp, 'obsidian', 'Obsidian');
+          await cdp.waitFor(`(${mermaidImgSrcExpr}) !== ${JSON.stringify(darkSrc)}`, { timeoutMs: 15_000, label: 'Mermaid image src changed after switching Dark -> Obsidian' });
+          findings.push('Mermaid image src genuinely changed after switching to Obsidian, proving a real re-render, not a stale cached image.');
+          const obsidianSrc = await cdp.evaluate(mermaidImgSrcExpr);
+          await switchTheme(cdp, 'cyber-amber', 'Cyber Amber');
+          await cdp.waitFor(`(${mermaidImgSrcExpr}) !== ${JSON.stringify(obsidianSrc)}`, { timeoutMs: 15_000, label: 'Mermaid image src changed again after switching Obsidian -> Cyber Amber' });
+          findings.push('Mermaid image src genuinely changed again after switching back to Cyber Amber, proving a second real re-render.');
+        }
         await cdp.waitFor(`!!document.querySelector('img[role="img"]')`, { timeoutMs: 15_000, label: `${theme.name}: Mermaid diagram image rendered` });
-        const mermaidSrc = await cdp.evaluate(`document.querySelector('img[role="img"]')?.getAttribute('src') ?? null`);
+        const mermaidSrc = await cdp.evaluate(mermaidImgSrcExpr);
         if (!mermaidSrc || !mermaidSrc.startsWith('data:image/svg+xml')) {
           failures.push(`${theme.name}: Mermaid diagram image has no real data: URI src (got ${JSON.stringify(mermaidSrc)}).`);
         } else {
@@ -445,20 +451,17 @@ async function main() {
           } else {
             findings.push(`${theme.name}: real rendered Mermaid SVG contains Dark's own node text literal (${MERMAID_NODE_TEXT}).`);
           }
-          const colours = new Set((svgText.match(/#[0-9a-fA-F]{6}/g) ?? []).map((c) => c.toLowerCase()));
+          const colours = new Set((svgText.match(MERMAID_COLOUR_REGEX) ?? []).map((c) => c.toLowerCase()));
+          findings.push(`${theme.name}: real rendered Mermaid SVG contains ${colours.size} distinct colour token(s) (informational, hex/rgb()/hsl()).`);
           if (theme.id === 'dark') {
-            darkMermaidColors = colours;
-            findings.push(`Dark: captured ${colours.size} distinct hex colour(s) from the real rendered Mermaid SVG as the cross-theme equality baseline (${[...colours].join(', ')}).`);
-          } else if (!darkMermaidColors) {
-            failures.push(`${theme.name}: no Dark Mermaid colour baseline was captured to compare against (Dark's own turn must run first).`);
+            darkMermaidSvgText = svgText;
+            findings.push(`Dark: captured the real rendered Mermaid SVG's own full decoded text (${svgText.length} chars) as the cross-theme equality baseline.`);
+          } else if (!darkMermaidSvgText) {
+            failures.push(`${theme.name}: no Dark Mermaid SVG baseline was captured to compare against (Dark's own turn must run first).`);
+          } else if (svgText !== darkMermaidSvgText) {
+            failures.push(`${theme.name}: real rendered Mermaid SVG differs from Dark's own byte-for-byte (same render id, so equal palettes must give byte-identical SVGs) -- Cyber Amber's own Mermaid palette may have drifted off DARK_FAMILY.`);
           } else {
-            const missing = [...darkMermaidColors].filter((c) => !colours.has(c));
-            const extra = [...colours].filter((c) => !darkMermaidColors.has(c));
-            if (missing.length > 0 || extra.length > 0) {
-              failures.push(`${theme.name}: real rendered Mermaid SVG's own hex colour set differs from Dark's (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'}) -- Cyber Amber's own Mermaid palette may have drifted off DARK_FAMILY.`);
-            } else {
-              findings.push(`${theme.name}: real rendered Mermaid SVG's own hex colour set (${colours.size}) is byte-identical to Dark's own.`);
-            }
+            findings.push(`${theme.name}: real rendered Mermaid SVG is byte-identical to Dark's own full decoded text.`);
           }
         }
 
@@ -466,24 +469,18 @@ async function main() {
         // Mermaid diagram's own "Show source" toggle), an open dropdown (the Profile menu),
         // Manage sessions (the Session list), a toast (an unknown-command refusal, the same
         // client-side mechanism as `verify-997-notice-severity.mjs`), and Settings Appearance.
-        // Gate round 1 (self-review, 2026-10-20): `settleForScreenshot` (imported from
-        // `verify-700-todo-pin-helpers.mjs`, the same fix issue #700's own gate round 7 self-
-        // caught failure landed) runs before EVERY shot below -- moves the pointer, blurs,
-        // presses Escape, and THROWS (fails this run fatally, not a soft skip) if a stray
-        // tooltip/hover card is still open. It always runs BEFORE the action that produces the
-        // state a given shot captures (opening the dropdown, showing the code block, sending
-        // the refusal), never after, so it can never dismiss the very overlay a shot exists to
-        // capture. ----
+        // `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`) runs before EVERY shot --
+        // moves the pointer, blurs, presses Escape, and THROWS if a stray tooltip/hover card is
+        // still open. Always BEFORE the action producing a shot's own state (opening the
+        // dropdown, showing the code block, sending the refusal), so it never dismisses it. ----
         await settleForScreenshot(cdp);
         const chatShot = `${theme.id}-00-chat-with-warning.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, chatShot));
         shotNames.push(chatShot);
 
         await settleForScreenshot(cdp);
-        // Gate round 1 fix (self-caught live): `button[aria-expanded="true"]` was ambiguous
-        // and Dark's own "hide" click never closed the panel, leaking `showSource` state into
-        // Cyber Amber's turn. The finder matches this SPECIFIC toggle by accessible name
-        // regardless of state; every wait reads THIS element's own `aria-expanded`.
+        // Gate round 1 fix: `button[aria-expanded="true"]` was ambiguous and leaked
+        // `showSource` state into Cyber Amber's turn -- scoped to this toggle's own name now.
         const mermaidToggleFinder = `Array.from(document.querySelectorAll('button')).find((el) => { const t = el.textContent.trim(); return t.startsWith('Show source for Mermaid') || t.startsWith('Hide source for Mermaid'); })`;
         await cdp.click(mermaidToggleFinder);
         await cdp.waitFor(`(() => { const el = ${mermaidToggleFinder}; return !!el && el.getAttribute('aria-expanded') === 'true'; })()`, { timeoutMs: 10_000, label: `${theme.name}: Mermaid source code block shown` });
@@ -499,6 +496,10 @@ async function main() {
           timeoutMs: 10_000,
           label: 'Profile dropdown menu open (containing Manage sessions)'
         });
+        // UI review fix: wait for the open animation to finish (not just `data-state="open"`,
+        // which fires before it), then two more rAFs, so the shot never catches mid-transition.
+        await cdp.waitFor(`(() => { const m = Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions')); return !!m && m.getAnimations().length === 0; })()`, { timeoutMs: 5_000, label: 'Profile dropdown menu open animation settled' });
+        await waitTwoFrames(cdp);
         const dropdownShot = `${theme.id}-04-profile-dropdown.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, dropdownShot));
         shotNames.push(dropdownShot);
@@ -525,11 +526,9 @@ async function main() {
         shotNames.push(toastShot);
         await cdp.click(`(${freshToastExpr})?.querySelector('[data-close-button]')`);
         await cdp.waitFor(`!(${freshToastExpr})`, { timeoutMs: 5_000, label: `${theme.name}: refusal toast dismissed` });
-        // Gate round 1 fix (self-caught live: leftover draft leaked into Cyber Amber's own
-        // shots -- a refusal leaves the draft untouched, FR-019): `clearField`'s Ctrl+A/
-        // Backspace measured unreliable here (the slash-menu's own panel intercepts real key
-        // events over a recognised-looking draft) -- the native `<textarea>` value setter plus
-        // a real `input` event bypasses React's own short-circuit instead.
+        // Gate round 1 fix: a refusal leaves the draft untouched (FR-019), leaking it into
+        // Cyber Amber's shots. `clearField`'s Ctrl+A/Backspace measured unreliable here; root
+        // cause unknown (not reproduced in isolation) -- the native value setter works around it.
         await cdp.evaluate(`(() => { const el = document.querySelector('[aria-label="Message"]'); if (!el) return; Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
         await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value === ''`, { timeoutMs: 5_000, label: `${theme.name}: composer draft cleared` });
 

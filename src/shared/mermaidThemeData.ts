@@ -384,9 +384,11 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // override (`#0f0703`/`#22160e`/`#faf4ef`/`#887e78`/`#bb9679`/`#382e28`/`#2c221b`) predate
   // #1039's retune and are gone; only the accent family (`--accent-text`, `--primary`/`--send`),
   // the warning hue, and `themes.ts`'s own `swatchPrimary` still differ from Dark, none of
-  // which Mermaid's own `themeVariables` read. Live-verified
-  // (`scripts/verify-1039-amber-retune.mjs`): a real rendered Mermaid flowchart's own SVG
-  // (decoded from its `data:image/svg+xml` `<img>` source) contains Dark's own `primaryColor`
-  // (`#1f1f1f`) and `textColor` (`#fafafa`) literals, not Cyber Amber's old brown ones.
+  // which Mermaid's own `themeVariables` read. Live-verified (`scripts/verify-1039-amber-
+  // retune.mjs`, round-2 gate fix): a real rendered Mermaid flowchart's own SVG (decoded from
+  // its `data:image/svg+xml` `<img>` source) is byte-for-byte identical to Dark's own render --
+  // Mermaid derives its node FILL internally (never the raw `primaryColor` literal verbatim),
+  // so this is a full-string equality check, not a hardcoded-literal match; `textColor`
+  // (`#fafafa`) IS a literal match, confirmed separately.
   'cyber-amber': DARK_FAMILY
 }

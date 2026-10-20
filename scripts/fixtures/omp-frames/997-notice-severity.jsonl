@@ -10,8 +10,9 @@
 // EXTENDED (#1039 round-1 self-review, 2026-10-20): one assistant message added before the
 // notice frames, a FIXED hand-written reply (not a real model's own wording, same convention
 // `code-surface-975.jsonl` uses for its own JS fence) containing one short ` ```mermaid ` fence
-// -- so `scripts/verify-1039-amber-retune.mjs` can assert a real rendered Mermaid diagram's node
-// fill/text colours equal Default Dark's in Cyber Amber too (AGENTS.md "no new fixtures":
+// -- so `scripts/verify-1039-amber-retune.mjs` can assert a real rendered Mermaid diagram's own
+// SVG is byte-identical between Default Dark and Cyber Amber (a round-trip through Obsidian
+// first proves a genuine re-render, not a stale cached image) (AGENTS.md "no new fixtures":
 // extending this already-committed, already-reused tape, not adding a new one).
 // `verify-997-notice-severity.mjs`'s own assertions are unaffected: it only reads NoticeRow
 // styling, never asserts message content or count.

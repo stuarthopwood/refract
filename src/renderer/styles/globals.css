@@ -1003,11 +1003,13 @@
  * shipped with (see this comment's own history note above) is gone, replaced by Default Dark
  * exactly. `--card`/`--popover` collapse to one tier (0.205), the same two-tier-not-three
  * structure `.theme-dark`'s own `--surface-1`/`--surface-2` comment already documents for that
- * theme. Only the accent family (`--accent-text`/`--active-indicator`, `--primary`/`--send`,
+ * theme. The accent family (`--accent-text`/`--active-indicator`, `--primary`/`--send`,
  * markdown links -- all of which already read `--accent-text`), the warning hue
- * (`--severity-warning`), and `themes.ts`'s own `swatchPrimary` still differ from Default Dark
- * -- `--ring` is explicitly NOT part of this family and never has been (the achromatic-ring
- * decision, 2026-10-09, applies to every built-in preset including this one).
+ * (`--severity-warning`), the error family (`--severity-error`/`--destructive`/
+ * `--state-stopped`/`--pr-closed`, all four kept equal, the #568/#529 decision 5 convention),
+ * and `themes.ts`'s own `swatchPrimary` still differ from Default Dark -- `--ring` is
+ * explicitly NOT part of this family and never has been (the achromatic-ring decision,
+ * 2026-10-09, applies to every built-in preset including this one).
  *
  * **Accent, per the grill's decided hex values (unaffected by any of the four 2026-10-20
  * amendments):** `--accent-text`/`--active-indicator` move to the vivid orange `#fb923c` (real
@@ -1027,14 +1029,22 @@
  * lightness/chroma, `oklch(0.78 0.17 88)`, real hue 86.6) -- more yellow-gold, still clearly
  * "amber", now ~30.7 degrees from the new accent's real hue. `--severity-success`/
  * `--severity-info` are unchanged (green hue 162.48, cool teal hue 200).
- * **Open gate finding (round 1, HIGH, NOT yet fixed):** `--accent-text`'s new real hue (55.9)
- * also closed the gap to `--severity-error` (hue 12, unchanged since #551): the two swatches
- * now measure only 1.23:1 apart (WCAG luminance contrast), under the 1.5:1 distinctness floor
- * #551's own gate established. Lowering `--severity-error`'s lightness alone cannot fix this:
- * the swatch-distinctness floor (>=1.5:1) needs L<=~0.662, but the error-text-on-`--muted`
- * floor (>=4.5:1) needs L>=~0.665 -- the two windows do not overlap at this hue/chroma, so no
- * single lightness clears both. Flagged to Main for a decision (chroma change, a relaxed
- * floor, or an accepted gap); `--severity-error` is UNCHANGED pending that call.
+ * **Error family retuned (Main, 2026-10-20, round-2 gate decision):** `--accent-text`'s new
+ * real hue (55.9) closed the gap to `--severity-error` (hue 12, unchanged since #551) to
+ * 1.23:1, under the 1.5:1 distinctness floor #551's own gate established. The original grid
+ * search (L 0.655-0.675, chroma 0.15-0.24, hue 5-25) found no point clearing both that floor
+ * and the error-text-everywhere floor (>=4.5:1) at once; widened on hue (kept redder, same
+ * family the other themes use) and reran outside the original chroma band -- `oklch(0.665
+ * 0.12 22)` (`#d37472`) is the best accent-vs-error ratio achievable (1.42:1) while keeping
+ * every error-text pair >=4.5:1 (6.14:1 on `--background`, 5.56:1 on `--card`/`--popover`,
+ * 4.69:1 on `--muted`, 4.50:1 on the composited `destructive/80` hover fill over the dialog
+ * footer -- the binding case, margin confirmed live, `check-theme-contrast.mjs` re-run
+ * 872/872). The 1.5:1 distinctness floor is NOT met here -- a named accepted departure for
+ * Cyber Amber only, `docs/design/accessibility.md` "Accepted departures" (the error row
+ * always also carries its own icon and word, so colour is never the only cue, WCAG 1.4.1).
+ * `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` is a
+ * literal copy (the same convention every other theme's own `--pr-closed` already follows)
+ * and is updated to the SAME value here, not left behind.
  *
  * **Text, foreground/chat/muted: byte-identical to Default Dark, not retuned by #1039 at
  * all** (see the third 2026-10-20 amendment above) -- `--foreground` is `oklch(0.985 0 0)`,
@@ -1105,7 +1115,11 @@
   --pr-open-foreground: oklch(0.145 0 0);
   --pr-draft: oklch(0.708 0 0);
   --pr-draft-foreground: oklch(0.145 0 0);
-  --pr-closed: oklch(0.72 0.191 12);
+  /* Gate round 2 fix (Main, Code HIGH): was still the old pre-retune literal
+   * (`oklch(0.72 0.191 12)`) -- every theme keeps `--pr-closed` equal to `--destructive`
+   * (#568/#529 decision 5); updated to the same `oklch(0.665 0.12 22)` literal `--severity-
+   * error`/`--destructive`/`--state-stopped` now share (see this block's own header comment). */
+  --pr-closed: oklch(0.665 0.12 22);
   --pr-closed-foreground: oklch(0.145 0 0);
   --pr-merged: oklch(0.70 0.18 300);
   --pr-merged-foreground: oklch(0.145 0 0);
@@ -1130,25 +1144,19 @@
    * uses. `--severity-warning` is the theme's own golden amber, retuned apart from the new
    * accent by #1039 (real hue 86.6, up from 73.8 -- see this block's own header comment for the
    * measured hue distances). `--severity-info` stays the cool teal (real hue ~200.1), well
-   * clear of the warm family. **`--severity-error` retuned (Main, 2026-10-20, #1039 round-1
-   * self-review): the new accent hue (55.9) closed the accent-vs-error distinctness gap to
-   * 1.23:1, under the 1.5:1 floor #551's gate established. A grid search (L 0.655-0.675,
-   * chroma 0.15-0.24, hue 5-25) found NO point clearing both that floor and the error-text-
-   * on-every-surface floor (>=4.5:1), INCLUDING a real near-black-text-on-composited-fill
-   * check (`destructive-foreground` on `destructive/80` over the dialog footer, only
-   * discovered by running `check-theme-contrast.mjs` for real) at once -- WCAG text contrast
-   * wins per Main's decision: this value clears every text floor with margin (6.17:1 on
-   * `--background`, 5.59:1 on `--card`/`--popover`, 4.71:1 on `--muted`, 4.52:1 on the
-   * composited hover fill -- all the binding cases) while measuring the best accent-vs-error
-   * ratio achievable under that constraint (1.42:1). The 1.5:1 distinctness floor is NOT met
-   * here -- an accepted departure for Cyber Amber only, `docs/design/accessibility.md`
-   * "Accepted departures" (the error row also carries its own icon and word, so colour is not
-   * the only cue, WCAG 1.4.1); `scripts/verify-551-presets.mjs`'s own
-   * `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` is lowered to 1.4 for this one check, with a
-   * comment pointing here. */
+   * clear of the warm family. `--severity-error` retuned (Main, 2026-10-20, round-2 gate
+   * decision; see this block's own header comment for the full grid-search/floor rationale):
+   * `oklch(0.665 0.12 22)` (`#d37472`) is the best accent-vs-error swatch ratio achievable
+   * (1.42:1) while every error-text pair stays >=4.5:1 (binding case 4.69:1 on `--muted`,
+   * 4.50:1 on the composited `destructive/80` hover fill) -- an accepted departure for Cyber
+   * Amber only, `docs/design/accessibility.md` "Accepted departures"; `scripts/verify-551-
+   * presets.mjs`'s own `CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR` is lowered to 1.4 for this one
+   * check, with a comment pointing there. Kept in the red family (hue 22) every other theme's
+   * own `--severity-error` uses, per #568/#529 decision 5 -- `--destructive`/`--state-stopped`
+   * alias it already; `--pr-closed` below is updated to the same literal too. */
   --severity-success: oklch(0.70 0.17 162.48);
   --severity-warning: oklch(0.78 0.17 88);
-  --severity-error: oklch(0.67 0.14 8);
+  --severity-error: oklch(0.665 0.12 22);
   --severity-info: oklch(0.70 0.12 200);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);

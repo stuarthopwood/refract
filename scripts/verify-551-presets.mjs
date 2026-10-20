@@ -67,10 +67,11 @@ const NEW_THEMES = [
 ];
 
 // Gate round 3 item 6: named thresholds (globals.css's own `.theme-cyber-amber` comment); hue
-// floor below round 1's failed 16-17-degree candidate, with margin. #1039 round-1 self-review
-// (Main, 2026-10-20): new accent hue (55.9) closed the swatch gap to `--severity-error` below
-// 1.5:1; no point clears that AND error-text->=4.5:1-everywhere -- text contrast won (1.42:1
-// best achievable), an accepted departure for Cyber Amber only (accessibility.md), floor lowered.
+// floor below round 1's failed 16-17-degree candidate, with margin. #1039 round-2 gate
+// decision (Main, 2026-10-20): new accent hue (55.9) closed the swatch gap to `--severity-
+// error` below 1.5:1; no point clears that AND error-text->=4.5:1-everywhere -- text contrast
+// won (1.42:1 best achievable, `oklch(0.665 0.12 22)`), an accepted departure for Cyber Amber
+// only (accessibility.md), floor lowered.
 const CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR = 1.4;
 const CYBER_AMBER_ACCENT_WARNING_HUE_FLOOR = 30;
 
@@ -336,18 +337,17 @@ async function main() {
           else findings.push(`${theme.name}: --accent-text (hue ${accentHL.hue.toFixed(1)}) and --severity-info (hue ${infoHL.hue.toFixed(1)}) are ${hueDist.toFixed(1)} degrees apart, a real distinct hue.`);
         }
 
-        // Cyber Amber only: accent vs error must ALSO clear the decided swatch-contrast
-        // separation (gate round 1 item 6's own fix, re-verified live here; item 1 of gate
-        // round 2 corrected this from an OKLab lightness-ratio gate, which the real measured
-        // values -- 1.15:1 -- would have failed even though the decision itself specified
-        // swatch contrast >= 1.5:1, the figure actually measured and decided on).
+        // Cyber Amber only: accent vs error must clear the lowered swatch-contrast floor this
+        // theme's own accepted departure established (#1039, `docs/design/accessibility.md`
+        // "Accepted departures" -- `--severity-error` cannot clear both the original 1.5:1
+        // distinctness floor and the error-text floor at once, so this floor is lowered to 1.4).
         if (theme.id === 'cyber-amber') {
           const errorRaw = await requireResolvedCssVarColor(cdp, '--severity-error', 'color');
           const swatchRatio = measuredContrastRatio(accentRaw, errorRaw);
           if (swatchRatio === null) {
             failures.push(`${theme.name}: could not parse --accent-text (${accentRaw}) or --severity-error (${errorRaw}) for a measured swatch contrast ratio.`);
           } else if (swatchRatio < CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR) {
-            failures.push(`${theme.name}: --accent-text (${accentRaw}) and --severity-error (${errorRaw}) measure only ${swatchRatio.toFixed(2)}:1 apart (swatch contrast) -- below the ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 the gate round 1 retune decided.`);
+            failures.push(`${theme.name}: --accent-text (${accentRaw}) and --severity-error (${errorRaw}) measure only ${swatchRatio.toFixed(2)}:1 apart (swatch contrast) -- below the ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 this theme's own accepted departure established (docs/design/accessibility.md "Accepted departures").`);
           } else {
             findings.push(`${theme.name}: --accent-text and --severity-error measure ${swatchRatio.toFixed(2)}:1 apart (swatch contrast), clearing the decided ${CYBER_AMBER_ACCENT_ERROR_SWATCH_FLOOR}:1 separation.`);
           }

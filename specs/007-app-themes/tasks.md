@@ -977,9 +977,10 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
      0.24/hue 5-25 for a point clearing BOTH 1.5:1 AND error-text->=4.5:1-everywhere; none found
      (confirmed, no point in that space clears both -- the two floors' lightness windows do not
      overlap at any hue/chroma in range). Per Main's fallback: WCAG text contrast wins.
-     `--severity-error` retuned to `oklch(0.67 0.14 8)` -- the best accent-vs-error swatch ratio
-     achievable (1.42:1) while keeping every error-text pair >=4.5:1 (5.90:1/`--background`,
-     5.59:1/`--card`-`--popover`, 4.71:1/`--muted`, 4.52:1 on the composited `destructive/80`
+     `--severity-error` retuned to `oklch(0.665 0.12 22)` (`#d37472`) -- the best accent-vs-
+     error swatch ratio achievable (1.42:1) while keeping every error-text pair >=4.5:1
+     (6.14:1/`--background`, 5.56:1/`--card`-`--popover`, 4.69:1/`--muted`, 4.50:1 on the
+     composited `destructive/80`
      hover fill over the dialog footer -- a real constraint only discovered by running
      `check-theme-contrast.mjs` for real, since near-black `destructive-foreground` text sits
      on that composited fill too). Recorded as a named accepted departure,
@@ -1009,11 +1010,15 @@ reverted) and `.theme-cyber-amber` (every token) are retuned.
   9. [High] `scripts/verify-1039-amber-retune.mjs` extended: the existing `997-notice-severity`
      fixture now also carries one assistant message with a short Mermaid fence (its own
      "EXTENDED" header comment, README.md's provenance table updated -- not a new fixture per
-     AGENTS.md). A real step reads the rendered Mermaid `<img>`'s `data:image/svg+xml` src,
-     decodes it, and asserts the real SVG text contains Dark's own node fill/text literals
-     (`MERMAID_NODE_FILL`/`MERMAID_NODE_TEXT`, `#1f1f1f`/`#fafafa`) in both Dark and Cyber
-     Amber -- Mermaid bakes `themeVariables` straight into the SVG, never through a CSS custom
-     property, so item 1's fix could not be verified any other way.
+     AGENTS.md). Mermaid bakes `themeVariables` straight into the rendered SVG, never through a
+     CSS custom property, so item 1's fix could not be verified via computed style. A real step
+     reads the rendered Mermaid `<img>`'s `data:image/svg+xml` src, decodes it, and asserts the
+     real SVG text contains Dark's own node text literal (`MERMAID_NODE_TEXT`, `#fafafa`) in
+     both Dark and Cyber Amber; Mermaid derives node FILL internally rather than emitting
+     `primaryColor` verbatim, so fill equality is instead proven by a full-string SVG
+     comparison -- Cyber Amber's turn round-trips through Obsidian first (proving a genuine
+     re-render, not a stale cached image), then its final SVG is asserted byte-identical to
+     Dark's own captured SVG.
   10. [Medium] Screenshots extended: a code block (the Mermaid diagram's own "Show source"
       toggle), an open dropdown (the Profile menu, captured before clicking through to Manage
       sessions) and a toast (an unknown-command refusal, the same client-side mechanism

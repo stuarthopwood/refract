@@ -101,9 +101,15 @@ font and code font stay with issue #4 and are out of scope here.
   the same). The status palette (severity/state/PR-state tokens) stays Cyber Amber's own,
   except that `--accent-text`'s new real hue (55.9) also closed the gap to `--severity-error`
   (hue 12): the two swatches now measure only 1.23:1 apart, under the 1.5:1 distinctness floor
-  #551's own gate established. No single `--severity-error` lightness clears both that floor
-  (needs L≤~0.662) and the error-text-on-`--muted` floor (needs L≥~0.665) at once -- flagged to
-  Main for a decision, `--severity-error` left unchanged pending it.
+  #551's own gate established. A grid search (L 0.655-0.675, chroma 0.15-0.24, hue 5-25) found
+  no point clearing both that floor and the error-text-everywhere floor (>=4.5:1) at once; the
+  search was widened (kept redder, hue 22, the family every other theme's own `--severity-
+  error` already uses; the winning chroma, 0.12, sits outside the original 0.15-0.24 band) --
+  `oklch(0.665 0.12 22)` clears every text floor with margin while measuring the best
+  accent-vs-error ratio achievable (1.42:1); the 1.5:1 distinctness floor is NOT met, an
+  accepted departure recorded in `docs/design/accessibility.md` "Accepted departures".
+  `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` (a literal
+  copy in every theme, #568/#529 decision 5) is updated to the same value too.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -306,16 +312,20 @@ side panel and confirm both show the same theme.
 - **FR-020** (#1039): Within any single built-in theme, the active accent colour (`--accent-text`,
   `--primary`, `--send`) MUST stay visually distinct in hue from that theme's own warning colour
   (`--severity-warning`), so a warning never reads as an accent.
-- **FR-022** (#1039, amended 2026-10-20 four times): Cyber Amber's surface and text tokens,
+- **FR-022** (#1039, amended 2026-10-20 five times): Cyber Amber's surface and text tokens,
   plus `--input`, `--scrollbar-thumb`/`--scrollbar-thumb-hover` and `--composer-focus`, MUST
   equal Default Dark's own tokens exactly (byte-identical, OKLCH chroma ≤ 0.002 where that
   applies) -- `--ring`/`--sidebar-ring` too, achromatic per the 2026-10-09 decision and never
   part of the accent family. The status palette (`--severity-success`/`--severity-warning`/
   `--severity-error`/`--severity-info` and the state/PR-state tokens built from them) keeps
   Cyber Amber's own preset values, EXCEPT where retuning the accent moved a distinctness floor
-  out of reach (see FR-020); only the accent family (`--accent-text`, `--primary`/`--send`,
-  markdown links), the warning hue, and `themes.ts`'s own `swatchPrimary` may differ from
-  Default Dark.
+  out of reach -- FR-020 covers the accent-vs-warning case; the accent-vs-error case has no
+  single value clearing both its own distinctness floor and the error-text floor at once, so
+  it is a named accepted departure instead (`docs/design/accessibility.md` "Accepted
+  departures"), not a functional requirement. Only the accent family (`--accent-text`,
+  `--primary`/`--send`, markdown links), the warning hue, the error family (`--severity-error`/
+  `--destructive`/`--state-stopped`/`--pr-closed`), and `themes.ts`'s own `swatchPrimary` may
+  differ from Default Dark.
 
 ### Key Entities
 
