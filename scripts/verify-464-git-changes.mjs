@@ -31,14 +31,13 @@
 //     `None`/omitted here, not a populated figure this script could honestly produce without
 //     fabricating an upstream that would not exist for a real local Session either. Checked as
 //     "correctly absent", both via the real IPC response and the rendered DOM, not assumed.
-//   - Containment refusal: NOT independently reachable via the real UI at all -- confirmed by
-//     reading `git-changes-store.ts` (paths only ever come from the panel's own already-
-//     validated snapshot) and `ipc/git_changes.rs` (no bespoke containment check of its own;
-//     `stage`/`unstage`/`diff` pass the path straight to `git ... -- <path>`, relying on git's
-//     own "is outside repository" pathspec refusal, `GitErrorCode::GitFailed` -> wire code
-//     `"git-failed"`). Exercised by calling `window.refract.gitChanges.*` directly via CDP
-//     `Runtime.evaluate` -- the same real-IPC-bridge-bypassing-the-UI precedent
-//     `verify-926-attach-any-file.mjs` already established for `window.refract.attachments`.
+//   - Containment refusal: NOT independently reachable via the real UI at all (paths only ever
+//     come from the panel's own already-validated snapshot, `git-changes-store.ts`) -- exercised
+//     by calling `window.refract.gitChanges.*` directly via CDP `Runtime.evaluate` instead, the
+//     same real-IPC-bridge-bypassing-the-UI precedent `verify-926-attach-any-file.mjs` already
+//     established for `window.refract.attachments`. A Rust-side `validate_pathspec` gate
+//     (`src-tauri/src/git/pathspec.rs`, added 2026-10-20) now refuses an absolute/outside-
+//     worktree path before it ever reaches a `git` subprocess, wire code `outside-worktree`.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -60,6 +59,7 @@ import {
 } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository } from './verify-tauri-session-list-helpers.mjs';
 import {
+  runGit,
   FIXTURE,
   commitRepoBaseline,
   buildScratchWorkingTree,
@@ -369,6 +369,18 @@ async function main() {
       failures
     );
 
+    // Script fixture fix (falsified against a real throwaway repo before changing anything:
+    // `git commit` genuinely refuses ANY commit -- even of unrelated already-staged files --
+    // while an unmerged path exists anywhere in the index; "error: Committing is not possible
+    // because you have unmerged files" is git's own message, not a Refract bug). The Conflicts-
+    // group assertions (checks 6/7/9 above) are already done with `conflict.txt` by this point,
+    // so it is resolved here -- keeping the worktree's own side (`FIXTURE`'s own "worktree
+    // change" content) and staging it -- the same way a developer would actually finish this
+    // merge, so the commit checks below can exercise a REAL commit instead of a precondition
+    // `git` itself would always refuse regardless of anything this panel does.
+    writeFileSync(path.join(worktreePath, FIXTURE.conflict), 'worktree change\n');
+    runGit(worktreePath, ['add', '--', FIXTURE.conflict]);
+
     // ---- Check 10: commit via a REAL Ctrl+Enter keypress (not a button click) -- verified via
     // `git log` against the scratch worktree, not just a UI state change. ----
     await pressCtrlEnter(cdp);
@@ -406,21 +418,25 @@ async function main() {
     await shot('11-external-change-refresh.png');
 
     // ---- Check 13: containment refusal, via the real IPC bridge directly (no UI path exists --
-    // see this file's own header comment). ----
+    // see this file's own header comment). 2026-10-20 update: a Rust-side `validate_pathspec`
+    // gate (`src-tauri/src/git/pathspec.rs`) now refuses an absolute/outside-worktree path
+    // BEFORE it ever reaches a `git` subprocess, wire code `outside-worktree` -- stronger than
+    // relying on git's own "is outside repository" pathspec refusal (`git-failed`), which this
+    // check used to expect. ----
     const outsideMarkerFile = path.join(outsideDir, 'outside-worktree-marker.txt');
     writeFileSync(outsideMarkerFile, 'this must never be reachable from inside the worktree\n');
     const diffAttempt = await cdp.evaluate(
       `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
     );
     if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
-    else if (diffAttempt.code !== 'git-failed') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "git-failed", git's own pathspec-outside-repository refusal) -- message: ${diffAttempt.message}`);
-    else findings.push(`Containment refusal (gitChanges.diff): refused with code "git-failed" (${diffAttempt.message}).`);
+    else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
+    else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
     const stageAttempt = await cdp.evaluate(
       `window.refract.gitChanges.stage(${JSON.stringify(sessionId)}, [${JSON.stringify(outsideMarkerFile)}]).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
     );
     if (stageAttempt.ok) failures.push(`Containment refusal: gitChanges.stage against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
-    else if (stageAttempt.code !== 'git-failed') failures.push(`Containment refusal: gitChanges.stage refused the outside-worktree path, but with code "${stageAttempt.code}" -- message: ${stageAttempt.message}`);
-    else findings.push(`Containment refusal (gitChanges.stage): refused with code "git-failed" (${stageAttempt.message}).`);
+    else if (stageAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.stage refused the outside-worktree path, but with code "${stageAttempt.code}" -- message: ${stageAttempt.message}`);
+    else findings.push(`Containment refusal (gitChanges.stage): refused with code "outside-worktree" (${stageAttempt.message}).`);
     const outsideMarkerUnchanged = readFileSync(outsideMarkerFile, 'utf8') === 'this must never be reachable from inside the worktree\n';
     assertEqual(outsideMarkerUnchanged, true, 'Outside-worktree marker file untouched after both refused attempts', findings, failures);
 
