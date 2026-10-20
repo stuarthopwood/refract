@@ -222,7 +222,11 @@ export async function diffViewText(cdp) {
   return cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
 }
 
-export const BACK_TO_CHANGES_FINDER = `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Back to changes')`;
+// #1101 item 6: the Back button is now a ghost icon-only control (`ArrowLeftIcon`, no visible
+// text) with its own file-naming `aria-label` ("Back to changes from <file>") instead of a
+// literal "Back to changes" text node -- matched by that label's stable prefix so this finder
+// still works regardless of which file is currently open.
+export const BACK_TO_CHANGES_FINDER = `Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`;
 
 /** Real Ctrl+Enter: a `rawKeyDown` for Control (carrying the Ctrl bit in its own `modifiers`,
  * the exact technique `verify-980-toast-send.mjs`'s own `ctrlClickSessionRow` already
@@ -338,10 +342,15 @@ export async function activeElementIs(cdp, finderExpr) {
   return cdp.evaluate(`document.activeElement === (${finderExpr})`);
 }
 
-/** `document.activeElement`'s own trimmed visible text (used for the "Back to changes" button,
- * whose own icon renders no text node of its own). */
+/** `document.activeElement`'s own trimmed visible text. */
 export async function activeElementText(cdp) {
   return cdp.evaluate(`document.activeElement ? document.activeElement.textContent.trim() : null`);
+}
+
+/** `document.activeElement`'s own `aria-label` (#1101 item 6: the Back button is now icon-only,
+ * so its accessible name lives in this attribute, not in `textContent`). */
+export async function activeElementAriaLabel(cdp) {
+  return cdp.evaluate(`document.activeElement ? document.activeElement.getAttribute('aria-label') : null`);
 }
 
 /** `document.activeElement`'s own `data-git-row-path` (`focus.ts`'s `focusGitRow` target) --

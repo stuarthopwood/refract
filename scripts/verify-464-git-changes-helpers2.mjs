@@ -14,7 +14,7 @@ import {
   readGroupFileTitles,
   diffViewText,
   BACK_TO_CHANGES_FINDER,
-  activeElementText,
+  activeElementAriaLabel,
   assertArrayEqual,
   assertEqual,
   gitStatusPorcelain,
@@ -75,7 +75,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   if (!diffTextBefore || !diffTextBefore.includes(FIXTURE.readmeEditedLine)) {
     failures.push(`Item 2 setup: README.md's own reopened diff did not show its real added line before the external write: ${JSON.stringify(diffTextBefore)}`);
   }
-  assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2 setup: focus is on Back to changes before an unrelated external write', findings, failures);
+  assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from README.md', 'Item 2 setup: focus is on Back to changes before an unrelated external write', findings, failures);
 
   writeFileSync(path.join(worktreePath, unrelatedFileName), "an unrelated change while README.md's own diff is open, for verify-464\n");
 
@@ -101,7 +101,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   assertEqual(await cdp.evaluate(`!!document.querySelector('.diff-view')`), true, 'Item 2: the diff view is still mounted immediately after that direct backend check', findings, failures);
   const diffTextAfter = await diffViewText(cdp);
   assertEqual(diffTextAfter, diffTextBefore, "Item 2: README.md's own diff text is still mounted, byte-identical, after the unrelated external write", findings, failures);
-  assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2: focus is still on Back to changes after the unrelated external write (never stolen by the background refresh)', findings, failures);
+  assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from README.md', 'Item 2: focus is still on Back to changes after the unrelated external write (never stolen by the background refresh)', findings, failures);
 
   await cdp.click(BACK_TO_CHANGES_FINDER);
   await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the item-2 stability check' });
