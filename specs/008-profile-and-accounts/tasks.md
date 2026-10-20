@@ -268,6 +268,39 @@ correctly and are fully keyboard-accessible.
 
 ---
 
+## Phase 9: Bug fix -- Theme submenu radios (#1043)
+
+**Goal**: the Theme submenu (FR-019, FR-030) is a real radio group whose checked state is
+visible, drawn with the shared `DropdownMenuRadioItem`'s own leading ring-and-dot mark rather than
+a trailing check -- #1043's reported bug (every round swatch read as an unselected radio).
+
+**Independent test**: open the profile menu's Theme submenu in each built-in preset and confirm
+the active one shows a filled leading radio dot (never only a trailing "Current" word); confirm
+the composer's Reasoning picker (the shared component's other caller) still shows its own current
+level the same way.
+
+- [X] T031 (#1043) [grilled 2026-10-19, converged 2026-10-20] Fix the shared
+  `DropdownMenuRadioItem` (`dropdown-menu.tsx`) to draw a leading ring-and-dot radio indicator
+  (`radio-group.tsx`'s new `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, extracted from the Ask card's own
+  mark, ADR 0003) instead of a trailing `CheckIcon` (FR-030); rebuild `ThemeSubmenu`
+  (`ProfileMenu.tsx`) as a `DropdownMenuRadioGroup`/`RadioItem` bound to the active theme, moving
+  each preset's colour swatch to a small square chip after its name and dropping the trailing
+  "Current" text (FR-019); add `foreground`/`popover` to `scripts/theme-contrast-pairs.mjs`
+  (WCAG 1.4.11, the new dot's real surface) -- `primary`/`popover` (the checked ring's own border)
+  is deliberately NOT added, matching `radio-group.tsx`'s own pre-existing #572 decision D10 that
+  the ring is reinforcement only, never the WCAG-load-bearing element (it measures under 3:1 on
+  `--popover` in three of five themes, same as it already does, unchecked, against `--card`/
+  `--background` everywhere else no PAIRS entry covers it). The composer's Reasoning picker
+  (`ComposerPickers.tsx:114-120`) needed no code change -- it already built on
+  `DropdownMenuRadioGroup`/`RadioItem`, so it picks up the new mark automatically.
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:file-size`,
+`pnpm check:theme-contrast`, `pnpm check:parity`, and `pnpm check:drag-regions` all pass; a live
+Tauri check per `scripts/verify-1043-theme-radio.mjs` confirms every preset's radio state, keyboard
+and mouse selection, the forced-colours indicator, and the Reasoning picker.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -281,6 +314,8 @@ correctly and are fully keyboard-accessible.
   - US4 (P2) depends on US1's `ProfileMenu.tsx` shell and references US2's Manage accounts item and US5's Manage sessions item by name, but its own Theme/Keyboard shortcuts/update/Health check/What's new items are independent of US2/US3/US5's internals.
   - US5 (P3) depends on US1's `view-store.ts` (T012) and, for its menu entry, US4's full menu (T021) — its own screen (T026) has no other story dependency and reuses only spec 001 IPC.
 - **Polish (Phase 8)**: depends on every story above being complete.
+- **Bug fix (Phase 9)**: independent of Phase 8 -- a post-ship fix to US4's own Theme submenu
+  (T021) and the shared `DropdownMenuRadioItem` primitive, not a new story.
 
 ### Parallel Opportunities
 
