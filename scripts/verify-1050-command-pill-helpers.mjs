@@ -4,6 +4,7 @@
 // pill/spellcheck/geometry/theme checks).
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { parseComputedColorToEntry, srgbGammaEncode } from './contrast-math.mjs';
 
 export const TEXTAREA = `document.querySelector('[aria-label="Message"]')`;
 export const PILL = `document.querySelector('[data-command-pill-token]')`;
@@ -186,12 +187,18 @@ export async function assertCaretVisible(cdp, sleep, charOffset, label, report) 
   console.log(`verify-1050: PASS ${label}`);
 }
 
-/** Parses a `getComputedStyle()`/`resolveCssVarColor` `rgb()`/`rgba()` string into its `[r, g,
- * b]` triplet, for comparing against raw `getImageData` bytes. */
-function parseRgbTriplet(rgbStr) {
-  const m = typeof rgbStr === 'string' && rgbStr.match(/rgba?\(([^)]+)\)/);
-  if (!m) return null;
-  return m[1].split(',').map((n) => parseFloat(n)).slice(0, 3);
+/** Gate round 4 fix: `resolveCssVarColor` had only ever been fed through `outline-color`/
+ * `background-color` call sites that Chromium happened to serialize as `rgb()` before -- a
+ * `background-color` resolving through an INDIRECT `var()` chain (`--composer-selection-bg` ->
+ * `var(--accent)` -> `oklch(0.269 0 0)`) comes back as the LITERAL `oklch(...)` string instead
+ * (confirmed live: `expectedBgRaw` read `'oklch(0.269 0 0)'`, which a plain `rgba?\(...\)` regex
+ * never matches, so the comparison silently always failed). Reuses `contrast-math.mjs`'s own
+ * `parseComputedColorToEntry` (already handles `rgb()`/`oklch()`/`oklab()`, the same parser
+ * `check-theme-contrast.mjs` relies on) instead of a second, narrower regex here. */
+function expectedRgbBytes(rawColorString) {
+  const entry = parseComputedColorToEntry(rawColorString);
+  if (!entry) return null;
+  return entry.linear.map((c) => Math.round(srgbGammaEncode(c) * 255));
 }
 
 /** Gate round 3 HIGH fix, remediated gate round 4: round 1's version sampled the PILL's own
@@ -219,7 +226,7 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssV
   const after = await capturePixelRegion(cdp, x, y, 0, 0);
   await cdp.screenshot(path.join(shotsDir, '02b-selection-highlight.png'));
   const expectedBgRaw = await resolveCssVarColor(cdp, '--composer-selection-bg', 'background-color');
-  const expectedRgb = parseRgbTriplet(expectedBgRaw);
+  const expectedRgb = expectedRgbBytes(expectedBgRaw);
   const differs = before.some((value, index) => Math.abs(value - after[index]) > 10);
   const matchesExpected = !!expectedRgb && expectedRgb.every((v, i) => Math.abs(v - after[i]) <= 10);
   report.push({ step: 'Ctrl+A: selection highlight paints a real background over plain argument text', ok: differs && matchesExpected, before, after, expectedBgRaw, x, y });
