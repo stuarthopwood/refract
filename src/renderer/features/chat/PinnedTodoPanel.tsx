@@ -99,6 +99,11 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     lastFollowedKeyRef.current = currentTaskKey
     const elTop = el.offsetTop
     const elBottom = elTop + el.offsetHeight
+    // THROWAWAY (Main's decisive-trace spec, #700 E4): every classic cause (shared ref, last-
+    // match selector, data-current on every row) was ruled out by reading the code -- this logs
+    // every actual follow decision so the live run shows which task/render produces scrollTop
+    // 127. Revert with the rest of this throwaway once decided.
+    console.log('[E4TRACE]', JSON.stringify({ currentTaskKey, elText: el.textContent?.slice(0, 40) ?? null, elTop, elBottom, scrollTopBefore: list.scrollTop, clientHeight: list.clientHeight, scrollHeight: list.scrollHeight }))
     if (elTop < list.scrollTop) list.scrollTop = elTop
     else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
   })

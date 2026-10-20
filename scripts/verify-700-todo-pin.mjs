@@ -63,6 +63,10 @@ const THEMES = [
 
 const report = [];
 const notExercised = [];
+// THROWAWAY (Main's decisive-trace spec, #700 E4): every `console.log` from launch, so
+// `PinnedTodoPanel.tsx`'s own `[E4TRACE]` lines (and any error/warning) land in report.json
+// without re-instrumenting a rerun. Revert with the rest of this throwaway once decided.
+const consoleCapture = [];
 function assertTrue(actual, label, extra) {
   const ok = actual === true;
   report.push({ step: label, ok, actual, ...(extra ? { extra } : {}) });
@@ -160,6 +164,21 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
+    // THROWAWAY (Main's decisive-trace spec, #700 E4): a second, additive 'message' listener on
+    // the SAME CDP WebSocket (never touches the shared verify-tauri-cdp.mjs helper every other
+    // lane's own verify script also uses) -- `CdpSession.connect` already sends `Runtime.enable`,
+    // so these events are already flowing; its own listener only correlates request/response
+    // ids and silently ignores method-only event frames.
+    cdp.ws.addEventListener('message', (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      if (msg.method === 'Runtime.exceptionThrown') {
+        const ed = msg.params.exceptionDetails;
+        consoleCapture.push({ type: 'exception', text: ed?.exception?.description ?? ed?.text ?? null, ts: Date.now() });
+      } else if (msg.method === 'Runtime.consoleAPICalled') {
+        consoleCapture.push({ type: msg.params.type, text: (msg.params.args || []).map((a) => a.value ?? a.description ?? '').join(' '), ts: Date.now() });
+      }
+    });
 
     // ---- Readiness, Add repository, Session A ----
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -454,7 +473,7 @@ async function main() {
   } finally {
     try {
       const failures = report.filter((r) => r.ok === false).map((r) => r.step);
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty, failures, notExercised, results: report }, null, 2));
+      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty, failures, notExercised, consoleCapture, results: report }, null, 2));
     } catch (writeErr) {
       console.error(`${LOG}: failed to write report.json: ${writeErr}`);
     }
