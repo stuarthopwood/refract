@@ -182,6 +182,17 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
   if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
   else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
   else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
+  // Gate round 1 item (c) (#1101, Main's UI review): the call above leaves `untracked` at its
+  // default (`false`), so it only ever exercises the TRACKED path's pre-existing
+  // `validate_pathspec` backstop. `untracked_file_patch` (`changes_diff.rs`) is a SEPARATE code
+  // path that reads the filesystem directly rather than asking `git` to diff an already-
+  // contained blob, so it needs its own explicit proof, not an inference from the tracked case.
+  const untrackedDiffAttempt = await cdp.evaluate(
+    `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
+  );
+  if (untrackedDiffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff(untracked=true) against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
+  else if (untrackedDiffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff(untracked=true) refused the outside-worktree path, but with code "${untrackedDiffAttempt.code}" (expected "outside-worktree") -- message: ${untrackedDiffAttempt.message}`);
+  else findings.push(`Containment refusal (gitChanges.diff, untracked=true): refused with code "outside-worktree" (${untrackedDiffAttempt.message}).`);
   const stageAttempt = await cdp.evaluate(
     `window.refract.gitChanges.stage(${JSON.stringify(sessionId)}, [${JSON.stringify(outsideMarkerFile)}]).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
   );

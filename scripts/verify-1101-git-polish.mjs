@@ -43,7 +43,7 @@
 // exact Chromium build this app ships, the explicit `matches(':focus-visible')` assertion below
 // fails loudly rather than silently comparing a meaningless unfocused style.
 
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -348,11 +348,15 @@ async function main() {
     const rowBusyFinder = `document.querySelector('span[title=${JSON.stringify(FIXTURE.bigUntracked)}]')?.closest('[aria-busy]')`;
     await clickRowMenuItem(cdp, FIXTURE.bigUntracked, `Stage ${FIXTURE.bigUntracked}`);
     const rowBusySnapshot = await cdp.waitFor(
-      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); return { spinner: !!row.querySelector('svg.animate-spin'), kebabDisabled: kebab ? kebab.getAttribute('aria-disabled') === 'true' : null }; })()`,
+      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab ? kebab.getAttribute('aria-disabled') === 'true' : null, kebabNativeDisabled: kebab ? kebab.disabled : null }; })()`,
       { timeoutMs: 5_000, intervalMs: 15, label: 'Row aria-busy="true" observed mid-flight while staging a 100 MB file' }
     );
     assertEqual(rowBusySnapshot?.spinner, true, 'Row shows a spinner icon while its own stage is in flight', findings, failures);
-    assertEqual(rowBusySnapshot?.kebabDisabled, true, "Row's own kebab trigger is aria-disabled while its stage is in flight", findings, failures);
+    assertEqual(rowBusySnapshot?.kebabAriaDisabled, true, "Row's own kebab trigger is aria-disabled while its stage is in flight", findings, failures);
+    // Gate round 1 MEDIUM 4: `aria-disabled` alone never stops a keyboard Enter/Space from
+    // opening the menu -- proves the REAL native `disabled` property (`GitChangesFileRow.tsx`'s
+    // own fix) actually landed, not just the pre-existing AT-only signal.
+    assertEqual(rowBusySnapshot?.kebabNativeDisabled, true, "Row's own kebab trigger carries a real native `disabled` while its stage is in flight (keyboard-proof, not just AT-only)", findings, failures);
     await shot('04-busy-staging-big-file.png');
     await cdp.waitFor(`(() => { const row = (${rowBusyFinder}); return !!row && row.getAttribute('aria-busy') !== 'true'; })()`, {
       timeoutMs: 30_000,
@@ -412,6 +416,40 @@ async function main() {
     await shot('05-untracked-diff-additions.png');
     await cdp.click(BACK_TO_CHANGES_FINDER);
     await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the untracked-diff check' });
+
+    // =========================================================================================
+    // Check 4b (gate round 1 HIGH 1 proof, #1101): an untracked SYMLINK whose target escapes
+    // the worktree is refused outright by `resolve_in_worktree`'s own symlink-following walk
+    // (`changes_diff.rs::untracked_file_patch` step (a)) -- the secret content on the OTHER side
+    // of that link is never read, let alone rendered. Bypasses the UI (same real-IPC-bridge
+    // precedent `runContainmentRefusalCheck` already uses) since the product-level contract
+    // under test is "the Rust side never touches that file's bytes", not any particular render.
+    // =========================================================================================
+    const outsideSecretDir = mkdtempSync(path.join(tmpdir(), 'refract-1101-outside-secret-'));
+    const outsideSecretFile = path.join(outsideSecretDir, 'secret.txt');
+    const secretMarker = 'OUTSIDE-WORKTREE-SECRET-MUST-NEVER-LEAK-1101';
+    writeFileSync(outsideSecretFile, `${secretMarker}\n`);
+    const escapingSymlinkName = 'escaping-symlink-for-verify-1101.txt';
+    const escapingSymlinkPath = path.join(worktreePath, escapingSymlinkName);
+    symlinkSync(outsideSecretFile, escapingSymlinkPath, 'file');
+    await cdp.waitFor(
+      `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return false; return Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(escapingSymlinkName)}); })()`,
+      { timeoutMs: 15_000, label: 'Escaping symlink rendered as Untracked' }
+    );
+    const escapingDiffAttempt = await cdp.evaluate(
+      `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(escapingSymlinkName)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
+    );
+    if (escapingDiffAttempt.ok) failures.push(`Untracked escaping symlink: gitChanges.diff SUCCEEDED (patch=${JSON.stringify(escapingDiffAttempt.patch)}) -- must always be refused, never read through the link.`);
+    else if (escapingDiffAttempt.code !== 'outside-worktree') failures.push(`Untracked escaping symlink: refused, but with code "${escapingDiffAttempt.code}" (expected "outside-worktree") -- message: ${escapingDiffAttempt.message}`);
+    else findings.push(`Untracked escaping symlink: refused with code "outside-worktree" (${escapingDiffAttempt.message}), the secret content on the other side of the link was never read.`);
+    const leakedInMessage = Boolean(escapingDiffAttempt.message && escapingDiffAttempt.message.includes(secretMarker)) || Boolean(escapingDiffAttempt.patch && escapingDiffAttempt.patch.includes(secretMarker));
+    assertEqual(leakedInMessage, false, 'Outside-worktree secret content never appears in the diff response (patch OR error message)', findings, failures);
+    rmSync(escapingSymlinkPath, { force: true });
+    rmSync(outsideSecretDir, { recursive: true, force: true });
+    await cdp.waitFor(
+      `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return true; return !Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(escapingSymlinkName)}); })()`,
+      { timeoutMs: 15_000, label: 'Escaping symlink fixture torn down, gone from Untracked' }
+    );
 
     // =========================================================================================
     // Check 5 (items 5/6): Back button accessible name, and sticky while the diff scrolls.
