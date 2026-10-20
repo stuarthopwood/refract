@@ -867,11 +867,17 @@ more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-con
   `docs/design/foundations-tokens-theming.md`'s surface-ladder/border/divider tables for Cyber
   Amber's new numbers (depends on T036).
   **Done**: both docs.
-- [ ] T039 Write `scripts/verify-1039-amber-retune.mjs` (live Tauri CDP check: switch to Cyber
-  Amber and Default Dark, read real computed colours for background/card/sidebar/foreground/
-  chat prose/muted text/accent-or-link/Send/a warning, assert accent-vs-warning hue distance,
-  screenshot chat/Session list/Settings/a warning in both themes) (depends on T036, T037).
-  (#1039)
+- [X] T039 Write `scripts/verify-1039-amber-retune.mjs` (live Tauri CDP check: switch to Cyber
+  Amber and Default Dark via the real Profile-menu Theme submenu, reusing the existing
+  `997-notice-severity.jsonl` fixture for a deterministic real warning NoticeRow and chat-prose
+  element -- no new fixture, per AGENTS.md; reads real computed colours for background/sidebar/
+  card/foreground/chat prose/muted text/accent-text (probe)/Send/warning and asserts each
+  against its own CSS custom property; asserts accent-vs-warning real OKLab hue distance
+  (floor 25 degrees, below the measured ~30.7); screenshots chat+warning/Manage sessions
+  (Session list)/Settings Appearance in both themes) (depends on T036, T037). (#1039)
+  **Done, NOT run**: this is a no-build prep lane (held for the build slot); syntax-checked only
+  (`node --check`, clean, 383 lines). Live run and its evidence are this story's own remaining
+  step once the build slot opens.
 - [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T039).
 
