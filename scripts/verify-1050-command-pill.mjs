@@ -48,7 +48,7 @@ import {
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { TEXTAREA, PILL, OVERLAY, THEMES, clearAndType, measurePillGeometry, overlayStructure, assertCaretVisible, assertSelectionHighlightVisible, defaultShotsDir } from './verify-1050-command-pill-helpers.mjs';
+import { TEXTAREA, PILL, OVERLAY, THEMES, clearAndType, measurePillGeometry, overlayStructure, assertCaretVisible, assertSelectionHighlightVisible, assertSelectedGlyphsInkVisible, defaultShotsDir } from './verify-1050-command-pill-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -132,13 +132,22 @@ async function main() {
       'textarea, so the UA\'s forced CanvasText remap lands both renderings on the same pixels) ' +
       'is reasoned in CommandPillOverlay.tsx\'s own header comment, not live-proven.',
     'Real IME composition (an actual CJK/dead-key input method): no IME harness exists here. ' +
-      "Proven: composed text shows through the mirror correctly, because the masking moved from " +
-      "`color` to `-webkit-text-fill-color` specifically so anything reading `color` (a " +
-      "composition underline included, drawn in `currentColor` by default) keeps a real, visible " +
-      "value (CommandPillOverlay.tsx's own comment has the full reasoning). NOT verified: the " +
-      "underline's own actual rendered colour/visibility, which needs a real IME session to confirm.",
+      "Reasoned, not proven: composed text shows through the mirror correctly, because the " +
+      "masking moved from `color` to `-webkit-text-fill-color` specifically so anything reading " +
+      "`color` (a composition underline included, drawn in `currentColor` by default) keeps a " +
+      "real, visible value (CommandPillOverlay.tsx's own comment has the full reasoning). NOT " +
+      "verified: the underline's own actual rendered colour/visibility, which needs a real IME " +
+      "session to confirm.",
     'Real display zoom (OS/browser zoom level changed mid-session): not driven live; the caret/' +
-      'geometry checks below run at the default 100% zoom only.'
+      'geometry checks below run at the default 100% zoom only.',
+    '`/btw` (a recognised, PILLED command) actually reaching a real `chat.send` via a genuine ' +
+      'Send click: never exercised together. `/btw` is special-cased by `handleSend` (opens the ' +
+      "Side chat panel instead of calling `chat.send` -- confirmed live, draft left untouched, " +
+      "gate round 4 finding), so the Send/Stop clickability check below sends `/skill:demo-" +
+      "review hi` instead (a DIFFERENT recognised command with no special-cased handling, " +
+      'proving the identical z-index/clickability scenario). The pill itself, `/btw`\'s own ' +
+      'spellcheck-off and selection-highlight behaviour are all exercised earlier in this run ' +
+      'with `/btw` directly; only the combination of its pill WITH a real completed Send is not.'
   ];
 
   function assertEqual(actual, expected, label) {
@@ -259,6 +268,7 @@ async function main() {
     // the previous order left the draft already selected by the time this frame was captured.
     await cdp.screenshot(path.join(SHOTS_DIR, '02-pill-btw.png'));
     await assertSelectionHighlightVisible(cdp, pressKey, resolveCssVarColor, report, SHOTS_DIR);
+    await assertSelectedGlyphsInkVisible(cdp, pressKey, report);
 
     // ---- 3. Height/caret identical with and without the pill (both exactly 7 characters) ---
     await clearAndType(cdp, pressKey, '/btw hi');

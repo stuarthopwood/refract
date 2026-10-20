@@ -235,6 +235,62 @@ export async function assertSelectionHighlightVisible(cdp, pressKey, resolveCssV
   console.log('verify-1050: PASS Ctrl+A: selection highlight paints a real background over plain argument text');
 }
 
+/** Gate round 5 fix (#1050, test review): the h/i-boundary sample above proves the BACKGROUND
+ * paints a real fill during selection, but proves nothing about whether the GLYPHS themselves
+ * stay visible on top of it -- the exact HIGH-severity risk this round's selection redesign
+ * exists to address (a translucent `--composer-selection-bg` specifically so real ink shows
+ * through even if `-webkit-text-fill-color: currentColor` is not honoured inside `::selection`
+ * by every engine). Samples a WIDE region covering most of one glyph's own bounding box (not a
+ * single pixel, and not a zero-width boundary) for a PLAIN-text character and a PILLED-token
+ * character, counts "bright" pixels (RGB average > 140 -- comfortably between every theme's own
+ * near-black backgrounds/composited selection fills, all measured <100, and its near-white/
+ * bright text colours, all measured >200) before and after Ctrl+A, and asserts the selected
+ * count is still close to the resting count (allowing a couple of pixels either way for edge
+ * anti-aliasing blending differently against a different background colour) rather than merely
+ * ">0", a stricter, false-positive-resistant bar. This is the one check that would have FAILED
+ * against the pre-round-5 build if `-webkit-text-fill-color: currentColor` were silently
+ * ignored inside `::selection` on an opaque `--composer-selection-bg`: the glyph would have
+ * stayed fully masked, reading 0 bright pixels after Ctrl+A regardless of the resting count. */
+export async function assertSelectedGlyphsInkVisible(cdp, pressKey, report) {
+  async function glyphBrightPixelCount(charOffset) {
+    const rect = await findMirrorOffsetRect(cdp, charOffset, charOffset + 1);
+    if (!rect) return null;
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+    const halfWidth = Math.max(1, Math.round(rect.width / 3));
+    const halfHeight = Math.max(1, Math.round(rect.height / 3));
+    const pixels = await capturePixelRegion(cdp, cx, cy, halfWidth, halfHeight);
+    let bright = 0;
+    for (let i = 0; i + 3 < pixels.length; i += 4) {
+      if ((pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3 > 140) bright++;
+    }
+    return bright;
+  }
+
+  // "/btw hi": offset 1 is 'b' (inside the pilled token), offset 5 is 'h' (plain argument text).
+  const restingPillInk = await glyphBrightPixelCount(1);
+  const restingPlainInk = await glyphBrightPixelCount(5);
+  if (restingPillInk === null || restingPlainInk === null) {
+    throw new Error('FAIL: selected-glyph ink visibility (findMirrorOffsetRect found no mirror text node -- is a recognised token showing?)');
+  }
+  await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, including the pill
+  const selectedPillInk = await glyphBrightPixelCount(1);
+  const selectedPlainInk = await glyphBrightPixelCount(5);
+  const pillOk = restingPillInk > 0 && selectedPillInk >= restingPillInk - 2;
+  const plainOk = restingPlainInk > 0 && selectedPlainInk >= restingPlainInk - 2;
+  report.push({
+    step: 'Ctrl+A: selected glyph ink stays pixel-visible over both the pilled token and plain argument text',
+    ok: pillOk && plainOk,
+    restingPillInk,
+    selectedPillInk,
+    restingPlainInk,
+    selectedPlainInk
+  });
+  if (!pillOk) throw new Error(`FAIL: selected-glyph ink visibility over the pilled token (resting ${restingPillInk} bright px, selected ${selectedPillInk} bright px)`);
+  if (!plainOk) throw new Error(`FAIL: selected-glyph ink visibility over plain argument text (resting ${restingPlainInk} bright px, selected ${selectedPlainInk} bright px)`);
+  console.log('verify-1050: PASS Ctrl+A: selected glyph ink stays pixel-visible over both the pilled token and plain argument text');
+}
+
 export function shotPath(shotsDir, name) {
   return path.join(shotsDir, name);
 }

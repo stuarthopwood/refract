@@ -20,10 +20,26 @@
 // legibility floor above -- a clearly accent-hued tint there, not a WCAG-enforced one, the same
 // accepted-gap shape `sidebarBorderContrastRows` in theme-contrast-pairs.mjs already uses).
 //
-// A brand-new file, not an addition to theme-contrast-pairs.mjs: that file sits exactly at its
-// own #806 file-size baseline (604 lines) with zero headroom, the same reason contrast-math.mjs
-// itself was extracted out of check-theme-contrast.mjs in an earlier gate round.
+// A brand-new file, not an addition to theme-contrast-pairs.mjs: that file is 599 lines on
+// `origin/main` with no #806 baseline entry (naturally under its 600-line cap) -- every PAIRS
+// entry #1050 needs (the command-pill ones below, and `composerSelectionContrastRows` above)
+// lives here instead, so that file never crosses its cap and never needs a baseline entry
+// manually added to grandfather it back in (the same reason contrast-math.mjs itself was
+// extracted out of check-theme-contrast.mjs in an earlier gate round).
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
+
+// Issue #1050 (composer command pill, gate round 2): two independent tokens -- `--command-pill-
+// bg` clears only 1.4:1 vs composer, `--command-pill-fg` (a lightened `--accent-text` hue)
+// clears only the text floor on that fill; see globals.css for the measured numbers. Plain
+// `{ fg, bg, min }` rows, the same shape `theme-contrast-pairs.mjs`'s own `PAIRS` export uses --
+// merged into that same array by `check-theme-contrast.mjs`'s main loop, just not declared in
+// that file (see this module's own header comment for why).
+export const COMMAND_PILL_PAIRS = [
+  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 4.5 },
+  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
+]
 
 export function composerSelectionContrastRows(themes) {
   const rows = []

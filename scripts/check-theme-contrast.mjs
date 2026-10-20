@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
-import { composerSelectionContrastRows } from './composer-selection-contrast.mjs'
+import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -292,8 +292,10 @@ checkedCount += swatchDrift.checkedCount
 failCount += swatchDrift.failCount
 rows.push(...swatchDrift.rows)
 
+// #1050: `COMMAND_PILL_PAIRS` lives in composer-selection-contrast.mjs, not PAIRS above (that
+// module's own header comment explains why) -- merged into the same per-theme loop here.
 for (const [themeId, props] of Object.entries(themes)) {
-  for (const { fg, bg, min, onlyThemes, informationalThemes } of PAIRS) {
+  for (const { fg, bg, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS]) {
     // #927 (quiet composer): `onlyThemes`/`informationalThemes` (theme-contrast-pairs.mjs's own
     // comment documents both) restrict a pair to the named theme ids; `informationalThemes`
     // additionally means "never enforced" -- computed and printed, tagged, but never counted

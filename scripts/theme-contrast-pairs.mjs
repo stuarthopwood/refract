@@ -127,19 +127,14 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  // Issue #1050 (composer command pill, gate round 2): two independent tokens -- `--command-pill-bg` clears only 1.4:1 vs composer, `--command-pill-fg` (a lightened `--accent-text` hue) clears only the text floor on that fill; see globals.css for the measured numbers.
-  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 4.5 },
-  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
-  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
-  // Gate round 5 fix (#1050, test review): `--composer-selection-bg` is now a TRANSLUCENT tint --
-  // a plain PAIRS entry can't composite it correctly any more (self-composites `bg` against
-  // itself). See `scripts/composer-selection-contrast.mjs`'s own `composerSelectionContrastRows`.
-  // TODO(#579): `accent-text` on `surface-hover` (muted/accent hover fill) measures only 4.00:1
-  // in Dark and 4.28:1 in Obsidian, under the 4.5:1 floor -- not added as a PAIRS entry (would
-  // fail both today). Issue #610 reads `accent-text` via `Markdown.tsx`'s `linkClassName`, but
-  // never on `surface-hover` (every surface it DOES render on is covered below). Before #579
-  // migrates a link/text colour onto a hover row: lighten `accent-text` further, or add this pair.
+  // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
+  // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
+  // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
+  // (`Markdown.tsx`'s `linkClassName`), but never on `surface-hover`: every link/file-link
+  // surface it renders on -- the plain chat background/card/popover, and the composited user
+  // message bubble checked below -- is covered by a real gate entry. Before #579 migrates a
+  // link/text colour onto a hover row, either lighten `accent-text` further (it already has
+  // margin to spare against background/card/popover) or add this pair here once it passes.
   { fg: 'severity-success', bg: 'background', min: 3 },
   { fg: 'severity-success', bg: 'card', min: 3 },
   { fg: 'severity-success', bg: 'popover', min: 3 },
