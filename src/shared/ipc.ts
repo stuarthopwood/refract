@@ -95,6 +95,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
+  | 'worktree-held'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
@@ -275,6 +276,24 @@ export interface MergeInput {
   expectedHeadSha: string;
 }
 
+/** `sessions.deleteLeftoverSummary` (issue #891): a background `git status --ignored` read of
+ * the worktree (gate round 1: not a raw filesystem walk -- tracked files and `.git` are never
+ * listed), separate from `deleteCheck`'s own uncommitted/unpushed stats. Lists generated
+ * folders (e.g. `node_modules`) by name with a combined file count, and other files by path,
+ * capped with `moreCount` once there are too many to list individually. `rootName` (gate round,
+ * M3) is the worktree folder's own basename, so the renderer can lead each displayed path with
+ * which Session it belongs to. `unavailable` (gate round 2, H2) is true when the underlying
+ * `git status` call failed, timed out, or its own join failed -- distinct from a genuinely
+ * empty worktree; the dialog must show "Couldn't list the folder's files." in that case, never
+ * fold it into "Nothing left in the worktree". */
+export interface LeftoverSummary {
+  rootName: string;
+  generatedFolders: { name: string; fileCount: number }[];
+  otherFiles: string[];
+  moreCount: number;
+  unavailable: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Channel names
 // ---------------------------------------------------------------------------
@@ -296,6 +315,7 @@ export const IPC_REQUESTS = {
   SESSIONS_ARCHIVE: 'sessions.archive',
   SESSIONS_RESTORE: 'sessions.restore',
   SESSIONS_DELETE_CHECK: 'sessions.deleteCheck',
+  SESSIONS_DELETE_LEFTOVER_SUMMARY: 'sessions.deleteLeftoverSummary',
   SESSIONS_DELETE: 'sessions.delete',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
@@ -474,6 +494,11 @@ export interface RefractApi extends UpdatesApi {
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
+    /** Issue #891: a background filesystem walk, separate from `deleteCheck`, listing generated
+     * folders and other files the delete would remove. Can take real time against a large
+     * worktree -- the Delete dialog shows "Checking files…" until it resolves and never gates
+     * Delete on it. */
+    deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>;
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;

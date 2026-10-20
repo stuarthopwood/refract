@@ -22,13 +22,17 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::fs::leftover_summary::{cancel_and_wait, compute_leftover_summary};
+use crate::git::git::GitError;
 use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
-use crate::git::worktree_validity::comparable_path;
+use crate::git::worktree_holders;
 use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,
     remove_worktree,
 };
+use crate::process::pid_records;
+use crate::session::SessionStatus;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -43,6 +47,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sessions.archive", sessions_archive);
     d.register("sessions.restore", sessions_restore);
     d.register("sessions.deleteCheck", sessions_delete_check);
+    d.register(
+        "sessions.deleteLeftoverSummary",
+        sessions_delete_leftover_summary,
+    );
     d.register("sessions.delete", sessions_delete);
     d.register("sessions.recreateWorktree", sessions_recreate_worktree);
     d.register("sessions.diffStat", sessions_diff_stat);
@@ -279,6 +287,12 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .clone();
             (session, repository)
         };
+        // Issue #891 gate round 3 (H1): held for the whole `delete_check_for_session` call --
+        // this spawns about five git child processes with their own `current_dir` set to the
+        // worktree; `sessions.delete`'s own write guard blocks until this releases, so a Retry
+        // can never start removing the worktree while a STALE `deleteCheck` call (the P4
+        // post-refusal refresh) still has git children running with a cwd inside it.
+        let _read_guard = crate::fs::worktree_access::read_guard(&id).await;
         let check = delete_check_for_session(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
@@ -287,6 +301,34 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
         .await
         .map_err(map_git_error)?;
         Ok(serde_json::to_value(check).expect("DeleteCheck is always JSON-serialisable"))
+    })
+}
+
+/// `sessions.deleteLeftoverSummary` (issue #891, Stuart's 2026-10-19 grill item 3): a
+/// read-only background filesystem walk the Delete dialog runs as soon as it opens, listing
+/// generated folders (for example `node_modules`) by name with file counts and other files by
+/// path, capped with "and N more". Purely informational -- Delete stays enabled regardless of
+/// how long this takes or what it finds; see `fs::leftover_summary`'s own header for why this
+/// is deliberately a SEPARATE call from `sessions.deleteCheck`'s own fast git-only answer.
+pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let id = match arg_str(&args, 0) {
+            Some(id) => id.to_string(),
+            None => {
+                return Err(invalid_argument(
+                    "sessions.deleteLeftoverSummary expects a string id",
+                ))
+            }
+        };
+        let session = {
+            let registry = state.registry.lock().await;
+            registry
+                .get_session(&id)
+                .ok_or_else(|| not_found(format!("Session not found: {id}")))?
+                .clone()
+        };
+        let summary = compute_leftover_summary(&id, Path::new(&session.worktree_path)).await;
+        Ok(serde_json::to_value(summary).expect("LeftoverSummary is always JSON-serialisable"))
     })
 }
 
@@ -331,6 +373,47 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (session, repository)
         };
 
+        // Issue #891 gate round 1 item 5: a leftover-summary walk started when the dialog
+        // opened may still be running against this exact worktree -- cancel it and wait for it
+        // to actually exit BEFORE any holder check, so Refract's own open file handles during
+        // "Checking files…" can never be mistaken for an external holder. A no-op if no walk
+        // is currently in flight for this Session.
+        cancel_and_wait(&id).await;
+
+        // Issue #891 gate round 3 (H1, Main's own root-cause finding from app.log): the write
+        // guard blocks until EVERY Refract-owned reader of this worktree (`sessions.
+        // deleteCheck`'s own git children, the leftover-summary walk above) has actually
+        // finished and released -- the leftover walk was already cancelled above for
+        // responsiveness, but `deleteCheck`'s own background P4 refresh has no cooperative
+        // cancel and must simply be waited out; it is a handful of plain git calls, never
+        // slow enough to matter. Held for the rest of this handler, through the actual
+        // removal, so no NEW reader can start once this begins either.
+        let _write_guard = crate::fs::worktree_access::write_guard(&id).await;
+
+        // Issue #891, Stuart's 2026-10-19 grill item 2: the NAMED-holder (file-handle) check
+        // runs BEFORE the agent is stopped -- a refused Delete for an external FILE holder must
+        // leave the Session exactly as it was, agent still running, watcher untouched. This
+        // Session's own recorded `omp` pids are excluded from whatever Restart Manager reports:
+        // the agent itself holding its own files open is never a reason to refuse.
+        let own_pids = pid_records::pids_for_session(&id).await;
+        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): a direct status read, not
+        // `!own_pids.is_empty()` -- that list is only a proxy used to exclude this Session's
+        // own pids from Restart Manager, and could in principle be stale (a crashed process
+        // whose record has not yet been reaped) while the agent itself already reads `Stopped`.
+        let was_running = state
+            .session_manager
+            .get_or_create_agent(&id)
+            .status()
+            .await
+            != SessionStatus::Stopped;
+        worktree_holders::check_named_holders(
+            Path::new(&repository.path),
+            Path::new(&session.worktree_path),
+            &own_pids,
+        )
+        .await
+        .map_err(map_git_error)?;
+
         // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: see `sessions_archive`'s own
         // comment -- resets on failure too, not only on success.
         let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
@@ -338,17 +421,49 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             &id,
         );
         // CRITICAL fix (gate round 1): the live agent (if any) must be shut down BEFORE the
-        // worktree is removed -- same ordering `sessions.archive` already uses, same ordering
-        // `sessions.ts`'s own SESSIONS_DELETE handler uses (`await manager.getOrCreateAgent(id)
-        // .shutdown()` before `removeSessionWorktree`). A still-running omp process holds its
-        // cwd (and open file handles) inside the worktree; removing it out from under a live
-        // process is exactly the EBUSY/EPERM class `git::worktree_delete`'s own `wrap_fs_error`
-        // exists to explain, not something this handler should ever risk causing.
+        // worktree is removed -- same ordering `sessions.archive` uses. A still-running omp
+        // process holds its cwd (and open file handles) inside the worktree; removing it out
+        // from under a live process is the EBUSY/EPERM class `wrap_fs_error` exists to explain.
+        // Also why the cwd-holder check below must come AFTER this, never before (see
+        // `worktree_holders::check_folder_in_use`'s own doc comment): this Session's own agent,
+        // while still running, is itself an unattributable cwd holder from a plain rename's own
+        // point of view -- checking first would refuse every ordinary Delete of a running one.
         state
             .session_manager
             .get_or_create_agent(&id)
             .shutdown()
             .await;
+
+        // Issue #891, Stuart's decision 2 (issuecomment-6273442096): "a refused Delete leaves
+        // the Session running" stands even here. If the probe refuses and the agent WAS
+        // running before this call (`was_running`, captured above -- Delete's own shutdown is
+        // the only reason it would not be), restart it through the normal `start()` path before
+        // returning the refusal; a Session already stopped beforehand stays stopped, matching
+        // every other refusal. A restart failure must never hide the real one: `status()` is
+        // checked afterwards (same pattern `ipc/sessions_agent.rs`'s own `resume_session_core`
+        // uses), and if it is still `Stopped` the returned message names that too.
+        if let Err(err) = worktree_holders::check_folder_in_use(
+            Path::new(&repository.path),
+            Path::new(&session.worktree_path),
+            &id,
+            &own_pids,
+        )
+        .await
+        {
+            let code = err.code;
+            let mut message = err.message;
+            if was_running {
+                let agent = state.session_manager.get_or_create_agent(&id);
+                let _ = agent.start().await;
+                if agent.status().await == SessionStatus::Stopped {
+                    message = format!(
+                        "{message} Also, Refract could not restart this Session's agent automatically -- reopen it yourself."
+                    );
+                }
+            }
+            return Err(map_git_error(GitError::new(code, message)));
+        }
+
         crate::process::pid_records::remove_process_records_for_session(&id).await;
 
         remove_session_worktree(
@@ -454,87 +569,14 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
 mod diag;
 use diag::{sessions_diff_stat, sessions_reveal_worktree};
 
-/// Issues #657/#658 (gate round 2: a reviewer found this bullet in #785 asks only for a call
-/// point plus a test, never the 5-slice reclaim POLICY those two issues themselves scope --
-/// this hook is exactly that call point, nothing more): the single place future worktree/branch
-/// reclaim logic for a Session whose worktree is no longer needed (archived, or deleted)
-/// attaches to, so a later lane implementing #657's slice 1 or #658's reap step never has to
-/// rediscover where `sessions.archive`/`sessions.delete` finish releasing a worktree. A no-op
-/// today -- the decision on WHETHER/WHEN to reclaim stays with #657/#658, not this lane.
-fn on_worktree_released(_session_id: &str) {
-    #[cfg(test)]
-    WORKTREE_RELEASED_HOOK_CALLS.with(|calls| calls.set(calls.get() + 1));
-}
-
-// Thread-local, not a global atomic (gate round 2): `#[tokio::test]`'s default current-thread
-// runtime keeps one whole test's execution on a single OS thread from start to finish, and the
-// std test harness never runs two different tests concurrently on that SAME thread -- so a
-// thread-local counter isolates each test's own "did the hook fire" observation from every
-// OTHER test running in parallel on a different thread, which a single process-wide atomic
-// could not (a concurrently running, unrelated archive/delete call firing the hook would have
-// made a "never fires on failure" assertion flaky).
+// Split into `sessions_delete_support.rs` (#806 "No god files", issue #891 gate round 1 margin):
+// the reclaim hook, the Conversation-cleanup helper, and its own path-containment check.
+mod sessions_delete_support;
 #[cfg(test)]
-thread_local! {
-    static WORKTREE_RELEASED_HOOK_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// Security: a Session's `session_dir` is learned from OMP's own `get_state`, but the registry
-/// is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
-/// remove an arbitrary path. Only a true descendant of the real OMP sessions root (never the
-/// root itself) is ever touched. Mirrors `sessions.ts`'s own `isStrictDescendantOfOmpSessions`;
-/// `dirs::home_dir()` is the same home-directory resolution `omp/process.rs` already uses for
-/// `~/.omp/logs`, and `comparable_path` is the same lexical-resolve-plus-lowercase comparison
-/// key `git::worktree_validity`/`store::registry` already use for a path that may not (yet)
-/// exist on disk.
-fn is_strict_descendant_of_omp_sessions(dir: &str) -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let sessions_root = comparable_path(
-        &home
-            .join(".omp")
-            .join("agent")
-            .join("sessions")
-            .to_string_lossy(),
-    );
-    let resolved = comparable_path(dir);
-    resolved != sessions_root
-        && resolved.starts_with(&format!("{sessions_root}{}", std::path::MAIN_SEPARATOR))
-}
-
-/// Deletes only this Session's own Conversation files (`*.jsonl`) and their sibling same-stem
-/// directories (subagent transcripts, data-model.md), then removes `session_dir` itself only
-/// once it is empty -- never a wholesale recursive remove, which could take unrelated sibling
-/// Conversations or (if `session_dir` were ever wrong) far more than that. Best-effort
-/// throughout (mirrors `sessions.ts`'s own `deleteSessionConversations`): every removal failure
-/// is swallowed, since a Session that could not fully clean up its own transcript files still
-/// must finish being deleted from the registry.
-async fn delete_session_conversations(session_dir: &str) {
-    let dir = Path::new(session_dir);
-    let mut entries = match tokio::fs::read_dir(dir).await {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
-    let mut names = Vec::new();
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        names.push(entry.file_name());
-    }
-    for name in names {
-        let name = name.to_string_lossy().into_owned();
-        if !name.to_lowercase().ends_with(".jsonl") {
-            continue;
-        }
-        let file_path = dir.join(&name);
-        let sibling_dir = dir.join(&name[..name.len() - ".jsonl".len()]);
-        let _ = tokio::fs::remove_file(&file_path).await;
-        let _ = tokio::fs::remove_dir_all(&sibling_dir).await;
-    }
-    if let Ok(mut remaining) = tokio::fs::read_dir(dir).await {
-        if matches!(remaining.next_entry().await, Ok(None)) {
-            let _ = tokio::fs::remove_dir(dir).await;
-        }
-    }
-}
+use sessions_delete_support::WORKTREE_RELEASED_HOOK_CALLS;
+use sessions_delete_support::{
+    delete_session_conversations, is_strict_descendant_of_omp_sessions, on_worktree_released,
+};
 
 #[cfg(test)]
 #[path = "sessions_lifecycle_tests.rs"]

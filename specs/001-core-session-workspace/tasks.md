@@ -4596,3 +4596,75 @@ scripts/check-file-size.mjs` (0 cap violations, no baseline raised -- `model.rs`
 helpers into `model_support.rs` and condensing comments); targeted `vitest run` on `model-roles-
 store.test.ts`, `modelRoleSuffix.test.ts`, `sessions-store.test.ts` (28/28 passed; no new
 renderer tests, per the prototyping-phase rule).
+
+## Phase 70: Convergence (#891, FR-029 amended) [US6]
+
+(Next free numbers after merging `origin/main`: Phase 69/T330-T338 claimed by #741 above, so this
+phase claims Phase 70/T339 onward.)
+
+**Goal**: Delete no longer dead-ends on a full, generated-file worktree or one still held open by
+another program. The Delete dialog runs a background leftover-files walk on open; the worktree-
+held preflight runs before the agent is stopped; Refract removes the worktree's own files with its
+own long-path-safe walker instead of `git worktree remove --force`. Decided on the issue (Stuart,
+2026-10-15 and 2026-10-19 grill, issue #891); Rust implementation already landed on this branch.
+
+- [X] T339 `src-tauri/src/fs/remove_tree.rs` (new): long-path-safe recursive worktree-file
+  remover replacing `git worktree remove --force` for this Session's own worktree. Per-entry
+  `symlink_metadata` (never following a link), `\\?\`-prefixed paths used over 260 characters,
+  read-only attributes cleared before removal, junctions/symlinks removed as links and never
+  descended into or deleted through. Only this worktree's own `.git/worktrees/<name>` admin entry
+  is removed afterward (never `git worktree prune`), verified with `git worktree list
+  --porcelain`. **Gate round 1 decision (issuecomment-6273798707):** reversed to
+  `std::fs::remove_dir_all` behind a containment gate instead of a hand-rolled walker. **Gate
+  round 3 (H2):** `remove_dir_all` retried up to 10 times (300ms apart) on raw OS errors
+  32/33/5/145, re-checking containment before each attempt.
+- [X] T340 `src-tauri/src/git/worktree_holders.rs` (new): the holder preflight run before the
+  agent is stopped. Windows Restart Manager names a program and pid holding a file open inside
+  the worktree, excluding this Session's own recorded `omp` pids (`process/pid_records.rs`); only
+  if Restart Manager finds nobody, a safe rename probe (rename the worktree folder to a sibling
+  name inside the worktrees root and straight back) catches a folder held only as a working
+  directory. A named holder, or an in-use folder with no named holder, refuses the delete; a
+  holder that cannot be detected does not block. **Gate round 3 (H1), the real root cause of an
+  earlier "transient sharing violation":** Refract's own background `sessions.deleteCheck`
+  refresh (not this preflight) was racing a Retry's own removal; fixed with a new per-Session
+  `fs/worktree_access.rs` read/write lock, not a change to this file.
+- [X] T341 `src-tauri/src/ipc/sessions_lifecycle.rs`: registers `sessions.deleteLeftoverSummary(id:
+  string): Promise<Result<LeftoverSummary>>` (`LeftoverSummary = { generatedFolders: { name:
+  string; fileCount: number }[]; otherFiles: string[]; moreCount: number; unavailable: boolean }`),
+  a background filesystem walk started when the Delete dialog opens, separate from the existing
+  git-based `sessions.deleteCheck`. Wires `worktree_holders`'s preflight into `sessions.delete`
+  ahead of stopping the agent, surfacing a refusal as the new `worktree-held` error code through
+  the existing `Promise<Result<void>>` error channel (no signature change); a refusal leaves the
+  Session running. `remove_session_worktree`'s own signature stays stable (#476). **Gate round 3
+  (H1):** both `sessions.deleteCheck` and `sessions.delete` wired to the new `fs/worktree_access`
+  read/write lock.
+- [X] T342 `src/shared/ipc.ts`: `IpcErrorCode` gains `worktree-held`; the `sessions` interface
+  gains `deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>` and the `LeftoverSummary`
+  type, alongside the existing `deleteCheck`/`delete` entries.
+- [X] T343 `src/renderer/features/sessions/DeleteDialog.tsx`: fetches `deleteLeftoverSummary`
+  alongside the existing `deleteCheck`, on the same cancelled-guard `useEffect([open,
+  session.id, check])` pattern, rendering the generated-folders/other-files list with a
+  "Checking files…" loading state and Delete enabled throughout; a `worktree-held` refusal
+  surfaces through the dialog's existing `role="alert"` error paragraph, so Retry is clicking
+  Delete again with no new control. **Gate rounds 2-3:** a unified always-mounted status line,
+  a `refused` flag (not bare `error`) driving the Retry label, a separate `refreshing` flag so
+  the post-refusal background refresh never greys out Retry, a generation counter guarding every
+  refresh callback against an out-of-order stale result, and stale-state clearing on a failed
+  refresh.
+- [X] T344 Docs: amended `specs/001-core-session-workspace/spec.md` FR-029, two new Acceptance
+  Scenarios (User Story 6) and two new Edge Cases, and a dated `### Session 2026-10-19 (Session
+  delete: leftover summary and holder preflight, issue #891)` Clarifications entry;
+  `plan.md`'s new `## Amendment 2026-10-19` section; `contracts/ipc.md`'s new
+  `sessions.deleteLeftoverSummary` row and the `worktree-held` error documented on
+  `sessions.delete`.
+
+**Non-build checks**: Rust side already compiles clean (`cargo check -p refract-tauri
+--all-targets`, confirmed on this branch before this phase was appended); this phase's own work
+is documentation plus the frontend dialog wiring (T342/T343), landing in the same PR.
+
+**FINAL LIVE-VERIFIED PASS (gate round 3), clean HEAD `6452a137`**: full chained `ci-local.mjs &&
+verify-891-delete-leftovers.mjs` -- `ci-local.mjs` all 16 steps PASS (`cargo fmt --check`, `cargo
+test`, `cargo clippy -D warnings`, Tauri debug build); `verify-891-delete-leftovers.mjs`: **0
+failures, 3 honest `notExercised`**, `gitHead` matches, `dirty: false`. All acceptance scenarios
+PASS, including (c) and (d)'s Retry succeeding on a single click (the real `fs/worktree_access.rs`
+read/write-lock fix, not a retry-loop band-aid). All five screenshots viewed directly.
