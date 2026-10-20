@@ -55,7 +55,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1050';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1050_SHOTS_DIR || defaultShotsDir();
-const LONG_SKILL = 'skill:demo-review-with-a-very-long-name-used-only-to-force-the-recognised-token-to-wrap-across-two-or-more-visual-lines';
+const LONG_SKILL = 'skill:demo-review-with-a-very-long-name-used-only-to-force-the-recognised-token-to-wrap-across-two-or-more-visual-lines-in-the-composer-textarea-so-this-live-check-reliably-exercises-the-multi-line-pill-box-decoration-break-rounding-behaviour-end-to-end-every-single-run';
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
