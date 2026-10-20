@@ -10,11 +10,13 @@
 // out to a file's diff and back (the Panel swaps its rendered content between the four-group
 // list and the diff pane, unmounting this whole list in between) -- a developer's own collapse
 // choices were silently discarded by opening a single diff.
-import { useEffect, useRef } from 'react'
-import { MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2Icon, MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
 import { GroupHeaderTrigger } from '@/features/sessions/GroupHeader'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
@@ -65,28 +67,44 @@ export function GitChangesGroup({
   useEffect(() => {
     triggerRef.current?.setAttribute('data-git-group-trigger', kind)
   }, [kind])
+  // Item 3 (#1101): same local-state, set-before/clear-in-`finally` in-flight pattern as
+  // `GitChangesFileRow.tsx`'s own per-row `actionPending` (mirrors the Commit button's
+  // `committing`, the state-location convention #1093's own Low item flags for that button).
+  const [bulkPending, setBulkPending] = useState(false)
 
   async function runBulkAction(): Promise<void> {
-    // Gate round 3 fix (#1076 HIGH 1): reads the `Result<void>` each action returns DIRECTLY --
-    // never re-reads `actionError` from the store after the fact, which raced an unrelated
-    // in-flight refresh (Gate1076Test3).
-    const result =
-      kind === 'staged'
-        ? await useGitChangesStore.getState().unstageAll(sessionId)
-        // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked'
-        // (BULK_ACTION above has no entry for 'conflicts'), so this narrowing is exhaustive in
-        // practice.
-        : kind === 'changes' || kind === 'untracked'
-          ? await useGitChangesStore.getState().stageAll(sessionId, kind)
-          : null
-    if (result === null) return
-    // Item 7 (gate round 1): "Stage all"/"Unstage all" focuses the NEXT group's own trigger.
-    // Gate round 2 item 10: only when the action actually succeeded -- a failure leaves
-    // `actionError` set (GitCommitBox's own role="alert" announces it), and yanking focus away
-    // from the bulk-action button the developer just clicked would both lose their place and
-    // read as though nothing happened. Focus naturally stays on that same button by simply
-    // skipping the restore call, no extra bookkeeping needed.
-    if (result.ok) focusNearestGroupTrigger(sessionId, kind)
+    if (bulkPending || !bulk) return
+    setBulkPending(true)
+    // Item 3 (#1101): the existing app-level `role="status"` region (`chatAreaAnnouncer.ts`)
+    // covers the screen-reader side of the in-progress state -- no new live region.
+    useChatAreaAnnouncer.getState().announce(`${bulkAccessibleName}…`)
+    try {
+      // Gate round 3 fix (#1076 HIGH 1): reads the `Result<void>` each action returns DIRECTLY --
+      // never re-reads `actionError` from the store after the fact, which raced an unrelated
+      // in-flight refresh (Gate1076Test3).
+      const result =
+        kind === 'staged'
+          ? await useGitChangesStore.getState().unstageAll(sessionId)
+          // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked'
+          // (BULK_ACTION above has no entry for 'conflicts'), so this narrowing is exhaustive in
+          // practice.
+          : kind === 'changes' || kind === 'untracked'
+            ? await useGitChangesStore.getState().stageAll(sessionId, kind)
+            : null
+      if (result === null) return
+      // Item 7 (gate round 1): "Stage all"/"Unstage all" focuses the NEXT group's own trigger.
+      // Gate round 2 item 10: only when the action actually succeeded -- a failure leaves
+      // `actionError` set (GitCommitBox's own role="alert" announces it), and yanking focus away
+      // from the bulk-action button the developer just clicked would both lose their place and
+      // read as though nothing happened. Focus naturally stays on that same button by simply
+      // skipping the restore call, no extra bookkeeping needed.
+      if (result.ok) {
+        useChatAreaAnnouncer.getState().announce(`${bulkAccessibleName} done`)
+        focusNearestGroupTrigger(sessionId, kind)
+      }
+    } finally {
+      setBulkPending(false)
+    }
   }
 
   return (
@@ -101,10 +119,12 @@ export function GitChangesGroup({
                   variant="ghost"
                   size="icon-xs"
                   aria-label={bulkAccessibleName ?? undefined}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                  aria-busy={bulkPending}
+                  aria-disabled={bulkPending || undefined}
+                  className={cn('shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none', bulkPending && 'opacity-100')}
                   onClick={() => void runBulkAction()}
                 >
-                  <bulk.icon aria-hidden className="size-3.5" />
+                  {bulkPending ? <Loader2Icon aria-hidden className="size-3.5 animate-spin" /> : <bulk.icon aria-hidden className="size-3.5" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{bulkAccessibleName}</TooltipContent>

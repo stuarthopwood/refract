@@ -23,7 +23,7 @@
 // - `data-git-row-path` on the row's own open-diff button: the focus-restore target
 //   `GitChangesPanel.tsx` queries for after a stage/unstage changes this row's group membership.
 import { useEffect, useRef, useState } from 'react'
-import { CheckIcon, Code2Icon, EllipsisVerticalIcon, EyeIcon, MinusIcon, PlusIcon } from 'lucide-react'
+import { CheckIcon, Code2Icon, EllipsisVerticalIcon, EyeIcon, Loader2Icon, MinusIcon, PlusIcon } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +35,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
 import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 import { STATUS_MARKS } from '../file-explorer/FileExplorerPanel'
@@ -74,6 +75,15 @@ export function GitChangesFileRow({
 
   const [confirmResolveOpen, setConfirmResolveOpen] = useState(false)
   const kebabTriggerRef = useRef<HTMLButtonElement>(null)
+  // Item 3 (#1101): a per-row in-flight flag -- set before the store call, cleared in a
+  // `finally`, local component state (mirrors the Commit button's own `committing` pattern,
+  // GitCommitBox.tsx, the state-location convention #1093's own Low item flags for that button
+  // -- this follows the SAME pattern rather than inventing a second one). Guards the kebab
+  // menu's Stage/Unstage/Mark-as-resolved items against a double click while a round trip is
+  // already in flight, and swaps the row's own status icon for a spinner so there is a visible
+  // cue even after the menu itself has closed (a `DropdownMenuItem`'s `onSelect` always closes
+  // its menu, so the spinner cannot live inside the vanished menu item).
+  const [actionPending, setActionPending] = useState(false)
 
   // Item 7 (gate round 1): after a single-file stage/unstage (or a conflict's own "mark as
   // resolved", which is a stage under the hood), focus the SAME row again wherever it ended up
@@ -83,13 +93,36 @@ export function GitChangesFileRow({
   // stage/unstage must never move focus away from the control the developer just activated
   // (the kebab item stays in place, same as the group's own bulk-action already did).
   async function handleStage(): Promise<void> {
-    const result = await useGitChangesStore.getState().stage(sessionId, [entry.path])
-    if (result.ok && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    if (actionPending) return
+    setActionPending(true)
+    // Item 3 (#1101): the existing app-level `role="status"` region (`chatAreaAnnouncer.ts`,
+    // mounted once in `App.tsx`, survives this row remounting across a group move) covers the
+    // screen-reader side of the in-progress state -- no new live region.
+    useChatAreaAnnouncer.getState().announce(`Staging ${fileName}…`)
+    try {
+      const result = await useGitChangesStore.getState().stage(sessionId, [entry.path])
+      if (result.ok) {
+        useChatAreaAnnouncer.getState().announce(`Staged ${fileName}`)
+        if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+      }
+    } finally {
+      setActionPending(false)
+    }
   }
 
   async function handleUnstage(): Promise<void> {
-    const result = await useGitChangesStore.getState().unstage(sessionId, [entry.path])
-    if (result.ok && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    if (actionPending) return
+    setActionPending(true)
+    useChatAreaAnnouncer.getState().announce(`Unstaging ${fileName}…`)
+    try {
+      const result = await useGitChangesStore.getState().unstage(sessionId, [entry.path])
+      if (result.ok) {
+        useChatAreaAnnouncer.getState().announce(`Unstaged ${fileName}`)
+        if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+      }
+    } finally {
+      setActionPending(false)
+    }
   }
 
   async function handleConfirmResolve(): Promise<void> {
@@ -98,14 +131,22 @@ export function GitChangesFileRow({
   }
 
   return (
-    <div className="group/row flex w-full items-center gap-1.5 rounded px-1 py-1 text-sm hover:bg-accent/50">
+    <div className="group/row flex w-full items-center gap-1.5 rounded px-1 py-1 text-sm hover:bg-accent/50" aria-busy={actionPending}>
       <button
         type="button"
         data-git-row-path={entry.path}
         onClick={onOpenDiff}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
-        <mark.Icon aria-hidden className={`size-3.5 shrink-0 ${mark.className}`} />
+        {/* Item 3 (#1101): the row's own status icon becomes a spinner while a stage/unstage
+            round trip for THIS file is in flight -- the kebab menu that triggered it has
+            already closed (a `DropdownMenuItem`'s `onSelect` always closes its menu), so the
+            row itself is the only place left to show it. */}
+        {actionPending ? (
+          <Loader2Icon aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        ) : (
+          <mark.Icon aria-hidden className={`size-3.5 shrink-0 ${mark.className}`} />
+        )}
         <span className="sr-only">{`${mark.label} — Open diff for ${entry.path}`}</span>
         <span aria-hidden className="min-w-0 flex-1 truncate" title={entry.path}>
           {fileName}
@@ -129,7 +170,8 @@ export function GitChangesFileRow({
             ref={kebabTriggerRef}
             type="button"
             aria-label={`More actions for ${entry.path}`}
-            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100"
+            aria-disabled={actionPending || undefined}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
             <EllipsisVerticalIcon aria-hidden className="size-3.5" />
           </button>
