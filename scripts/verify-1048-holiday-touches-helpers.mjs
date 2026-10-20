@@ -348,6 +348,14 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   await keepAwakeUntilFlightStarts('blur-mid-flight proof');
   await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
   await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length === 0`, { timeoutMs: 2_000, label: 'Blur mid-flight cancels the running Animation (getAnimations back to 0 quickly)' });
+  // Gate round 4 fix (flaky, found live): `getAnimations()` dropping the cancelled Animation and
+  // the `cancel` EVENT actually reaching `oncancel` (which clears `willChange`) are two separate
+  // spec-defined steps -- the Animation stops being "relevant" (and so disappears from
+  // `getAnimations()`) synchronously with `.cancel()`, but the `cancel` event itself is queued
+  // and dispatched later, in a later "update animations and send events" pass. Waiting for
+  // `willChange` to clear SEPARATELY (not assuming it's already true the instant
+  // `getAnimations()` reads 0) gives that event the chance to actually flush first.
+  await cdp.waitFor(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).every((el) => el.style.willChange === '')`, { timeoutMs: 2_000, label: "Every bat wrapper's willChange clears once the cancel event flushes" });
   const afterBlurMidFlight = await cdp.evaluate(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)`);
   assertTrue(afterBlurMidFlight.every((wc) => wc === ''), "Blur mid-flight also clears every bat's own inline style.willChange", afterBlurMidFlight);
   await cdp.evaluate(`window.dispatchEvent(new Event('focus'))`);
