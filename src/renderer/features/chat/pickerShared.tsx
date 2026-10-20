@@ -115,3 +115,15 @@ export const PICKER_TRIGGER_CLASS = cn(
  * already relied on elsewhere for exactly this purpose) when active. */
 export const PICKER_OPTION_CLASS = 'flex cursor-default items-center gap-2 border-l-2 border-transparent px-2 py-1.5 text-sm'
 export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-accent text-accent-foreground'
+
+/** #1101 (Git changes panel commit box, ADR 0003): the composer's own surface/border/focus
+ * treatment (`MessageInput.tsx`'s outer wrapper div -- `border-composer-border`/
+ * `bg-composer-background`/`border-composer-focus`/`ring-composer-ring`), applied directly to a
+ * standalone `Input`/`Textarea` element instead. The real composer draws this on a WRAPPING div
+ * and keys its focus state off a descendant textarea (`has-[textarea:focus-visible]`) because a
+ * pill row and ghost-text overlay share that same box; the commit box has no such siblings, so
+ * the identical tokens are applied straight to each field's own `focus-visible` state, replacing
+ * `Input`/`Textarea`'s generic `border-input`/`--ring` defaults with the composer's instead of
+ * re-deriving a third set of tokens. */
+export const COMPOSER_INPUT_SURFACE_CLASS =
+  'border-composer-border bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'

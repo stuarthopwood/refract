@@ -28,12 +28,14 @@
 //   via `setCommitDraft`), so it survives this remount-avoidance AND a Session switch away and
 //   back (which still remounts `GitChangesPanel` itself).
 import { useId, useState } from 'react'
+import { cn } from '@/lib/utils'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useGitChangesStore, useSessionsStore } from '@/state'
+import { COMPOSER_INPUT_SURFACE_CLASS } from '@/features/chat/pickerShared'
 import { DEFAULT_COMMIT_DRAFT } from '@/state/git-changes-store'
 
 export function GitCommitBox({ sessionId }: { sessionId: string }) {
@@ -139,11 +141,24 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
           onChange={(event) => updateDraft({ subject: event.target.value })}
           onKeyDown={handleKeyDown}
           placeholder="Commit subject"
-          className="flex-1"
+          className={cn('flex-1', COMPOSER_INPUT_SURFACE_CLASS)}
         />
-        <span aria-hidden className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {subject.length}
-        </span>
+        {/* Item 1 (#1101): hidden on an empty field (no bare "0"), `n/72` once typing starts,
+            muted until past 50 (warning colour) and past 72 (error colour, visual only -- FR-024/
+            FR-009 still never block Commit on subject length). The sr-only "Subject length"
+            prefix shares this SAME element's accessible text with the visible count (previously
+            `aria-hidden` with no name at all) -- nothing else needs to read it separately. */}
+        {subject.length > 0 && (
+          <span
+            className={cn(
+              'shrink-0 text-xs tabular-nums',
+              subject.length > 72 ? 'text-severity-error' : subject.length > 50 ? 'text-severity-warning' : 'text-muted-foreground'
+            )}
+          >
+            <span className="sr-only">Subject length </span>
+            {subject.length}/72
+          </span>
+        )}
       </div>
       <label htmlFor={bodyId} className="sr-only">
         Commit description
@@ -154,7 +169,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
         onChange={(event) => updateDraft({ body: event.target.value })}
         onKeyDown={handleKeyDown}
         placeholder="Description (optional)"
-        className="max-h-32 min-h-12 overflow-y-auto text-sm"
+        className={cn('max-h-32 min-h-12 overflow-y-auto text-sm', COMPOSER_INPUT_SURFACE_CLASS)}
       />
       {entry?.actionError && (
         <div className="flex items-start gap-1.5">
