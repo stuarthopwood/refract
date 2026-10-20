@@ -122,7 +122,7 @@ async function main() {
   const dirtyLines = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true }).stdout.split('\n').filter(Boolean);
   const dirty = dirtyLines.length > 0;
   console.log(`${LOG}: git HEAD ${head}${dirty ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
-  clearKnownOutputFiles(SHOTS_DIR, 'refract-700-todo-pin-shots', [...THEMES.map((t) => `pinned-${t.id}.png`), '360px.png', '520px.png', 'report.json']);
+  clearKnownOutputFiles(SHOTS_DIR, 'refract-700-todo-pin-shots', [...THEMES.map((t) => `pinned-${t.id}.png`), '360px.png', '520px.png', 'e4-follow-diagnostic.png', 'report.json']);
   mkdirSync(SHOTS_DIR, { recursive: true });
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-700-data-'));
@@ -256,8 +256,39 @@ async function main() {
     // ---- E4: overflow + follow, then a real user scroll stops it ----
     const listMetrics = await cdp.evaluate(`(() => { const l = document.getElementById((${PANEL_SELECTOR}).querySelector('[role="group"]').id); return { scrollHeight: l.scrollHeight, clientHeight: l.clientHeight, scrollTop: l.scrollTop }; })()`);
     assertTrue(listMetrics.scrollHeight > listMetrics.clientHeight, 'E4: the 14-task list genuinely overflows its own max-height cap');
-    const currentRowTop = await cdp.evaluate(`(() => { const row = (${PANEL_SELECTOR}).querySelector('[data-current-task="true"]'); const list = (${PANEL_SELECTOR}).querySelector('[role="group"]'); if (!row || !list) return null; const r = row.getBoundingClientRect(); const l = list.getBoundingClientRect(); return r.top >= l.top && r.bottom <= l.bottom; })()`);
-    assertTrue(currentRowTop === true, 'E4: the in-progress row is actually within the scrolled list\'s own visible bounds (followed into view)');
+    // Gate round 3 fix (Main's diagnosis): the OLD probe collapsed "row or scroller missing" and
+    // "found but genuinely out of view" into the SAME reported `(actual false)` (`null === true`
+    // and `false === true` both stringify identically through `assertTrue`'s own `actual === true`
+    // check), so a real failure here could never be told apart from a broken selector without a
+    // rebuild. This permanent version records which it was, plus the exact geometry and every
+    // phase's own folded state, into report.json on every run (not just failure), and a
+    // screenshot only when it actually fails.
+    const e4Diag = await cdp.evaluate(`(() => {
+      const panel = ${PANEL_SELECTOR};
+      const list = panel ? panel.querySelector('[role="group"]') : null;
+      const row = panel ? panel.querySelector('[data-current-task="true"]') : null;
+      const rowRect = row ? row.getBoundingClientRect() : null;
+      const listRect = list ? list.getBoundingClientRect() : null;
+      const phases = list ? Array.from(list.querySelectorAll(':scope > div')).map((d) => ({ header: d.querySelector(':scope > div')?.textContent?.trim() ?? null, folded: !d.querySelector('ul') })) : [];
+      return {
+        panelFound: !!panel,
+        listFound: !!list,
+        rowFound: !!row,
+        selector: '[data-current-task="true"]',
+        rowRect: rowRect ? { top: rowRect.top, bottom: rowRect.bottom } : null,
+        listRect: listRect ? { top: listRect.top, bottom: listRect.bottom } : null,
+        listScrollTop: list ? list.scrollTop : null,
+        listScrollHeight: list ? list.scrollHeight : null,
+        listClientHeight: list ? list.clientHeight : null,
+        phases,
+        inView: (row && list) ? (rowRect.top >= listRect.top && rowRect.bottom <= listRect.bottom) : null
+      };
+    })()`);
+    report.push({ step: 'DIAG E4 follow-into-view geometry', ok: true, extra: e4Diag });
+    if (e4Diag.inView !== true) {
+      await cdp.screenshot(path.join(SHOTS_DIR, 'e4-follow-diagnostic.png'));
+    }
+    assertTrue(e4Diag.inView === true, 'E4: the in-progress row is actually within the scrolled list\'s own visible bounds (followed into view)', e4Diag);
     // A real wheel scroll by the user, dispatched at the list's own centre point.
     const listRect = await cdp.evaluate(`(() => { const l = (${PANEL_SELECTOR}).querySelector('[role="group"]'); const r = l.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: listRect.x, y: listRect.y, deltaX: 0, deltaY: -40 });
