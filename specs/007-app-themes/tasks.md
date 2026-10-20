@@ -1199,3 +1199,39 @@ one genuinely new pair per theme (872 -> 877, see that task's own entry).
   gained a round-3 session recording both findings. `pnpm typecheck`/no-build checks run clean
   (see verification note below). No build run; live-verify of the new composer-selection shot
   deferred to the next build slot.
+
+- [X] T052 Main's gate round 3 follow-up, part 2 (2026-10-20): three concrete fixes Main named
+  after reviewing T051's audit -- Journey/Timeline task-label colour (HIGH), a missing
+  `titleColor` token, and the Focused pill's alpha -- plus extending the fixture (fixtures may be
+  EXTENDED, not only newly added) so Journey's solid labels are captured live, no build
+  (depends on T051).
+  **Done**: (1) `getMermaidThemeCSS` (`mermaidTheme.ts`) gains a journey-scoped
+  `.task ~ switch .label, .journey-section ~ switch .label { color: taskTextColor !important }`
+  rule -- confirmed via `node_modules/mermaid`'s own journeyDiagram/svgDraw source that Journey
+  (and Timeline, same renderer) draws task/section labels as a foreignObject `div.label`
+  SIBLING of the coloured `.task-type-N`/`.section-type-N` rect, so Mermaid's own
+  `.label {color: textColor}` default painted them with the SOFTENED #1074 tier -- measured as
+  low as 4.06:1 (Main's own finding). (2) `titleColor` (flowchart `.cluster text`) added to
+  `MermaidThemeVariables`/`mermaidThemeData.ts` for every softened theme at FR-023's 0.9 tier
+  over `--card` (byte-identical to `primaryTextColor`'s own value, same formula) -- previously
+  unset, fell through to Mermaid's own hardcoded `#F9FFFE` in every preset. (3) A new dedicated
+  solid token, `--active-indicator-foreground` (plain white, every preset), replaces
+  `ChatHeader.tsx`'s Focused-pill `text-foreground` (FR-023's "stays solid on a coloured fill"
+  exception, not a re-verified translucent ratio); added to FR-023's exception list, Tailwind's
+  `@theme` mapping, and a new `focused-badge-contrast.mjs` module (`focusedBadgeContrastRows`,
+  a real ENFORCED pair, merged into `check-theme-contrast.mjs`'s loop -- moved to its own file
+  immediately, not grown inline, after it first pushed `theme-contrast-pairs.mjs` to 625 lines,
+  over the #806 cap). Fixture (`997-notice-severity.jsonl`) extended with a second `journey`
+  fence in the same assistant message (confirmed harmless to `verify-1039-amber-retune.mjs`'s
+  own first-match `querySelector`/`.find()` selectors); `verify-1074-text-opacity.mjs` gained a
+  real assertion decoding the second rendered Mermaid SVG and checking it contains the theme's
+  solid `taskTextColor` literal, plus two honest `notExercised` entries (the Focused pill needs
+  a split view this script's single-pane flow never opens; `titleColor` needs a flowchart
+  subgraph the fixture's own fence doesn't have). Issue #1108 amended (comment + title) to its
+  narrower remaining Gantt-only scope now that Journey is covered.
+  Re-ran every no-build check after moving `focused-badge-contrast.mjs` out:
+  `pnpm typecheck` clean, `vitest run` 148/148, `check:indent` 0/460 files, `check:theme-contrast`
+  **892/892 PASS** (up from 887: +5, one new `focusedBadgeContrastRows` pair per theme),
+  `check:file-size` 0 cap violations, `check:versions` aligned, `check:omp-schema` no drift,
+  `cargo fmt --check` clean. No build run; live-verify of the Journey-label/composer-selection
+  assertions and every screenshot deferred to the next build slot.

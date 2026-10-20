@@ -155,10 +155,27 @@ font and code font stay with issue #4 and are out of scope here.
   themselves needed no change, since all three already clear 4.5:1 against the real backdrop too.
 - Q: Is Gantt/Journey task-text token coverage (`taskTextColor`, `sectionBkgColor`-family,
   `critBkgColor`) ever confirmed against a real rendered diagram, the way flowchart nodes are?
-  -> A: No, and this story cannot fix that itself -- AGENTS.md's "no new fixtures while
-  prototyping" rule blocks adding a journey/Gantt-bearing fixture, and the one committed Mermaid
-  fixture every live-verify script reuses (`997-notice-severity.jsonl`) renders a `flowchart TD`
-  fence only. Logged as a tracked gap, issue #1108, not silently left unverified.
+  -> A: Initially no (issue #1108, filed this round); corrected the same round -- EXTENDING an
+  existing tape is allowed (the precedent #1039 set with `997-notice-severity.jsonl`'s own
+  mermaid fence), so a small Journey fence is added to that same fixture and #1108 is amended
+  to its narrower remaining scope (Gantt specifically; Journey is now covered).
+- Q: Mermaid's own `textColor` (this file's softened #1074 value) colours Journey/Timeline task
+  and section labels, sitting on the coloured `fillType0-7` task/section fills -- a genuine
+  coloured-fill case FR-023 already exempts elsewhere -- measured as low as 4.06:1. Fix? -> A:
+  Yes, a CODE fix, not only a fixture question: `getMermaidThemeCSS` (`mermaidTheme.ts`) gains a
+  journey-scoped `color: <taskTextColor> !important` override (same solid token Gantt's own
+  task bars already use for the identical role), confirmed via `node_modules/mermaid`'s own
+  source that the label renders as a foreignObject HTML `div.label` sibling of the coloured
+  rect, so a CSS sibling selector reliably targets it.
+- Q: Mermaid's `titleColor` (flowchart cluster/subgraph titles) was never set by this file at
+  all -- it fell through to Mermaid's own hardcoded solid `#F9FFFE` in every preset. Fix? -> A:
+  Yes. Set explicitly per softened theme at FR-023's 0.9 tier over `--card` (byte-identical to
+  `primaryTextColor`'s own value, same formula); `dark-high-contrast` keeps its own solid value.
+- Q: The "Focused" session badge (`ChatHeader.tsx`) uses plain `text-foreground` on
+  `bg-active-indicator/20` -- a coloured, non-neutral fill. A re-verified ratio on the now-
+  translucent `--foreground` isn't the FR-023-compliant fix -- what is? -> A: A new dedicated
+  solid token, `--active-indicator-foreground` (plain white in every preset, added to FR-023's
+  "stays solid" exception list), replacing `text-foreground` on that one badge.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -383,7 +400,8 @@ side panel and confirm both show the same theme.
   `secondary-foreground`, `accent-foreground`, `sidebar-foreground`,
   `sidebar-accent-foreground`) MUST resolve to it via `var()` so it inherits the same alpha. A
   foreground token that sits on a coloured, non-neutral fill (`primary-foreground`,
-  `send-foreground`, `destructive-foreground`, `sidebar-primary-foreground`, the
+  `send-foreground`, `destructive-foreground`, `sidebar-primary-foreground`,
+  `active-indicator-foreground` (gate round 3, the "Focused" session badge), the
   `state-*-foreground` and `pr-*-foreground` tokens) MUST stay a fully opaque literal. The
   dedicated high-contrast theme (FR-010) MUST keep every one of these tokens solid, per its
   existing 7:1 text target (FR-008, #552).

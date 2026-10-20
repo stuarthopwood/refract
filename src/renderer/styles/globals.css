@@ -51,6 +51,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-active-indicator: var(--active-indicator);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): Tailwind mapping for the new solid
+   * "Focused" badge foreground token -- see `.theme-dark`'s own `--active-indicator-foreground`
+   * comment. */
+  --color-active-indicator-foreground: var(--active-indicator-foreground);
   /* #550 (theme foundation, palette v2): PURELY ADDITIVE for Dark and Dark (high contrast) --
    * every token below is new (components keep their current classes unchanged; #579 migrates
    * most of them later, though #606 already migrated the panel separators ahead of that).
@@ -252,6 +256,12 @@
   --input: oklch(1 0 0 / 36%);
   --ring: oklch(0.556 0 0);
   --active-indicator: oklch(0.58 0.22 264.376);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): the "Focused" badge's own
+   * `bg-active-indicator/20` tint is a coloured, non-neutral fill -- FR-023's "stays solid"
+   * exception, same category as `--send-foreground`/`--composer-selection-fg`, not the
+   * softened `--foreground` alias cascade. Plain solid white, same pattern every other
+   * `-foreground` token on a coloured fill already uses. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -611,6 +621,9 @@
    * decided here). */
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -742,6 +755,10 @@
   --input: oklch(1 0 0 / 38%);
   --ring: oklch(0.9 0 0);
   --active-indicator: oklch(0.75 0.17 264);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key -- same solid value, no change in behaviour here since this theme's own `--foreground`
+   * is already solid. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.75 0.17 264);
   --chart-2: oklch(0.8 0.17 162);
   --chart-3: oklch(0.85 0.17 70);
@@ -940,6 +957,9 @@
    * "Focus ring colour -- achromatic, decided"), never this preset's own cyan accent. */
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -1153,6 +1173,9 @@
    * `--ring` via `var()`, so it follows automatically. */
   --ring: oklch(0.556 0 0);
   --active-indicator: var(--accent-text);
+  /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
+   * key for the full reasoning. */
+  --active-indicator-foreground: oklch(1 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);

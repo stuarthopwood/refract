@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
 import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
+import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -683,7 +684,8 @@ for (const [themeId, props] of Object.entries(themes)) {
 // baseline; merged into one loop for the same reason.
 // Gate round 5 (#1050, test review): `composerSelectionContrastRows` lives in its own module
 // (composer-selection-contrast.mjs's own comment explains why), merged into this same loop.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+// Gate round 3 (#1074, Main's follow-up, item 4): `focusedBadgeContrastRows` merged the same way.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)

@@ -436,6 +436,14 @@ export interface MermaidThemeVariables {
  gitBranchLabel5: string
  gitBranchLabel6: string
  gitBranchLabel7: string
+ /** Cluster/subgraph title text colour (flowchart `.cluster text`, sits on `clusterBkg` ==
+  * `tertiaryColor`, a neutral dark surface comparable to `--card`/`--popover`, not a coloured
+  * fill). Gate round 3 fix (Main, #1074 follow-up): Mermaid's own `theme-dark.js` hardcodes
+  * this to a literal `#F9FFFE`, independent of every theme-specific field above -- this file
+  * never set it before, so every preset fell through to that one fixed near-white regardless
+  * of its own palette. FR-023's 0.9 tier, same methodology as `primaryTextColor` above: white
+  * at 90% alpha composited over `--card`. */
+ titleColor: string
 }
 
 // Per-theme data (DARK_FAMILY plus every `MERMAID_THEME_VARIABLES` entry, including #551's
@@ -521,6 +529,24 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
      afterward, verified live via the same real-pixel harness. */
   .commit-label-bkg {
     opacity: 1 !important;
+  }
+  /* Gate round 3 fix (Main, #1074 follow-up, HIGH): Journey (and Timeline, which shares the
+     identical renderer code) task and section labels render via Mermaid's own default
+     \`textPlacement: 'fo'\` path -- a foreignObject \`<div class="label">\` sibling to the
+     coloured \`.task-type-N\`/\`.section-type-N\` rect (confirmed by reading
+     node_modules/mermaid's own journeyDiagram/svgDraw source directly: \`byFo\` appends the
+     switch/foreignObject/div.label as a SIBLING of the rect inside the same \`<g>\`, so \`~\`
+     reliably selects it). Mermaid's own \`.label { color: textColor }\` rule therefore paints
+     these labels with this file's SOFTENED \`textColor\` (#1074's alpha tier), composited
+     against journey's own coloured \`fillType0-7\` fills (derived from this theme's
+     primaryColor/secondaryColor) -- measured as low as 4.06:1, below the 4.5:1 floor. These
+     labels sit on a genuine coloured, non-neutral fill, the same FR-023 exception Gantt's own
+     task bars already carry -- reusing \`taskTextColor\` (already solid, already tuned for
+     exactly this "light text on a coloured task-bar fill" role) rather than inventing a new
+     token. */
+  .task ~ switch .label,
+  .journey-section ~ switch .label {
+    color: ${t.taskTextColor} !important;
   }
 `
 }

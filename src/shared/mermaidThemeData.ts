@@ -30,6 +30,12 @@ const DARK_FAMILY: MermaidThemeVariables = {
   // -- the REAL composited ratio here is 13.33:1 against that literal, still >>4.5:1.
   primaryColor: '#1f1f1f',
   primaryTextColor: '#e8e8e8',
+  // Gate round 3 fix (Main, #1074 follow-up): FR-023's 0.9 tier, same formula as
+  // `primaryTextColor` above (white at 90% alpha composited over `--card`) -- byte-identical
+  // value, since both use the exact same methodology. Previously unset, so every preset fell
+  // through to Mermaid's own hardcoded `#F9FFFE` regardless of its own palette (interface
+  // comment has the full citation).
+  titleColor: '#e8e8e8',
   // `--border: oklch(0.56 0 0)` == `#747474`, this theme's own opaque border token
   // (quality-gate remediation round 2: `--border` itself moved from 0.5 to 0.56 to also clear
   // 3:1 against `--card`/`--muted`, see globals.css's own comment on `--border`).
@@ -210,6 +216,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     // `DARK_FAMILY`'s own comment on this key for the full citation) -- real ratio 13.43:1.
     primaryColor: '#1C1F28',
     primaryTextColor: '#e8e9e9',
+    // Gate round 3 fix (Main, #1074 follow-up): FR-023's 0.9 tier, same formula/value as
+    // `primaryTextColor` above (see `DARK_FAMILY`'s own comment for the full citation).
+    titleColor: '#e8e9e9',
     // `--border: #6F7C9D` (retuned, strong -- see globals.css's own comment on this preset's
     // `--border`).
     primaryBorderColor: '#6F7C9D',
@@ -269,6 +278,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     background: '#000000',
     primaryColor: '#090909',
     primaryTextColor: '#ffffff',
+    // Gate round 3 fix (Main, #1074 follow-up): stays solid, unaffected by #1074 (FR-023), same
+    // as `primaryTextColor` above.
+    titleColor: '#ffffff',
     primaryBorderColor: '#808080',
     lineColor: '#cecece',
     // Multi-fill diagrams still need to tell fills apart at this theme's own higher contrast
@@ -387,12 +399,13 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // not merely deferred -- that script calls `require('electron')` directly, which the CDP/Tauri
   // live-verify harness every other check in this story uses does not provide (issue #1106,
   // filed round 3: port to the CDP/Tauri harness or pure `contrast-math.mjs`). Separately
-  // (issue #1108, filed round 3): every Gantt/Journey task-text token in this file
-  // (`taskTextColor`/`taskTextOutsideColor`/`taskTextClickableColor`/`critBkgColor`/
-  // `sectionBkgColor`-family) is measured by `contrast-math.mjs` arithmetic against Mermaid's
-  // own documented CSS template strings only -- no committed fixture renders an actual
-  // journey/Gantt diagram (`997-notice-severity.jsonl`'s own fence is `flowchart TD` only), so
-  // none of these have ever been visually confirmed against a real browser render.
+  // (issue #1108, filed round 3, amended round 3): every Gantt task-text token in this file
+  // (`taskTextOutsideColor`/`taskTextClickableColor`/`critBkgColor`/`sectionBkgColor`-family) is
+  // still measured by `contrast-math.mjs` arithmetic against Mermaid's own documented CSS
+  // template strings only, not a real rendered Gantt diagram -- #1108's scope narrowed to just
+  // Gantt once Journey gained its own fence (`997-notice-severity.jsonl`, same round); `taskTextColor`
+  // itself IS now live-verified there (Journey shares the identical renderer/CSS-class path a
+  // Gantt task bar would use for this one token).
   'nordic-frost': {
     ...DARK_FAMILY,
     background: '#060f1e', // `--background`
@@ -402,6 +415,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     // fill Mermaid renders is its own hardcoded `#1f2020` literal, not `--card` (see
     // `DARK_FAMILY`'s own comment on this key for the full citation) -- real ratio 13.32:1.
     primaryTextColor: '#e7e8ea',
+    // Gate round 3 fix (Main, #1074 follow-up): FR-023's 0.9 tier, same formula/value as
+    // `primaryTextColor` above (see `DARK_FAMILY`'s own comment for the full citation).
+    titleColor: '#e7e8ea',
     primaryBorderColor: '#79818c', // `--border`
     // Gate-fix (#1074 round 1): FR-023's 0.6 tier, white at 60% alpha composited over
     // `--background` (`#060f1e`) -- 7.22:1. `pieOuterStrokeColor`/`cScaleInv0`-`11` below carry

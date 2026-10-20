@@ -10,10 +10,12 @@
 // `sidebar-primary-foreground`, the `state-*-foreground`/`pr-*-foreground` tokens) stay solid.
 //
 // Reuses the existing, committed `997-notice-severity.jsonl` fixture (AGENTS.md: no new
-// fixtures while prototyping) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn
-// gives a real session, a real echoed user message (`.text-chat-foreground` Markdown), and a
-// real Manage sessions/Settings Appearance route, the same flow `verify-1039-amber-retune.mjs`
-// already exercises -- no chat content from that fixture is otherwise used here.
+// fixtures while prototyping; EXTENDING an existing tape, the same precedent #1039 set, is
+// allowed) via `REFRACT_FAKE_OMP_SCENARIO=997-notice-severity`: one turn gives a real session, a
+// real echoed user message (`.text-chat-foreground` Markdown), a real Manage sessions/Settings
+// Appearance route, the same flow `verify-1039-amber-retune.mjs` already exercises, AND (gate
+// round 3, Main's follow-up) a second rendered Mermaid diagram -- a Journey, appended this round
+// -- whose task/section labels are asserted below.
 //
 // For each of the 5 built-in themes, switches via the real Profile-menu Theme submenu
 // (`switchTheme`), then reads FIVE real rendered elements and asserts each equals its own CSS
@@ -38,6 +40,11 @@
 // math (`contrast-math.mjs`'s `compositeOverLinear`, the same primitive `check-theme-
 // contrast.mjs` uses) predicts for `--chat-foreground` alpha-blended over `--background` -- so
 // the opacity is proven to really composite on screen, not only in computed style.
+// Also (gate round 3, Main's follow-up, item 1): decodes the second rendered Mermaid diagram's
+// (the new Journey fence's) own SVG and asserts it contains this theme's solid `taskTextColor`
+// literal -- Journey's task/section labels sit on Mermaid's own coloured `fillType0-7` fills
+// and, left unfixed, would inherit the SOFTENED `textColor` instead (`mermaidTheme.ts`'s own
+// comment on this fix has the full citation).
 //
 // Screenshots per theme: chat (chat prose plus the header and Send button all visible), a
 // popover menu (the Profile dropdown), selected chat-prose text, a composer-selection shot (a
@@ -117,6 +124,19 @@ const ALPHA_EPSILON = 0.01;
 // chat prose actually sits inside -- `userBubbleContrastRows`' own bubble math, below). Now that
 // the prediction composites over that real bubble fill, 4 is font antialiasing/hinting slack only.
 const PIXEL_TOLERANCE = 4; // per sRGB byte channel, 0-255.
+// `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`) -- Journey/Gantt's own "solid on
+// a coloured task-bar fill" FR-023 exception token. Hardcoded here, not imported, the same way
+// verify-1039-amber-retune.mjs's own `MERMAID_NODE_TEXT` is (no cross-file TS import from a
+// plain .mjs script). Gate round 3 fix (Main, #1074 follow-up, item 1): the real check below is
+// case-insensitive, since Mermaid embeds this file's own CSS string verbatim into the rendered
+// SVG's `<style>` block, preserving whatever case each theme's own literal happens to use.
+const JOURNEY_TASK_TEXT_COLOUR = {
+  dark: '#fafafa',
+  'dark-high-contrast': '#ffffff',
+  obsidian: '#F8FAFC',
+  'nordic-frost': '#eff7fb',
+  'cyber-amber': '#fafafa'
+};
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
@@ -130,7 +150,9 @@ async function main() {
     // this live check as written, not fixed glossed-over gaps.
     'Windows Forced Colors mode (forced-colors: active): every opacity-softened token above is overridden by the OS high-contrast palette in that mode -- never exercised here (this run always has it off).',
     'Emoji glyph rendering: emoji in chat prose paint via the font/platform\'s own colour (COLR/CBDT) layer, bypassing `color`/`--chat-foreground` entirely -- the pixel-compositing check below samples the brightest pixel in the rect, which could be an emoji glyph rather than text; not isolated or verified separately here.',
-    'High-DPI rendering (devicePixelRatio != 1): the pixel-compositing check below now REFUSES to run unless devicePixelRatio === 1 (a correctness fix, not a workaround -- sampling a captured PNG\'s device pixels against a CSS-pixel rect only lines up 1:1 at DPR 1), so icon-stroke/text-opacity overlap at a scaled DPR is never exercised by this script.'
+    'High-DPI rendering (devicePixelRatio != 1): the pixel-compositing check below now REFUSES to run unless devicePixelRatio === 1 (a correctness fix, not a workaround -- sampling a captured PNG\'s device pixels against a CSS-pixel rect only lines up 1:1 at DPR 1), so icon-stroke/text-opacity overlap at a scaled DPR is never exercised by this script.',
+    'The "Focused" session badge (`ChatHeader.tsx`, `--active-indicator-foreground`, gate round 3 fix): only renders when a SECOND Session is open in a split pane (`isSplit`) -- this script\'s single-pane flow never opens a split, so the badge\'s real rendered colour is never read live here. Static: the token is a plain solid white in every theme (`globals.css`), clearing 4.5:1 trivially against any of this badge\'s own tinted fills.',
+    'Mermaid `titleColor` (gate round 3 fix): governs flowchart `.cluster text` (subgraph titles); the fixture\'s own flowchart fence (`flowchart TD\\n A[Start] --> B[End]`) has no subgraph, so this token is never actually painted by either mermaid fence in this fixture -- fixed statically (same 0.9-tier formula as `primaryTextColor`), not live-verified.'
   ]; // Genuine skips only.
   const shotNames = [];
 
@@ -143,7 +165,7 @@ async function main() {
   clearKnownOutputFiles(
     SHOTS_DIR,
     'refract-1074-text-opacity-shots',
-    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-popover-menu.png`, `${t.id}-04-selected-text.png`, `${t.id}-05-settings-appearance.png`, `${t.id}-06-switch-off.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
+    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-popover-menu.png`, `${t.id}-04-selected-text.png`, `${t.id}-05-settings-appearance.png`, `${t.id}-06-switch-off.png`, `${t.id}-07-composer-selection.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
   );
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1074-data-'));
@@ -384,6 +406,33 @@ async function main() {
               } else {
                 findings.push(`${theme.name}: real painted chat-prose ink rgb(${ink.r},${ink.g},${ink.b}) is within ${maxDiff} of the predicted composited rgb(${expectedRgb.join(',')}) -- the opacity genuinely composites on screen.`);
               }
+            }
+          }
+        }
+
+        // ---- Journey diagram labels stay solid (gate round 3 fix, Main's follow-up, item 1):
+        // the fixture's second mermaid fence (`997-notice-severity.jsonl`, extended this round)
+        // renders a Journey diagram; its task/section labels render via Mermaid's own default
+        // foreignObject path (confirmed by reading node_modules/mermaid's own journeyDiagram
+        // source directly -- see mermaidTheme.ts's own comment on the fix), so the embedded
+        // `<style>` block this file's getMermaidThemeCSS generates is what actually governs
+        // them. Asserts the real rendered SVG's own decoded text contains this theme's solid
+        // `taskTextColor` literal, proving the override genuinely reached the page, not only
+        // the CSS source. ----
+        const mermaidImgs = await cdp.evaluate(`Array.from(document.querySelectorAll('img[role="img"]')).map((el) => el.getAttribute('src'))`);
+        if (!Array.isArray(mermaidImgs) || mermaidImgs.length < 2 || !mermaidImgs[1]) {
+          failures.push(`${theme.name}: expected 2 real rendered Mermaid diagrams (flowchart then journey), found ${Array.isArray(mermaidImgs) ? mermaidImgs.length : 0}.`);
+        } else {
+          const journeySrc = mermaidImgs[1];
+          if (!journeySrc.startsWith('data:image/svg+xml')) {
+            failures.push(`${theme.name}: second Mermaid diagram (journey) has no real data: URI src (got ${JSON.stringify(journeySrc)}).`);
+          } else {
+            const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
+            const expectedTaskText = JOURNEY_TASK_TEXT_COLOUR[theme.id];
+            if (!journeySvgText.toLowerCase().includes(expectedTaskText.toLowerCase())) {
+              failures.push(`${theme.name}: real rendered Journey SVG is missing the solid taskTextColor literal ${expectedTaskText} -- labels may still be using the softened textColor.`);
+            } else {
+              findings.push(`${theme.name}: real rendered Journey SVG contains the solid taskTextColor literal ${expectedTaskText} -- task/section labels stay solid on their coloured fillType fill.`);
             }
           }
         }
