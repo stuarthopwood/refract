@@ -363,20 +363,22 @@ async function main() {
     // MEDIUM fix (#1043): the check above only proves the `forced-colors:...` class NAME is
     // present as rendered-DOM text -- true even if Tailwind's JIT silently failed to compile a
     // matching rule for this exact combination (a media variant wrapping a named-group variant
-    // wrapping an arbitrary value), since JSX never strips an unmatched class name. This instead
-    // walks the REAL compiled `document.styleSheets`, finds a rule genuinely sitting inside an
-    // `@media (forced-colors: ...)` block whose own selector matches this ring, and confirms its
-    // declaration actually sets `border-color: Highlight` -- proof Tailwind really generated the
-    // CSS this fix depends on, not just that the class name exists as text.
-    const forcedColorsRule = await forcedColorsRuleCompiled(cdp);
-    if (forcedColorsRule.matchingSelectorCount > 0 && forcedColorsRule.declaresHighlightBorder) {
-      checkPass('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: Highlight (document.styleSheets, not just the className string)', JSON.stringify(forcedColorsRule));
+    // wrapping an arbitrary value), since JSX never strips an unmatched class name. Reads the
+    // real built `out/tauri-web/assets/*.css` straight off disk instead of `document.styleSheets`
+    // over CDP (`forcedColorsRuleCompiled`'s own comment: the CDP/CSSOM route scanned 0 rules
+    // every run, a WebView2 cross-origin-style restriction on reading a `<link>`-loaded sheet's
+    // rules back out, unrelated to whether the CSS itself works) -- confirms a rule genuinely
+    // sitting inside an `@media (forced-colors: ...)` block whose own selector matches this
+    // ring, and that its declaration actually sets `border-color: highlight`.
+    const forcedColorsRule = forcedColorsRuleCompiled(REPO_ROOT);
+    if (forcedColorsRule.selectorFound && forcedColorsRule.insideForcedColorsMedia && forcedColorsRule.declaresHighlightBorder) {
+      checkPass('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: highlight (read from the built CSS bundle, not just the className string)', JSON.stringify(forcedColorsRule));
     } else {
-      checkFail('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: Highlight', JSON.stringify(forcedColorsRule));
+      checkFail('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: highlight', JSON.stringify(forcedColorsRule));
     }
     notExercised(
       'Real OS forced-colours (Windows High Contrast) rendering of the checked vs unchecked ring',
-      "WebView2's own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs/verify-439-history-truncate.mjs already record); the two checks above confirm the forced-colors:group-data-[state=checked]/radio-item:border-[Highlight] utility class is literally present on every ring AND that Tailwind genuinely compiled a matching @media (forced-colors: ...) CSS rule declaring border-color: Highlight for it, which is as far as this harness can prove it."
+      "WebView2's own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs/verify-439-history-truncate.mjs already record); the two checks above confirm the forced-colors:group-data-[state=checked]/radio-item:border-[Highlight] utility class is literally present on every ring AND that Tailwind genuinely compiled a matching @media (forced-colors: ...) CSS rule declaring border-color: highlight for it, which is as far as this harness can prove it."
     );
 
     await closeAllMenus(cdp);

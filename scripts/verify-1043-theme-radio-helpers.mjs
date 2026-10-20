@@ -1,6 +1,8 @@
 // Shared constants and DOM-driving/reading helpers for verify-1043-theme-radio.mjs, split out
 // (#806 file-size cap) the same way verify-741-role-chip.mjs/verify-569 etc. split their own
 // bulk check bodies into a companion `-helpers.mjs` file.
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { sleep } from './verify-tauri-cdp.mjs';
 import { measuredContrastRatio } from './contrast-math.mjs';
 import { pressKey, pressEscape, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
@@ -207,51 +209,59 @@ export async function ringCarriesForcedColorsOverride(cdp) {
  * element's `className` attribute -- which would stay true even if Tailwind's JIT silently
  * failed to compile a matching CSS rule for this exact (group-variant inside a media-variant,
  * inside a `/radio-item`-named group) combination, since JSX never removes an unmatched class
- * name from the DOM. This instead walks the REAL compiled stylesheets (`document.styleSheets`,
- * recursing into every `CSSMediaRule`'s own nested `cssRules`), finds every rule sitting inside
- * an `@media (forced-colors: ...)` block, and fuzzy-matches each rule's `selectorText` (with
- * backslash escapes stripped, since Tailwind escapes `:`/`[`/`]`/`/` in a literal class-name
- * selector) against the ring's own two defining substrings -- `group-data-[state=checked]/
- * radio-item` (the group-variant key) and `border-[Highlight]` (the arbitrary value) -- rather
- * than reconstructing Tailwind's exact compiled selector syntax by hand (which differs across
- * versions and which group/media-variant nesting order it picks), so this does not depend on
- * guessing that syntax correctly. Confirms the matching rule's own declaration actually sets
- * `border-color: Highlight` (or a shorthand `border: ... Highlight`), not just that a rule with
- * a matching selector exists with some unrelated declaration. */
-export async function forcedColorsRuleCompiled(cdp) {
-  return cdp.evaluate(`
-    (() => {
-      function collectLeafRules(rule, acc) {
-        if (rule.cssRules) {
-          for (const child of Array.from(rule.cssRules)) collectLeafRules(child, acc);
-        } else {
-          acc.push(rule);
-        }
-      }
-      const forcedColorsRules = [];
-      for (const sheet of Array.from(document.styleSheets)) {
-        let rules;
-        try { rules = sheet.cssRules; } catch { continue; }
-        for (const rule of Array.from(rules || [])) {
-          const isForcedColorsMedia = typeof CSSMediaRule !== 'undefined' && rule instanceof CSSMediaRule &&
-            /forced-colors/i.test(rule.conditionText || rule.media?.mediaText || '');
-          if (isForcedColorsMedia) collectLeafRules(rule, forcedColorsRules);
-        }
-      }
-      const stripEscapes = (s) => (s || '').replace(/\\\\/g, '');
-      const matching = forcedColorsRules.filter((r) => {
-        const sel = stripEscapes(r.selectorText);
-        return sel.includes('group-data-[state=checked]/radio-item') && sel.includes('border-[Highlight]');
-      });
-      const declaresHighlightBorder = matching.some((r) => /border(-color)?:\\s*[^;]*Highlight/i.test(r.style?.cssText || r.cssText || ''));
-      return {
-        totalForcedColorsRulesScanned: forcedColorsRules.length,
-        matchingSelectorCount: matching.length,
-        matchingSelectors: matching.map((r) => r.selectorText),
-        declaresHighlightBorder
-      };
-    })()
-  `);
+ * name from the DOM. First cut of this check read `document.styleSheets` live over CDP --
+ * scanned 0 rules every run, even though the CSS genuinely IS there (confirmed: grepping the
+ * real built `out/tauri-web/assets/*.css` finds `.forced-colors\:group-data-\[state\=checked\]
+ * \/radio-item\:border-\[Highlight\]` correctly nested inside a real `@media(forced-colors:
+ * active){...}` block) -- `sheet.cssRules` throws (silently swallowed by the old `try{}catch{
+ * continue}`) for a Tauri-served stylesheet, a known WebView2/CSSOM cross-origin-style
+ * restriction on reading rules back out of a `<link>`-loaded sheet, unrelated to whether the
+ * CSS itself works. Reads the REAL built CSS bundle straight off disk instead (no CDP, no
+ * CSSOM, so that restriction cannot apply) -- the Vite build `buildAndCopyExeFresh` already
+ * ran emits `out/tauri-web/assets/*.css` with a content hash in the filename each build; picks
+ * the most-recently-written match so a stale file from an earlier run can never be read by
+ * mistake. Fuzzy-matches the normalized (backslash-escapes-stripped) text against the ring's
+ * own two defining substrings -- `group-data-[state=checked]/radio-item` (the group-variant
+ * key) and `border-[Highlight]` (the arbitrary value) -- rather than reconstructing Tailwind's
+ * exact compiled selector syntax by hand (which differs across versions and which group/media-
+ * variant nesting order it picks). Confirms via brace-depth counting (from the nearest `@media`
+ * before the match to the match itself) that it is genuinely NESTED inside a forced-colors
+ * media block, and that the matched rule's own declaration body actually sets
+ * `border-color: highlight` (CSS colour keywords are case-insensitive; Lightning CSS lowercases
+ * them), not just that a rule with a matching selector exists with some unrelated declaration. */
+export function forcedColorsRuleCompiled(repoRoot) {
+  const assetsDir = path.join(repoRoot, 'out', 'tauri-web', 'assets');
+  let cssFiles;
+  try {
+    cssFiles = readdirSync(assetsDir)
+      .filter((f) => f.endsWith('.css'))
+      .map((f) => ({ file: f, full: path.join(assetsDir, f), mtime: statSync(path.join(assetsDir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch (err) {
+    return { error: `could not read ${assetsDir}: ${err.message}`, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
+  }
+  if (cssFiles.length === 0) {
+    return { error: `no .css file found under ${assetsDir}`, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
+  }
+  const { file, full } = cssFiles[0];
+  const raw = readFileSync(full, 'utf8');
+  const normalized = raw.replace(/\\(.)/g, '$1');
+  const targetSelector = '.forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]';
+  const selIdx = normalized.indexOf(targetSelector);
+  if (selIdx === -1) {
+    return { cssFile: file, totalChars: normalized.length, selectorFound: false, insideForcedColorsMedia: false, declaresHighlightBorder: false };
+  }
+  const mediaIdx = normalized.lastIndexOf('@media', selIdx);
+  const mediaHeader = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, mediaIdx + 40);
+  const between = mediaIdx === -1 ? '' : normalized.slice(mediaIdx, selIdx);
+  const opens = (between.match(/\{/g) || []).length;
+  const closes = (between.match(/\}/g) || []).length;
+  const insideForcedColorsMedia = mediaIdx !== -1 && /forced-colors/i.test(mediaHeader) && opens - closes >= 1;
+  const bodyStart = normalized.indexOf('{', selIdx);
+  const bodyEnd = normalized.indexOf('}', bodyStart);
+  const body = bodyStart !== -1 && bodyEnd !== -1 ? normalized.slice(bodyStart, bodyEnd) : '';
+  const declaresHighlightBorder = /border(-color)?:\s*highlight/i.test(body);
+  return { cssFile: file, selectorFound: true, mediaHeader, insideForcedColorsMedia, body, declaresHighlightBorder };
 }
 
 /** Gate finding (Main, live pixel sample, 2026-10-20): the dot used to mount structurally
