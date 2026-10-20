@@ -1,5 +1,5 @@
-import { BotIcon, FolderTreeIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
+import { BotIcon, FolderTreeIcon, GitBranchIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 
 // Spec 013 (data-model.md `HostedPanelDescriptor`/`PanelId`): the single source of which right
 // pane panels exist, read by the rail, the tab bar, and the launcher so none of the three keeps
@@ -9,7 +9,7 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 // no content behind it. `side-chat` (spec 014 T005) and `file-explorer` (spec 015 T006) each add
 // a tenant the same way, no change to the rail/tab-bar/launcher rendering logic itself
 // (research.md decision 4, spec 014; decision 9, spec 015).
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer'
+export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes'
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -32,7 +32,12 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   // and this very panel's own Reveal in File Explorer action, Slice 3) -- the literal "a folder
   // containing a nested tree" shape avoids conflating "open this panel" with that action. No
   // live count is asked for by the issue.
-  { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false }
+  { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false },
+  // Spec 018 slice 1 research.md decision 5: distinct from `FolderTreeIcon` above (that one
+  // already means "browse this worktree's files"); the branch glyph reads as "this worktree's
+  // Git state" specifically. `hasCount: true`: the `additions-deletions` shape below, already
+  // defined for this purpose, previously unused.
+  { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {
@@ -73,11 +78,32 @@ export function formatPanelCount(count: PanelCount): string {
  * whichever Session backs a per-Session panel's count -- `frontSessionId` (research.md:
  * "whichever Session's data should back a per-Session panel's count"), not necessarily the
  * Session this panel's own content is bound to. 'fdb-knowledge'/'agent-builder' always return
- * `null` in this spec (neither placeholder defines a count). */
+ * `null` in this spec (neither placeholder defines a count). Spec 018 slice 1 (FR-020):
+ * 'git-changes' sums every visible file row's additions/deletions across all four groups of the
+ * currently-loaded snapshot for `sessionId` -- `null` until a snapshot has actually loaded,
+ * never a stale zero. */
 export function usePanelCount(id: PanelId, sessionId: string | null): PanelCount {
   const running = useReadoutStore((s) =>
     id === 'subagents' && sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount?.running : undefined
   )
-  if (id !== 'subagents' || !sessionId) return null
-  return running !== undefined && running > 0 ? { kind: 'running', value: running } : null
+  const gitChangesSnapshot = useGitChangesStore((s) =>
+    id === 'git-changes' && sessionId ? (s.bySession[sessionId]?.snapshot ?? null) : null
+  )
+  if (id === 'subagents') {
+    if (!sessionId) return null
+    return running !== undefined && running > 0 ? { kind: 'running', value: running } : null
+  }
+  if (id === 'git-changes') {
+    if (!gitChangesSnapshot) return null
+    let additions = 0
+    let deletions = 0
+    for (const entries of Object.values(gitChangesSnapshot.groups)) {
+      for (const entry of entries) {
+        additions += entry.additions
+        deletions += entry.deletions
+      }
+    }
+    return { kind: 'additions-deletions', additions, deletions }
+  }
+  return null
 }

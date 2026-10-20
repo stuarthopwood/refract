@@ -627,7 +627,7 @@ export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ig
  * not ignored; `.git` itself is never a key (FR-007). Built for reuse, as-is, by the future
  * git-changes panel (#464, FR-011), not gated on that panel's own existence. */
 export type GitStatusMap = Record<string, GitStatusMark>;
-
+export type { GitChangesGroupKind, GitChangesFileEntry, GitChangesHeader, GitChangesSnapshot } from './model-git-changes';
 /** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
  * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
  * underlying file disappears while open (FR-021), never left showing stale content. `kind:
