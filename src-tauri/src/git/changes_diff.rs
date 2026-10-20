@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::git::{git_raw, GitError, GitErrorCode};
+use super::pathspec::validate_pathspec;
 
 /// Mirrors `changes_status.rs`'s own `DIFF_TIMEOUT`: re-declared rather than imported, since that
 /// constant is a private `const` in its own file (same reasoning that file's header comment gives
@@ -15,8 +16,9 @@ use super::git::{git_raw, GitError, GitErrorCode};
 const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// FR-008: `git diff` / `git diff --cached` for one file's diff body, by whether it is staged.
-/// `path` is a literal post-`--` argv entry, sourced only from the current status map's own keys
-/// (same rule as `stage_files`/`unstage_files`). Returns just the hunk-only patch text (from the
+/// (same rule as `stage_files`/`unstage_files`, enforced here too by the same
+/// `validate_pathspec` backstop, 2026-10-20 security hardening -- never trusts that convention
+/// alone, constitution V). Returns just the hunk-only patch text (from the
 /// first `@@` line onward) -- the same shape GitHub's REST `patch` field already uses -- so the
 /// renderer's existing `DiffViewFromPatch` (`src/renderer/features/chat/DiffView.tsx`, which
 /// rebuilds its own `diff --git`/`---`/`+++` header from the path directly) can render it
@@ -25,6 +27,7 @@ const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
 /// or a binary file (git prints "Binary files ... differ", no `@@` line at all) both score an
 /// empty string -- the renderer's own "No changes" fallback covers that display case.
 pub async fn diff_text(worktree_path: &Path, path: &str, staged: bool) -> Result<String, GitError> {
+    validate_pathspec(worktree_path, path)?;
     let mut args: Vec<&str> = vec!["diff"];
     if staged {
         args.push("--cached");

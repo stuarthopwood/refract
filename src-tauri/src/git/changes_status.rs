@@ -43,6 +43,7 @@ use serde::Serialize;
 use crate::fs::paths::contains_git_segment;
 
 use super::git::{git, git_raw, git_raw_with_stdin, GitError, GitErrorCode};
+use super::pathspec::validate_pathspec;
 use super::status::GitStatusMark;
 
 // `--untracked-files=all` (unlike `status.rs`'s own default/"normal" mode, left as-is for the
@@ -545,11 +546,14 @@ pub async fn read_changes_status(worktree_path: &Path, base_branch: &str) -> Opt
 }
 
 /// `git add --`, every path a literal post-`--` argv entry (FR-007) -- `paths` must already come
-/// only from the current status map's own keys; this function itself takes no free text. A
-/// no-op for an empty `paths` (the renderer never has anything to stage in that case).
+/// only from the current status map's own keys; `validate_pathspec` is the backstop that never
+/// trusts that alone (constitution V). A no-op for an empty `paths`.
 pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), GitError> {
     if paths.is_empty() {
         return Ok(());
+    }
+    for path in paths {
+        validate_pathspec(worktree_path, path)?;
     }
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(paths.iter().map(String::as_str));
@@ -557,12 +561,15 @@ pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), G
     Ok(())
 }
 
-/// `git restore --staged --`, the same path-sourcing rule as `stage_files` (FR-007, research.md
-/// decision 3: the dedicated `restore` verb, never `checkout`, and never `--worktree`, which is
-/// slice 3's own discard verb).
+/// `git restore --staged --`, the same path-sourcing rule and `validate_pathspec` backstop as
+/// `stage_files` (FR-007, research.md decision 3: the dedicated `restore` verb, never
+/// `checkout`, and never `--worktree`, which is slice 3's own discard verb).
 pub async fn unstage_files(worktree_path: &Path, paths: &[String]) -> Result<(), GitError> {
     if paths.is_empty() {
         return Ok(());
+    }
+    for path in paths {
+        validate_pathspec(worktree_path, path)?;
     }
     let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
     args.extend(paths.iter().map(String::as_str));

@@ -14,6 +14,7 @@ pub mod changes_status;
 pub mod diff_stat;
 #[allow(clippy::module_inception)]
 pub mod git;
+pub mod pathspec;
 pub mod remote;
 pub mod status;
 #[cfg(test)]

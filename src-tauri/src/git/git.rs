@@ -28,6 +28,14 @@ pub enum GitErrorCode {
     /// Windows Restart Manager, or an unnamed one detected only by the rename-probe failing).
     /// Never raised for anything this Session's own recorded `omp` pids hold.
     WorktreeHeld,
+    /// 2026-10-20 security hardening (Skippy, delegated by Stuart): a pathspec this module was
+    /// about to pass to `git` (`changes_status::stage_files`/`unstage_files`,
+    /// `changes_diff::diff_text`) failed `changes_status::validate_pathspec`'s own containment
+    /// check -- refused before it ever reaches a `git` subprocess. Reuses the SAME wire code
+    /// `fs::resolve::ResolveReason::OutsideWorktree` already uses for the File explorer lane
+    /// (`src/shared/ipc.ts`'s `IpcErrorCode` already lists `'outside-worktree'`; no TS change
+    /// needed).
+    OutsideWorktree,
 }
 
 impl GitErrorCode {
@@ -42,6 +50,7 @@ impl GitErrorCode {
             Self::BranchMissing => "branch-missing",
             Self::CheckoutFailed => "checkout-failed",
             Self::WorktreeHeld => "worktree-held",
+            Self::OutsideWorktree => "outside-worktree",
         }
     }
 }
