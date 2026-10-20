@@ -1053,3 +1053,83 @@ confirmed by `check-theme-contrast.mjs` re-running their other pairs unchanged i
 full re-check plus Dark's newly-touched literal-copy foreground pairs). T044's own merge of
 `origin/main` (#1050/#700/#464) brought the total to 872 before any T044 token change; T044's
 own fixes added no new PAIRS entries, only changed Cyber Amber's existing literal values.
+
+---
+
+## Phase 10: Convergence — #1074 App-wide softer text (opacity) (append-only, `/speckit.converge`)
+
+Amends spec.md with a new Clarifications session (2026-10-20) and FR-023 (alpha-based text
+softening), per the #1074 grill (2026-10-20, Stuart, none deferred). Supersedes #1039's own
+abandoned text-softening attempt (Phase 9's T043 reverted it back out of that issue entirely so
+it could land here, app-wide, instead). Same additive rule as Phases 8/9: `dark-high-contrast`
+stays byte-identical to `origin/main`; only `dark`, `obsidian`, `nordic-frost` and `cyber-amber`
+gain the new alpha tokens.
+
+- [X] T045 Add spec.md Clarifications session 2026-10-20 (#1074) and FR-023 (alpha-based
+  `--foreground`/`--chat-foreground`/`--muted-foreground`, every preset but the high-contrast
+  one).
+  **Done**: `specs/007-app-themes/spec.md` gained the Clarifications session and FR-023,
+  immediately after FR-022.
+- [X] T046 Apply the three alpha tokens (`oklch(1 0 0 / 90%)`/`78%`/`60%`) to `--foreground`/
+  `--chat-foreground`/`--muted-foreground` in `.theme-dark`, `.theme-obsidian`,
+  `.theme-nordic-frost` and `.theme-cyber-amber` (`globals.css`); switch `.theme-dark`'s own
+  six literal duplicates (`--card-foreground`, `--popover-foreground`,
+  `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
+  `--sidebar-accent-foreground`) to `var(--foreground)` so they inherit the alpha the same way
+  Obsidian/Nordic Frost/Cyber Amber already alias them (depends on T045).
+  **Done**: `.theme-dark` (`--foreground` -> `oklch(1 0 0 / 90%)`, `--chat-foreground` ->
+  `oklch(1 0 0 / 78%)`, `--muted-foreground` -> `oklch(1 0 0 / 60%)`, the six aliases
+  switched to `var(--foreground)`), `.theme-obsidian`/`.theme-nordic-frost`/
+  `.theme-cyber-amber` (same three tokens retuned; their own six aliases already read
+  `var(--foreground)` from #550/#551, so no further edit needed there). Every
+  `primary-foreground`/`send-foreground`/`destructive-foreground`/
+  `sidebar-primary-foreground`/`state-*-foreground`/`pr-*-foreground` token (sits on a
+  coloured fill) is untouched, still a solid literal. `.theme-dark-high-contrast` untouched.
+  Measured (`scripts/contrast-math.mjs`, gamma-composited): every background/card/popover pair
+  in the four affected presets clears 4.5:1 -- Dark and Cyber Amber (byte-identical surfaces)
+  15.93/14.59/14.59, 11.97/11.15/11.15, 7.30/7.04/7.04; Obsidian 15.39/13.51/12.17,
+  11.65/10.43/9.51, 7.22/6.71/6.26; Nordic Frost 15.50/14.13/12.42, 11.71/10.84/9.67,
+  7.22/6.89/6.34 (foreground/chat-foreground/muted-foreground rows respectively). No floor
+  failed; nothing relaxed.
+- [X] T047 Hand-recompute `src/shared/themes.ts`'s four `titleBarOverlay.symbolColor` literals
+  (`dark`, `obsidian`, `nordic-frost`, `cyber-amber`) to each theme's new composited
+  `--foreground` colour, since Electron's `setTitleBarOverlay` API takes an opaque hex with no
+  alpha channel; extend `scripts/check-theme-contrast.mjs`'s metadata drift check
+  (`THEME_METADATA_RE`/`swatchMetadataDriftCheck`) with a `symbolColor` comparison against the
+  real composited `--foreground`-over-`--background` colour, alongside its existing
+  `swatch`/`swatchPrimary`/`titleBarOverlay.color` checks, so the two can never silently drift
+  apart again (depends on T046).
+  **Done**: `src/shared/themes.ts` (`dark` `symbolColor` `#fafafa` -> `#e7e7e7`, `obsidian`
+  `#F8FAFC` -> `#e7e7e7` [byte-coincidence of rounding, not a bug -- Obsidian's own background
+  is a different hex to Dark's], `nordic-frost` `#eff7fb` -> `#e6e7e8`, `cyber-amber`
+  `#fafafa` -> `#e7e7e7`; `dark-high-contrast`'s `#ffffff` untouched, its own `--foreground`
+  stays fully opaque so the composited value equals the raw one). `scripts/check-theme-
+  contrast.mjs`'s `THEME_METADATA_RE` gained a trailing `symbolColor` capture group,
+  `themeMetadata` entries gained `symbolColor`; `theme-contrast-pairs.mjs`'s
+  `swatchMetadataDriftCheck` now also composites `foreground` over `background`
+  (`resolvedLinear`, the same primitive every other alpha check here uses) and fails loudly on
+  a mismatch. `checkedCount` is unchanged (one increment per theme, same as before) so the
+  PAIRS total stays at 872.
+- [X] T048 Run every no-build check (`pnpm typecheck`, `check:theme-contrast`, `check:indent`,
+  `check:file-size`, `check:parity`, `check:drag-regions`, `check:ui-text`, `vitest run`) and
+  confirm 872/872 pairs across 5 themes PASS with no new failures (depends on T047).
+  **Done**: `node scripts/check-theme-contrast.mjs` 872/872 PASS, including the new
+  `symbolColor` rows for all 5 themes; `pnpm typecheck` clean; no other no-build check touched
+  by this issue's file set regressed.
+- [X] T049 Write a new live check, `scripts/verify-1074-text-opacity.mjs` (modelled on
+  `verify-1039-amber-retune.mjs`/`verify-551-presets.mjs`): for each of the 5 themes, read the
+  computed colours of a header, chat prose, muted text, a primary button label and a badge
+  label; assert the alpha values in the four affected presets and solid text in Dark (high
+  contrast); assert text on coloured fills stays solid; sample the rendered pixel luminance of
+  a chat paragraph so the opacity genuinely composites; screenshot chat, the Session list and
+  Settings in each theme, with a tooltip/hover-card guard before every shot; record
+  `report.json` (depends on T048).
+  **Done**: `scripts/verify-1074-text-opacity.mjs` authored, `node --check`-clean.
+  **NOT run yet** (awaiting the next granted build slot): the live run (switching themes,
+  reading real computed colours, sampling pixels, capturing every screenshot) is deferred,
+  same shape as T040/T044's own deferred items above.
+
+T046 keeps `dark-high-contrast` byte-identical to `origin/main`; confirmed by
+`check-theme-contrast.mjs` re-running its other pairs unchanged inside the same 872-pair total
+(no PAIRS entries added or removed by this issue, only token values and the metadata drift
+check's own internal comparison count, which was already one-per-theme).

@@ -112,6 +112,36 @@ font and code font stay with issue #4 and are out of scope here.
   `--destructive`/`--state-stopped` alias `--severity-error` already; `--pr-closed` (a literal
   copy in every theme, #568/#529 decision 5) is updated to the same value too.
 
+### Session 2026-10-20 (#1074, grilled 2026-10-20, none deferred)
+
+- Q: Pure-white UI text (`--foreground`, `--chat-foreground`, `--muted-foreground`) reads too
+  harsh/clinical across every built-in preset. Should it soften via alpha so each theme's own
+  background tints it, replacing #1039's own abandoned text-softening attempt (that issue's
+  grill item 3, superseded)? -> A: Yes. `--foreground` (headers/UI text) moves to `oklch(1 0 0
+  / 90%)`, `--chat-foreground` (body/chat prose) to `oklch(1 0 0 / 78%)`, `--muted-foreground`
+  (low emphasis) to `oklch(1 0 0 / 60%)`, in `dark`, `obsidian`, `nordic-frost` and
+  `cyber-amber`. `dark-high-contrast` is untouched, keeping its existing solid 7:1 text (#552).
+  The aliasing tokens that already resolve to `var(--foreground)` (`card-foreground`,
+  `popover-foreground`, `secondary-foreground`, `accent-foreground`, `sidebar-foreground`,
+  `sidebar-accent-foreground`) pick up the alpha automatically; `.theme-dark`'s own literal
+  duplicates of those six tokens are switched to `var(--foreground)` so they do too. Every
+  foreground that sits on a coloured fill instead of a neutral/background-toned one --
+  `primary-foreground`, `send-foreground`, `destructive-foreground`,
+  `sidebar-primary-foreground`, the three `state-*-foreground` tokens and the four
+  `pr-*-foreground` tokens -- stays a solid, opaque literal, unaffected. Measured (gamma-
+  composited, `scripts/contrast-math.mjs`): all 12 affected background/card/popover pairs
+  across the four non-HC presets clear 4.5:1, worst case Obsidian's `--muted-foreground` on
+  `--popover` at 6.26:1.
+- Q: `src/shared/themes.ts`'s `titleBarOverlay.symbolColor` is a literal hex Electron's
+  `BrowserWindow.setTitleBarOverlay` API takes with no alpha channel -- can it take the new
+  alpha token directly? -> A: No. Each preset's `symbolColor` is hand-recomputed to the real
+  composited colour (`--foreground` alpha-blended over that theme's own `--background`, the
+  same gamma-space compositing `scripts/contrast-math.mjs` already performs for every other
+  check), not a `var()` reference and not the raw pre-alpha `--foreground` value.
+  `scripts/check-theme-contrast.mjs`'s metadata drift check gains a `symbolColor` comparison
+  (alongside its existing `swatch`/`swatchPrimary`/`titleBarOverlay.color` checks) so a future
+  edit to either side cannot drift silently.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Opens in a sensible default preset on first launch (Priority: P1)
@@ -327,6 +357,18 @@ side panel and confirm both show the same theme.
   `--primary`/`--send`, markdown links), the warning hue, the error family (`--severity-error`/
   `--destructive`/`--state-stopped`/`--pr-closed`), and `themes.ts`'s own `swatchPrimary` may
   differ from Default Dark.
+- **FR-023** (#1074): In every built-in theme except the dedicated high-contrast one (FR-010),
+  `--foreground`, `--chat-foreground` and `--muted-foreground` MUST be a translucent white
+  (`oklch(1 0 0 / 90%)`, `78%` and `60%` respectively) composited over that theme's own
+  background, rather than a solid colour; every other token that aliases `--foreground` for a
+  neutral/background-toned fill (`card-foreground`, `popover-foreground`,
+  `secondary-foreground`, `accent-foreground`, `sidebar-foreground`,
+  `sidebar-accent-foreground`) MUST resolve to it via `var()` so it inherits the same alpha. A
+  foreground token that sits on a coloured, non-neutral fill (`primary-foreground`,
+  `send-foreground`, `destructive-foreground`, `sidebar-primary-foreground`, the
+  `state-*-foreground` and `pr-*-foreground` tokens) MUST stay a fully opaque literal. The
+  dedicated high-contrast theme (FR-010) MUST keep every one of these tokens solid, per its
+  existing 7:1 text target (FR-008, #552).
 
 ### Key Entities
 
