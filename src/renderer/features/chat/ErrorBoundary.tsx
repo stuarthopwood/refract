@@ -24,6 +24,11 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     console.error('[refract] render error', error, info.componentStack)
+    // THROWAWAY (Main's decisive-run spec, item 3): a distinctive, grep-able marker separate
+    // from the line above, captured by `verify-700-todo-pin.mjs`'s own `Runtime.consoleAPICalled`
+    // listener -- proves or disproves an ErrorBoundary catch-and-reset cycle during the #700
+    // live todo update. Revert with the rest of that throwaway diagnostic once decided.
+    console.error('[EB]', error.message, info.componentStack)
   }
 
   private reload = (): void => {
