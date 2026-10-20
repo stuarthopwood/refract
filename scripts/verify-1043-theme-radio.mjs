@@ -1,0 +1,387 @@
+#!/usr/bin/env node
+// Live CDP check for issue #1043 (Theme submenu real radio list, shared DropdownMenuRadioItem,
+// ADR 0003). Grilled 2026-10-19, converged into spec 008 (Clarifications "Session 2026-10-20",
+// FR-019/FR-030) 2026-10-20. Built the same way `verify-tauri-569.mjs`/`verify-741-role-chip.mjs`
+// drive this app: `scripts/verify-tauri-launcher.rs`'s kill-on-close Job Object, a fresh scratch
+// `REFRACT_DATA_DIR`/`WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR` per launch, the real
+// rendered DOM over CDP -- never `window.refract.theme.set`/`.setThinkingLevel` as a shortcut for
+// anything the UI itself should do, except the two documented exceptions below (same exceptions
+// `verify-tauri-735.mjs`/`verify-564-gate2-live-check.mjs` already establish).
+//
+// Proves, against the real rendered DOM, in each of the 5 built-in presets:
+//   - The Theme submenu is a real `DropdownMenuRadioGroup`: every row `role="menuitemradio"`,
+//     exactly one `aria-checked="true"`, matching the active theme (`useThemeStore`).
+//   - The leading ring-and-dot mark (`radio-group.tsx`'s `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`):
+//     the dot (`DropdownMenuPrimitive.ItemIndicator`) is structurally mounted on the checked row
+//     ONLY, never on an unchecked one.
+//   - The colour swatch is a square chip (`rounded-[2px]`, never `rounded-full`) AFTER the name,
+//     never confused for a second radio.
+//   - Pointer selection (`switchTheme`, `verify-tauri-scratch-helpers.mjs`, fixed for #1043's new
+//     `menuitemradio` rows) moves the check, once per preset (5/5 transitions exercised).
+//   - Keyboard selection: ArrowRight into the submenu lands focus on the ACTIVE preset first (the
+//     existing keyboard-open-focus behaviour, unregressed); ArrowDown x2 + Enter from Dark
+//     selects Obsidian; the checked radio is re-read as having actually moved.
+//   - The focus-bar/checked-state split (2026-10-15 decision, "the bar means keyboard focus
+//     only" -- unchanged by this fix): an UNCHECKED row that has keyboard focus carries the
+//     inset-shadow focus bar; the CHECKED-but-unfocused row does not.
+//   - Forced-colours: WebView2's own CDP endpoint has no working `Emulation.setEmulatedMedia` for
+//     `forced-colors` (the same limitation `verify-tauri-567.mjs`'s header comment already
+//     records) -- a structural check confirms the ring's own
+//     `forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]` utility class is
+//     literally present in the rendered markup; real OS forced-colours rendering is reported
+//     `notExercised`, not silently skipped or falsely claimed.
+// Then, the shared `DropdownMenuRadioItem`'s OTHER caller:
+//   - The composer's Reasoning picker (`ComposerPickers.tsx:114-120`, needed NO code change for
+//     #1043): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
+//     the Session's seeded `lastThinkingLevel`, the same dot-on-checked-only structural proof,
+//     and a real keyboard selection through the real `model.setThinkingLevel` IPC.
+//
+// Exceptions to "never a shortcut": `window.refract.theme.set`/`window.refract.sessions.list()`
+// read-only calls (confirming a real store round trip after a UI-driven action, not driving the
+// UI itself) and `seedLastThinkingLevel` (`registry.json`, written with no instance running,
+// read once at process startup) -- OMP's own `get_state` never echoes a concrete thinking level
+// back for this isolated, credential-free harness, so there is no live way to CONFIRM one
+// through real use; `verify-564-gate2-live-check.mjs` established this exact same seed.
+//
+// Every launched app instance (and its CDP connection) is registered in `openHandles` the
+// instant it is created and torn down in ONE top-level `finally`-equivalent, regardless of which
+// step throws. A hard `process.exit(...)` at every exit path.
+
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import {
+  getFreePort,
+  waitForCdpTarget,
+  CdpSession,
+  stopLauncher,
+  isTargetOwningPort,
+  assertExeMatchesProcess,
+  createReportLogger,
+  sleep
+} from './verify-tauri-cdp.mjs';
+import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { addRepository, createSessionViaQuickCreate, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
+import {
+  THEMES_1043,
+  THINKING_LEVELS_1043,
+  THINKING_LEVEL_LABEL_1043,
+  pressArrow,
+  pressEnterKey,
+  openThemeSubmenu,
+  closeAllMenus,
+  readRadioRows,
+  openReasoningPicker,
+  seedLastThinkingLevel,
+  ringCarriesForcedColorsOverride
+} from './verify-1043-theme-radio-helpers.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..');
+// #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+const SHOTS_DIR = process.env.REFRACT_1043_SHOTS_DIR || path.join(tmpdir(), 'refract-1043-shots');
+
+function spawnSync_(cmd, args, opts = {}) {
+  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
+}
+function gitDirty(repoRoot) {
+  const result = spawnSync_('git', ['-C', repoRoot, 'status', '--porcelain']);
+  return result.status === 0 ? result.stdout.trim().length > 0 : null;
+}
+
+const openHandles = [];
+function track(teardownFn) {
+  openHandles.push(teardownFn);
+}
+async function teardownAll(log) {
+  while (openHandles.length > 0) {
+    const fn = openHandles.pop();
+    try {
+      await fn();
+    } catch (err) {
+      log?.(`teardownAll: a cleanup step itself failed (continuing): ${err.message}`);
+    }
+  }
+}
+
+async function connectCdp(port, targetPid, label) {
+  const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
+  const cdp = await CdpSession.connect(wsUrl);
+  if (!isTargetOwningPort(port, targetPid)) {
+    throw new Error(`${label}: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid}) -- refusing to drive it`);
+  }
+  return cdp;
+}
+
+async function main() {
+  mkdirSync(SHOTS_DIR, { recursive: true });
+  const log = createReportLogger(path.join(SHOTS_DIR, 'report.txt'));
+  const report = { gitHead: gitHead(REPO_ROOT), dirty: gitDirty(REPO_ROOT), checks: [], failures: [], notExercised: [] };
+  log(`verify-1043-theme-radio: git HEAD under test: ${report.gitHead} (dirty: ${report.dirty})`);
+
+  function checkPass(name, detail) {
+    report.checks.push({ name, status: 'PASS', detail });
+    log(`STEP PASS: ${name}${detail ? ` -- ${detail}` : ''}`);
+  }
+  function checkFail(name, detail) {
+    report.checks.push({ name, status: 'FAIL', detail });
+    report.failures.push(name);
+    log(`STEP FAIL: ${name}${detail ? ` -- ${detail}` : ''}`);
+  }
+  function notExercised(name, reason) {
+    report.notExercised.push({ name, reason });
+    log(`NOT EXERCISED: ${name} -- ${reason}`);
+  }
+
+  let exePath, exeHash, launcherExe;
+
+  async function launchFresh(label, { reuseDataDir } = {}) {
+    const dataDir = reuseDataDir ?? mkdtempSync(path.join(tmpdir(), `refract-1043-${label}-data-`));
+    if (!reuseDataDir) track(() => safeRmSync(dataDir));
+    const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-1043-${label}-import-`));
+    track(() => safeRmSync(importSourceDir));
+
+    let lastErr;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const launchExeDir = mkdtempSync(path.join(tmpdir(), `refract-1043-${label}-exe${attempt}-`));
+      track(() => safeRmSync(launchExeDir));
+      const launchExePath = path.join(launchExeDir, 'refract-tauri.exe');
+      copyFileSync(exePath, launchExePath);
+      const port = await getFreePort();
+      const launched = await launchBuiltExe(launcherExe, launchExePath, { port, dataDir, importSourceDir, logFile: path.join(SHOTS_DIR, `app-run-${label}-attempt${attempt}.log`) });
+      try {
+        const cdp = await connectCdp(port, launched.targetPid, `verify-1043-theme-radio (${label})`);
+        assertExeMatchesProcess(launched.targetPid, launchExePath, exeHash);
+        await cdp.waitFor(
+          `!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`,
+          { timeoutMs: 45_000, label: `app ready (${label})` }
+        );
+        let tornDown = false;
+        async function teardown() {
+          if (tornDown) return;
+          tornDown = true;
+          await cdp.close();
+          await stopLauncher(launched.child);
+        }
+        return { cdp, dataDir, teardown };
+      } catch (err) {
+        lastErr = err;
+        log(`verify-1043-theme-radio (${label}): attempt ${attempt}/5 failed (${err.message}); killing this attempt's process and retrying with a fresh port and exe copy.`);
+        await stopLauncher(launched.child);
+        await sleep(1000);
+      }
+    }
+    throw lastErr;
+  }
+
+  try {
+    const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-1043-launcher-'));
+    const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1043-exe-'));
+    track(() => safeRmSync(shimDir));
+    track(() => safeRmSync(exeDir));
+    launcherExe = buildLauncher(shimDir);
+    const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-1043-theme-radio' });
+    exePath = built.dest;
+    exeHash = built.hash;
+    log(`verify-1043-theme-radio: exe sha256 ${exeHash} copied to ${exePath}`);
+
+    // -----------------------------------------------------------------------------------------
+    // Part A: the Theme submenu -- a real radio group in every preset, pointer AND keyboard
+    // selection, the radio dot, the square swatch chip, the focus-bar/checked-state split, and
+    // the forced-colours structural check.
+    // -----------------------------------------------------------------------------------------
+    const repoParentA = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoA-'));
+    track(() => safeRmSync(repoParentA));
+    const repoDirA = makeScratchRepo(path.join(repoParentA, 'repo'), 'refract-1043-repoA');
+    const { cdp, teardown: teardownA } = await launchFresh('themes');
+    await addRepository(cdp, repoDirA);
+    checkPass('Added a scratch repository (the Theme submenu needs no Session to exist)');
+
+    for (const theme of THEMES_1043) {
+      await switchTheme(cdp, theme.id, theme.name);
+      await openThemeSubmenu(cdp);
+      const rows = await readRadioRows(cdp);
+      const checkedRows = rows.filter((r) => r.ariaChecked === 'true');
+      const everyRoleCorrect = rows.length === THEMES_1043.length;
+      const exactlyOneChecked = checkedRows.length === 1 && checkedRows[0].label === theme.name;
+      if (everyRoleCorrect && exactlyOneChecked) {
+        checkPass(`${theme.name}: Theme submenu is menuitemradio x${rows.length}, exactly one aria-checked=true matching the active preset`, JSON.stringify(rows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked }))));
+      } else {
+        checkFail(`${theme.name}: Theme submenu is menuitemradio x${rows.length}, exactly one aria-checked=true matching the active preset`, JSON.stringify(rows));
+      }
+
+      const checkedRow = rows.find((r) => r.ariaChecked === 'true');
+      const dotVisibleOnlyOnChecked = !!checkedRow?.hasDot && rows.filter((r) => r.ariaChecked !== 'true').every((r) => !r.hasDot);
+      if (dotVisibleOnlyOnChecked) checkPass(`${theme.name}: the radio dot is mounted on the checked row only (DropdownMenuPrimitive.ItemIndicator)`);
+      else checkFail(`${theme.name}: the radio dot is mounted on the checked row only`, JSON.stringify(rows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked, hasDot: r.hasDot }))));
+
+      const swatchOk = rows.every((r) => r.childCount === 3 && r.swatchClass && r.swatchClass.includes('rounded-[2px]') && !r.swatchClass.includes('rounded-full') && r.swatchBg);
+      if (swatchOk) checkPass(`${theme.name}: every row's colour swatch is a square chip (rounded-[2px]) AFTER the name, never round`);
+      else checkFail(`${theme.name}: every row's colour swatch is a square chip (rounded-[2px]) AFTER the name, never round`, JSON.stringify(rows));
+
+      await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-theme-submenu.png`));
+      await closeAllMenus(cdp);
+    }
+    checkPass('Pointer selection moves the check: exercised once per preset above via switchTheme (5/5 transitions)');
+
+    // ---- Keyboard: open via Enter, ArrowDown x2 + ArrowRight into the submenu, confirm focus
+    // lands on the ACTIVE preset first, then ArrowDown x2 + Enter from Dark selects Obsidian. ----
+    await switchTheme(cdp, 'dark', 'Dark');
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
+    await cdp.evaluate(`document.querySelector('[data-profile-name-button]').focus()`);
+    await pressEnterKey(cdp);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Profile menu opened via Enter' });
+    await sleep(250);
+    await pressArrow(cdp, 'Down');
+    await sleep(150);
+    await pressArrow(cdp, 'Down');
+    await sleep(150);
+    const onThemeTrigger = (await getActiveElementAccessibleName(cdp)).name?.startsWith('Theme') ?? false;
+    await pressArrow(cdp, 'Right');
+    await cdp.waitFor(`document.querySelectorAll('[role="menuitemradio"]').length >= 5`, { timeoutMs: 10_000, label: 'Theme submenu opened via ArrowRight' });
+    await sleep(300);
+    const focusedOnOpen = await getActiveElementAccessibleName(cdp);
+    const openedFocusOnActive = focusedOnOpen.name === 'Dark' && focusedOnOpen.role === 'menuitemradio';
+    if (onThemeTrigger && openedFocusOnActive) checkPass('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark)', JSON.stringify(focusedOnOpen));
+    else checkFail('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark)', JSON.stringify({ onThemeTrigger, focusedOnOpen }));
+
+    await pressArrow(cdp, 'Down'); // Dark (high contrast)
+    await sleep(100);
+    await pressArrow(cdp, 'Down'); // Obsidian
+    await sleep(100);
+    const beforeEnter = await getActiveElementAccessibleName(cdp);
+    await pressEnterKey(cdp);
+    await cdp.waitFor(`document.documentElement.classList.contains('theme-obsidian')`, { timeoutMs: 10_000, label: 'Keyboard Enter applies Obsidian' });
+    await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Menu closes after keyboard selection' });
+    if (beforeEnter.name === 'Obsidian') checkPass('Keyboard: ArrowDown x2 + Enter from Dark selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
+    else checkFail('Keyboard: ArrowDown x2 + Enter from Dark selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
+
+    await openThemeSubmenu(cdp);
+    const rowsAfterKeyboard = await readRadioRows(cdp);
+    const checkedAfterKeyboard = rowsAfterKeyboard.find((r) => r.ariaChecked === 'true');
+    if (checkedAfterKeyboard?.label === 'Obsidian') checkPass('Keyboard selection moved the checked radio to Obsidian (re-opened and re-read)');
+    else checkFail('Keyboard selection moved the checked radio to Obsidian (re-opened and re-read)', JSON.stringify(rowsAfterKeyboard));
+    await cdp.screenshot(path.join(SHOTS_DIR, 'keyboard-selection-obsidian.png'));
+
+    // ---- Focus-bar vs checked-state: the 2026-10-15 "bar means keyboard focus only" rule. ----
+    await pressArrow(cdp, 'Down'); // off Obsidian onto Nordic Frost
+    await sleep(150);
+    const focusBarState = await cdp.evaluate(`
+      (() => {
+        const active = document.activeElement;
+        const rows = Array.from(document.querySelectorAll('[role="menuitemradio"]'));
+        const checkedRow = rows.find((r) => r.getAttribute('aria-checked') === 'true');
+        return {
+          focusedLabel: active?.children?.[1]?.textContent?.trim() ?? active?.textContent?.trim() ?? null,
+          focusedIsChecked: active?.getAttribute('aria-checked') === 'true',
+          focusedShadow: active ? getComputedStyle(active).boxShadow : null,
+          checkedLabel: checkedRow ? (checkedRow.children[1]?.textContent?.trim() ?? null) : null,
+          checkedShadowWhenNotFocused: checkedRow && checkedRow !== active ? getComputedStyle(checkedRow).boxShadow : null
+        };
+      })()
+    `);
+    const focusBarOk = !focusBarState.focusedIsChecked && focusBarState.focusedShadow && focusBarState.focusedShadow !== 'none' &&
+      (focusBarState.checkedShadowWhenNotFocused === 'none' || focusBarState.checkedShadowWhenNotFocused == null);
+    if (focusBarOk) checkPass('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
+    else checkFail('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
+
+    // ---- Forced-colours: structural only (see header comment for the WebView2 CDP limitation). ----
+    const forcedColors = await ringCarriesForcedColorsOverride(cdp);
+    if (forcedColors.checkedHasOverride && forcedColors.uncheckedHasOverride) {
+      checkPass('Forced-colours override utility class present on the ring markup (structural proof -- see notExercised for the real-rendering caveat)', JSON.stringify(forcedColors));
+    } else {
+      checkFail('Forced-colours override utility class present on the ring markup', JSON.stringify(forcedColors));
+    }
+    notExercised(
+      'Real OS forced-colours (Windows High Contrast) rendering of the checked vs unchecked ring',
+      "WebView2's own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs/verify-439-history-truncate.mjs already record); the structural check above confirms the forced-colors:group-data-[state=checked]/radio-item:border-[Highlight] utility class is literally present on every ring, which is as far as this harness can prove it."
+    );
+
+    await closeAllMenus(cdp);
+    await switchTheme(cdp, 'dark', 'Dark');
+    await teardownA();
+
+    // -----------------------------------------------------------------------------------------
+    // Part B: the Reasoning picker (ComposerPickers.tsx) -- needed zero code change for #1043,
+    // but is the shared DropdownMenuRadioItem's only other caller, so it is live-checked here.
+    // -----------------------------------------------------------------------------------------
+    const repoParentB = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoB-'));
+    track(() => safeRmSync(repoParentB));
+    const repoDirB = makeScratchRepo(path.join(repoParentB, 'repo'), 'refract-1043-repoB');
+    const { cdp: cdpB, dataDir: dataDirB, teardown: teardownB } = await launchFresh('reasoning');
+    await addRepository(cdpB, repoDirB);
+    await createSessionViaQuickCreate(cdpB, 'refract-1043-repoB');
+    const list = await cdpB.evaluate('window.refract.sessions.list()');
+    if (!list.ok || list.value.length !== 1) throw new Error(`Part B: expected exactly 1 Session, got ${JSON.stringify(list)}`);
+    const sessionId = list.value[0].id;
+    await cdpB.waitFor(
+      `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.status === 'idle')`,
+      { timeoutMs: 60_000, label: 'Session reached idle (Reasoning picker enabled)' }
+    );
+    await teardownB();
+
+    // registry.json is read once at process startup (no instance running while it is edited) --
+    // seed `lastThinkingLevel` now and relaunch against the SAME dataDir to pick it up, the same
+    // established pattern `verify-564-gate2-live-check.mjs` uses for this exact field (OMP's own
+    // get_state never echoes a concrete thinking level back for this isolated harness).
+    seedLastThinkingLevel(dataDirB, sessionId, 'low');
+    const { cdp: cdpB2, teardown: teardownB2 } = await launchFresh('reasoning-reopen', { reuseDataDir: dataDirB });
+    await cdpB2.waitFor(`!!document.querySelector('[data-session-open]')`, { timeoutMs: 30_000, label: 'Session row rendered after relaunch' });
+    await cdpB2.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`);
+    await cdpB2.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 30_000, label: 'Composer mounted' });
+
+    await openReasoningPicker(cdpB2);
+    const reasoningRows = await readRadioRows(cdpB2);
+    const reasoningChecked = reasoningRows.filter((r) => r.ariaChecked === 'true');
+    const reasoningOk = reasoningRows.length === THINKING_LEVELS_1043.length && reasoningChecked.length === 1 && reasoningChecked[0].label === THINKING_LEVEL_LABEL_1043.low;
+    if (reasoningOk) checkPass('Reasoning picker: menuitemradio x8 (every THINKING_LEVELS entry), exactly one aria-checked=true matching the seeded level (Low)', JSON.stringify(reasoningRows.map((r) => ({ label: r.label, ariaChecked: r.ariaChecked }))));
+    else checkFail('Reasoning picker: menuitemradio x8, exactly one aria-checked=true matching the seeded level (Low)', JSON.stringify(reasoningRows));
+    const reasoningDotOk = reasoningChecked[0]?.hasDot && reasoningRows.filter((r) => r.ariaChecked !== 'true').every((r) => !r.hasDot);
+    if (reasoningDotOk) checkPass('Reasoning picker: the same radio dot is visible on the checked row only');
+    else checkFail('Reasoning picker: the same radio dot is visible on the checked row only', JSON.stringify(reasoningRows));
+    await cdpB2.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-open.png'));
+
+    // Keyboard selection: ArrowDown from Low (index 3) to Medium (index 4), Enter -- the real
+    // model.setThinkingLevel IPC, never a UI-bypassing shortcut.
+    await pressArrow(cdpB2, 'Down');
+    await sleep(100);
+    await pressEnterKey(cdpB2);
+    await cdpB2.waitFor(
+      `window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(sessionId)})?.lastThinkingLevel === 'medium')`,
+      { timeoutMs: 15_000, label: 'Keyboard selection calls the real setThinkingLevel IPC (level becomes "medium")' }
+    );
+    checkPass('Reasoning picker: keyboard (ArrowDown + Enter) selects the next level via the real model.setThinkingLevel IPC');
+    await openReasoningPicker(cdpB2);
+    const reasoningRowsAfter = await readRadioRows(cdpB2);
+    const checkedAfter = reasoningRowsAfter.find((r) => r.ariaChecked === 'true');
+    if (checkedAfter?.label === THINKING_LEVEL_LABEL_1043.medium) checkPass('Reasoning picker: the checked radio moved to Medium after the keyboard selection');
+    else checkFail('Reasoning picker: the checked radio moved to Medium after the keyboard selection', JSON.stringify(reasoningRowsAfter));
+    await cdpB2.screenshot(path.join(SHOTS_DIR, 'reasoning-picker-medium.png'));
+    await closeAllMenus(cdpB2);
+    await teardownB2();
+
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    if (report.failures.length > 0) {
+      log(`verify-1043-theme-radio: ${report.failures.length} FAILURE(S): ${report.failures.join('; ')}`);
+      await teardownAll(log);
+      process.exit(1);
+    } else {
+      log(`verify-1043-theme-radio: ALL EXERCISED CHECKS PASS (${report.notExercised.length} not exercised). Evidence: ${SHOTS_DIR}`);
+      await teardownAll(log);
+      process.exit(0);
+    }
+  } catch (err) {
+    report.failures.push(err.message);
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    console.error('verify-1043-theme-radio: FAIL');
+    console.error(err);
+    await teardownAll(log);
+    process.exit(1);
+  }
+}
+
+main();
