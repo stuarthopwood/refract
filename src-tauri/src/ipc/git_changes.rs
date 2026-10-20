@@ -17,7 +17,8 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::fs::git_changes_watch_state as watch_state;
-use crate::git::changes_status::{commit as git_commit, diff_text, read_changes_status, stage_files, unstage_files};
+use crate::git::changes_diff::diff_text;
+use crate::git::changes_status::{commit as git_commit, read_changes_status, stage_files, unstage_files};
 
 use super::{arg_str, invalid_argument, map_git_error, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 

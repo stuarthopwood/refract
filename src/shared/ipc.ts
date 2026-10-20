@@ -34,6 +34,8 @@ import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type { AttachmentsApi } from './ipc-attachments';
 import type { DebugApi } from './ipc-debug';
 import type { LeftoverSummary } from './ipc-sessions';
+import type { GitChangesApi } from './ipc-git-changes';
+import type { FileExplorerApi } from './ipc-file-explorer';
 import type {
   ChangedFile, FilterTab, MergeMethod, PullRequestDetail,
   PullRequestStateFilter, PullRequestSummary, ReviewVerdict
@@ -355,8 +357,6 @@ export const IPC_REQUESTS = {
   // expansion/scroll state) the moment one mounts again.
   FILE_EXPLORER_STOP_WATCHING: 'fileExplorer.stopWatching',
   FILE_EXPLORER_ENSURE_WATCHING: 'fileExplorer.ensureWatching',
-  // Spec 018 slice 1 (issue #464): the Git changes panel's own channels, mirroring
-  // `fileExplorer.*`'s own request/watcher shapes directly above.
   GIT_CHANGES_LIST: 'gitChanges.list',
   GIT_CHANGES_STAGE: 'gitChanges.stage',
   GIT_CHANGES_UNSTAGE: 'gitChanges.unstage',
@@ -613,120 +613,11 @@ export interface RefractApi extends UpdatesApi {
     getHistory(sessionId: string): Promise<Result<SideChatRecord[]>>;
   };
 
-  fileExplorer: {
-    /** Spec 015 contracts/ipc.md "File explorer" (FR-001, FR-004 to FR-007, T004/T005): lists
-     * one directory's immediate children only (lazy-load, FR-005 -- never recurses), folders
-     * before files then alphabetical within each group (FR-006). `relativePath` `''` lists the
-     * worktree root itself (FR-004); any other value is resolved against that Session's
-     * worktree root through `resolveInWorktree` (`src/main/ipc/files.ts`, issue #610's own
-     * already-hardened containment check, reused unchanged here rather than a second
-     * implementation) and MUST stay inside it after resolving symlinks/junctions, or the call
-     * fails `outside-worktree` rather than reading outside it. `.git` itself is never returned
-     * as an entry (FR-007). `truncated` (Slice 2, PR #671 gate round 2 fix, security-auditor/
-     * code-reviewer LOW) is the count of entries past a main-side cap on how many this one
-     * directory ever returns -- enforced in main BEFORE any per-entry symlink classification
-     * work runs, not only by the renderer's own virtualisation, so a pathologically huge
-     * directory can never force unbounded `readlink`/`stat` work; `0` means nothing was cut.
-     * No git-status/ignore filtering here (Slice 2, FR-009 to FR-011) -- that is `getStatus`
-     * below, merged in by the renderer, never part of this response. */
-    listDirectory(sessionId: string, relativePath: string): Promise<Result<{ entries: FileTreeNode[]; truncated: number }>>;
-    /** Spec 015 Slice 2 (FR-012 to FR-015, FR-002/FR-003, data-model.md `FilePreview`): reads one
-     * file's preview data. Same path-containment check and error codes as `listDirectory`
-     * (`resolveInWorktree`, reused unchanged). Binary detection is by content (a NUL byte in a
-     * capped header slice, reusing `diffStat.ts`'s own `isBinary` heuristic), never by
-     * extension; an image is detected by magic bytes, also never by extension (FR-014). A file
-     * over the preview size cap returns `kind: 'too-large'` with `size` set, never a partial
-     * read (FR-002, SC-001). */
-    readPreview(sessionId: string, relativePath: string): Promise<Result<{ preview: FilePreview }>>;
-    /** Spec 015 Slice 2 (FR-010, FR-011, data-model.md `GitStatusMap`): issues the single shared
-     * git-status/ignore reader (research.md decisions 2 and 6) once for the whole worktree; the
-     * renderer merges this into every currently-loaded node's `gitStatus` rather than calling
-     * per-path. `null` on any failure (no git repo, git unavailable, timeout) -- never thrown,
-     * mirrors `diffStat.ts`'s own never-throw-into-renderer convention; the tree still renders
-     * with no status marks in that case. Built for reuse by #464 (FR-011) -- this method's shape
-     * is intentionally generic (a full map, not scoped to the explorer's own currently-expanded
-     * paths). */
-    getStatus(sessionId: string): Promise<Result<{ status: GitStatusMap | null }>>;
-    /** Spec 015 Slice 3 (FR-016, FR-017, research.md decision 1): resolves `Code.exe` via the
-     * dedicated fixed-install-root resolver (never `resolveExecutable('code')`/`code.cmd`, never
-     * `shell: true`) and spawns it with an absolute-path args array. `{ opened: false }` when no
-     * known install root resolves -- a normal result, not an IPC error, so the renderer shows the
-     * "VS Code not found" state inline rather than a toast. No silent fallback to any other
-     * launcher. */
-    openInVSCode(sessionId: string, relativePath: string): Promise<Result<{ opened: boolean }>>;
-    /** Spec 015 Slice 3 (FR-018): reveals one file in the OS file explorer via
-     * `shell.showItemInFolder`, the exact same hardened pattern `sessions.revealFile` (issue
-     * #610) already established -- deliberately NEVER `shell.openPath`, which runs a file's own
-     * default verb (a `.cmd`/`.ps1`/`.lnk`/`.js` an agent or tool wrote would execute). */
-    reveal(sessionId: string, relativePath: string): Promise<Result<void>>;
-    /** Spec 015 Slice 3 (FR-018): writes the file's absolute path to the clipboard. The renderer
-     * tries `navigator.clipboard.writeText` itself first (`useWorktreeActions.ts`'s own
-     * fallback pattern) and only calls this when the sandboxed renderer refuses it. Error
-     * `clipboard-failed` on a main-process clipboard write failure. */
-    copyPath(sessionId: string, relativePath: string): Promise<Result<void>>;
-    /** PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7): the recursive watcher `ensureWatcher`
-     * (`src/main/ipc/fileExplorer.ts`) opens an OS directory handle that blocks
-     * rename/move of every ancestor of the worktree root for as long as it runs. Stops the
-     * watcher for this Session outright -- call `ensureWatching` to resume it. The renderer
-     * calls this when the LAST open `FileExplorerPanel` for a Session unmounts (ref-counted per
-     * `sessionId` -- round 9 correction: today this is exactly one mounted instance per
-     * Session, `App.tsx` renders only one `RightPaneShell`; the ref-count exists for React
-     * StrictMode's own dev-time double mount/unmount/remount, not a real multi-instance case).
-     * A no-op (never errors) if nothing is currently watching this Session. */
-    stopWatching(sessionId: string): Promise<Result<void>>;
-    /** Counterpart to `stopWatching`. Round 9 correction (Sec9/Code9/Verif9 Medium): this used
-     * to say "restarts the watch handle WITHOUT re-listing any directory" -- round 8 changed
-     * that: when a watch handle actually (re)starts, every directory the renderer still has
-     * loaded is re-flushed through the existing bounded/deduped patch queue, so changes made
-     * while unwatched (including a previewed file's own deletion, FR-021) are caught up via an
-     * ordinary patch, not a reset. The renderer's own cached expansion/scroll state (FR-025)
-     * survives untouched either way. A no-op if the Session is archived or already being
-     * watched; if the worktree folder does not currently resolve AND this Session had cached
-     * state from before, a one-shot reset is sent instead of leaving a stale tree marked ready
-     * with nothing watching under it. */
-    ensureWatching(sessionId: string): Promise<Result<void>>;
-  };
+  /** `ipc-file-explorer.ts`'s own `FileExplorerApi` has the full reasoning -- split out there to
+   * keep this file at its own file-size baseline (issue #806). */
+  fileExplorer: FileExplorerApi;
 
-  /** Spec 018 contracts/ipc.md "Git changes" (issue #464, slice 1): the right-pane Git changes
-   * panel's own full per-Session surface -- `list` (FR-001, FR-002, FR-014), per-file `stage`/
-   * `unstage` (FR-006, FR-007), bulk `stageAll`/`unstageAll` (FR-004, re-reading the CURRENT
-   * status server-side rather than trusting a client-supplied path list, and deliberately
-   * excluding Conflicts from both), `commit` (FR-009 to FR-011), and the watcher lifecycle pair
-   * `ensureWatching`/`stopWatching` (FR-015b, FR-016) mirroring `fileExplorer`'s own pair above. */
-  gitChanges: {
-    /** `{ snapshot: null }` when the worktree is not a git repository, a git call failed, or the
-     * status read exceeded the same size cap `fileExplorer.getStatus` already enforces
-     * (FR-018) -- never thrown, mirrors `fileExplorer.getStatus`'s own never-throw-into-renderer
-     * convention. */
-    list(sessionId: string): Promise<Result<{ snapshot: GitChangesSnapshot | null }>>;
-    /** FR-007: `git add --`, every path a literal post-`--` argv entry sourced only from the
-     * current status map's own keys. */
-    stage(sessionId: string, paths: string[]): Promise<Result<void>>;
-    /** FR-007: `git restore --staged --`, same path-sourcing rule as `stage`. */
-    unstage(sessionId: string, paths: string[]): Promise<Result<void>>;
-    /** FR-004: stages every file CURRENTLY in the Changes and Untracked groups (re-read
-     * server-side at call time, never the renderer's own possibly-stale snapshot) -- Conflicts
-     * are never swept up by this bulk action. */
-    stageAll(sessionId: string): Promise<Result<void>>;
-    /** FR-004: unstages every file CURRENTLY in the Staged group (re-read server-side). */
-    unstageAll(sessionId: string): Promise<Result<void>>;
-    /** FR-008: one file's diff body, `git diff` / `git diff --cached` by whether `staged` is
-     * true -- the hunk-only patch text `DiffViewFromPatch` (`DiffView.tsx`) already expects (no
-     * `diff --git`/`---`/`+++` header lines), never rendered inline inside the hosted pane
-     * (the panel's own content area swaps to a diff view, still inside the pane). */
-    diff(sessionId: string, path: string, staged: boolean): Promise<Result<{ patch: string }>>;
-    /** FR-011: `git commit -F -`, the composed message piped on stdin (never `-m`). Rejected
-     * locally with `invalid-argument` for a blank (after trimming) message before ever reaching
-     * git. FR-013: any failure (including an `index.lock` collision) is a typed `git-failed`
-     * error, never auto-retried. */
-    commit(sessionId: string, message: string): Promise<Result<void>>;
-    /** Mirrors `fileExplorer.stopWatching`/`.ensureWatching` exactly (research.md decision 6):
-     * the panel calls `ensureWatching` on mount/Session-focus and `stopWatching` on unmount/
-     * blur, so a closed panel's Session is never watched (FR-016). A no-op if already in the
-     * requested state. */
-    stopWatching(sessionId: string): Promise<Result<void>>;
-    ensureWatching(sessionId: string): Promise<Result<void>>;
-  };
+  gitChanges: GitChangesApi;
 
   settings: {
     get(): Promise<Result<Settings>>;
@@ -934,10 +825,6 @@ export interface RefractApi extends UpdatesApi {
    * watcher is re-established on the next `listDirectory('')` -- without this the panel keeps
    * showing a stale tree forever with no watcher running underneath it. */
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
-  /** Spec 018 contracts/ipc.md "Git changes" `GIT_CHANGES_REFRESH` (research.md decision 6): a
-   * worktree file-system change under this Session's watch (FR-015b) -- a plain "something
-   * changed, refetch" ping with no diff content, matching `FILE_EXPLORER_RESET`'s own minimal
-   * payload; the store always calls `gitChanges.list` again itself rather than applying a patch. */
   onGitChangesRefresh(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
