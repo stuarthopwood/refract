@@ -125,12 +125,13 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     id: 'cyber-amber',
     name: 'Cyber Amber',
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
-    // `.theme-dark`'s own near-black canvas (2026-10-20 amendment: every surface is pure
-    // neutral, chroma 0, no warm tint anywhere).
+    // `.theme-dark`'s own near-black canvas (2026-10-20, amended twice: every surface AND
+    // every text token is pure neutral, chroma 0, no warm tint anywhere -- `symbolColor` below
+    // now equals Dark's own, since `--foreground` is literally identical between the two).
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e1dddb' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#dedede' }
   }
 }
 

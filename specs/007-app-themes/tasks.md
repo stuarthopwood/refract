@@ -896,6 +896,28 @@ more grey"). Same additive rule as Phase 8 for every OTHER theme: `dark-high-con
   PASS** (unchanged total -- no new PAIRS entries, only Cyber Amber's own literal values
   changed); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
   `check:drag-regions`/`vitest run` (148/148) all green.
+- [X] T042 Correct T041: Stuart's round-1 2026-10-20 amendment only pure-neutralled Cyber
+  Amber's SURFACES; the original grill item 3 set `--foreground`/`--chat-foreground` to
+  chroma 0 in BOTH themes, so a same-day correction pure-neutrals Cyber Amber's TEXT tokens
+  too (`--foreground`, `--chat-foreground`, `--muted-foreground`, and every token that aliases
+  `--foreground`): byte-identical to `.theme-dark`'s own literals. Only the accent family
+  (`--accent-text`, `--primary`/`--send`, `--ring`, markdown links), the warning hue, and
+  `themes.ts`'s own `swatchPrimary` still differ from Default Dark. Amends spec.md FR-022 and
+  adds a further Clarifications session; extends the chroma assertion in
+  `scripts/verify-1039-amber-retune.mjs` to the three text tokens (depends on T041).
+  **Done**: `src/renderer/styles/globals.css` `.theme-cyber-amber` (`--foreground`
+  `oklch(0.90 0.005 50)` -> `oklch(0.90 0 0)`, `--chat-foreground` `oklch(0.86 0.005 50)` ->
+  `oklch(0.86 0 0)`, `--muted-foreground` `oklch(0.708 0.01 50)` -> `oklch(0.708 0 0)`, header
+  comment rewritten), `src/shared/themes.ts` (`symbolColor` `#e1dddb` -> `#dedede`, now
+  byte-identical to Dark's own), `specs/007-app-themes/spec.md` (FR-022 widened, new
+  Clarifications session), `docs/design/product-look-and-feel.md`/
+  `foundations-tokens-theming.md` (both amendment bullets rewritten; also fixed a pre-existing
+  stale #551-era Cyber Amber accent hex mention in the "Accent and primary fill colour"
+  section, never updated for #1039's own retune), `scripts/verify-1039-amber-retune.mjs`
+  (`CYBER_AMBER_TEXT_VARS` added to the chroma loop, 418 -> 438 lines, `node --check` clean).
+  `node scripts/check-theme-contrast.mjs`: **839/839 pairs across 5 themes PASS** (unchanged
+  total); `pnpm typecheck`/`check:indent`/`check:file-size`/`check:parity`/
+  `check:drag-regions`/`vitest run` (148/148) all green.
 - [ ] T040 Live-run `scripts/verify-1039-amber-retune.mjs` once the build slot opens; record the
   report/screenshots in the PR body (depends on T039).
 
