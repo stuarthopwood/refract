@@ -146,6 +146,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   const WORST_CASE_FLIGHTS_PER_MINUTE = 60 / (PRODUCTION_MIN_FLIGHT_GAP_S + PRODUCTION_FLIGHT_DURATION_S);
   const IDLE_MANAGEMENT_BASELINE_S = 0.328;
   const IDLE_MANAGEMENT_BASELINE_SOURCE = 'docs/PLAN.md round-2 status update, head edcde895 ("Final budget: median active 0.328s/60s") -- not re-measured live this run: REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS is fixed in the OS process env block at launch, unreachable mid-run without a relaunch';
+  const PER_FLIGHT_EXCESS_CEILING_S = 0.6;
 
   const refreshRateHz = await cdp.evaluate(`new Promise((resolve) => {
     let frames = 0;
