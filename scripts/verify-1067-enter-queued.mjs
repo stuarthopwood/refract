@@ -155,7 +155,7 @@ async function main() {
   const dirtyLines = spawnSync_('git', ['-C', REPO_ROOT, 'status', '--porcelain']).stdout.split('\n').filter(Boolean);
   const dirty = dirtyLines.length > 0;
   console.log(`${LOG}: git HEAD ${head}${dirty ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
-  clearKnownOutputFiles(SHOTS_DIR, 'refract-1067-enter-queued-shots', [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png', 'report.json']);
+  clearKnownOutputFiles(SHOTS_DIR, 'refract-1067-enter-queued-shots', [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png', 'attachment-only.png', 'report.json']);
 
   const report = [];
   const notExercised = [
@@ -331,6 +331,8 @@ async function main() {
     );
     const attachmentOnlyHint = await readHint(cdp, 'Message the agent');
     assertEqual(attachmentOnlyHint.visibleLead, 'Message the agent', 'attachment-only blank composer: the hint stays the DEFAULT wording, not "Enter sends the next queued message"');
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, 'attachment-only.png'));
     await cdp.pressEnter();
     await sleep(500);
     assertEqual(
@@ -480,7 +482,7 @@ async function main() {
     await sleep(400);
     assertEqual(debugLogContent(debugLogPath), beforeShiftEnter, 'Shift+Enter sent no command at all');
 
-    report.push({ step: 'screenshots', ok: true, screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png']) });
+    report.push({ step: 'screenshots', ok: true, screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `hint-${t.id}.png`), 'hint-360px.png', 'attachment-only.png']) });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;
