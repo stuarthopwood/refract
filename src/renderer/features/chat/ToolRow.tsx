@@ -500,8 +500,9 @@ interface SubagentRowProps {
   item: SubagentItem
   /** Issue #1077: true shows this row's own goal (`item.task`'s first lines, clamped to 3
    * lines) above the toggle -- the default, since a bare row has no Stage of its own to supply
-   * one. `SubagentChainRow.tsx`'s Stage call sites pass `false`: the Stage's own
-   * `StageContextBrief` already shows the shared goal, so a member must never duplicate it. */
+   * one. `SubagentChainRow.tsx`'s multi-agent member call site always passes `false` (2+
+   * members share one Stage goal, never one member's own task); its solo call site passes
+   * `!group.context`, so a context-less solo Stage still gets a goal from somewhere. */
   showGoal?: boolean
 }
 

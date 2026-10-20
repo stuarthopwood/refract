@@ -353,10 +353,13 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             element type on a 1-to-2 members transition -- never the context brief/Uses line
             above, which do not unmount on it -- so the focus-tracking effect above never
             redirects focus away from one of THOSE while they stay mounted. */}
-        {/* Issue #1077: `showGoal={false}` on both branches below -- a Stage member never shows
-            its own goal (`item.task`'s first lines), relying instead on the shared goal the
-            Stage itself already shows above (`StageContextBrief`, when `group.context` exists)
-            so it is never duplicated once or twice over per member. */}
+        {/* Issue #1077: a multi-agent member (`showGoal={false}`) never shows its own goal --
+            2+ members share ONE Stage context, so no single member's own task can stand in for
+            it. A SOLO member instead shows its own goal (`showGoal={!group.context}`) only when
+            this Stage has no shared context of its own to lean on (`StageContextBrief` above is
+            the only other place a Stage's goal can come from); with a context, the solo member
+            suppresses its own goal exactly like a multi-agent member does, so it is never shown
+            twice over. */}
         <div ref={memberContentRef}>
           {total > 1 ? (
             <SpineList gap="member">
@@ -367,7 +370,7 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
               ))}
             </SpineList>
           ) : (
-            <SubagentBody item={group.items[0]!} showGoal={false} />
+            <SubagentBody item={group.items[0]!} showGoal={!group.context} />
           )}
         </div>
       </div>
