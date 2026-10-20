@@ -540,7 +540,7 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
      these labels with this file's SOFTENED \`textColor\` (#1074's alpha tier), composited
      against journey's own coloured \`fillType0-7\` fills (derived from this theme's
      primaryColor/secondaryColor) -- measured as low as 4.06:1, below the 4.5:1 floor. These
-     labels sit on a genuine coloured, non-neutral fill, the same FR-023 exception Gantt's own
+     labels sit on a genuine coloured, non-neutral fill, the same solid-text exception Gantt's own
      task bars already carry -- reusing \`taskTextColor\` (already solid, already tuned for
      exactly this "light text on a coloured task-bar fill" role) rather than inventing a new
      token. */
