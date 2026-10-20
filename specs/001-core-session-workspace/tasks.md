@@ -4842,3 +4842,60 @@ all 856/856 pairs PASS; `check:parity` 106/106 + 24/24 (unaffected); `check:drag
 violations. `spec.md`'s new 2026-10-20 "gate round 3" Clarifications entry and FR-092's own
 amended text record every correction. **A fresh FINAL LIVE-VERIFIED PASS is still pending the
 next build slot** -- not yet run.
+
+## Phase 72: Agent rows show only the goal (#1077, FR-093)
+
+(Next free numbers against `origin/main` at this branch's own cut, `4996ede9`: Phase 71/
+T345-T349 claimed by #1050 above, so this phase claims Phase 72/T350 onward; the highest FR in
+this spec is FR-092, so this phase claims FR-093.)
+
+**Goal**: an expanded Stage row or subagent row shows only the goal; the full Prompt/Result
+move behind a "See input & output" toggle. Decided (Stuart, `grill-with-docs`, 2026-10-20,
+issue #1077; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the
+four-point decision record.
+
+- [X] T350 Docs convergence: this phase, `spec.md` FR-093 (new, amends FR-067/FR-068) and its
+  dated `### Session 2026-10-20 (Agent rows show only the goal, #1077)` Clarifications entry
+  recording the four decided points. `docs/PLAN.md`'s "Agent rows show only the goal" row status.
+- [X] T351 `src/renderer/components/InlineDisclosure.tsx` (new, ADR 0003): the shared text-link
+  disclosure shape lifted out of `Markdown.tsx`'s `MermaidBlock` "Show source" toggle -- a
+  caller-controlled `open`/`onOpenChange`, `aria-expanded`/`aria-controls`, and an Escape
+  handler on its own content that closes and returns focus to the trigger even when focus sits
+  deep inside (a CodeBlock's own Copy button) -- the WCAG 2.4.3 hazard issues #991/#1001 fixed
+  one level up for a Stage's own trigger. `Markdown.tsx`'s `MermaidBlock` ported onto it (net
+  line reduction, no behaviour change).
+- [X] T352 `src/renderer/features/chat/stageMeta.ts`: `extractTaskGoalPreview` -- `item.task`'s
+  own first non-blank lines, the same heading/"Goal:" stripping `extractContextLabel` already
+  applies to a Stage's own context, keeping the line breaks that follow (rather than folding to
+  one line) and capped by a character budget (`GOAL_PREVIEW_MAX_CHARS`) instead of a single line.
+- [X] T353 `src/renderer/features/chat/ToolRow.tsx`: `SubagentRowProps` gains `showGoal`
+  (default `true`); `SubagentBody` shows `extractTaskGoalPreview(item.task)` (when `showGoal`)
+  clamped to 3 lines (`line-clamp-3`), then wraps its existing Prompt/Result blocks in the new
+  `InlineDisclosure` ("See input"/"See input & output", gated on `item.result`'s own presence,
+  flipping to "Hide ..." once open); `SubagentRow` forwards `showGoal` to it.
+- [X] T354 `src/renderer/features/chat/SubagentChainRow.tsx`: `StageGroupRow`'s own direct
+  `SubagentBody` call (solo Stage) and its `SubagentRow` call (each multi-agent member) both
+  pass `showGoal={false}` -- a Stage member never shows its own goal, relying on the Stage's own
+  shared `StageContextBrief` instead, so it is never duplicated.
+- [X] T355 Live CDP verification (`scripts/verify-1077-agent-goal.mjs`, new fake-omp tape
+  `stages-1077.jsonl`): an expanded Stage row shows the goal and the toggle link with no Prompt/
+  Result visible; the link opens and closes input/output with the correct labels and
+  `aria-expanded`/`aria-controls`; a still-running agent shows "See input" (no "& output"); a
+  single subagent row (no Stage goal) shows its own task as the goal, clamped to 3 lines;
+  closing the toggle (Escape, focus deep inside) returns focus to the link; reopening starts
+  collapsed again (no remembered state); screenshots in 2 themes with no stray hover card/
+  tooltip open. `report.json` records `gitHead`, `dirty`, failures and `notExercised`.
+
+**Non-build checks**: `pnpm typecheck` clean; `pnpm test` 148/148 passed (no new renderer
+tests, prototyping-phase rule); `node scripts/check-indent.mjs` 0 odd-indent lines across 451
+files scanned (3 allow-listed); `node scripts/check-file-size.mjs` 0 cap violations across 516
+files scanned (`ToolRow.tsx` 594/600, `Markdown.tsx` 994/997 baseline, both within cap, no
+growth past Markdown.tsx's own baseline); `node scripts/check-theme-contrast.mjs` all 872 pairs
+across 5 themes PASS (no new token, reuses `--muted-foreground`/`--foreground`/`--ring`); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 152 files.
+
+**Pending the next build slot**: `scripts/verify-1077-agent-goal.mjs` is written but not yet
+run (no cargo build in this turn, per the lane's own build-slot gating rule); its own tape
+`stages-1077.jsonl` is new. A FINAL LIVE-VERIFIED PASS (the chained `ci-local.mjs &&
+verify-1077-agent-goal.mjs` run) is outstanding.

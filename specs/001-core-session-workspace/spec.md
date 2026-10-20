@@ -1089,6 +1089,27 @@
   the round-2/3 comment's claim that the check's own 4.75:1 was simply "measured" is corrected
   to note that number was real for the CLIPPED colour, not the authored (unreachable) literal.
 
+### Session 2026-10-20 (Agent rows show only the goal, #1077)
+
+- Q: Issue #1077 (Stuart, `grill-with-docs`, 2026-10-20): expanding a Stage row or a solo
+  subagent row shows its full Prompt and Result inline, each in its own tall scrollable
+  `max-h-64` code block, crowding out the one thing worth a quick read -- the goal. Scope,
+  content, toggle shape and running-state wording? -> A: All four resolved, none deferred. (1)
+  Scope: every agent row in the chat wherever `SubagentBody` renders -- a Stage row (multi-agent
+  or solo), each member row inside a multi-agent Stage, and a row with no enclosing Stage goal
+  of its own. (2) Content: only the goal shows once expanded. A Stage (solo or multi-agent
+  member) shows the Stage's own existing Goal/context text (`StageContextBrief`); `SubagentBody`
+  itself never repeats it there. A row with no Stage goal to lean on shows its own goal instead
+  -- the first lines of its own task, clamped to 3 lines, with the full text reachable once the
+  toggle opens. (3) Toggle: a text link under the goal reading "See input & output" collapsed,
+  "Hide input & output" open, with `aria-expanded`/`aria-controls`; starts collapsed every time
+  its own row (re)expands, with no remembered state. (4) While running (no result yet) the label
+  drops "& output", matching whatever state actually exists (reusing `resultBlock`'s own
+  existing gate for today's "Result" heading). Reuses `Markdown.tsx`'s `MermaidBlock` "Show
+  source" disclosure shape (ADR 0003) rather than a new one; closing the toggle while focus
+  sits inside its own content returns focus to the toggle link, the same WCAG 2.4.3 hazard
+  issues #991/#1001 already fixed one level up for a Stage's own trigger.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1713,6 +1734,26 @@ The developer types a slash command and finds the ones the agent offers. If a se
   so a recognised command's own arguments go unchecked too while it shows. An unrecognised
   leading token (e.g. `/zzz`) MUST show no pill and leave spellcheck unchanged. This is visual
   only: the textarea's own accessible name and value are unaffected.
+- **FR-093** (new, 2026-10-20, issue #1077, Stuart's own grill session, 2026-10-20; amends
+  FR-067/FR-068's own Subagent chain and Stage rendering, and `SubagentBody`'s own Prompt/
+  Result rendering unchanged by FR-008/FR-061, which never applied to subagents): Expanding a
+  Stage row (solo or multi-agent) or a subagent row's own member content, wherever
+  `SubagentBody` renders, MUST show only the goal, not the full Prompt/Result inline. Inside a
+  Stage (solo or a multi-agent member), the goal is the Stage's own shared batch context already
+  shown by `StageContextBrief` (FR-067); `SubagentBody` itself shows no separate goal there, so
+  the Goal paragraph is never duplicated per member. A row with no enclosing Stage goal to lean
+  on shows its own goal instead -- the first lines of its own task, Markdown heading markers and
+  a leading "Goal:" prefix stripped the same way `stageMeta.ts`'s own Stage-label extraction
+  strips them, clamped to 3 lines, with the untruncated task reachable once the toggle below is
+  open. The Prompt and (once known) Result MUST sit behind a text link reading "See input &
+  output", "Hide input & output" once open, with `aria-expanded` and `aria-controls` pointing at
+  their container (`Markdown.tsx`'s `MermaidBlock` "Show source" toggle is the cited, reused
+  disclosure shape, ADR 0003); while the agent still has no result, the link reads "See input"/
+  "Hide input" (no "& output") instead, matching `resultBlock`'s own existing presence gate for
+  the "Result" heading. The toggle MUST start collapsed every time its own row (re)mounts, with
+  no remembered state across a collapse-then-reopen. Closing the toggle while keyboard focus
+  sits inside its own content MUST move focus back to the toggle link (the same WCAG 2.4.3
+  hazard issues #991/#1001 fixed one level up, for a Stage's own trigger).
 
 ### Key Entities
 
