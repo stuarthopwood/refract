@@ -421,11 +421,27 @@ async function main() {
     assertTrue(!settledRead.rows.some((r) => r.hasBlockedLine), 'E2: settle tree reconciles "Update docs" from blocked (last live) to completed -- no Blocked line remains');
     assertTrue(/Todo 4\/13/.test(settledRead.header ?? ''), 'E2: header reads "Todo 4\\/13" at settle, differing from the pre-settle "Todo 3\\/13" (the reconciled Update docs now also counts as done)', settledRead.header);
 
-    // ---- Collapse control ----
+    // ---- Collapse control, plus Main's two follow-up focus asks on gate round 6's HIGH 1 ----
+    // (c): focus genuinely INSIDE the list before collapsing it -- confirms focus moves to the
+    // panel's own Collapse chevron, never <body>, when the list-only collapse effect fires.
+    await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[role="group"]').focus()`);
+    await waitTwoFrames(cdp);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${PANEL_SELECTOR}).querySelector('[role="group"]')`), 'Setup: focus genuinely lands inside the task list before collapsing it');
     await clickCollapseButton(cdp);
+    await waitTwoFrames(cdp);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${PANEL_SELECTOR}).querySelector('[aria-label="Todo list details"]')`), 'Main follow-up (c): collapsing with focus inside the list moves focus to the Collapse chevron (never <body>)');
     const collapsedRead = await readPanel(cdp);
     assertEqual(collapsedRead.collapsed, true, 'Collapse button hides the task list');
     assertTrue(collapsedRead.rows === null, 'Task list genuinely absent from the DOM while collapsed (not merely visually hidden)');
+    // (a): Unpin while COLLAPSED, starting with focus already on the chevron (left there by (c)
+    // above) -- the panel's OWN true -> false edge must restore focus to the pill, never
+    // <body>, even though `active` (what the OLD single effect keyed on) is already false here.
+    await clickUnpinButton(cdp);
+    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts once Unpin is clicked while collapsed' });
+    await waitTwoFrames(cdp);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR}) && document.activeElement !== document.body`), 'Main follow-up (a): Unpin from a COLLAPSED panel restores focus to the pill (never <body>)');
+    await clickTodoPill(cdp);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned after the collapsed-Unpin focus check' });
     await clickCollapseButton(cdp);
     const expandedAgainRead = await readPanel(cdp);
     assertEqual(expandedAgainRead.collapsed, false, 'Collapse button toggles back to expanded');
@@ -517,6 +533,18 @@ async function main() {
     await cdp.waitFor(`!!(${PANEL_SELECTOR}).textContent.includes('All 13 done')`, { timeoutMs: 20_000, label: 'Panel header reads "All 13 done" once every open task is complete' });
     const allDoneRead = await readPanel(cdp);
     assertTrue(allDoneRead.rows === null, 'P2: "All N done" genuinely COLLAPSES the task list itself (list absent, not just the header text)');
+    // (b): Main follow-up ask -- Unpin right after the AUTOMATIC all-done collapse, starting
+    // with focus explicitly on the chevron, must restore focus to the pill (never <body>) --
+    // proves the fix holds after an automatic collapse too, not only the manual one (a)/(c) above.
+    await cdp.evaluate(`(${PANEL_SELECTOR}).querySelector('[aria-label="Todo list details"]').focus()`);
+    await waitTwoFrames(cdp);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${PANEL_SELECTOR}).querySelector('[aria-label="Todo list details"]')`), 'Setup: focus genuinely lands on the chevron before Unpin (after the all-done auto-collapse)');
+    await clickUnpinButton(cdp);
+    await cdp.waitFor(`!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Panel unmounts once Unpin is clicked right after the all-done auto-collapse' });
+    await waitTwoFrames(cdp);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR}) && document.activeElement !== document.body`), 'Main follow-up (b): Unpin right after the "All N done" auto-collapse restores focus to the pill (never <body>)');
+    await clickTodoPill(cdp);
+    await cdp.waitFor(`!!(${PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Re-pinned after the all-done-collapse Unpin focus check' });
 
     // ---- Turn 3 on Session A: clear the plan -> panel unmounts, pill hidden too ----
     await clickCollapseButton(cdp); // the user CAN expand again after all-done (P2's own reversibility)
