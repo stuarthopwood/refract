@@ -20,6 +20,12 @@ export interface ThemeDefinition {
    * `--background` value, so the swatch is literally that theme's real window colour rather
    * than an arbitrary accent. */
   swatch: string
+  /** #1043 (ui-architect-v3 swatch ruling, 2026-10-20): the theme's own `--primary` value,
+   * literal (matches globals.css's `.theme-<id>` block, same hand-conversion precedent `swatch`
+   * above already sets), paired with `swatch` as a two-colour landscape preview chip after the
+   * Theme submenu row's name (`ProfileMenu.tsx`'s `ThemeSubmenu`) -- never a round shape, so it
+   * is never mistaken for the row's own leading radio mark. */
+  swatchPrimary: string
   /** A Shiki bundled theme id (research.md decision 9, confirmed live: FINDINGS.md item 42). */
   syntaxTheme: string
   /** `BrowserWindow.setTitleBarOverlay` colours (spec 001 T100); `height` is theme-independent
@@ -39,6 +45,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
     // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
     swatch: '#0a0a0a',
+    swatchPrimary: '#e5e5e5',
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
@@ -51,6 +58,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // deliberately starker background than `dark`'s, maximising the margin above the WCAG AA
     // contrast floors every built-in theme must clear.
     swatch: '#000000',
+    swatchPrimary: '#ffffff',
     syntaxTheme: 'github-dark-high-contrast',
     titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
   },
@@ -63,6 +71,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     id: 'obsidian',
     name: 'Obsidian',
     swatch: '#0F1014',
+    swatchPrimary: '#5A5EEE',
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
@@ -108,6 +117,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Nordic Frost',
     // Matches `.theme-nordic-frost`'s own `--background` (globals.css): a deep navy canvas.
     swatch: '#060f1e',
+    swatchPrimary: '#007a7c',
     syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#060f1e', symbolColor: '#eff7fb' }
   },
@@ -116,6 +126,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Cyber Amber',
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a warm near-black canvas.
     swatch: '#0f0703',
+    swatchPrimary: '#c14100',
     syntaxTheme: 'github-dark-default',
     titleBarOverlay: { color: '#0f0703', symbolColor: '#faf4ef' }
   }
