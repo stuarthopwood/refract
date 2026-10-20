@@ -271,7 +271,11 @@ async function main() {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
       const hint = await readHint(cdp, 'Enter sends the next queued message');
       assertEqual(hint.visibleLead, 'Enter sends the next queued message', `${theme.name}: visible hint reads "Enter sends the next queued message"`);
-      assertTrue(hint.describedByText.includes('Enter sends the next queued message'), `${theme.name}: aria-describedby includes the hint text`, hint);
+      // Round-1 item 5 fix: the sr-only text now reads "Enter sends the next queued message.
+      // Markdown is supported. Type slash for commands." (the ordinary hint kept appended after
+      // it), so this checks a SUBSTRING match across the describedByText entries, not exact
+      // array-element equality (`Array.includes` on a full string never matches a substring).
+      assertTrue(hint.describedByText.some((t) => t.includes('Enter sends the next queued message')), `${theme.name}: aria-describedby includes the hint text`, hint);
       await settleForScreenshot(cdp);
       await cdp.screenshot(path.join(SHOTS_DIR, `hint-${theme.id}.png`));
     }
