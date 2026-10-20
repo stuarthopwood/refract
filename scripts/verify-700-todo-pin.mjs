@@ -315,6 +315,14 @@ async function main() {
     await clickCollapseButton(cdp);
     assertEqual(await readScrollerScrollTop(cdp), scrollAtBottomBefore, 'E1: expanding the panel again (bottom-scrolled transcript) does not move the real scroller');
 
+    // Gate round 3 fix (self-caught live-check failure, now that E4 finally runs far enough to
+    // reach this section): nothing here previously waited for the transcript to have ENOUGH
+    // content to genuinely overflow before scrolling it to "the middle" -- the long assistant
+    // reply (many "Status line" sentences, scripted specifically to make the transcript
+    // overflow) streams in right after todo-8, with no scripted delay, so a fast run could
+    // reach this setup step before that content has landed, leaving scrollHeight <= clientHeight
+    // and `scrollTop = scrollHeight / 2` a no-op (still 0).
+    await cdp.waitFor(`(() => { const el = ${SCROLLER_SELECTOR}; return !!el && el.scrollHeight > el.clientHeight; })()`, { timeoutMs: 60_000, label: 'Transcript genuinely overflows before the middle-scroll E1 check' });
     await cdp.evaluate(`(() => { const el = ${SCROLLER_SELECTOR}; if (!el) return null; el.scrollTop = Math.floor(el.scrollHeight / 2); return el.scrollTop; })()`);
     await sleep(200);
     const scrollAtMiddleBefore = await readScrollerScrollTop(cdp);
