@@ -1112,22 +1112,28 @@
  * about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget 1.0s/60s) --
  * three elements animating for the WHOLE window, however cheaply each tick costs, adds up over
  * a sustained 60s. Switched to occasional flights instead (the ui-architect review's own
- * fallback): one randomly-chosen bat flies for about 7s every 60-120s via a single
+ * fallback): one randomly-chosen bat flies for about 4s every 90-180s via a single
  * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
  * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
  * time. Single colour (`--muted-foreground`, the same token the watermark itself uses), very
  * low constant opacity. */
 .holiday-ambient-loop-bat {
-  position: absolute;
   color: var(--muted-foreground);
   opacity: 0.1;
 }
-/* Gate round 3 fix (Low, do-if-cheap): on a short/narrow pane, `top: 12%` alone could sit bat 1
- * right under the header's own row -- `max(12%, 72px)` keeps it clear of that regardless of pane
- * height. */
-.holiday-ambient-loop-bat:nth-child(1) { top: max(12%, 72px); left: 8%; }
-.holiday-ambient-loop-bat:nth-child(2) { top: 32%; left: 55%; }
-.holiday-ambient-loop-bat:nth-child(3) { top: 58%; left: 22%; }
+/* Gate round 4 fix (Main's decision on #1048, 2026-10-20): `position`/`:nth-child` placement
+ * moved onto this wrapper -- `HolidayAmbientLoop.tsx` now animates `transform`/`will-change` on
+ * this `<div>`, never the `<svg>` root (WebView2's own frame-production cost for any running
+ * animation, not specific to SVG, made the animated element itself irrelevant to that cost; this
+ * split is purely about which element the position rules live on). Gate round 3 fix (Low,
+ * do-if-cheap): on a short/narrow pane, `top: 12%` alone could sit bat 1 right under the
+ * header's own row -- `max(12%, 72px)` keeps it clear of that regardless of pane height. */
+.holiday-ambient-loop-bat-wrap {
+  position: absolute;
+}
+.holiday-ambient-loop-bat-wrap:nth-child(1) { top: max(12%, 72px); left: 8%; }
+.holiday-ambient-loop-bat-wrap:nth-child(2) { top: 32%; left: 55%; }
+.holiday-ambient-loop-bat-wrap:nth-child(3) { top: 58%; left: 22%; }
 
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
   .holiday-ambient-loop {

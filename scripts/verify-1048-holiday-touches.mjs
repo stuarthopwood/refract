@@ -72,9 +72,9 @@ const SHORT_IDLE_MS = 3_000;
 // Gate round 1 fix (High, item 5): well under SHORT_IDLE_MS, so a pause observed within this
 // window can only be the blur/hidden handler, never a coincidental idle-timer firing.
 const SHORT_PAUSE_PROOF_MS = 300;
-// Gate round 3 fix (High, item 1): the real flight gap is randomised 60-120s, so a 60s
+// Gate round 3 fix (High, item 1): the real flight gap is randomised 90-180s, so a 60s
 // CPU-budget sample window almost never lands inside one -- a short fixed gap here (plus each
-// flight's own fixed 7s duration) gives every 60s Full sample several flights to measure.
+// flight's own fixed 4s duration) gives every 60s Full sample several flights to measure.
 const SHORT_FLIGHT_INTERVAL_MS = 5_000;
 // The one DOM probe for "did holiday artwork render anywhere": the watermark/sidebar/spinner
 // all carry a lucide icon whose own class name is `lucide-<kebab-icon-name>`; Halloween's own

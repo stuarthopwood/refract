@@ -10,7 +10,7 @@
 // hidden). `idleTimeoutMs` is read by `HolidayAmbientLoop.tsx` for the same override reason: a
 // live check can shorten the ambient loop's 60s no-input pause without waiting a full minute.
 // `flightIntervalMs` (gate round 3 fix, High, item 1) is read the same way, overriding the
-// flight-scheduling effect's real 60-120s random gap to a short fixed value so a live check's
+// flight-scheduling effect's real 90-180s random gap to a short fixed value so a live check's
 // own 60s CPU-budget sample window reliably contains several flights to measure.
 import { create } from 'zustand'
 import { activeHoliday } from '../../shared/holidays'
@@ -24,7 +24,7 @@ interface HolidayState {
    * against the SAME override every time, not just the real clock. */
   dateOverride: string | null
   idleTimeoutMs: number
-  /** `null` means the real randomised 60-120s gap (the production behaviour); a debug-only
+  /** `null` means the real randomised 90-180s gap (the production behaviour); a debug-only
    * fixed value overrides it for a live check. */
   flightIntervalMs: number | null
   activeHoliday: HolidayId | null

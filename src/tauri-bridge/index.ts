@@ -234,7 +234,7 @@ const refract: RefractApi = {
   },
 
   debug: {
-    getOverrides: () => request<{ date: string | null; idleTimeoutMs: number | null }>(IPC_REQUESTS.DEBUG_GET_OVERRIDES)
+    getOverrides: () => request<{ date: string | null; idleTimeoutMs: number | null; flightIntervalMs: number | null }>(IPC_REQUESTS.DEBUG_GET_OVERRIDES)
   },
 
   modelRoles: {

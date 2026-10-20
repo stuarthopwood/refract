@@ -77,31 +77,64 @@ export async function dispatchShiftKeyTap(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
 }
 
-/** Gate round 2 fix (High, items 1 and 2), extended gate round 3 (High, item 1): a FAILING CPU
- * budget check, not an informational-only figure -- the ambient loop must cost at most 1.0s of
- * process-tree CPU per 60s ABOVE Artwork-only (not Off: Artwork-only still shows the static
- * watermark artwork, so comparing against it isolates the cost of the ANIMATED loop itself,
- * never the icon swap), plus at most 0.1s/min above Artwork-only while genuinely paused (idle).
- * Median of 3 alternating Full/Artwork-only 60s samples for BOTH the active and the paused
- * budget (gate round 3 fix, item 7: the paused check used to be a single pair, noisy against
- * normal OS scheduling jitter) -- which mode is measured first alternates each round, so any
- * monotonic drift across the whole run affects both modes evenly rather than biasing one. Each
- * active sample is kept genuinely RUNNING via real dispatched Shift keydown/keyup every 2s
- * (gate round 1 fix, High, item 4). Gate round 3 fix (High, item 1): the round 2 budget never
- * actually caught a flight (the real 60-120s gap almost never lands inside a single 60s sample),
- * so this run launches with `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` set short (passed in as
- * `shortFlightIntervalMs`) -- every Full sample's own flight count (`data-flight-count`,
- * before/after the sample) is recorded and asserted >= 1, and the start/end `data-paused` check
- * dropped during the round 2 rewrite is restored. Mid-flight (`document.getAnimations().length
- * === 1`, the flying bat's own inline `style.willChange === 'transform'`) and post-flight (both
- * `0` and `''`) are proven directly, as is a blur THAT HAPPENS mid-flight (same `0`/`''`
- * cleanup), and a REAL dialog opening (not a simulated `role="dialog"` DOM poke) pausing the
- * loop with no running animation. The display refresh rate is recorded alongside (a
- * 60/120/144Hz panel changes how many real frames the flight's own 7s `ease-in-out` animation
- * can produce -- useful context, not itself a pass/fail input). This throws (fails the whole
- * run) over budget or on any failed proof -- it is the backstop against the CPU regression
- * landing again unnoticed. */
+/** Gate round 2 fix (High, items 1 and 2), extended gate round 3 (High, item 1), made honest in
+ * gate round 4 (Main's decision on #1048, 2026-10-20): a FAILING CPU budget check, not an
+ * informational-only figure. Round 3 asserted the DEBUG-ACCELERATED median active delta (every
+ * Full sample forced to several flights via `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS`) directly
+ * against the 1.0s/60s budget -- but that rate is several times the real production rate (the
+ * real gap is randomised, not fixed), so it was asserting an artificially inflated number
+ * against a budget meant for real usage. Round 4 instead measures the MEDIAN PER-FLIGHT CPU
+ * excess (median of 3 rounds' own `(active delta - idle-management baseline) / that round's own
+ * flight count`) and projects it to the real WORST-CASE production rate
+ * (`worstCaseFlightsPerMinute = 60 / (minGap + duration)`, both read from
+ * `HolidayAmbientLoop.tsx`'s own production constants: 90s min gap, 4s flight), asserting
+ * `idleManagementBaselineS + medianPerFlightExcess * worstCaseFlightsPerMinute <= 1.0s`.
+ * `idleManagementBaselineS` (0.328s) is gate round 2's own measured cost of Full mode's
+ * idle-management machinery (listeners, idle timer, MutationObserver) with ZERO flights running
+ * -- measured before this debug override existed, when the real randomised gap essentially
+ * never landed a flight inside a single 60s sample. A SEPARATE hard ceiling on the per-flight
+ * excess itself (<= 0.6s, regardless of production rate) catches a regression in the flight's
+ * own cost directly, not just diluted by the projection. Every input (both baselines, both
+ * medians, the worst-case rate, the projected total) is recorded in `report.json`, not just the
+ * pass/fail.
+ *
+ * Both the active and paused budgets are a median of 3 alternating Full/Artwork-only samples
+ * (gate round 3 fix, item 7: a single pair was noisy against normal OS scheduling jitter) --
+ * which mode is measured first alternates each round, so any monotonic drift across the whole
+ * run affects both modes evenly rather than biasing one. Each active sample is kept genuinely
+ * RUNNING via real dispatched Shift keydown/keyup every 2s (gate round 1 fix, High, item 4).
+ * Gate round 4 fix: each PAUSED sample is now 120s (normalised back to a per-60s figure before
+ * taking the median) -- a 60s paused sample's own delta sat close enough to the 0.1s/60s budget
+ * that Windows' own 1/64s (0.015625s) `Get-Process.CPU` tick-quantization noise alone could tip
+ * it either side of the threshold; doubling the window halves that noise's relative weight
+ * without doubling the budget itself.
+ *
+ * Gate round 3 fix (High, item 1): the round 2 budget never actually caught a flight (the real
+ * 90-180s gap almost never lands inside a single 60s sample), so this run launches with
+ * `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` set short (passed in as `shortFlightIntervalMs`) -- every
+ * Full sample's own flight count (`data-flight-count`, before/after the sample) is recorded and
+ * asserted >= 1, and the start/end `data-paused` check is restored. Mid-flight
+ * (`document.getAnimations().length === 1`, the flying bat WRAPPER's own inline
+ * `style.willChange === 'transform'`) and post-flight (both `0` and `''`) are proven directly,
+ * as is a blur THAT HAPPENS mid-flight (same `0`/`''` cleanup), and a REAL dialog opening (not a
+ * simulated `role="dialog"` DOM poke) pausing the loop with no running animation. The display
+ * refresh rate is recorded alongside (a 60/120/144Hz panel changes how many real frames the
+ * flight's own 4s `ease-in-out` animation can produce -- useful context, not itself a pass/fail
+ * input). This throws (fails the whole run) over budget or on any failed proof -- it is the
+ * backstop against the CPU regression landing again unnoticed. */
 export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, assertEqual, { log, shortIdleMs, shortFlightIntervalMs, dispatchShiftKeyTap: tap }) {
+  // Production constants mirrored from `HolidayAmbientLoop.tsx`'s own `scheduleNextFlight`/
+  // `runFlight` (90_000 + Math.random() * 90_000 gap, 4_000ms duration) -- kept here, not
+  // imported, since this is a Node script and that module is a React component bundled for the
+  // renderer; a drift between the two would only ever make this projection MORE conservative in
+  // one direction (if the real code's own numbers changed without this comment being updated,
+  // whoever changes them again owns re-checking this file too).
+  const PRODUCTION_MIN_FLIGHT_GAP_S = 90;
+  const PRODUCTION_FLIGHT_DURATION_S = 4;
+  const WORST_CASE_FLIGHTS_PER_MINUTE = 60 / (PRODUCTION_MIN_FLIGHT_GAP_S + PRODUCTION_FLIGHT_DURATION_S);
+  const IDLE_MANAGEMENT_BASELINE_S = 0.328;
+  const PER_FLIGHT_EXCESS_CEILING_S = 0.6;
+
   const refreshRateHz = await cdp.evaluate(`new Promise((resolve) => {
     let frames = 0;
     let start = null;
@@ -178,37 +211,58 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   const validActiveDeltas = activeDeltas.filter((d) => d !== null).sort((a, b) => a - b);
   const medianActiveDelta = validActiveDeltas.length > 0 ? validActiveDeltas[Math.floor(validActiveDeltas.length / 2)] : null;
 
-  // ---- Paused budget: gate round 3 fix (item 7), 3 alternating pairs instead of 1. ----
+  // ---- Per-flight excess: gate round 4 fix (Main's decision on #1048). Each round's own
+  // active delta already mixes idle-management overhead with that round's own flight cost --
+  // subtract the idle-management baseline FIRST, then divide by that SAME round's own flight
+  // count, so a round that happened to produce more/fewer flights (debug-accelerated timing is
+  // not perfectly deterministic across a 60s window) does not skew the per-flight figure. ----
+  const perFlightExcesses = activeDeltas.map((delta, i) => {
+    const flights = fullSamples[i].flightCount;
+    return delta !== null && flights !== null && flights > 0 ? (delta - IDLE_MANAGEMENT_BASELINE_S) / flights : null;
+  });
+  const validPerFlightExcesses = perFlightExcesses.filter((d) => d !== null).sort((a, b) => a - b);
+  const medianPerFlightExcess = validPerFlightExcesses.length > 0 ? validPerFlightExcesses[Math.floor(validPerFlightExcesses.length / 2)] : null;
+  const projectedProductionCostS = medianPerFlightExcess !== null ? IDLE_MANAGEMENT_BASELINE_S + medianPerFlightExcess * WORST_CASE_FLIGHTS_PER_MINUTE : null;
+
+  // ---- Paused budget: gate round 3 fix (item 7), 3 alternating pairs instead of 1; gate round 4
+  // fix, each pair now 120s (normalised back to a per-60s figure below), see the docblock. ----
   const pausedDeltas = [];
   for (let round = 0; round < 3; round++) {
     const fullFirst = round % 2 === 0;
     let fullPausedCpu;
     let artworkCpu;
     if (fullFirst) {
-      fullPausedCpu = await samplePausedFull(60_000);
-      artworkCpu = (await sampleMode('artwork', 60_000, false)).cpuSeconds;
+      fullPausedCpu = await samplePausedFull(120_000);
+      artworkCpu = (await sampleMode('artwork', 120_000, false)).cpuSeconds;
     } else {
-      artworkCpu = (await sampleMode('artwork', 60_000, false)).cpuSeconds;
-      fullPausedCpu = await samplePausedFull(60_000);
+      artworkCpu = (await sampleMode('artwork', 120_000, false)).cpuSeconds;
+      fullPausedCpu = await samplePausedFull(120_000);
     }
-    pausedDeltas.push(fullPausedCpu !== null && artworkCpu !== null ? fullPausedCpu - artworkCpu : null);
+    pausedDeltas.push(fullPausedCpu !== null && artworkCpu !== null ? (fullPausedCpu - artworkCpu) / 2 : null);
   }
   const validPausedDeltas = pausedDeltas.filter((d) => d !== null).sort((a, b) => a - b);
   const medianPausedDelta = validPausedDeltas.length > 0 ? validPausedDeltas[Math.floor(validPausedDeltas.length / 2)] : null;
 
   report.push({
-    step: 'Ambient loop CPU budget (process tree, median of 3 alternating pairs, active and paused)',
-    ok: medianActiveDelta !== null && medianPausedDelta !== null,
+    step: 'Ambient loop CPU budget (process tree, median of 3 alternating pairs, active and paused, honest per-flight projection)',
+    ok: medianPerFlightExcess !== null && projectedProductionCostS !== null && medianPausedDelta !== null,
     refreshRateHz,
     activeDeltas,
     medianActiveDelta,
     fullSamples,
+    perFlightExcesses,
+    medianPerFlightExcess,
+    idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S,
+    worstCaseFlightsPerMinute: WORST_CASE_FLIGHTS_PER_MINUTE,
+    perFlightExcessCeilingS: PER_FLIGHT_EXCESS_CEILING_S,
+    projectedProductionCostS,
     pausedDeltas,
     medianPausedDelta
   });
-  console.log(`${log}: CPU budget -- refresh rate ${refreshRateHz}Hz, active deltas ${JSON.stringify(activeDeltas)}, median ${medianActiveDelta}s, paused deltas ${JSON.stringify(pausedDeltas)}, median ${medianPausedDelta}s, full sample flight counts ${JSON.stringify(fullSamples.map((f) => f.flightCount))}`);
+  console.log(`${log}: CPU budget -- refresh rate ${refreshRateHz}Hz, active deltas ${JSON.stringify(activeDeltas)}, median ${medianActiveDelta}s, full sample flight counts ${JSON.stringify(fullSamples.map((f) => f.flightCount))}, per-flight excesses ${JSON.stringify(perFlightExcesses)}, median ${medianPerFlightExcess}s, projected production-rate cost ${projectedProductionCostS}s, paused deltas (120s samples, normalised per 60s) ${JSON.stringify(pausedDeltas)}, median ${medianPausedDelta}s`);
 
   assertTrue(validActiveDeltas.length === 3, 'Ambient loop CPU budget: exactly 3 valid active samples', { activeDeltas });
+  assertTrue(validPerFlightExcesses.length === 3, 'Ambient loop CPU budget: exactly 3 valid per-flight excess samples', { perFlightExcesses });
   assertTrue(validPausedDeltas.length === 3, 'Ambient loop CPU budget: exactly 3 valid paused samples', { pausedDeltas });
   fullSamples.forEach((full, i) => {
     assertTrue(full.pausedAtStart === false, `Full active sample ${i + 1}: not paused at start (keep-awake taps worked)`, full);
@@ -216,9 +270,14 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
     assertTrue(full.flightCount !== null && full.flightCount >= 1, `Full active sample ${i + 1}: at least one flight occurred (debug-shortened flight interval)`, full);
   });
   assertTrue(
-    medianActiveDelta !== null && medianActiveDelta <= 1.0,
-    `Ambient loop CPU budget: median active excess over Artwork-only is at most 1.0s per 60s (actual ${medianActiveDelta}s)`,
-    { activeDeltas, medianActiveDelta, refreshRateHz }
+    medianPerFlightExcess !== null && medianPerFlightExcess <= PER_FLIGHT_EXCESS_CEILING_S,
+    `Ambient loop CPU budget: median per-flight CPU excess is at most ${PER_FLIGHT_EXCESS_CEILING_S}s (actual ${medianPerFlightExcess}s)`,
+    { perFlightExcesses, medianPerFlightExcess, idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S }
+  );
+  assertTrue(
+    projectedProductionCostS !== null && projectedProductionCostS <= 1.0,
+    `Ambient loop CPU budget: projected production-rate cost (idle-management baseline + median per-flight excess x worst-case flights/min) is at most 1.0s per 60s (actual ${projectedProductionCostS}s)`,
+    { idleManagementBaselineS: IDLE_MANAGEMENT_BASELINE_S, medianPerFlightExcess, worstCaseFlightsPerMinute: WORST_CASE_FLIGHTS_PER_MINUTE, projectedProductionCostS }
   );
   assertTrue(
     medianPausedDelta !== null && medianPausedDelta <= 0.1,
@@ -242,7 +301,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   await cdp.waitFor(`document.getAnimations().length === 0`, { timeoutMs: 10_000, label: 'Flight finishes naturally (getAnimations back to 0)' });
   const postFlight = await cdp.evaluate(`({
     animCount: document.getAnimations().length,
-    willChangeValues: Array.from(document.querySelectorAll('.holiday-ambient-loop-bat')).map((el) => el.style.willChange)
+    willChangeValues: Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)
   })`);
   assertEqual(postFlight.animCount, 0, 'After the flight finishes: document.getAnimations().length is 0');
   assertTrue(postFlight.willChangeValues.every((wc) => wc === ''), "After the flight finishes: every bat's own inline style.willChange is cleared ('')", postFlight);
@@ -252,7 +311,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   await cdp.waitFor(`document.getAnimations().length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A second flight starts, for the blur-mid-flight proof' });
   await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
   await cdp.waitFor(`document.getAnimations().length === 0`, { timeoutMs: 2_000, label: 'Blur mid-flight cancels the running Animation (getAnimations back to 0 quickly)' });
-  const afterBlurMidFlight = await cdp.evaluate(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat')).map((el) => el.style.willChange)`);
+  const afterBlurMidFlight = await cdp.evaluate(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)`);
   assertTrue(afterBlurMidFlight.every((wc) => wc === ''), "Blur mid-flight also clears every bat's own inline style.willChange", afterBlurMidFlight);
   await cdp.evaluate(`window.dispatchEvent(new Event('focus'))`);
   await tap(cdp);

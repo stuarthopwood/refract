@@ -38,7 +38,7 @@ import { useHolidayStore, useSettingsStore } from '@/state'
 import { OVERLAY_OPEN_SELECTOR } from '@/lib/overlayOpenSelector'
 import { HOLIDAY_CONTENT } from './holidayContent'
 
-/** Gate round 3 fix (High, item 1): the real flight gap is randomised 60-120s, so a 60s
+/** Gate round 3 fix (High, item 1): the real flight gap is randomised 90-180s, so a 60s
  * CPU-budget sample almost never contains one -- `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS` (debug
  * build only, surfaced via `debug.getOverrides().flightIntervalMs`) overrides that gap to a
  * short fixed value so a live check's own sample window reliably contains several. Render-gated
@@ -179,21 +179,25 @@ export function HolidayAmbientLoop() {
   // measured about 3.2s of CPU per 60s above Artwork-only in the live budget check (budget
   // 1.0s/60s) -- three elements animating for the whole window, however cheaply each tick costs,
   // adds up over a sustained 60s. The bats sit STATIC (no CSS animation at all, see
-  // `globals.css`) almost all the time; one randomly-chosen bat flies for about 7s via a single
-  // `Element.animate()` call every 60-120s (randomised in production; `flightIntervalMsOverride`
+  // `globals.css`) almost all the time; one randomly-chosen bat flies for about 4s via a single
+  // `Element.animate()` call every 90-180s (randomised in production; `flightIntervalMsOverride`
   // replaces that gap with a short fixed value in a debug build only, so a live check's own 60s
-  // sample reliably contains several flights to measure). Gate round 3 fix (Medium, item 4): the
+  // sample reliably contains several flights to measure). Gate round 4 fix (Main's decision on
+  // #1048, 2026-10-20): the live budget check found ~0.86s of CPU per flight at the round 3
+  // duration (7s) and rate -- WebView2's own frame-production cost for ANY running animation,
+  // the same rate the round 2 continuous loop cost, not specific to this shape. Shorter and
+  // rarer is the real lever: duration cut to 4s (also now under WCAG 2.2.2's 5s "no more than
+  // 5 seconds" threshold, decision 3), gap widened to 90-180s. The animated target is now the
+  // WRAPPING `<div class="holiday-ambient-loop-bat-wrap">` (`transform`/`will-change` both set
+  // on the div, never the `<svg>` root) -- `globals.css` moved the `position`/`:nth-child`
+  // placement rules onto that wrapper; the bat SVG inside is unpositioned, purely visual
+  // (colour/opacity/shape). Gate round 3 fix (Medium, item 4): the
   // flight is now a round trip back to `translate(0,0)` -- the round 2 version ended at
   // `translate(120px, 6px)` with `fill: 'none'`, so the bat SNAPPED 120px back to its resting
   // spot the instant the animation finished, a visible pop the component's own "gentle drift,
   // never a flicker" promise forbids. `document.getAnimations()` is empty between flights (no
   // `.persist()` call, so the browser auto-removes the finished Animation), and
   // `will-change: transform` is set only for that one flight's own duration, never ambiently.
-  // Gated on `!paused` (the SAME state the pause-rule effect above already computes for
-  // hidden/unfocused/idle/dialog-open) and on `motionReducedOrForcedColors` (gate round 3 fix,
-  // Medium, item 5: now a REACTIVE media-query listener above, not a one-shot check at mount --
-  // a hidden `display:none` ancestor does not stop a running Web Animations API animation from
-  // consuming CPU in the background, so toggling the media mid-flight must cancel it, not just
   // block the next one).
   useEffect(() => {
     if (!active || paused || motionReducedOrForcedColors) return
@@ -202,12 +206,12 @@ export function HolidayAmbientLoop() {
     let currentAnimation: Animation | undefined
 
     function scheduleNextFlight() {
-      const delayMs = flightIntervalMsOverride !== null ? flightIntervalMsOverride : 60_000 + Math.random() * 60_000
+      const delayMs = flightIntervalMsOverride !== null ? flightIntervalMsOverride : 90_000 + Math.random() * 90_000
       flightTimer = window.setTimeout(runFlight, delayMs)
     }
 
     function runFlight() {
-      const bats = containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat')
+      const bats = containerRef.current?.querySelectorAll<HTMLElement>('.holiday-ambient-loop-bat-wrap')
       if (!bats || bats.length === 0) {
         scheduleNextFlight()
         return
@@ -227,7 +231,7 @@ export function HolidayAmbientLoop() {
           { transform: 'translate(60px, -10px)', offset: 0.75 },
           { transform: 'translate(0px, 0px)', offset: 1 }
         ],
-        { duration: 7_000, easing: 'ease-in-out', fill: 'none' }
+        { duration: 4_000, easing: 'ease-in-out', fill: 'none' }
       )
       currentAnimation = animation
       animation.onfinish = () => {
@@ -261,9 +265,15 @@ export function HolidayAmbientLoop() {
     >
       {holiday === 'halloween' && (
         <>
-          <BatSilhouette />
-          <BatSilhouette />
-          <BatSilhouette />
+          <div className="holiday-ambient-loop-bat-wrap">
+            <BatSilhouette />
+          </div>
+          <div className="holiday-ambient-loop-bat-wrap">
+            <BatSilhouette />
+          </div>
+          <div className="holiday-ambient-loop-bat-wrap">
+            <BatSilhouette />
+          </div>
         </>
       )}
     </div>
