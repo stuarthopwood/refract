@@ -1129,7 +1129,41 @@ gain the new alpha tokens.
   reading real computed colours, sampling pixels, capturing every screenshot) is deferred,
   same shape as T040/T044's own deferred items above.
 
+- [X] T050 Main's build-slot-queue follow-up (2026-10-20): confirm exactly how the checker
+  composites an alpha foreground over its real surface before measuring (cite the compositing
+  code), report the lowest measured ratio per alpha tier (0.9/0.78/0.6) with its theme and
+  surface, and audit for a missing alpha pair -- if found, add it and commit, no build
+  (depends on T048).
+  **Done**: compositing confirmed at `scripts/contrast-math.mjs:32-43` (`compositeOverLinear`/
+  `resolvedLinear`, gamma-space blend), called from `check-theme-contrast.mjs:322-324` (the
+  main `PAIRS` loop) for every pair, including the three new #1074 tokens -- no separate
+  alpha-aware code path exists; the same primitive already composited every pair since the
+  #806 gate-round-5 fix (`contrast-math.mjs`'s own header comment). Audit found a genuine gap:
+  `--chat-foreground` renders inside the user message bubble (`UserMessageRow.tsx:94,107`,
+  `bg-accent/50` over `--background`), not only on the plain chat `--background` the one
+  existing `chat-foreground`/`background` PAIRS entry covers -- and since `--chat-foreground`
+  is now itself translucent (#1074), its own alpha composites a SECOND time on top of the
+  bubble's. `theme-contrast-pairs.mjs`'s `userBubbleLinkContrastRows` (already composited
+  `--accent-text` over that exact bubble backdrop, #610) renamed to `userBubbleContrastRows`
+  and extended to also check `--chat-foreground` there, same backdrop, same gamma-space
+  compositing (`theme-contrast-pairs.mjs:404-424`); `check-theme-contrast.mjs`'s own import and
+  merged loop updated to match. `--muted-foreground`/sidebar and `--muted-foreground`/composer-
+  surface were NOT missing: `sidebar` is already a real `PAIRS` entry, and the composer surface
+  is `transparent` in every preset but Dark (high contrast) (where it IS checked), so the other
+  four themes' real composer backdrop is `--background`, already covered. Total pairs: 872 ->
+  877 (+1 per theme, 5 themes), re-run 877/877 PASS. Lowest enforced ratio per tier, against
+  the plain `background`/`card`/`popover` surfaces the issue's own table named: 0.9 tier
+  12.17:1 (Obsidian, `popover-foreground`/`popover`); 0.78 tier 11.65:1 (Obsidian,
+  `chat-foreground`/`background`); 0.6 tier 6.26:1 (Obsidian, `muted-foreground`/`popover`,
+  unchanged from the issue's own original measurement). Lowest enforced ratio across EVERY
+  real checked surface (tinted severity banners, the sidebar-border literal, the new user-
+  bubble pair): 0.9 tier 9.84:1 (Obsidian, `foreground` on a severity-info tinted banner over
+  `popover`); 0.78 tier 10.28:1 (Nordic Frost, `chat-foreground` on the user bubble); 0.6 tier
+  5.64:1 (Obsidian, `muted-foreground`/`sidebar-border`, pre-existing, unrelated to #1074).
+  `pnpm typecheck`/`check:file-size`/`check:indent` all still green. No build run.
+
 T046 keeps `dark-high-contrast` byte-identical to `origin/main`; confirmed by
-`check-theme-contrast.mjs` re-running its other pairs unchanged inside the same 872-pair total
-(no PAIRS entries added or removed by this issue, only token values and the metadata drift
-check's own internal comparison count, which was already one-per-theme).
+`check-theme-contrast.mjs` re-running its other pairs unchanged inside the original 872-pair
+total (no PAIRS entries added or removed by T046 itself, only token values and the metadata
+drift check's own internal comparison count, which was already one-per-theme). T050 later adds
+one genuinely new pair per theme (872 -> 877, see that task's own entry).

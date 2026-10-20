@@ -392,36 +392,33 @@ export function searchFieldContrastRows(themes) {
   return rows
 }
 
-// ---- issue #610 (hyperlinks): a link/file-link rendered inside a user message composites
-// `--accent-text` (Markdown.tsx's `linkClassName`) over the user bubble's own translucent fill
-// (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
-// `--background` -- the plain-background/card/popover PAIRS entries above never actually
-// exercise this composited case. Checked the same way the destructive-footer block above
-// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
-// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
-// `--accent-text` against that blended result.
-export function userBubbleLinkContrastRows(themes) {
+// ---- issue #610 (hyperlinks) and #1074 (chat text opacity): both a link/file-link AND the
+// chat prose itself composite over the user bubble's own translucent fill (`bg-accent/50`,
+// `UserMessageRow.tsx`'s `MessageContent`), not flat `--background` -- the plain-background/
+// card/popover PAIRS entries never exercise this composited case, and `--chat-foreground` is
+// now itself translucent (#1074), so its own alpha composites a SECOND time on top of the
+// bubble's. Checked the same way the destructive-footer block above checks its own composited
+// backdrop: gamma-blend the bubble fill over the chat area's own `--background`, then gamma-
+// blend each foreground (itself translucent or not) over THAT blended result, then WCAG-
+// contrast.
+export function userBubbleContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {
     const accent = props['accent']
     const background = props['background']
     const accentText = props['accent-text']
-    if (!accent || !background || !accentText) {
-      rows.push({ themeId, fg: 'accent-text', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    const chatForeground = props['chat-foreground']
+    if (!accent || !background || !accentText || !chatForeground) {
+      rows.push({ themeId, fg: 'accent-text/chat-foreground', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background)
-    const ratio = contrastRatio(relativeLuminance(accentText.linear), relativeLuminance(bubbleLinear))
-    rows.push({
-      themeId,
-      fg: 'accent-text',
-      bg: 'user-bubble (accent/50 on background)',
-      min: 4.5,
-      ratio,
-      pass: ratio >= 4.5,
-      fgHex: linearToHex(accentText.linear),
-      bgHex: linearToHex(bubbleLinear),
-    })
+    const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background) }
+    const bubbleLum = relativeLuminance(bubble.linear)
+    for (const [fg, entry] of [['accent-text', accentText], ['chat-foreground', chatForeground]]) {
+      const fgLinear = resolvedLinear(entry, bubble)
+      const ratio = contrastRatio(relativeLuminance(fgLinear), bubbleLum)
+      rows.push({ themeId, fg, bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
+    }
   }
   return rows
 }
