@@ -201,7 +201,7 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
  * every such switch (Gate1076Test3, MEDIUM) -- gate round 3 moved it into its own
  * `commitDraftsBySession` map, untouched by `forgetSession`. Proves it through the real tab-
  * switch UI path, not just a store read. Fully clears the draft before returning. */
-export async function runDraftPersistsAcrossTabSwitchCheck(cdp, findings, failures) {
+export async function runDraftPersistsAcrossTabSwitchCheck(cdp, shot, findings, failures) {
   const draftSubject = 'A half-typed draft for verify-464';
   const draftBody = 'Switching tabs must not discard this.';
   await typeIntoField(cdp, SUBJECT_FINDER, draftSubject);
@@ -212,6 +212,7 @@ export async function runDraftPersistsAcrossTabSwitchCheck(cdp, findings, failur
   await cdp.waitFor(`!!${SUBJECT_FINDER}`, { timeoutMs: 10_000, label: 'Git changes panel remounted after switching back' });
   assertEqual(await cdp.evaluate(`${SUBJECT_FINDER}?.value ?? null`), draftSubject, 'Commit draft subject survived a tab switch away and back', findings, failures);
   assertEqual(await cdp.evaluate(`${BODY_FINDER}?.value ?? null`), draftBody, 'Commit draft body survived a tab switch away and back', findings, failures);
+  await shot('13a-draft-survives-tab-switch.png');
   await clearField(cdp, SUBJECT_FINDER);
   await clearField(cdp, BODY_FINDER);
 }

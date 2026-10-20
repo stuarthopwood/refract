@@ -480,7 +480,7 @@ async function main() {
     await shot('13-post-button-commit.png');
 
     // ---- Check 13a (#1076 MEDIUM 4): draft survives a tab switch -- helper's own doc comment. ----
-    await runDraftPersistsAcrossTabSwitchCheck(cdp, findings, failures);
+    await runDraftPersistsAcrossTabSwitchCheck(cdp, shot, findings, failures);
     // ---- Check 13b (#1076 HIGH 1 proof): commit clears within 2s under sustained churn -- helper's own doc comment. ----
     await runCommitClearsDuringExternalChurnCheck(cdp, worktreePath, shot, findings, failures);
 
