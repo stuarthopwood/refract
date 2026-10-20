@@ -4975,3 +4975,56 @@ files; `check:file-size` 0 violations (`ToolRow.tsx` 599/600, `SubagentChainRow.
 `SubagentGoalPreview.tsx`/`linkStyles.ts` new, both small); `check:theme-contrast`/`check:
 parity`/`check:drag-regions` unaffected (no new token, no IPC/drag-region change). **A fresh
 FINAL LIVE-VERIFIED PASS is still pending the next build slot** -- not yet run.
+
+## Phase 73: Enter sends queued follow-up (#1067, FR-094)
+
+(Next free numbers against `origin/main` at this branch's own cut, `a5e3ff7b`: Phase 72/T350-T355
+claimed by #1077 above, so this phase claims Phase 73/T356 onward; the highest FR in this spec is
+FR-093, so this phase claims FR-094.)
+
+**Goal**: Enter on a blank composer with at least one queued follow-up sends the oldest one,
+exactly as its own "Send now" chip would. Decided (Stuart, `grill-with-docs`, 2026-10-20, issue
+#1067; none deferred) -- see spec.md's own 2026-10-20 Clarifications entry for the decision
+record.
+
+- [X] T356 Docs convergence: this phase, `spec.md` FR-094 (new, amends FR-011/FR-012) and its
+  dated `### Session 2026-10-20 (Enter sends queued follow-up, #1067)` Clarifications entry
+  recording the decided rule, the "blank" definition, and the discoverability/single-flight
+  details. `docs/PLAN.md`'s "Enter sends queued follow-up" row status.
+- [X] T357 `src/renderer/features/chat/useEnterSendsQueuedFollowUp.ts` (new, small helper --
+  `MessageInput.tsx` is at its own `check:file-size` baseline cap): `computeEnterSendsQueuedFollowUp(text, attachments, chips, showSlashMenu, ghost)`
+  derives whether a plain Enter should steer the oldest queued follow-up instead of calling the
+  ordinary `handleSend()`. "Blank" is whitespace-only text with no pending images, text chips, or
+  file attachments (deliberately distinct from issue #744's still-open `hasSendableContent`,
+  which asks the opposite question for the Send button). The oldest follow-up is `chips.find`'s
+  first `queue === 'followUp'` entry (follow-ups list before any steering chip, in `followUp`
+  array/FIFO order); a steering-only queue yields no match. The rule is suppressed while the
+  slash menu is open or a live ghost-text suggestion is showing (the latter can't actually
+  coexist with a blank draft today per `isGhostTextEligible`, but the guard is explicit anyway).
+- [X] T358 `src/renderer/features/chat/MessageInput.tsx`: the Enter branch of `handleKeyDown`
+  calls `handleSendNow(enterQueuedFollowUp.chip!)` instead of `handleSend()` when
+  `enterQueuedFollowUp.applies`, reusing its existing `inFlightChips` single-flight guard
+  unchanged (a fast double Enter resolves to the same chip key on both presses, so the second
+  call is a no-op) and its existing "Sending now…" announcement. The empty-state hint overlay's
+  lead text and the `composerHintId` sr-only description (already wired into the textarea's
+  `aria-describedby`, issue #533) both read "Enter sends the next queued message" while the rule
+  applies, in place of the default "Message the agent"/"Markdown is supported..." wording.
+  IME composition and Shift+Enter are unaffected (both already gated before this branch runs).
+- [ ] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape):
+  written, not yet run -- pending the next build slot. Covers: two queued follow-ups mid-turn,
+  Enter on a blank composer sends the oldest then the next; the placeholder text and
+  `aria-describedby` while the rule applies; a fast double Enter sends once; steering-only
+  queued, Enter is a no-op; Enter with typed text still sends that text; the slash menu open
+  suppresses the rule; Shift+Enter inserts a newline. `report.json` records `gitHead`, `dirty`,
+  failures and `notExercised`.
+
+**Non-build checks** (run against the renderer changes alone, before any build slot): `pnpm
+typecheck` clean; `pnpm test` 148/148 passed (no new renderer tests, prototyping-phase rule);
+`node scripts/check-indent.mjs` 0 odd-indent lines across 456 files scanned (3 allow-listed);
+`node scripts/check-file-size.mjs` 0 cap violations across 521 files scanned (`MessageInput.tsx`
+1632/1632 baseline, unchanged -- new logic lives in `useEnterSendsQueuedFollowUp.ts` instead);
+`node scripts/check-theme-contrast.mjs` all 872 pairs across 5 themes PASS (no new token); `node
+scripts/check-parity.mjs` 115 of 115 requests, 25 of 25 events (unaffected, frontend-only
+change); `node scripts/check-drag-regions.mjs` 0 violations across 153 files.
+
+**FINAL LIVE-VERIFIED PASS is pending the next build slot** -- not yet run.

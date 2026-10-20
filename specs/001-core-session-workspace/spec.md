@@ -1139,6 +1139,29 @@
   (no implicit default); `InlineDisclosure`'s unused `className`/`buttonClassName` props are
   dropped.
 
+### Session 2026-10-20 (Enter sends queued follow-up, #1067)
+
+- Q: Issue #1067 (Stuart, `grill-with-docs`, 2026-10-20, all resolved, none deferred): with a
+  blank composer and at least one queued follow-up, Enter does nothing useful today --
+  `handleSend()` runs against empty content, and the only way to send a queued follow-up is the
+  "Send now" chip button (FR-012, issue #540). What should Enter do? -> A: Enter (no Shift, not
+  composing) on a blank composer sends the OLDEST queued follow-up, exactly as if its own "Send
+  now" chip were clicked, matching OMP's FIFO `promote_queued_message`; a repeat Enter sends the
+  next one. Queued `steering` messages are skipped (follow-ups only, matching FR-012's existing
+  chip rule); if only steering is queued, Enter on a blank composer does nothing.
+- Q: How is "blank" defined for this rule, and is it discoverable? -> A: Blank means
+  whitespace-only text, no pending images, no pending text chips, and no pending file
+  attachments (independent of, and not to be confused with, issue #744's still-open
+  `hasSendableContent` proposal, which asks the opposite question for the Send button). While the
+  rule applies (composer blank, at least one follow-up queued), the composer's hint reads "Enter
+  sends the next queued message", reachable through the textarea's existing `aria-describedby`
+  (an inert hint overlay is never read as a native `placeholder` by assistive tech, per issue
+  #533); sending this way announces "Sending now…", identical to the chip's own announcement. The
+  rule reuses `handleSendNow` and its existing `inFlightChips` single-flight guard rather than
+  reimplementing it, so a fast double Enter cannot double-send. Enter is never hijacked by this
+  rule while the slash menu is open, an IME composition is in progress, or a ghost-text
+  suggestion is showing; Shift+Enter is unaffected.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1797,6 +1820,18 @@ The developer types a slash command and finds the ones the agent offers. If a se
   MUST move focus back to the toggle link (the same WCAG 2.4.3 hazard issues #991/#1001 fixed
   one level up, for a Stage's own trigger); a nested control's own Escape handling (a Tooltip's
   own dismiss, WCAG 1.4.13) MUST win the first press.
+- **FR-094** (new, 2026-10-20, issue #1067, Stuart's own `grill-with-docs` session, 2026-10-20;
+  amends FR-011/FR-012): With the composer blank (whitespace-only text, no pending images, text
+  chips, or file attachments) and at least one queued `followUp` message, Enter (no Shift, not
+  composing) MUST send the oldest queued follow-up exactly as its own "Send now" chip (FR-012)
+  would, reusing the same single-flight guard so a fast double Enter cannot double-send; a
+  repeat Enter MUST send the next queued follow-up. Queued `steering` messages MUST be skipped;
+  with only steering queued, Enter on a blank composer MUST do nothing. This rule MUST NOT apply
+  while the slash menu is open, an IME composition is in progress, or a ghost-text suggestion
+  (FR-058) is showing. While the rule applies, the composer's hint MUST read "Enter sends the
+  next queued message", reachable through the textarea's `aria-describedby`, and sending this
+  way MUST announce "Sending now…" exactly as the chip's own button does. Shift+Enter is
+  unaffected.
 
 ### Key Entities
 
