@@ -12,6 +12,7 @@
 // over it: `isolate` is what creates the stacking context here (`container-type` does not, it
 // only applies style and size containment).
 import { BrandWatermark } from './BrandWatermark'
+import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
 import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 
 export function EmptyChatState() {
@@ -24,6 +25,7 @@ export function EmptyChatState() {
       className="relative isolate flex flex-col h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
     >
       <BrandWatermark variant="live" />
+      <HolidayAmbientLoop />
       <span>Select a Session or create one.</span>
       <HolidayEmptyStateLine className="text-xs" />
     </div>

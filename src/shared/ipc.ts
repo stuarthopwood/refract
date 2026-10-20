@@ -699,11 +699,11 @@ export interface RefractApi extends UpdatesApi {
 
   /** Issue #1048 (R-lane live-check harness): debug-build-only knobs, always answerable (never
    * `unsupported`) regardless of build -- a release build's own answer is simply always inert
-   * (`{ date: null, idleTimeoutMs: null }`), the same posture `lib.rs::data_dir`'s
-   * `REFRACT_DATA_DIR` already sets for the equivalent Rust-only override. Read once at
-   * startup (`init-stores.ts`), never polled. */
+   * (`{ date: null, idleTimeoutMs: null, flightIntervalMs: null }`), the same posture
+   * `lib.rs::data_dir`'s `REFRACT_DATA_DIR` already sets for the equivalent Rust-only override.
+   * Read once at startup (`init-stores.ts`), never polled. */
   debug: {
-    getOverrides(): Promise<Result<{ date: string | null; idleTimeoutMs: number | null }>>;
+    getOverrides(): Promise<Result<{ date: string | null; idleTimeoutMs: number | null; flightIntervalMs: number | null }>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI,

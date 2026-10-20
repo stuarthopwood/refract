@@ -35,6 +35,7 @@ import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
+import { HolidayAmbientLoop } from '../holidays/HolidayAmbientLoop'
 import { HolidayEmptyStateLine } from '../holidays/HolidayEmptyStateLine'
 import { HOLIDAY_CONTENT } from '../holidays/holidayContent'
 import { ChatHeader } from './ChatHeader'
@@ -101,9 +102,13 @@ interface ChatPaneProps {
    * transcript container (the normal case) or its own `!session` Empty fallback, whichever
    * branch is active. */
   showWatermark?: boolean
+  /** Gate round 3 fix (High, item 2, FR-008 regression): true only for `paneIndex === 0`, mounts
+   * `<HolidayAmbientLoop />` in the transcript container ONLY (never the Empty fallback above,
+   * unlike `showWatermark` -- independent of it: that one goes to the RIGHT pane in a split). */
+  showAmbientLoop?: boolean
 }
 
-export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark }: ChatPaneProps) {
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark, showAmbientLoop }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4 / Issue #618 gate-fix (code/verif/a11y High): while `sessions-store.ts`'s
   // `open()` is in flight for this Session (a fresh click, or a not-started Session cold-starting
@@ -1400,6 +1405,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       />
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
+        {showAmbientLoop && <HolidayAmbientLoop />}
         <Transcript
           sessionId={sessionId}
           hasHistory={hasHistory}

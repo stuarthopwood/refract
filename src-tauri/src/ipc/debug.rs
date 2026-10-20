@@ -1,8 +1,8 @@
 // IPC handlers for debug-build-only knobs (issue #1048, R-lane live-check harness). Same posture
 // as `lib.rs::data_dir`'s own `REFRACT_DATA_DIR`: every env var read here is gated
 // `#[cfg(debug_assertions)]`, so a release build's `debug.getOverrides` always answers
-// `{ date: null, idleTimeoutMs: null }` regardless of whether either variable happens to be set
-// in the process environment (gate-fix precedent, security review MEDIUM) -- never a build-time
+// `{ date: null, idleTimeoutMs: null, flightIntervalMs: null }` regardless of whether any of
+// them happens to be set in the process environment (gate-fix precedent, security review MEDIUM) -- never a build-time
 // `#[cfg]` on the channel's own registration, so the renderer can call this channel unconditionally
 // in every build without a feature-detection round trip; a release build's answer is simply
 // always inert.
@@ -23,6 +23,12 @@ pub fn register(d: &mut Dispatcher) {
 #[cfg(debug_assertions)]
 const MIN_IDLE_TIMEOUT_MS: u64 = 1_000;
 
+/// Gate round 3 fix (High, item 1): a live check that asked for a flight interval of 0ms would
+/// busy-loop flights back-to-back with no gap at all -- same posture as `MIN_IDLE_TIMEOUT_MS`
+/// above.
+#[cfg(debug_assertions)]
+const MIN_FLIGHT_INTERVAL_MS: u64 = 500;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct DebugOverrides {
     /// `REFRACT_DATE_OVERRIDE` (`YYYY-MM-DD`): substitutes for `new Date()` everywhere the
@@ -37,6 +43,13 @@ struct DebugOverrides {
     /// to at least `MIN_IDLE_TIMEOUT_MS`.
     #[serde(rename = "idleTimeoutMs")]
     idle_timeout_ms: Option<u64>,
+    /// `REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS`: gate round 3 fix (High, item 1) -- the real
+    /// gap between ambient-loop flights is randomised 60-120s, so a 60s CPU-budget sample
+    /// almost never contains one; this overrides that gap to a short fixed value (clamped to
+    /// at least `MIN_FLIGHT_INTERVAL_MS`) so a live check's own sample window reliably contains
+    /// several flights to measure.
+    #[serde(rename = "flightIntervalMs")]
+    flight_interval_ms: Option<u64>,
 }
 
 pub fn debug_get_overrides(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -56,12 +69,14 @@ fn resolve_overrides() -> DebugOverrides {
         resolve_overrides_from(
             std::env::var("REFRACT_DATE_OVERRIDE").ok(),
             std::env::var("REFRACT_HOLIDAY_IDLE_MS").ok(),
+            std::env::var("REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS").ok(),
         )
     }
     #[cfg(not(debug_assertions))]
     DebugOverrides {
         date: None,
         idle_timeout_ms: None,
+        flight_interval_ms: None,
     }
 }
 
@@ -73,7 +88,7 @@ fn resolve_overrides() -> DebugOverrides {
 /// `runInvalidDateOverrideCheck` launches once with `REFRACT_DATE_OVERRIDE=2026-02-30` and asserts
 /// the override resolves to `null`).
 #[cfg(debug_assertions)]
-fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>) -> DebugOverrides {
+fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>, raw_flight_interval_ms: Option<String>) -> DebugOverrides {
     let date = raw_date
         .as_deref()
         .map(str::trim)
@@ -84,9 +99,14 @@ fn resolve_overrides_from(raw_date: Option<String>, raw_idle_ms: Option<String>)
         .as_deref()
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(|ms| ms.max(MIN_IDLE_TIMEOUT_MS));
+    let flight_interval_ms = raw_flight_interval_ms
+        .as_deref()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|ms| ms.max(MIN_FLIGHT_INTERVAL_MS));
     DebugOverrides {
         date,
         idle_timeout_ms,
+        flight_interval_ms,
     }
 }
 

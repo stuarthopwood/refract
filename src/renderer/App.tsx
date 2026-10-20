@@ -27,7 +27,6 @@ import {
 import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
-import { HolidayAmbientLoop } from '@/features/holidays/HolidayAmbientLoop'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
@@ -525,13 +524,8 @@ export function App() {
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
-            {/* Gate round 2 fix (Medium, item 7): `relative isolate` here (not an extra wrapper
-                div) gives the single `HolidayAmbientLoop` mount below a stacking context to
-                paint behind, for exactly ONE instance per window regardless of split state --
-                split view used to mount it once per `ChatPane`, doubling the bats. */}
-            <ResizablePanel id="chat" className="relative isolate" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
+            <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
-                {view === 'chat' && <HolidayAmbientLoop />}
                 {view === 'pull-requests' ? (
                   // specs/003-pull-request-management: swaps only this panel's content (never
                   // the session-list panel or the subagent panel, both of which stay mounted --
@@ -548,6 +542,7 @@ export function App() {
                     reservesWindowControls={!paneShown}
                     otherSession={otherSessionForNarrowCollapse}
                     showWatermark
+                    showAmbientLoop
                   />
                 ) : (
                   <ResizablePanelGroup
@@ -570,7 +565,7 @@ export function App() {
                   >
                     <ResizablePanel id="split-pane-0" defaultSize={`${dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
-                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
+                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} showAmbientLoop />
                       </ErrorBoundary>
                     </ResizablePanel>
                     <ResizableHandle withHandle aria-label="Resize chat panes" />

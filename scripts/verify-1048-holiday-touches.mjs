@@ -72,6 +72,10 @@ const SHORT_IDLE_MS = 3_000;
 // Gate round 1 fix (High, item 5): well under SHORT_IDLE_MS, so a pause observed within this
 // window can only be the blur/hidden handler, never a coincidental idle-timer firing.
 const SHORT_PAUSE_PROOF_MS = 300;
+// Gate round 3 fix (High, item 1): the real flight gap is randomised 60-120s, so a 60s
+// CPU-budget sample window almost never lands inside one -- a short fixed gap here (plus each
+// flight's own fixed 7s duration) gives every 60s Full sample several flights to measure.
+const SHORT_FLIGHT_INTERVAL_MS = 5_000;
 // The one DOM probe for "did holiday artwork render anywhere": the watermark/sidebar/spinner
 // all carry a lucide icon whose own class name is `lucide-<kebab-icon-name>`; Halloween's own
 // icon is `Ghost` -> `lucide-ghost`. Module scope (used by both `main()` and
@@ -100,6 +104,11 @@ async function main() {
     'ambient-loop-blurred.png',
     'spinner-working.png',
     'baseline-off-season.png',
+    // Gate round 3 fix (Low): one-time cleanup of the stale pre-rename file left behind by
+    // earlier runs (the round 2 rename to `baseline-off-season.png` above never touched it) --
+    // listing it here puts its deletion through the SAME guarded known-file-name clear every
+    // other screenshot already goes through, never an ad hoc delete.
+    'baseline-no-override.png',
     'report.json'
   ]);
 
@@ -173,7 +182,8 @@ async function main() {
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log'),
         REFRACT_FAKE_OMP_SCENARIO: 'session',
         REFRACT_DATE_OVERRIDE: HALLOWEEN_DATE_OVERRIDE,
-        REFRACT_HOLIDAY_IDLE_MS: String(SHORT_IDLE_MS)
+        REFRACT_HOLIDAY_IDLE_MS: String(SHORT_IDLE_MS),
+        REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS: String(SHORT_FLIGHT_INTERVAL_MS)
       }
     });
     child = launched.child;
@@ -188,6 +198,7 @@ async function main() {
     assertTrue(overridesResult.ok === true, 'debug.getOverrides() answers ok:true');
     assertEqual(overridesResult.value.date, HALLOWEEN_DATE_OVERRIDE, 'debug.getOverrides() reports the REFRACT_DATE_OVERRIDE env var verbatim');
     assertEqual(overridesResult.value.idleTimeoutMs, SHORT_IDLE_MS, 'debug.getOverrides() reports the REFRACT_HOLIDAY_IDLE_MS env var verbatim');
+    assertEqual(overridesResult.value.flightIntervalMs, SHORT_FLIGHT_INTERVAL_MS, 'debug.getOverrides() reports the REFRACT_HOLIDAY_FLIGHT_INTERVAL_MS env var verbatim');
 
     // ---- Real UI flow: readiness, Add repository (no Session created yet) ----
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -281,6 +292,38 @@ async function main() {
     assertTrue(batStackingCheck !== null && batStackingCheck.batCount === 3, 'Three bat silhouettes found for the stacking-order proof', batStackingCheck);
     assertEqual(batStackingCheck.loopZIndex, '-10', 'Ambient loop layer computed z-index is -10');
     assertEqual(batStackingCheck.parentIsolation, 'isolate', "Ambient loop layer's positioned ancestor computed isolation is isolate (the -10 z-index genuinely creates a BEHIND stacking context, not a no-op)");
+
+    // ---- Gate round 3 fix (High, item 2, FR-008 regression): a full draft typed into the
+    // composer (so its own box reflects a realistic, possibly taller, expanded state) must
+    // never have any bat's resting rect, OR its own flight-end rect (resting rect offset by the
+    // flight's own max `translate(120px, 6px)`), intersect the composer's rect -- the loop is
+    // scoped to the transcript container ONLY (item 2's fix), a separate sibling above the
+    // composer, so this must hold regardless of whether a flight is actually running right now. ----
+    await cdp.typeIntoByLabel('Message', 'A full draft of several lines of text, long enough to grow the composer box taller than its single-line resting height, so the geometry check below exercises its real expanded size.\nA second line.\nA third line.');
+    await settleForScreenshot(cdp);
+    const composerFlightSafety = await cdp.evaluate(`(() => {
+      const composer = document.querySelector('[aria-label="Message"]');
+      if (!composer) return null;
+      const composerRect = composer.getBoundingClientRect();
+      const bats = Array.from(document.querySelectorAll('.holiday-ambient-loop-bat'));
+      const intersects = (a, b) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+      const results = bats.map((bat) => {
+        const r = bat.getBoundingClientRect();
+        const flown = { left: r.left + 120, right: r.right + 120, top: r.top + 6, bottom: r.bottom + 6 };
+        return {
+          restIntersectsComposer: intersects(r, composerRect),
+          flightEndIntersectsComposer: intersects(flown, composerRect)
+        };
+      });
+      return { composerRect, batCount: bats.length, results };
+    })()`);
+    assertTrue(composerFlightSafety !== null && composerFlightSafety.batCount === 3, 'Composer/bat geometry check found the composer and all three bats', composerFlightSafety);
+    assertTrue(composerFlightSafety.results.every((r) => !r.restIntersectsComposer), 'No bat rests over the composer (full draft typed, composer at its real expanded height)', composerFlightSafety);
+    assertTrue(composerFlightSafety.results.every((r) => !r.flightEndIntersectsComposer), 'No bat\'s flight-end position (its own rect offset by the flight\'s max translate(120px, 6px)) reaches the composer', composerFlightSafety);
+    await cdp.evaluate(`document.querySelector('[aria-label="Message"]').select()`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 8, key: 'Backspace', code: 'Backspace' });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 8, key: 'Backspace', code: 'Backspace' });
+    await cdp.waitFor(`document.querySelector('[aria-label="Message"]')?.value === ''`, { timeoutMs: 5_000, label: 'Composer draft cleared before continuing' });
 
     // ---- Ambient loop: Full (default) ----
     let loopState = await readAmbientLoopState(cdp);
@@ -405,12 +448,11 @@ async function main() {
     await cdp.clickByText('Appearance', { tag: 'button' });
     await cdp.waitFor(`!!document.querySelector('#holiday-touches-select')`, { timeoutMs: 10_000, label: 'Appearance section shows the Holiday touches control' });
     await cdp.evaluate(`document.querySelector('#holiday-touches-select').scrollIntoView({ block: 'center' })`);
-    await settleForScreenshot(cdp);
-    await cdp.screenshot(path.join(SHOTS_DIR, 'settings-appearance.png'));
-    // ---- Gate round 2 fix (Medium, item 9): exercises the REAL Settings control once, not only
-    // the debug `window.refract.settings.setHolidayTouches` shortcut every other mode switch in
-    // this script uses -- proves the actual Select wiring (SelectTrigger/SelectItem), not just
-    // the underlying Zustand setter it calls. ----
+    // ---- Gate round 2 fix (Medium, item 9) + round 3 fix (Low, "take the Settings shot after
+    // the Select is used"): exercises the REAL Settings control (not only the debug
+    // `window.refract.settings.setHolidayTouches` shortcut every other mode switch in this
+    // script uses) BEFORE the screenshot, so the shot reflects the control's real post-use state
+    // (closed, back on Full, no stray open-menu artefact), not merely its first-render state. ----
     await cdp.click(`document.querySelector('#holiday-touches-select')`);
     await cdp.waitFor(`!!document.querySelector('[data-slot="select-item"]')`, { timeoutMs: 5_000, label: 'Holiday touches select options open' });
     await cdp.clickByText('Artwork only', { tag: '[data-slot="select-item"]' });
@@ -419,6 +461,8 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[data-slot="select-item"]')`, { timeoutMs: 5_000, label: 'Holiday touches select options open again' });
     await cdp.clickByText('Full', { tag: '[data-slot="select-item"]' });
     await cdp.waitFor(`document.querySelector('#holiday-touches-select')?.textContent.includes('Full')`, { timeoutMs: 5_000, label: 'Holiday touches select back to Full through the control itself' });
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, 'settings-appearance.png'));
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 10_000, label: 'Back to chat from Settings' });
 
@@ -426,7 +470,7 @@ async function main() {
     // round 1 informational-only Full-vs-Off single sample -- median of 3 alternating
     // Full/Artwork-only 60s samples, plus a paused-state budget, both asserted against a hard
     // ceiling (see `measureAmbientLoopCpuBudget`'s own doc comment). ----
-    await measureAmbientLoopCpuBudget(cdp, launched.targetPid, report, assertTrue, { log: LOG, shortIdleMs: SHORT_IDLE_MS, dispatchShiftKeyTap });
+    await measureAmbientLoopCpuBudget(cdp, launched.targetPid, report, assertTrue, assertEqual, { log: LOG, shortIdleMs: SHORT_IDLE_MS, shortFlightIntervalMs: SHORT_FLIGHT_INTERVAL_MS, dispatchShiftKeyTap });
 
     report.push({
       step: 'screenshots',
