@@ -1,14 +1,18 @@
 // Spec 018 slice 1 (issue #464), User Story 2: the panel's fixed, non-scrolling commit-box
 // footer (FR-009 to FR-013, FR-023, FR-024) -- a subject field with a live character counter, a
-// body field, and a Commit button, disabled with exactly one visible reason whenever nothing is
-// staged or the message is empty (`disabled` + `title` + a visible reason line, the same
-// disabled-with-reason convention `PullRequestDetail.tsx`'s own Merge button already uses).
-// Ctrl+Enter from anywhere in either field commits (matching the composer's own send shortcut).
-// A quiet inline warning shows whenever the focused Session's status is `working`, without
-// disabling Commit on that basis alone (FR-012); any stage/unstage/commit failure (the store's
-// one shared `error` field) surfaces here as a plain inline `role="alert"` (FR-013), the one
-// place this panel announces an alert so a load failure and an action failure are never
-// double-announced in two places at once.
+// body field, and a Commit button, disabled with exactly one visible reason whenever a conflict
+// is unresolved, nothing is staged, or the message is empty (`aria-disabled` + `title` + a
+// visible reason line, the same disabled-with-reason convention `PullRequestDetail.tsx`'s own
+// Merge button already uses -- never the native `disabled` attribute, which would drop focus to
+// `<body>` the moment the last staged file is unstaged out from under a focused Commit button).
+// Ctrl/Cmd+Enter from anywhere in either field commits (matching the composer's own send
+// shortcut), skipped while an IME composition is in progress so a composing Enter never fires a
+// commit early. A quiet inline warning shows whenever the focused Session's status is `working`,
+// without disabling Commit on that basis alone (FR-012); any stage/unstage/commit failure (the
+// store's own `actionError`, 2026-10-20 gate fix: split from the unrelated `loadError`, so a
+// background refresh can never silently clear an unacknowledged action failure) surfaces here as
+// a plain inline `role="alert"` (FR-013), the one place this panel announces an alert so a load
+// failure and an action failure are never double-announced in two places at once.
 import { useId, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
@@ -23,45 +27,64 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [committing, setCommitting] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
   const subjectId = useId()
   const bodyId = useId()
+  const warningId = useId()
+  const reasonId = useId()
 
+  const conflictCount = entry?.snapshot?.groups.conflicts.length ?? 0
   const stagedCount = entry?.snapshot?.groups.staged.length ?? 0
   const trimmedSubject = subject.trim()
   const trimmedBody = body.trim()
   // FR-009: subject + blank line + body, the conventional git shape -- FR-024 still holds (no
   // format is ENFORCED; a bare body with no subject, or vice versa, is composed as-is below).
   const message = trimmedSubject && trimmedBody ? `${trimmedSubject}\n\n${trimmedBody}` : trimmedSubject || trimmedBody
-  const disabledReason = stagedCount === 0 ? 'Nothing staged' : message.length === 0 ? 'Write a message' : null
+  // Gate round 1 fix (item 11): a conflict blocks Commit outright, checked BEFORE "Nothing
+  // staged"/"Write a message" -- git itself refuses to commit any staged changes while a
+  // conflict remains anywhere in the worktree, regardless of what else is staged or typed.
+  const disabledReason =
+    conflictCount > 0
+      ? 'Resolve conflicts first'
+      : stagedCount === 0
+        ? 'Nothing staged'
+        : message.length === 0
+          ? 'Write a message'
+          : null
 
   async function handleCommit(): Promise<void> {
     if (disabledReason || committing) return
+    const committedSubject = trimmedSubject || trimmedBody
     setCommitting(true)
     await useGitChangesStore.getState().commit(sessionId, message)
     setCommitting(false)
-    // `runAction` (git-changes-store.ts) clears `error` to `null` on a genuine success (it calls
-    // `load`, which always resets it) -- reading it fresh here, rather than trusting a local
-    // "it resolved" flag, is how a real failure (which sets a non-null `error` instead) is told
-    // apart from success without the store returning a redundant boolean of its own.
-    if (useGitChangesStore.getState().bySession[sessionId]?.error === null) {
+    // `runAction` (git-changes-store.ts) clears `actionError` up front and only sets it again on
+    // a genuine failure -- reading it fresh here, rather than trusting a local "it resolved"
+    // flag, is how a real failure is told apart from success without the store returning a
+    // redundant boolean of its own.
+    if (useGitChangesStore.getState().bySession[sessionId]?.actionError === null) {
       setSubject('')
       setBody('')
+      setAnnouncement(`Committed: ${committedSubject}`)
+      document.getElementById(subjectId)?.focus()
     }
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement | HTMLInputElement>): void {
-    if (event.key === 'Enter' && event.ctrlKey) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void handleCommit()
     }
   }
 
+  const describedBy = [sessionStatus === 'working' ? warningId : null, disabledReason ? reasonId : null].filter(Boolean).join(' ') || undefined
+
   return (
     <div className="no-drag-region flex shrink-0 flex-col gap-1.5 border-t border-divider p-2">
       {sessionStatus === 'working' && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p id={warningId} role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
-          Agent is working -- review before committing
+          Agent is working — review before committing
         </p>
       )}
       <div className="flex items-center gap-1.5">
@@ -89,16 +112,41 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Description (optional)"
-        className="min-h-12 text-sm"
+        className="max-h-32 min-h-12 overflow-y-auto text-sm"
       />
-      {entry?.error && (
-        <p role="alert" className="text-xs text-destructive">
-          {entry.error}
-        </p>
+      {entry?.actionError && (
+        <div className="flex items-start gap-1.5">
+          <p role="alert" className="max-h-24 flex-1 overflow-y-auto whitespace-pre-wrap text-xs text-destructive">
+            {entry.actionError}
+          </p>
+          <button
+            type="button"
+            className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => useGitChangesStore.getState().dismissActionError(sessionId)}
+          >
+            Dismiss
+          </button>
+        </div>
       )}
+      {/* Item 8: a commit success is announced once, same `role="status"` pattern as the
+          agent-working warning above -- visually empty (`sr-only`), so it never shifts layout. */}
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
       <div className="flex items-center justify-end gap-1.5">
-        {disabledReason && <span className="text-xs text-muted-foreground">{disabledReason}</span>}
-        <Button size="sm" disabled={disabledReason !== null || committing} title={disabledReason ?? undefined} onClick={() => void handleCommit()}>
+        {disabledReason && (
+          <span id={reasonId} className="text-xs text-muted-foreground">
+            {disabledReason}
+          </span>
+        )}
+        <Button
+          size="sm"
+          aria-disabled={disabledReason !== null || committing}
+          aria-describedby={describedBy}
+          className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+          title={disabledReason ?? undefined}
+          onClick={() => void handleCommit()}
+        >
           {committing ? 'Committing…' : 'Commit'}
         </Button>
       </div>

@@ -14,7 +14,18 @@
 // button. Known, flagged UX compromise for Stuart/Main: `DiffView`/`DiffViewFromPatch` were
 // designed for full chat-pane width; here they render inside the 240-520px hosted pane instead,
 // with their own existing horizontal scroll.
-import { useEffect, useState } from 'react'
+//
+// Gate round 1 fixes (2026-10-20):
+// - `data-git-changes-session={sessionId}` on the root element: every focus-restoration query in
+//   `focus.ts` scopes to it, so a Split's other pane (or the same Session shown in both panes,
+//   FR-022) is never queried by mistake.
+// - Group collapse state is lifted here (`groupOpen`, keyed by kind) instead of each
+//   `GitChangesGroup` owning its own local `useState` -- see that file's own comment.
+// - Item 7: opening a diff remembers which row opened it (`lastSelectionRef`); returning from it
+//   focuses that row again (or the nearest surviving group trigger, if the row is gone).
+// - The commit box is only mounted once a snapshot exists (LOW item): it has nothing truthful to
+//   show while the repo state itself is unknown (no repo, a read failure, or still loading).
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeftIcon, CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -24,9 +35,7 @@ import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../share
 import { GitChangesGroup } from './GitChangesGroup'
 import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
-
-// FR-002's own order: Conflicts/Staged/Changes/Untracked.
-const GROUP_ORDER: readonly GitChangesGroupKind[] = ['conflicts', 'staged', 'changes', 'untracked']
+import { focusGitRow, focusNearestGroupTrigger, GROUP_ORDER } from './focus'
 
 // Mirrors `FileExplorerPanel.tsx`'s own `watcherRefCounts` map exactly (PR #671 gate round 7's
 // own reasoning: this effect's mount/unmount net out to zero across React StrictMode's dev-time
@@ -37,6 +46,13 @@ const watcherRefCounts = new Map<string, number>()
 interface DiffSelection {
   entry: GitChangesFileEntry
   group: GitChangesGroupKind
+}
+
+const DEFAULT_GROUP_OPEN: Record<GitChangesGroupKind, boolean> = {
+  conflicts: true,
+  staged: true,
+  changes: true,
+  untracked: true
 }
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
@@ -76,11 +92,30 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   const sessionEntry = useGitChangesStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
   const [selected, setSelected] = useState<DiffSelection | null>(null)
+  const [groupOpen, setGroupOpen] = useState<Record<GitChangesGroupKind, boolean>>(DEFAULT_GROUP_OPEN)
+  // Item 7: which row opened the currently (or most recently) selected diff -- read when
+  // `selected` transitions back to `null` (Back, or Escape inside the diff pane) so focus can
+  // return to that same row, wherever it ended up.
+  const lastSelectionRef = useRef<DiffSelection | null>(null)
 
   // A different Session's own selection never bleeds into this one.
   useEffect(() => {
     setSelected(null)
+    lastSelectionRef.current = null
+    setGroupOpen(DEFAULT_GROUP_OPEN)
   }, [sessionId])
+
+  useEffect(() => {
+    if (selected !== null || !sessionId || !lastSelectionRef.current) return
+    const { entry, group } = lastSelectionRef.current
+    if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
+    lastSelectionRef.current = null
+  }, [selected, sessionId])
+
+  function openDiff(entry: GitChangesFileEntry, group: GitChangesGroupKind): void {
+    lastSelectionRef.current = { entry, group }
+    setSelected({ entry, group })
+  }
 
   if (!sessionId) {
     return (
@@ -100,7 +135,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   const loading = sessionEntry?.loading ?? true
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div data-git-changes-session={sessionId} className="flex h-full flex-col overflow-hidden">
       {snapshot && <GitChangesHeader header={snapshot.header} />}
       <div className="flex-1 overflow-auto">
         {selected ? (
@@ -113,8 +148,8 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
           ) : (
             // FR-018/SC-006: a legitimate not-available state (not a repo, a git failure, or past
             // the status size cap) collapses to the same `snapshot: null` the store also uses for
-            // a genuine fetch error -- `sessionEntry.error`, when set, is this same text; this is
-            // deliberately NOT a second `role="alert"` (GitCommitBox below is the one place this
+            // a genuine fetch error -- `sessionEntry.loadError`, when set, is this same text; this
+            // is deliberately NOT a second `role="alert"` (GitCommitBox is the one place this
             // panel raises that alert, so neither surface double-announces it).
             <Empty className="h-full">
               <EmptyHeader>
@@ -122,7 +157,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
                   <FileWarningIcon aria-hidden />
                 </EmptyMedia>
                 <EmptyTitle>Not available</EmptyTitle>
-                <EmptyDescription>{sessionEntry?.error ?? "This worktree's Git status could not be read."}</EmptyDescription>
+                <EmptyDescription>{sessionEntry?.loadError ?? "This worktree's Git status could not be read."}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           )
@@ -143,13 +178,15 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
                 kind={kind}
                 entries={snapshot.groups[kind]}
                 sessionId={sessionId}
-                onOpenDiff={(entry, group) => setSelected({ entry, group })}
+                open={groupOpen[kind]}
+                onOpenChange={(next) => setGroupOpen((prev) => ({ ...prev, [kind]: next }))}
+                onOpenDiff={openDiff}
               />
             ))}
           </div>
         )}
       </div>
-      <GitCommitBox sessionId={sessionId} />
+      {snapshot && <GitCommitBox sessionId={sessionId} />}
     </div>
   )
 }
@@ -168,6 +205,17 @@ function GitChangesDiffPane({
   const { entry, group } = selection
   const staged = group === 'staged'
   const [state, setState] = useState<DiffState>('loading')
+  const backButtonRef = useRef<HTMLButtonElement>(null)
+  // Item 14 (gate round 1): re-fetches whenever this Session's own snapshot object changes
+  // underneath an open diff (a watcher ping, a status transition, or this same file's own
+  // stage/unstage/commit from elsewhere) -- previously this effect only re-ran if the SELECTED
+  // file/side changed, so an open diff silently went stale through a live refresh.
+  const snapshot = useGitChangesStore((s) => s.bySession[sessionId]?.snapshot)
+
+  // Item 7: focuses Back on open, the same way a dialog focuses its own first control on mount.
+  useEffect(() => {
+    backButtonRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -184,14 +232,26 @@ function GitChangesDiffPane({
     return () => {
       cancelled = true
     }
-  }, [sessionId, entry.path, staged])
+  }, [sessionId, entry.path, staged, snapshot])
 
   return (
-    <div className="flex flex-col gap-1.5 p-1">
-      <Button variant="outline" size="sm" className="self-start" onClick={onBack}>
-        <ArrowLeftIcon aria-hidden className="size-3.5" />
-        Back to changes
-      </Button>
+    <div
+      className="flex flex-col gap-1.5 p-1"
+      onKeyDown={(event) => {
+        // Item 14: Escape returns to the list, same as the explicit Back button.
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onBack()
+        }
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <Button ref={backButtonRef} variant="outline" size="sm" className="self-start" onClick={onBack}>
+          <ArrowLeftIcon aria-hidden className="size-3.5" />
+          Back to changes
+        </Button>
+        <span className="text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
+      </div>
       {state === 'loading' ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
           Loading diff…

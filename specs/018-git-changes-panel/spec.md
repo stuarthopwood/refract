@@ -266,18 +266,30 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   per mark), and a `+N`/`-N` badge rendered through the shared `DiffStatCounts` component.
 - **FR-006**: Each file row MUST provide per-file actions: Stage (Changes/Untracked/Conflicts
   rows), Unstage (Staged rows), Open diff, and Open in VS Code (the shared action #463's file
-  explorer already exposes).
+  explorer already exposes). **Amended (gate round 1 item 11, issue #464; decision recorded by
+  Skippy on behalf of Stuart, 2026-10-20)**: on a Conflicts row this same Stage action is labelled
+  "Mark as resolved" (git's own standard phrase for `git add` on a conflicted path) and gated by a
+  confirmation naming the file and warning that conflict markers may still be present in it --
+  every other row's Stage/Unstage runs immediately, unconfirmed, as before.
 - **FR-007**: Stage MUST run `git add --` with the file's own path as a literal post-`--` argv
   entry, sourced only from the current status map's own keys -- never from free text or shell
   interpolation. Unstage MUST run `git restore --staged --` the same way.
 - **FR-008**: Selecting a row or its Open diff action MUST open that file's diff (via `git diff` /
   `git diff --cached`, by whether the file is staged) in the main-area tab, reusing `DiffView.tsx`,
-  at the full chat-pane width -- never rendered inline inside the hosted pane.
+  at the full chat-pane width -- never rendered inline inside the hosted pane. **Amended (gate
+  round 1 item 14, issue #464, 2026-10-20)**: the open diff MUST show whether it is Staged or
+  Unstaged, MUST refetch whenever the panel's own snapshot refreshes underneath it (the three
+  FR-015 triggers), and Escape MUST return to the groups list, the same as the explicit Back
+  control.
 - **FR-009**: The system MUST show a fixed, non-scrolling commit box under the scrollable groups/
   rows region, containing a subject-line field with a live character counter, a body field, and a
   Commit button.
 - **FR-010**: The Commit button MUST be disabled with a visible reason whenever nothing is staged
-  or the message is empty (showing exactly one applicable reason).
+  or the message is empty (showing exactly one applicable reason). **Amended (gate round 1 item
+  11, issue #464; decision recorded by Skippy on behalf of Stuart, 2026-10-20)**: an unresolved
+  conflict (the Conflicts group is non-empty) disables Commit with "Resolve conflicts first",
+  checked BEFORE the other two reasons -- git itself refuses to commit any staged changes while
+  a conflict remains anywhere in the worktree, regardless of what else is staged or typed.
 - **FR-011**: Pressing Commit, or pressing Ctrl+Enter anywhere in the message field, MUST run `git
   commit -F -` with the composed message piped on stdin (never `-m`), then clear the message field
   and trigger a panel refetch.
@@ -286,7 +298,10 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   basis alone and without any modal interruption.
 - **FR-013**: Any git-command failure during stage, unstage, or commit (including an `index.lock`
   collision) MUST surface as a plain inline `role="alert"` error naming what failed, and MUST NOT
-  be retried automatically.
+  be retried automatically. **Amended (gate round 1 item 3, issue #464, 2026-10-20)**: this error
+  (`actionError`) is tracked independently of a plain `load` failure (`loadError`) -- a background
+  refresh succeeding underneath an unacknowledged action failure MUST NOT silently clear it; only
+  starting another action or an explicit dismiss clears it.
 - **FR-014**: The system MUST show a branch + ahead/behind header reusing `SessionDetailsCard.tsx`
   's branch-line shape (`GitBranchIcon` + branch name + muted "from {base}"), with a muted
   icon+text ahead/behind figure appended when an upstream exists, and the figure entirely omitted
@@ -295,7 +310,10 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   three triggers, only while the panel is open for that Session: (a) that Session's status
   transitioning away from `Working`; (b) a worktree file-system change reported by the existing
   debounced `notify` watcher (`fs/watch.rs`), reused rather than duplicated; (c) immediately after
-  every stage/unstage/commit action completes.
+  every stage/unstage/commit action completes. **Amended (gate round 1 item 2, issue #464,
+  2026-10-20)**: overlapping refetches for the same Session MUST be single-flighted (concurrent
+  calls share the one in-flight request rather than each firing their own) with at most one
+  coalesced trailing rerun, and a stale response MUST NOT ever overwrite a newer one.
 - **FR-016**: The system MUST NOT watch or refetch for a Session whose Git changes panel is not
   currently open.
 - **FR-017**: A worktree with no pending changes MUST show the existing honest-empty-state
@@ -316,12 +334,20 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
 - **FR-022**: Each Split pane MUST show its own focused Session's Git changes panel independently
   of any other pane's panel state (no shared/dual-rooted panel).
 - **FR-023**: Ctrl+Enter MUST commit from anywhere in the message field (subject or body), matching
-  the main composer's own send shortcut.
+  the main composer's own send shortcut. **Amended (gate round 1 item 7, issue #464, 2026-10-20)**:
+  Cmd+Enter does the same, and a composing IME keystroke's own Enter MUST NOT be treated as this
+  shortcut.
 - **FR-024**: No commit-message format is enforced; the subject-line counter is a length guide
   only, never a validator blocking Commit.
 - **FR-025**: Commit author identity MUST come solely from the worktree's own `git config
   user.name`/`user.email`; the system MUST NOT provide a Refract-side override, and an
   unconfigured identity surfaces as git's own plain error (FR-013).
+- **FR-026**: After a single-file stage/unstage (or Commit), focus MUST return to that same row in
+  its new group if it still exists, else the nearest surviving group trigger (gate round 1 item 7,
+  issue #464, 2026-10-20). A bulk Stage-all/Unstage-all MUST focus the next group's own trigger.
+  Opening a diff MUST focus its own Back control; returning from it (Back or Escape) MUST focus
+  the row that opened it. A successful commit MUST focus the subject field and announce what was
+  committed once (`role="status"`).
 
 ### Key Entities *(include if feature involves data)*
 

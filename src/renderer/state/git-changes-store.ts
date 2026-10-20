@@ -19,7 +19,7 @@ interface GitChangesSessionState {
   /** `null` until the first `gitChanges.list` response arrives, or whenever the worktree is not
    * a git repository / the status read exceeded its own size cap (FR-018, FR-006 decision 8) --
    * the panel itself (a separate lane) renders its own not-available state for that case, same
-   * as a genuine `error` below. */
+   * as a genuine `loadError` below. */
   snapshot: GitChangesSnapshot | null
   /** True while the initial `load` or any live refresh is in flight. A mutating action (`stage`/
    * `unstage`/`stageAll`/`unstageAll`/`commit`) does NOT set this -- SC-002 requires staging or
@@ -27,12 +27,24 @@ interface GitChangesSessionState {
    * visible full-panel reload; the panel's own row-level pending state (a separate lane) covers
    * that instead. */
   loading: boolean
-  /** Plain inline `role="alert"` text naming what failed (FR-013) -- a fetch failure, or the
-   * most recent mutating action's own failure (an `index.lock` collision surfaces here exactly
-   * like any other git failure). `null` once a later fetch or action succeeds. Never a toast:
-   * a toast closes itself, which would leave the panel's own persistent state claiming nothing
-   * is wrong (same reasoning `file-explorer-store.ts`'s own root-load error state uses). */
-  error: string | null
+  /** Plain inline text naming why the MOST RECENT `load` call itself failed (the IPC call threw,
+   * or returned `!ok` -- a rare, genuine load-layer failure, distinct from a successful response
+   * carrying a `null` snapshot, which is the normal not-available state and sets no error at
+   * all). Cleared by the NEXT `load` call regardless of outcome (so it never re-announces the
+   * same stale text through a background refresh that also fails the same way) -- 2026-10-20
+   * gate fix: this used to share one `error` field with `actionError` below, so a background
+   * refresh's own success silently wiped an unacknowledged action failure too. */
+  loadError: string | null
+  /** Plain inline `role="alert"` text naming why the most recent mutating action (`stage`/
+   * `unstage`/`stageAll`/`unstageAll`/`commit`) failed (FR-013) -- an `index.lock` collision
+   * surfaces here exactly like any other git failure. Survives a background `load` (watcher
+   * ping, status transition) succeeding underneath it: `load` never touches this field, so a
+   * failure stays visible and announced until the user either starts ANOTHER action (cleared at
+   * the top of `runAction`, "the next user action") or dismisses it explicitly
+   * (`dismissActionError`). Never a toast: a toast closes itself, which would leave the panel's
+   * own persistent state claiming nothing is wrong (same reasoning `file-explorer-store.ts`'s
+   * own root-load error state uses). */
+  actionError: string | null
 }
 
 interface GitChangesStoreState {
@@ -45,7 +57,7 @@ interface GitChangesStoreState {
   /** FR-006, FR-007: `paths` come only from the panel's own currently-rendered row(s) -- this
    * store never validates them itself, mirroring `file-explorer-store.ts`'s own trust boundary
    * (the IPC layer is where path provenance is actually enforced, contracts/ipc.md). Refetches
-   * on success (FR-015c); a failure sets `error` and does NOT refetch (the stale snapshot stays
+   * on success (FR-015c); a failure sets `actionError` and does NOT refetch (the stale snapshot
    * visible rather than silently vanishing). */
   stage(sessionId: string, paths: string[]): Promise<void>
   unstage(sessionId: string, paths: string[]): Promise<void>
@@ -70,6 +82,9 @@ interface GitChangesStoreState {
    * that Session starts this tracking from a clean baseline instead of comparing against
    * whatever status happened to be current before the panel ever opened. */
   handleStatusTransition(sessionId: string, status: SessionStatus): void
+  /** Explicit dismiss for `actionError` (the other way it can be cleared, besides starting a
+   * new action) -- a no-op for an unknown Session or one with no current `actionError`. */
+  dismissActionError(sessionId: string): void
 }
 
 /** FR-015a's own "previous status" record: `useSessionsStore`'s own per-Session `status` field
@@ -80,15 +95,36 @@ interface GitChangesStoreState {
  * Session's status was the last time this store observed it. */
 const lastKnownStatus = new Map<string, SessionStatus>()
 
-/** Shared by every mutating action (`stage`/`unstage`/`stageAll`/`unstageAll`/`commit`): runs
- * `run`, sets `error` to a plain message on failure (FR-013, never auto-retried), and refetches
- * on success (FR-015c). A no-op for an unknown Session (nothing to update). */
+/** Single-flight + one coalesced trailing rerun per Session (2026-10-20 gate fix): concurrent
+ * `load` calls for the same Session (initial mount effect, a watcher ping, a post-action
+ * refetch, and FR-015a's status-transition refetch can all land within the same tick) used to
+ * each fire their own `gitChanges.list` IPC call and race to `set` the result, with no guarantee
+ * the LAST one to resolve was the one started last. Now a `load` call while one is already
+ * in flight for that Session only records that a rerun is wanted and returns the SAME in-flight
+ * promise; once the current call finishes it runs exactly one more pass per pending request
+ * (coalesced, never one-per-caller). `loadGeneration` is a second, independent guard against a
+ * stale response ever being committed to state even if some future caller bypasses `load`
+ * entirely and reads `window.refract.gitChanges.list` directly. */
+const loadInFlight = new Map<string, Promise<void>>()
+const loadRerunRequested = new Set<string>()
+const loadGeneration = new Map<string, number>()
+
+/** Shared by every mutating action (`stage`/`unstage`/`stageAll`/`unstageAll`/`commit`): clears
+ * any previous `actionError` up front (starting a new action is one of the two ways it is
+ * cleared, FR-013), runs `run`, sets `actionError` to a plain message on failure (never
+ * auto-retried), and refetches on success (FR-015c). A no-op for an unknown Session (nothing to
+ * update). */
 async function runAction(
   sessionId: string,
   set: (fn: (state: GitChangesStoreState) => Partial<GitChangesStoreState>) => void,
   get: () => GitChangesStoreState,
   run: () => Promise<Result<void>>
 ): Promise<void> {
+  set((state) => {
+    const existing = state.bySession[sessionId]
+    if (!existing || existing.actionError === null) return state
+    return { bySession: { ...state.bySession, [sessionId]: { ...existing, actionError: null } } }
+  })
   let result: Result<void>
   try {
     result = await run()
@@ -96,7 +132,7 @@ async function runAction(
     set((state) => {
       const existing = state.bySession[sessionId]
       if (!existing) return state
-      return { bySession: { ...state.bySession, [sessionId]: { ...existing, error: `That action failed` } } }
+      return { bySession: { ...state.bySession, [sessionId]: { ...existing, actionError: `That action failed` } } }
     })
     return
   }
@@ -104,63 +140,113 @@ async function runAction(
     set((state) => {
       const existing = state.bySession[sessionId]
       if (!existing) return state
-      return { bySession: { ...state.bySession, [sessionId]: { ...existing, error: result.error.message } } }
+      return {
+        bySession: { ...state.bySession, [sessionId]: { ...existing, actionError: result.error.message } }
+      }
     })
     return
   }
   await get().load(sessionId)
 }
 
-export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
-  bySession: {},
-
-  async load(sessionId) {
+/** The actual IPC round trip for one `load` pass -- see `loadInFlight`/`loadGeneration` above
+ * for how repeated/overlapping calls are coalesced before this ever runs. */
+async function performLoad(
+  sessionId: string,
+  set: (fn: (state: GitChangesStoreState) => Partial<GitChangesStoreState>) => void
+): Promise<void> {
+  const generation = (loadGeneration.get(sessionId) ?? 0) + 1
+  loadGeneration.set(sessionId, generation)
+  set((state) => {
+    const existing = state.bySession[sessionId]
+    return {
+      bySession: {
+        ...state.bySession,
+        [sessionId]: {
+          snapshot: existing?.snapshot ?? null,
+          loading: true,
+          loadError: null,
+          actionError: existing?.actionError ?? null
+        }
+      }
+    }
+  })
+  let result: ListResult
+  try {
+    result = await window.refract.gitChanges.list(sessionId)
+  } catch {
+    if (loadGeneration.get(sessionId) !== generation) return
     set((state) => {
       const existing = state.bySession[sessionId]
       return {
         bySession: {
           ...state.bySession,
-          [sessionId]: { snapshot: existing?.snapshot ?? null, loading: true, error: null }
+          [sessionId]: {
+            snapshot: existing?.snapshot ?? null,
+            loading: false,
+            loadError: `Couldn't load this Session's Git changes`,
+            actionError: existing?.actionError ?? null
+          }
         }
       }
     })
-    let result: ListResult
-    try {
-      result = await window.refract.gitChanges.list(sessionId)
-    } catch {
-      set((state) => {
-        const existing = state.bySession[sessionId]
-        return {
-          bySession: {
-            ...state.bySession,
-            [sessionId]: {
-              snapshot: existing?.snapshot ?? null,
-              loading: false,
-              error: `Couldn't load this Session's Git changes`
-            }
+    return
+  }
+  if (loadGeneration.get(sessionId) !== generation) return
+  if (!result.ok) {
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      return {
+        bySession: {
+          ...state.bySession,
+          [sessionId]: {
+            snapshot: existing?.snapshot ?? null,
+            loading: false,
+            loadError: result.error.message,
+            actionError: existing?.actionError ?? null
           }
         }
-      })
-      return
-    }
-    if (!result.ok) {
-      set((state) => {
-        const existing = state.bySession[sessionId]
-        return {
-          bySession: {
-            ...state.bySession,
-            [sessionId]: { snapshot: existing?.snapshot ?? null, loading: false, error: result.error.message }
-          }
-        }
-      })
-      return
-    }
-    set((state) => ({
+      }
+    })
+    return
+  }
+  set((state) => {
+    const existing = state.bySession[sessionId]
+    return {
       bySession: {
         ...state.bySession,
-        [sessionId]: { snapshot: result.value.snapshot, loading: false, error: null }
+        [sessionId]: {
+          snapshot: result.value.snapshot,
+          loading: false,
+          loadError: null,
+          actionError: existing?.actionError ?? null
+        }
       }
-    }))
+    }
+  })
+}
+
+export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
+  bySession: {},
+
+  async load(sessionId) {
+    const existingInFlight = loadInFlight.get(sessionId)
+    if (existingInFlight) {
+      loadRerunRequested.add(sessionId)
+      return existingInFlight
+    }
+    const promise = (async () => {
+      await performLoad(sessionId, set)
+      while (loadRerunRequested.delete(sessionId)) {
+        await performLoad(sessionId, set)
+      }
+    })()
+    loadInFlight.set(sessionId, promise)
+    try {
+      await promise
+    } finally {
+      loadInFlight.delete(sessionId)
+    }
   },
 
   async stage(sessionId, paths) {
@@ -191,5 +277,13 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
     if (previous === 'working' && status !== 'working' && sessionId in get().bySession) {
       void get().load(sessionId)
     }
+  },
+
+  dismissActionError(sessionId) {
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing || existing.actionError === null) return state
+      return { bySession: { ...state.bySession, [sessionId]: { ...existing, actionError: null } } }
+    })
   }
 }))

@@ -3,7 +3,14 @@
 // `(N)` count, research.md decision 9) plus its own bulk action (Stage all / Unstage all,
 // FR-004) -- Conflicts gets no bulk action at all (a developer resolves a conflict per-file,
 // matching `ipc/git_changes.rs`'s own bulk handlers, which already exclude it server-side).
-import { useState } from 'react'
+//
+// Gate round 1 (LOW, cheap to do): `open` is now owned by `GitChangesPanel.tsx`, keyed per
+// group kind, instead of this component's own local `useState` -- a local `useState` reset to
+// its default (`true`, open) every time this component remounted, which happened on every trip
+// out to a file's diff and back (the Panel swaps its rendered content between the four-group
+// list and the diff pane, unmounting this whole list in between) -- a developer's own collapse
+// choices were silently discarded by opening a single diff.
+import { useEffect, useRef } from 'react'
 import { MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
@@ -12,6 +19,7 @@ import { useGitChangesStore } from '@/state'
 import { GroupHeaderTrigger } from '@/features/sessions/GroupHeader'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesFileRow } from './GitChangesFileRow'
+import { focusNearestGroupTrigger } from './focus'
 
 const GROUP_LABELS: Record<GitChangesGroupKind, string> = {
   conflicts: 'Conflicts',
@@ -32,32 +40,47 @@ export function GitChangesGroup({
   kind,
   entries,
   sessionId,
+  open,
+  onOpenChange,
   onOpenDiff
 }: {
   kind: GitChangesGroupKind
   entries: GitChangesFileEntry[]
   sessionId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onOpenDiff: (entry: GitChangesFileEntry, group: GitChangesGroupKind) => void
 }) {
-  const [open, setOpen] = useState(true)
   const label = GROUP_LABELS[kind]
   const bulk = BULK_ACTION[kind]
   // FR-004's own wording: "an accessible name that includes the group's own name (for example
   // 'Stage all in Changes')".
   const bulkAccessibleName = bulk ? `${bulk.label} in ${label}` : null
+  // Item 7 (gate round 1): `GitChangesPanel.tsx`'s own post-bulk-action focus restore queries
+  // for "the next group's trigger" by kind -- `GroupHeaderTrigger` is shared with the Sessions
+  // list and takes no `data-*` prop of its own, so the attribute is set imperatively on the ref
+  // it already exposes (`triggerRef`), rather than widening that shared component for one
+  // caller's own query hook.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    triggerRef.current?.setAttribute('data-git-group-trigger', kind)
+  }, [kind])
 
-  function runBulkAction(): void {
-    if (kind === 'staged') void useGitChangesStore.getState().unstageAll(sessionId)
+  async function runBulkAction(): Promise<void> {
+    if (kind === 'staged') await useGitChangesStore.getState().unstageAll(sessionId)
     // `bulk` (and therefore this button) only ever renders for 'changes'/'untracked' (BULK_ACTION
     // above has no entry for 'conflicts'), so this narrowing is exhaustive in practice.
-    else if (kind === 'changes' || kind === 'untracked') void useGitChangesStore.getState().stageAll(sessionId, kind)
+    else if (kind === 'changes' || kind === 'untracked') await useGitChangesStore.getState().stageAll(sessionId, kind)
+    else return
+    // Item 7 (gate round 1): "Stage all"/"Unstage all" focuses the NEXT group's own trigger.
+    focusNearestGroupTrigger(sessionId, kind)
   }
 
   return (
     <div className="group flex flex-col">
-      <Collapsible open={open} onOpenChange={setOpen}>
+      <Collapsible open={open} onOpenChange={onOpenChange}>
         <div className="flex items-center gap-1 px-1">
-          <GroupHeaderTrigger label={label} count={entries.length} />
+          <GroupHeaderTrigger label={label} count={entries.length} triggerRef={triggerRef} />
           {bulk && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -66,7 +89,7 @@ export function GitChangesGroup({
                   size="icon-xs"
                   aria-label={bulkAccessibleName ?? undefined}
                   className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-                  onClick={runBulkAction}
+                  onClick={() => void runBulkAction()}
                 >
                   <bulk.icon aria-hidden className="size-3.5" />
                 </Button>
