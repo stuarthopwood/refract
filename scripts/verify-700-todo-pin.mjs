@@ -63,11 +63,6 @@ const THEMES = [
 
 const report = [];
 const notExercised = [];
-// THROWAWAY (Main's decisive-run spec): every `Runtime.exceptionThrown`/error-or-warning
-// `Runtime.consoleAPICalled` from launch, with stack traces, written into report.json so a
-// thrown-and-caught render error (ErrorBoundary.tsx's own throwaway `[EB]` log below) or any
-// other JS exception during the live todo update is visible without re-instrumenting a rerun.
-const consoleCapture = [];
 function assertTrue(actual, label, extra) {
   const ok = actual === true;
   report.push({ step: label, ok, actual, ...(extra ? { extra } : {}) });
@@ -165,21 +160,6 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
-    // THROWAWAY (Main's decisive-run spec, item 1): `CdpSession.connect` already sends
-    // `Runtime.enable`, so these events are already flowing -- `CdpSession`'s own `ws` message
-    // listener only correlates request/response `id`s and silently ignores method-only event
-    // frames, so this is a second, additive listener on the SAME socket (never touches the
-    // shared `verify-tauri-cdp.mjs` helper every other lane's own verify script also uses).
-    cdp.ws.addEventListener('message', (event) => {
-      let msg;
-      try { msg = JSON.parse(event.data); } catch { return; }
-      if (msg.method === 'Runtime.exceptionThrown') {
-        const ed = msg.params.exceptionDetails;
-        consoleCapture.push({ type: 'exception', text: ed?.exception?.description ?? ed?.text ?? null, stack: ed?.stackTrace ?? null, ts: Date.now() });
-      } else if (msg.method === 'Runtime.consoleAPICalled' && (msg.params.type === 'error' || msg.params.type === 'warning')) {
-        consoleCapture.push({ type: msg.params.type, text: (msg.params.args || []).map((a) => a.value ?? a.description ?? '').join(' '), stack: msg.params.stackTrace ?? null, ts: Date.now() });
-      }
-    });
 
     // ---- Readiness, Add repository, Session A ----
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
@@ -267,13 +247,6 @@ async function main() {
     // same reasoning `verify-741-role-chip-helpers.mjs`'s own comment gives for its 3s-delay/45s
     // budget). 20s gives a real, comfortable margin without being excessive.
     await cdp.waitFor(`!!(${PANEL_SELECTOR}).querySelector('.line-through')`, { timeoutMs: 20_000, label: 'Abandoned task strike-through appears live, mid-turn' });
-    // THROWAWAY (Main's decisive-run spec, item 2): if `composer`/`transcript`/`chatHeader` are
-    // ALSO > 1 here, the whole ChatPane subtree double-mounted (a pre-existing, feature-
-    // independent bug); if only `panel` is > 1, the duplication is local to `PinnedTodoPanel`.
-    const mountCounts = await cdp.evaluate(`({ panel: document.querySelectorAll('[data-slot="pinned-todo-panel"]').length, composer: document.querySelectorAll('[aria-label="Message"]').length, transcript: document.querySelectorAll('[role="log"]').length, chatHeader: document.querySelectorAll('header.drag-region').length })`);
-    console.log('DIAG mount counts right after the abandoned update:', JSON.stringify(mountCounts));
-    report.push({ step: 'DIAG mount counts after abandoned update', ok: true, extra: mountCounts });
-    await assertSinglePanel(cdp, 'right after the abandoned update');
     assertTrue(await readStillRunning(cdp), 'E2: the turn is still running after the second 8s hold too (abandoned state already live)');
     const abandonedRead = await readPanel(cdp);
     assertTrue(abandonedRead.rows.some((r) => r.lineThrough && r.text.includes('Deploy')), 'Deploy row shows a strike-through (abandoned)', abandonedRead.rows);
@@ -449,7 +422,7 @@ async function main() {
   } finally {
     try {
       const failures = report.filter((r) => r.ok === false).map((r) => r.step);
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty, failures, notExercised, consoleCapture, results: report }, null, 2));
+      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty, failures, notExercised, results: report }, null, 2));
     } catch (writeErr) {
       console.error(`${LOG}: failed to write report.json: ${writeErr}`);
     }
