@@ -16,7 +16,13 @@
 // lifecycle wiring (lane R7, #790, gate round 1 fix) IS now in place: `.archive`/`.delete`/
 // `.recreateWorktree` each call `fs::explorer_watch_state::begin_worktree_operation` before
 // touching the worktree and `.finish(...)` after, and `.restore` calls
-// `notify_file_explorer_reset` directly -- see each handler's own comment.
+// `notify_file_explorer_reset` directly -- see each handler's own comment. Gate round 1 item 1
+// (#464, Git changes panel): each of those same three handlers ALSO stops
+// `fs::git_changes_watch_state`'s own separate per-Session watcher alongside the explorer one
+// (that module has no tree/busy-session bookkeeping of its own, so it has nothing else to
+// call here); `git_changes_watch_state::ensure_watcher` itself refuses to (re)start while
+// `explorer_watch_state::is_session_busy` is true, reusing that same busy-claim rather than a
+// second one.
 
 use std::path::Path;
 
@@ -201,6 +207,11 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             state.app_handle.clone(),
             &id,
         );
+        // Gate round 1 item 1 (#464): the git-changes panel has its own, separate per-Session
+        // watcher (`fs::git_changes_watch_state`) that `begin_worktree_operation` above knows
+        // nothing about -- stop it here too, so a still-mounted panel's `ensureWatching` cannot
+        // restart it mid-archive.
+        crate::fs::git_changes_watch_state::stop_watcher(&id);
         state
             .session_manager
             .get_or_create_agent(&id)
@@ -420,6 +431,9 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             state.app_handle.clone(),
             &id,
         );
+        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
+        // git-changes panel's own separate watcher here too.
+        crate::fs::git_changes_watch_state::stop_watcher(&id);
         // CRITICAL fix (gate round 1): the live agent (if any) must be shut down BEFORE the
         // worktree is removed -- same ordering `sessions.archive` uses. A still-running omp
         // process holds its cwd (and open file handles) inside the worktree; removing it out
@@ -553,6 +567,9 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
             state.app_handle.clone(),
             &id,
         );
+        // Gate round 1 item 1 (#464): see `sessions_archive`'s own comment -- stop the
+        // git-changes panel's own separate watcher here too.
+        crate::fs::git_changes_watch_state::stop_watcher(&id);
         recreate_worktree(
             repo_path,
             Path::new(&session.worktree_path),

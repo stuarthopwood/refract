@@ -24,7 +24,7 @@ import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DiffStatLine } from '@/features/sessions/sessionDisplay'
+import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
 import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
@@ -42,24 +42,30 @@ const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
 /** FR-002: "N files, +A -D" (each figure abbreviated past 1,000 by the shared `compactNumber`
  * formatter, issue #437), matching the Session details card's own diff line exactly -- both now
- * render through the shared `DiffStatLine` (`sessionDisplay.tsx`), so neither can show or colour
- * the figure a different way; "Not available" for the `'not-available'` literal; hidden (`null`)
- * otherwise. Issue #925: `+A`/`-D` take the diff view's own green/red hue when positive, muted
- * when zero (never a red "-0"); `DiffStatLine` itself pairs the aria-hidden coloured visual text
- * with a real `sr-only` span (gate round 4, #437 LOW), the same pairing `ContextUsageChip` below
- * already uses. */
+ * render through the shared `DiffStatLine`, so neither can show or colour the figure a different
+ * way; "Not available" for the `'not-available'` literal; hidden (`null`) otherwise. Spec 018
+ * slice 1 (FR-021): activating it opens the Git changes panel for this pane's Session, the same
+ * explicit-activation pattern `SubagentsChip` below already uses -- this chip's own figure is
+ * read-only (`useReadoutStore`'s diff stat), the Git changes panel is the live, mutable view of
+ * the same worktree. */
 export function ChangesChip({ sessionId }: { sessionId: string }) {
   const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) =>
+    openHostedPanel('git-changes', sessionId, { opener: event.currentTarget })
   if (changes === null) return null
   if (changes === 'not-available') {
     return (
-      <ReadoutChip icon={FileDiffIcon}>
+      <ReadoutChip icon={FileDiffIcon} onActivate={onActivate} accessibleName="Open Git changes panel (Not available)">
         <span>Not available</span>
       </ReadoutChip>
     )
   }
   return (
-    <ReadoutChip icon={FileDiffIcon}>
+    <ReadoutChip
+      icon={FileDiffIcon}
+      onActivate={onActivate}
+      accessibleName={`Open Git changes panel (${formatDiffStatAccessible(changes)})`}
+    >
       <DiffStatLine stat={changes} />
     </ReadoutChip>
   )

@@ -339,8 +339,10 @@ fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
 
 /// Debounced to `READOUT_COALESCE_MS`, then single-flight (a trigger arriving while a
 /// computation is already in progress joins the next run instead of starting a second
-/// overlapping one) -- port of `scheduleReadoutUpdate`/`runReadoutUpdate`. `pub(super)` (not
-/// private): `session::subagents`'s own `on_frame` calls this too, the same way
+/// overlapping one) -- port of `scheduleReadoutUpdate`/`runReadoutUpdate`. `pub(crate)` (gate
+/// round 1 item 13, issue #464: widened from `pub(super)` so `ipc::git_changes`/
+/// `fs::git_changes_watch_state` can call it too, same signature/behaviour, unchanged for every
+/// existing caller): `session::subagents`'s own `on_frame` calls this too, the same way
 /// `handleTaskStart`/`handleTaskUpdate` call `this.scheduleReadoutUpdate()` directly in TS.
 ///
 /// A plain `fn` returning an explicitly boxed future, NOT `async fn` (gate-fix, round 2): this
@@ -351,7 +353,7 @@ fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
 /// already resolved. Declaring THIS one's return type concretely up front (not inferred from its
 /// body) breaks the cycle; every call site still just calls it and `.await`s the result exactly
 /// as before.
-pub(super) fn schedule_readout_update(
+pub(crate) fn schedule_readout_update(
     agent: &SessionAgent,
 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
     let agent = agent.arc();

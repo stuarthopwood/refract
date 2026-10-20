@@ -18,6 +18,7 @@ import { useAdvisorStore } from './advisor-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
+import { useGitChangesStore } from './git-changes-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { useSessionListStore } from './session-list-store'
@@ -80,6 +81,11 @@ export function initStores(): void {
     if (event.status === 'stopped') {
       useSideChatStore.getState().reconcileInterrupted(event.sessionId)
     }
+    // Spec 018 slice 1 (issue #464) FR-015a: the Git changes panel's third refresh trigger --
+    // this Session's status transitioning away from `working` -- reusing this exact signal
+    // rather than a second Rust-side mechanism (research.md decision 7, `git-changes-store.ts`'s
+    // own doc comment has the full reasoning).
+    useGitChangesStore.getState().handleStatusTransition(event.sessionId, event.status)
   })
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
@@ -139,6 +145,12 @@ export function initStores(): void {
   // tree with nothing watching underneath it forever.
   window.refract.onFileExplorerReset(({ sessionId }) => {
     useFileExplorerStore.getState().resetSession(sessionId)
+  })
+  // Spec 018 slice 1 (issue #464) FR-015b: the Git changes panel's watcher-driven refresh ping
+  // (`fs::git_changes_watch_state`, `events::GIT_CHANGES_REFRESH`) -- no payload beyond the
+  // Session id, the store always refetches wholesale rather than applying a patch.
+  window.refract.onGitChangesRefresh(({ sessionId }) => {
+    void useGitChangesStore.getState().load(sessionId)
   })
   // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
   // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc
