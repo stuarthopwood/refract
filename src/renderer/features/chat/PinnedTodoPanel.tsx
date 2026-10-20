@@ -63,8 +63,18 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
   // pointerdown, or a key, attached directly to the list); the follow itself sets `list.scrollTop`
   // directly (never `scrollIntoView`, which walks up and can scroll an ANCESTOR -- the transcript,
   // the whole window -- not just this list).
+  //
+  // Gate round 7 fix (self-caught live-check failure, #700 E4): this used to also skip re-running
+  // whenever `currentTaskKey` matched a `lastFollowedKeyRef` recorded on an earlier render. That
+  // broke the moment a row ABOVE the current task changed height without the current task itself
+  // changing -- e.g. `todo-6` blocks "Update docs" (adding its "Blocked: <blocker>" line) 300ms
+  // after `todo-5` already followed "Task 9" into view; the extra line pushes every later row down,
+  // but the key-match guard silently skipped the re-check, leaving "Task 9" partly scrolled out of
+  // view with no way to recover (the key never changes again until the task itself does). There is
+  // no equivalent risk from running the full containment check every render: it is a pure read plus
+  // a conditional write, a no-op scrollTop assignment when the row is already fully in view, so
+  // nothing to recompute away via a key cache in the first place.
   const userScrolledRef = useRef(false)
-  const lastFollowedKeyRef = useRef<string | null>(null)
   const found = deriveCurrentTask(todoTree)
   const currentTaskKey = found ? currentTaskKeyOf(found.phaseIndex, found.taskIndex) : null
 
@@ -79,28 +89,20 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
 
   // Gate round 1 fix (Main P1): "re-run the follow on mount, expand and re-pin" -- this component
   // never fully unmounts between pin/unpin or collapse/expand (the SAME instance just returns
-  // `null` or stale state), so a stale `userScrolledRef`/`lastFollowedKeyRef` from a PRIOR pinned-
-  // and-expanded stretch would otherwise silently suppress the very first follow of a fresh one.
-  // Resets both exactly on the false -> true edge of `active` (covers mount, expand, and re-pin
-  // in one place, never on every render). Gate round 3 fix (Main's diagnosis, #700 E4 self-caught
-  // live-check failure): declared BEFORE the follow effect below (was after) -- both are plain
-  // `useLayoutEffect`s in this SAME component, so React runs them in declaration order within one
-  // commit; the OLD order let the follow effect below read `lastFollowedKeyRef` BEFORE this reset
-  // cleared it, on the exact commit a re-pin flips `active` false -> true, silently skipping that
-  // commit's own re-follow whenever the current task's key happened to already match the stale
-  // ref value left over from the prior pinned stretch.
+  // `null` or stale state), so a stale `userScrolledRef` from a PRIOR pinned-and-expanded stretch
+  // would otherwise silently suppress the very first follow of a fresh one. Resets on the false ->
+  // true edge of `active` (covers mount, expand, and re-pin in one place, never on every render).
   const wasActiveRef = useRef(false)
   useLayoutEffect(() => {
     if (active && !wasActiveRef.current) {
       userScrolledRef.current = false
-      lastFollowedKeyRef.current = null
     }
     wasActiveRef.current = active
   }, [active])
 
   useLayoutEffect(() => {
     if (userScrolledRef.current) return
-    if (currentTaskKey === null || currentTaskKey === lastFollowedKeyRef.current) return
+    if (currentTaskKey === null) return
     const list = listRef.current
     const el = list?.querySelector<HTMLElement>('[data-current-task="true"]')
     if (!list || !el) return
@@ -119,22 +121,13 @@ export function PinnedTodoPanel({ sessionId }: { sessionId: string }) {
     const elTop = elRect.top - listRect.top + list.scrollTop
     const elBottom = elTop + elRect.height
     // Gate round 6 fix (#700, Main MEDIUM 5): a row taller than the list itself (a long wrapped
-    // blocker line) can never satisfy the full-containment check below -- aligning its own top
-    // and marking it followed immediately, rather than leaving `lastFollowedKeyRef` unset,
-    // stops this effect from re-attempting (and jittering `scrollTop`) on every later render.
+    // blocker line) can never satisfy the full-containment check below -- align its own top
+    // instead (the best available fit).
     if (elRect.height > list.clientHeight) {
-      list.scrollTop = elTop
-      lastFollowedKeyRef.current = currentTaskKey
+      if (list.scrollTop !== elTop) list.scrollTop = elTop
     } else {
       if (elTop < list.scrollTop) list.scrollTop = elTop
       else if (elBottom > list.scrollTop + list.clientHeight) list.scrollTop = elBottom - list.clientHeight
-      // Gate round 3 fix (Main's diagnosis): marking a key "followed" BEFORE checking whether
-      // the row actually ended up in view let one render with bad geometry lock the scroll
-      // there permanently -- the key-match guard above never let a later, correct render retry.
-      // Only commit `lastFollowedKeyRef` once the row genuinely landed in view.
-      if (elTop >= list.scrollTop && elBottom <= list.scrollTop + list.clientHeight) {
-        lastFollowedKeyRef.current = currentTaskKey
-      }
     }
   })
 
