@@ -322,7 +322,13 @@ pub async fn stage_files(worktree_path: &Path, paths: &[String]) -> Result<(), G
     for path in paths {
         validate_pathspec(worktree_path, path)?;
     }
-    let mut args: Vec<&str> = vec!["--literal-pathspecs", "-c", "core.fsmonitor=false", "add", "--"];
+    let mut args: Vec<&str> = vec![
+        "--literal-pathspecs",
+        "-c",
+        "core.fsmonitor=false",
+        "add",
+        "--",
+    ];
     args.extend(paths.iter().map(String::as_str));
     git(worktree_path, &args).await?;
     Ok(())

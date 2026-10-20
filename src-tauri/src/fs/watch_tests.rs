@@ -215,6 +215,11 @@ fn a_burst_of_writes_in_the_same_directory_produces_one_callback() {
     // `ReadDirectoryChangesW` scheduling jitter, which is an OS/environment timing fact, not a
     // bug in the trailing-edge-timer logic this test exists to prove). A 2s window comfortably
     // absorbs that jitter while still proving the SAME guarantee the production value relies on.
+    // 2026-10-20 gate fix (#464 item 2): `watch_directory_with_debounce` grew a 5th parameter
+    // (`requeue_root_on_liveness`) to let the Git changes panel's own watcher opt OUT of the
+    // root-liveness poll's debounce re-queue (see `watch.rs`'s own doc comment) -- `true` here
+    // preserves this test's pre-existing behaviour exactly (every other consumer, including the
+    // File explorer this test exercises, still gets that poll unconditionally).
     let handle = watch_directory_with_debounce(
         &root,
         move |_rel| {
@@ -222,6 +227,7 @@ fn a_burst_of_writes_in_the_same_directory_produces_one_callback() {
         },
         || {},
         Duration::from_secs(2),
+        true,
     )
     .unwrap();
     std::thread::sleep(Duration::from_millis(300));
