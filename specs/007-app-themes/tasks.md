@@ -1124,10 +1124,11 @@ gain the new alpha tokens.
   a chat paragraph so the opacity genuinely composites; screenshot chat, the Session list and
   Settings in each theme, with a tooltip/hover-card guard before every shot; record
   `report.json` (depends on T048).
-  **Done**: `scripts/verify-1074-text-opacity.mjs` authored, `node --check`-clean.
-  **NOT run yet** (awaiting the next granted build slot): the live run (switching themes,
-  reading real computed colours, sampling pixels, capturing every screenshot) is deferred,
-  same shape as T040/T044's own deferred items above.
+  **Done**: `scripts/verify-1074-text-opacity.mjs` authored, `node --check`-clean, **and
+  LIVE-RUN**: all 5 themes, 0 failures, 0 `notExercised`, real-painted-pixel compositing check
+  passing in every theme (real alpha 0.9/0.78/0.6 in the four non-HC presets, solid 1.0 in Dark
+  high contrast and for every coloured-fill label), screenshots viewed directly. gitHead
+  `f068e7b3`, dirty `false`, exitCode `0` (PR #1104).
 
 - [X] T050 Main's build-slot-queue follow-up (2026-10-20): confirm exactly how the checker
   composites an alpha foreground over its real surface before measuring (cite the compositing

@@ -381,7 +381,11 @@
    * rather than a WCAG-enforced one, the same accepted-gap shape this file already uses
    * elsewhere. */
   --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
-  --composer-selection-fg: var(--accent-foreground);
+  /* #1074 DECIDED (gate round 1): this is text on a coloured tint, not ambient UI chrome, so
+   * FR-023's "stays solid on a coloured fill" rule applies -- a literal solid near-white, not
+   * `var(--accent-foreground)` (which now resolves through the translucent `--foreground`).
+   * Same value `--foreground` held before #1074 softened it. */
+  --composer-selection-fg: oklch(0.985 0 0);
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
    * second set" rule). `--severity-info` was originally the one genuinely new colour with no
@@ -467,9 +471,14 @@
   /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
    * 90%/78%/60% alpha composited over this theme's own `--background` (`#0F1014`) -- 15.39:1/
    * 11.65:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
-   * the 4.5:1 AA floor; worst case against `--surface-2`/popover is 6.26:1 (the 60%-alpha
-   * `--muted-foreground` tier, the binding case across every affected preset). Every alias
-   * that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
+   * foreground` ALIAS cascade itself is 6.26:1 against `--surface-2`/popover (the 60%-alpha
+   * `--muted-foreground` tier). Gate-fix (round 1, corrected): the real binding case across
+   * this whole story is tighter still and lives on a DIFFERENT, independent token --
+   * `--composer-selection-fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on
+   * its own selection highlight over the command pill, 7.34:1 here (`scripts/check-theme-
+   * contrast.mjs`'s live measured numbers; Nordic Frost is the tightest of the five, 5.82:1).
+   * Every alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
    * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
    * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
    * `.theme-dark`'s own comment explains in full. */
@@ -519,7 +528,10 @@
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
    * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
   --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
-  --composer-selection-fg: var(--accent-foreground);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
+   * value, before #1074 softened it. */
+  --composer-selection-fg: #F8FAFC;
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
    * retuned specifically for this preset (lightness 0.74 vs Dark/HC's shared 0.704/0.78) so it
@@ -879,9 +891,14 @@
   /* #1074 (app-wide text-opacity softening, grilled 2026-10-20, none deferred): white at
    * 90%/78%/60% alpha composited over this theme's own `--background` (`#060f1e`) -- 15.50:1/
    * 11.71:1/7.22:1 (`scripts/contrast-math.mjs`'s gamma-space compositing), comfortably above
-   * the 4.5:1 AA floor; worst case against `--surface-2`/popover is 6.34:1 (the 60%-alpha
-   * `--muted-foreground` tier, the binding case across every affected preset). Every alias
-   * that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
+   * the 4.5:1 AA floor; worst case among the `--foreground`/`--chat-foreground`/`--muted-
+   * foreground` ALIAS cascade itself is 6.34:1 against `--surface-2`/popover (the 60%-alpha
+   * `--muted-foreground` tier). Gate-fix (round 1, corrected): the real binding case across
+   * this whole story is tighter still and lives on a DIFFERENT, independent token --
+   * `--composer-selection-fg` (#1050/#1074 DECIDED, solid per FR-023's coloured-fill rule) on
+   * its own selection highlight over the command pill, 5.82:1 here -- THIS preset is the
+   * tightest of the five (`scripts/check-theme-contrast.mjs`'s live measured numbers). Every
+   * alias that resolves to `var(--foreground)` below (`--card-foreground`, `--popover-foreground`,
    * `--secondary-foreground`, `--accent-foreground`, `--sidebar-foreground`,
    * `--sidebar-accent-foreground`) already picks up this same alpha automatically, same as
    * `.theme-dark`'s own comment explains in full. */
@@ -968,7 +985,10 @@
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
    * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
   --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
-  --composer-selection-fg: var(--accent-foreground);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. This preset's own old solid `--foreground`
+   * value, before #1074 softened it. */
+  --composer-selection-fg: #eff7fb;
   /* Severity roles: success/warning/error share the same hue every other built-in theme uses
    * (#550's "do not create a second set"), lightness retuned for this preset's own darker navy
    * surfaces. Info is deliberately NOT this preset's own cyan accent hue (195) -- a periwinkle
@@ -1182,7 +1202,10 @@
   /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
    * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
   --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
-  --composer-selection-fg: var(--accent-foreground);
+  /* #1074 DECIDED (gate round 1): see Dark's own comment on this token for the full reasoning
+   * -- text on a coloured tint stays solid per FR-023. Same literal as Dark's own (#1039:
+   * Cyber Amber's surfaces/text are byte-identical to Default Dark's). */
+  --composer-selection-fg: oklch(0.985 0 0);
   /* Severity roles: success/error keep the same green/red hue family every other built-in theme
    * uses. `--severity-warning` is the theme's own golden amber, retuned apart from the new
    * accent by #1039 (real hue 86.6, up from 73.8 -- see this block's own header comment for the

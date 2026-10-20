@@ -75,7 +75,13 @@ export function composerSelectionContrastRows(themes) {
       fgHex: linearToHex(overPill),
       bgHex: linearToHex(pillBg.linear),
     })
-    const pillLegibilityRatio = contrastRatio(relativeLuminance(selectionFg.linear), relativeLuminance(overPill))
+    // Gate-fix (#1074 round 1, Code/Test HIGH): `composer-selection-fg` used to alias
+    // `--accent-foreground` -> `--foreground`, translucent in every non-HC preset -- reading
+    // `.linear` directly (the old code here) scored it as if fully opaque. `resolvedLinear`
+    // against the real composited backdrop composites that alpha in properly (now moot for the
+    // DECIDED fix below, which makes this token solid again, but kept correct defensively).
+    const pillLegibilityFgLinear = resolvedLinear(selectionFg, { raw: 'over-pill', alpha: 1, linear: overPill })
+    const pillLegibilityRatio = contrastRatio(relativeLuminance(pillLegibilityFgLinear), relativeLuminance(overPill))
     rows.push({
       themeId,
       fg: 'composer-selection-fg',
@@ -83,12 +89,13 @@ export function composerSelectionContrastRows(themes) {
       min,
       ratio: pillLegibilityRatio,
       pass: pillLegibilityRatio >= min,
-      fgHex: linearToHex(selectionFg.linear),
+      fgHex: linearToHex(pillLegibilityFgLinear),
       bgHex: linearToHex(overPill),
     })
 
     const overBackground = resolvedLinear(selectionBg, background)
-    const bgLegibilityRatio = contrastRatio(relativeLuminance(selectionFg.linear), relativeLuminance(overBackground))
+    const bgLegibilityFgLinear = resolvedLinear(selectionFg, { raw: 'over-background', alpha: 1, linear: overBackground })
+    const bgLegibilityRatio = contrastRatio(relativeLuminance(bgLegibilityFgLinear), relativeLuminance(overBackground))
     rows.push({
       themeId,
       fg: 'composer-selection-fg',
@@ -96,7 +103,7 @@ export function composerSelectionContrastRows(themes) {
       min,
       ratio: bgLegibilityRatio,
       pass: bgLegibilityRatio >= min,
-      fgHex: linearToHex(selectionFg.linear),
+      fgHex: linearToHex(bgLegibilityFgLinear),
       bgHex: linearToHex(overBackground),
     })
     const bgDistinctRatio = contrastRatio(relativeLuminance(overBackground), relativeLuminance(background.linear))
@@ -117,7 +124,8 @@ export function composerSelectionContrastRows(themes) {
 
     if (composerBackground) {
       const overComposerBg = resolvedLinear(selectionBg, composerBackground)
-      const cbgLegibilityRatio = contrastRatio(relativeLuminance(selectionFg.linear), relativeLuminance(overComposerBg))
+      const cbgLegibilityFgLinear = resolvedLinear(selectionFg, { raw: 'over-composer-background', alpha: 1, linear: overComposerBg })
+      const cbgLegibilityRatio = contrastRatio(relativeLuminance(cbgLegibilityFgLinear), relativeLuminance(overComposerBg))
       rows.push({
         themeId,
         fg: 'composer-selection-fg',
@@ -125,7 +133,7 @@ export function composerSelectionContrastRows(themes) {
         min,
         ratio: cbgLegibilityRatio,
         pass: cbgLegibilityRatio >= min,
-        fgHex: linearToHex(selectionFg.linear),
+        fgHex: linearToHex(cbgLegibilityFgLinear),
         bgHex: linearToHex(overComposerBg),
       })
       const cbgDistinctRatio = contrastRatio(relativeLuminance(overComposerBg), relativeLuminance(composerBackground.linear))

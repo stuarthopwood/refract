@@ -377,7 +377,10 @@ export function searchFieldContrastRows(themes) {
       continue
     }
     const fieldLinear = resolvedLinear({ raw: 'input*0.3', alpha: input.alpha * 0.3, linear: input.linear }, sidebar)
-    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fieldLinear))
+    // Gate-fix (#1074 round 1, Code/Test HIGH): `muted-foreground` is translucent -- `.linear`
+    // alone scores it as opaque; `resolvedLinear` composites it over the real field backdrop.
+    const fgLinear = resolvedLinear(mutedForeground, { raw: 'search-field', alpha: 1, linear: fieldLinear })
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(fieldLinear))
     rows.push({
       themeId,
       fg: 'muted-foreground',
@@ -385,7 +388,7 @@ export function searchFieldContrastRows(themes) {
       min: 4.5,
       ratio,
       pass: ratio >= 4.5,
-      fgHex: linearToHex(mutedForeground.linear),
+      fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(fieldLinear),
     })
   }
@@ -432,13 +435,11 @@ export function userBubbleContrastRows(themes) {
 // ever measures for a preset whose `--sidebar-border` literally aliases `--divider` (Obsidian).
 // Dark, Dark high contrast, Nordic Frost and Cyber Amber all have an INDEPENDENT `--sidebar-
 // border` value and were never checked against this real fill at all before now.
-//
 // Informational only (never fails the run): adding this as a genuine PAIRS entry would newly
 // fail Dark (high contrast) (`muted-foreground` on its own `--sidebar-border`/`--sidebar`
 // composite measures only ~2.50:1, a real, pre-existing gap unrelated to this story's own
-// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1
-// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.24:1 -- #1039
-// retuned this preset's `--sidebar`/`--muted-foreground`, 2026-10-20; was 5.39:1 before).
+// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1 with
+// margin (Dark/Cyber Amber 5.93:1, Obsidian 5.64:1, Nordic Frost 6.00:1 -- gate-fix round 1, #1074: real alpha composited, not scored as solid).
 export function sidebarBorderContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {
@@ -450,7 +451,9 @@ export function sidebarBorderContrastRows(themes) {
       continue
     }
     const fillLinear = resolvedLinear(sidebarBorder, sidebar)
-    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fillLinear))
+    // Gate-fix (#1074 round 1, Code/Test HIGH): same translucent-as-solid bug as above.
+    const fgLinear = resolvedLinear(mutedForeground, { raw: 'sidebar-border-hover', alpha: 1, linear: fillLinear })
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(fillLinear))
     rows.push({
       themeId,
       fg: 'muted-foreground',
@@ -458,7 +461,7 @@ export function sidebarBorderContrastRows(themes) {
       min: 4.5,
       ratio,
       pass: true,
-      fgHex: linearToHex(mutedForeground.linear),
+      fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(fillLinear),
       note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })

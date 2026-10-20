@@ -39,8 +39,10 @@
 // contrast.mjs` uses) predicts for `--chat-foreground` alpha-blended over `--background` -- so
 // the opacity is proven to really composite on screen, not only in computed style.
 //
-// Screenshots per theme: chat (chat prose plus the header and Send button all visible), Manage
-// sessions (the full Session list), and Settings Appearance. Every shot is preceded by
+// Screenshots per theme: chat (chat prose plus the header and Send button all visible), a
+// popover menu (the Profile dropdown), selected chat-prose text, Manage sessions (the full
+// Session list), Settings Appearance, and an Off switch (the Appearance section's own watermark
+// toggle, clicked off then restored -- gate round 1, Low item 7). Every shot is preceded by
 // `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`): moves the pointer, blurs, presses
 // Escape, and THROWS if a stray tooltip/hover card is still open.
 //
@@ -71,7 +73,21 @@ import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { requireResolvedCssVarColor } from './verify-551-helpers.mjs';
 import { parseComputedColorToEntry, compositeOverLinear, resolvedLinear, relativeLuminance, srgbGammaEncode } from './contrast-math.mjs';
-import { settleForScreenshot, waitTwoFrames } from './verify-700-todo-pin-helpers.mjs';
+import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
+import {
+  SEND_BUTTON_FINDER,
+  HEADER_FINDER,
+  CHAT_PROSE_FINDER,
+  BADGE_FINDER,
+  readRealColours,
+  readBadgeColour,
+  openSettingsAppearance,
+  closeSettingsBackToChat,
+  capturePngBase64,
+  decodePixelRegion,
+  brightestPixel,
+  scrollTranscriptToShow
+} from './verify-1074-text-opacity-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -91,141 +107,26 @@ const SOLID_THEME_IDS = new Set(['dark-high-contrast']);
 // fourth independent tier.
 const EXPECTED_ALPHA = { header: 0.9, badge: 0.9, chat: 0.78, muted: 0.6 };
 const ALPHA_EPSILON = 0.01;
-const PIXEL_TOLERANCE = 20; // per sRGB byte channel, 0-255 -- font antialiasing/hinting slack.
+// Gate-fix (Code/Test Medium): was 20, loose enough to hide a wrong prediction baseline (the
+// old code predicted over flat `--background`, not the real `bg-accent/50` user-bubble fill the
+// chat prose actually sits inside -- `userBubbleContrastRows`' own bubble math, below). Now that
+// the prediction composites over that real bubble fill, 4 is font antialiasing/hinting slack only.
+const PIXEL_TOLERANCE = 4; // per sRGB byte channel, 0-255.
 
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
 
-const SEND_BUTTON_FINDER = `document.querySelector('button[aria-label="Send message"]')`;
-const HEADER_FINDER = `document.querySelector('header .truncate.text-sm.font-medium')`;
-const CHAT_PROSE_FINDER = `document.querySelector('.text-chat-foreground')`;
-const BADGE_FINDER = `document.querySelector('[data-slot="badge"][data-variant="secondary"]')`;
-
-/** Reads every REAL, currently-rendered element this check needs in one round trip (never a
- * hidden probe alone -- see this file's own header comment for which component each belongs
- * to). */
-async function readRealColours(cdp) {
-  return cdp.evaluate(`(() => {
-    const header = ${HEADER_FINDER};
-    const footer = document.querySelector('footer');
-    const chatProse = ${CHAT_PROSE_FINDER};
-    const send = ${SEND_BUTTON_FINDER};
-    return {
-      header: header ? getComputedStyle(header).color : null,
-      muted: footer ? getComputedStyle(footer).color : null,
-      chat: chatProse ? getComputedStyle(chatProse).color : null,
-      sendBackground: send ? getComputedStyle(send).backgroundColor : null,
-      sendForeground: send ? getComputedStyle(send).color : null
-    };
-  })()`);
-}
-
-/** Session count badge on the Manage sessions screen (`ManageSessionsScreen.tsx`,
- * `data-slot="badge" data-variant="secondary"`) -- only mounted while that screen is open, so
- * read separately from `readRealColours` above (the chat-view elements). */
-async function readBadgeColour(cdp) {
-  return cdp.evaluate(`(() => { const b = ${BADGE_FINDER}; return b ? getComputedStyle(b).color : null; })()`);
-}
-
-async function openSettingsAppearance(cdp) {
-  await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
-  await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
-  await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`);
-  await cdp.waitFor(`!!document.querySelector('[role="radiogroup"]')`, { timeoutMs: 10_000, label: 'Appearance section mounted (theme picker radiogroup)' });
-}
-
-async function closeSettingsBackToChat(cdp) {
-  await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
-  await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: 'Settings closed, back in chat' });
-}
-
-/** Decodes a real `Page.captureScreenshot` entirely inside the page via an offscreen `<canvas>`
- * (`drawImage` + `getImageData`), so no Node-side PNG decoder dependency is needed -- the same
- * technique `verify-1050-command-pill-helpers.mjs`'s own (module-private) `capturePixelRegion`
- * uses. Returns a flat RGBA byte array for the given CSS-pixel rect. */
-async function samplePixelRegion(cdp, rect) {
-  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
-  const x = Math.max(0, Math.round(rect.x));
-  const y = Math.max(0, Math.round(rect.y));
-  const w = Math.max(1, Math.round(rect.width));
-  const h = Math.max(1, Math.round(rect.height));
-  return cdp.evaluate(`new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(${x}, ${y}, ${w}, ${h}).data;
-      resolve(Array.from(d));
-    };
-    img.onerror = reject;
-    img.src = 'data:image/png;base64,${data}';
-  })`);
-}
-
-/** The single brightest (most fully-inked, least anti-aliased) pixel in a sampled RGBA region --
- * every theme here is dark-toned, so the chat text is always lighter than its own background,
- * making "brightest" a reliable proxy for "a glyph's own solid interior", not a blended edge. */
-function brightestPixel(rgba) {
-  let best = null;
-  for (let i = 0; i + 3 < rgba.length; i += 4) {
-    const r = rgba[i];
-    const g = rgba[i + 1];
-    const b = rgba[i + 2];
-    const sum = r + g + b;
-    if (!best || sum > best.sum) best = { r, g, b, sum };
-  }
-  return best;
-}
-
-/** The transcript's vendored message-scroller (`Transcript.tsx`) sticks to the bottom and
- * silently re-snaps any plain `scrollTop`/`scrollIntoView` write straight back to the end --
- * its own `handleViewportScroll` only disengages follow-bottom when it sees the scroll move up
- * AND `useScrollGestureTracking().isRecentGesture()` is true, which ONLY a real `wheel`/
- * pointer/touch/key DOM event sets (confirmed live: a `scrollIntoView` call measurably moved
- * `scrollTop` to its OWN requested value for one frame, then the vendored scroller snapped it
- * straight back to `scrollHeight - clientHeight` by the time this script's own two-frame
- * settle read it back). CDP's `Input.dispatchMouseEvent` `mouseWheel` type dispatches a
- * trusted wheel event the real `onWheel` listener sees, so the resulting scroll-up genuinely
- * sticks instead of being fought. Returns false (caller fails loudly) if no scrollable
- * ancestor is found at all even after retrying (the scrollable transcript container's own
- * `scrollHeight`/`clientHeight` can transiently read equal for a frame or two right after the
- * Manage-sessions-closed navigation settles -- `Transcript.tsx`'s own "landing" effect comment
- * describes the same still-settling `content-visibility:auto` window). */
-async function scrollTranscriptToShow(cdp, finderExpr) {
-  let viewportCentre = null;
-  for (let attempt = 0; attempt < 10 && !viewportCentre; attempt++) {
-    if (attempt > 0) await waitTwoFrames(cdp);
-    viewportCentre = await cdp.evaluate(`(() => {
-      const el = ${finderExpr};
-      if (!el) return null;
-      let anc = el.parentElement;
-      while (anc) {
-        const cs = getComputedStyle(anc);
-        if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && anc.scrollHeight > anc.clientHeight) {
-          const r = anc.getBoundingClientRect();
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        }
-        anc = anc.parentElement;
-      }
-      return null;
-    })()`);
-  }
-  if (!viewportCentre) return false;
-  for (let i = 0; i < 8; i++) {
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: viewportCentre.x, y: viewportCentre.y, deltaX: 0, deltaY: -2000 });
-    await waitTwoFrames(cdp);
-  }
-  return true;
-}
-
 async function main() {
   const findings = [];
   const failures = []; // Wrong measured values, or a target genuinely missing -- ALWAYS fails the run.
-  const notExercised = []; // Genuine skips only.
+  const notExercised = [
+    // Gate round 1 (Low item 7): honest, genuine skips -- none of these can be exercised by
+    // this live check as written, not fixed glossed-over gaps.
+    'Windows Forced Colors mode (forced-colors: active): every opacity-softened token above is overridden by the OS high-contrast palette in that mode -- never exercised here (this run always has it off).',
+    'Emoji glyph rendering: emoji in chat prose paint via the font/platform\'s own colour (COLR/CBDT) layer, bypassing `color`/`--chat-foreground` entirely -- the pixel-compositing check below samples the brightest pixel in the rect, which could be an emoji glyph rather than text; not isolated or verified separately here.',
+    'High-DPI rendering (devicePixelRatio != 1): the pixel-compositing check below now REFUSES to run unless devicePixelRatio === 1 (a correctness fix, not a workaround -- sampling a captured PNG\'s device pixels against a CSS-pixel rect only lines up 1:1 at DPR 1), so icon-stroke/text-opacity overlap at a scaled DPR is never exercised by this script.'
+  ]; // Genuine skips only.
   const shotNames = [];
 
   const gitHeadSha = gitHead(REPO_ROOT);
@@ -237,7 +138,7 @@ async function main() {
   clearKnownOutputFiles(
     SHOTS_DIR,
     'refract-1074-text-opacity-shots',
-    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
+    [...THEMES.flatMap((t) => [`${t.id}-00-chat.png`, `${t.id}-01-manage-sessions.png`, `${t.id}-02-settings-appearance.png`, `${t.id}-03-popover-menu.png`, `${t.id}-04-selected-text.png`, `${t.id}-05-settings-appearance.png`, `${t.id}-06-switch-off.png`]), 'report.json', 'app.log', 'fake-omp-invocations.log']
   );
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1074-data-'));
@@ -426,19 +327,47 @@ async function main() {
           failures.push(`${theme.name}: chat-prose element has no scrollable ancestor to scroll it into view.`);
           continue;
         }
-        const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, viewportHeight: window.innerHeight }; })()`);
-        if (!chatRect || chatRect.width < 1 || chatRect.height < 1 || chatRect.y < 0 || chatRect.y + chatRect.height > chatRect.viewportHeight) {
+        // Gate-fix (Code/Test Medium): captures the screenshot FIRST, then measures the
+        // chat-prose element's own `getBoundingClientRect()` -- not the reverse (the old order),
+        // which left a window for the rect to go stale relative to what was actually painted.
+        // Also guards `x` (not only `y`) against being scrolled/clipped out of the viewport, and
+        // asserts `devicePixelRatio === 1`: `decodePixelRegion` below samples the captured PNG's
+        // own device pixels at this rect's CSS-pixel coordinates verbatim, which only lines up
+        // 1:1 when the page has no device scaling.
+        const pngData = await capturePngBase64(cdp);
+        const chatRect = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, devicePixelRatio: window.devicePixelRatio }; })()`);
+        if (
+          !chatRect ||
+          chatRect.width < 1 ||
+          chatRect.height < 1 ||
+          chatRect.x < 0 ||
+          chatRect.x + chatRect.width > chatRect.viewportWidth ||
+          chatRect.y < 0 ||
+          chatRect.y + chatRect.height > chatRect.viewportHeight
+        ) {
           failures.push(`${theme.name}: chat-prose element has no real, fully-in-viewport paintable rect to sample after scrolling (${JSON.stringify(chatRect)}).`);
+        } else if (chatRect.devicePixelRatio !== 1) {
+          failures.push(`${theme.name}: devicePixelRatio is ${chatRect.devicePixelRatio}, not 1 -- the captured screenshot's device pixels would not line up 1:1 with this CSS-pixel rect.`);
         } else {
+          // Gate-fix (Code/Test Medium): predicts over the REAL fill the chat prose actually
+          // sits inside -- the user-message bubble's own translucent `bg-accent/50`
+          // (`UserMessageRow.tsx`'s `MessageContent`), composited over `--background`, THEN
+          // `--chat-foreground`'s own alpha composited a second time on top of THAT -- not flat
+          // `--background` directly (the old, wrong baseline `userBubbleContrastRows` in
+          // `theme-contrast-pairs.mjs` already predicts the same way for its own WCAG check).
           const bgRaw = await requireResolvedCssVarColor(cdp, '--background', 'background-color');
+          const accentRaw = await requireResolvedCssVarColor(cdp, '--accent', 'background-color');
           const fgEntry = parseComputedColorToEntry(real.chat);
           const bgEntry = parseComputedColorToEntry(bgRaw);
-          if (!fgEntry || !bgEntry) {
-            failures.push(`${theme.name}: could not parse --chat-foreground (${real.chat}) or --background (${bgRaw}) for the real pixel-compositing check.`);
+          const accentEntry = parseComputedColorToEntry(accentRaw);
+          if (!fgEntry || !bgEntry || !accentEntry) {
+            failures.push(`${theme.name}: could not parse --chat-foreground (${real.chat}), --background (${bgRaw}) or --accent (${accentRaw}) for the real pixel-compositing check.`);
           } else {
-            const expectedLinear = resolvedLinear(fgEntry, bgEntry);
+            const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accentEntry.linear }, bgEntry);
+            const bubbleEntry = { raw: 'bubble', alpha: 1, linear: bubbleLinear };
+            const expectedLinear = resolvedLinear(fgEntry, bubbleEntry);
             const expectedRgb = expectedLinear.map((c) => Math.round(srgbGammaEncode(c) * 255));
-            const pixels = await samplePixelRegion(cdp, chatRect);
+            const pixels = await decodePixelRegion(cdp, pngData, chatRect);
             const ink = brightestPixel(pixels);
             if (!ink) {
               failures.push(`${theme.name}: no pixels sampled from the chat-prose rect (${JSON.stringify(chatRect)}).`);
@@ -446,7 +375,7 @@ async function main() {
               const diffs = [Math.abs(ink.r - expectedRgb[0]), Math.abs(ink.g - expectedRgb[1]), Math.abs(ink.b - expectedRgb[2])];
               const maxDiff = Math.max(...diffs);
               if (maxDiff > PIXEL_TOLERANCE) {
-                failures.push(`${theme.name}: brightest real painted chat-prose pixel is rgb(${ink.r},${ink.g},${ink.b}), expected close to the gamma-composited --chat-foreground-over---background prediction rgb(${expectedRgb.join(',')}) (max channel diff ${maxDiff}, tolerance ${PIXEL_TOLERANCE}).`);
+                failures.push(`${theme.name}: brightest real painted chat-prose pixel is rgb(${ink.r},${ink.g},${ink.b}), expected close to the gamma-composited --chat-foreground-over-user-bubble prediction rgb(${expectedRgb.join(',')}) (max channel diff ${maxDiff}, tolerance ${PIXEL_TOLERANCE}).`);
               } else {
                 findings.push(`${theme.name}: real painted chat-prose ink rgb(${ink.r},${ink.g},${ink.b}) is within ${maxDiff} of the predicted composited rgb(${expectedRgb.join(',')}) -- the opacity genuinely composites on screen.`);
               }
@@ -454,25 +383,69 @@ async function main() {
           }
         }
 
-        // ---- Screenshots: chat (header, chat prose and Send button all visible) and Settings
-        // Appearance (Manage sessions already shot above). `settleForScreenshot` runs before
-        // EVERY shot -- moves the pointer, blurs, presses Escape, and THROWS if a stray
+        // ---- Screenshots: chat (header, chat prose and Send button all visible), a popover
+        // menu, selected chat-prose text, Settings Appearance (Manage sessions already shot
+        // above) and an Off switch (gate round 1, Low item 7). `settleForScreenshot` runs
+        // before EVERY shot -- moves the pointer, blurs, presses Escape, and THROWS if a stray
         // tooltip/hover card is still open. ----
         await settleForScreenshot(cdp);
         const chatShot = `${theme.id}-00-chat.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, chatShot));
         shotNames.push(chatShot);
 
+        // Popover menu (gate round 1, Low item 7): the Profile dropdown's own `--popover`
+        // surface, real rendered menu items whose text is `--popover-foreground` (aliases
+        // `--foreground`, so this screenshot doubles as visual evidence for the alias cascade).
+        await cdp.click(`document.querySelector('[data-profile-name-button]')`);
+        await cdp.waitFor(`!!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 10_000, label: `${theme.name}: Profile dropdown menu open` });
+        await sleep(150);
+        const popoverShot = `${theme.id}-03-popover-menu.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, popoverShot));
+        shotNames.push(popoverShot);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+        await cdp.waitFor(`!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 5_000, label: `${theme.name}: Profile dropdown menu closed` });
+
+        // Selected chat-prose text (gate round 1, Low item 7): a real double-click word
+        // selection, not a synthetic `Range` -- demonstrates the softened `--chat-foreground`
+        // stays legible under the browser's own (unstyled, no `::selection` override) highlight.
+        await settleForScreenshot(cdp);
+        const chatProseCentre = await cdp.evaluate(`(() => { const el = ${CHAT_PROSE_FINDER}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+        if (!chatProseCentre) {
+          notExercised.push(`${theme.name}: selected-text screenshot skipped -- chat-prose element not found at screenshot time.`);
+        } else {
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: chatProseCentre.x, y: chatProseCentre.y, button: 'left', clickCount: 2 });
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: chatProseCentre.x, y: chatProseCentre.y, button: 'left', clickCount: 2 });
+          await cdp.waitFor(`(window.getSelection()?.toString().length ?? 0) > 0`, { timeoutMs: 3_000, label: `${theme.name}: chat-prose word selected` });
+          const selectedTextShot = `${theme.id}-04-selected-text.png`;
+          await cdp.screenshot(path.join(SHOTS_DIR, selectedTextShot));
+          shotNames.push(selectedTextShot);
+          await cdp.evaluate(`window.getSelection()?.removeAllRanges()`);
+        }
+
         await settleForScreenshot(cdp);
         await openSettingsAppearance(cdp);
         await sleep(200);
         await settleForScreenshot(cdp);
-        const settingsShot = `${theme.id}-02-settings-appearance.png`;
+        const settingsShot = `${theme.id}-05-settings-appearance.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, settingsShot));
         shotNames.push(settingsShot);
+
+        // Off switch (gate round 1, Low item 7): the Appearance section's own watermark toggle,
+        // clicked off then restored on (never leaves the toggle in a different state than it
+        // started, so a later theme iteration or a rerun sees the same default every time).
+        await cdp.click(`document.querySelector('#watermark-toggle')`);
+        await cdp.waitFor(`document.querySelector('#watermark-toggle')?.getAttribute('aria-checked') === 'false'`, { timeoutMs: 5_000, label: `${theme.name}: watermark toggle switched off` });
+        await settleForScreenshot(cdp);
+        const switchOffShot = `${theme.id}-06-switch-off.png`;
+        await cdp.screenshot(path.join(SHOTS_DIR, switchOffShot));
+        shotNames.push(switchOffShot);
+        await cdp.click(`document.querySelector('#watermark-toggle')`);
+        await cdp.waitFor(`document.querySelector('#watermark-toggle')?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 5_000, label: `${theme.name}: watermark toggle restored on` });
+
         await closeSettingsBackToChat(cdp);
 
-        findings.push(`${theme.name}: screenshots captured (chat, Manage sessions, Settings Appearance).`);
+        findings.push(`${theme.name}: screenshots captured (chat, popover menu, selected text, Manage sessions, Settings Appearance, Off switch).`);
       } catch (err) {
         failures.push(`${theme.name}: ${err.message}`);
       }

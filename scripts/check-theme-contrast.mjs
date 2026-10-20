@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
+import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
@@ -568,7 +569,11 @@ if (watermarkOpacity === null) {
       rows.push({ themeId, fg: 'muted-foreground', bg: 'background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const markEntry = { raw: 'mark', alpha: watermarkOpacity, linear: mutedFg.linear }
+    // Gate-fix (#1074 round 1, Code/Test HIGH): `--muted-foreground` is now itself translucent
+    // (60% alpha) -- the real painted mark's alpha is `mutedFg.alpha * watermarkOpacity` (CSS
+    // `opacity` multiplies with an already-translucent `color`, it does not replace its alpha),
+    // not `watermarkOpacity` alone (the old code here silently dropped the 60% factor).
+    const markEntry = { raw: 'mark', alpha: mutedFg.alpha * watermarkOpacity, linear: mutedFg.linear }
     const markBackdropLinear = resolvedLinear(markEntry, background)
     const markBackdropEntry = { raw: 'mark-on-background', alpha: 1, linear: markBackdropLinear }
     for (const fg of ['muted-foreground', 'chat-foreground']) {
@@ -678,7 +683,7 @@ for (const [themeId, props] of Object.entries(themes)) {
 // baseline; merged into one loop for the same reason.
 // Gate round 5 (#1050, test review): `composerSelectionContrastRows` lives in its own module
 // (composer-selection-contrast.mjs's own comment explains why), merged into this same loop.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)
