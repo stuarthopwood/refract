@@ -1,5 +1,6 @@
 {
   "scripts/check-theme-contrast.mjs": 743,
+  "scripts/verify-1067-enter-queued.mjs": 671,
   "scripts/verify-632-grouped-calls.mjs": 673,
   "scripts/verify-926-attach-any-file.mjs": 663,
   "src-tauri/src/omp/process.rs": 1106,

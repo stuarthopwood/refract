@@ -311,7 +311,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     chipPoolRef.current = deriveQueuedChips(followUp, steering, chipPoolRef.current).nextPool
   }, [followUp, steering])
   // Issue #1067: steer the oldest queued follow-up on a plain Enter against a blank composer.
-  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost)
+  const enterQueuedFollowUp = computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)
 
   // Tracks the previous commit's `chips` (Issue #540/#598 High): when the tracked chip's key
   // disappears from the real arrays entirely (the server delivered it, e.g. a steering chip was
@@ -1485,7 +1485,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
-              <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter sends the next queued message' : 'Message the agent'}</span>
+              <span className="min-w-0 truncate">{enterQueuedFollowUp.applies ? 'Enter: send next queued' : 'Message the agent'}</span>
               <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
                 <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
@@ -1609,7 +1609,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {enterQueuedFollowUp.applies ? 'Enter sends the next queued message' : <Kbd>Enter</Kbd>}
+                {enterQueuedFollowUp.applies ? 'Send' /* gate round 2: aria-disabled while the rule applies (blank text) -- wired into aria-describedby by Radix, must not describe an action the button can't perform */ : <Kbd>Enter</Kbd>}
               </TooltipContent>
             </Tooltip>
           </div>

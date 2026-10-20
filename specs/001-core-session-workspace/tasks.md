@@ -4994,7 +4994,7 @@ record.
 - [X] T357 `src/renderer/features/chat/enterSendsQueuedFollowUp.ts` (new, small helper --
   `MessageInput.tsx` is at its own `check:file-size` baseline cap; renamed from
   `useEnterSendsQueuedFollowUp.ts` in gate round 1, DECIDED item 4: not a hook, no `use*` prefix):
-  `computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost)`
+  `computeEnterSendsQueuedFollowUp(text, attachments, pendingAttachmentReads, chips, showSlashMenu, ghost, disabled)`
   derives whether a plain Enter should steer the oldest queued follow-up instead of calling the
   ordinary `handleSend()`, returning a discriminated `{ applies: true; chip: DerivedChip } | {
   applies: false }` union (gate round 1, DECIDED item 4: replaces a plain `{ applies: boolean;
@@ -5006,26 +5006,32 @@ record.
   still-open `hasSendableContent`, which asks the opposite question for the Send button). The
   oldest follow-up is `chips.find`'s first `queue === 'followUp'` entry (follow-ups list before
   any steering chip, in `followUp` array/FIFO order); a steering-only queue yields no match. The
-  rule is suppressed while the slash menu is open or a live ghost-text suggestion is showing
-  (neither can actually coexist with a blank draft today -- `showSlashMenu` requires `text` to
-  start with `/`, `isGhostTextEligible` requires text already on the line -- but both guards are
-  explicit anyway).
+  rule is suppressed while the slash menu is open, a live ghost-text suggestion is showing, or
+  the composer is `disabled` (gate round 2, Main, MEDIUM item b: the helper used to ignore
+  `disabled` entirely; now short-circuits to `applies: false` before any other check). Neither
+  slash-menu nor ghost-text can actually coexist with a blank draft today -- `showSlashMenu`
+  requires `text` to start with `/`, `isGhostTextEligible` requires text already on the line --
+  but both guards are explicit anyway.
 - [X] T358 `src/renderer/features/chat/MessageInput.tsx`: the Enter branch of `handleKeyDown`
   calls `handleSendNow(enterQueuedFollowUp.chip)` instead of `handleSend()` when
   `enterQueuedFollowUp.applies` (gate round 1, DECIDED item 4: the discriminated union above
   removes the need for a `chip!` non-null assertion), reusing its existing `inFlightChips`
   single-flight guard unchanged (a fast double Enter resolves to the same chip key on both
   presses, so the second call is a no-op) and its existing "Sending now…" announcement. The
-  empty-state hint overlay's lead text and the `composerHintId` sr-only description (already
-  wired into the textarea's `aria-describedby`, issue #533) both read "Enter sends the next
-  queued message" while the rule applies, with the sr-only description keeping the ordinary
+  empty-state hint overlay's lead text reads the shortened "Enter: send next queued" (gate round
+  2, LOW item 5: the original full sentence still truncated at the 360px panel floor; shortened
+  to fit) while the rule applies, in place of the default "Message the agent" wording; the
+  `composerHintId` sr-only description (already wired into the textarea's `aria-describedby`,
+  issue #533) keeps the FULL "Enter sends the next queued message" sentence, with the ordinary
   "Markdown is supported. Type slash for commands." text appended after it (gate round 1, DECIDED
-  item 5), in place of the default "Message the agent" wording for the visible overlay. The Send
-  button's own `aria-keyshortcuts="Enter"` and its tooltip's `<Kbd>Enter</Kbd>` are both dropped
-  while the rule applies, replaced with "Enter sends the next queued message" text (gate round 1,
-  DECIDED item 6: the Send button must never claim Enter sends the empty draft while Enter
-  actually steers the queue instead). IME composition and Shift+Enter are unaffected (both
-  already gated before this branch runs).
+  item 5). The Send button's own `aria-keyshortcuts="Enter"` is dropped while the rule applies
+  (gate round 1, DECIDED item 6: the button must never claim Enter sends the empty draft while
+  Enter actually steers the queue instead); its tooltip reads plain "Send" instead of
+  `<Kbd>Enter</Kbd>` (gate round 2, UI review (a): the button is unconditionally `aria-disabled`
+  while the rule applies, so the tooltip -- wired into the button's own `aria-describedby` by
+  Radix -- must not describe an action, the queued send, the disabled button itself cannot
+  perform). IME composition and Shift+Enter are unaffected (both already gated before this branch
+  runs).
 - [X] T359 Live CDP verification (`scripts/verify-1067-enter-queued.mjs`, new fake-omp tape
   `scripts/fixtures/omp-frames/1067-enter-queued.jsonl`). Covers: two queued follow-ups mid-turn,
   chips render oldest-first; the hint and `aria-describedby` while the rule applies, in two

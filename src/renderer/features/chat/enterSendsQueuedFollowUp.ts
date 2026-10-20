@@ -35,6 +35,11 @@ export type EnterSendsQueuedFollowUp = { applies: true; chip: DerivedChip } | { 
  * predicate issue #744 proposes (that one treats an attachment-only draft as sendable); this is
  * the opposite question -- "is there nothing here a plain Enter could send as typed text".
  *
+ * `disabled` (gate round 2, Main, MEDIUM item b: the helper used to ignore it entirely) short-
+ * circuits to `applies: false` before any other check -- a stopped/not-yet-started Session's
+ * composer must never claim Enter steers a queued follow-up, even if stale queue state briefly
+ * lingered from before the stop.
+ *
  * The oldest queued follow-up is the one a repeat Enter sends first, matching the first "Send
  * now" button a developer would see: `chips` lists every follow-up before any steering chip, in
  * `followUp` array order (FIFO, OMP's own `promote_queued_message`), so the first follow-up
@@ -48,8 +53,10 @@ export function computeEnterSendsQueuedFollowUp(
   pendingAttachmentReads: number,
   chips: readonly DerivedChip[],
   showSlashMenu: boolean,
-  ghost: { text: string } | null
+  ghost: { text: string } | null,
+  disabled: boolean
 ): EnterSendsQueuedFollowUp {
+  if (disabled) return { applies: false }
   const isBlank =
     text === '' &&
     attachments.images.length === 0 &&
