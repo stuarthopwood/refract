@@ -363,37 +363,45 @@ async function main() {
     await clearAndType(cdp, pressKey, '/skill:demo-review do it');
     await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: 'theme loop: pill re-shown' });
     for (const theme of THEMES) {
-      if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
+      if (theme.id !== 'dark') {
+        await switchTheme(cdp, theme.id, theme.name);
+        // Gate round 3 fix, remediated gate round 4: the Profile name button this menu opens
+        // from ALSO carries its own Tooltip ("Stuart Hopwood"), which can stay open afterward.
+        // Gate round 4: a PURE `mouseMoved` dispatch is not enough to close it -- this is the
+        // SAME documented CDP/Radix limitation `verify-937-advisor-chip.mjs`'s own gate round 5
+        // already found (confirmed there via a 3s poll of the tooltip's own `data-state`):
+        // Radix's open/close state is driven by a REAL `pointerleave`/blur DOM event on the
+        // trigger, which `Input.dispatchMouseEvent`'s synthetic `mouseMoved` does not reliably
+        // produce. Escape (Radix's own documented dismiss key for every DismissableLayer-based
+        // primitive, including Tooltip) plus a real click elsewhere (a genuine focus change, not
+        // just a pointer co-ordinate) are the two REAL dismiss paths Radix actually listens for,
+        // tried together for the best realistic chance; the wait itself stays best-effort
+        // (`.catch`), matching `verify-741-role-chip-helpers.mjs`'s own identical precedent -- a
+        // tooltip that survives both real dismiss attempts is this same pre-existing CDP
+        // limitation, not a product bug, and must never fail the whole run over a cosmetic
+        // screenshot detail. Scoped to the `switchTheme` branch ONLY (gate round 4 fix, found by
+        // this exact run): Dark is the one theme `switchTheme` never runs for (it is already the
+        // live theme when the loop starts), so the textarea is STILL FOCUSED there -- Escape
+        // dispatched in that state hits the composer's OWN `onKeyDown` handler instead of
+        // Radix's tooltip, clearing the whole draft (`/skill:demo-review do it` -> ''), which is
+        // exactly why "Dark: pill found" failed once this was run unconditionally.
+        await pressKey(cdp, 27, 'Escape', 'Escape');
+        const neutralPoint = await cdp.evaluate(`(() => { const r = ${TEXTAREA}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: neutralPoint.x, y: neutralPoint.y });
+        await cdp.click(TEXTAREA);
+        await cdp
+          .waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `${theme.name}: any stuck tooltip closed before measuring` })
+          .catch((err) => {
+            notExercised.push(
+              `${theme.name}: a stuck Profile-name tooltip did not close after Escape + a real click away (${err.message}) -- the same documented CDP/Radix limitation verify-937-advisor-chip.mjs's gate round 5 already found (synthetic events cannot reliably reproduce the real pointerleave/blur Radix's own close logic listens for); cosmetic only, the pill geometry/colour assertions below are unaffected.`
+            );
+          });
+      }
       // Gate round 1 LOW remediation (item 6): `switchTheme` itself returns once the real
       // `<html>` class has applied, but the Profile dropdown's own Radix close animation and
       // any still-open tooltip can still be mid-transition at that exact instant -- wait for
       // the menu to be genuinely gone and let any transition settle before measuring/shooting.
       await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: `${theme.name}: profile menu fully closed before measuring` });
-      // Gate round 3 fix, remediated gate round 4: the Profile name button this menu opens from
-      // ALSO carries its own Tooltip ("Stuart Hopwood"), which can stay open afterward. Gate
-      // round 4: a PURE `mouseMoved` dispatch is not enough to close it -- this is the SAME
-      // documented CDP/Radix limitation `verify-937-advisor-chip.mjs`'s own gate round 5 already
-      // found (confirmed there via a 3s poll of the tooltip's own `data-state`): Radix's
-      // open/close state is driven by a REAL `pointerleave`/blur DOM event on the trigger, which
-      // `Input.dispatchMouseEvent`'s synthetic `mouseMoved` does not reliably produce. Escape
-      // (Radix's own documented dismiss key for every DismissableLayer-based primitive,
-      // including Tooltip) plus a real click elsewhere (a genuine focus change, not just a
-      // pointer co-ordinate) are the two REAL dismiss paths Radix actually listens for, tried
-      // together for the best realistic chance; the wait itself stays best-effort (`.catch`),
-      // matching `verify-741-role-chip-helpers.mjs`'s own identical precedent -- a tooltip that
-      // survives both real dismiss attempts is this same pre-existing CDP limitation, not a
-      // product bug, and must never fail the whole run over a cosmetic screenshot detail.
-      await pressKey(cdp, 27, 'Escape', 'Escape');
-      const neutralPoint = await cdp.evaluate(`(() => { const r = ${TEXTAREA}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: neutralPoint.x, y: neutralPoint.y });
-      await cdp.click(TEXTAREA);
-      await cdp
-        .waitFor(`!document.querySelector('[role="tooltip"]')`, { timeoutMs: 3_000, label: `${theme.name}: any stuck tooltip closed before measuring` })
-        .catch((err) => {
-          notExercised.push(
-            `${theme.name}: a stuck Profile-name tooltip did not close after Escape + a real click away (${err.message}) -- the same documented CDP/Radix limitation verify-937-advisor-chip.mjs's gate round 5 already found (synthetic events cannot reliably reproduce the real pointerleave/blur Radix's own close logic listens for); cosmetic only, the pill geometry/colour assertions below are unaffected.`
-          );
-        });
       await sleep(300);
       const themeGeom = await measurePillGeometry(cdp);
       assertTrue(themeGeom !== null, `${theme.name}: pill found`);
