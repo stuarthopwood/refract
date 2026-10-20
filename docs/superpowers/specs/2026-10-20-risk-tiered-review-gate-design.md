@@ -164,13 +164,106 @@ gate config, so it needs a human.
 - Audit interval N.
 
 The existing reviewer agents already read `.omp/review-config.md` or `.claude/review-config.md`.
-The new config should replace that hook, not add a second one.
+The new config replaces that hook, not adds a second one.
+
+## Contracts
+
+These are the interfaces the core, each repository, and the CI check share. Values marked
+"default" were set while planning (2026-10-20), not in the grill.
+
+### Config file
+
+- Path: `.github/review-gate.json`. JSON, so the script needs no parser dependency. It sits under
+  `.github/`, so editing it is a CI-category change and needs a human (Q12).
+- Shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "preflight": ["pnpm typecheck", "pnpm test"],
+  "pathRules": [
+    { "glob": "src-tauri/src/auth/**", "area": "backend", "minRisk": "Elevated",
+      "minSecurity": "Sensitive", "humanRequired": "auth" }
+  ],
+  "sizeRules": { "standardAboveLines": 150, "elevatedAboveLines": 400, "splitAboveLines": 800 },
+  "humanRequiredAdd": [],
+  "acSource": { "kind": "spec-md", "path": "specs" },
+  "evidenceKinds": ["smoke-run", "screenshot"],
+  "testPolicy": "no-new-tests",
+  "bots": [],
+  "mergeAuthority": { "Trivial": "auto", "Standard": "auto", "Elevated": "human", "Severe": "human" },
+  "auditEveryMerges": 10,
+  "auditMarker": "docs/audit/last-app-wide.md"
+}
+```
+
+- `acSource.kind`: `spec-md`, `github-issue`, or `jira`. `testPolicy`: `no-new-tests` or
+  `tests-expected`. Each `bots` entry: `name`, `login`, `timeoutMin` (default 15), and
+  `blocksIfMissing`. Size thresholds are defaults.
+- The script has core defaults built in for the CI, migration, dependency-manifest, and gate
+  self-file categories (`.github/**`, `**/migrations/**`, package manifests and lockfiles,
+  `scripts/review-gate/**`). Repository `pathRules` map the categories that depend on layout,
+  such as auth, public contracts, and data retention.
+
+### Rule-floor script (Q16)
+
+- The canonical copy lives in the user-level core. Each repository vendors a copy at
+  `scripts/review-gate/floor.mjs`. The first line is `// review-gate floor v<semver>`. The gate
+  skill warns when the vendored version differs from the canonical one.
+- Node 20 or later, built-in modules only.
+- Command: `node scripts/review-gate/floor.mjs --base <ref> [--head <ref>] [--config <path>]`.
+- Output on stdout, exit code 0:
+
+```json
+{ "risk": "Standard", "security": "None", "areas": ["frontend"],
+  "humanRequired": [{ "category": "ci", "paths": [".github/workflows/ci.yml"] }],
+  "changedLines": 212, "splitRecommended": false }
+```
+
+### Gate record
+
+- Posted as one sticky PR comment that starts with `<!-- review-gate-record v1 -->` and holds one
+  fenced `json` block. The JSON artifact has the same content.
+- Trusted only when the comment's `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`.
+- Shape:
+
+```json
+{
+  "schemaVersion": 1, "headSha": "<40-hex>", "baseSha": "<40-hex>",
+  "risk": "Standard", "security": "Contained", "areas": ["frontend"],
+  "humanRequired": [{ "category": "ci", "reason": "workflow file changed" }],
+  "verdict": "PASS", "rounds": 2, "rethinks": 0,
+  "panel": [{ "role": "Spec-keeper", "model": "<model id>" }],
+  "findings": [{ "id": "F1", "source": "Adversary", "severity": "High", "path": "src/a.ts",
+    "line": 42, "summary": "...", "status": "fixed", "note": "..." }],
+  "decisions": [{ "summary": "...", "raisedBy": "Maintainer", "ifDone": "...", "ifNotDone": "..." }],
+  "acEvidence": [{ "ac": "US1 scenario 2", "kind": "screenshot", "evidence": "...", "verdict": "proven" }],
+  "durationMin": 18, "cost": "..."
+}
+```
+
+- `verdict`: `PASS`, `NEEDS_HUMAN`, or `FAIL`. Finding `status`: `fixed`, `refuted`, `open`, or
+  `logged`. AC `verdict`: `proven`, `unproven`, or `not-applicable`.
+
+### Record check (CI)
+
+- Vendored beside the floor script at `scripts/review-gate/check-record.mjs`. Command:
+  `node scripts/review-gate/check-record.mjs --pr <number>`, using `gh api` with the workflow
+  token.
+- It fails when the record is missing or untrusted, when `headSha` differs from the PR head, when
+  any rating is below the floor, or when a floor human-required category is missing from the
+  record.
+- `PASS` succeeds. `NEEDS_HUMAN` succeeds only while the PR carries the
+  `review-gate:human-approved` label (default: a solo maintainer cannot approve their own PR on
+  GitHub, so a label stands in for the approval). `FAIL` fails.
 
 ## Where it lives
 
-- Core (classifier, panel roles, refuter, gate skill) at user level, beside today's
-  `quality-gate` skill and reviewer agents, with a Claude Code mirror.
-- Refract holds only its config and the CI check.
+- Core (classifier, panel roles, refuter, gate skill, and the canonical floor and record-check
+  scripts) at user level, beside today's `quality-gate` skill and reviewer agents, with a Claude
+  Code mirror.
+- Each repository holds its config, the vendored scripts, and the CI workflow that runs the record
+  check.
 - Port: copy the core into fdb-agentkit and write RepeatPlus configs.
 
 ## Rollout and measurement
@@ -183,8 +276,10 @@ The new config should replace that hook, not add a second one.
 
 ## Changes to existing rules
 
-- The `quality-gate` skill and the AGENTS.md "Quality gate" HARD RULE: replace the whole-app first
-  run and the fixed 5-agent fan-out with this design.
+- The `quality-gate` skill and the AGENTS.md "Quality gate" HARD RULE: a repository with
+  `.github/review-gate.json` uses this gate; any other repository keeps the existing
+  `quality-gate` until it adopts a config. This keeps RepeatPlus on the current gate until its
+  shadow run.
 - The Refract gate skills (`refract-lane-pr-gate`, `refract-multi-lane-pr-gate-orchestration`,
   `refract-ui-lane-gate-checklist`): point them at the new gate; their checklists become
   specialist prompts or Refract config.
@@ -215,4 +310,5 @@ The new config should replace that hook, not add a second one.
 | Q12 | Human-required | Core defaults with self-protection |
 | Q13 | Exhaustion | One rethink, then a human |
 | Q14 | Bots in Refract | None for the trial |
-| Q15 | Home | User-level core; repository holds config only |
+| Q15 | Home | User-level core; repository holds config (refined by Q16) |
+| Q16 | Floor logic home | Vendor a copy into each repository; canonical copy in the core |
