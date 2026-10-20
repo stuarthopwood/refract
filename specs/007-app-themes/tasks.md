@@ -1233,5 +1233,41 @@ one genuinely new pair per theme (872 -> 877, see that task's own entry).
   `pnpm typecheck` clean, `vitest run` 148/148, `check:indent` 0/460 files, `check:theme-contrast`
   **892/892 PASS** (up from 887: +5, one new `focusedBadgeContrastRows` pair per theme),
   `check:file-size` 0 cap violations, `check:versions` aligned, `check:omp-schema` no drift,
-  `cargo fmt --check` clean. No build run; live-verify of the Journey-label/composer-selection
-  assertions and every screenshot deferred to the next build slot.
+  `cargo fmt --check` clean. No build run this task; live-verify of the Journey-label/
+  composer-selection assertions and every screenshot done in T053, the next build slot.
+
+- [X] T053 Main's gate round 3 build slot, final live-verify (2026-10-20): merge `origin/main`,
+  rerun the chained `ci-local.mjs` + `verify-1074-text-opacity.mjs`, falsify any red, VIEW the
+  Journey diagram and composer-selection shots, report "slot released" (depends on T052).
+  **Done**: merged `origin/main` cleanly (#1067 "Enter sends oldest queued follow-up", one
+  commit, `docs/PLAN.md` auto-merged, `MessageInput.tsx` exactly at its 1632-line baseline).
+  Two real bugs found and fixed live, falsified not assumed: (1) `check:ui-text` failed --
+  a CSS-template-literal comment in `getMermaidThemeCSS` referenced the literal string
+  `FR-023`, which is baked verbatim into the compiled bundle (unlike a stripped TS `//`
+  comment) and tripped the leak detector's `FR-\d{3}` pattern; reworded to drop the code
+  reference. (2) The Journey SVG-content assertion (T052) searched for the plain hex literal
+  and failed in every non-HC theme on the real exe; live debugging confirmed the CSS rule and
+  correct colour WERE present in the embedded `<style>` block, just serialized as
+  `rgb(r, g, b)` -- Mermaid's own per-mount stylesheet scoping re-serializes every colour this
+  way -- fixed the assertion to match that form instead of hex. A third regression (the new
+  Journey-diagram screenshot's `scrollIntoView` leaving the transcript scrolled away from the
+  chat-prose message, breaking the already-passing "selected chat-prose text" check in every
+  theme) was caught and fixed in the same pass by restoring the scroll position after the shot.
+  `ci-local.mjs`: **all 16 steps PASS** (typecheck, vitest 148/148, indent, theme-contrast
+  892/892, drag-regions, IPC parity, file-size, versions, OMP schema drift + self-test,
+  `cargo fmt --check`, `cargo test`, `cargo clippy`, Tauri debug build, `check:ui-text` 0
+  leaks). `verify-1074-text-opacity.mjs`: **0 failures across all 5 themes, exitCode 0**;
+  every Journey SVG assertion confirmed the real rendered `rgb()` colour matches each theme's
+  solid `taskTextColor` (Dark/Cyber Amber `rgb(250, 250, 250)` == `#fafafa`, Obsidian
+  `rgb(248, 250, 252)` == `#F8FAFC`, Nordic Frost `rgb(239, 247, 251)` == `#eff7fb`, Dark HC
+  `rgb(255, 255, 255)` == `#ffffff`). gitHead `91b30ff8`, dirty `false`, exeSha256
+  `6fa3fbc96595…` (confirmed unchanged through copy and post-launch; cross-checked against a
+  concurrent lane's build into the same shared `CARGO_TARGET_DIR` by proving this run's own
+  #1074-specific behaviours -- Journey labels, composer-selection -- actually passed, not
+  merely assumed). Journey diagram screenshot viewed directly (Dark): "My day" journey with
+  blue/green coloured section/task bars, crisp solid white labels legible against every
+  coloured fill, no washout. Composer-selection screenshot viewed directly (Dark): a real
+  `/btw hi` draft, Ctrl+A-selected, both pill and plain text legible under the highlight.
+  PR #1104 body updated with the full round-3 evidence; PLAN.md row updated. `notExercised`
+  (5, all genuine, unchanged from T052).
+
