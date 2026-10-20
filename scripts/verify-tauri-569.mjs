@@ -14,7 +14,7 @@
 //     while the GitHub clone is still the default repository (count visible).
 //   - Keyboard-ONLY profile menu, driven with `Emulation.setFocusEmulationEnabled` and real
 //     `Input.dispatchKeyEvent`: focus the name button, Enter opens the menu, fixed item order,
-//     ArrowDown to Theme, ArrowRight into the submenu (asserting the "Current" marker), ArrowLeft
+//     ArrowDown to Theme, ArrowRight into the submenu (asserting one checked `menuitemradio`), ArrowLeft
 //     back out, Esc closes the whole menu and returns focus to the name button.
 //   - The update entry's renderings (FR-021) forced via a scratch `updateState.json`. This is
 //     NOT a no-network check: Refract's own automatic startup update check makes a real `gh`

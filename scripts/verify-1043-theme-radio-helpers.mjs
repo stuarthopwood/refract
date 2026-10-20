@@ -202,6 +202,58 @@ export async function ringCarriesForcedColorsOverride(cdp) {
   `);
 }
 
+/** Stronger than `ringCarriesForcedColorsOverride` above (MEDIUM fix, #1043): that check only
+ * confirms the `forced-colors:...` utility class string is literally present in the rendered
+ * element's `className` attribute -- which would stay true even if Tailwind's JIT silently
+ * failed to compile a matching CSS rule for this exact (group-variant inside a media-variant,
+ * inside a `/radio-item`-named group) combination, since JSX never removes an unmatched class
+ * name from the DOM. This instead walks the REAL compiled stylesheets (`document.styleSheets`,
+ * recursing into every `CSSMediaRule`'s own nested `cssRules`), finds every rule sitting inside
+ * an `@media (forced-colors: ...)` block, and fuzzy-matches each rule's `selectorText` (with
+ * backslash escapes stripped, since Tailwind escapes `:`/`[`/`]`/`/` in a literal class-name
+ * selector) against the ring's own two defining substrings -- `group-data-[state=checked]/
+ * radio-item` (the group-variant key) and `border-[Highlight]` (the arbitrary value) -- rather
+ * than reconstructing Tailwind's exact compiled selector syntax by hand (which differs across
+ * versions and which group/media-variant nesting order it picks), so this does not depend on
+ * guessing that syntax correctly. Confirms the matching rule's own declaration actually sets
+ * `border-color: Highlight` (or a shorthand `border: ... Highlight`), not just that a rule with
+ * a matching selector exists with some unrelated declaration. */
+export async function forcedColorsRuleCompiled(cdp) {
+  return cdp.evaluate(`
+    (() => {
+      function collectLeafRules(rule, acc) {
+        if (rule.cssRules) {
+          for (const child of Array.from(rule.cssRules)) collectLeafRules(child, acc);
+        } else {
+          acc.push(rule);
+        }
+      }
+      const forcedColorsRules = [];
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules;
+        try { rules = sheet.cssRules; } catch { continue; }
+        for (const rule of Array.from(rules || [])) {
+          const isForcedColorsMedia = typeof CSSMediaRule !== 'undefined' && rule instanceof CSSMediaRule &&
+            /forced-colors/i.test(rule.conditionText || rule.media?.mediaText || '');
+          if (isForcedColorsMedia) collectLeafRules(rule, forcedColorsRules);
+        }
+      }
+      const stripEscapes = (s) => (s || '').replace(/\\\\/g, '');
+      const matching = forcedColorsRules.filter((r) => {
+        const sel = stripEscapes(r.selectorText);
+        return sel.includes('group-data-[state=checked]/radio-item') && sel.includes('border-[Highlight]');
+      });
+      const declaresHighlightBorder = matching.some((r) => /border(-color)?:\\s*[^;]*Highlight/i.test(r.style?.cssText || r.cssText || ''));
+      return {
+        totalForcedColorsRulesScanned: forcedColorsRules.length,
+        matchingSelectorCount: matching.length,
+        matchingSelectors: matching.map((r) => r.selectorText),
+        declaresHighlightBorder
+      };
+    })()
+  `);
+}
+
 /** Gate finding (Main, live pixel sample, 2026-10-20): the dot used to mount structurally
  * (`readRadioRows`'s own `hasDot` check passed) while painting at 0x0 -- a `<span>` nested one
  * level inside `DropdownMenuPrimitive.ItemIndicator` stayed `display: inline` (never

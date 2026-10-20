@@ -100,8 +100,8 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` this gate round 5/6
-      // history above records read as an unselected radio with nothing marking the checked row
+      // Issue #1043 (grilled 2026-10-19, ADR 0003): the TRAILING `CheckIcon` the Gate round 1
+      // history above (`DropdownMenuRadioGroup`'s own comment) records read as an unselected
       // (the round swatches in the Theme submenu, its first caller, looked identical whether
       // checked or not). Moves to the SAME leading ring-and-dot mark the Ask card's radios use
       // (`RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, `radio-group.tsx`'s own shared source, ADR 0003 --
@@ -116,7 +116,7 @@ function DropdownMenuRadioItem({
       // identically under Windows High Contrast (the same failure mode `RadioGroupItem`'s own
       // comment documents, just with no outer border to lean on this time). The inset shadow
       // stays on `--active-indicator`, same as `DropdownMenuItem` above -- unrelated to this
-      // fix, that cue is keyboard focus only (2026-10-15 decision, unchanged).
+      // fix, that cue follows focus, never selection (2026-10-15 decision, unchanged).
       className={cn(
         "group/radio-item relative flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

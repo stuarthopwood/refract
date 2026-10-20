@@ -284,20 +284,28 @@ level the same way.
   (`radio-group.tsx`'s new `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`, extracted from the Ask card's own
   mark, ADR 0003) instead of a trailing `CheckIcon` (FR-030); rebuild `ThemeSubmenu`
   (`ProfileMenu.tsx`) as a `DropdownMenuRadioGroup`/`RadioItem` bound to the active theme, moving
-  each preset's colour swatch to a small square chip after its name and dropping the trailing
-  "Current" text (FR-019); add `foreground`/`popover` to `scripts/theme-contrast-pairs.mjs`
-  (WCAG 1.4.11, the new dot's real surface) -- `primary`/`popover` (the checked ring's own border)
-  is deliberately NOT added, matching `radio-group.tsx`'s own pre-existing #572 decision D10 that
-  the ring is reinforcement only, never the WCAG-load-bearing element (it measures under 3:1 on
-  `--popover` in three of five themes, same as it already does, unchecked, against `--card`/
-  `--background` everywhere else no PAIRS entry covers it). The composer's Reasoning picker
-  (`ComposerPickers.tsx:114-120`) needed no code change -- it already built on
+  each preset's colour swatch to a small two-colour chip (the theme's own `--background` and
+  `--primary`, split down the middle, ui-architect-v3 ruling 2026-10-20) after its name and
+  dropping the trailing "Current" text (FR-019); add `foreground`/`popover` to
+  `scripts/theme-contrast-pairs.mjs` (WCAG 1.4.11, the new dot's real surface). The composer's
+  Reasoning picker (`ComposerPickers.tsx:114-120`) needed no code change -- it already built on
   `DropdownMenuRadioGroup`/`RadioItem`, so it picks up the new mark automatically.
+  -- Gate round 1 fix (PR #1057, Code/Test/UI reviewers, High): the checked ring's own border
+  (`RADIO_RING_CLASS`, `radio-group.tsx`) was `border-primary`, matching the Ask card's look, but
+  `--primary`/`--popover` measures only 2.92-2.99:1 in Obsidian/Nordic Frost/Cyber Amber -- under
+  the 3:1 floor, and visibly INVERTED there (the checked row's own ring read FAINTER than an
+  unchecked row's, since `--primary`'s relative luminance is lower than `--muted-foreground`'s in
+  those three themes). This was never "the same pre-existing gap" an earlier cut of this task
+  claimed via the #572 decision D10 comment (which is about `RadioGroupIndicator`'s own dot
+  token, a different element): `primary`/`card` and `primary`/`background` both clear 3:1 with
+  margin; `--popover`, the surface this ring is NEW to, was the one failure. Fixed: the checked
+  ring now uses `border-foreground` instead; `foreground`/`popover` (already gated) and the newly
+  added `foreground`/`accent` (the row's own `focus:bg-accent` fill) both cover it.
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`, `pnpm check:file-size`,
 `pnpm check:theme-contrast`, `pnpm check:parity`, and `pnpm check:drag-regions` all pass; a live
 Tauri check per `scripts/verify-1043-theme-radio.mjs` confirms every preset's radio state, keyboard
-and mouse selection, the forced-colours indicator, and the Reasoning picker.
+and mouse selection, the forced-colours override's real compiled CSS rule, and the Reasoning picker.
 
 ---
 

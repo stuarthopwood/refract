@@ -14,22 +14,27 @@
 //   - The leading ring-and-dot mark (`radio-group.tsx`'s `RADIO_RING_CLASS`/`RADIO_DOT_CLASS`):
 //     the dot (`DropdownMenuPrimitive.ItemIndicator`) is structurally mounted on the checked row
 //     ONLY, never on an unchecked one.
-//   - The colour swatch is a square chip (`rounded-[2px]`, never `rounded-full`) AFTER the name,
-//     never confused for a second radio.
+//   - The colour swatch is a two-colour chip (`rounded-[3px]`, never `rounded-full`) AFTER the
+//     name, never confused for a second radio.
 //   - Pointer selection (`switchTheme`, `verify-tauri-scratch-helpers.mjs`, fixed for #1043's new
 //     `menuitemradio` rows) moves the check, once per preset (5/5 transitions exercised).
 //   - Keyboard selection: ArrowRight into the submenu lands focus on the ACTIVE preset first (the
-//     existing keyboard-open-focus behaviour, unregressed); ArrowDown x2 + Enter from Dark
-//     selects Obsidian; the checked radio is re-read as having actually moved.
-//   - The focus-bar/checked-state split (2026-10-15 decision, "the bar means keyboard focus
-//     only" -- unchanged by this fix): an UNCHECKED row that has keyboard focus carries the
+//     existing keyboard-open-focus behaviour, unregressed) -- seeded on 'Dark (high contrast)',
+//     the SECOND-listed preset, not the first-listed 'Dark', so this cannot pass merely because
+//     Radix's own unmodified default (focus the first item) coincidentally matches; ArrowDown +
+//     Enter from there selects Obsidian, the checked radio re-read as having actually moved.
+//   - The focus-bar/checked-state split (2026-10-15 decision, "the bar follows focus, never
+//     selection" -- unchanged by this fix): an UNCHECKED row that has keyboard focus carries the
 //     inset-shadow focus bar; the CHECKED-but-unfocused row does not.
 //   - Forced-colours: WebView2's own CDP endpoint has no working `Emulation.setEmulatedMedia` for
 //     `forced-colors` (the same limitation `verify-tauri-567.mjs`'s header comment already
 //     records) -- a structural check confirms the ring's own
 //     `forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]` utility class is
-//     literally present in the rendered markup; real OS forced-colours rendering is reported
-//     `notExercised`, not silently skipped or falsely claimed.
+//     literally present in the rendered markup, AND a `document.styleSheets` check confirms
+//     Tailwind genuinely compiled a matching `@media (forced-colors: ...)` CSS rule declaring
+//     `border-color: Highlight` (not just that the class name exists as rendered-DOM text);
+//     real OS forced-colours rendering is reported `notExercised`, not silently skipped or
+//     falsely claimed.
 // Then, the shared `DropdownMenuRadioItem`'s OTHER caller:
 //   - The composer's Reasoning picker (`ComposerPickers.tsx:114-120`, needed NO code change for
 //     #1043): `menuitemradio` x8 (every `THINKING_LEVELS` entry), exactly one checked matching
@@ -66,7 +71,7 @@ import {
   createReportLogger,
   sleep
 } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, buildAndCopyExeFresh, launchBuiltExe, safeRmSync, makeScratchRepo, switchTheme, requireSharedCargoTarget, clearKnownOutputFiles } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 import {
   THEMES_1043,
@@ -80,6 +85,7 @@ import {
   openReasoningPicker,
   navigateRadioGroupByKeyboardTo,
   ringCarriesForcedColorsOverride,
+  forcedColorsRuleCompiled,
   readDotRenderState,
   dotIsVisuallyVisible,
   readSwatchGradient,
@@ -91,6 +97,24 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // #946: requires the shared CARGO_TARGET_DIR; refuses rather than falling back to a worktree-local src-tauri/target.
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1043_SHOTS_DIR || path.join(tmpdir(), 'refract-1043-shots');
+// LOW fix (#1043): this is a FIXED folder name (not a fresh mkdtempSync per run), so a previous
+// run's output -- including an early "first build" attempt's own screenshots, possibly captured
+// at the wrong zoom/DPI before some later fix landed -- would otherwise linger here untouched by
+// any filename this run does not happen to regenerate (e.g. a run that FAILs before reaching a
+// later screenshot). Cleared by exact literal filename only (`clearKnownOutputFiles`'s own
+// guard, never a recursive delete of a variable-overridable folder), every name this script is
+// known to ever write: the per-theme Theme-submenu shots, the keyboard/reasoning shots, both
+// report files, and every retry attempt's own app log (`launchFresh`'s own 1-5 attempts x 2
+// labels, 'themes'/'reasoning').
+const SHOT_NAMES_1043 = [
+  ...THEMES_1043.map((theme) => `${theme.id}-theme-submenu.png`),
+  'keyboard-selection-obsidian.png',
+  'reasoning-picker-open.png',
+  'reasoning-picker-medium.png',
+  'report.json',
+  'report.txt',
+  ...['themes', 'reasoning'].flatMap((label) => [1, 2, 3, 4, 5].map((attempt) => `app-run-${label}-attempt${attempt}.log`))
+];
 
 function spawnSync_(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
@@ -125,6 +149,7 @@ async function connectCdp(port, targetPid, label) {
 }
 
 async function main() {
+  clearKnownOutputFiles(SHOTS_DIR, 'refract-1043-shots', SHOT_NAMES_1043);
   mkdirSync(SHOTS_DIR, { recursive: true });
   const log = createReportLogger(path.join(SHOTS_DIR, 'report.txt'));
   const report = { gitHead: gitHead(REPO_ROOT), dirty: gitDirty(REPO_ROOT), checks: [], failures: [], notExercised: [] };
@@ -198,7 +223,7 @@ async function main() {
 
     // -----------------------------------------------------------------------------------------
     // Part A: the Theme submenu -- a real radio group in every preset, pointer AND keyboard
-    // selection, the radio dot, the square swatch chip, the focus-bar/checked-state split, and
+    // selection, the radio dot, the two-colour gradient chip, the focus-bar/checked-state split, and
     // the forced-colours structural check.
     // -----------------------------------------------------------------------------------------
     const repoParentA = mkdtempSync(path.join(tmpdir(), 'refract-1043-repoA-'));
@@ -208,6 +233,14 @@ async function main() {
     await addRepository(cdp, repoDirA);
     checkPass('Added a scratch repository (the Theme submenu needs no Session to exist)');
 
+    // MEDIUM fix (#1043): the app's own default/starting theme is 'dark' (THEMES_1043[0]),
+    // so a loop that starts by switching TO 'dark' first would make that one iteration a no-op
+    // click (ProfileMenu.tsx's `chooseTheme` returns early for `id === activeId`, calling
+    // `useThemeStore.save` zero times) -- not a real transition, undercutting the "5/5
+    // transitions exercised" claim below to really only 4/5. Seed a different preset first so
+    // every one of the 5 iterations below, including the first (switching away from this seed
+    // back to 'dark'), is a genuine pointer-driven transition.
+    await switchTheme(cdp, 'cyber-amber', 'Cyber Amber');
     for (const theme of THEMES_1043) {
       await switchTheme(cdp, theme.id, theme.name);
       await openThemeSubmenu(cdp);
@@ -239,11 +272,19 @@ async function main() {
       await cdp.screenshot(path.join(SHOTS_DIR, `${theme.id}-theme-submenu.png`));
       await closeAllMenus(cdp);
     }
-    checkPass('Pointer selection moves the check: exercised once per preset above via switchTheme (5/5 transitions)');
+    checkPass('Pointer selection moves the check: exercised once per preset above via switchTheme, genuinely 5/5 transitions (seeded on Cyber Amber beforehand, so the first iteration switching to Dark is a real transition too, not a same-theme no-op click)');
 
     // ---- Keyboard: open via Enter, ArrowDown x2 + ArrowRight into the submenu, confirm focus
-    // lands on the ACTIVE preset first, then ArrowDown x2 + Enter from Dark selects Obsidian. ----
-    await switchTheme(cdp, 'dark', 'Dark');
+    // lands on the ACTIVE preset first. Seeds 'Dark (high contrast)' (THEMES_1043[1]), not
+    // 'Dark' (THEMES_1043[0]) -- MEDIUM fix (#1043): asserting focus lands on 'Dark' here would
+    // be a VACUOUS test, since Radix's own unmodified default (focus the first `RadioItem` in
+    // DOM order) would ALSO land on 'Dark' purely because it happens to be first-listed, proving
+    // nothing about ProfileMenu.tsx's own `onOpenChange` focus-steering code (the exact habitual-
+    // Enter-on-the-wrong-row bug that code's own doc comment describes). Asserting focus lands
+    // on 'Dark (high contrast)' instead -- the SECOND-listed preset -- only passes if that
+    // steering code genuinely ran; Radix's own default would leave focus on 'Dark' (the first
+    // item) instead, which this assertion would then catch as a FAIL. ----
+    await switchTheme(cdp, 'dark-high-contrast', 'Dark (high contrast)');
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     await cdp.evaluate(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
     await cdp.evaluate(`document.querySelector('[data-profile-name-button]').focus()`);
@@ -259,20 +300,18 @@ async function main() {
     await cdp.waitFor(`document.querySelectorAll('[role="menuitemradio"]').length >= 5`, { timeoutMs: 10_000, label: 'Theme submenu opened via ArrowRight' });
     await sleep(300);
     const focusedOnOpen = await getActiveElementAccessibleName(cdp);
-    const openedFocusOnActive = focusedOnOpen.name === 'Dark' && focusedOnOpen.role === 'menuitemradio';
-    if (onThemeTrigger && openedFocusOnActive) checkPass('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark)', JSON.stringify(focusedOnOpen));
-    else checkFail('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark)', JSON.stringify({ onThemeTrigger, focusedOnOpen }));
+    const openedFocusOnActive = focusedOnOpen.name === 'Dark (high contrast)' && focusedOnOpen.role === 'menuitemradio';
+    if (onThemeTrigger && openedFocusOnActive) checkPass('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark (high contrast), the SECOND-listed preset -- not the vacuously-passing first-listed "Dark")', JSON.stringify(focusedOnOpen));
+    else checkFail('Keyboard open: ArrowRight into the Theme submenu lands focus on the ACTIVE preset (Dark (high contrast), the SECOND-listed preset -- not the vacuously-passing first-listed "Dark")', JSON.stringify({ onThemeTrigger, focusedOnOpen }));
 
-    await pressArrow(cdp, 'Down'); // Dark (high contrast)
-    await sleep(100);
     await pressArrow(cdp, 'Down'); // Obsidian
     await sleep(100);
     const beforeEnter = await getActiveElementAccessibleName(cdp);
     await pressEnterKey(cdp);
     await cdp.waitFor(`document.documentElement.classList.contains('theme-obsidian')`, { timeoutMs: 10_000, label: 'Keyboard Enter applies Obsidian' });
     await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Menu closes after keyboard selection' });
-    if (beforeEnter.name === 'Obsidian') checkPass('Keyboard: ArrowDown x2 + Enter from Dark selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
-    else checkFail('Keyboard: ArrowDown x2 + Enter from Dark selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
+    if (beforeEnter.name === 'Obsidian') checkPass('Keyboard: ArrowDown + Enter from Dark (high contrast) selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
+    else checkFail('Keyboard: ArrowDown + Enter from Dark (high contrast) selects Obsidian, <html> class applies, menu closes', JSON.stringify(beforeEnter));
 
     await openThemeSubmenu(cdp);
     const rowsAfterKeyboard = await readRadioRows(cdp);
@@ -281,7 +320,7 @@ async function main() {
     else checkFail('Keyboard selection moved the checked radio to Obsidian (re-opened and re-read)', JSON.stringify(rowsAfterKeyboard));
     await cdp.screenshot(path.join(SHOTS_DIR, 'keyboard-selection-obsidian.png'));
 
-    // ---- Focus-bar vs checked-state: the 2026-10-15 "bar means keyboard focus only" rule. ----
+    // ---- Focus-bar vs checked-state: the 2026-10-15 "bar follows focus, never selection" rule. ----
     // Pointer-driven open does not reliably land focus on a row inside the submenu (the same
     // Radix quirk `navigateRadioGroupByKeyboardTo`'s own comment documents for the Reasoning
     // picker's trigger -- confirmed live here too: an ArrowDown from an unfocused SubTrigger
@@ -310,19 +349,34 @@ async function main() {
     `);
     const focusBarOk = focusBarState.focusedLabel === 'Nordic Frost' && !focusBarState.focusedIsChecked && focusBarState.focusedShadow && focusBarState.focusedShadow !== 'none' &&
       (focusBarState.checkedShadowWhenNotFocused === 'none' || focusBarState.checkedShadowWhenNotFocused == null);
-    if (focusBarOk) checkPass('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
-    else checkFail('Focus-bar means keyboard focus only: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
+    if (focusBarOk) checkPass('Focus-bar follows focus, never selection: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
+    else checkFail('Focus-bar follows focus, never selection: an UNCHECKED focused row carries the inset shadow, the checked-but-unfocused row does not', JSON.stringify(focusBarState));
 
-    // ---- Forced-colours: structural only (see header comment for the WebView2 CDP limitation). ----
+    // ---- Forced-colours: structural check plus a real compiled-CSS-rule check (see header
+    // comment for the WebView2 CDP media-emulation limitation this still cannot get around). ----
     const forcedColors = await ringCarriesForcedColorsOverride(cdp);
     if (forcedColors.checkedHasOverride && forcedColors.uncheckedHasOverride) {
       checkPass('Forced-colours override utility class present on the ring markup (structural proof -- see notExercised for the real-rendering caveat)', JSON.stringify(forcedColors));
     } else {
       checkFail('Forced-colours override utility class present on the ring markup', JSON.stringify(forcedColors));
     }
+    // MEDIUM fix (#1043): the check above only proves the `forced-colors:...` class NAME is
+    // present as rendered-DOM text -- true even if Tailwind's JIT silently failed to compile a
+    // matching rule for this exact combination (a media variant wrapping a named-group variant
+    // wrapping an arbitrary value), since JSX never strips an unmatched class name. This instead
+    // walks the REAL compiled `document.styleSheets`, finds a rule genuinely sitting inside an
+    // `@media (forced-colors: ...)` block whose own selector matches this ring, and confirms its
+    // declaration actually sets `border-color: Highlight` -- proof Tailwind really generated the
+    // CSS this fix depends on, not just that the class name exists as text.
+    const forcedColorsRule = await forcedColorsRuleCompiled(cdp);
+    if (forcedColorsRule.matchingSelectorCount > 0 && forcedColorsRule.declaresHighlightBorder) {
+      checkPass('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: Highlight (document.styleSheets, not just the className string)', JSON.stringify(forcedColorsRule));
+    } else {
+      checkFail('Forced-colours: a REAL compiled CSS rule exists inside @media (forced-colors: ...) matching the ring, declaring border-color: Highlight', JSON.stringify(forcedColorsRule));
+    }
     notExercised(
       'Real OS forced-colours (Windows High Contrast) rendering of the checked vs unchecked ring',
-      "WebView2's own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs/verify-439-history-truncate.mjs already record); the structural check above confirms the forced-colors:group-data-[state=checked]/radio-item:border-[Highlight] utility class is literally present on every ring, which is as far as this harness can prove it."
+      "WebView2's own CDP endpoint has no working Emulation.setEmulatedMedia for forced-colors (same limitation verify-tauri-567.mjs/verify-439-history-truncate.mjs already record); the two checks above confirm the forced-colors:group-data-[state=checked]/radio-item:border-[Highlight] utility class is literally present on every ring AND that Tailwind genuinely compiled a matching @media (forced-colors: ...) CSS rule declaring border-color: Highlight for it, which is as far as this harness can prove it."
     );
 
     await closeAllMenus(cdp);

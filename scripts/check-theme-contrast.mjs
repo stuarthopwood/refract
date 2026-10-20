@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
+import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -203,21 +203,27 @@ if (declaredThemeIds.length === 0) {
 }
 const missingThemeBlocks = declaredThemeIds.filter((id) => !(id in themes))
 
-// The exact bug that caused this PR's first two gate failures -- `themes.ts`'s `swatch`/
-// `titleBarOverlay.color` silently drifting from the theme's own `.theme-<id>` `--background`
-// -- was only ever caught by a human re-reading two files side by side; nothing in this script
-// checked it. Parse every entry's `id`, `swatch`, `syntaxTheme` and `titleBarOverlay.color` out
-// of the same `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?`
+// Parses every entry's `id`, `swatch`, `swatchPrimary`, `syntaxTheme` and `titleBarOverlay.color`
+// out of the same `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?`
 // gaps (not a plain `[\s\S]*?`) stop each entry's own match at the next `id:`, so a theme entry
-// missing any one of these cannot silently read the NEXT entry's values instead -- it just
-// fails to match, which the count check below turns into a hard failure. `syntaxTheme` (#975:
-// feeds `shikiTokenContrastRows` below, checking every Shiki token colour that theme ships
-// against this preset's own `--card`) is captured between `swatch` and `titleBarOverlay`, the
-// same declaration order every entry in `src/shared/themes.ts` already uses.
-const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?syntaxTheme:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
+// missing any one of these cannot silently read the NEXT entry's values instead -- it just fails
+// to match, which the count check below turns into a hard failure. `syntaxTheme` (#975: feeds
+// `shikiTokenContrastRows` below, checking every Shiki token colour that theme ships against
+// this preset's own `--card`) is captured between `swatchPrimary` and `titleBarOverlay`, the
+// same declaration order every entry in `src/shared/themes.ts` already uses. `swatchMetadata
+// DriftCheck` (`theme-contrast-pairs.mjs`) below confirms every one of these parsed literals
+// never silently drifts from the preset's real resolved CSS tokens -- the exact bug class that
+// caused this PR's first two gate failures, only ever caught before by a human re-reading two
+// files side by side.
+const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?swatchPrimary:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?syntaxTheme:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
 const themeMetadata = Object.create(null)
 for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
-  themeMetadata[m[1]] = { swatch: m[2].toLowerCase(), syntaxTheme: m[3], titleBarOverlayColor: m[4].toLowerCase() }
+  themeMetadata[m[1]] = {
+    swatch: m[2].toLowerCase(),
+    swatchPrimary: m[3].toLowerCase(),
+    syntaxTheme: m[4],
+    titleBarOverlayColor: m[5].toLowerCase(),
+  }
 }
 if (Object.keys(themeMetadata).length !== declaredThemeIds.length) {
   console.error(
@@ -277,54 +283,13 @@ for (const id of missingThemeBlocks) {
   })
 }
 
-for (const id of declaredThemeIds) {
-  if (!(id in themes)) continue // already reported as a missing block above
-  checkedCount++
-  const meta = themeMetadata[id]
-  if (!meta) {
-    failCount++
-    rows.push({
-      themeId: id,
-      fg: 'themes.ts swatch/titleBarOverlay',
-      bg: `.theme-${id} --background`,
-      min: 'n/a',
-      ratio: null,
-      pass: false,
-      note: `could not parse 'swatch'/'titleBarOverlay.color' for '${id}' out of src/shared/themes.ts`,
-    })
-    continue
-  }
-  const bg = themes[id].background
-  if (!bg) {
-    failCount++
-    rows.push({
-      themeId: id,
-      fg: 'themes.ts swatch/titleBarOverlay',
-      bg: `.theme-${id} --background`,
-      min: 'n/a',
-      ratio: null,
-      pass: false,
-      note: `'${id}' has no --background token in globals.css to compare against`,
-    })
-    continue
-  }
-  const actualBgHex = linearToHex(bg.linear)
-  const mismatches = []
-  if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
-  if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
-  if (mismatches.length > 0) {
-    failCount++
-    rows.push({
-      themeId: id,
-      fg: 'themes.ts swatch/titleBarOverlay',
-      bg: `.theme-${id} --background`,
-      min: 'n/a',
-      ratio: null,
-      pass: false,
-      note: mismatches.join('; '),
-    })
-  }
-}
+// #806 file-size (moved out, theme-contrast-pairs.mjs's own comment explains why): confirms
+// themes.ts's swatch/swatchPrimary/titleBarOverlay.color literals against the real resolved
+// CSS tokens for every declared theme.
+const swatchDrift = swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds)
+checkedCount += swatchDrift.checkedCount
+failCount += swatchDrift.failCount
+rows.push(...swatchDrift.rows)
 
 for (const [themeId, props] of Object.entries(themes)) {
   for (const { fg, bg, min, onlyThemes, informationalThemes } of PAIRS) {

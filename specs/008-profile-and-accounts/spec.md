@@ -44,10 +44,12 @@ Health check; What's new; About; Help center; and Sign out in red).
   group (`menuitemradio`, `aria-checked`), drawn with the same leading ring-and-dot radio
   indicator the Ask card's radios use (ring, filled dot when selected), never a round swatch
   mistaken for a radio.
-- Q: Where does the colour swatch go instead? -> A: After the name, as a small square chip
-  (`size-3 rounded-[2px]`, bordered, decorative) -- never round, so it cannot read as a second
-  radio; the trailing "✓ Current" text is dropped, since the checked radio's filled dot plus the
-  screen reader's own "checked" state already carry that.
+- Q: Where does the colour swatch go instead? -> A: After the name, as a small two-colour chip
+  (`h-3 w-5 rounded-[3px]`, bordered, decorative) -- the theme's own `--background` and
+  `--primary`, split down the middle (ui-architect-v3 swatch ruling, amended 2026-10-20: a flat
+  single-colour square read too close to a status dot) -- never round, so it cannot read as a
+  second radio; the trailing "✓ Current" text is dropped, since the checked radio's filled dot
+  plus the screen reader's own "checked" state already carry that.
 - Q: Is this a Theme-submenu-only fix or does it touch the shared component? -> A: The shared
   `DropdownMenuRadioItem` itself (ADR 0003): its trailing check becomes the leading radio mark,
   so every single-choice dropdown menu shows radios the same way. The Theme submenu is the first
@@ -207,8 +209,9 @@ confirm a list appears; open and close the menu, and move through it, using only
 2. **Given** the menu is open, **When** the developer points at or selects Theme, **Then** a
    submenu opens as a real radio group (`menuitemradio`/`aria-checked`) listing every built-in
    dark preset, the currently active one marked by a filled leading ring-and-dot indicator (the
-   Ask card's own radio mark), each preset's colour swatch shown as a small square chip after its
-   name, and an "Appearance settings" entry that opens the Settings screen's Appearance section
+   Ask card's own radio mark), each preset's colour swatch shown as a small two-colour chip (the
+   theme's own `--background` and `--primary`, split down the middle) after its name, and an
+   "Appearance settings" entry that opens the Settings screen's Appearance section
    (spec 007).
 3. **Given** the menu is open, **When** the developer selects Keyboard shortcuts, **Then** a
    read-only list of shortcuts opens; its entries come from the shortcut set tracked as backlog
@@ -341,8 +344,9 @@ a session, confirming each action's confirmation names what will be lost.
   What's new, and Sign out, with Sign out visually set apart from the rest.
 - **FR-019**: The Theme item MUST open a submenu listing every built-in dark preset as a real
   radio group (`menuitemradio`, `aria-checked`), the currently active one marked by a leading
-  ring-and-dot radio indicator (FR-030), each preset's colour swatch shown as a small square chip
-  after its name (never round, so it is never mistaken for a radio), plus an "Appearance
+  ring-and-dot radio indicator (FR-030), each preset's colour swatch shown as a small two-colour
+  chip (the theme's own `--background` and `--primary`, split down the middle) after its name
+  (never round, so it is never mistaken for a radio), plus an "Appearance
   settings" entry that opens the Settings screen's Appearance section (spec 007).
 - **FR-020**: The Keyboard shortcuts item MUST open a read-only list of Refract's current keyboard
   shortcuts; its entries MUST come from the shortcut set defined by backlog issue #6 once that
