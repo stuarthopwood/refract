@@ -63,11 +63,7 @@ export const PAIRS = [
   // never checked against that specific surface before.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
   { fg: 'destructive', bg: 'background', min: 3 },
-  { fg: 'state-working', bg: 'background', min: 3 },
-  // Issue #700: the pinned todo panel's own "In progress" status word is real visible BODY
-  // TEXT (not icon-only, unlike the 3:1 pairing above), sitting directly on the chat pane's
-  // own `background` (no card wrapper of its own) -- needs the 4.5:1 text floor.
-  { fg: 'state-working', bg: 'background', min: 4.5 },
+  { fg: 'state-working', bg: 'background', min: 4.5 }, // #700: also real BODY TEXT ("In progress"), not just icon-only -- 4.5 subsumes the old 3:1 icon floor
   { fg: 'state-idle', bg: 'background', min: 3 },
   { fg: 'state-needs-you', bg: 'background', min: 3 },
   { fg: 'state-stopped', bg: 'background', min: 3 },
