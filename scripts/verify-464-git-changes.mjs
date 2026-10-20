@@ -442,15 +442,16 @@ async function main() {
 
     notExercised.push('FR-012 "Agent is working -- review before committing" inline banner: not exercised -- reaching a real `working` Session status needs a real prompt sent to the real agent, which this script deliberately never does.');
 
-    // ---- Check 14: all 5 themes render the panel with no obvious broken state. ----
+    // ---- Check 14: all 5 themes render the panel with no obvious broken state. Expected
+    // summaries here: Conflicts (and every other group) is gone -- conflict.txt was resolved and
+    // committed along with everything else by checks 10/11's own two real commits -- only
+    // Untracked remains (external-change.txt from check 12, untracked-file.txt never re-staged
+    // since check 7's Unstage all). ----
+    const expectedSummariesAfterCommits = [{ name: 'Untracked', count: 2 }];
     for (const theme of THEMES) {
       await switchTheme(cdp, theme.id, theme.name);
       const summaries = await readGroupSummaries(cdp);
-      const expected = [
-        { name: 'Conflicts', count: 1 },
-        { name: 'Untracked', count: 2 }
-      ];
-      if (JSON.stringify(summaries) !== JSON.stringify(expected)) {
+      if (JSON.stringify(summaries) !== JSON.stringify(expectedSummariesAfterCommits)) {
         failures.push(`Theme ${theme.name}: group summaries changed unexpectedly: ${JSON.stringify(summaries)}`);
       }
       const subjectPresent = await cdp.evaluate(`!!${SUBJECT_FINDER}`);

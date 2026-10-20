@@ -276,8 +276,13 @@ export function assertTabSubsequence(trail, expectedNames, label, findings, fail
   findings.push(`${label}: Tab reached every expected stop in order: ${JSON.stringify(expectedNames)}.`);
 }
 
+/** Value equality per element (never `===`, which only works for the string-array call sites --
+ * `readGroupSummaries`'s own `{name, count}` objects are a NEW object literal every read, so
+ * reference equality always fails even when the content genuinely matches -- a real bug this
+ * script's own "Initial group summaries" check hit, confirmed by the failure message printing
+ * byte-identical `expected`/`got` JSON). */
 export function assertArrayEqual(actual, expected, label, findings, failures) {
-  const same = Array.isArray(actual) && actual.length === expected.length && actual.every((v, i) => v === expected[i]);
+  const same = Array.isArray(actual) && actual.length === expected.length && actual.every((v, i) => JSON.stringify(v) === JSON.stringify(expected[i]));
   if (!same) failures.push(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   else findings.push(`${label}: ${JSON.stringify(actual)}`);
 }
