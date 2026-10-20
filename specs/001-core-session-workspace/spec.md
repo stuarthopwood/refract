@@ -935,6 +935,43 @@
      requested unit tests are skipped; verification is the live CDP check this issue's own
      acceptance criteria describe.
 
+### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)
+
+- Q: Issue #1050 (UI polish, filed 2026-10-19 during away mode): a recognised command or skill
+  at the start of the composer's draft should get a subtle accent styling and stop triggering a
+  spelling underline. What counts as "recognised", how does spellcheck toggle, how is it drawn,
+  and what is the pill fill (since issue #610 already found `--accent-text` fails 4.5:1 on
+  `--muted` in some presets)? -> A: Decided (Skippy, delegated by Stuart 2026-10-19, away mode;
+  reversible on the issue). Six points:
+  1. **What counts.** Only a recognised command or skill token at the very start of the draft --
+     a name in the composer's own command list (built-ins, `/skill:<name>`, and custom commands
+     as they land with #760), read the same way `chat.send`'s own refusal path already matches
+     one (`parseSlashCommand`/`classifySlashInvocation` against the composer's own `commands`
+     list), never a hard-coded copy of either the list or its matching rules. An unknown `/zzz`
+     stays plain, so the styling doubles as a "this command exists" cue.
+  2. **Spelling.** While the draft starts with a recognised command, `spellCheck={false}` on the
+     whole box -- a `<textarea>` cannot exclude part of its own text, so the trade-off is that
+     arguments after a command (`/btw <text>`) go unchecked too; accepted, since command lines
+     are short and mostly names. Spellcheck returns the instant the leading token stops matching.
+  3. **Styling.** The recognised token gets a subtle pill: a neutral fill, a small radius
+     following `--radius`, the token text in `--accent-text`, no border, no line-height change,
+     no caret movement; arguments after the token stay normal text. **Fill, decided by
+     measurement (not #610's first-drafted `--muted`):** `--accent-text` still fails 4.5:1 on
+     `--muted` in Dark (4.00:1) and Obsidian (4.28:1), and clears only 6.60:1 on it in Dark (high
+     contrast) -- short of this issue's own enhanced 7:1 ask there. `--card` (the issue's own
+     named fallback) clears 4.5:1 in every preset and clears 7:1 in Dark (high contrast)
+     (8.46:1), so the pill's fill is `--card`, not `--muted`.
+  4. **Mechanism.** Reuses the composer's existing mirror pattern (the inert, scroll-synced,
+     `aria-hidden` overlay `ChipOverlaySegments`/the ghost-text overlay already use, T103/
+     FR-058): the overlay draws the pill and the accent glyphs exactly over the token, masking
+     the textarea's own plain-coloured glyphs underneath the same way the chip overlay already
+     does, with no layout shift. `MessageInput.tsx` is at its file-size cap (working rule 11), so
+     the logic lives in a new `CommandPillOverlay.tsx`.
+  5. **Scope.** The composer only; the same pill on the sent user bubble is a possible follow-up
+     (proposal), not part of this issue.
+  6. **Accessibility.** No change to the accessible name or value; the pill is a visual-only
+     `aria-hidden` overlay, so a screen reader reads the draft text exactly as today.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1512,6 +1549,25 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `/`. Role names, icons, and the provider map MUST live in one shared module so Settings
   (#714), the icon choice (#717), and the role switcher (#766) read the same data Refract's
   composer chip does, rather than four independent copies that could drift.
+- **FR-092** (new, 2026-10-20, issue #1050, Decided Skippy, delegated by Stuart 2026-10-19, away
+  mode; amends FR-032/FR-033, reuses FR-058's own mirror-overlay mechanism): while the draft's
+  own leading token (from `/` through the end of its name, including a `skill:` prefix) is a
+  command or skill the composer's own `commands` list recognises (the same exact-match logic
+  `chat.send`'s own refusal path already applies, never a hard-coded copy of the list or its
+  matching rules), the message box MUST show that token as a subtle pill -- a neutral `--card`
+  fill (decided by measurement: `--accent-text` fails 4.5:1 on `--muted` in Dark/Obsidian and
+  clears only 6.60:1 on it in Dark (high contrast), short of this requirement's own 7:1 there;
+  `--card` clears 4.5:1 everywhere and 7:1 in Dark (high contrast)), a small radius following
+  `--radius`, the token text in `--accent-text`, no border -- drawn by the same inert, scroll-
+  synced, `aria-hidden` overlay FR-058's ghost-text completion and the text-chip overlay already
+  use, with no line-height change and no caret movement; text after the token (the command's own
+  arguments) MUST stay plain. The message box MUST also set `spellCheck={false}` for as long as
+  that leading token is recognised, reverting the instant it stops matching (deleted, edited
+  into an unrecognised name, or the draft no longer starts with `/`) -- a `<textarea>` cannot
+  exclude part of its own text from spellcheck, so a recognised command's own arguments go
+  unchecked too while it shows. An unrecognised leading token (e.g. `/zzz`) MUST show no pill and
+  leave spellcheck unchanged. This is visual only: the textarea's own accessible name and value
+  are unaffected.
 
 ### Key Entities
 

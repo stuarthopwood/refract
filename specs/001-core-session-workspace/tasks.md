@@ -4668,3 +4668,58 @@ test`, `cargo clippy -D warnings`, Tauri debug build); `verify-891-delete-leftov
 failures, 3 honest `notExercised`**, `gitHead` matches, `dirty: false`. All acceptance scenarios
 PASS, including (c) and (d)'s Retry succeeding on a single click (the real `fs/worktree_access.rs`
 read/write-lock fix, not a retry-loop band-aid). All five screenshots viewed directly.
+
+## Phase 71: Composer command pill, no spelling underline (#1050, FR-092)
+
+(Next free numbers against `origin/main` at this branch's own cut, b29367aa: Phase 70/T339-T344
+claimed by #891 above, so this phase claims Phase 71/T345 onward; the highest FR in this spec is
+FR-091, so this phase claims FR-092.)
+
+**Goal**: a recognised leading command or skill token in the composer's draft gets a subtle
+accent pill (`--card` fill, `--accent-text` glyphs) and the box turns spellcheck off while it
+shows; an unrecognised token (`/zzz`) gets neither. Decided (Skippy, delegated by Stuart
+2026-10-19, away mode, issue #1050; reversible on the issue) -- see spec.md's own 2026-10-20
+Clarifications entry for the six-point decision record.
+
+- [X] T345 Docs convergence: this phase, `spec.md` FR-092 (new, amends FR-032/FR-033) and its
+  dated `### Session 2026-10-20 (Composer command pill, no spelling underline, #1050)`
+  Clarifications entry recording all six decided points, including the `--muted` -> `--card`
+  pill-fill correction found by measurement (not by eye, per the issue's own instruction).
+  `docs/PLAN.md`'s "Composer command pill" row.
+- [X] T346 `src/renderer/features/chat/CommandPillOverlay.tsx` (new): `findRecognisedCommandToken`
+  (reuses `parseSlashCommand`/`classifySlashInvocation` from `shared/slash-commands.ts` against
+  the composer's own `commands` list -- never a hard-coded copy of either), `CommandPillSegments`
+  (the invisible-gap/pill/invisible-gap render, same shape `ChipOverlaySegments` already uses,
+  `rounded-sm bg-card text-accent-text [box-decoration-break:clone]`, no border, no padding so no
+  layout shift), and `useCommandPillOverlay` (the memo/ref/scroll-sync-on-mount hook) --
+  `MessageInput.tsx`'s own file-size baseline (1632 lines) had zero headroom, so every piece of
+  logic beyond the bare integration call lives here.
+- [X] T347 `src/renderer/features/chat/MessageInput.tsx`: wires `useCommandPillOverlay`, the new
+  overlay div (same inert/`aria-hidden`/scroll-synced box-model-matching pattern as the ghost-
+  text/chip overlays beside it) and `spellCheck={!commandToken}` on the `<textarea>`, plus the
+  overlay's own scroll sync in the existing `onScroll` handler -- net file-size growth kept at
+  zero against the baseline (condensed one pre-existing wrapped comment by the same margin the
+  new wiring needed; `pnpm check:file-size` confirms 1631/1632, 0 cap violations).
+- [X] T348 `scripts/theme-contrast-pairs.mjs`: new `{ fg: 'accent-text', bg: 'card', min: 7,
+  onlyThemes: ['dark-high-contrast'] }` pair (the generic `accent-text`/`card` 4.5:1 pair already
+  existed and already covers every preset's own baseline floor for this pill). `pnpm check:
+  theme-contrast` confirms all 830 pairs PASS across all five presets.
+- [ ] T349 Live CDP verification (`scripts/verify-1050-command-pill.mjs`, fake-omp tape
+  `1050-command-pill.jsonl` carrying the native `/btw` built-in plus one tape-provided
+  `source: 'skill'` descriptor): `/btw hi` and `/skill:demo-review do it` show the pill and
+  `spellCheck === false`; `/zzz` shows neither; the pill's own rect sits over the token's own
+  glyph box (measured against the textarea's own padding, not a guessed selector); the textarea's
+  own `getBoundingClientRect().height`/`scrollHeight` and `selectionStart`/`selectionEnd` after
+  an identical keystroke sequence are identical with and without the pill; spellcheck returns the
+  instant the leading slash is deleted; arguments render as plain invisible-gap text (asserted
+  structurally, not by pixel guess); the pill stays aligned across all five theme presets and in
+  a scrolled multi-line draft (`scrollTop` sync asserted directly); screenshots per state. Queued
+  behind other lanes for its build slot; this task's own FINAL LIVE-VERIFIED PASS paragraph is
+  appended once `ci-local.mjs && verify-1050-command-pill.mjs` actually run.
+
+**Non-build checks** (run before the build slot, clean tree at this phase's own HEAD): `pnpm
+typecheck` clean; `pnpm test` unaffected (no new renderer tests added, per the prototyping-phase
+rule); `node scripts/check-indent.mjs` (0 odd-indent lines across 413 files); `node scripts/
+check-file-size.mjs` (0 cap violations, `MessageInput.tsx` 1631/1632); `node scripts/check-
+theme-contrast.mjs` (all 830 pairs PASS); `node scripts/check-parity.mjs` (104/104 requests,
+24/24 events, unaffected by this issue); `node scripts/check-drag-regions.mjs` (0 violations).
