@@ -128,13 +128,27 @@ export async function openReasoningPicker(cdp) {
  * pointer/keyboard selection through the actual UI has no such race). `labels` is the group's
  * rows in on-screen order. */
 export async function navigateRadioGroupByKeyboardTo(cdp, labels, targetLabel) {
-  // Radix's own open-auto-focus (moving focus from the trigger into the first/checked menu
-  // item) lands a frame or two after the menu's rows already exist in the DOM -- the same
-  // "needs a frame to actually commit" gap `verify-tauri-569.mjs`'s own comment documents for
-  // the Theme submenu's keyboard-open focus. Waiting for focus to land ON a real row (not the
-  // trigger button, whose own accessible name coincidentally differs) avoids a race rather than
-  // guessing a fixed settle delay.
-  await cdp.waitFor(`document.activeElement?.getAttribute('role') === 'menuitemradio'`, { timeoutMs: 5_000, label: 'Open-auto-focus lands on a real menuitemradio row' });
+  // Radix's own open-auto-focus reliably lands on a real menu row for the Theme submenu's plain
+  // `DropdownMenuSubTrigger` (confirmed live), but NOT for the Reasoning picker's trigger -- a
+  // `<button>` doubly wrapped in `TooltipTrigger asChild` + `DropdownMenuTrigger asChild`
+  // (`ComposerPickers.tsx`), where focus was confirmed live to stay on the trigger itself after
+  // open, indefinitely (not merely a slow settle -- waiting longer never changed it). Rather
+  // than depend on a Radix open-auto-focus quirk this issue's own scope does not touch, this
+  // explicitly focuses a known row (the checked one if any, else the first) as the navigation's
+  // deterministic starting point when open-auto-focus did not land on one -- the keyboard PATH
+  // under test (arrow keys + Enter, the real selection) is unaffected; only the starting point
+  // is made deterministic.
+  const landedOnRow = await cdp.evaluate(`document.activeElement?.getAttribute('role') === 'menuitemradio'`).catch(() => false);
+  if (!landedOnRow) {
+    await cdp.evaluate(`
+      (() => {
+        const rows = Array.from(document.querySelectorAll('[role="menuitemradio"]'));
+        const target = rows.find((r) => r.getAttribute('aria-checked') === 'true') || rows[0];
+        target?.focus();
+      })()
+    `);
+    await sleep(100);
+  }
   const focused = await getActiveElementAccessibleName(cdp);
   const fromIdx = labels.indexOf(focused.name);
   const toIdx = labels.indexOf(targetLabel);
