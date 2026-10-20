@@ -132,9 +132,9 @@ export const PAIRS = [
   { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
   { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
   { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
-  // Gate round 3 HIGH fix (#1050): the composer's selection highlight now paints a real fill (CommandPillOverlay.tsx's own comment has the full reasoning) -- plain aliases of the already-enforced accent-foreground/accent pair above, checked again under their own name.
-  { fg: 'composer-selection-fg', bg: 'composer-selection-bg', min: 4.5 },
-  { fg: 'composer-selection-fg', bg: 'composer-selection-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
+  // Gate round 5 fix (#1050, test review): `--composer-selection-bg` is now a TRANSLUCENT tint --
+  // a plain PAIRS entry can't composite it correctly any more (self-composites `bg` against
+  // itself). See `scripts/composer-selection-contrast.mjs`'s own `composerSelectionContrastRows`.
   // TODO(#579): `accent-text` on `surface-hover` (muted/accent hover fill) measures only 4.00:1
   // in Dark and 4.28:1 in Obsidian, under the 4.5:1 floor -- not added as a PAIRS entry (would
   // fail both today). Issue #610 reads `accent-text` via `Markdown.tsx`'s `linkClassName`, but

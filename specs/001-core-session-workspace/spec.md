@@ -965,9 +965,11 @@
      `aria-hidden` overlay `ChipOverlaySegments`/the ghost-text overlay already use, T103/
      FR-058), but as a "highlight-within-textarea" (gate round 1 HIGH correction, 2026-10-20):
      the mirror sits UNDER the real `<textarea>` and renders the whole draft visibly, with the
-     real textarea going `text-transparent` plus an explicit `caret-color` and a `::selection`
-     text-colour override ONLY while a token is present, so the native caret, native selection
-     highlight and IME composition keep painting on the real control, on top of the mirror --
+     real textarea going `[-webkit-text-fill-color:transparent]` (gate round 3 fix: NOT the
+     `color` property, which also hides anything else that reads it, such as an IME composition
+     underline) plus an explicit `caret-color` and a real `::selection` fill, so the native
+     caret, native selection highlight and IME composition keep painting on the real control, on
+     top of the mirror --
      the first draft instead painted an opaque pill ON TOP of the textarea, which hid all three
      for any character inside the token (found by all four reviewers in gate round 1, confirmed
      from the round's own screenshot: the caret at offset 3 was gone). `MessageInput.tsx` is at
@@ -1050,6 +1052,42 @@
   pill's own fill now extends 2px past the token's glyph box on every side via `box-shadow`
   (which never reserves layout space, unlike `padding`), so `/`/the token's own edge glyphs no
   longer sit flush against the fill.
+
+### Session 2026-10-20 (Composer command pill, gate round 5 remediation, #1050)
+
+- Q: The test review found `--composer-selection-bg`'s round-3 opaque `var(--accent)` alias
+  measured EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber (both resolve `--accent`/
+  `--muted` to the same colour there), painting a completely invisible selection highlight over
+  a selected pill; the UI review separately found the live check's own "chip clickable" test
+  targeted the real, ABOVE-composer `AttachmentStrip` (nothing there could ever be occluded by
+  the pill) instead of the in-composer chip mirror that actually sits beside it; Obsidian's
+  `--command-pill-fg` (`oklch(0.715 0.166 280)`) was also found to sit outside the sRGB gamut.
+  How to fix all three? -> A: Decided (Main, 2026-10-20): (1) `--composer-selection-bg` becomes
+  a TRANSLUCENT accent-text tint, `color-mix(in oklab, var(--accent-text) 34%, transparent)`,
+  not a second opaque colour per theme that could drift the same way again -- a translucent fill
+  always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+  through, so it is visibly distinct from its own backdrop by construction. Applied
+  UNCONDITIONALLY now (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, moved out of the
+  pill-only `COMMAND_PILL_TEXTAREA_CLASS`), so the selection never changes look the instant a
+  recognised command's own leading token appears or disappears. 34% clears every theme's own
+  `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high contrast) AND a new
+  >=1.5:1 "visibly distinct from the pill" floor at once (worst case Dark, 1.52:1; Dark high
+  contrast's own 7:1 floor is the other binding constraint, 7.22:1) -- both enforced in
+  `scripts/composer-selection-contrast.mjs`'s new `composerSelectionContrastRows` (a dedicated
+  module, not a `theme-contrast-pairs.mjs` PAIRS entry: that file sits at its own #806 baseline
+  with no headroom, and a plain two-operand pair cannot correctly composite a translucent `bg`
+  operand over a REAL backdrop rather than itself). Against the near-black `--background`/
+  `--composer-background` themselves, no alpha near this window reaches 3:1 without exceeding
+  the text floor above, so that comparison stays informational only, the same accepted-gap shape
+  this spec's `sidebarBorderContrastRows` precedent already uses. (2) The live check's chip-
+  clickable assertion now targets `ChipOverlaySegments`'s own `span[role="button"]` (the in-
+  composer mirror; the real strip only ever renders real `<button>`s, so the selector is
+  unambiguous) with both an `elementFromPoint` reachability check and a real dispatched click
+  that opens and closes its preview dialog. (3) Obsidian's `--command-pill-fg` chroma is lowered
+  from 0.166 to 0.14 (same lightness 0.715, same hue 280) -- comfortably inside gamut rather
+  than at its boundary, clearing 4.5:1 at 4.86:1 measured from a colour that needs no clipping;
+  the round-2/3 comment's claim that the check's own 4.75:1 was simply "measured" is corrected
+  to note that number was real for the CLIPPED colour, not the authored (unreachable) literal.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -1650,10 +1688,14 @@ The developer types a slash command and finds the ones the agent offers. If a se
   transparent]` (gate round 3 HIGH, IME: NOT the `color` property -- masking via `color` also
   hid anything else that reads it, such as an IME composition underline; `color` itself stays
   real) with an explicit `caret-color` and a real `::selection` fill (dedicated `--composer-
-  selection-bg`/`-fg` tokens, plain aliases of the existing `accent-foreground`/`accent` pair;
-  gate round 3 HIGH: round 1/2's `::selection` rule set only a text colour with NO background,
-  which left the highlight completely invisible -- an author `::selection` rule leaves any
-  UNSET property at the element's own ordinary value, never the UA's special highlight) ONLY
+  selection-bg`/`-fg` tokens; gate round 3 HIGH: round 1/2's `::selection` rule set only a text
+  colour with NO background, which left the highlight completely invisible -- an author
+  `::selection` rule leaves any UNSET property at the element's own ordinary value, never the
+  UA's special highlight; gate round 5, test review: `--composer-selection-bg` is a TRANSLUCENT
+  accent-text tint, not an opaque alias of `--accent` -- the opaque fill happened to measure
+  EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber, painting an invisible highlight over
+  a selected pill; `--composer-selection-fg` stays a plain alias of `--accent-foreground`,
+  restored via `color` plus `-webkit-text-fill-color: currentColor`) UNCONDITIONALLY, not only
   while a token is present, so the native caret, the native selection highlight and IME
   composition keep painting on the real control, on top of the mirror -- the original opaque-
   overlay-on-top design hid all three. The Send/Stop button container MUST stay clickable while

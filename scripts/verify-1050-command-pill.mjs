@@ -348,15 +348,36 @@ async function main() {
       label: 'chip+pill: the large paste collapsed into a pending text chip'
     });
     assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the leading command pill is still shown alongside the new pasted-text chip');
+    // Gate round 5 fix (#1050, UI review): the ORIGINAL check here targeted the real, ABOVE-
+    // composer `AttachmentStrip` (`[role="group"][aria-label="Pending attachments"] button`) --
+    // nothing in the composer ever occludes that strip, so passing there proved nothing about
+    // the pill. The IN-COMPOSER chip MIRROR (`ChipOverlaySegments`, `AttachmentStrip.tsx:178-
+    // 182`, a `span[role="button"]` -- the real strip only ever renders real `<button>`s, so
+    // this selector is unambiguous) sits directly beside the pill, at real risk of being
+    // covered by its own fake-padding shadow or z-index -- that is the one worth proving
+    // reachable, with BOTH a synthetic `elementFromPoint` check AND a real dispatched click.
     const chipHit = await cdp.evaluate(`(() => {
-      const chip = document.querySelector('[role="group"][aria-label="Pending attachments"] button');
+      const chip = document.querySelector('span[role="button"]');
       if (!chip) return null;
       const r = chip.getBoundingClientRect();
       const x = r.left + r.width / 2, y = r.top + r.height / 2;
       const hit = document.elementFromPoint(x, y);
       return { reachable: hit === chip || chip.contains(hit) };
     })()`);
-    assertTrue(!!chipHit && chipHit.reachable, "chip+pill: the pasted-text chip is actually hit-testable (elementFromPoint at its own centre), not occluded by the pill's mirror or the textarea", chipHit);
+    assertTrue(!!chipHit && chipHit.reachable, "chip+pill: the in-composer chip mirror's span[role=\"button\"] is actually hit-testable (elementFromPoint at its own centre), not occluded by the pill's mirror or the textarea", chipHit);
+    await cdp.click(`document.querySelector('span[role="button"]')`);
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, {
+      timeoutMs: 5_000,
+      label: 'chip+pill: a real click on the in-composer chip mirror opens its preview dialog'
+    });
+    // `TextPreviewModal`'s own `restoreFocusTo={textareaRef}` (AttachmentStrip.tsx) means focus
+    // is still inside the dialog's content when this fires (`onOpenAutoFocus` redirect), so
+    // Escape here reaches Radix's own dialog dismiss, not the composer's `onKeyDown` (which
+    // would otherwise clear the whole draft -- the same documented focus-dependent gap the
+    // theme-loop tooltip dismiss below this already works around).
+    await pressKey(cdp, 27, 'Escape', 'Escape');
+    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 5_000, label: 'chip+pill: preview dialog closed before continuing' });
+    assertTrue(await cdp.evaluate(`${PILL} !== null`), 'chip+pill: the pill is still shown after the dialog closes and focus returns to the textarea');
     await cdp.screenshot(path.join(SHOTS_DIR, '08-chip-plus-pill.png'));
 
     // ---- 10. Pill stays aligned across all five theme presets, fill/text colour verified --

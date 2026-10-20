@@ -26,6 +26,28 @@
 // [2]` -- it used to have no z-index at all, so this textarea's own stacking context painted
 // over it while a pill showed, making Send/Stop unclickable (`COMMAND_PILL_TEXTAREA_CLASS`'s own
 // comment has the full stacking order).
+// Gate round 5 fix (#1050, test review): the composer's text-selection highlight is now a
+// TRANSLUCENT accent-text tint (`--composer-selection-bg`, `color-mix(in oklab, var(--accent-
+// text) 34%, transparent)`), applied UNCONDITIONALLY by `COMPOSER_SELECTION_CLASS` below --
+// `MessageInput.tsx`'s own `<textarea>` carries it regardless of whether a pill shows, so a
+// draft's selection looks identical whether or not the leading token happens to be a recognised
+// command. The previous opaque `var(--accent)` fill (round 3) measured EQUAL to
+// `--command-pill-bg` in Nordic Frost/Cyber Amber (both alias `--muted`/`--accent` to the same
+// resolved colour), so selecting the pilled token itself painted an invisible highlight --
+// found in this round's test review. A translucent tint lets the pill's own fill show through
+// underneath it, so the highlight is always visibly distinct from whatever it sits on, by
+// construction, in every theme (`scripts/composer-selection-contrast.mjs`'s own
+// `composerSelectionContrastRows` has the measured numbers: >=1.5:1 against the pill, enforced;
+// against the near-black `--background`/`--composer-background` themselves, no alpha in this
+// window reaches 3:1 without exceeding the text-legibility floor below, so that comparison is
+// informational only, same shape as this codebase's other accepted gaps). Text still restores
+// via `color: var(--composer-selection-fg)` (a dedicated declaration, not an inherited default)
+// with `-webkit-text-fill-color: currentColor` re-asserting the fill to track it -- WebView2
+// does not reliably apply a `::selection`-scoped override of that property in every case
+// (confirmed live, same engine gap `forced-colors:` already works around), so this is belt-and-
+// braces: when the override DOES apply, selected glyphs paint in the dedicated colour; when it
+// doesn't, the translucent highlight underneath still lets the real glyph colour (painted by
+// this mirror, or -- with no pill -- by the textarea itself) show through regardless.
 import type { ReactNode, RefObject } from 'react'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { classifySlashInvocation, parseSlashCommand } from '../../../shared/slash-commands'
@@ -97,7 +119,10 @@ export const COMPOSER_MIRROR_CLASS =
 const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[0_0_0_2px_var(--command-pill-bg)] [box-decoration-break:clone]'
 
 /** `MessageInput.tsx`'s own `<textarea>` adds this ONLY while `commandToken` is truthy (gate
- * round 1 HIGH remediation, item 1).
+ * round 1 HIGH remediation, item 1) -- the glyph-masking half of the highlight-within-textarea
+ * technique. Gate round 5: the SELECTION styling that used to live here moved out to
+ * `COMPOSER_SELECTION_CLASS` below, which the textarea now carries UNCONDITIONALLY (full
+ * reasoning in this file's own header comment) -- this constant is masking-only now.
  *
  * Full composer stacking order (gate round 3 CRITICAL fix: the Send/Stop button container used
  * to have no z-index at all, so this textarea's own `z-[1]` painted ABOVE it despite coming
@@ -121,25 +146,33 @@ const PILL_CLASS = 'rounded-sm bg-command-pill-bg text-command-pill-fg shadow-[0
  * explicitly here instead (not live-exercised, no forced-colours harness; `notExercised` on
  * #1050's own live check, same as before this fix). `caret-foreground`: the native caret is
  * drawn independently of text colour, so it stays fully visible at every offset, including
- * inside the (otherwise invisible) pilled token.
- *
- * Selection (gate round 3 HIGH fix): the previous `selection:text-foreground` set only `color`
- * within `::selection`, and CSS gives ANY property an author's `::selection` rule leaves unset
- * the ELEMENT's own ordinary (unselected) value for that property, never the UA's special
- * highlight -- so `background-color` fell back to this textarea's own `bg-transparent`, and the
- * "highlight" was completely invisible (confirmed live: Ctrl+A over a pilled draft painted
- * nothing). Fixed with a REAL fill (`selection:bg-composer-selection-bg`, a plain alias of the
- * existing, already-enforced `accent-foreground`/`accent` pair -- see globals.css) and an
- * explicit `-webkit-text-fill-color` override within `::selection` too: since the BASE rule
- * above forces that property transparent, `::selection` inheriting it unchanged would leave
- * selected glyphs invisible even with a real background now painted underneath, so it must be
- * reset to a real colour inside the selection rule specifically (`color` alone would not do
- * this, for the identical reason the base masking itself had to move off `color`).
- * `forced-colors:selection:` pair: the OS's own `Highlight`/`HighlightText` system colours,
- * the forced-colours-safe equivalent of the same override (not live-exercised, same
- * `notExercised` entry). */
+ * inside the (otherwise invisible) pilled token. */
 export const COMMAND_PILL_TEXTAREA_CLASS =
-  'relative z-[1] [-webkit-text-fill-color:transparent] forced-colors:[-webkit-text-fill-color:CanvasText] caret-foreground selection:bg-composer-selection-bg selection:[-webkit-text-fill-color:var(--composer-selection-fg)] forced-colors:selection:bg-[Highlight] forced-colors:selection:[-webkit-text-fill-color:HighlightText]'
+  'relative z-[1] [-webkit-text-fill-color:transparent] forced-colors:[-webkit-text-fill-color:CanvasText] caret-foreground'
+
+/** `MessageInput.tsx`'s own `<textarea>` carries this UNCONDITIONALLY (gate round 5 fix, test
+ * review: see this file's own header comment for the full reasoning) -- the composer's
+ * selection highlight looks identical whether or not a pill shows, so there is no visible
+ * discontinuity the instant a recognised command's own leading token appears or disappears.
+ *
+ * `selection:bg-composer-selection-bg`: a TRANSLUCENT accent-text tint (34% alpha,
+ * `globals.css`), not an opaque fill -- round 3's opaque `var(--accent)` alias happened to
+ * measure EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber, so selecting the pilled
+ * token itself painted an invisible highlight (this round's test-review finding). A translucent
+ * tint lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+ * through, so it is visibly distinct from its own backdrop by construction, in every theme.
+ *
+ * `selection:text-composer-selection-fg selection:[-webkit-text-fill-color:currentColor]`: sets
+ * `color` to a dedicated token AND re-asserts the fill to track it. Belt-and-braces for the same
+ * WebView2 gap the base masking rule above already works around: `-webkit-text-fill-color`
+ * cannot be relied on to track `color` through a `::selection` override in every engine, so both
+ * are set explicitly rather than assuming one implies the other.
+ *
+ * `forced-colors:` pair: the OS's own `Highlight`/`HighlightText` system colours, the forced-
+ * colours-safe equivalent of the same override (not live-exercised, no forced-colours harness;
+ * `notExercised` on #1050's own live check). */
+export const COMPOSER_SELECTION_CLASS =
+  'selection:bg-composer-selection-bg selection:text-composer-selection-fg selection:[-webkit-text-fill-color:currentColor] forced-colors:selection:bg-[Highlight] forced-colors:selection:text-[HighlightText] forced-colors:selection:[-webkit-text-fill-color:HighlightText]'
 
 /** Renders the composer mirror for a recognised command/skill token: the WHOLE draft, visibly --
  * plain `--foreground` text before and after the token, the token itself as the pill. `null`

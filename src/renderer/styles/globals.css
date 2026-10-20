@@ -339,16 +339,30 @@
    * measured) -- a visibly lighter step of the same accent family, not a different colour. */
   --command-pill-bg: oklch(0.31 0 0);
   --command-pill-fg: oklch(0.695 0.162 279);
-  /* Gate round 3 HIGH fix (#1050): the composer's own text-selection highlight, while a
-   * recognised command/skill pill shows -- `selection:text-foreground` alone left `::selection`
-   * with NO authored `background-color`, and an author `::selection` rule with a property
-   * unset falls back to the ELEMENT's own ordinary (unselected) value for that property, not
-   * the UA's special highlight colour -- so the textarea's own `bg-transparent` left the
-   * "highlight" completely invisible. Plain aliases of the EXISTING, already-enforced
-   * `accent-foreground`/`accent` pair (14.48:1 here) -- the same "this row/item is
-   * highlighted" surface already used for hover/active menu rows, reused rather than inventing
-   * a new untested colour. */
-  --composer-selection-bg: var(--accent);
+  /* Gate round 5 fix (#1050, test review): translucent accent-text tint, not an opaque alias --
+   * round 3's `var(--accent)` fill (aliasing the SAME "highlighted row" surface as hover/active
+   * menu rows) happened to measure EQUAL to `--command-pill-bg` in Nordic Frost/Cyber Amber (both
+   * alias `--muted`/`--accent` to the same resolved colour there), so selecting the pilled token
+   * itself painted a completely invisible highlight -- found in this round's test review, not
+   * caught before because Dark/Obsidian/Dark (high contrast) never had that exact coincidence.
+   * `color-mix(in oklab, var(--accent-text) 34%, transparent)`: translucent so the highlight
+   * always lets whatever is underneath (the pill's own fill, or the plain composer surface) show
+   * through, visibly distinct from it by construction in every theme, rather than needing a
+   * second, independently-tuned opaque colour per theme that could drift the same way again. Now
+   * applied UNCONDITIONALLY (`CommandPillOverlay.tsx`'s `COMPOSER_SELECTION_CLASS`, full
+   * reasoning there), not only while a pill shows, so the selection never changes look the
+   * instant a recognised command's own leading token appears or disappears. 34% clears every
+   * theme's own `--composer-selection-fg`-on-highlight text floor (4.5:1, 7:1 in Dark high
+   * contrast) AND a new >=1.5:1 "visibly distinct from the pill" floor at once -- the narrowest
+   * of the two windows this measurement found was roughly 33%-35.5% alpha (`scripts/composer-
+   * selection-contrast.mjs`'s own `composerSelectionContrastRows` has the full measured numbers,
+   * worst case here 1.52:1 against the pill). Against the near-black `--background` itself, no
+   * alpha anywhere near this window reaches a full 3:1 without exceeding the text-legibility
+   * floor above (even 50% alpha tops out at 3.41:1 in Cyber Amber, the best case) -- that
+   * comparison stays informational only (measured, never enforced), a clearly accent-hued tint
+   * rather than a WCAG-enforced one, the same accepted-gap shape this file already uses
+   * elsewhere. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
    * values above (not a second set, and not a value change -- #550's own "do not create a
@@ -464,14 +478,20 @@
    * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
    * (280, measured from its own hex `#8588F4` -- gate round 3 fix: round 2's hue 255 was a
    * transcription drift, 25 degrees off the real accent hue, which read as a visibly different
-   * blue), lightened/desaturated only as far as needed to clear 4.5:1 on this fill (4.75:1,
-   * measured). */
+   * blue), lightened/desaturated only as far as needed to clear 4.5:1 on this fill. Gate round 5
+   * fix (test review): the round-3 chroma (0.166) put the computed oklch candidate outside the
+   * sRGB gamut -- `check-theme-contrast.mjs` CLIPS any out-of-gamut channel the same way a
+   * display would before computing a ratio (its own methodology note above says so), so its
+   * measured 4.75:1 was a real ratio for the CLIPPED colour, not for the authored literal, which
+   * the browser also silently clips to whatever in-gamut colour is nearest -- not guaranteed to
+   * be the one this comment's own chroma was chosen from. Chroma lowered to 0.14 (same lightness
+   * 0.715, same hue 280) -- comfortably inside gamut, not just at its boundary -- clearing 4.5:1
+   * on this fill at 4.86:1, computed from a colour that needs no clipping at all. */
   --command-pill-bg: oklch(0.32 0.02 255);
-  --command-pill-fg: oklch(0.715 0.166 280);
-  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
-   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
-   * `--foreground` here, the same hover/active row surface used elsewhere). */
-  --composer-selection-bg: var(--accent);
+  --command-pill-fg: oklch(0.715 0.14 280);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
@@ -764,10 +784,9 @@
    * number was stale at 7.23, drifted from the spec's recorded 7.26). */
   --command-pill-bg: oklch(0.30 0 0);
   --command-pill-fg: oklch(0.80 0.10 264);
-  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
-   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (15.54:1 here,
-   * comfortably above this preset's own enhanced 7:1 floor). */
-  --composer-selection-bg: var(--accent);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
    * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
@@ -907,10 +926,9 @@
    * hue, lightness and contrast, no lightened step needed). */
   --command-pill-bg: var(--muted);
   --command-pill-fg: var(--accent-text);
-  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
-   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
-   * `--foreground` here, the same hover/active row surface used elsewhere). */
-  --composer-selection-bg: var(--accent);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: success/warning/error share the same hue every other built-in theme uses
    * (#550's "do not create a second set"), lightness retuned for this preset's own darker navy
@@ -1088,10 +1106,9 @@
    * plain alias of `--accent-text`, no lightened step needed. */
   --command-pill-bg: var(--muted);
   --command-pill-fg: var(--accent-text);
-  /* Gate round 3 HIGH fix (#1050), see Dark's own comment for the full reasoning: plain aliases
-   * of the EXISTING, already-enforced `accent-foreground`/`accent` pair (`--surface-hover`/
-   * `--foreground` here, the same hover/active row surface used elsewhere). */
-  --composer-selection-bg: var(--accent);
+  /* Gate round 5 fix (#1050, test review), see Dark's own comment for the full reasoning:
+   * translucent accent-text tint, applied unconditionally, same 34% alpha every theme uses. */
+  --composer-selection-bg: color-mix(in oklab, var(--accent-text) 34%, transparent);
   --composer-selection-fg: var(--accent-foreground);
   /* Severity roles: success/error keep the same green/red hue family every other built-in theme
    * uses. `--severity-warning` is the theme's own golden-amber (real hue ~73.8, distinct from

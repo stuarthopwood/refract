@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
+import { composerSelectionContrastRows } from './composer-selection-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -668,7 +669,9 @@ for (const [themeId, props] of Object.entries(themes)) {
 // #975 (Shiki token colours vs the new `--card` code-block background): all four composited
 // checks live in `theme-contrast-pairs.mjs`, not inline here, to keep this file at its own #806
 // baseline; merged into one loop for the same reason.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+// Gate round 5 (#1050, test review): `composerSelectionContrastRows` lives in its own module
+// (composer-selection-contrast.mjs's own comment explains why), merged into this same loop.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)
