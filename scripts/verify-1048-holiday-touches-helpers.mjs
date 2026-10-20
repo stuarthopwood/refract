@@ -307,11 +307,27 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   // entirely -- `willChange` genuinely read `''` on THAT element while the real flying bat's own
   // `willChange` was `'transform'` the whole time, a false failure, not a product bug. Scoped to
   // `.holiday-ambient-loop`'s own subtree (`getAnimations({ subtree: true })`, a real Web
-  // Animations API option), so only the loop's own bat animations are ever counted. ----
+  // Animations API option), so only the loop's own bat animations are ever counted. Gate round 4
+  // fix (flaky, found live): a SINGLE tap right after mount is not enough to guarantee the
+  // debug-shortened flight (`shortFlightIntervalMs`, 5000ms) starts before the debug-shortened
+  // idle pause (`shortIdleMs`, 3000ms, SHORTER than the flight gap) cancels its scheduled timer
+  // -- a real race, not a product bug (the pause-on-idle behaviour is correct; one tap just
+  // cannot outlast a 3000ms idle window for a full 5000ms). `keepAwakeUntilFlightStarts` taps
+  // repeatedly (well under `shortIdleMs` apart) until a flight is actually running, the same
+  // keep-awake pattern the CPU-budget sampling above already relies on. ----
+  async function keepAwakeUntilFlightStarts(label) {
+    const deadline = Date.now() + shortFlightIntervalMs + 15_000;
+    while (Date.now() < deadline) {
+      await tap(cdp);
+      const running = await cdp.evaluate(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length > 0`);
+      if (running) return;
+      await sleep(Math.min(1_500, shortIdleMs - 500));
+    }
+    throw new Error(`keepAwakeUntilFlightStarts: no flight started within ${shortFlightIntervalMs + 15_000}ms (${label})`);
+  }
   await cdp.evaluate(`window.refract.settings.setHolidayTouches('full')`);
   await cdp.waitFor(`!!document.querySelector('.holiday-ambient-loop')`, { timeoutMs: 10_000, label: 'Ambient loop mounted before the mid-flight proof' });
-  await tap(cdp);
-  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A flight starts (debug-shortened interval)' });
+  await keepAwakeUntilFlightStarts('mid-flight proof');
   const midFlight = await cdp.evaluate(`(() => {
     const animations = document.querySelector('.holiday-ambient-loop').getAnimations({ subtree: true });
     const bat = animations[0] && animations[0].effect ? animations[0].effect.target : null;
@@ -329,8 +345,7 @@ export async function measureAmbientLoopCpuBudget(cdp, pid, report, assertTrue, 
   assertTrue(postFlight.willChangeValues.every((wc) => wc === ''), "After the flight finishes: every bat's own inline style.willChange is cleared ('')", postFlight);
 
   // ---- Blur mid-flight leaves the same 0/'' state (gate round 3, item 1). ----
-  await tap(cdp);
-  await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length > 0`, { timeoutMs: shortFlightIntervalMs + 15_000, label: 'A second flight starts, for the blur-mid-flight proof' });
+  await keepAwakeUntilFlightStarts('blur-mid-flight proof');
   await cdp.evaluate(`window.dispatchEvent(new Event('blur'))`);
   await cdp.waitFor(`document.querySelector('.holiday-ambient-loop')?.getAnimations({ subtree: true }).length === 0`, { timeoutMs: 2_000, label: 'Blur mid-flight cancels the running Animation (getAnimations back to 0 quickly)' });
   const afterBlurMidFlight = await cdp.evaluate(`Array.from(document.querySelectorAll('.holiday-ambient-loop-bat-wrap')).map((el) => el.style.willChange)`);
