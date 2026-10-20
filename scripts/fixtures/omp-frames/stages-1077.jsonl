@@ -1,0 +1,69 @@
+// SYNTHESIZED, not captured live: issue #1077 (expanded agent rows show only the goal; the
+// full Prompt/Result move behind a "See input & output" toggle). One user prompt, one agent
+// turn, TWO Stages (different owning assistant message ids, so `groupSubagentStages.ts` flushes
+// a new Stage on the `messageId` change even with nothing else between them):
+//
+// Stage A ("solo-task", msg-a1): ONE agent ("SoloSweep"), NO batch `context` at all -- the
+// scenario `StageGroupRow`'s solo branch needs `group.context` falsy for (issue #1077's own
+// `showGoal={!group.context}` rule): `StageContextBrief` never renders (no context captured),
+// so `SubagentBody` itself must supply the goal from `item.task`. Its own task is deliberately
+// a MULTI-LINE brief with a leading "# Goal" heading (the same heading-only-line convention
+// `stageMeta.ts`'s own `extractContextLabel` already strips for a Stage's context) and several
+// further lines, long enough to genuinely overflow a `line-clamp-3` paragraph at a normal
+// composer width -- proves the clamp is a real CSS constraint, not a component that merely
+// never renders more than 3 lines of text in the first place. A deliberate `{"__delay__":2500}`
+// between the assistant-message echo and `tool_execution_end` keeps it OBSERVABLY running (no
+// `item.result` yet) for a live check to confirm the toggle link reads "See input" (not "...&
+// output") before it settles.
+//
+// Stage B ("members-task", msg-a2): TWO agents ("MemberOne", "MemberTwo") sharing ONE batch
+// `context` -- the scenario a multi-agent Stage needs to prove no per-member goal duplication:
+// `StageContextBrief` shows the shared goal once, each member's own `SubagentBody` shows none of
+// its own (`showGoal={false}` unconditionally for a 2+-member Stage), and each member keeps its
+// own INDEPENDENT toggle open/closed state.
+//
+// Every boilerplate frame (ready/negotiate_protocol/get_state/set_ask_dialog/get_messages_page/
+// prompt ack) is copied verbatim from `stages-941.jsonl`'s own header, the same shared
+// conventions every `verify-941-*`/`verify-991-*`/`verify-1000-*`/`verify-1001-*` fixture
+// already follows (`scripts/fixtures/omp-frames/README.md`'s own "every fixture's second step"
+// notes); the two-Stage/one-job-then-two-job shape mirrors `stages-941.jsonl`'s own Stage
+// 1/Stage 2 pair (read in full while authoring this file).
+//
+// WRITTEN, NOT RUN end-to-end: no build slot has been granted for this sub-task -- hand-built
+// directly from the documented wire contract and `subagent_items.rs`'s own matching rules, not
+// yet replayed against a real built exe.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\stages-1077\\conversation.json","sessionId":"sess-stages-1077-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[]}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"solo-task","toolName":"task","args":{"tasks":[{"name":"SoloSweep","task":"# Goal\nSweep the fixture tree for issue #1077 and confirm the goal-only treatment end to end.\nCheck the Stage header, the toggle link, and every label state it can show.\nConfirm the goal never shows twice when a Stage context already covers it.\nThis line and the next exist only to push the rendered preview past three visual lines.\nFinal line, never meant to be readable without opening the toggle below."}]},"intent":"Running the solo sweep"}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"tasks":[{"name":"SoloSweep","task":"# Goal\nSweep the fixture tree for issue #1077 and confirm the goal-only treatment end to end.\nCheck the Stage header, the toggle link, and every label state it can show.\nConfirm the goal never shows twice when a Stage context already covers it.\nThis line and the next exist only to push the rendered preview past three visual lines.\nFinal line, never meant to be readable without opening the toggle below."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"solo-task","name":"task","arguments":{"tasks":[{"name":"SoloSweep","task":"# Goal\nSweep the fixture tree for issue #1077 and confirm the goal-only treatment end to end.\nCheck the Stage header, the toggle link, and every label state it can show.\nConfirm the goal never shows twice when a Stage context already covers it.\nThis line and the next exist only to push the rendered preview past three visual lines.\nFinal line, never meant to be readable without opening the toggle below."}]}}],"timestamp":0}}
+{"__delay__":2500}
+{"type":"tool_execution_end","toolCallId":"solo-task","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"SoloSweep","status":"finished","task":"Sweep the fixture tree for issue #1077.","durationMs":2300}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"SoloSweep","label":"SoloSweep","status":"completed","resultText":"Swept clean; every label state and goal text matched the fixture's own expectations.","durationMs":2300}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar1","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"SoloSweep","label":"SoloSweep","status":"completed","resultText":"Swept clean; every label state and goal text matched the fixture's own expectations.","durationMs":2300}]},"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"members-task","toolName":"task","args":{"context":"Confirm Stage members never duplicate the Stage's own shared goal (issue #1077).","tasks":[{"name":"MemberOne","task":"Confirm this member's own body never repeats the Stage's shared goal above it."},{"name":"MemberTwo","task":"Confirm the sibling member behaves identically, independent open state included."}]},"intent":"Running the member-duplication check"}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"members-task","name":"task","arguments":{"context":"Confirm Stage members never duplicate the Stage's own shared goal (issue #1077).","tasks":[{"name":"MemberOne","task":"Confirm this member's own body never repeats the Stage's shared goal above it."},{"name":"MemberTwo","task":"Confirm the sibling member behaves identically, independent open state included."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"members-task","name":"task","arguments":{"context":"Confirm Stage members never duplicate the Stage's own shared goal (issue #1077).","tasks":[{"name":"MemberOne","task":"Confirm this member's own body never repeats the Stage's shared goal above it."},{"name":"MemberTwo","task":"Confirm the sibling member behaves identically, independent open state included."}]}}],"timestamp":0}}
+{"__delay__":1500}
+{"type":"tool_execution_end","toolCallId":"members-task","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"MemberOne","status":"finished","task":"Confirm this member's own body never repeats the Stage's shared goal above it.","durationMs":1100},{"index":1,"id":"MemberTwo","status":"finished","task":"Confirm the sibling member behaves identically, independent open state included.","durationMs":1300}]}},"isError":false}
+{"type":"message_start","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"MemberOne","label":"MemberOne","status":"completed","resultText":"Confirmed: no duplicate goal text anywhere in this member's own body.","durationMs":1100},{"id":"MemberTwo","label":"MemberTwo","status":"completed","resultText":"Confirmed: this member's own toggle opens and closes independently of its sibling.","durationMs":1300}]},"timestamp":0}}
+{"type":"message_end","messageId":"msg-ar2","message":{"role":"custom","customType":"async-result","display":true,"content":"","details":{"jobs":[{"id":"MemberOne","label":"MemberOne","status":"completed","resultText":"Confirmed: no duplicate goal text anywhere in this member's own body.","durationMs":1100},{"id":"MemberTwo","label":"MemberTwo","status":"completed","resultText":"Confirmed: this member's own toggle opens and closes independently of its sibling.","durationMs":1300}]},"timestamp":0}}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a3","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Both Stages settled; goal-only rows confirmed."}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":"Both Stages settled; goal-only rows confirmed."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
