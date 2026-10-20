@@ -49,7 +49,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#dedede' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
@@ -124,11 +124,12 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   'cyber-amber': {
     id: 'cyber-amber',
     name: 'Cyber Amber',
-    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a warm near-black canvas.
-    swatch: '#0f0703',
-    swatchPrimary: '#c14100',
+    // Matches `.theme-cyber-amber`'s own `--background` (globals.css): a near-black canvas
+    // with a barely-visible warm tint (#1039 retune, Default Dark's own lightness ladder).
+    swatch: '#0c0a08',
+    swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0f0703', symbolColor: '#faf4ef' }
+    titleBarOverlay: { color: '#0c0a08', symbolColor: '#e1dddb' }
   }
 }
 
