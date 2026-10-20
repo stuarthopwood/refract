@@ -171,6 +171,16 @@ export function GitChangesFileRow({
             type="button"
             aria-label={`More actions for ${entry.path}`}
             aria-disabled={actionPending || undefined}
+            // Gate round 1 MEDIUM 4 (#1101): `aria-disabled` alone is a visual/AT-only signal --
+            // a NATIVE `disabled` is the only way to stop a focused trigger opening the menu on
+            // a keyboard Enter/Space while a stage/unstage round trip for this row is in flight
+            // (Radix's own `DropdownMenuTrigger` honours it). Accepted trade-off: this control
+            // never holds a long-lived "disabled with reason" state the way the Commit button
+            // does (the one place this codebase's own `aria-disabled`-over-`disabled` rule
+            // applies) -- `actionPending` is a brief, self-clearing IPC round trip, and the
+            // row's own existing focus-restoration effect (`focusGitRow`) re-settles focus once
+            // it does.
+            disabled={actionPending}
             className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >
             <EllipsisVerticalIcon aria-hidden className="size-3.5" />

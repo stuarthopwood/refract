@@ -83,7 +83,11 @@ resolved, none deferred)
    still enforces no format and never blocks Commit on subject length). An `sr-only` "Subject
    length" label names the value for a screen reader, since nothing previously did.
 2. **Commit inputs** (item 2): both the subject and body fields reuse the composer's own surface,
-   border and focus classes (ADR 0003), not the bare `Input`/`Textarea` defaults they used before.
+   border and focus classes (ADR 0003), not the bare `Input`/`Textarea` defaults they used
+   before. **Decided (gate round 1, 2026-10-20):** since the commit fields now draw the SAME
+   quiet, below-3:1-in-Dark/Obsidian tokens the composer's own text field already does, the
+   "Quiet composer" accepted departure (`docs/design/accessibility.md` "Accepted departures") is
+   extended to name them explicitly rather than leaving them an unscoped side effect.
 3. **Stage/unstage in-progress state** (item 4): a stage/unstage/stage-all/unstage-all round trip
    in flight shows a spinner on the row or group button that triggered it, sets `aria-busy`, and
    disables that control against a double click; the existing app-level `role="status"`

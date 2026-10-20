@@ -369,8 +369,10 @@ function GitChangesDiffPane({
           component above) -- a stop-gap until #732-dependent "Git diff opens in a main-area
           tab" ships and this whole diff pane (Back button included) is removed. `bg-background`
           (this hosted pane's own inherited base surface, set no closer than the app root) stops
-          scrolled-past diff text from showing through underneath it. */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background py-0.5">
+          scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
+          `py-1` (was `py-0.5`) -- the Back button's own 3px focus-visible ring needs 1px more
+          clearance than `py-0.5` left it, or the ring clips against the sticky bar's own edge. */}
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background py-1">
         <Button
           ref={backButtonRef}
           variant="ghost"
@@ -380,7 +382,12 @@ function GitChangesDiffPane({
         >
           <ArrowLeftIcon aria-hidden className="size-3.5" />
         </Button>
-        <span className="text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
+        {/* UI review (#1101 gate round 1): the bar previously showed only "Staged"/"Unstaged",
+            naming nothing -- the open file's own truncated name now sits beside it. */}
+        <span className="min-w-0 flex-1 truncate text-xs font-medium" title={entry.path}>
+          {fileName}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
       </div>
       {state === 'loading' ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
