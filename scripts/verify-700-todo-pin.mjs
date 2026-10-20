@@ -99,11 +99,13 @@ async function clearWidth(cdp) {
 
 /** Gate round 1 (Main E7): move the pointer to a neutral spot and wait out any stray tooltip or
  * hover card before a screenshot that must be clean -- used for every theme shot, not only the
- * narrow-width ones. */
+ * narrow-width ones. `.finish()` throws `InvalidStateError` on an animation with an infinite
+ * target effect end (self-caught live-check failure, a looping spinner); caught per-animation
+ * since it has no "final" state to settle to anyway. */
 async function settleForScreenshot(cdp) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 700, y: 50 });
   await cdp.waitFor(`!document.querySelector('[role="tooltip"]') && !document.querySelector('[data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'stray tooltip/hover card closed before screenshot' }).catch(() => {});
-  await cdp.evaluate(`document.getAnimations().forEach((a) => a.finish())`);
+  await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
 }
 
 /** Gate round 2 fix (self-caught live-check bug, confirmed by diagnostics then reverted): a
