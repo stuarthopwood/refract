@@ -2,6 +2,45 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui"
 
+// Issue #1043 (ADR 0003): the ring-and-dot mark every radio-style control in the app draws --
+// this file's own `RadioGroupIndicator` below, plus `AskCard.tsx`/`MergeDialog.tsx`'s identical
+// hand-rolled `<span aria-hidden className="grid size-4 ...">` ring wrapping it -- gains a
+// SECOND real consumer here, `dropdown-menu.tsx`'s `DropdownMenuRadioItem` (its old trailing
+// `CheckIcon` read as an unselected radio with nothing marking the checked row). Exported as
+// plain class-string constants (this codebase's established pattern for a cross-file shared
+// look, e.g. `pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`) rather than a JSX component: the two
+// Radix primitives involved (`RadioGroupPrimitive.Indicator` here, `DropdownMenuPrimitive.
+// ItemIndicator` there) mount conditionally in different, primitive-specific ways, so only the
+// CSS belongs here, not a wrapper tied to one primitive. `AskCard.tsx`/`MergeDialog.tsx` keep
+// their own pre-existing inline copy of the ring markup, unchanged by this issue's scope (#1043
+// is the shared `DropdownMenuRadioItem` only) -- a future touch of either file should migrate it
+// to `RADIO_RING_CLASS` too, so only one hand-rolled copy of the ring ever remains.
+// IMPORTANT for every consumer: `RADIO_DOT_CLASS` must land on the ring's own DIRECT child (the
+// Radix Indicator primitive itself), never on an extra nested `<span>` one level deeper. Both
+// `RadioGroupPrimitive.Indicator` and `DropdownMenuPrimitive.ItemIndicator` render a bare,
+// unstyled `<span>` (`display: inline` by the UA stylesheet); a grid item's own display is
+// "blockified" (CSS Display Level 3 2.7) so `size-2` applies when the class lands there directly
+// -- but blockification does NOT cascade to a grandchild, so a `size-2` dot nested one level
+// deeper silently collapses to 0x0 (width/height do not apply to non-replaced inline boxes,
+// CSS2.1 10.3.1/10.6.1) and never paints, confirmed live (#1043, Main's pixel sample caught the
+// Theme submenu's own first cut of this exact mistake, `dropdown-menu.tsx`'s own fix comment).
+// Gate round 1 fix (PR #1057, Code/Test/UI High, 2026-10-20): the checked ring's own border was
+// `border-primary`, matching the Ask card's own look -- but `--primary` measures only 2.92-2.99:1
+// against `--popover` in Obsidian/Nordic Frost/Cyber Amber (under the 3:1 WCAG 1.4.11 floor),
+// and is visibly INVERTED there (a checked row's own ring reads FAINTER than an unchecked row's,
+// since `--primary`'s own relative luminance is LOWER than `--muted-foreground`'s in those three
+// themes -- confirmed by direct measurement, not assumed). `--primary` still clears 3:1 against
+// `--card`/`--background` everywhere (the Ask card's own dialog surfaces) -- `--popover` (the
+// menu surface this ring is NEW to) is the one surface it fails, so this was never "the same
+// pre-existing gap" the #572 decision D10 comment below describes for a DIFFERENT token
+// (`RadioGroupIndicator`'s own dot). Changed to `border-foreground`: `foreground`/`popover` is
+// already a gated PAIRS entry (`scripts/theme-contrast-pairs.mjs`) and clears comfortably in
+// every theme; `foreground`/`accent` (the row's own `focus:bg-accent` fill) is added alongside
+// it for the focused-row case. `AskCard.tsx`/`MergeDialog.tsx` keep their own `border-primary`
+// ring unchanged (out of this issue's scope; D10 below still describes their design accurately).
+export const RADIO_RING_CLASS = "grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-foreground"
+export const RADIO_DOT_CLASS = "size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]"
+
 // Hand-written (not `pnpm dlx shadcn add radio-group`, no network in this environment), matching
 // shadcn's own radio-group.tsx shape: a thin `data-slot`-tagged wrapper per Root/Item/Indicator
 // node, built on the project's shared `radix-ui` meta-package import (see tabs.tsx, scroll-area.tsx,
@@ -77,7 +116,7 @@ function RadioGroupIndicator({
       // #572 decision D10: the dot uses `--foreground`, not `--primary` -- Obsidian's `--primary`
       // measures too low a contrast on the row's own hover surface; the row edge (`border-primary`
       // above) stays as reinforcement, only the glyph itself moved.
-      className={cn("size-2 rounded-full bg-foreground forced-colors:bg-[CanvasText]", className)}
+      className={cn(RADIO_DOT_CLASS, className)}
       {...props}
     />
   )
