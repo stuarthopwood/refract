@@ -102,6 +102,15 @@ async function openSettingsModelRoles(cdp) {
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
   await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Model roles')`);
   await cdp.waitFor(`!!document.getElementById('model-role-default-reasoning-inherit')`, { timeoutMs: 15_000, label: 'Model roles section mounted (reasoning radios present)' });
+  // The radios above mount unconditionally (they tolerate an unresolved catalog entry with their
+  // own "Pick a model first" reason), so their presence alone does NOT prove the chat catalog's
+  // own `omp models --kind chat --json` one-shot call has resolved yet -- wait for the provider
+  // switch to render at least one real segment too (it renders nothing until `catalogs.chat` is
+  // populated), or every assertion below races the load and reads pre-catalog raw selectors.
+  await cdp.waitFor(`document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]').length > 0`, {
+    timeoutMs: 15_000,
+    label: 'Chat model catalog loaded (provider switch has real segments)'
+  });
 }
 
 /** Reads each `[aria-label="Provider"]` segment's own text and whether it is currently selected. */
@@ -289,28 +298,45 @@ async function main() {
 
     await shot('01-seeded-state.png');
 
-    // ---- 7. Keyboard-switch the provider to Anthropic; Default's dropdown re-filters. ----
-    await cdp.click(`Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
-    await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-    await cdp.waitFor(
-      `Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'Anthropic'`,
-      { timeoutMs: 5_000, label: 'Keyboard: switch moved to Anthropic' }
-    );
+    // ---- 7. Keyboard-switch the provider to Anthropic; Default's dropdown re-filters. Focuses
+    // via a direct `.focus()` call (never a click first) so the keyboard proof below is never
+    // ambiguous about whether a prior pointer interaction, not the keyboard, moved focus. Reads
+    // and records the segment state after ArrowRight ALONE before pressing anything else: Radix's
+    // ToggleGroup "single" mode deselects an ALREADY-selected item on a second activation
+    // (`ManageSessionsToolbar.tsx`'s own header comment), so if arrow navigation itself already
+    // moves the selection (radiogroup-style), a further Space/Enter on the now-selected item
+    // would wrongly deselect it -- Space is sent only when the arrow move alone did not select. ----
+    const PROVIDER_SEGMENT_FINDER = `document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')`;
+    async function selectedProviderSegment() {
+      return cdp.evaluate(`Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() ?? null`);
+    }
+    async function focusProviderSegment(text) {
+      await cdp.evaluate(`Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.textContent.trim() === ${JSON.stringify(text)})?.focus()`);
+    }
+    async function keyboardSwitchProviderTo(targetText, arrowCode, arrowKey) {
+      await pressKey(cdp, arrowCode, arrowKey, arrowKey);
+      let selected = await selectedProviderSegment();
+      findings.push(`Provider switch: after ${arrowKey} alone, selected = ${JSON.stringify(selected)}`);
+      if (selected !== targetText) {
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+        selected = await selectedProviderSegment();
+        findings.push(`Provider switch: after ${arrowKey}+Space, selected = ${JSON.stringify(selected)}`);
+      }
+      return selected;
+    }
+
+    await focusProviderSegment('GitHub Copilot');
+    const afterRightArrow = await keyboardSwitchProviderTo('Anthropic', 39, 'ArrowRight');
+    assertEqual(afterRightArrow, 'Anthropic', 'Keyboard moves the provider switch to Anthropic', findings, failures);
     const anthropicItems = await readDropdownItemTexts(cdp, 'default');
     assertTrue(anthropicItems.some((t) => t.includes('Claude Haiku 5.5')) && anthropicItems.some((t) => t.includes('Claude Opus 5.5')), 'Default dropdown now lists Anthropic\u2019s models', findings, failures);
     assertTrue(!anthropicItems.some((t) => t.includes('Claude Fable') || t.includes('GPT')), 'Default dropdown no longer lists GitHub Copilot\u2019s models', findings, failures);
 
     // Restore GitHub Copilot for the remaining checks (keyboard again, proving the reverse move).
-    await cdp.click(`Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'Anthropic')`);
-    await pressKey(cdp, 37, 'ArrowLeft', 'ArrowLeft');
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-    await cdp.waitFor(
-      `Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'GitHub Copilot'`,
-      { timeoutMs: 5_000, label: 'Keyboard: switch moved back to GitHub Copilot' }
-    );
+    await focusProviderSegment('Anthropic');
+    const afterLeftArrow = await keyboardSwitchProviderTo('GitHub Copilot', 37, 'ArrowLeft');
+    assertEqual(afterLeftArrow, 'GitHub Copilot', 'Keyboard moves the provider switch back to GitHub Copilot', findings, failures);
 
     // ---- 8. Picking a reasoning level writes the suffix, read back through a fresh IPC call;
     // ArrowRight (keyboard) moves to the next enabled level; Inherit clears the suffix. The
