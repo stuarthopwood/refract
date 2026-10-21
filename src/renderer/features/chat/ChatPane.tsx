@@ -5,6 +5,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon, PaperclipIcon } from 'lucide-react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -1193,9 +1194,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
           SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
           "Focused" text badge so the marker is never colour alone. */}
-      {isSplit && isFocused && (
-        <span aria-hidden className="absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator" />
-      )}
+      {isSplit && isFocused && <ActiveIndicatorBar />}
       <ChatHeader
         sessionId={sessionId}
         focused={isSplit ? isFocused : undefined}

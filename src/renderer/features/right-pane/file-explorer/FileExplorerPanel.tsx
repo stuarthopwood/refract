@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { toast } from 'sonner'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -1067,33 +1068,32 @@ function TreeNodeRow({
       aria-selected={selected}
       aria-expanded={isFolder ? expanded : undefined}
       aria-labelledby={mark ? `${nameId} ${markId}` : nameId}
-      // PR #671 gate round 4 fix (Medium, A11y4): the kebab's own keyboard-only reveal (Shift+F10
-      // or the ContextMenu key -- nothing else makes either discoverable) is now at least
-      // advertised on the row itself.
+      // PR #671 gate round 4 fix (Medium, A11y4): the kebab's own keyboard-only reveal (Shift+F10 or the ContextMenu key) is now at least advertised on the row itself.
       aria-keyshortcuts={canAct ? 'Shift+F10' : undefined}
       tabIndex={tabbable ? 0 : -1}
       data-tree-row-path={node.path}
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-      className="group no-drag-region flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm outline-none hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
+      className="group no-drag-region relative flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
       onClick={() => onRowClick(node)}
       onFocus={() => onRowFocus(node)}
       onKeyDown={(event) => onRowKeyDown(event, row, absIndex)}
     >
-      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+      {selected && <ActiveIndicatorBar />}
+      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
         {isFolder && (expanded ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />)}
       </span>
       {isFolder ? (
         expanded ? (
-          <FolderOpenIcon aria-hidden className="size-4 shrink-0" />
+          <FolderOpenIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         ) : (
-          <FolderIcon aria-hidden className="size-4 shrink-0" />
+          <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         )
       ) : node.kind === 'cannot-access' ? (
-        <FileWarningIcon aria-hidden className="size-4 shrink-0" />
+        <FileWarningIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       ) : (
-        <FileIcon aria-hidden className="size-4 shrink-0" />
+        <FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       )}
-      <span id={nameId} className="min-w-0 flex-1 truncate" title={node.name}>
+      <span id={nameId} className="min-w-0 flex-1 truncate text-chat-foreground" title={node.name}>
         {node.name}
         {node.kind === 'cannot-access' && <span className="sr-only"> (cannot access)</span>}
       </span>
