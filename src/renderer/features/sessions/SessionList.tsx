@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, FolderPlusIcon, GitPullRequestIcon, SearchXIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -243,6 +244,10 @@ export function SessionList() {
       <Button
         variant="ghost"
         aria-current={view === 'pull-requests' ? 'page' : undefined}
+        // Issue #1122: `data-choice-item` joins this nav entry to the shared square-choice
+        // selector (globals.css) -- the unlayered rule there overrides the Button base's own
+        // `rounded-lg` regardless of source order (same pattern `RequestCard.tsx` already uses).
+        data-choice-item
         className={cn(
           'relative mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium hover:bg-sidebar-accent dark:hover:bg-sidebar-accent',
           view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -250,14 +255,9 @@ export function SessionList() {
         aria-label={activeCountLabel ? `Pull requests, ${activeCountLabel} active` : 'Pull requests'}
         onClick={handleOpenPullRequests}
       >
-        {/* #567 decision 18: "A selected nav entry gets the 2px bar plus the fill", the same
-            selected cue a Session row and a Group header's own visible-Session bar use. */}
-        {view === 'pull-requests' && (
-          <span
-            aria-hidden
-            className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
-          />
-        )}
+        {/* #567 decision 18, superseded by issue #1122: the shared `ActiveIndicatorBar` --
+            square, flush full-height, 2px -- not this nav entry's own hand-copied span. */}
+        {view === 'pull-requests' && <ActiveIndicatorBar />}
         <GitPullRequestIcon aria-hidden className="size-4" />
         <span className="min-w-0 truncate">Pull requests</span>
         {/* Issue #569 decisions 3-4: a plain trailing count, never a box or `(N)` brackets

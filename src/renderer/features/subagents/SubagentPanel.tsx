@@ -22,6 +22,7 @@
 // remains visible in the chat pane.
 import { useEffect, useMemo, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
@@ -409,15 +410,17 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // matching every OTHER verified-working `focus-visible:outline-*` row in this
                     // codebase (`CollapsedLine.tsx`, `ManageSessionRow.tsx`, `ProfileItem.tsx`,
                     // `PullRequestRow.tsx`), none of which carry a base `outline-hidden` either.
-                    'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+                    // Issue #1122: decision 13's bar-only treatment is superseded -- the
+                    // Subagent panel now gains the same accent fill the Explorer tree row
+                    // (`FileExplorerPanel.tsx`) already carries, so selection reads identically
+                    // across both trees, not bar-only here and bar+fill there.
+                    'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
                   )}
                 >
-                  {/* Decision 13 (issue #563): the selected node gets the shared 2px
-                      `--active-indicator` bar (SessionList.tsx/ManageSessionRow.tsx precedent)
-                      instead of a `bg-muted` background. */}
-                  {row.node.key === effectiveSelectedKey && (
-                    <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
-                  )}
+                  {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height,
+                      2px) replaces this row's own hand-copied rounded/inset span -- decision 13
+                      (issue #563)'s bar-only treatment is superseded by the fill above. */}
+                  {row.node.key === effectiveSelectedKey && <ActiveIndicatorBar />}
                   <span className="flex w-full items-center gap-2">
                     {/* Gate round 3 fix (issue #941 part 2, item 1, MEDIUM): a Stage header's own
                         icon slot is now a FIXED `w-4` box with NO visible status word

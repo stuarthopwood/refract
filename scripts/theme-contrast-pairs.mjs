@@ -62,6 +62,8 @@ export const PAIRS = [
   // this token (was `--ring`), rendered on `bg-popover` (`DropdownMenuContent`'s own fill),
   // never checked against that specific surface before.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
+  { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
+  { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: ...and the Settings nav's bg-muted selected fill
   { fg: 'destructive', bg: 'background', min: 3 },
   { fg: 'state-working', bg: 'background', min: 4.5 }, // #700: also real BODY TEXT ("In progress"), not just icon-only -- 4.5 subsumes the old 3:1 icon floor
   { fg: 'state-idle', bg: 'background', min: 3 },
@@ -115,11 +117,8 @@ export const PAIRS = [
   // `foreground`/`accent` below covers the row's own `focus:bg-accent` fill (a focused AND
   // checked row sits on `--accent`, never `--popover`, while focused).
   { fg: 'foreground', bg: 'accent', min: 3 },
-  // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode
-  // pill's own `badgeVariants({variant: 'outline'})` used to render an opaque `border-border`
-  // directly on `--composer-background` -- #927 moved the Approval pill, Model and Reasoning
-  // triggers to `badgeVariants({variant: 'ghost'})` (`pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`),
-  // which has no border in any theme, so nothing renders this pair any more.
+  { fg: 'foreground', bg: 'accent', min: 4.5 }, // #1122: PR/Manage sessions/Subagent rows' unstyled title span, real body text
+  // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode pill's own `badgeVariants({variant: 'outline'})` border moved to `variant: 'ghost'` (`pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`), which has no border in any theme, so nothing renders this pair any more.
   { fg: 'border-strong', bg: 'background', min: 3 },
   { fg: 'border-strong', bg: 'card', min: 3 },
   { fg: 'border-strong', bg: 'popover', min: 3 },
@@ -158,6 +157,7 @@ export const PAIRS = [
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
   { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
   { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
+  { fg: 'chat-foreground', bg: 'accent', min: 4.5 }, // #1119: Explorer name span vs its own aria-selected:bg-accent fill
   // Issue #630: `DiffView.tsx`'s new +N added-line count sits as real `text-xs` body text on
   // the diff box's own `bg-muted` header (the same token the diff gutter's own insert tint
   // already uses, chosen over a raw Tailwind palette colour precisely so it is gated here).
