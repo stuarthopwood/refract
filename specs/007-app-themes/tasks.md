@@ -1308,3 +1308,33 @@ one genuinely new pair per theme (872 -> 877, see that task's own entry).
   deferred per Main); the `settleForScreenshot` reorder and the narrowed Journey assertion are
   both unrun, next build slot.
 
+- [X] T055 Gate round 3, part 3, FINAL live-verify (confirmation build slot, 2026-10-21): merge
+  `origin/main` (#1109 git-changes-panel polish, clean), rerun the chained `ci-local.mjs` +
+  `verify-1074-text-opacity.mjs`, VIEW the composer-selection shot zoomed, commit script fixes
+  before the final run (depends on T054). **Two real bugs caught and fixed live by this run,
+  not assumed:** (1) `verify-1074-text-opacity.mjs` grew to 637 lines on T054's own
+  comment/logic additions, tripping `check:file-size` as a new over-cap file (no baseline) --
+  extracted `JOURNEY_TASK_TEXT_COLOUR`/`hexToRgbString`/the whole Journey-rule assertion into a
+  new `assertJourneyLabelsSolid` in `verify-1074-text-opacity-helpers.mjs` (568 lines now, well
+  under cap). (2) T054's narrowed Journey-rule regex had two live-confirmed format bugs: it
+  assumed the bare selector `.task~switch .label{color:rgb(...)` with no scoping prefix, when
+  Mermaid's per-mount scoping actually prepends EVERY selector with its own
+  `#mermaid-<reactId> ` token (different every render); and it assumed `{color:` sat directly
+  after the FIRST selector, when the two comma-joined selectors actually share ONE declaration
+  block (`{color:...}` follows only the second, `.journey-section~switch .label`). Fixed both,
+  confirmed via a temporary debug log against the real decoded SVG, then removed the debug log.
+  A pre-existing transient linker failure (another worktree's `windows-app-manifest.xml` path
+  leaking in via the shared `CARGO_TARGET_DIR`) was falsified and fixed with
+  `cargo clean -p refract-tauri`, per this repo's own documented recovery, before the real run.
+  `ci-local.mjs`: **all 16 steps PASS** (typecheck, vitest 148/148, indent,
+  `check:theme-contrast` 892/892, drag-regions, IPC parity, `check:file-size` 0 violations,
+  versions, OMP schema drift + self-test, `cargo fmt --check`, `cargo test`, `cargo clippy`,
+  Tauri debug build, `check:ui-text` 0 leaks). `verify-1074-text-opacity.mjs`: **0 failures
+  across all 5 themes, exitCode 0**; every Journey-rule assertion now confirms the exact
+  two-selector rule text, including the honest Dark (high contrast) caveat. Composer-selection
+  screenshot viewed directly (Dark), zoomed: a real `/btw hi` draft shows a genuine native
+  selection highlight across both the pill and the plain text -- the reorder fix from T054
+  genuinely works, confirmed live, not merely re-asserted. gitHead `0ad1c9cd`, dirty `false`,
+  exeSha256 `2e7cd008ea99…`. `notExercised` unchanged (5, all genuine). PR #1104 body updated
+  with the final confirmation.
+
