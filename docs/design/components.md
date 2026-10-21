@@ -45,6 +45,21 @@ Open:
 
 `icon-sm` and `icon-xs` match a 24px minimum target (WCAG 2.5.8); see [accessibility.md](accessibility.md#targets). `icon-lg` exists in `buttonVariants` but has no documented role in this system.
 
+### Whitespace (horizontal padding)
+
+Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's edge and its text, scaled by control height, for every pill, chip, badge and text button.
+
+| Control | Padding each side |
+|---|---|
+| Text tokens inside running text (the composer's slash command pill, the inline attachment chips in the message box) | 6 px |
+| Pills, chips and badges up to 24 px tall, and `xs` buttons | 8 px |
+| Text buttons 28 px and taller (`sm`, `default`, `lg`) | 10 px |
+
+- The side next to a leading or trailing icon is 2 px tighter; `Button` and `Badge` already do this through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`.
+- Use the primitive's own padding. A call-site `px-*`, `pl-*` or `pr-*` that breaks this table is a defect.
+- Composer text tokens sit in a mirror layer under the masked textarea, so their padding is drawn with `box-shadow`, never real `padding` (real padding would move the caret off the text).
+- Exceptions: icon-only buttons stay square (their padding comes from their fixed size), and inline code in prose keeps 4 px.
+
 ## Menus
 
 Menus and context menus (#471) follow one rule by menu type, not by menu mechanism (agenda item 5): the same rule applies to a `DropdownMenu`, a `ContextMenu`, or a right-click menu.
@@ -139,7 +154,7 @@ rows") already governs it and this issue's own grill confirmed it is not reopene
 
 ## Chips and pills
 
-Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
+Chips and pills carry metadata or a removable value (attachment chips, pasted-text chips, readout chips) and are one of the "boxed" exceptions to the zero-box rule above. A chip's own remove control follows the icon-only tooltip rule once it is fixed (see "Open" under Tooltip, above). Their horizontal padding follows the whitespace rule under "Button" above (#1144). Vocabulary for pill versus chip lives in [CONTEXT.md](../../CONTEXT.md); `CONTEXT.md` lists Badge only as a term to avoid, not as a defined UI vocabulary entry.
 
 ## List rows
 
