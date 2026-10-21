@@ -70,7 +70,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls } from './verify-1069-roles-overhaul-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -135,41 +135,6 @@ async function openSettingsModelRoles(cdp) {
     timeoutMs: 15_000,
     label: 'Chat model catalog loaded (provider switch has real segments)'
   });
-}
-
-/** Reads each provider segment's own text and whether it is currently selected. */
-async function readProviderSegments(cdp) {
-  return cdp.evaluate(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).map((el) => ({ text: el.textContent.trim(), on: el.getAttribute('data-state') === 'on' }))`);
-}
-
-/** A role's own trigger text (the `SelectValue`'s rendered content), closed-state -- no need to
- * open the popup, Radix mirrors the matched item's children into the trigger either way. */
-async function readTriggerText(cdp, role) {
-  return cdp.evaluate(`document.getElementById('model-role-${role}')?.textContent.trim() ?? null`);
-}
-
-/** Opens a role's own Select, reads every real `[role="option"]`'s visible text, then closes it
- * with Escape -- never a shortcut past the actual Radix popup. */
-async function readDropdownItemTexts(cdp, role) {
-  await cdp.click(`document.getElementById('model-role-${role}')`);
-  await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: `${role}: dropdown opened` });
-  const texts = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="option"]')).map((el) => el.textContent.trim())`);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
-  await cdp.waitFor(`!document.querySelector('[role="listbox"]')`, { timeoutMs: 5_000, label: `${role}: dropdown closed` });
-  return texts;
-}
-
-/** One reasoning-radio item's own disabled/checked state, read by its fixed DOM id
- * (`model-role-<role>-reasoning-<level>`, `RoleReasoningRadios.tsx`'s own convention). The
- * combined visible reason caption is read separately (`readReasonCaption`, per group not per
- * item -- gate round 1, High #4). */
-async function readRadioState(cdp, role, level) {
-  return cdp.evaluate(`(() => {
-    const el = document.getElementById(${JSON.stringify(`model-role-${role}-reasoning-${level}`)});
-    if (!el) return null;
-    return { exists: true, disabled: el.disabled === true, checked: el.getAttribute('data-state') === 'checked' };
-  })()`);
 }
 
 async function main() {
@@ -321,8 +286,8 @@ async function main() {
     }
     assertEqual(
       await readReasonCaption(cdp, 'slow'),
-      "Off, Minimal, Low, Medium, High and Extra high aren't supported by GPT 3.5 Turbo",
-      'Slow\u2019s visible caption names every unsupported level together',
+      "GPT 3.5 Turbo doesn't support reasoning",
+      'Slow\u2019s visible caption names the model as a whole, not a six-level list (gate round 2, Medium #6)',
       findings,
       failures
     );
@@ -423,9 +388,29 @@ async function main() {
       timeoutMs: 5_000,
       label: 'Tab from the trigger reaches the checked Medium radio (never `.focus()`)'
     });
+    // HARNESS FIX (not a product bug -- proven live via `document.activeElement`/`aria-checked`
+    // probes): a zero-latency `keyDown` immediately followed by `keyUp` raced Radix's own
+    // `isArrowKeyPressedRef` (`@radix-ui/react-radio-group/dist/index.mjs:338-345`, set on
+    // keydown/cleared on keyup by a RAW `document.addEventListener`, outside React) against the
+    // roving-focus-group's effect-driven focus move + `.click()` (the thing that actually
+    // SELECTS, gate round 1) -- the synthetic keyup could clear the flag before that effect ever
+    // read it. Proven: one burst left `active` medium -> high -> high (2 of 3 presses lost)
+    // while `checked` never left 'medium'. Real keystrokes always have nonzero keydown-to-keyup
+    // duration; this dispatch did not. Fix: hold each key down until `aria-checked` confirms the
+    // select landed, then release -- still far faster than the fake-omp 600ms write-settle, so
+    // the writes still race and the coalescing assertions below still exercise the same path.
     const configSetBeforeArrows = countConfigSetCalls(debugLogPath);
+    const arrowSequence = [
+      'model-role-default-reasoning-high',
+      'model-role-default-reasoning-xhigh',
+      'model-role-default-reasoning-inherit'
+    ];
     for (let i = 0; i < 3; i += 1) {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
+      await cdp.waitFor(`document.getElementById('${arrowSequence[i]}')?.getAttribute('aria-checked') === 'true'`, {
+        timeoutMs: 2_000,
+        label: `ArrowRight #${i + 1} selects ${arrowSequence[i]} (checked) while the key is still down`
+      });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
     }
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5')`, {

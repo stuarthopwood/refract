@@ -69,3 +69,38 @@ export async function keyboardSwitchProviderTo(cdp, pressKey, findings, targetTe
   }
   return selected;
 }
+
+/** Reads each provider segment's own text and whether it is currently selected. */
+export async function readProviderSegments(cdp) {
+  return cdp.evaluate(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).map((el) => ({ text: el.textContent.trim(), on: el.getAttribute('data-state') === 'on' }))`);
+}
+
+/** A role's own trigger text (the `SelectValue`'s rendered content), closed-state -- no need to
+ * open the popup, Radix mirrors the matched item's children into the trigger either way. */
+export async function readTriggerText(cdp, role) {
+  return cdp.evaluate(`document.getElementById('model-role-${role}')?.textContent.trim() ?? null`);
+}
+
+/** Opens a role's own Select, reads every real `[role="option"]`'s visible text, then closes it
+ * with Escape -- never a shortcut past the actual Radix popup. */
+export async function readDropdownItemTexts(cdp, role) {
+  await cdp.click(`document.getElementById('model-role-${role}')`);
+  await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: `${role}: dropdown opened` });
+  const texts = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="option"]')).map((el) => el.textContent.trim())`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+  await cdp.waitFor(`!document.querySelector('[role="listbox"]')`, { timeoutMs: 5_000, label: `${role}: dropdown closed` });
+  return texts;
+}
+
+/** One reasoning-radio item's own disabled/checked state, read by its fixed DOM id
+ * (`model-role-<role>-reasoning-<level>`, `RoleReasoningRadios.tsx`'s own convention). The
+ * combined visible reason caption is read separately (`readReasonCaption`, per group not per
+ * item -- gate round 1, High #4). */
+export async function readRadioState(cdp, role, level) {
+  return cdp.evaluate(`(() => {
+    const el = document.getElementById(${JSON.stringify(`model-role-${role}-reasoning-${level}`)});
+    if (!el) return null;
+    return { exists: true, disabled: el.disabled === true, checked: el.getAttribute('data-state') === 'checked' };
+  })()`);
+}
