@@ -24,8 +24,9 @@
 // row (refract-ui-lane-gate-checklist: "assert a story-only DOM marker before judging any
 // check"). The launched app gets no GitHub credentials: GH_TOKEN/GITHUB_TOKEN/
 // GH_ENTERPRISE_TOKEN/GH_HOST are stripped and GH_CONFIG_DIR points at an empty scratch dir.
-// `plugin:opener|open_url` is intercepted at `window.__TAURI_INTERNALS__.invoke` before
-// the one real click this run makes on the new button, so no real browser window ever opens.
+// `plugin:opener|open_url` is intercepted at `window.fetch` (the IPC custom-protocol request;
+// Tauri makes `__TAURI_INTERNALS__.invoke` non-writable) before the one real activation this run
+// makes on the new link, and a probe proves the hook is live first, so no real browser opens.
 //
 // Checks made, against the real rendered DOM:
 //   - #1120: the State select's own rendered height equals the SearchField's, both exactly
@@ -446,32 +447,48 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-open-on-github-focused.png'));
 
     // Activating it requests exactly this pull request's URL through the opener plugin --
-    // intercepted at the Tauri IPC boundary, never a real browser window.
-    await cdp.evaluate(`(() => {
-      window.__verify1121OpenerCalls = [];
+    // intercepted at the Tauri IPC boundary, never a real browser window. Tauri's injected
+    // init script defines __TAURI_INTERNALS__.invoke/ipc/postMessage as non-writable, so the hook
+    // goes on window.fetch, which the custom-protocol IPC calls at dispatch time.
+    const openerCheckName = 'Activating Open on GitHub requests the pull request\'s own URL through the opener plugin (intercepted)';
+    const hook = await cdp.evaluate(`(async () => {
       const internals = window.__TAURI_INTERNALS__;
-      if (internals && typeof internals.invoke === 'function' && !internals.__verify1121Patched) {
-        const original = internals.invoke.bind(internals);
-        internals.invoke = (cmd, payload, options) => {
-          if (cmd === 'plugin:opener|open_url') {
-            window.__verify1121OpenerCalls.push(payload);
-            return Promise.resolve(null);
-          }
-          return original(cmd, payload, options);
-        };
-        internals.__verify1121Patched = true;
-      }
-      return true;
-    })()`);
-    // document.activeElement is already the link from the Tab above; Enter/Space activates an <a>.
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r' });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-    await sleep(300);
-    const openerCalls = await cdp.evaluate(`window.__verify1121OpenerCalls ?? []`);
-    if (Array.isArray(openerCalls) && openerCalls.length === 1 && openerCalls[0]?.url === expectedHref) {
-      checkPass('Activating Open on GitHub requests the pull request\'s own URL through the opener plugin (intercepted)', JSON.stringify(openerCalls));
+      if (!internals || typeof internals.convertFileSrc !== 'function') return { ok: false, why: 'no __TAURI_INTERNALS__.convertFileSrc' };
+      const openerUrl = internals.convertFileSrc('plugin:opener|open_url', 'ipc');
+      const probeUrl = internals.convertFileSrc('verify1121|probe', 'ipc');
+      window.__verify1121OpenerCalls = [];
+      window.__verify1121ProbeCalls = 0;
+      const original = window.fetch;
+      const patched = function (input, init) {
+        const url = typeof input === 'string' ? input : input && input.url;
+        if (url === openerUrl || url === probeUrl) {
+          if (url === openerUrl) window.__verify1121OpenerCalls.push(JSON.parse(init.body));
+          else window.__verify1121ProbeCalls += 1;
+          return Promise.resolve(new Response('null', { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } }));
+        }
+        return original.apply(this, arguments);
+      };
+      window.fetch = patched;
+      if (window.fetch !== patched) return { ok: false, why: 'window.fetch is not writable' };
+      // Never reaches Rust: the hook answers it. Proves the hook sits on the live invoke path.
+      await Promise.race([internals.invoke('verify1121|probe', {}), new Promise((resolve) => setTimeout(resolve, 2000))]);
+      if (window.__verify1121ProbeCalls !== 1) return { ok: false, why: 'probe invoke bypassed the fetch hook', probeCalls: window.__verify1121ProbeCalls };
+      const link = ${OPEN_ON_GITHUB_LINK};
+      if (link) link.focus();
+      return { ok: true, openerUrl, focused: !!link && document.activeElement === link };
+    })()`).catch((error) => ({ ok: false, why: String(error) }));
+    if (!hook?.ok || !hook.focused) {
+      checkFail(openerCheckName, `hook not live or link not focused, Enter not sent: ${JSON.stringify(hook)}`);
     } else {
-      checkFail('Activating Open on GitHub requests the pull request\'s own URL through the opener plugin (intercepted)', JSON.stringify(openerCalls));
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
+      await sleep(300);
+      const openerCalls = await cdp.evaluate(`window.__verify1121OpenerCalls ?? []`);
+      if (Array.isArray(openerCalls) && openerCalls.length === 1 && openerCalls[0]?.url === expectedHref) {
+        checkPass(openerCheckName, JSON.stringify({ openerCalls, openerUrl: hook.openerUrl }));
+      } else {
+        checkFail(openerCheckName, JSON.stringify({ openerCalls, expectedHref }));
+      }
     }
 
     await cdp.screenshot(path.join(SHOTS_DIR, '02-dark-pull-requests.png'));
