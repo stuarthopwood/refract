@@ -204,14 +204,20 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
  * wraps, so this exercises the SAME `onClick` branch a real Ctrl+click would, without depending on
  * CDP's own modifier-key state machine landing in time. */
 async function ctrlClickSessionRow(cdp, sessionId) {
-  const clicked = await cdp.evaluate(`(() => {
+  const result = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
-    if (!el) return false;
+    if (!el) return { found: false };
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    let seenCtrlKey = null;
+    let seenModifierState = null;
+    const capture = (e) => { seenCtrlKey = e.ctrlKey; seenModifierState = e.getModifierState('Control'); };
+    document.addEventListener('click', capture, { capture: true, once: true });
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ctrlKey: true }));
-    return true;
+    document.removeEventListener('click', capture, { capture: true });
+    return { found: true, seenCtrlKey, seenModifierState };
   })()`);
-  if (!clicked) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  if (!result.found) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  console.error(`${LOG}: DIAG dispatched click's own ctrlKey as seen at document capture phase:`, JSON.stringify(result));
 }
 
 async function main() {
