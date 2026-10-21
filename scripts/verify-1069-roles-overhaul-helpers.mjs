@@ -155,6 +155,15 @@ export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings,
     timeoutMs: 8_000,
     label: 'The Claude Haiku 5.5 model save lands bare (High is not carryable) -- the refused Extra high pick never applied'
   });
+  // The IPC read above only confirms the BACKEND file landed -- the app's OWN re-render (which
+  // natively disables Extra high under the new model, and is what the layout-effect fix reacts
+  // to) runs through a SEPARATE `setRole()` promise chain that can still be in flight a moment
+  // later. Wait for the DOM's own disabled state directly, the actual proxy for "the component
+  // has re-rendered", before reading `document.activeElement`.
+  await cdp.waitFor(`document.getElementById('model-role-default-reasoning-xhigh')?.disabled === true`, {
+    timeoutMs: 8_000,
+    label: 'Extra high reads natively disabled once the component re-renders with Claude Haiku 5.5'
+  });
   const focusedAfterUnsupportedTransition = await cdp.evaluate(`document.activeElement?.id ?? null`);
   assertEqual(
     focusedAfterUnsupportedTransition,

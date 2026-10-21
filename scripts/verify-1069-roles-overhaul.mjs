@@ -423,12 +423,11 @@ async function main() {
     assertTrue(configSetDuringArrows >= 1 && configSetDuringArrows <= 2, `At most 2 config-set writes landed for 3 rapid ArrowRight presses, latest-pick-wins coalesced (got ${configSetDuringArrows})`, findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger unchanged after the ArrowRight burst (never the suffix)', findings, failures);
 
-    // ---- Gate round 3 fix (decision 1, removes gate round 2's N1 bug class at the root): a
-    // radio pick made while a SELECT model save (never the radios' own write) is in flight is
-    // REFUSED outright -- focus stays, the dot doesn't move, nothing is held. Switches to
-    // Anthropic (needed to reach Claude Opus 5.5 in Default's own dropdown), picks a new model,
-    // waits for the radiogroup to be genuinely `aria-busy` (deterministic, not a race) -- this
-    // busy state belongs to the SELECT's save, not the radios', so clicking "High" here must do
+    // ---- Gate round 3 fix (decision 1, removes round 2's N1 bug class at the root): a radio
+    // pick made while a SELECT model save (never the radios' own write) is in flight is REFUSED
+    // outright -- focus stays, the dot doesn't move, nothing is held. Switches to Anthropic
+    // (needed to reach Claude Opus 5.5), picks a new model, waits for genuinely `aria-busy` --
+    // this busy state belongs to the SELECT's save, not the radios', so clicking "High" must do
     // nothing until that model save lands. ----
     await cdp.click(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'Anthropic')`);
     await cdp.waitFor(
@@ -465,8 +464,9 @@ async function main() {
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:high', 'Gate round 3: the SAME pick, retried once the save has landed, writes :high against the new model', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Opus 5.5', 'Default trigger shows the new model\u2019s own name after the retried pick lands', findings, failures);
-    await runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
+    // Unmount case runs FIRST (needs Medium/Low, Opus 5.5 supports both); focus-recovery below switches Default to Haiku 5.5 (supports neither), so it must run after.
     await runUnmountDropsHeldLevelCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
+    await runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
 
     // Restore GitHub Copilot: Plan's own real model (`:auto`) lives there.
     await cdp.click(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
