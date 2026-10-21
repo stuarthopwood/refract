@@ -193,31 +193,22 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
   await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
 }
 
-/** Ctrl+click on a Session row's own open button (`data-session-open`, `SessionRow.tsx`) -- the
- * exact DOM node and modifier combination `onClick`'s own `event.ctrlKey` branch checks, calling
- * the real `openInSplit(session.id)`. Gate round: CDP's `Input.dispatchMouseEvent` modifiers
- * bitmask (Ctrl = 2), bracketed by a real `Input.dispatchKeyEvent` Control keydown/keyup and held
- * either side with a real sleep, still never landed as a `ctrlKey: true` click in this WebView2
- * build (confirmed live, twice, against both the already-open and the newly-created session's own
- * row) -- so this dispatches a genuine native `MouseEvent('click', { ctrlKey: true })` directly on
- * the button instead. React's `SyntheticEvent` reads `ctrlKey` straight off the native event it
- * wraps, so this exercises the SAME `onClick` branch a real Ctrl+click would, without depending on
- * CDP's own modifier-key state machine landing in time. */
-async function ctrlClickSessionRow(cdp, sessionId) {
-  const result = await cdp.evaluate(`(() => {
-    const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
-    if (!el) return { found: false };
-    el.scrollIntoView({ block: 'center', behavior: 'instant' });
-    let seenCtrlKey = null;
-    let seenModifierState = null;
-    const capture = (e) => { seenCtrlKey = e.ctrlKey; seenModifierState = e.getModifierState('Control'); };
-    document.addEventListener('click', capture, { capture: true, once: true });
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ctrlKey: true }));
-    document.removeEventListener('click', capture, { capture: true });
-    return { found: true, seenCtrlKey, seenModifierState };
-  })()`);
-  if (!result.found) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
-  console.error(`${LOG}: DIAG dispatched click's own ctrlKey as seen at document capture phase:`, JSON.stringify(result));
+/** Opens a Session row's own "..." actions menu (`${session.name} actions`, `SessionRow.tsx`)
+ * and clicks its "Open in split" item (`sessionActions.ts`'s own `{ key: 'open-in-split', label:
+ * 'Open in split', onSelect: handlers.onOpenInSplit }`) -- the SAME `openInSplit(session.id)`
+ * call a real Ctrl+click on the row's open button makes (`split-store.ts`'s own comment:
+ * "Spec 005: same effect as Ctrl+click on the row's open button"). Gate round: neither a real
+ * CDP `Input.dispatchMouseEvent` modifiers bitmask (Ctrl = 2, held either side with a real sleep)
+ * nor a native `MouseEvent('click', { ctrlKey: true })` dispatched directly on the button ever
+ * reached the row's own `onClick` as `event.ctrlKey === true` in this WebView2 build -- confirmed
+ * live that the dispatched event's own `ctrlKey`/`getModifierState('Control')` genuinely read
+ * `true` at a `document`-level capture listener, yet `replaceFocused` (the `else` branch) ran
+ * every time regardless. This menu item needs no modifier key simulation at all, so it sidesteps
+ * that gap entirely while still exercising the real `openInSplit` call. */
+async function openSessionInSplitViaMenu(cdp, sessionId) {
+  await cdp.click(`(() => { const openBtn = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]'); const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`);
+  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Session row actions menu open' });
+  await cdp.clickByText('Open in split', { tag: '[role="menuitem"]' });
 }
 
 async function main() {
@@ -440,16 +431,14 @@ async function main() {
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
     // Creating Session B does NOT switch the pane to it (`split-store.ts`'s own `create` path
     // never calls `replaceFocused`/`openInSplit` here -- confirmed live: the sole pane stayed
-    // Session A). Ctrl+clicking Session A's own row would be a documented no-op (`targetSession`'s
-    // `existing === sessionId` early-return, `split-store.ts` line ~167, research.md Decision 7:
-    // "already the focused pane"), so the row to Ctrl+click is Session B's -- the one NOT already
-    // the sole open pane -- which correctly places it in the unfocused slot alongside A.
+    // Session A). Opening Session A's own row menu and picking "Open in split" there would be a
+    // documented no-op (`targetSession`'s `existing === sessionId` early-return, `split-store.ts`
+    // line ~167, research.md Decision 7: "already the focused pane"), so Session B's own row is
+    // the one to target -- the one NOT already the sole open pane -- which correctly places it in
+    // the unfocused slot alongside A.
     const sessionIdB = await cdp.evaluate(`(() => { const ids = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open')); return ids.find((id) => id !== ${JSON.stringify(sessionIdA)}) ?? null; })()`);
     assertTrue(typeof sessionIdB === 'string' && sessionIdB.length > 0 && sessionIdB !== sessionIdA, 'Session B\'s own id read from its row (distinct from Session A)', { sessionIdA, sessionIdB });
-    await ctrlClickSessionRow(cdp, sessionIdB);
-    await sleep(200);
-    const panesAfterClick = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    console.error(`${LOG}: DIAG panes after Ctrl+click dispatch:`, JSON.stringify({ sessionIdA, sessionIdB, panesAfterClick }));
+    await openSessionInSplitViaMenu(cdp, sessionIdB);
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
     // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
     // window's own total width -- one measured correction pass against an arbitrary starting
