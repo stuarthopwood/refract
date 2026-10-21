@@ -204,15 +204,18 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
  * live that the dispatched event's own `ctrlKey`/`getModifierState('Control')` genuinely read
  * `true` at a `document`-level capture listener, yet `replaceFocused` (the `else` branch) ran
  * every time regardless. This menu item needs no modifier key simulation at all, so it sidesteps
- * that gap entirely while still exercising the real `openInSplit` call. */
+ * that gap entirely -- but `TRAILING_MENU_BUTTON_CLASS` (`SessionRow.tsx`) is `opacity-0
+ * pointer-events-none` at rest under `@media(hover:hover)`, only becoming interactive on
+ * `group-hover` -- confirmed live: a direct click there with no prior hover left `aria-expanded`/
+ * `data-state` on the button unchanged ("false"/"closed") and no menu mounted at all, the real
+ * click passing straight through the `pointer-events-none` button. Hovering the row first (a real
+ * `mouseMoved` to the open button, inside the same `.group` row) reveals it before the click. */
 async function openSessionInSplitViaMenu(cdp, sessionId) {
-  const finder = `(() => { const openBtn = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]'); const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`;
-  const preClickDiag = await cdp.evaluate(`(() => { const el = ${finder}; return { found: !!el, ariaLabel: el?.getAttribute('aria-label') ?? null, ariaExpanded: el?.getAttribute('aria-expanded') ?? null, dataState: el?.getAttribute('data-state') ?? null }; })()`);
-  console.error(`${LOG}: DIAG ellipsis button before click:`, JSON.stringify(preClickDiag));
-  await cdp.click(finder);
-  await sleep(300);
-  const postClickDiag = await cdp.evaluate(`(() => { const el = ${finder}; const anyMenuRole = Array.from(document.querySelectorAll('[role]')).map((n) => n.getAttribute('role')).filter((r) => /menu/i.test(r ?? '')); return { ariaExpanded: el?.getAttribute('aria-expanded') ?? null, dataState: el?.getAttribute('data-state') ?? null, anyMenuRole, activeElementLabel: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null }; })()`);
-  console.error(`${LOG}: DIAG after ellipsis click:`, JSON.stringify(postClickDiag));
+  const openBtnSelector = `document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`;
+  await hoverElement(cdp, openBtnSelector);
+  const menuBtnFinder = `(() => { const openBtn = ${openBtnSelector}; const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`;
+  await cdp.click(menuBtnFinder);
+  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Session row actions menu open' });
   await cdp.clickByText('Open in split', { tag: '[role="menuitem"]' });
 }
 
