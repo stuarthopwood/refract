@@ -299,10 +299,21 @@ checkedCount += swatchDrift.checkedCount
 failCount += swatchDrift.failCount
 rows.push(...swatchDrift.rows)
 
+// Gate round 2 (#700/#701 slice (b), Main CRITICAL item 1 follow-up): the Agents/Todo cards'
+// own `PopoverContent` is a new surface for two tokens -- lives here, not in
+// theme-contrast-pairs.mjs (file-size cap, #806), same precedent as `COMMAND_PILL_PAIRS` below.
+const READOUT_CARD_PAIRS = [
+  // `AgentsCard.tsx`'s running spinner and `TodoTree.tsx`'s in-progress glyph are both
+  // icon-only (`aria-hidden`) on this card.
+  { fg: 'state-working', bg: 'popover', min: 3 },
+  // `TodoTree.tsx`'s own "Blocked: <blocker>" line is real BODY TEXT in `text-severity-warning`
+  // here, not just the icon the existing 3:1 pair in `PAIRS` covers.
+  { fg: 'severity-warning', bg: 'popover', min: 4.5 }
+]
 // #1050: `COMMAND_PILL_PAIRS` lives in composer-selection-contrast.mjs, not PAIRS above (that
 // module's own header comment explains why) -- merged into the same per-theme loop here.
 for (const [themeId, props] of Object.entries(themes)) {
-  for (const { fg, bg, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS]) {
+  for (const { fg, bg, min, onlyThemes, informationalThemes } of [...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS]) {
     // #927 (quiet composer): `onlyThemes`/`informationalThemes` (theme-contrast-pairs.mjs's own
     // comment documents both) restrict a pair to the named theme ids; `informationalThemes`
     // additionally means "never enforced" -- computed and printed, tagged, but never counted

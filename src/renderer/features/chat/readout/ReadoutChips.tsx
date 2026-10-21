@@ -240,12 +240,10 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
     card.close()
     openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
   }
-  // Gate round 1 fix 4: the card's own "Open subagents panel" link is pointer-only (nothing
-  // else inside the card is ever keyboard-focused, decision record "inert text"; a keyboard
+  // Gate round 1 fix 4: the card's own "Open subagents panel" link is pointer-only (a keyboard
   // user's own route is the pill itself, already open-panel on Enter/Space via `onActivate`
   // above) -- closes the card and returns focus to the pill it came from BEFORE opening the
-  // panel, so a click here never strands focus on `<body>` while the panel is already open
-  // (previously a no-op re-open left nothing to move focus anywhere at all).
+  // panel, so a click here never strands focus on `<body>` while the panel is already open.
   const onOpenPanelFromCard = () => {
     card.close()
     card.anchorRef.current?.focus({ preventScroll: true })
@@ -289,6 +287,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
         data-slot="agents-card"
         side="top"
         align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
         className="w-auto p-3"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
@@ -361,6 +360,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
         data-slot="todo-card"
         side="top"
         align="start"
+        collisionPadding={8} // Gate round 2 (#700/#701 slice b, Low): matches ConversationSwitcher.tsx's own padding -- the composer sits near the viewport's bottom edge.
         className="w-auto p-3"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
