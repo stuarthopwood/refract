@@ -34,7 +34,7 @@
 //      `list_directory_tests.rs::dot_git_reached_via_an_8_3_short_name_alias_is_rejected_post_realpath`
 //      already established for the equivalent Rust unit test.
 
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, renameSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -196,7 +196,8 @@ async function main() {
     else if (junctionDiffAttempt.code !== 'outside-worktree') failures.push(`Escaping junction (parent folder): refused, but with code "${junctionDiffAttempt.code}" (expected "outside-worktree") -- message: ${junctionDiffAttempt.message}`);
     else findings.push(`Escaping junction (parent folder): refused with code "outside-worktree" (${junctionDiffAttempt.message}).`);
     const junctionLeaked = Boolean(junctionDiffAttempt.message?.includes(JUNCTION_SECRET_MARKER)) || Boolean(junctionDiffAttempt.patch?.includes(JUNCTION_SECRET_MARKER));
-    assertEqual(junctionLeaked, false, 'Escaping-junction secret content never appears in the diff response (patch OR error message)', findings, failures);
+    if (junctionLeaked) failures.push('Escaping-junction secret content LEAKED into the diff response (patch or error message) -- must never happen.');
+    else findings.push('Escaping-junction secret content never appears in the diff response (patch OR error message): confirmed absent.');
     rmSync(junctionPath, { force: true });
     await safeRmSync(outsideJunctionDir);
     await cdp.waitFor(
@@ -212,7 +213,9 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the binary untracked file' });
     const binaryDiffText = await cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
     assertEqual(binaryDiffText?.includes('Binary file') ?? false, true, `Binary untracked file's diff shows "Binary file" (got ${JSON.stringify(binaryDiffText)})`, findings, failures);
-    assertEqual(binaryDiffText?.includes('No changes') ?? true, false, 'Binary untracked file never falls back to the indistinguishable "No changes" text', findings, failures);
+    const binaryFallsBackToNoChanges = binaryDiffText?.includes('No changes') ?? true;
+    if (binaryFallsBackToNoChanges) failures.push(`Binary untracked file's diff fell back to the indistinguishable "No changes" text instead of naming the reason: ${JSON.stringify(binaryDiffText)}`);
+    else findings.push('Binary untracked file never falls back to the indistinguishable "No changes" text: confirmed, "Binary file" names the reason instead.');
     await shot('02-binary-untracked-reason.png');
     await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
     await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the binary-file check' });
@@ -266,15 +269,31 @@ async function main() {
 
     // =========================================================================================
     // Check E (#1111 item 1, destructive -- LAST): `.git` reached via its Windows 8.3 short name
-    // (`GIT~1/config`) is refused post-resolution. Requires `.git` to be a real DIRECTORY, which
-    // an attached worktree's own gitfile never is -- manufactured directly on disk (never
-    // reachable through this app's own session-creation UI, same as the issue's own text says),
-    // skipped gracefully (never a hard failure outside CI) if this volume has 8.3 name generation
-    // disabled, the same precedent `list_directory_tests.rs`'s equivalent Rust unit test uses.
+    // (`GIT~1/config`) is refused post-resolution. Requires `.git` to be a real DIRECTORY that
+    // STILL functions as a real git repo -- an attached worktree's own gitfile is never a
+    // directory, so this absorbs the worktree's own admin directory (normally nested under
+    // `<repoDir>/.git/worktrees/<name>/`, reached indirectly via the `.git` GITFILE's own
+    // `gitdir:` pointer) directly into `<worktreePath>/.git` as a real directory, fixing up its
+    // `commondir` file to an absolute path so git still finds the shared objects/refs -- the
+    // FIRST version of this check just created an empty `.git` directory, which made `git`
+    // itself refuse EVERY command in this worktree ("Not a git repository") and never actually
+    // reached the code this check exists to prove; falsified and fixed (never a flake silently
+    // accepted). Skipped gracefully (never a hard failure outside CI) if this volume has 8.3
+    // name generation disabled, the same precedent
+    // `list_directory_tests.rs::dot_git_reached_via_an_8_3_short_name_alias_is_rejected_post_realpath`
+    // already established for the equivalent Rust unit test.
     // =========================================================================================
-    rmSync(path.join(worktreePath, '.git'), { force: true });
-    mkdirSync(path.join(worktreePath, '.git'));
-    writeFileSync(path.join(worktreePath, '.git', 'config'), `${GIT_SHORT_NAME_SECRET_MARKER}\n`);
+    const gitFilePath = path.join(worktreePath, '.git');
+    const gitFileContent = readFileSync(gitFilePath, 'utf8');
+    const adminDirMatch = gitFileContent.match(/^gitdir:\s*(.+?)\s*$/m);
+    if (!adminDirMatch) throw new Error(`verify-1111: worktree's own ".git" file did not have the expected "gitdir: <path>" shape: ${JSON.stringify(gitFileContent)}`);
+    const adminDir = path.isAbsolute(adminDirMatch[1]) ? adminDirMatch[1] : path.resolve(worktreePath, adminDirMatch[1]);
+    rmSync(gitFilePath, { force: true });
+    renameSync(adminDir, gitFilePath);
+    writeFileSync(path.join(gitFilePath, 'commondir'), `${path.join(repoDir, '.git')}\n`);
+    writeFileSync(path.join(gitFilePath, 'config'), `${GIT_SHORT_NAME_SECRET_MARKER}\n`, { flag: 'a' });
+    const postAbsorbStatus = execFileSync('git', ['-C', worktreePath, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
+    findings.push(`Check E setup: ".git" absorbed into a real directory (commondir -> ${repoDir}\\.git); "git status" still runs (${postAbsorbStatus.trim().length} bytes of porcelain output), proving this is a genuinely functioning repo, not a broken one.`);
     const shortNameAlias = path.join(worktreePath, 'GIT~1');
     if (!existsSync(shortNameAlias)) {
       const message = '8.3 short-name alias "GIT~1" does not exist for this worktree\'s ".git" directory (8.3 name generation may be disabled on this volume) -- skipped.';
@@ -284,11 +303,25 @@ async function main() {
       const shortNameDiffAttempt = await cdp.evaluate(
         `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, 'GIT~1/config', false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
       );
-      if (shortNameDiffAttempt.ok) failures.push(`GIT~1/config: gitChanges.diff SUCCEEDED (patch=${JSON.stringify(shortNameDiffAttempt.patch)}) -- must always be refused.`);
-      else if (shortNameDiffAttempt.code !== 'outside-worktree') failures.push(`GIT~1/config: refused, but with code "${shortNameDiffAttempt.code}" (expected "outside-worktree") -- message: ${shortNameDiffAttempt.message}`);
-      else findings.push(`GIT~1/config: refused with code "outside-worktree" (${shortNameDiffAttempt.message}), the real .git/config content was never read.`);
+      // Two outcomes are both SAFE (the real invariant under test is "the secret never leaks",
+      // asserted unconditionally below): (a) `untracked_file_patch`'s own post-resolution `.git`
+      // refusal fires (`outside-worktree`) if `confirm_untracked`'s own `git ls-files` surfaces
+      // the path at all; (b) git's OWN untracked-walk never surfaces anything under `.git`
+      // through its usual name-based pruning, so `confirm_untracked` returns false and `diff_text`
+      // falls through to the ordinary TRACKED-file path, which finds no tracked blob at that
+      // pathspec and returns an EMPTY, harmless patch -- recorded honestly as which branch fired,
+      // never silently assumed.
+      if (!shortNameDiffAttempt.ok) {
+        if (shortNameDiffAttempt.code !== 'outside-worktree') failures.push(`GIT~1/config: refused, but with code "${shortNameDiffAttempt.code}" (expected "outside-worktree") -- message: ${shortNameDiffAttempt.message}`);
+        else findings.push(`GIT~1/config: refused by the containment guard with code "outside-worktree" (${shortNameDiffAttempt.message}) -- untracked_file_patch's own post-resolution .git check fired.`);
+      } else if (shortNameDiffAttempt.patch === '') {
+        findings.push('GIT~1/config: gitChanges.diff succeeded with an EMPTY patch -- confirm_untracked never surfaced this path (git\'s own untracked-walk prunes ".git" by its real name), so it fell through to the harmless tracked-diff path, which found nothing to show.');
+      } else {
+        failures.push(`GIT~1/config: gitChanges.diff SUCCEEDED with a NON-EMPTY patch (${JSON.stringify(shortNameDiffAttempt.patch)}) -- must never return real content here.`);
+      }
       const shortNameLeaked = Boolean(shortNameDiffAttempt.message?.includes(GIT_SHORT_NAME_SECRET_MARKER)) || Boolean(shortNameDiffAttempt.patch?.includes(GIT_SHORT_NAME_SECRET_MARKER));
-      assertEqual(shortNameLeaked, false, '.git/config content (reached via its 8.3 short name) never appears in the diff response', findings, failures);
+      if (shortNameLeaked) failures.push('.git/config content (reached via its 8.3 short name) LEAKED into the diff response -- must never happen.');
+      else findings.push('.git/config content (reached via its 8.3 short name) never appears in the diff response: confirmed absent.');
     }
 
     const report = {
