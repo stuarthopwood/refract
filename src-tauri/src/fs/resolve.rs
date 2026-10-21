@@ -154,7 +154,7 @@ fn lexical_resolve(base: &Path, token: &str) -> PathBuf {
     normalize_lexical(&combined)
 }
 
-fn normalize_lexical(p: &Path) -> PathBuf {
+pub(crate) fn normalize_lexical(p: &Path) -> PathBuf {
     let mut out: Vec<std::path::Component> = Vec::new();
     for component in p.components() {
         match component {

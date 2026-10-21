@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::paths::contains_git_segment;
 use crate::fs::read_preview::{read_preview, FilePreviewKind};
-use crate::fs::resolve::{canonicalize_root, resolve_in_worktree_with_root, ResolveReason};
+use crate::fs::resolve::{
+    canonicalize_root, normalize_lexical, resolve_in_worktree_with_root, ResolveReason,
+};
 
 /// Port of `diff_stat.rs`'s own `count_lines`.
 fn count_lines(text: &str) -> i64 {
@@ -98,11 +100,28 @@ pub(super) enum UntrackedEntry {
 /// `symlink_metadata` on THAT joined path classifies the leaf for what it itself is on disk,
 /// never for what following a chain through it would resolve to.
 ///
-/// `.git` is refused both as a raw segment of the as-typed `path` (before any resolution) and
-/// again on the final joined path relative to the canonicalized worktree root (catches a Windows
-/// 8.3 short name or trailing-dot alias that only resolves to `.git` after the fact) --
-/// `fs::list_directory::resolve_list_target`'s own two-step check, mirrored here. Gate round 2
-/// MEDIUM 6: the worktree root is canonicalized exactly ONCE per call (`canonicalize_root`, then
+/// `path` is normalised to `/`-only BEFORE either `.git` check or the parent/leaf split (gate
+/// round 3 CRITICAL, falsified live by both Code's harness and Sec's planted-token read):
+/// `rsplit_once('/')` alone let a backslash-separated token (`<escaping-junction>\secret.txt`,
+/// `GIT~1\config`) skip the parent containment walk entirely -- `parent` came back empty, `leaf`
+/// was the whole raw token, and `Path::join` then honoured the embedded `\` as a real separator
+/// on Windows, walking straight through an escaping junction/short-name alias with no proof at
+/// all, even though `validate_pathspec` allows `\` and git's own `ls-files -z` happily confirms
+/// the backslash form as untracked.
+///
+/// `.git` is refused both as a raw segment of the as-typed (now slash-normalised) `path` (before
+/// any resolution) and again on the final joined path relative to the canonicalized worktree
+/// root (catches a Windows 8.3 short name that only resolves to `.git` after the fact) --
+/// `fs::list_directory::resolve_list_target`'s own two-step check, mirrored here. A THIRD check
+/// re-runs both of those against the FINAL FILE case's own canonicalized form (gate round 3
+/// CRITICAL defence in depth, Code's MEDIUM): a leaf like `.git.` (trailing dot) never matches
+/// either as-typed check, since the string genuinely isn't `.git` -- but Windows' Win32 layer
+/// silently strips a trailing dot/space before ever touching the filesystem, so the REAL entry
+/// `symlink_metadata`/`read_preview` would open is the gitfile itself. Canonicalizing the file
+/// (not just its parent) and re-checking against what the filesystem actually resolved it to,
+/// rather than what its name merely looks like, closes that gap; `resolved` is replaced by the
+/// canonical form so the eventual read opens exactly what was vetted. Gate round 2 MEDIUM 6: the
+/// worktree root is canonicalized exactly ONCE per call (`canonicalize_root`, then
 /// `resolve_in_worktree_with_root` for the parent -- never a second, redundant canonicalize for
 /// the same containment proof), and a `strip_prefix` failure REFUSES (`OutsideWorktree`) instead
 /// of the previous `unwrap_or_default()`, which silently produced an EMPTY relative path on any
@@ -112,15 +131,17 @@ pub(super) async fn resolve_untracked_entry(
     worktree_path: &Path,
     path: &str,
 ) -> Result<UntrackedEntry, ResolveReason> {
-    if contains_git_segment(path) {
+    let path = path.replace('\\', "/");
+    if contains_git_segment(&path) {
         return Err(ResolveReason::OutsideWorktree);
     }
-    let (parent, leaf) = path.rsplit_once('/').unwrap_or(("", path));
+    let (parent, leaf) = path.rsplit_once('/').unwrap_or(("", &path));
     let root_real = canonicalize_root(worktree_path).await?;
+    let unresolved_root = normalize_lexical(worktree_path);
     let resolved_parent = if parent.is_empty() {
         root_real.clone()
     } else {
-        resolve_in_worktree_with_root(&root_real, worktree_path, parent).await?
+        resolve_in_worktree_with_root(&root_real, &unresolved_root, parent).await?
     };
     let resolved = resolved_parent.join(leaf);
     let rel_from_root = resolved
@@ -147,7 +168,7 @@ pub(super) async fn resolve_untracked_entry(
         // for reading -- `target_text` below always comes from the single-hop, unresolved
         // `read_link` instead (git's own view of the symlink, never the far end of a multi-hop
         // chain).
-        resolve_in_worktree_with_root(&root_real, worktree_path, path).await?;
+        resolve_in_worktree_with_root(&root_real, &unresolved_root, &path).await?;
         return Ok(match tokio::fs::read_link(&resolved).await {
             Ok(target) => UntrackedEntry::Symlink {
                 target_text: target.to_string_lossy().replace('\\', "/"),
@@ -158,7 +179,18 @@ pub(super) async fn resolve_untracked_entry(
     if !link_metadata.is_file() {
         return Ok(UntrackedEntry::NotAFile);
     }
-    Ok(UntrackedEntry::File { resolved })
+    let canonical = canonicalize_root(&resolved).await?;
+    let canonical_rel = canonical
+        .strip_prefix(&root_real)
+        .map_err(|_| ResolveReason::OutsideWorktree)?
+        .to_string_lossy()
+        .replace('\\', "/");
+    if contains_git_segment(&canonical_rel) {
+        return Err(ResolveReason::OutsideWorktree);
+    }
+    Ok(UntrackedEntry::File {
+        resolved: canonical,
+    })
 }
 
 /// Scores one untracked file directly from its own content (there is no index/HEAD side to diff

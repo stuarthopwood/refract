@@ -241,6 +241,23 @@ async function main() {
     const junctionLeaked = Boolean(junctionDiffAttempt.message?.includes(JUNCTION_SECRET_MARKER)) || Boolean(junctionDiffAttempt.patch?.includes(JUNCTION_SECRET_MARKER));
     if (junctionLeaked) failures.push('Escaping-junction secret content LEAKED into the diff response (patch or error message) -- must never happen.');
     else findings.push('Escaping-junction secret content never appears in the diff response (patch OR error message): confirmed absent.');
+    // #1111 gate round 3 CRITICAL (falsified live, Code's harness + Sec's planted-token read):
+    // the SAME escaping junction, reached through a BACKSLASH-separated token instead of a
+    // forward-slash one -- `resolve_untracked_entry`'s own `rsplit_once('/')` used to see an
+    // EMPTY parent and the whole raw token as the leaf for this shape, skipping the parent
+    // containment walk entirely. IPC-level only (bypasses the UI, same precedent as
+    // `runContainmentRefusalCheck`'s own absolute-path probes): no real UI path ever produces a
+    // backslash-separated relative token, so this proves the BACKEND refuses it regardless.
+    const junctionRelPathBackslash = `${JUNCTION_NAME}\\${JUNCTION_SECRET_FILE}`;
+    const junctionBackslashDiffAttempt = await cdp.evaluate(
+      `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(junctionRelPathBackslash)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
+    );
+    if (junctionBackslashDiffAttempt.ok) failures.push(`Escaping junction via a BACKSLASH token (${junctionRelPathBackslash}): gitChanges.diff SUCCEEDED (patch=${JSON.stringify(junctionBackslashDiffAttempt.patch)}) -- must always be refused (gate round 3 CRITICAL: backslash bypass).`);
+    else if (junctionBackslashDiffAttempt.code !== 'outside-worktree') failures.push(`Escaping junction via a BACKSLASH token: refused, but with code "${junctionBackslashDiffAttempt.code}" (expected "outside-worktree") -- message: ${junctionBackslashDiffAttempt.message}`);
+    else findings.push(`Escaping junction via a BACKSLASH token (${junctionRelPathBackslash}): refused with code "outside-worktree" (${junctionBackslashDiffAttempt.message}).`);
+    const junctionBackslashLeaked = Boolean(junctionBackslashDiffAttempt.message?.includes(JUNCTION_SECRET_MARKER)) || Boolean(junctionBackslashDiffAttempt.patch?.includes(JUNCTION_SECRET_MARKER));
+    if (junctionBackslashLeaked) failures.push('Escaping-junction secret content LEAKED into the diff response via a BACKSLASH token -- must never happen.');
+    else findings.push('Escaping-junction secret content never appears in the diff response via a BACKSLASH token: confirmed absent.');
     rmSync(junctionPath, { force: true });
     await safeRmSync(outsideJunctionDir);
     await cdp.waitFor(
@@ -363,7 +380,12 @@ async function main() {
     await pressTab(cdp);
     await sleep(50);
     const focusAfterTabWhilePending = await cdp.evaluate(`(() => { const kebab = (${kebabFinder}); return document.activeElement === kebab; })()`);
-    assertEqual(focusAfterTabWhilePending, false, 'D2: Tab moves focus OFF the pending kebab trigger (never a keyboard trap while a stage is in flight)', findings, failures);
+    // #1111 gate round 3 LOW: asserting the raw `focusAfterTabWhilePending === false` printed a
+    // PASS as "...: false", reading like a failure at a glance. Asserting the INVERTED boolean
+    // against `true` instead keeps the exact same pass/fail condition but prints "...: true" on
+    // the success path.
+    const focusMovedOffPendingKebab = !focusAfterTabWhilePending;
+    assertEqual(focusMovedOffPendingKebab, true, 'D2: Tab moved focus OFF the pending kebab trigger (never a keyboard trap while a stage is in flight)', findings, failures);
     await cdp.waitFor(`(() => { const el = (${kebabFinder}); return !!el && el.getAttribute('aria-disabled') !== 'true'; })()`, {
       timeoutMs: 15_000,
       label: 'D2: forced stage failure settled (kebab no longer aria-disabled)'
@@ -429,6 +451,24 @@ async function main() {
       const shortNameLeaked = Boolean(shortNameDiffAttempt.message?.includes(GIT_SHORT_NAME_SECRET_MARKER)) || Boolean(shortNameDiffAttempt.patch?.includes(GIT_SHORT_NAME_SECRET_MARKER));
       if (shortNameLeaked) failures.push('.git/config content (reached via its 8.3 short name) LEAKED into the diff response -- must never happen.');
       else findings.push('.git/config content (reached via its 8.3 short name) never appears in the diff response: confirmed absent.');
+      // #1111 gate round 3 CRITICAL (falsified live): the SAME 8.3 short name, reached through a
+      // BACKSLASH-separated token ("GIT~1\config") instead of a forward-slash one -- the exact
+      // shape Sec's harness used to read a planted token straight out of `.git/config`.
+      const shortNameBackslashToken = 'GIT~1\\config';
+      const shortNameBackslashDiffAttempt = await cdp.evaluate(
+        `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(shortNameBackslashToken)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
+      );
+      if (!shortNameBackslashDiffAttempt.ok) {
+        if (shortNameBackslashDiffAttempt.code !== 'outside-worktree') failures.push(`GIT~1\\config: refused, but with code "${shortNameBackslashDiffAttempt.code}" (expected "outside-worktree") -- message: ${shortNameBackslashDiffAttempt.message}`);
+        else findings.push(`GIT~1\\config: refused by the containment guard with code "outside-worktree" (${shortNameBackslashDiffAttempt.message}) -- untracked_file_patch's own post-resolution .git check fired via the backslash token.`);
+      } else if (shortNameBackslashDiffAttempt.patch === '') {
+        findings.push('GIT~1\\config: gitChanges.diff succeeded with an EMPTY patch (backslash token) -- confirm_untracked never surfaced this path, so it fell through to the harmless tracked-diff path.');
+      } else {
+        failures.push(`GIT~1\\config: gitChanges.diff SUCCEEDED with a NON-EMPTY patch via a BACKSLASH token (${JSON.stringify(shortNameBackslashDiffAttempt.patch)}) -- must never return real content here (gate round 3 CRITICAL: backslash bypass).`);
+      }
+      const shortNameBackslashLeaked = Boolean(shortNameBackslashDiffAttempt.message?.includes(GIT_SHORT_NAME_SECRET_MARKER)) || Boolean(shortNameBackslashDiffAttempt.patch?.includes(GIT_SHORT_NAME_SECRET_MARKER));
+      if (shortNameBackslashLeaked) failures.push('.git/config content (reached via its 8.3 short name, backslash token) LEAKED into the diff response -- must never happen.');
+      else findings.push('.git/config content (reached via its 8.3 short name, backslash token) never appears in the diff response: confirmed absent.');
     }
 
     const report = {
