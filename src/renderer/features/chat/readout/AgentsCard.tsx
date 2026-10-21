@@ -47,7 +47,11 @@ export function AgentsCard({
           ))}
         </ul>
       )}
-      {settledPhrase && <div className={cn('text-xs text-muted-foreground', running.length > 0 && 'mt-2')}>{settledPhrase}</div>}
+      {settledPhrase && (
+        <div data-slot="agents-card-settled" className={cn('text-xs text-muted-foreground', running.length > 0 && 'mt-2')}>
+          {settledPhrase}
+        </div>
+      )}
       <Button type="button" variant="link" size="sm" className="mt-2 h-auto p-0 text-xs" onClick={onOpenPanel}>
         Open subagents panel
       </Button>

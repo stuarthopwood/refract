@@ -266,6 +266,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       {/* Decision item 1: content is inert text, nothing inside is ever focused -- both
           auto-focus hooks are suppressed so keyboard focus stays on the pill the whole time. */}
       <PopoverContent
+        data-slot="agents-card"
         side="top"
         align="start"
         className="w-auto p-3"
@@ -330,6 +331,7 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
         </ReadoutChip>
       </PopoverAnchor>
       <PopoverContent
+        data-slot="todo-card"
         side="top"
         align="start"
         className="w-auto p-3"
