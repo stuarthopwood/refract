@@ -5,6 +5,7 @@
 // primary "open" button covers only the info area; the quick action and "..." menu are its
 // SIBLINGS, never nested inside it (a button must never contain another button).
 import { useEffect, useRef, useState } from 'react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import type { KeyboardEvent, RefObject } from 'react'
 import { toast } from 'sonner'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -475,11 +476,9 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   }
 
   return (
-    <li ref={rowRef} className="relative w-full hover:bg-muted/50">
-      {isVisible && <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-active-indicator" />}
-      {/* Post-build review fix (Phase7PostBuild, Medium): right-click/Shift+F10 opens the same
-          options the "..." trigger does, matching SessionList.tsx's own row (DESIGN.md "Session
-          list keyboard and focus model") -- the same object behaves identically on both screens. */}
+    <li ref={rowRef} className={isVisible ? 'relative w-full bg-accent text-accent-foreground' : 'relative w-full hover:bg-muted/50'}>
+      {isVisible && <ActiveIndicatorBar />}
+      {/* Post-build review fix (Phase7PostBuild, Medium): right-click/Shift+F10 opens the same options the "..." trigger does, matching SessionList.tsx's own row -- the same object behaves identically on both screens. */}
       <ContextMenu
         onOpenChange={(open) => {
           if (!open) return

@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import type { ComponentType, KeyboardEvent, Ref } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { StateIcon } from './sessionDisplay'
@@ -102,16 +103,16 @@ export function GroupHeaderTrigger({
       // `gap-1.5`/`px-1.5`, itself off-grid per decision 28) -- moves the Project icon's own
       // left edge to exactly 24px (4px container padding + 4px this padding + 12px chevron +
       // 4px gap), so `SessionRow.tsx`'s own `pl-6` status icon finally lines up under it.
+      // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),
+      // which overrides `rounded-md` below; the focus-visible outline is unaffected.
+      data-choice-item
       className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing
-          selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover. */}
-      {containsOpenSession && (
-        <span
-          aria-hidden
-          className="absolute inset-y-1 left-0 z-10 w-0.5 rounded-full bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]"
-        />
-      )}
+          selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover.
+          Issue #1122: the shared `ActiveIndicatorBar` replaces this row's own hand-copied
+          rounded-pill/inset span. */}
+      {containsOpenSession && <ActiveIndicatorBar />}
       {/* Gate round 1 fix (High, code-reviewer): keying this off `data-state` broke the moment
           the whole trigger became a Tooltip's child too -- Radix's `TooltipTrigger` spreads its
           OWN `data-state` ('closed'/'delayed-open'/'instant-open') onto this element AFTER
