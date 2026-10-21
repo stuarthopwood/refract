@@ -209,14 +209,24 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
  * `group-hover` -- confirmed live: a direct click there with no prior hover left `aria-expanded`/
  * `data-state` on the button unchanged ("false"/"closed") and no menu mounted at all, the real
  * click passing straight through the `pointer-events-none` button. Hovering the row first (a real
- * `mouseMoved` to the open button, inside the same `.group` row) reveals it before the click. */
+ * `mouseMoved` to the open button, inside the same `.group` row) reveals it before the click. The
+ * final "Open in split" selection uses a native `.click()` on the item scoped strictly to the
+ * CURRENTLY open `[role="menu"]` (never a coordinate-based click or a document-wide text search),
+ * since every row's menu shares the identical "Open in split" label. */
 async function openSessionInSplitViaMenu(cdp, sessionId) {
   const openBtnSelector = `document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`;
   await hoverElement(cdp, openBtnSelector);
   const menuBtnFinder = `(() => { const openBtn = ${openBtnSelector}; const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`;
   await cdp.click(menuBtnFinder);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Session row actions menu open' });
-  await cdp.clickByText('Open in split', { tag: '[role="menuitem"]' });
+  const clicked = await cdp.evaluate(`(() => {
+    const menu = document.querySelector('[role="menu"]');
+    const item = menu ? Array.from(menu.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Open in split') : null;
+    if (!item) return false;
+    item.click();
+    return true;
+  })()`);
+  if (!clicked) throw new Error(`openSessionInSplitViaMenu(${sessionId}): 'Open in split' menu item not found in the open menu.`);
 }
 
 async function main() {
