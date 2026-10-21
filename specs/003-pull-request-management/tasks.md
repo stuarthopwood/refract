@@ -320,10 +320,10 @@ live check (T047) left to the build lane.
   a blocked merge, or GitHub still computing mergeability; hidden for draft, closed, or merged
   (the state pill already shown there is the reason). The Merge and Review buttons' own
   tooltips (`title`) are unchanged and keep every reason regardless.
-  -- Implemented (pending commit sha, this PR).
+  -- Implemented (7a48ca41).
 - [X] T049 Update `specs/003-pull-request-management/spec.md` (Acceptance Scenario 6 amended,
   Edge Cases amended, FR-019 amended, Clarifications Session 2026-10-21).
-  -- Implemented (pending commit sha, this PR).
+  -- Implemented (7a48ca41).
 - [ ] T050 Live verification per the issue's own decision record (draft/closed/merged hide the
   line, a conflict/blocked/still-checking merge keeps it, Merge/Review tooltips keep every
   reason regardless) -- covered by `scripts/verify-1121-pr-polish.mjs`, which also covers
