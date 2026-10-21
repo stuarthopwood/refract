@@ -382,14 +382,23 @@ async function main() {
     // mouse click left Radix's own roving-tabindex ref pointing at it): a pointer click can
     // select a radio without updating that ref the same way a keyboard-driven move does, which
     // left an EARLIER cut of this check pressing ArrowRight from the wrong starting point.
+    const RADIO_GROUP_DUMP = `Array.from(document.querySelectorAll('[id^="model-role-default-reasoning-"]')).map((el) => ({ id: el.id, state: el.getAttribute('data-state'), disabled: el.disabled }))`;
     await cdp.evaluate(`document.getElementById('model-role-default-reasoning-medium')?.focus()`);
+    findings.push(`Reasoning radios: active element after focus(Medium) = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
     await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
     await sleep(200);
+    findings.push(`Reasoning radios: active element after ArrowRight = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
+    findings.push(`Reasoning radios: group state after ArrowRight = ${JSON.stringify(await cdp.evaluate(RADIO_GROUP_DUMP))}`);
     let highRoles = await readModelRolesViaIpc();
     findings.push(`Reasoning radios: after ArrowRight alone, default = ${JSON.stringify(highRoles?.default)}`);
     if (highRoles?.default !== 'github-copilot/claude-fable-5:high') {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+      await sleep(300);
+      findings.push(`Reasoning radios: active element after Space = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
+      findings.push(`Reasoning radios: group state after Space = ${JSON.stringify(await cdp.evaluate(RADIO_GROUP_DUMP))}`);
+      highRoles = await readModelRolesViaIpc();
+      findings.push(`Reasoning radios: after Space, default = ${JSON.stringify(highRoles?.default)}`);
     }
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
       timeoutMs: 8_000,
