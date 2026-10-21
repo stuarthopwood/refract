@@ -346,7 +346,7 @@ async function main() {
     const rowBusyFinder = `document.querySelector('span[title=${JSON.stringify(FIXTURE.bigUntracked)}]')?.closest('[aria-busy]')`;
     await clickRowMenuItem(cdp, FIXTURE.bigUntracked, `Stage ${FIXTURE.bigUntracked}`);
     const rowBusySnapshot = await cdp.waitFor(
-      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); if (!kebab) return null; kebab.focus(); const opened = kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab.getAttribute('aria-disabled') === 'true', kebabNativeDisabled: kebab.disabled, kebabFocusable: document.activeElement === kebab, keydownDefaultPrevented: !opened, menuOpenedOnEnter: !!document.querySelector('[role="menu"]') }; })()`,
+      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); if (!kebab) return null; kebab.focus(); const opened = kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab.getAttribute('aria-disabled') === 'true', kebabNativeDisabled: kebab.disabled, kebabFocusable: document.activeElement === kebab, keydownDefaultPrevented: !opened, menuOpenedOnEnter: !!document.querySelector('[role="menu"][data-state="open"]') }; })()`,
       { timeoutMs: 5_000, intervalMs: 15, label: 'Row aria-busy="true" observed mid-flight while staging a 100 MB file' }
     );
     assertEqual(rowBusySnapshot?.spinner, true, 'Row shows a spinner icon while its own stage is in flight', findings, failures);
@@ -360,6 +360,12 @@ async function main() {
     assertEqual(rowBusySnapshot?.kebabNativeDisabled, false, "Row's own kebab trigger stays natively enabled (never `disabled`) while its stage is in flight", findings, failures);
     assertEqual(rowBusySnapshot?.kebabFocusable, true, "Row's own kebab trigger is focusable while its stage is in flight", findings, failures);
     assertEqual(rowBusySnapshot?.keydownDefaultPrevented, true, 'A keyboard Enter on the busy kebab trigger has its default action prevented', findings, failures);
+    // Falsified-and-fixed (first live run): `[role="menu"]`'s bare DOM presence false-positived
+    // here -- Radix keeps the PREVIOUS "Stage" selection's own menu present with
+    // `data-state="closed"` for its own brief exit animation, which can still be in the DOM at
+    // the exact instant `aria-busy` flips (that happens on the very next tick). Requiring
+    // `data-state="open"` specifically (the query above) is what actually proves a NEW open,
+    // never a stale closing one.
     assertEqual(rowBusySnapshot?.menuOpenedOnEnter, false, 'A keyboard Enter on the busy kebab trigger does not open its menu', findings, failures);
     await shot('04-busy-staging-big-file.png');
     await cdp.waitFor(`(() => { const row = (${rowBusyFinder}); return !!row && row.getAttribute('aria-busy') !== 'true'; })()`, {
