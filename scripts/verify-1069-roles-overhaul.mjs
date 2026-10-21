@@ -202,14 +202,16 @@ async function main() {
       dataDir,
       importSourceDir,
       pathPrepend: shimDir,
-      logFile: path.join(exeDir, 'app.log'),
+      logFile: path.join(SHOTS_DIR, 'app.log'),
       extraEnv: {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'session',
         REFRACT_FAKE_OMP_CONFIG_STORE: configStorePath,
         REFRACT_FAKE_OMP_MODEL_CATALOG: CATALOG_FIXTURE,
-        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(exeDir, 'fake-omp-invocations.log')
+        // Written to SHOTS_DIR (not exeDir, which this script's own `finally` block removes),
+        // so a failed run's evidence survives for a post-mortem.
+        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-invocations.log')
       }
     });
     child = launched.child;
