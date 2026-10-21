@@ -207,9 +207,15 @@ async function ctrlClickSessionRow(cdp, sessionId) {
     return { found: true, x: r.x + r.width / 2, y: r.y + r.height / 2 };
   })()`);
   if (!info.found) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
+  // Gate round: Main's own finding on a sibling lane -- a zero-latency synthetic keydown/
+  // mouse-event/keyup sequence can beat the browser's own modifier-key state landing before
+  // the click's `event.ctrlKey` is read, so the Control key is genuinely HELD across the click
+  // (a real sleep either side), not released the instant after dispatch.
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 });
+  await sleep(100);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
+  await sleep(100);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
 }
 
