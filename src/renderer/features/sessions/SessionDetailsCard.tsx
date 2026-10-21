@@ -134,9 +134,9 @@ export function SessionDetailsCard({
                 )}
               </div>
               {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map,
-                  raw id fallback -- `friendlyProviderLabel`, `@/lib/modelRoles`), since this card
-                  has room for it that the composer strip does not. `pl-5` aligns it under the
-                  model name's own text, past the CpuIcon (`size-3.5` + `gap-1.5` above it). */}
+                  raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this
+                  card has room for it that the composer strip does not. `pl-5` aligns it under
+                  the model name's own text, past the CpuIcon (`size-3.5` + `gap-1.5` above it). */}
               {session.lastModel && <p className="truncate pl-5 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

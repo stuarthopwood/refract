@@ -7,7 +7,7 @@ Each file is `{ [catalogKind]: ModelCatalogEntry[] }` (`provider`, `id`, `select
 `src-tauri/src/ipc/model_roles.rs`'s `parse_catalog_response` produce from the real CLI).
 
 Unlike `../omp-frames/*.jsonl`, these are **entirely hand-written**, not sanitised recordings of a
-real `omp models --kind chat --json` call. **Correction (2026-10-22, gate round 2, #1114):** an
+real `omp models --kind chat --json` call. **Correction (2026-10-21, gate round 2, #1114):** an
 earlier cut of this file claimed `off`/`auto`/`max` are "never reported as a catalog `thinking`
 level" -- re-verified live against a real `omp models --kind chat --json` (87 chat models):
 `off`/`auto` are indeed never reported (confirmed again), but `max` IS real and common (31 of 87

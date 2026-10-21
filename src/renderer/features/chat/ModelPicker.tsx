@@ -127,8 +127,8 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   // Gate round 1 fix (MEDIUM): a friendly display name is not code-shaped data -- monospace is
   // reserved for a raw `provider/id` fallback. Gate round 1 fix (LOW #11): the Tooltip's
-  // provider now reads through the shared `friendlyProviderLabel` map (`modelRoles.ts`), not
-  // OMP's raw provider id (`SessionDetailsCard.tsx` already does the same).
+  // provider now reads through the shared `friendlyProviderLabel` map (`@/lib/providerLabels`),
+  // not OMP's raw provider id (`SessionDetailsCard.tsx` already does the same).
   const modelFullLabel = session?.lastModel ? `${friendlyProviderLabel(session.lastModel.provider)}/${session.lastModel.name?.trim() || session.lastModel.id}` : null
   const modelLabelIsRaw = Boolean(session?.lastModel && !session.lastModel.name)
   // Gate round 5 fix (Layout/Flow/Visual Medium #3): the VISIBLE trigger text is the bare model

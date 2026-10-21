@@ -143,17 +143,32 @@ async function main() {
       process.exit(0);
     }
     // `config set <key> --json -- <value>`: the value is the argv entry right after the `--`.
+    // Issue #1069 gate round 2 (#1114, N1 regression evidence): `REFRACT_FAKE_OMP_CONFIG_SET_DELAY_MS`
+    // (opt-in, unset by default -- every other scenario/script is unaffected) delays only the
+    // REPLY to a `set` call, never `get`, so a live check can create a real window where a
+    // Select's own model save is still in flight when a radio pick is made against it.
     const sepIndex = rawArgs.indexOf('--');
     const valueArg = sepIndex >= 0 ? rawArgs[sepIndex + 1] : undefined;
     const value = valueArg !== undefined ? JSON.parse(valueArg) : null;
     const store = readStore();
     store[key] = value;
     if (storePath) writeFileSync(storePath, JSON.stringify(store));
+    const delayMs = Number(process.env.REFRACT_FAKE_OMP_CONFIG_SET_DELAY_MS || 0);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     process.stdout.write(`${JSON.stringify({ key, value })}\n`);
     process.exit(0);
   }
   if (rawArgs[0] === 'models' && rawArgs[1] === '--kind') {
     const kind = rawArgs[2];
+    // Issue #1069 gate round 2 (#1114, Medium #6 evidence): `REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND`
+    // (opt-in, unset by default) simulates a real `omp models --kind <kind> --json` failure for
+    // ONE named kind -- a non-zero exit with no JSON on stdout, exactly what `run_json_with`
+    // (`model_roles.rs`) already treats as an `OmpConfigError`, surfaced to the renderer as
+    // `catalogErrors[kind]`.
+    if (process.env.REFRACT_FAKE_OMP_MODEL_CATALOG_FAIL_KIND === kind) {
+      process.stderr.write(`verify-tauri-fake-omp: simulated catalog failure for kind "${kind}"\n`);
+      process.exit(1);
+    }
     const catalogPath = process.env.REFRACT_FAKE_OMP_MODEL_CATALOG;
     let catalogByKind = {};
     if (catalogPath) {

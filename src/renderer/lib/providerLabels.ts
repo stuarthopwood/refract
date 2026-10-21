@@ -7,8 +7,9 @@
 // reads `CHAT_ROLE_DESCRIPTORS` at its own module top level), not merely a theoretical one. Built
 // from the fields OMP already reports (`provider`), never by splitting a display string on `/` --
 // an id such as `openrouter/google/gemini` stays untouched by any caller that uses this map
-// correctly. `lib/modelRoles.ts` re-exports `friendlyProviderLabel` from here so every existing
-// import site (`@/lib/modelRoles`) is unchanged.
+// correctly. Gate round 1 fix (#1114, Low): `lib/modelRoles.ts` used to re-export
+// `friendlyProviderLabel` from here; that re-export is gone -- `ModelPicker.tsx` and
+// `SessionDetailsCard.tsx` (the only other two callers) now import it directly from here.
 const PROVIDER_LABEL: Record<string, string> = {
   'github-copilot': 'GitHub Copilot',
   anthropic: 'Anthropic',

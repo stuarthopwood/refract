@@ -56,7 +56,7 @@ import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../../share
 import { applyThinkingSuffixCarryOver, splitThinkingSuffix } from './modelRoleSuffix'
 import { defaultProvider, filterCatalogByProvider, providersInCatalog, resolveCatalogEntry } from './modelProviderFilter'
 import { ProviderSwitch } from './ProviderSwitch'
-import { isReasoningLevelSupported, RoleReasoningRadios } from './RoleReasoningRadios'
+import { isLevelCarryable, RoleReasoningRadios } from './RoleReasoningRadios'
 
 export interface RoleDescriptor {
   role: ModelRoleId
@@ -349,6 +349,10 @@ export function ModelRolesSection() {
     // list and `{name} ({provider})` item labels).
     const isChat = kind === 'chat'
     const displayCatalog = isChat ? filterCatalogByProvider(catalog, selectedProvider) : (catalog ?? [])
+    // Gate round 2 fix (Medium #6): the reasoning radios' own caption must stay silent while the
+    // catalog is still loading or failed -- `catalog === undefined` with no error means "not
+    // fetched yet", never "this model is unknown".
+    const catalogStatus: 'loading' | 'loaded' | 'error' = catalogError ? 'error' : catalog === undefined ? 'loading' : 'loaded'
 
     // The displayed list may not list a role's current selector verbatim (a comma-list, an
     // `@alias`, a selector from a provider the catalog fetch temporarily missed, one carrying a
@@ -422,13 +426,16 @@ export function ModelRolesSection() {
                 }
                 // Gate round 1 fix (Medium #5): if the role's EXISTING level is not supported by
                 // the newly picked model, write the bare selector (never a silently-dropped
-                // level masquerading as "saved") and announce the reset explicitly.
+                // level masquerading as "saved") and announce the reset explicitly. Gate round 2
+                // fix (Medium #2): `isLevelCarryable`, not the plain per-level support check --
+                // `auto` is model-independent (real `omp` never reports it as a catalog level at
+                // all) so it must not be dropped on every single model change.
                 const carried = applyThinkingSuffixCarryOver(pickedValue, currentValue)
                 const carriedSuffix = splitThinkingSuffix(carried).suffix
                 if (carriedSuffix) {
                   const pickedEntry = resolveCatalogEntry(pickedValue, catalog)
-                  if (!isReasoningLevelSupported(carriedSuffix.slice(1), pickedEntry)) {
-                    void handleRoleChange(role, label, pickedValue, 'Reasoning reset to Inherit')
+                  if (!isLevelCarryable(carriedSuffix.slice(1), pickedEntry)) {
+                    void handleRoleChange(role, label, pickedValue, `${label} saved; reasoning reset to Inherit`)
                     return
                   }
                 }
@@ -487,6 +494,7 @@ export function ModelRolesSection() {
             labelId={labelId}
             currentValue={currentValue}
             catalogEntry={resolvedCurrentEntry}
+            catalogStatus={catalogStatus}
             disabled={isPending}
             onPick={(nextValue) => void handleRoleChange(role, label, nextValue)}
             announcePolite={announcePolite}

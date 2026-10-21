@@ -11,17 +11,26 @@
 // arrow-driven focus move), a single ArrowRight during a save fired a SECOND write before the
 // first had even settled. Native `disabled` is now reserved for a genuinely UNSUPPORTED level
 // (`reason !== null`) -- Inherit is never disabled, and a save in flight no longer disables
-// anything natively. Instead: `aria-disabled`/`aria-busy` on the GROUP (informational only, never
-// blocks activation), a local OPTIMISTIC `pendingLevel` so the checked dot moves the instant the
-// user picks (rather than waiting out the write, which can include the unrelated #740
-// propagation sweep), and latest-pick-wins coalescing -- a second pick made while the first write
-// is still in flight is held in `pendingWriteRef` and sent once that write settles, rather than
-// starting a second concurrent write or being silently dropped. Arrowing across several levels
-// during one save costs at most TWO writes total (the first, plus one coalesced trailing write),
-// never one per keypress, and focus never leaves the radio the user is actually on.
+// anything natively. Instead: `aria-busy` on the GROUP (informational only, never blocks
+// activation), a local OPTIMISTIC `pendingLevel` so the checked dot moves the instant the user
+// picks (rather than waiting out the write, which can include the unrelated #740 propagation
+// sweep), and latest-pick-wins coalescing -- a second pick made while the first write is still in
+// flight is held and sent once that write settles, rather than starting a second concurrent write
+// or being silently dropped.
+//
+// Gate round 2 fix (High #1, N1): the coalesced write used to hold the FULL `${base}:${level}`
+// value built at PICK time -- if a Select model change for the SAME role was still saving when
+// the level was picked, `base` was the OLD model, so the held write silently reverted a model
+// change that had already landed. The held pick now carries the LEVEL ONLY; `sendHeldLevel`
+// rebuilds the value from `latestRef` (synced on every render, so the settle effect and the
+// unmount flush below both always read the model/value THIS SAME COMMIT just settled on, never a
+// stale closure), re-checks support against that fresh model, and skips the write entirely when
+// the rebuilt value already matches what is already stored (also closes N5's redundant sweep). A
+// held pick that survives to unmount (N2, the Settings section unmounting mid-save) is flushed
+// through the same path rather than silently lost.
 import { useEffect, useRef, useState } from 'react'
-import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
-import { RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
+import { Loader2Icon } from 'lucide-react'
+import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { splitThinkingSuffix } from './modelRoleSuffix'
@@ -46,10 +55,16 @@ const LEVELS: ReadonlyArray<{ value: ReasoningLevel; label: string }> = [
 const KNOWN_LEVELS = new Set<string>(LEVELS.map((l) => l.value))
 
 // Gate round 1 (#1114, High #3, Decided Skippy/Stuart 2026-10-21): rendered ONLY while the
-// role's own current value carries exactly this suffix; picking any OTHER level replaces it. A
-// literal `:inherit` suffix needs no entry here -- `currentLevel` below already maps it onto
-// `INHERIT_VALUE` directly (the same string), so it shows as a normal checked Inherit, and
-// picking Inherit (or any other level) already strips any existing suffix via `base`.
+// role's own STORED value carries one of these suffixes (gate round 2, Medium #3: kept rendered
+// even while a DIFFERENT level is merely PENDING, not yet saved, so arrowing off it and back is
+// still possible -- it disappears only once a different level is actually SAVED). A literal
+// `:inherit` suffix needs no entry here: `currentLevel` already maps it onto `INHERIT_VALUE`
+// directly (the same string), so it shows as a normal checked Inherit. **Known limitation (gate
+// round 2, confirmed, not a round-1 claim)**: Radix only fires `onValueChange` on a genuine VALUE
+// change, so re-picking the ALREADY-checked Inherit item when the stored suffix is the literal
+// token `:inherit` fires no event at all -- that literal suffix cannot be cleared from this UI.
+// Deferred (Main, gate round 2): low-probability (nothing in this app ever WRITES a literal
+// `:inherit` suffix; it could only arise from a hand-edited config), doesn't block.
 const UNKNOWN_LEVEL_LABEL: Record<string, string> = { auto: 'Auto', max: 'Max' }
 
 /** Whether `level` (one of the seven UI options) is supported by `entry` -- exported so
@@ -62,13 +77,25 @@ export function isReasoningLevelSupported(level: string, entry: ModelCatalogEntr
   return entry.thinking?.includes(level) ?? false
 }
 
+/** Whether `level` (which may be `inherit`, one of the seven UI options, or an out-of-vocabulary
+ * token like `auto`/`max`) survives a carry-over onto `entry` -- shared by `ModelRolesSection.tsx`
+ * (picking a new model) and this file's own held-pick rebuild (gate round 2, Medium #2). `inherit`
+ * always carries (it writes no suffix at all); `auto` is model-independent (real `omp` never
+ * reports it as a catalog `thinking` level, confirmed live, `fixtures/model-catalogs/README.md`)
+ * so it carries whenever the model supports reasoning at all; every other token (including `max`,
+ * which IS a real catalog level) uses the ordinary per-model support check. */
+export function isLevelCarryable(level: string, entry: ModelCatalogEntry | undefined): boolean {
+  if (level === INHERIT_VALUE) return true
+  if (level === 'auto') return entry?.reasoning ?? false
+  return isReasoningLevelSupported(level, entry)
+}
+
 export interface RoleReasoningRadiosProps {
-  /** `ModelRoleId`, used only to build each option's own DOM id -- kept as a plain string so this
-   * component never needs the shared model types just for an id prefix. */
+  /** `ModelRoleId`, used only to build each option's own DOM id. */
   role: string
   /** The role's own visible display label (e.g. "Default"): the group's own accessible name is
-   * "{roleLabel} Reasoning", and the "is still saving" announcement names the role the same way
-   * the Select's own in-flight announcement already does (gate round 1, High #1/#4). */
+   * "{roleLabel} Reasoning", and the in-flight announcements name the role the same way the
+   * Select's own announcements do. */
   roleLabel: string
   /** The role's own visible label element id (`aria-labelledby`, combined with this component's
    * own sr-only "Reasoning" label below) -- a named radiogroup per role, never a second generic
@@ -81,12 +108,15 @@ export interface RoleReasoningRadiosProps {
    * regardless of the selected provider (decision 4). `undefined` when the value is unset or not
    * found in the catalog at all. */
   catalogEntry: ModelCatalogEntry | undefined
+  /** Gate round 2 fix (Medium #6): whether the CATALOG itself (not this one role's own value) is
+   * still loading or failed to load -- while it is, nothing about `catalogEntry` being `undefined`
+   * can be trusted as "this model is unknown", so the caption stays silent instead of guessing. */
+  catalogStatus: 'loading' | 'loaded' | 'error'
   /** True while a save for this role is in flight -- mirrors the Select's own pending guard. */
   disabled: boolean
   onPick(nextValue: string): void
-  /** Mirrors the Select's own in-flight announcement (`ModelRolesSection.tsx`'s own
-   * `useClearedAnnouncement` polite region) -- "{roleLabel} reasoning is still saving" when a
-   * pick is made while a save for this SAME role is already in flight. */
+  /** Mirrors the Select's own in-flight announcement region (`ModelRolesSection.tsx`'s own
+   * `useClearedAnnouncement` polite region). */
   announcePolite(message: string): void
 }
 
@@ -95,52 +125,85 @@ export interface RoleReasoningRadiosProps {
  * `omp models --kind chat --json`) -- a disabled item is explained by ONE visible caption below
  * the row (gate round 1, High #4: the issue's own accessibility AC asks for visible text, never
  * only a screen-reader-only reason read as part of the radio's own name). */
-export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, catalogEntry, disabled, onPick, announcePolite }: RoleReasoningRadiosProps) {
+export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, catalogEntry, catalogStatus, disabled, onPick, announcePolite }: RoleReasoningRadiosProps) {
   const { base, suffix } = currentValue ? splitThinkingSuffix(currentValue) : { base: '', suffix: null }
   const storedLevel = suffix ? suffix.slice(1) : INHERIT_VALUE // ':high' -> 'high'
   const hasValue = currentValue !== undefined
-  // Gate round 1 fix (Medium #8): a set value this catalog cannot resolve at all (an alias, or a
-  // model missing from this run's catalog fetch) is "Unknown model", never "Pick a model first"
-  // -- the two are different problems with different fixes for the user.
-  const unresolvedModel = hasValue && !catalogEntry
+  // Gate round 2 fix (Medium #6): a catalog that hasn't finished loading (or failed) can never
+  // tell "unresolved" apart from "not fetched yet" -- only a LOADED catalog missing the selector
+  // is genuinely "Unknown model".
+  const unresolvedModel = hasValue && !catalogEntry && catalogStatus === 'loaded'
 
-  // Gate round 1 fix (High #1): a local optimistic level (so the dot moves at once) plus
-  // latest-pick-wins coalescing (a pick made while a write is already in flight is HELD, not
-  // fired immediately, and sent once that write settles -- at most one extra write, ever).
+  // Gate round 1 fix (High #1), rebuilt gate round 2 (High #1, N1/N2): a local optimistic level
+  // (so the dot moves at once) plus latest-pick-wins coalescing. The held pick now carries the
+  // LEVEL ONLY -- `sendHeldLevel` rebuilds the value to send from `latestRef`, which is kept in
+  // sync on every render (never only inside an effect), so whichever model/value THIS component
+  // last rendered with is what a held pick is checked and built against, never a stale one
+  // captured back when the pick was originally made.
   const [pendingLevel, setPendingLevel] = useState<string | null>(null)
-  const pendingWriteRef = useRef<{ value: string; level: string } | null>(null)
+  const pendingWriteRef = useRef<string | null>(null)
   const wasDisabledRef = useRef(disabled)
+  const latestRef = useRef({ base, currentValue, catalogEntry })
+  latestRef.current = { base, currentValue, catalogEntry }
 
-  useEffect(() => {
-    if (wasDisabledRef.current && !disabled) {
-      const coalesced = pendingWriteRef.current
-      pendingWriteRef.current = null
-      if (coalesced) {
-        setPendingLevel(coalesced.level)
-        onPick(coalesced.value)
-      } else {
-        setPendingLevel(null)
-      }
+  function sendHeldLevel(level: string): void {
+    const { base: latestBase, currentValue: latestCurrentValue, catalogEntry: latestEntry } = latestRef.current
+    const built = level === INHERIT_VALUE ? latestBase : `${latestBase}:${level}`
+    if (!isLevelCarryable(level, latestEntry)) {
+      setPendingLevel(null)
+      announcePolite(`${roleLabel} reasoning reset to Inherit`)
+      return
     }
-    wasDisabledRef.current = disabled
-  }, [disabled, onPick])
-
-  const currentLevel = pendingLevel ?? storedLevel
-
-  function pick(value: string, level: string): void {
-    if (disabled) {
-      pendingWriteRef.current = { value, level }
-      setPendingLevel(level)
-      announcePolite(`${roleLabel} reasoning is still saving`)
+    // Gate round 2 fix (N1/N5): the model this role is on may have changed (a Select save that
+    // was still in flight when the level was picked) by the time this held pick is actually sent
+    // -- skip the write entirely when the rebuilt value already matches what is already stored,
+    // rather than firing a redundant (or actively reverting) sweep.
+    if (built === (latestCurrentValue ?? '')) {
+      setPendingLevel(null)
       return
     }
     setPendingLevel(level)
-    onPick(value)
+    onPick(built)
   }
 
-  // Gate round 1 fix: a level is disabled whenever there is no resolvable model to check
-  // support against (no value set, or a set value this catalog cannot resolve) -- the REASON
-  // text itself lives only in the combined group caption below (High #4), never per item.
+  useEffect(() => {
+    if (wasDisabledRef.current && !disabled) {
+      const level = pendingWriteRef.current
+      pendingWriteRef.current = null
+      if (level !== null) sendHeldLevel(level)
+      else setPendingLevel(null)
+    }
+    wasDisabledRef.current = disabled
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled])
+
+  useEffect(() => {
+    // Gate round 2 fix (N2): a held pick that survives to unmount (the Settings section itself
+    // unmounting mid-save, `SettingsScreen.tsx`) is flushed through the SAME rebuild-and-check
+    // path, rather than the user's own pick silently vanishing.
+    return () => {
+      const level = pendingWriteRef.current
+      pendingWriteRef.current = null
+      if (level !== null) sendHeldLevel(level)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const currentLevel = pendingLevel ?? storedLevel
+
+  function pick(level: string): void {
+    if (disabled) {
+      pendingWriteRef.current = level
+      setPendingLevel(level)
+      // Gate round 2 fix (Medium #4): distinct wording from the Select's own "{label} is still
+      // saving" (a DROPPED pick) -- this pick is accepted and QUEUED, not dropped.
+      announcePolite(`${roleLabel} reasoning: your pick will apply when the save finishes`)
+      return
+    }
+    setPendingLevel(level)
+    onPick(level === INHERIT_VALUE ? base : `${base}:${level}`)
+  }
+
   function levelDisabled(level: ReasoningLevel): boolean {
     if (!hasValue || unresolvedModel) return true
     return !isReasoningLevelSupported(level, catalogEntry)
@@ -151,8 +214,14 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   // radio's own accessible name read the reason TWICE (once as content, once via its own
   // `aria-describedby` pointing right back at itself).
   function reasonCaption(): string | null {
+    // Gate round 2 fix (Medium #6): stay silent while the catalog itself hasn't settled --
+    // `renderCatalogStatus` already shows the real loading/error state for the whole kind.
+    if (catalogStatus !== 'loaded') return null
     if (!hasValue) return 'Pick a model first'
     if (unresolvedModel) return 'Unknown model'
+    // Gate round 2 fix (Medium #6): a model that doesn't reason at all gets one short line,
+    // never a list of all six levels repeating the same fact six times.
+    if (!catalogEntry!.reasoning) return `${catalogEntry!.name} doesn't support reasoning`
     const unsupported = LEVELS.filter((l) => !isReasoningLevelSupported(l.value, catalogEntry)).map((l) => l.label)
     if (unsupported.length === 0) return null
     const joined = unsupported.length === 1 ? unsupported[0] : `${unsupported.slice(0, -1).join(', ')} and ${unsupported[unsupported.length - 1]}`
@@ -162,20 +231,22 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   const caption = reasonCaption()
   const captionId = caption ? `${labelId}-reasoning-reason` : undefined
   const reasoningLabelId = `${labelId}-reasoning-label`
-  const isUnknownLevel = currentLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(currentLevel)
+  // Gate round 2 fix (Medium #3): judged against the STORED level, never the (possibly pending,
+  // not yet saved) `currentLevel` -- arrowing to a different level while this one is still in
+  // flight must not make the Auto/Max item disappear before that pick actually lands.
+  const isStoredUnknownLevel = storedLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(storedLevel)
 
   return (
     <>
       <RadioGroup
         aria-labelledby={`${labelId} ${reasoningLabelId}`}
         aria-describedby={captionId}
-        aria-disabled={disabled || undefined}
         aria-busy={disabled || undefined}
         className="mt-2 flex flex-row flex-wrap gap-x-4 gap-y-1.5"
         value={currentLevel}
         onValueChange={(value) => {
-          if (value === INHERIT_VALUE) pick(base, INHERIT_VALUE)
-          else if (hasValue && !unresolvedModel) pick(`${base}:${value}`, value)
+          if (value === INHERIT_VALUE) pick(INHERIT_VALUE)
+          else if (hasValue && !unresolvedModel) pick(value)
         }}
       >
         <span id={reasoningLabelId} className="sr-only">
@@ -192,16 +263,26 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
             pending={disabled && currentLevel === value}
           />
         ))}
-        {isUnknownLevel && (
+        {isStoredUnknownLevel && (
           <ReasoningRadioItem
-            id={`model-role-${role}-reasoning-${currentLevel}`}
-            value={currentLevel}
-            label={UNKNOWN_LEVEL_LABEL[currentLevel] ?? currentLevel}
+            id={`model-role-${role}-reasoning-${storedLevel}`}
+            value={storedLevel}
+            label={UNKNOWN_LEVEL_LABEL[storedLevel] ?? storedLevel}
             disabled={false}
-            pending={disabled}
+            pending={disabled && currentLevel === storedLevel}
           />
         )}
       </RadioGroup>
+      {disabled && (
+        // Gate round 2 fix (Medium #5): the Select's own "Saving…" sits next to the trigger
+        // (still needed there -- it is the ONLY pending cue the 5 model-kind roles have, which
+        // never render this component at all); this one sits right where a keyboard/radio user
+        // is actually looking, immediately under the row they just picked in.
+        <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          Saving…
+        </p>
+      )}
       {caption && (
         <p id={captionId} className="mt-1 text-xs text-muted-foreground">
           {caption}
@@ -231,9 +312,10 @@ function ReasoningRadioItem({
       disabled={disabled}
       className={cn(
         'min-h-6 w-auto flex-row items-center gap-1.5 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none data-[state=checked]:bg-transparent disabled:cursor-not-allowed disabled:opacity-50',
-        // Gate round 1 fix (Visual Medium #2): the pending (saving) treatment must look
-        // different from "unsupported" (both used `opacity-50` before this fix).
-        pending && 'opacity-80'
+        // Gate round 2 fix (Visual Medium #2): `opacity-80` read too close to the disabled
+        // `opacity-50` treatment -- a filled background makes the pending item unmistakable
+        // instead of merely a little less faded.
+        pending && 'rounded bg-accent/70'
       )}
     >
       <span aria-hidden className={RADIO_RING_CLASS}>
