@@ -82,13 +82,10 @@ export const ROLE_ICON: Partial<Record<RoleChipRoleId, LucideIcon>> = {
   [FALLBACK_ROLE]: LifeBuoyIcon
 }
 
-/** Friendly provider names (#741 Part 1): extracted to `providerLabels.ts` (issue #1069, that
- * file's own header explains why -- a Model roles component needs this map without pulling in
- * this file's own top-level `CHAT_ROLE_DESCRIPTORS` import and risking a circular import back
- * into `ModelRolesSection.tsx`); re-exported here so every existing `@/lib/modelRoles` import
- * site is unchanged. */
-export { friendlyProviderLabel } from './providerLabels'
-
+// Gate round 1 fix (#1114, Low): the `friendlyProviderLabel` re-export this comment used to sit
+// above was removed -- `ModelPicker.tsx` and `SessionDetailsCard.tsx` (the only two callers
+// outside this file's own former re-export) now import it directly from `@/lib/providerLabels`,
+// the one place it is actually defined, rather than through this file as a side door.
 export interface RoleChipDisplay {
   role: RoleChipRoleId
   label: string

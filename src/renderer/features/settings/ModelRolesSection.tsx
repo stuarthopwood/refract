@@ -53,10 +53,10 @@ import { friendlyProviderLabel } from '@/lib/providerLabels'
 import { useModelRolesStore } from '@/state'
 import { CHAT_MODEL_ROLES, MODEL_KIND_ROLES, ROLE_CATALOG_KIND } from '../../../shared/model'
 import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
-import { applyThinkingSuffixCarryOver } from './modelRoleSuffix'
+import { applyThinkingSuffixCarryOver, splitThinkingSuffix } from './modelRoleSuffix'
 import { defaultProvider, filterCatalogByProvider, providersInCatalog, resolveCatalogEntry } from './modelProviderFilter'
 import { ProviderSwitch } from './ProviderSwitch'
-import { RoleReasoningRadios } from './RoleReasoningRadios'
+import { isReasoningLevelSupported, RoleReasoningRadios } from './RoleReasoningRadios'
 
 export interface RoleDescriptor {
   role: ModelRoleId
@@ -204,10 +204,14 @@ export function ModelRolesSection() {
     wasLoadErrorRef.current = loadError !== null
   }, [loadError])
 
-  async function handleRoleChange(role: ModelRoleId, label: string, value: string | null): Promise<void> {
+  async function handleRoleChange(role: ModelRoleId, label: string, value: string | null, successAnnouncement?: string): Promise<void> {
     const result = await setRole(role, value)
     if (result.ok) {
-      announcePolite(value === null ? `${label} cleared` : `${label} saved`)
+      // Gate round 1 fix (#1114, Medium #5): picking a new model whose own reasoning support
+      // does not cover the role's EXISTING carried-over level writes a bare selector instead
+      // (see `renderRole`'s own onValueChange below) and says so here, rather than the generic
+      // "saved" that would otherwise mask a silent level drop.
+      announcePolite(successAnnouncement ?? (value === null ? `${label} cleared` : `${label} saved`))
     } else {
       announceAssertive(`Could not save ${label}: ${result.message}`)
     }
@@ -352,13 +356,26 @@ export function ModelRolesSection() {
     // selected) -- render it as its own pinned option so the picker never silently shows the
     // wrong thing for a value the displayed list does not contain verbatim.
     const knownSelectors = new Set(displayCatalog.map((entry) => entry.selector))
-    const hasUnknownCurrent = currentValue !== undefined && !knownSelectors.has(currentValue)
+    // Gate round 1 fix (#1114, High #2/Visual H1): compare on the BASE selector (suffix
+    // stripped), never the raw suffixed value -- every suffixed chat role (the common case:
+    // Stuart's real profile carries one on every chat role) previously failed this check
+    // regardless of whether its own model was actually still in the displayed list, pinning a
+    // DUPLICATE item showing the exact same text as the real catalog entry
+    // (`report.json`: `["Claude Fable 5","Claude Fable 5"]`).
+    const currentBase = currentValue !== undefined ? splitThinkingSuffix(currentValue).base : undefined
+    const hasUnknownCurrent = currentBase !== undefined && !knownSelectors.has(currentBase)
     const inheritedLabel = ROLE_FALLBACK_LABEL[role] ? `Inherited (${ROLE_FALLBACK_LABEL[role]})` : 'Inherited'
     // Decisions 3 and 5: resolved against the FULL (unfiltered) catalog, never `displayCatalog`,
     // so a role on a different provider is still identified by its real model, and the reasoning
     // radios below read the model's own `reasoning`/`thinking` fields regardless of which
     // provider is currently selected on the switch.
     const resolvedCurrentEntry: ModelCatalogEntry | undefined = isChat ? resolveCatalogEntry(currentValue, catalog) : undefined
+    // Gate round 1 fix (High #2): the Select's own `value` matches the BASE selector whenever
+    // that base is already a real, displayed catalog item -- Radix then shows that SAME item
+    // selected, instead of a redundant pinned duplicate; only a genuinely off-list base (a
+    // different provider, an alias, or an unresolvable model) falls back to the raw suffixed
+    // value, matched by the pinned item below.
+    const selectValue = hasUnknownCurrent ? (currentValue ?? INHERITED_VALUE) : (currentBase ?? INHERITED_VALUE)
 
     return (
       <div key={role} className="py-3">
@@ -379,7 +396,7 @@ export function ModelRolesSection() {
               </span>
             )}
             <Select
-              value={currentValue ?? INHERITED_VALUE}
+              value={selectValue}
               onValueChange={(pickedValue) => {
                 // Quality-gate remediation (accessibility-auditor HIGH): the trigger stays a
                 // real, focusable, non-`disabled` element while a save is pending (see below) so
@@ -394,8 +411,28 @@ export function ModelRolesSection() {
                   announcePolite(`${label} is still saving`)
                   return
                 }
-                const value = pickedValue === INHERITED_VALUE ? null : applyThinkingSuffixCarryOver(pickedValue, currentValue)
-                void handleRoleChange(role, label, value)
+                // Gate round 1 fix (High #2): picking the item the Select ALREADY shows
+                // selected (whether the regular list's own matching base, or the pinned item's
+                // exact raw value) writes nothing -- this can only be a re-pick of the exact
+                // current model, never a real change.
+                if (pickedValue === selectValue) return
+                if (pickedValue === INHERITED_VALUE) {
+                  void handleRoleChange(role, label, null)
+                  return
+                }
+                // Gate round 1 fix (Medium #5): if the role's EXISTING level is not supported by
+                // the newly picked model, write the bare selector (never a silently-dropped
+                // level masquerading as "saved") and announce the reset explicitly.
+                const carried = applyThinkingSuffixCarryOver(pickedValue, currentValue)
+                const carriedSuffix = splitThinkingSuffix(carried).suffix
+                if (carriedSuffix) {
+                  const pickedEntry = resolveCatalogEntry(pickedValue, catalog)
+                  if (!isReasoningLevelSupported(carriedSuffix.slice(1), pickedEntry)) {
+                    void handleRoleChange(role, label, pickedValue, 'Reasoning reset to Inherit')
+                    return
+                  }
+                }
+                void handleRoleChange(role, label, carried)
               }}
             >
               <SelectTrigger
@@ -412,10 +449,10 @@ export function ModelRolesSection() {
                 {hasUnknownCurrent && (
                   <SelectItem value={currentValue as string}>
                     {resolvedCurrentEntry ? (
-                      <span className="flex items-center gap-1.5">
-                        {resolvedCurrentEntry.name}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate">{resolvedCurrentEntry.name}</span>
                         {resolvedCurrentEntry.provider !== selectedProvider && (
-                          <span className="text-xs text-muted-foreground">via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{' '}via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>
                         )}
                       </span>
                     ) : (
@@ -446,11 +483,13 @@ export function ModelRolesSection() {
         {isChat && (
           <RoleReasoningRadios
             role={role}
+            roleLabel={label}
             labelId={labelId}
             currentValue={currentValue}
             catalogEntry={resolvedCurrentEntry}
             disabled={isPending}
             onPick={(nextValue) => void handleRoleChange(role, label, nextValue)}
+            announcePolite={announcePolite}
           />
         )}
       </div>
@@ -512,7 +551,17 @@ export function ModelRolesSection() {
           <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-semibold">
             Chat roles
           </h3>
-          <ProviderSwitch providers={providersInCatalog(catalogs.chat)} selected={selectedProvider} onSelect={setSelectedProvider} />
+          <ProviderSwitch
+            providers={providersInCatalog(catalogs.chat)}
+            selected={selectedProvider}
+            onSelect={(provider) => {
+              setSelectedProvider(provider)
+              // Gate round 1 fix (#1114, Flow/Visual Medium #7): the switch's own change was
+              // never announced -- the issue itself asks for it, and a filter change elsewhere
+              // in this app (e.g. `ManageSessionsToolbar.tsx`'s archive filter) always is.
+              announcePolite(`Showing ${friendlyProviderLabel(provider)} models`)
+            }}
+          />
           <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6">
             {renderGroup(CHAT_ROLE_DESCRIPTORS)}
           </div>

@@ -8,32 +8,41 @@
 // the one-shot `omp config get/set modelRoles --json` and `omp models --kind <kind> --json` CLI
 // calls it never handled before (neither is part of the `--mode rpc-ui` wire tape): a scratch
 // `REFRACT_FAKE_OMP_CONFIG_STORE` JSON file this script seeds/reads for `modelRoles`, and the
-// new `scripts/fixtures/model-catalogs/chat-1069.json` fixture (two providers, a mix of
-// reasoning and non-reasoning models, partial `thinking` arrays -- that fixture's own README has
-// the full table) for the chat catalog.
+// `scripts/fixtures/model-catalogs/chat-1069.json` fixture (two providers, a mix of reasoning
+// and non-reasoning models, partial `thinking` arrays -- that fixture's own README has the full
+// table) for the chat catalog.
 //
 // Proves, against the real rendered DOM:
-//   1. The provider switch (`[aria-label="Provider"]`) starts selected on GitHub Copilot, the
-//      provider of the seeded Default role's own current model.
+//   1. The provider switch starts selected on GitHub Copilot, the provider of the seeded Default
+//      role's own current model; the switch carries a visible "Show models from" label.
 //   2. Default's own model dropdown, opened for real, lists only GitHub Copilot's models, each
-//      item showing the model's name alone (no "(github-copilot)" parenthetical).
+//      item showing the model's name alone (no "(github-copilot)" parenthetical), with no
+//      duplicate item text (gate round 1, High #2: a suffixed current value used to pin a
+//      duplicate of its own regular catalog item).
 //   3. Smol's current model (`anthropic/claude-haiku-5.5:low`) is on a different provider than
-//      the switch: its trigger still shows "Claude Haiku 5.5", with a muted "via Anthropic" tag,
-//      never blanked and never the raw suffixed selector string.
+//      the switch: its trigger still shows "Claude Haiku 5.5 via Anthropic" (a real space before
+//      "via", gate round 1 Medium #9), never blanked and never the raw suffixed selector string.
 //   4. Default's and Slow's triggers show the model's display name only -- no provider, no
 //      trailing `:level` suffix -- even though Slow's own stored value carries none and Default's
 //      carries `:high`; Vision (left unconfigured) shows plain "Inherited".
-//   5. Reasoning radios exist only on the 10 chat roles, never the 5 model-kind roles.
-//   6. Slow's model (`reasoning:false`) disables every level except Inherit, each with a
-//      "Not supported by GPT 3.5 Turbo" reason; Vision (unconfigured) disables every level except
-//      Inherit with "Pick a model first".
+//   5. Reasoning radios exist only on the 10 chat roles, never the 5 model-kind roles; each
+//      disabled level is explained by ONE VISIBLE caption (gate round 1, High #4), never only a
+//      screen-reader-only reason; Plan's own `:auto` value shows a checked "Auto" radio (gate
+//      round 1, High #3) instead of no level checked at all.
+//   6. Slow's model (`reasoning:false`) disables every level except Inherit with one combined
+//      visible caption; Vision (unconfigured) disables every level but Inherit with "Pick a
+//      model first".
 //   7. Keyboard-switching the provider to Anthropic re-filters Default's dropdown to Anthropic's
-//      own two models only; switching back restores GitHub Copilot's three.
+//      own two models only (announced, and `modelRoles.list()` itself is unchanged by the
+//      switch -- it is a display filter, never a write); Default's trigger now reads "Claude
+//      Fable 5 via GitHub Copilot" (decision 3, the role's own real model never blanked);
+//      switching back restores GitHub Copilot's three.
 //   8. Picking Default's "Medium" radio (a real click) writes `...claude-fable-5:medium`, read
-//      back through a fresh `window.refract.modelRoles.list()` IPC call -- not just the DOM;
-//      focusing "High" directly and pressing Space (keyboard) writes `...:high`; the trigger
-//      keeps showing "Claude Fable 5" throughout, never the suffix. Picking Inherit afterwards
-//      clears the suffix back to the bare selector.
+//      back through a fresh `window.refract.modelRoles.list()` IPC call -- not just the DOM.
+//      Tabbing from the trigger (never `.focus()`) reaches the checked Medium radio; three rapid
+//      ArrowRight presses (no settle wait between them) land on Inherit, costing at most TWO
+//      `config set` writes total (gate round 1, High #1: latest-pick-wins coalescing, not one
+//      write per keypress) and never dropping focus off the radio group.
 //
 // No Session is created: a live Session on the changed role (every Session defaults to 'default'
 // unless pinned) would make each pick above also wait on `SessionManager::apply_role_change`'s
@@ -41,10 +50,15 @@
 // per live Session, confirmed by a persisted fake-omp-invocations.log during this check's own
 // development. The profile item's Settings entry is reachable once a repository exists alone.
 //
+// Theme screenshots: `shared/themes.ts`'s own module comment is explicit that every built-in
+// theme is dark-toned ("there is nothing left to distinguish by mode") -- this build has no
+// light theme to screenshot. Dark (the default) plus Obsidian (the same second-theme choice
+// `verify-tauri-567.mjs` uses) stand in for "Dark and one light theme".
+//
 // Every screenshot is preceded by `settleForScreenshot` (pointer moved inside the viewport,
 // blurred, Escape pressed, fails loudly if a tooltip or hover card is still open).
 
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -53,6 +67,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -62,13 +77,15 @@ const CATALOG_FIXTURE = path.join(__dirname, 'fixtures', 'model-catalogs', 'chat
 
 // Seeded `modelRoles` record (the fake config store's `modelRoles` key): Default and Slow stay on
 // GitHub Copilot (the provider the switch must start on); Smol is deliberately on Anthropic (the
-// off-provider display proof); Vision is left unconfigured (the "Pick a model first" proof); the
-// other six chat roles and the five model-kind roles are left unconfigured too -- not needed by
-// any assertion below.
+// off-provider display proof); Vision is left unconfigured (the "Pick a model first" proof);
+// Plan carries a literal `:auto` suffix (gate round 1, High #3: a suffix outside the seven-option
+// UI vocabulary) on a GitHub Copilot model; the other five chat roles and the five model-kind
+// roles are left unconfigured too -- not needed by any assertion below.
 const SEEDED_MODEL_ROLES = {
   default: 'github-copilot/claude-fable-5:high',
   smol: 'anthropic/claude-haiku-5.5:low',
-  slow: 'github-copilot/gpt-3.5-turbo'
+  slow: 'github-copilot/gpt-3.5-turbo',
+  plan: 'github-copilot/gpt-5.6-terra:auto'
 };
 
 function assertTrue(actual, label, findings, failures) {
@@ -111,17 +128,15 @@ async function openSettingsModelRoles(cdp) {
   // own `omp models --kind chat --json` one-shot call has resolved yet -- wait for the provider
   // switch to render at least one real segment too (it renders nothing until `catalogs.chat` is
   // populated), or every assertion below races the load and reads pre-catalog raw selectors.
-  await cdp.waitFor(`document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]').length > 0`, {
+  await cdp.waitFor(`document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]').length > 0`, {
     timeoutMs: 15_000,
     label: 'Chat model catalog loaded (provider switch has real segments)'
   });
 }
 
-/** Reads each `[aria-label="Provider"]` segment's own text and whether it is currently selected. */
+/** Reads each provider segment's own text and whether it is currently selected. */
 async function readProviderSegments(cdp) {
-  return cdp.evaluate(
-    `Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).map((el) => ({ text: el.textContent.trim(), on: el.getAttribute('data-state') === 'on' }))`
-  );
+  return cdp.evaluate(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).map((el) => ({ text: el.textContent.trim(), on: el.getAttribute('data-state') === 'on' }))`);
 }
 
 /** A role's own trigger text (the `SelectValue`'s rendered content), closed-state -- no need to
@@ -142,15 +157,15 @@ async function readDropdownItemTexts(cdp, role) {
   return texts;
 }
 
-/** One reasoning-radio item's own disabled/reason state, read by its fixed DOM id
- * (`model-role-<role>-reasoning-<level>`, `RoleReasoningRadios.tsx`'s own convention). */
+/** One reasoning-radio item's own disabled/checked state, read by its fixed DOM id
+ * (`model-role-<role>-reasoning-<level>`, `RoleReasoningRadios.tsx`'s own convention). The
+ * combined visible reason caption is read separately (`readReasonCaption`, per group not per
+ * item -- gate round 1, High #4). */
 async function readRadioState(cdp, role, level) {
   return cdp.evaluate(`(() => {
     const el = document.getElementById(${JSON.stringify(`model-role-${role}-reasoning-${level}`)});
     if (!el) return null;
-    const describedBy = el.getAttribute('aria-describedby');
-    const reasonEl = describedBy ? document.getElementById(describedBy) : null;
-    return { exists: true, disabled: el.disabled === true, checked: el.getAttribute('data-state') === 'checked', reason: reasonEl ? reasonEl.textContent.trim() : null };
+    return { exists: true, disabled: el.disabled === true, checked: el.getAttribute('data-state') === 'checked' };
   })()`);
 }
 
@@ -179,6 +194,8 @@ async function main() {
     return cdp.evaluate(`window.refract.modelRoles.list().then((r) => (r.ok ? r.value : null))`);
   }
 
+  let debugLogPath;
+
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-1069-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1069-data-'));
@@ -193,6 +210,7 @@ async function main() {
 
     configStorePath = path.join(dataDir, 'fake-omp-config-store.json');
     writeFileSync(configStorePath, JSON.stringify({ modelRoles: SEEDED_MODEL_ROLES }));
+    debugLogPath = path.join(SHOTS_DIR, 'fake-omp-invocations.log');
 
     const port = await getFreePort();
     buildOmpShim(shimDir);
@@ -215,7 +233,7 @@ async function main() {
         REFRACT_FAKE_OMP_MODEL_CATALOG: CATALOG_FIXTURE,
         // Written to SHOTS_DIR (not exeDir, which this script's own `finally` block removes),
         // so a failed run's evidence survives for a post-mortem.
-        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(SHOTS_DIR, 'fake-omp-invocations.log')
+        REFRACT_FAKE_OMP_DEBUG_LOG: debugLogPath
       }
     });
     child = launched.child;
@@ -233,17 +251,18 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
     await addRepository(cdp, repoDir);
-    // Deliberately no Session is created: a live Session on the 'default' role (every Session's
-    // own effective role unless pinned elsewhere) would make every pick below also wait on
-    // `SessionManager::apply_role_change`'s own propagation sweep -- a real, pre-existing
-    // feature (issue #740/lane RM, unrelated to #1069) that tries to live-apply the new model to
-    // every matching live Session via up to three 60s-timeout RPCs each. This section's own
-    // checks are about the Settings screen only; the profile item's Settings entry (and so the
-    // Model roles section) is reachable once a repository exists, with no Session required.
+    // Deliberately no Session is created: a live Session on the changed role would wait on
+    // `SessionManager::apply_role_change`'s own propagation sweep (issue #740/lane RM, unrelated
+    // to #1069) -- up to three 60s-timeout RPCs per live Session, confirmed via a persisted
+    // fake-omp-invocations.log during this check's own development. Settings is reachable with
+    // just a repository added, no Session needed.
 
     await openSettingsModelRoles(cdp);
 
-    // ---- 1. The switch starts on GitHub Copilot (Default's own seeded provider). ----
+    // ---- 1. The switch starts on GitHub Copilot (Default's own seeded provider), with a
+    // visible "Show models from" label (gate round 1, Medium #7). ----
+    const switchLabelText = await cdp.evaluate(`document.getElementById('model-role-provider-switch-label')?.textContent.trim() ?? null`);
+    assertEqual(switchLabelText, 'Show models from', 'Provider switch carries a visible "Show models from" label', findings, failures);
     const segmentsBefore = await readProviderSegments(cdp);
     findings.push(`Provider segments at open: ${JSON.stringify(segmentsBefore)}`);
     const onSegments = segmentsBefore.filter((s) => s.on);
@@ -256,13 +275,15 @@ async function main() {
     assertEqual(await readTriggerText(cdp, 'slow'), 'GPT 3.5 Turbo', 'Slow trigger shows the model name only', findings, failures);
     assertEqual(await readTriggerText(cdp, 'vision'), 'Inherited', 'Vision (unconfigured) trigger reads plain Inherited', findings, failures);
 
-    // ---- 3. Smol (on Anthropic, a different provider) keeps its real model name, tagged. ----
+    // ---- 3. Smol (on Anthropic, a different provider) keeps its real model name, tagged, with
+    // a real space before "via" (gate round 1, Medium #9: the pre-fix text ran the two
+    // together, "Claude Haiku 5.5via Anthropic"). ----
     const smolTrigger = await readTriggerText(cdp, 'smol');
-    assertTrue(smolTrigger?.includes('Claude Haiku 5.5') ?? false, `Smol trigger names its real model (got ${JSON.stringify(smolTrigger)})`, findings, failures);
-    assertTrue(smolTrigger?.includes('via Anthropic') ?? false, `Smol trigger carries a "via Anthropic" tag (got ${JSON.stringify(smolTrigger)})`, findings, failures);
+    assertEqual(smolTrigger, 'Claude Haiku 5.5 via Anthropic', 'Smol trigger names its real model with a spaced "via Anthropic" tag', findings, failures);
 
     // ---- 2 continued. Default's own dropdown lists only GitHub Copilot's three models, no
-    // provider parenthetical. ----
+    // provider parenthetical, no duplicate item text (gate round 1, High #2: a suffixed current
+    // value used to pin a second, identical-looking copy of its own regular catalog item). ----
     const defaultItems = await readDropdownItemTexts(cdp, 'default');
     findings.push(`Default dropdown items: ${JSON.stringify(defaultItems)}`);
     assertTrue(
@@ -273,9 +294,11 @@ async function main() {
     );
     assertTrue(!defaultItems.some((t) => t.includes('Claude Haiku') || t.includes('Claude Opus')), 'Default dropdown excludes Anthropic models (filtered by provider)', findings, failures);
     assertTrue(!defaultItems.some((t) => t.includes('(')), 'No dropdown item shows a provider parenthetical', findings, failures);
+    assertEqual(new Set(defaultItems).size, defaultItems.length, 'Default dropdown items have no duplicate text', findings, failures);
 
     // ---- 5/6. Reasoning radios exist only on chat roles; Slow (non-reasoning) and Vision
-    // (unconfigured) disable every level but Inherit, each with its own stated reason. ----
+    // (unconfigured) disable every level but Inherit, each with ONE visible caption (gate
+    // round 1, High #4 -- never only a screen-reader-only reason). ----
     const imageRadio = await readRadioState(cdp, 'image', 'inherit');
     assertEqual(imageRadio, null, 'Image (a model-kind role) has no reasoning radio group at all', findings, failures);
     const defaultInherit = await readRadioState(cdp, 'default', 'inherit');
@@ -284,11 +307,17 @@ async function main() {
     for (const level of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']) {
       const slowState = await readRadioState(cdp, 'slow', level);
       assertTrue(slowState?.disabled === true, `Slow\u2019s ${level} radio is disabled (non-reasoning model)`, findings, failures);
-      assertEqual(slowState?.reason, 'Not supported by GPT 3.5 Turbo', `Slow\u2019s ${level} radio states why (${level})`, findings, failures);
       const visionState = await readRadioState(cdp, 'vision', level);
       assertTrue(visionState?.disabled === true, `Vision\u2019s ${level} radio is disabled (no model set)`, findings, failures);
-      assertEqual(visionState?.reason, 'Pick a model first', `Vision\u2019s ${level} radio states why (${level})`, findings, failures);
     }
+    assertEqual(
+      await readReasonCaption(cdp, 'slow'),
+      "Off, Minimal, Low, Medium, High and Extra high aren't supported by GPT 3.5 Turbo",
+      'Slow\u2019s visible caption names every unsupported level together',
+      findings,
+      failures
+    );
+    assertEqual(await readReasonCaption(cdp, 'vision'), 'Pick a model first', 'Vision\u2019s visible caption (no model set)', findings, failures);
     // Default's own model (Claude Fable 5) reports every one of the five levels plus reasoning,
     // so every radio should be enabled -- the positive case alongside Slow/Vision's negative one.
     for (const level of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']) {
@@ -297,58 +326,32 @@ async function main() {
     }
     assertEqual(await readRadioState(cdp, 'default', 'high').then((s) => s.checked), true, 'Default\u2019s radio reads the seeded :high level as checked', findings, failures);
 
+    // ---- 5 continued (gate round 1, High #3). Plan's own `:auto` suffix -- outside the
+    // seven-option UI vocabulary -- shows a checked "Auto" radio instead of no level checked. ----
+    const planAuto = await readRadioState(cdp, 'plan', 'auto');
+    assertTrue(planAuto?.exists === true && planAuto.checked === true && planAuto.disabled === false, 'Plan\u2019s own :auto suffix shows a checked, enabled "Auto" radio', findings, failures);
+
     // Named per role, not a shared generic name (accessibility section).
     const radioGroupName = await cdp.evaluate(
-      `(() => { const el = document.getElementById('model-role-default-reasoning-inherit'); const group = el.closest('[role="radiogroup"]'); const labelId = group?.getAttribute('aria-labelledby'); return labelId ? document.getElementById(labelId)?.textContent.trim() : null; })()`
+      `(() => { const el = document.getElementById('model-role-default-reasoning-inherit'); const group = el.closest('[role="radiogroup"]'); const labelId = group?.getAttribute('aria-labelledby'); return labelId ? labelId.split(' ').map((id) => document.getElementById(id)?.textContent.trim()).filter(Boolean).join(' ') : null; })()`
     );
-    assertEqual(radioGroupName, 'Default', 'Default\u2019s reasoning radiogroup is named via its own role label', findings, failures);
+    assertEqual(radioGroupName, 'Default Reasoning', 'Default\u2019s reasoning radiogroup is named "{Role} Reasoning" via its own role label plus a sr-only sub-label', findings, failures);
 
     await shot('01-seeded-state.png');
 
-    // ---- 7. Keyboard-switch the provider to Anthropic; Default's dropdown re-filters. Focuses
-    // via a direct `.focus()` call (never a click first) so the keyboard proof below is never
-    // ambiguous about whether a prior pointer interaction, not the keyboard, moved focus. Reads
-    // and records the segment state after ArrowRight ALONE before pressing anything else: Radix's
-    // ToggleGroup "single" mode deselects an ALREADY-selected item on a second activation
-    // (`ManageSessionsToolbar.tsx`'s own header comment), so if arrow navigation itself already
-    // moves the selection (radiogroup-style), a further Space/Enter on the now-selected item
-    // would wrongly deselect it -- Space is sent only when the arrow move alone did not select.
-    // Every read polls (`cdp.waitFor`) rather than reading once immediately after dispatching a
-    // key: a one-shot read raced React's own re-render in earlier runs of this exact check
-    // (non-deterministic pass/fail against identical actions), confirmed by comparing two runs'
-    // `report.json` side by side -- a real script bug, not a product one. ----
-    const PROVIDER_SEGMENT_FINDER = `document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')`;
-    async function selectedProviderSegment() {
-      return cdp.evaluate(`Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() ?? null`);
-    }
-    async function focusProviderSegment(text) {
-      await cdp.evaluate(`Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.textContent.trim() === ${JSON.stringify(text)})?.focus()`);
-    }
-    async function keyboardSwitchProviderTo(targetText, arrowCode, arrowKey) {
-      await pressKey(cdp, arrowCode, arrowKey, arrowKey);
-      await sleep(200);
-      let selected = await selectedProviderSegment();
-      findings.push(`Provider switch: after ${arrowKey} alone, selected = ${JSON.stringify(selected)}`);
-      if (selected !== targetText) {
-        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-        try {
-          await cdp.waitFor(
-            `Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === ${JSON.stringify(targetText)}`,
-            { timeoutMs: 3_000, label: `Provider switch moves to ${targetText} after ${arrowKey}+Space` }
-          );
-        } catch {
-          // Fall through: the assertion below reports whatever was actually observed.
-        }
-        selected = await selectedProviderSegment();
-        findings.push(`Provider switch: after ${arrowKey}+Space, selected = ${JSON.stringify(selected)}`);
-      }
-      return selected;
-    }
-
-    await focusProviderSegment('GitHub Copilot');
-    const afterRightArrow = await keyboardSwitchProviderTo('Anthropic', 39, 'ArrowRight');
+    // ---- 7. Keyboard-switch the provider to Anthropic; Default's dropdown re-filters, its own
+    // trigger now reads "via GitHub Copilot" (decision 3: a role's real model is never blanked
+    // just because the switch moved elsewhere), and `modelRoles.list()` itself is UNCHANGED by
+    // the switch (a display filter, never a write). Focuses via a direct `.focus()` call (never
+    // a click first) so the keyboard proof below is never ambiguous about whether a prior
+    // pointer interaction, not the keyboard, moved focus. ----
+    const rolesBeforeSwitch = await readModelRolesViaIpc();
+    await cdp.evaluate(`document.querySelector('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')?.focus()`);
+    const afterRightArrow = await keyboardSwitchProviderTo(cdp, pressKey, findings, 'Anthropic', 39, 'ArrowRight');
     assertEqual(afterRightArrow, 'Anthropic', 'Keyboard moves the provider switch to Anthropic', findings, failures);
+    const rolesAfterSwitch = await readModelRolesViaIpc();
+    assertEqual(JSON.stringify(rolesAfterSwitch), JSON.stringify(rolesBeforeSwitch), 'modelRoles.list() is unchanged by the provider switch (a display filter, never a write)', findings, failures);
+
     const anthropicItems = await readDropdownItemTexts(cdp, 'default');
     assertTrue(anthropicItems.some((t) => t.includes('Claude Haiku 5.5')) && anthropicItems.some((t) => t.includes('Claude Opus 5.5')), 'Default dropdown now lists Anthropic\u2019s models', findings, failures);
     // Claude Fable 5 MAY still appear once here -- not as a regular filtered-list item, but as
@@ -357,22 +360,34 @@ async function main() {
     // GitHub Copilot's own regular list items, so their absence is what actually proves filtering.
     assertTrue(!anthropicItems.some((t) => t.includes('GPT')), 'Default dropdown no longer lists GitHub Copilot\u2019s own (non-pinned) models', findings, failures);
 
+    const defaultTriggerOnAnthropic = await readTriggerText(cdp, 'default');
+    assertEqual(defaultTriggerOnAnthropic, 'Claude Fable 5 via GitHub Copilot', 'Default\u2019s trigger shows "via GitHub Copilot" once Anthropic is selected', findings, failures);
+    await shot('02-anthropic-via-github-copilot.png');
+
     // Restore GitHub Copilot for the remaining checks. Keyboard operability of the switch is
     // already fully proven by the forward move above (ArrowRight then Space selects the newly
     // focused segment); a plain click is enough to put the UI back in its seeded state for what
     // follows, not a second keyboard claim.
-    await cdp.click(`Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
+    await cdp.click(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
     await cdp.waitFor(
-      `Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'GitHub Copilot'`,
+      `Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'GitHub Copilot'`,
       { timeoutMs: 5_000, label: 'Switch restored to GitHub Copilot' }
     );
 
-    // ---- 8. Picking a reasoning level writes the suffix, read back through a fresh IPC call;
-    // ArrowRight (keyboard) moves to the next enabled level; Inherit clears the suffix. The
-    // trigger keeps showing the bare model name throughout (decision 5). Polls the real IPC value
-    // directly (`window.refract.modelRoles.list()`), not the DOM `data-state`: the write is an
-    // async round trip through the store and the fake-omp config file (get, set, get again), and
-    // this is the actual ground truth the claim is about, not a proxy for it. ----
+    // ---- Obsidian theme screenshot (shared/themes.ts: every built-in theme is dark-toned --
+    // this stands in for "one light theme", there being none to capture). ----
+    await cdp.evaluate(`window.refract.theme.set('obsidian')`);
+    await cdp.waitFor(`document.documentElement.className.includes('obsidian')`, { timeoutMs: 10_000, label: 'Obsidian theme applied' });
+    await shot('03-obsidian-seeded-state.png');
+    await cdp.evaluate(`window.refract.theme.set('dark')`);
+    await cdp.waitFor(`document.documentElement.className.includes('theme-dark') && !document.documentElement.className.includes('dark-high-contrast')`, { timeoutMs: 10_000, label: 'Dark theme restored' });
+
+    // ---- 8. Picking a reasoning level writes the suffix, read back through a fresh IPC call.
+    // Polls the real IPC value directly (`window.refract.modelRoles.list()`), not the DOM
+    // `data-state`: the write is an async round trip through the store and the fake-omp config
+    // file (get, set, get again), and this is the actual ground truth the claim is about, not a
+    // proxy for it. ----
+    const configSetBeforeMedium = countConfigSetCalls(debugLogPath);
     await cdp.click(`document.getElementById('model-role-default-reasoning-medium')`);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:medium')`, {
       timeoutMs: 8_000,
@@ -381,34 +396,43 @@ async function main() {
     let rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
+    assertTrue(countConfigSetCalls(debugLogPath) - configSetBeforeMedium >= 1, 'Picking Medium made at least one config-set call', findings, failures);
 
-    // A live Session on the 'default' role would have made this (and the provider switch above)
-    // wait on `SessionManager::apply_role_change`'s own propagation sweep (issue #740/lane RM,
-    // unrelated to #1069) -- not created above for exactly that reason (a session-RPC-timeout
-    // level delay was confirmed by a persisted fake-omp-invocations.log showing this exact pick
-    // never completing while a live Session existed on this role), so this is a plain, fast
-    // local save. Proves the keyboard contract with a direct `.focus()` + Space (never a click
-    // first, so the activation is unambiguously keyboard-driven).
-    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
-      timeoutMs: 8_000,
-      label: 'Keyboard Space on the focused High item writes :high (modelRoles.list() IPC)'
+    // ---- 8 continued (gate round 1, High #1 verify). Tab from the trigger -- never `.focus()`
+    // -- reaches the radiogroup's own roving-tabindex item, the currently CHECKED one (Medium).
+    // Three rapid ArrowRight presses, no settle wait between them, land on Inherit (every level
+    // is enabled for Default's own model, so Radix moves through every item with no skips,
+    // wrapping past Extra high back to Inherit): proves latest-pick-wins coalescing costs at
+    // most TWO `config set` writes for the whole burst, never one per keypress, and that focus
+    // never leaves the radio the user is actually on. ----
+    await cdp.click(`document.getElementById('model-role-default')`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
+    await cdp.waitFor(`!document.querySelector('[role="listbox"]')`, { timeoutMs: 5_000, label: 'Default dropdown closed before Tab' });
+    await pressKey(cdp, 9, 'Tab', 'Tab');
+    await cdp.waitFor(`document.activeElement?.id === 'model-role-default-reasoning-medium'`, {
+      timeoutMs: 5_000,
+      label: 'Tab from the trigger reaches the checked Medium radio (never `.focus()`)'
     });
-    rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard Space on the focused High item writes the :high suffix (read back via modelRoles.list())', findings, failures);
-
-    await cdp.click(`document.getElementById('model-role-default-reasoning-inherit')`);
+    const configSetBeforeArrows = countConfigSetCalls(debugLogPath);
+    for (let i = 0; i < 3; i += 1) {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
+    }
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5')`, {
       timeoutMs: 8_000,
-      label: 'Picking Inherit clears the suffix (modelRoles.list() IPC)'
+      label: 'Three rapid ArrowRight presses (Medium -> High -> Extra high -> wraps to Inherit) settle via IPC'
     });
+    const focusedAfterArrows = await cdp.evaluate(`document.activeElement?.id ?? null`);
+    assertEqual(focusedAfterArrows, 'model-role-default-reasoning-inherit', 'Focus stays on the picked radio (Inherit) after three rapid ArrowRight presses', findings, failures);
     rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5', 'Picking Inherit clears the suffix back to the bare selector', findings, failures);
-    assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger unchanged after clearing the suffix', findings, failures);
+    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5', 'Three rapid ArrowRight presses settle on the bare selector, read back via modelRoles.list()', findings, failures);
+    const configSetDuringArrows = countConfigSetCalls(debugLogPath) - configSetBeforeArrows;
+    findings.push(`config-set calls during the 3-ArrowRight burst: ${configSetDuringArrows}`);
+    assertTrue(configSetDuringArrows >= 1 && configSetDuringArrows <= 2, `At most 2 config-set writes landed for 3 rapid ArrowRight presses, latest-pick-wins coalesced (got ${configSetDuringArrows})`, findings, failures);
+    assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger unchanged after the ArrowRight burst (never the suffix)', findings, failures);
 
-    await shot('02-after-provider-switch-and-level-picks.png');
+    await shot('04-after-provider-switch-and-level-picks.png');
 
     const report = {
       gitHead: gitHeadSha,

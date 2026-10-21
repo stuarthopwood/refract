@@ -6,7 +6,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { friendlyProviderLabel } from '@/lib/modelRoles'
+import { friendlyProviderLabel } from '@/lib/providerLabels'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { DiffStatLine, StateIcon, STATUS_LABEL, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'

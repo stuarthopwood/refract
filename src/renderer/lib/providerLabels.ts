@@ -34,5 +34,9 @@ const PROVIDER_LABEL: Record<string, string> = {
  * the same rule applied here to an unrecognised PROVIDER id, not just an unrecognised model
  * name). */
 export function friendlyProviderLabel(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider
+  // Gate round 1 fix (#1114, Low): `Object.hasOwn` rather than bracket access + `??`, so a
+  // provider id that happens to collide with an `Object.prototype` member name (e.g.
+  // `"constructor"`, `"toString"`) can never return that inherited function instead of falling
+  // through to the raw-id fallback.
+  return Object.hasOwn(PROVIDER_LABEL, provider) ? (PROVIDER_LABEL[provider] as string) : provider
 }

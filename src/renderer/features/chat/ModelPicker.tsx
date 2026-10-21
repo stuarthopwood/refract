@@ -110,14 +110,9 @@ import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { ROLE_FALLBACK_LABEL } from '../settings/ModelRolesSection'
-import { friendlyProviderLabel, ROLE_LABEL } from '@/lib/modelRoles'
-import {
-  PICKER_OPTION_ACTIVE_CLASS,
-  PICKER_OPTION_CLASS,
-  PICKER_TRIGGER_CLASS,
-  usePickerDisabled,
-  usePickerOpenState
-} from './pickerShared'
+import { ROLE_LABEL } from '@/lib/modelRoles'
+import { friendlyProviderLabel } from '@/lib/providerLabels'
+import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 // Gate round 6 fix (`agent://Arch877` Flow L-N1): `smol`/`slow`'s "Default" fallback now lives
 // IN the shared `ROLE_FALLBACK_LABEL` itself (`ModelRolesSection.tsx`), not merged in locally --
