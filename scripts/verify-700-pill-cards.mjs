@@ -455,15 +455,23 @@ async function main() {
     // (`targetSession`'s `existing === sessionId` early-return, `split-store.ts` line ~167,
     // research.md Decision 7: "already the focused pane") -- so this reads the CURRENT sole pane
     // right before acting and always targets the OTHER session, whichever way that race landed.
+    //
+    // Gate round: the REAL reason "both panes rendered" never landed was never the click at all
+    // -- `App.tsx:41/119/120` (`MIN_SPLIT_WIDTH_PX = 720`, `canShowSplit = chatWidthPx >= 720`,
+    // `showSplit = isSplit && canShowSplit`) means the DOM only ever mounts a SECOND
+    // `[data-session-pane]` once the chat area is already wide enough -- `paneSessionIds` was
+    // reaching length 2 correctly the whole time (confirmed live via `openInSplit`'s own
+    // `targetSession` logic), the narrow default test-window chat area just never rendered it.
+    // Widening the window FIRST (comfortably over the 720px chat-area floor, well before the
+    // later 1000px-then-measure-then-360px dance below even starts) means `canShowSplit` is
+    // already true the moment `paneSessionIds` becomes length 2.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
     const sessionIdB = await cdp.evaluate(`(() => { const ids = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open')); return ids.find((id) => id !== ${JSON.stringify(sessionIdA)}) ?? null; })()`);
     assertTrue(typeof sessionIdB === 'string' && sessionIdB.length > 0 && sessionIdB !== sessionIdA, 'Session B\'s own id read from its row (distinct from Session A)', { sessionIdA, sessionIdB });
     const currentPaneId = await cdp.evaluate(`document.querySelector('[data-session-pane]')?.getAttribute('data-session-pane') ?? null`);
     const sessionToSplit = currentPaneId === sessionIdA ? sessionIdB : sessionIdA;
     await openSessionInSplitViaMenu(cdp, sessionToSplit);
-    const panesImmediatelyAfter = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    await sleep(500);
-    const panesAfter500ms = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    console.error(`${LOG}: DIAG split targeting:`, JSON.stringify({ sessionIdA, sessionIdB, currentPaneId, sessionToSplit, panesImmediatelyAfter, panesAfter500ms }));
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
     // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
     // window's own total width -- one measured correction pass against an arbitrary starting
