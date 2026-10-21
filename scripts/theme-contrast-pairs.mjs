@@ -61,11 +61,11 @@ export const PAIRS = [
   // Gate round 5 (#564 follow-up): dropdown-menu.tsx's active-row inset shadow now uses this token (was --ring), rendered on bg-popover.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
   { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
-  { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: a transient-focus/other bar-on-muted combination already covered elsewhere
+  { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: SubagentPanel.tsx's `hover:bg-muted/50` row hover can paint under a selected row's bar
   { fg: 'ring', bg: 'accent', min: 3 }, // #1122: focus-visible:ring-ring now paints while focused on an accent-filled selected row
   { fg: 'severity-success', bg: 'accent', min: 3 },
   { fg: 'severity-error', bg: 'accent', min: 3 },
-  { fg: 'destructive', bg: 'accent', min: 3 },
+  { fg: 'destructive', bg: 'accent', min: 4.5 }, // #1122: ManageSessionRow.tsx's "Worktree missing" body text on the selected row's bg-accent
   { fg: 'state-idle', bg: 'accent', min: 3 },
   { fg: 'state-needs-you', bg: 'accent', min: 3 },
   { fg: 'state-stopped', bg: 'accent', min: 3 },

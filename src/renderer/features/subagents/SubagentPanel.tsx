@@ -383,8 +383,9 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                     // Gate remediation (Medium, a11y across reviewers): the FileExplorerPanel.tsx
                     // tree-row precedent's own forced-colours selected fallback, reused verbatim
                     // so both trees are visually consistent and the selected row survives Windows
-                    // High Contrast (where the `bg-active-indicator` bar below is itself repainted
-                    // away). Gate round 2 (High) claimed `outline-hidden` fixed the Tailwind 4 trap
+                    // High Contrast (an outline backing up the `ActiveIndicatorBar` below, which
+                    // paints `Highlight` there). Gate round 2 (High) claimed `outline-hidden`
+                    // fixed the Tailwind 4 trap
                     // (`outline-none` pins `outline-style: none` permanently) -- it did not:
                     // compiling this exact class list with the installed tailwindcss@4.3.3 shows
                     // `.outline-hidden` ALSO sets `--tw-outline-style: none` unconditionally

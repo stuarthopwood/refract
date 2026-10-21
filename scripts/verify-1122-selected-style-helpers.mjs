@@ -5,7 +5,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { resolveCssVarColor } from './verify-tauri-cdp.mjs';
+import { resolveCssVarColor, sleep } from './verify-tauri-cdp.mjs';
 
 // The EXACT compiled className `src/renderer/components/ActiveIndicatorBar.tsx` renders --
 // asserting a rendered bar's className equals this literal string (not a loose substring match)
@@ -121,4 +121,56 @@ export function forcedColorsRuleCompiledFor(repoRoot, targetSelector, declaratio
   const body = bodyStart !== -1 && bodyEnd !== -1 ? normalized.slice(bodyStart, bodyEnd) : '';
   const declarationMatches = declarationRe.test(body);
   return { cssFile: file, selectorFound: true, mediaHeader, insideForcedColorsMedia, body, declarationMatches };
+}
+
+/** Gate round 2 fix: a click leaves the pointer resting on the row, so its own `hover:bg-*`
+ * (often the SAME token as the selected fill) would paint whether or not selection did -- a fill
+ * check measured there cannot fail. Moves the pointer to a neutral point (the same
+ * `Input.dispatchMouseEvent` mechanism `settleForScreenshot` uses: `width - 20, 450` first, then
+ * the bottom-centre edge as a fallback), REQUIRES `!el.matches(':hover')`, then waits for every
+ * running transition on the element to finish before the caller measures. */
+export async function movePointerOffAndSettle(cdp, finder, label) {
+  const { width, height } = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
+  for (const [x, y] of [[width - 20, 450], [Math.round(width / 2), height - 4]]) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await sleep(50);
+    const hovered = await cdp.evaluate(`(() => { const el = ${finder}; return !!el && el.matches(':hover'); })()`);
+    if (!hovered) {
+      await cdp.waitFor(`(() => { const el = ${finder}; return !!el && el.getAnimations().length === 0; })()`, {
+        timeoutMs: 5_000,
+        label: `${label}: transitions settled`
+      });
+      return;
+    }
+  }
+  throw new Error(`${label}: the pointer still hovers the row after moving to two neutral points -- a hover fill would mask the selected fill.`);
+}
+
+// `RepositoryGroup.tsx`'s collapsed header trigger for the group holding the open Session. Tagged
+// with a scratch-only `data-verify-1122-group` attribute (set by this script in the live DOM, not
+// product markup) so it can be found again once collapsing removes the Session row it was found by.
+const GROUP_TRIGGER = `document.querySelector('[data-verify-1122-group]')`;
+
+/** Issue #1122 / #735 decision 22: collapses the open Session's own group and reads its header
+ * trigger -- square (`data-choice-item`), the exact shared bar, the bar's real colour, and NO
+ * selected fill (bar only). Re-expands afterwards: later checks click the Session row inside. */
+export async function checkCollapsedGroupHeader(cdp, themeName, { barBg, screenshot }) {
+  const tagged = await cdp.evaluate(`(() => {
+    const trigger = Array.from(document.querySelectorAll('nav[aria-label="Sessions"] button[aria-expanded="true"][aria-controls]'))
+      .find((b) => document.getElementById(b.getAttribute('aria-controls'))?.querySelector('li[data-choice-item]'));
+    if (!trigger) return false;
+    document.querySelectorAll('[data-verify-1122-group]').forEach((el) => el.removeAttribute('data-verify-1122-group'));
+    trigger.setAttribute('data-verify-1122-group', '');
+    return true;
+  })()`);
+  if (!tagged) throw new Error(`${themeName}: the open Session's group header trigger was not found.`);
+  await cdp.click(GROUP_TRIGGER);
+  await cdp.waitFor(`${GROUP_TRIGGER}?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: `${themeName}: group collapsed` });
+  await movePointerOffAndSettle(cdp, GROUP_TRIGGER, `${themeName}: collapsed group header`);
+  const read = await readSelectedSite(cdp, GROUP_TRIGGER);
+  await screenshot();
+  await cdp.click(GROUP_TRIGGER);
+  await cdp.waitFor(`${GROUP_TRIGGER}?.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: `${themeName}: group re-expanded` });
+  await cdp.waitFor(`!!document.querySelector('nav[aria-label="Sessions"] li[data-choice-item]')`, { timeoutMs: 10_000, label: `${themeName}: Session row visible again` });
+  return read;
 }

@@ -103,6 +103,9 @@ export function GroupHeaderTrigger({
       // `gap-1.5`/`px-1.5`, itself off-grid per decision 28) -- moves the Project icon's own
       // left edge to exactly 24px (4px container padding + 4px this padding + 12px chevron +
       // 4px gap), so `SessionRow.tsx`'s own `pl-6` status icon finally lines up under it.
+      // Issue #1122: `data-choice-item` joins the shared square-choice selector (globals.css),
+      // which overrides `rounded-md` below; the focus-visible outline is unaffected.
+      data-choice-item
       className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing

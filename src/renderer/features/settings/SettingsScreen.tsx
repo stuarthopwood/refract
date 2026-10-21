@@ -120,6 +120,9 @@ export function SettingsScreen() {
                   className={cn(
                     'relative block w-full rounded-md border border-transparent bg-clip-padding px-2 py-1.5 text-left text-sm outline-none',
                     'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+                    // Forced colours strips the box-shadow ring and the transparent border, so
+                    // draw a real outline there (same pattern as SessionList.tsx's Clear filter).
+                    'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
                     section.id === settingsSection ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   )}
                 >

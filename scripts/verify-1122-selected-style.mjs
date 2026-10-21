@@ -11,12 +11,14 @@
 // Flow: Readiness -> add a scratch repo seeded with 2 real files (so FileExplorerPanel has more
 // than a bare root to pick from) -> create session -> send the tape's prompt -> for each of
 // Dark, Obsidian and Dark (high contrast) (the acceptance's own named themes; Nordic Frost and
-// Cyber Amber are covered mathematically by `check-theme-contrast.mjs`'s 927/927 pairs, so
+// Cyber Amber are covered mathematically by `check-theme-contrast.mjs`'s 962/962 pairs, so
 // visual screenshot coverage is only required for these three):
 //   - Session row (`SessionRow.tsx`): selected, square (`data-choice-item`), the shared bar+fill.
+//   - Collapsed group header (`GroupHeader.tsx`): collapses the open Session's group, square
+//     (`data-choice-item`), the shared bar, NO fill (#735 decision 22), then re-expands.
 //   - "Pull requests" nav (`SessionList.tsx`): click, `aria-current="page"`, square
 //     (`data-choice-item`), the shared bar+fill, then returns to chat.
-//   - Settings nav (`SettingsScreen.tsx`): default section selected (square, bar, `bg-muted`
+//   - Settings nav (`SettingsScreen.tsx`): default section selected (square, bar, `bg-accent`
 //     fill); clicks "Appearance" (now selected) then Shift+Tab's focus back to "Session readout"
 //     (now focused but NOT selected) -- proves keyboard focus stays visible and distinct from
 //     selection on two DIFFERENT rows at once, the cleanest site for this (a plain `<ul>` of
@@ -67,7 +69,15 @@ import { buildOmpShim, worktreesDirFor } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { pressKey } from './verify-tauri-session-list-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
-import { readSelectedSite, readExplorerRowTone, tokenColor, forcedColorsRuleCompiledFor } from './verify-1122-selected-style-helpers.mjs';
+import {
+  readSelectedSite,
+  readExplorerRowTone,
+  tokenColor,
+  forcedColorsRuleCompiledFor,
+  movePointerOffAndSettle,
+  checkCollapsedGroupHeader,
+  ACTIVE_INDICATOR_BAR_CLASS
+} from './verify-1122-selected-style-helpers.mjs';
 import { hasVisibleShadow } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,7 +119,8 @@ async function main() {
         `${t.id}-05-explorer-row-selected.png`,
         `${t.id}-06-subagent-row-selected.png`,
         `${t.id}-07-manage-sessions-row-selected.png`,
-        `${t.id}-08-pull-request-row-attempt.png`
+        `${t.id}-08-pull-request-row-attempt.png`,
+        `${t.id}-09-group-header-collapsed.png`
       ]),
       'report.json',
       'app.log',
@@ -234,19 +245,30 @@ async function main() {
         pushShot(shotNames, `${theme.id}-01-session-row-selected.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
+        // ---- Collapsed group header (GroupHeader.tsx) -- bar only, no fill (#735 decision 22) ----
+        const groupHeader = await checkCollapsedGroupHeader(cdp, theme.name, {
+          barBg,
+          screenshot: async () => {
+            await settleForScreenshot(cdp);
+            pushShot(shotNames, `${theme.id}-09-group-header-collapsed.png`);
+            await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
+          }
+        });
+        assertSite(failures, findings, theme.name, 'Collapsed group header', groupHeader, { barBg });
+        if (groupHeader && groupHeader.fillBackgroundColor !== 'rgba(0, 0, 0, 0)') {
+          failures.push(`${theme.name}: Collapsed group header -- expected no selected fill (bar only, #735 decision 22), measured ${groupHeader.fillBackgroundColor}.`);
+        }
+
         // ---- "Pull requests" nav entry (SessionList.tsx) ----
         await cdp.clickByLabel('Pull requests');
         await cdp.waitFor(`document.querySelector('[aria-label="Pull requests"]')?.getAttribute('aria-current') === 'page'`, {
           timeoutMs: 10_000,
           label: `${theme.name}: Pull requests nav selected`
         });
-        // The shared Button carries `transition-all`: reading the fill straight after
-        // `aria-current` flips measured the background mid-transition (~70% alpha). Wait for
-        // every running transition on the entry to finish before measuring.
-        await cdp.waitFor(`document.querySelector('[aria-label="Pull requests"]')?.getAnimations().length === 0`, {
-          timeoutMs: 5_000,
-          label: `${theme.name}: Pull requests nav transitions settled`
-        });
+        // The pointer rests on the entry after the click, and its own `hover:bg-sidebar-accent`
+        // paints the same token as the selected fill -- move it off first, then wait out the
+        // Button's `transition-all` (a mid-transition read measured ~70% alpha).
+        await movePointerOffAndSettle(cdp, `document.querySelector('[aria-label="Pull requests"]')`, `${theme.name}: Pull requests nav`);
         const prNav = await readSelectedSite(cdp, `document.querySelector('[aria-label="Pull requests"]')`);
         assertSite(failures, findings, theme.name, 'Pull requests nav entry', prNav, { barBg, fillBg: sidebarAccentBg, fillTokenName: '--sidebar-accent' });
         await settleForScreenshot(cdp);
@@ -263,8 +285,9 @@ async function main() {
         const hasPrRows = prRowsAppeared ? await cdp.evaluate(`document.querySelectorAll('[data-pr-row]').length > 0`) : false;
         if (hasPrRows) {
           await cdp.click(`document.querySelector('[data-pr-row]')`);
-          await sleep(200);
-          const prRow = await readSelectedSite(cdp, `document.querySelector('[data-pr-row]')`);
+          await cdp.waitFor(`!!document.querySelector('[data-pr-row][aria-current="true"]')`, { timeoutMs: 10_000, label: `${theme.name}: PR row selected` });
+          await movePointerOffAndSettle(cdp, `document.querySelector('[data-pr-row][aria-current="true"]')`, `${theme.name}: PR row`);
+          const prRow = await readSelectedSite(cdp, `document.querySelector('[data-pr-row][aria-current="true"]')`);
           assertSite(failures, findings, theme.name, 'PR list row', prRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
         } else if (theme === THEMES[0]) {
           notExercised.push(
@@ -284,7 +307,7 @@ async function main() {
         await runSubagentChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg });
         await runManageSessionsChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg });
 
-        findings.push(`${theme.name}: screenshots captured for all 6 built sites plus the PR-row attempt.`);
+        findings.push(`${theme.name}: screenshots captured for all 7 measured sites plus the PR-row attempt.`);
       } catch (err) {
         failures.push(`${theme.name}: ${err.message}`);
       }
@@ -409,7 +432,7 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
     cdp,
     `Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`
   );
-  assertSite(failures, findings, theme.name, 'Settings nav (Appearance, after click)', appearanceSection);
+  assertSite(failures, findings, theme.name, 'Settings nav (Appearance, after click)', appearanceSection, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
 
   // ---- Keyboard focus distinct from selection: after the screen's own focus-the-heading
   // effect fires (`SettingsScreen.tsx`'s `useEffect` on `settingsSection`, which moves real
@@ -428,10 +451,13 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
   const focusState = await cdp.evaluate(`(() => {
     const active = document.activeElement;
     const sessionReadout = Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Session readout');
+    const appearance = Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance');
     const style = sessionReadout ? getComputedStyle(sessionReadout) : null;
     return {
       focusedIsSessionReadout: active === sessionReadout,
       sessionReadoutSelected: sessionReadout?.getAttribute('aria-current') === 'page',
+      appearanceSelected: appearance?.getAttribute('aria-current') === 'page',
+      appearanceBarPresent: !!appearance && Array.from(appearance.querySelectorAll('span[aria-hidden]')).some((s) => s.className === ${JSON.stringify(ACTIVE_INDICATOR_BAR_CLASS)}),
       // Issue #1144 whitespace rule aside -- this button's OWN pre-existing focus indicator
       // (unchanged by #1122) is \`focus-visible:border-ring focus-visible:ring-3
       // focus-visible:ring-ring/50\`, a box-shadow ring plus a border-colour change, never an
@@ -452,10 +478,12 @@ async function runSettingsChecks(cdp, theme, { failures, findings, notExercised,
     failures.push(`${theme.name}: the bounded Shift+Tab search never landed on Session readout within 20 presses.`);
   } else if (focusState.sessionReadoutSelected) {
     failures.push(`${theme.name}: Session readout is focused but also reports selected (aria-current=page) -- the keyboard-focus-vs-selection distinction this check exists to prove did not hold.`);
+  } else if (!focusState.appearanceSelected || !focusState.appearanceBarPresent) {
+    failures.push(`${theme.name}: with focus on Session readout, Appearance no longer shows as selected (aria-current=page: ${focusState.appearanceSelected}, exact shared bar present: ${focusState.appearanceBarPresent}) -- focus and selection were not shown on two different rows.`);
   } else if (!focusState.matchesFocusVisible) {
-    notExercised.push(`${theme.name}: Session readout keyboard focus did not match :focus-visible in this scratch WebView2 window even with Emulation.setFocusEmulationEnabled(true) (box-shadow: ${focusState.sessionReadoutBoxShadow}) -- the selected-vs-focus distinction for this theme is Not verified rather than claimed.`);
+    failures.push(`${theme.name}: Session readout keyboard focus did not match :focus-visible in this scratch WebView2 window even with Emulation.setFocusEmulationEnabled(true) (box-shadow: ${focusState.sessionReadoutBoxShadow}) -- the focus ring could not be measured.`);
   } else if (!realRingVisible) {
-    notExercised.push(`${theme.name}: Session readout matched :focus-visible but its box-shadow measured no real visible layer (${focusState.sessionReadoutBoxShadow}) once Tailwind's always-present zero-geometry layers are discounted -- Not verified rather than claimed.`);
+    failures.push(`${theme.name}: Session readout matched :focus-visible but its box-shadow measured no real visible layer (${focusState.sessionReadoutBoxShadow}) once Tailwind's always-present zero-geometry layers are discounted.`);
   } else {
     findings.push(`${theme.name}: keyboard focus (Session readout, real bounded Shift+Tab, :focus-visible matched, a REAL visible ring box-shadow measured) is distinct from selection (Appearance, square+bar+fill) -- two different rows, each its own real state.`);
   }
@@ -474,7 +502,8 @@ async function runExplorerChecks(cdp, theme, { failures, findings, shotNames, ba
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Files"]')`, { timeoutMs: 15_000, label: `${theme.name}: Explorer tree mounted` });
   await cdp.waitFor(`document.querySelectorAll('[data-tree-row-path]').length > 0`, { timeoutMs: 15_000, label: `${theme.name}: Explorer rows rendered` });
   await cdp.click(`document.querySelector('[data-tree-row-path]')`);
-  await sleep(200);
+  await cdp.waitFor(`!!document.querySelector('[data-tree-row-path][aria-selected="true"]')`, { timeoutMs: 10_000, label: `${theme.name}: Explorer row selected` });
+  await movePointerOffAndSettle(cdp, `document.querySelector('[data-tree-row-path][aria-selected="true"]')`, `${theme.name}: Explorer row`);
   const explorerRow = await readSelectedSite(cdp, `document.querySelector('[data-tree-row-path][aria-selected="true"]')`);
   assertSite(failures, findings, theme.name, 'Explorer row', explorerRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
 
@@ -508,8 +537,10 @@ async function runSubagentChecks(cdp, theme, { failures, findings, shotNames, ba
     label: `${theme.name}: Subagent panel rows rendered`
   });
   await cdp.click(`Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]')).find((el) => el.getAttribute('aria-selected') !== null)`);
-  await sleep(200);
-  const subagentRow = await readSelectedSite(cdp, `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')`);
+  const selectedSubagent = `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')`;
+  await cdp.waitFor(`!!${selectedSubagent}`, { timeoutMs: 10_000, label: `${theme.name}: Subagent row selected` });
+  await movePointerOffAndSettle(cdp, selectedSubagent, `${theme.name}: Subagent panel row`);
+  const subagentRow = await readSelectedSite(cdp, selectedSubagent);
   assertSite(failures, findings, theme.name, 'Subagent panel row', subagentRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
   await settleForScreenshot(cdp);
   shotNames.push(`${theme.id}-06-subagent-row-selected.png`);
@@ -524,8 +555,11 @@ async function runManageSessionsChecks(cdp, theme, { failures, findings, shotNam
   });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Manage sessions')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: `${theme.name}: Manage sessions screen opened` });
-  await cdp.waitFor(`!!document.querySelector('li[class*="bg-accent"]')`, { timeoutMs: 15_000, label: `${theme.name}: the open session's own row is visible-selected` });
-  const manageRow = await readSelectedSite(cdp, `document.querySelector('li[class*="bg-accent"]')`);
+  // The open session's own row, found by `ManageSessionRow.tsx`'s existing sr-only "Shown in
+  // chat" marker (rendered only while `isVisible`), not by a styling class.
+  const visibleRow = `Array.from(document.querySelectorAll('li .sr-only')).find((s) => s.textContent.trim() === 'Shown in chat')?.closest('li')`;
+  await cdp.waitFor(`!!${visibleRow}`, { timeoutMs: 15_000, label: `${theme.name}: the open session's own row is visible-selected` });
+  const manageRow = await readSelectedSite(cdp, visibleRow);
   assertSite(failures, findings, theme.name, 'Manage sessions row', manageRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
   await settleForScreenshot(cdp);
   shotNames.push(`${theme.id}-07-manage-sessions-row-selected.png`);

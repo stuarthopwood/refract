@@ -2,7 +2,9 @@
 // surface -- the "Pull requests" nav entry and Session rows (SessionList.tsx/SessionRow.tsx),
 // the Settings nav (SettingsScreen.tsx), PR list rows (PullRequestRow.tsx), Explorer tree rows
 // and the Subagent panel (FileExplorerPanel.tsx/SubagentPanel.tsx), and Manage sessions rows
-// (ManageSessionRow.tsx). Flush full height (`inset-y-0`, no rounded caps), 2px wide, the shared
+// (ManageSessionRow.tsx), plus the collapsed group header's containment cue (GroupHeader.tsx,
+// bar only) and the focused split pane (ChatPane.tsx). Flush full height (`inset-y-0`, no
+// rounded caps), 2px wide, the shared
 // `--active-indicator` accent, with its own forced-colours fallback baked in so selection
 // survives Windows High Contrast at every call site, not just the ones that already carried one.
 // Replaces the hand-copied `<span>` this shape used to drift apart at (five-plus call sites: some
