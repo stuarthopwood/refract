@@ -383,7 +383,7 @@ function GitChangesDiffPane({
           separate name span beside an icon-only control -- also fixes the Low "file name shown
           twice" item, since that separate span was the duplicate. `border-b border-divider`
           (Low item) separates the bar from the diff without heavy chrome. */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-divider bg-background py-1">
+      <div className="no-drag-region sticky top-0 z-10 flex items-center gap-2 border-b border-divider bg-background py-1">
         <Button
           ref={backButtonRef}
           variant="ghost"

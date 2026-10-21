@@ -85,7 +85,10 @@ pub(super) fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
 /// `fs::read_preview::read_preview` reader `changes_diff.rs::untracked_file_patch` uses, instead
 /// of this module's own now-removed second hand-rolled `is_binary`/`MAX_FILE_BYTES` copy of that
 /// exact logic.
-pub(super) async fn score_untracked_file(worktree_path: &Path, relative_path: &str) -> (i64, i64, bool) {
+pub(super) async fn score_untracked_file(
+    worktree_path: &Path,
+    relative_path: &str,
+) -> (i64, i64, bool) {
     if contains_git_segment(relative_path) {
         return (0, 0, false);
     }
@@ -126,8 +129,9 @@ pub(super) async fn score_untracked_file(worktree_path: &Path, relative_path: &s
         // Binary, a vanished-mid-read race, a read error, or an image: scores 0/0/not-partial,
         // the same "nothing countable" degrade the pre-existing binary/vanished cases already
         // used -- this is a badge count, not the diff-reason surface `changes_diff.rs` exposes.
-        FilePreviewKind::Binary | FilePreviewKind::Deleted | FilePreviewKind::ReadError | FilePreviewKind::Image => {
-            (0, 0, false)
-        }
+        FilePreviewKind::Binary
+        | FilePreviewKind::Deleted
+        | FilePreviewKind::ReadError
+        | FilePreviewKind::Image => (0, 0, false),
     }
 }

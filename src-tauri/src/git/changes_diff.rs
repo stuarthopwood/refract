@@ -11,7 +11,9 @@ use super::git::{git_raw, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
 use crate::fs::paths::contains_git_segment;
 use crate::fs::read_preview::{read_preview, FilePreviewKind};
-use crate::fs::resolve::{canonicalize_root, resolve_in_worktree, resolve_reason_message, ResolveReason};
+use crate::fs::resolve::{
+    canonicalize_root, resolve_in_worktree, resolve_reason_message, ResolveReason,
+};
 
 /// Mirrors `changes_status.rs`'s own `DIFF_TIMEOUT`: re-declared rather than imported, since that
 /// constant is a private `const` in its own file (same reasoning that file's header comment gives
@@ -193,9 +195,10 @@ async fn untracked_file_patch(
         }
         let preview = read_preview(&resolved, path).await;
         match preview.kind {
-            FilePreviewKind::Text | FilePreviewKind::Markdown => {
-                Ok((build_added_patch(&preview.content.unwrap_or_default()), None))
-            }
+            FilePreviewKind::Text | FilePreviewKind::Markdown => Ok((
+                build_added_patch(&preview.content.unwrap_or_default()),
+                None,
+            )),
             FilePreviewKind::Binary => Ok((String::new(), Some(REASON_BINARY))),
             FilePreviewKind::TooLarge => Ok((String::new(), Some(REASON_TOO_LARGE))),
             FilePreviewKind::ReadError => Ok((String::new(), Some(REASON_READ_ERROR))),

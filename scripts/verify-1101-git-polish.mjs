@@ -44,7 +44,6 @@
 // fails loudly rather than silently comparing a meaningless unfocused style.
 
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +57,8 @@ import {
   safeRmSync,
   assertExeUnchanged,
   requireSharedCargoTarget,
-  citeScreenshots
+  citeScreenshots,
+  computeDirty
 } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository } from './verify-tauri-session-list-helpers.mjs';
 import {
@@ -200,9 +200,7 @@ async function main() {
     screenshotNames.push(name);
   }
 
-  const dirtyResult = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true });
-  const dirtyLines = dirtyResult.status === 0 ? dirtyResult.stdout.split('\n').filter(Boolean) : null;
-  const dirty = dirtyLines === null ? 'unknown' : dirtyLines.length > 0;
+  const dirty = computeDirty(REPO_ROOT);
 
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1101-data-'));
@@ -348,15 +346,21 @@ async function main() {
     const rowBusyFinder = `document.querySelector('span[title=${JSON.stringify(FIXTURE.bigUntracked)}]')?.closest('[aria-busy]')`;
     await clickRowMenuItem(cdp, FIXTURE.bigUntracked, `Stage ${FIXTURE.bigUntracked}`);
     const rowBusySnapshot = await cdp.waitFor(
-      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab ? kebab.getAttribute('aria-disabled') === 'true' : null, kebabNativeDisabled: kebab ? kebab.disabled : null }; })()`,
+      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); if (!kebab) return null; kebab.focus(); const opened = kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab.getAttribute('aria-disabled') === 'true', kebabNativeDisabled: kebab.disabled, kebabFocusable: document.activeElement === kebab, keydownDefaultPrevented: !opened, menuOpenedOnEnter: !!document.querySelector('[role="menu"]') }; })()`,
       { timeoutMs: 5_000, intervalMs: 15, label: 'Row aria-busy="true" observed mid-flight while staging a 100 MB file' }
     );
     assertEqual(rowBusySnapshot?.spinner, true, 'Row shows a spinner icon while its own stage is in flight', findings, failures);
     assertEqual(rowBusySnapshot?.kebabAriaDisabled, true, "Row's own kebab trigger is aria-disabled while its stage is in flight", findings, failures);
-    // Gate round 1 MEDIUM 4: `aria-disabled` alone never stops a keyboard Enter/Space from
-    // opening the menu -- proves the REAL native `disabled` property (`GitChangesFileRow.tsx`'s
-    // own fix) actually landed, not just the pre-existing AT-only signal.
-    assertEqual(rowBusySnapshot?.kebabNativeDisabled, true, "Row's own kebab trigger carries a real native `disabled` while its stage is in flight (keyboard-proof, not just AT-only)", findings, failures);
+    // #1111 item 2 fix (round-2 gate on PR #1109): a NATIVE `disabled` forces a browser blur
+    // the instant React applies it, which left the round-1 build unable to restore focus to a
+    // just-closed menu's own trigger (WCAG 2.4.3 regression) -- the trigger now stays natively
+    // ENABLED and focusable throughout, with `onKeyDown`'s own `preventDefault()` (observed via
+    // `dispatchEvent`'s own return value, and a real check that no `[role="menu"]` opened)
+    // blocking the keyboard-driven reopen instead.
+    assertEqual(rowBusySnapshot?.kebabNativeDisabled, false, "Row's own kebab trigger stays natively enabled (never `disabled`) while its stage is in flight", findings, failures);
+    assertEqual(rowBusySnapshot?.kebabFocusable, true, "Row's own kebab trigger is focusable while its stage is in flight", findings, failures);
+    assertEqual(rowBusySnapshot?.keydownDefaultPrevented, true, 'A keyboard Enter on the busy kebab trigger has its default action prevented', findings, failures);
+    assertEqual(rowBusySnapshot?.menuOpenedOnEnter, false, 'A keyboard Enter on the busy kebab trigger does not open its menu', findings, failures);
     await shot('04-busy-staging-big-file.png');
     await cdp.waitFor(`(() => { const row = (${rowBusyFinder}); return !!row && row.getAttribute('aria-busy') !== 'true'; })()`, {
       timeoutMs: 30_000,

@@ -182,17 +182,27 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
   if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
   else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
   else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
-  // Gate round 1 item (c) (#1101, Main's UI review): the call above leaves `untracked` at its
-  // default (`false`), so it only ever exercises the TRACKED path's pre-existing
-  // `validate_pathspec` backstop. `untracked_file_patch` (`changes_diff.rs`) is a SEPARATE code
-  // path that reads the filesystem directly rather than asking `git` to diff an already-
-  // contained blob, so it needs its own explicit proof, not an inference from the tracked case.
+  // #1111 item 6 correction: this call's `path` is an ABSOLUTE, outside-worktree path, which
+  // `diff_text`'s own unconditional `validate_pathspec(worktree_path, path)?` refuses BEFORE
+  // `untracked`/`confirm_untracked`/`untracked_file_patch` are ever consulted -- this probe
+  // only proves CALL ORDER (the tracked-path backstop runs first regardless of the flag), never
+  // `untracked_file_patch`'s OWN `resolve_in_worktree` containment proof (that function's actual
+  // containment, including its symlink/junction-walking and post-resolution `.git` check, is
+  // proven live by `verify-1101-git-polish.mjs`'s Check 4b and `verify-1111-git-readpath.mjs`'s
+  // own junction/8.3-alias checks, both of which use an untracked path that genuinely reaches
+  // `untracked_file_patch` instead of being refused earlier by this lexical gate). Asserted
+  // directly below: the refusal message must be `validate_pathspec`'s own exact wording
+  // (`pathspec.rs`'s `refused unsafe path: ...`), never `fs::resolve::resolve_reason_message`'s
+  // differently-worded text -- if that ever flips, this probe's own "proves call order" claim
+  // would itself be falsified, not silently kept passing.
   const untrackedDiffAttempt = await cdp.evaluate(
     `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
   );
   if (untrackedDiffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff(untracked=true) against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
   else if (untrackedDiffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff(untracked=true) refused the outside-worktree path, but with code "${untrackedDiffAttempt.code}" (expected "outside-worktree") -- message: ${untrackedDiffAttempt.message}`);
   else findings.push(`Containment refusal (gitChanges.diff, untracked=true): refused with code "outside-worktree" (${untrackedDiffAttempt.message}).`);
+  const refusedByValidatePathspec = untrackedDiffAttempt.message === `refused unsafe path: ${outsideMarkerFile}`;
+  assertEqual(refusedByValidatePathspec, true, `gitChanges.diff(untracked=true) against an absolute outside-worktree path was refused by validate_pathspec's own call-order gate specifically (message=${JSON.stringify(untrackedDiffAttempt.message)}), not a different guard`, findings, failures);
   const stageAttempt = await cdp.evaluate(
     `window.refract.gitChanges.stage(${JSON.stringify(sessionId)}, [${JSON.stringify(outsideMarkerFile)}]).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
   );

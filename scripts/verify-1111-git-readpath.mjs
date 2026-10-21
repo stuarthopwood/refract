@@ -1,0 +1,343 @@
+#!/usr/bin/env node
+// Live CDP check for issue #1111 (Git panel follow-ups from PR #1109's round-2 gate): read-path
+// hardening checks that have no natural home in `verify-1101-git-polish.mjs` (already close to
+// `check-file-size.mjs`'s 600-line soft cap, #806) -- a NEW file, the same precedent that
+// script's own header comment already documents for the identical reason.
+//
+// Isolation posture: its own scratch `REFRACT_DATA_DIR`/worktree/repo/exe, same as every
+// `verify-tauri-5xx+`/`verify-464`/`verify-1101` script -- never touches Stuart's real Session
+// list.
+//
+// AGENTS.md destructive-ops rule, honoured throughout: every deleted path is either a literal,
+// freshly-`mkdtempSync`'d directory under the OS temp dir, or routed through `safeRmSync`'s own
+// guard (realpath-checked against the temp dir). Never a bare drive letter, `.`, `..`, `~`, or a
+// path built from an unset/default-valued variable.
+//
+// Usage: CARGO_TARGET_DIR=<shared target dir> CARGO_INCREMENTAL=0 node
+// scripts/verify-1111-git-readpath.mjs (requires a prior `pnpm tauri build --debug --no-bundle`).
+//
+// Checks:
+//   A. An escaping JUNCTION in a PARENT folder (not a leaf symlink -- `verify-1101-git-polish.mjs`
+//      Check 4b already covers that) is refused the same way, never read through.
+//   B. A binary untracked file's diff shows "Binary file", never the indistinguishable "No
+//      changes" fallback.
+//   C. A long diff grows no window-level scrollbar (horizontal or vertical) -- the `.diff-view`
+//      CSS containment fix.
+//   D. A stage forced to fail (a real `index.lock` collision, not a deleted file racing the
+//      watcher) leaves focus on the SAME row's kebab trigger, never `<body>`.
+//   E. (Destructive to this Session's own git linkage -- run LAST.) `.git` as a Windows 8.3 short
+//      name (`GIT~1/config`) is refused post-resolution, never just as the raw typed token.
+//      Requires `.git` to be a real DIRECTORY (an attached worktree's own `.git` is always a
+//      gitfile -- `git/worktrees.rs` never reuses a bare checkout as a Session's own worktree),
+//      so this manufactures that directly on disk rather than through any UI path, the same
+//      graceful-skip-if-8.3-generation-is-disabled precedent
+//      `list_directory_tests.rs::dot_git_reached_via_an_8_3_short_name_alias_is_rejected_post_realpath`
+//      already established for the equivalent Rust unit test.
+
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, isTargetOwningPort, sleep } from './verify-tauri-cdp.mjs';
+import {
+  gitHead,
+  buildLauncher,
+  makeScratchRepo,
+  buildAndCopyExeFresh,
+  launchBuiltExe,
+  safeRmSync,
+  assertExeUnchanged,
+  requireSharedCargoTarget,
+  citeScreenshots,
+  computeDirty
+} from './verify-tauri-scratch-helpers.mjs';
+import { addRepository } from './verify-tauri-session-list-helpers.mjs';
+import { commitRepoBaseline, SUBJECT_FINDER, assertEqual, fileRowActionsFinder } from './verify-464-git-changes-helpers.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..');
+const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+const SHOTS_DIR =
+  process.env.REFRACT_1111_SHOTS_DIR || path.join(tmpdir(), 'refract-1111-git-readpath-shots', new Date().toISOString().replace(/[:.]/g, '-'));
+
+const BINARY_FILE = 'untracked-binary-for-verify-1111.bin';
+const LONG_DIFF_FILE = 'untracked-long-diff-for-verify-1111.txt';
+const LONG_DIFF_LINE_COUNT = 400;
+const FAIL_STAGE_FILE = 'untracked-fail-stage-for-verify-1111.txt';
+const JUNCTION_NAME = 'escaping-junction-for-verify-1111';
+const JUNCTION_SECRET_FILE = 'secret.txt';
+const JUNCTION_SECRET_MARKER = 'OUTSIDE-WORKTREE-JUNCTION-SECRET-MUST-NEVER-LEAK-1111';
+const GIT_SHORT_NAME_SECRET_MARKER = 'GIT-SHORT-NAME-SECRET-MUST-NEVER-LEAK-1111';
+
+/** Minimal settle before a screenshot: blur whatever has focus, wait out any stray tooltip/menu
+ * (same established per-script pattern as `verify-700-todo-pin-helpers.mjs`'s own version, kept
+ * local rather than imported since no shared copy exists across this script family). */
+async function settleForScreenshot(cdp) {
+  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+  await cdp.waitFor(`document.querySelectorAll('[role="tooltip"]').length === 0`, { timeoutMs: 5_000, label: 'No stray tooltip before screenshot' });
+  await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'No stray open menu before screenshot' });
+}
+
+async function main() {
+  let dataDir, importSourceDir, repoDir, exeDir, launcherDir;
+  let child;
+  let cdp;
+  const findings = [];
+  const failures = [];
+  const notExercised = [];
+  let exeHash = null;
+  let gitHeadSha = null;
+  const screenshotNames = [];
+
+  async function shot(name) {
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, name));
+    screenshotNames.push(name);
+  }
+
+  const dirty = computeDirty(REPO_ROOT);
+
+  try {
+    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-data-'));
+    importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-import-'));
+    repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-1111-repo-')), 'verify-1111-git-readpath');
+    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-exe-'));
+    launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-launcher-'));
+    mkdirSync(SHOTS_DIR, { recursive: true });
+    const port = await getFreePort();
+    gitHeadSha = gitHead(REPO_ROOT);
+    console.log(`verify-1111: git HEAD ${gitHeadSha}${dirty ? ' (DIRTY)' : ''}`);
+    console.log(`verify-1111: shots dir ${SHOTS_DIR}`);
+
+    commitRepoBaseline(repoDir);
+
+    const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-1111' });
+    const exePath = built.dest;
+    exeHash = built.hash;
+    const launcherExe = buildLauncher(launcherDir);
+
+    const launched = await launchBuiltExe(launcherExe, exePath, { port, dataDir, importSourceDir, logFile: path.join(exeDir, 'app.log') });
+    child = launched.child;
+    const targetPid = launched.targetPid;
+    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
+    cdp = await CdpSession.connect(wsUrl);
+    if (!isTargetOwningPort(port, targetPid)) {
+      throw new Error(`verify-1111: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid})`);
+    }
+    assertExeUnchanged(exePath, exeHash, 'post-launch', 'verify-1111');
+
+    // ---- Add the scratch repo, create a Session, read its real worktreePath. ----
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+    await cdp.waitFor(
+      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+      { timeoutMs: 60_000, label: 'Readiness green' }
+    );
+    await addRepository(cdp, repoDir);
+    await cdp.clickByLabel('New session from a branch in ', { prefix: true });
+    await cdp.waitFor(
+      `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
+      { timeoutMs: 15_000, label: 'New session dialog open, Create session enabled' }
+    );
+    await cdp.clickByText('Create session', { inDialog: true });
+    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'New session dialog closed' });
+    await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
+      timeoutMs: 90_000,
+      label: 'Session opened, real agent attached, composer enabled'
+    });
+
+    const sessionInfo = await cdp.waitFor(
+      `window.refract.sessions.list().then((r) => { if (!r.ok || !r.value[0]) return null; const s = r.value[0]; return { id: s.id, worktreePath: s.worktreePath }; })`,
+      { timeoutMs: 15_000, label: 'Session registered (id/worktreePath readable)' }
+    );
+    const { id: sessionId, worktreePath } = sessionInfo;
+    findings.push(`Session created: id=${sessionId}, worktreePath=${worktreePath}.`);
+
+    // ---- Build this script's own fixtures directly in the Session's worktree. ----
+    writeFileSync(path.join(worktreePath, BINARY_FILE), Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff, 0xfe, 0x00, 0x41, 0x42, 0x43]));
+    writeFileSync(
+      path.join(worktreePath, LONG_DIFF_FILE),
+      `${Array.from({ length: LONG_DIFF_LINE_COUNT }, (_, i) => `line ${i + 1} of a long diff for verify-1111, padded to force real wrapping and scroll height`).join('\n')}\n`
+    );
+    writeFileSync(path.join(worktreePath, FAIL_STAGE_FILE), 'content for the forced-stage-failure fixture, verify-1111\n');
+    findings.push(`Fixtures built: ${BINARY_FILE} (binary), ${LONG_DIFF_FILE} (${LONG_DIFF_LINE_COUNT} lines), ${FAIL_STAGE_FILE}.`);
+
+    // ---- Open the Git changes panel. ----
+    await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
+    await cdp.waitFor(`!!(${SUBJECT_FINDER})`, { timeoutMs: 20_000, label: 'Git changes panel loaded (commit box rendered)' });
+    await cdp.waitFor(
+      `(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Untracked, ')); return !!b && b.getAttribute('aria-label') === 'Untracked, 3'; })()`,
+      { timeoutMs: 20_000, label: 'Untracked group shows all three fixture files' }
+    );
+    await shot('01-initial-panel.png');
+
+    // =========================================================================================
+    // Check A: an escaping JUNCTION in a PARENT folder is refused (not just a leaf symlink --
+    // `verify-1101-git-polish.mjs` Check 4b already proves that case). Bypasses the UI (same
+    // real-IPC-bridge precedent that check and `runContainmentRefusalCheck` already use): git's
+    // own untracked-file walk does not recognise a junction's own reparse tag as a symlink, so it
+    // recurses straight through it and reports the secret file inside as an ordinary untracked
+    // path -- exactly the shape `untracked_file_patch`'s own `resolve_in_worktree` call must
+    // still catch and refuse.
+    // =========================================================================================
+    const outsideJunctionDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-outside-junction-'));
+    writeFileSync(path.join(outsideJunctionDir, JUNCTION_SECRET_FILE), `${JUNCTION_SECRET_MARKER}\n`);
+    const junctionPath = path.join(worktreePath, JUNCTION_NAME);
+    symlinkSync(outsideJunctionDir, junctionPath, 'junction');
+    const junctionRelPath = `${JUNCTION_NAME}/${JUNCTION_SECRET_FILE}`;
+    await cdp.waitFor(
+      `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); return !!ul && Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(junctionRelPath)}); })()`,
+      { timeoutMs: 15_000, label: 'File inside the escaping junction rendered as its own Untracked row (proves git walked straight through the junction)' }
+    );
+    const junctionDiffAttempt = await cdp.evaluate(
+      `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(junctionRelPath)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
+    );
+    if (junctionDiffAttempt.ok) failures.push(`Escaping junction (parent folder): gitChanges.diff SUCCEEDED (patch=${JSON.stringify(junctionDiffAttempt.patch)}) -- must always be refused.`);
+    else if (junctionDiffAttempt.code !== 'outside-worktree') failures.push(`Escaping junction (parent folder): refused, but with code "${junctionDiffAttempt.code}" (expected "outside-worktree") -- message: ${junctionDiffAttempt.message}`);
+    else findings.push(`Escaping junction (parent folder): refused with code "outside-worktree" (${junctionDiffAttempt.message}).`);
+    const junctionLeaked = Boolean(junctionDiffAttempt.message?.includes(JUNCTION_SECRET_MARKER)) || Boolean(junctionDiffAttempt.patch?.includes(JUNCTION_SECRET_MARKER));
+    assertEqual(junctionLeaked, false, 'Escaping-junction secret content never appears in the diff response (patch OR error message)', findings, failures);
+    rmSync(junctionPath, { force: true });
+    await safeRmSync(outsideJunctionDir);
+    await cdp.waitFor(
+      `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); if (!ul) return true; return !Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(junctionRelPath)}); })()`,
+      { timeoutMs: 15_000, label: 'Escaping-junction fixture torn down, gone from Untracked' }
+    );
+
+    // =========================================================================================
+    // Check B (#1111 item 5): a binary untracked file's diff names the reason instead of the
+    // indistinguishable "No changes" fallback.
+    // =========================================================================================
+    await cdp.click(`Array.from(document.querySelectorAll('span[title=${JSON.stringify(BINARY_FILE)}]')).map((el) => el.closest('button')).find(Boolean)`);
+    await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the binary untracked file' });
+    const binaryDiffText = await cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
+    assertEqual(binaryDiffText?.includes('Binary file') ?? false, true, `Binary untracked file's diff shows "Binary file" (got ${JSON.stringify(binaryDiffText)})`, findings, failures);
+    assertEqual(binaryDiffText?.includes('No changes') ?? true, false, 'Binary untracked file never falls back to the indistinguishable "No changes" text', findings, failures);
+    await shot('02-binary-untracked-reason.png');
+    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
+    await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the binary-file check' });
+
+    // =========================================================================================
+    // Check C (#1111 item 3): a long diff grows no window-level scrollbar, horizontal or
+    // vertical -- the `.diff-view` CSS containment fix for its own `sr-only` gutter labels.
+    // =========================================================================================
+    await cdp.click(`Array.from(document.querySelectorAll('span[title=${JSON.stringify(LONG_DIFF_FILE)}]')).map((el) => el.closest('button')).find(Boolean)`);
+    await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the long-diff fixture' });
+    await sleep(300);
+    const windowScroll = await cdp.evaluate(
+      `({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight })`
+    );
+    assertEqual(windowScroll.scrollWidth <= windowScroll.innerWidth, true, `No window-level HORIZONTAL scrollbar on a long diff (scrollWidth=${windowScroll.scrollWidth}, innerWidth=${windowScroll.innerWidth})`, findings, failures);
+    assertEqual(windowScroll.scrollHeight <= windowScroll.innerHeight, true, `No window-level VERTICAL scrollbar on a long diff (scrollHeight=${windowScroll.scrollHeight}, innerHeight=${windowScroll.innerHeight})`, findings, failures);
+    await shot('03-long-diff-no-window-scrollbar.png');
+    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
+    await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the long-diff check' });
+
+    // =========================================================================================
+    // Check D (#1111 item 2): a stage forced to fail by a real `.git/index.lock` collision
+    // (never a deleted fixture file, which would race the file watcher's own debounce) leaves
+    // focus on the SAME row's kebab trigger, not `<body>`.
+    // =========================================================================================
+    const realGitDir = execFileSync('git', ['-C', worktreePath, 'rev-parse', '--git-dir'], { encoding: 'utf8', windowsHide: true }).trim();
+    const absoluteGitDir = path.isAbsolute(realGitDir) ? realGitDir : path.join(worktreePath, realGitDir);
+    const indexLockPath = path.join(absoluteGitDir, 'index.lock');
+    writeFileSync(indexLockPath, '');
+    const kebabFinder = fileRowActionsFinder(FAIL_STAGE_FILE);
+    await cdp.click(kebabFinder);
+    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Row actions menu open for the fail-stage fixture' });
+    const stageItemFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(`Stage ${FAIL_STAGE_FILE}`)})`;
+    await cdp.waitFor(`!!(${stageItemFinder})`, { timeoutMs: 10_000, label: 'Stage menu item present for the fail-stage fixture' });
+    await cdp.click(stageItemFinder);
+    await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Row actions menu closed after selecting Stage' });
+    await cdp.waitFor(`(() => { const el = (${kebabFinder}); return !!el && el.getAttribute('aria-disabled') !== 'true'; })()`, {
+      timeoutMs: 15_000,
+      label: 'Forced stage failure settled (kebab no longer aria-disabled)'
+    });
+    rmSync(indexLockPath, { force: true });
+    const focusAfterFailure = await cdp.evaluate(
+      `(() => { const kebab = (${kebabFinder}); return document.activeElement === kebab; })()`
+    );
+    assertEqual(focusAfterFailure, true, "Focus lands back on the SAME row's kebab trigger after a failed stage (never <body>)", findings, failures);
+    const stillUntracked = await cdp.evaluate(
+      `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); return !!ul && Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(FAIL_STAGE_FILE)}); })()`
+    );
+    assertEqual(stillUntracked, true, 'The forced-failure fixture is still in Untracked (the stage genuinely failed, not a flake)', findings, failures);
+    await shot('04-focus-after-failed-stage.png');
+
+    // =========================================================================================
+    // Check E (#1111 item 1, destructive -- LAST): `.git` reached via its Windows 8.3 short name
+    // (`GIT~1/config`) is refused post-resolution. Requires `.git` to be a real DIRECTORY, which
+    // an attached worktree's own gitfile never is -- manufactured directly on disk (never
+    // reachable through this app's own session-creation UI, same as the issue's own text says),
+    // skipped gracefully (never a hard failure outside CI) if this volume has 8.3 name generation
+    // disabled, the same precedent `list_directory_tests.rs`'s equivalent Rust unit test uses.
+    // =========================================================================================
+    rmSync(path.join(worktreePath, '.git'), { force: true });
+    mkdirSync(path.join(worktreePath, '.git'));
+    writeFileSync(path.join(worktreePath, '.git', 'config'), `${GIT_SHORT_NAME_SECRET_MARKER}\n`);
+    const shortNameAlias = path.join(worktreePath, 'GIT~1');
+    if (!existsSync(shortNameAlias)) {
+      const message = '8.3 short-name alias "GIT~1" does not exist for this worktree\'s ".git" directory (8.3 name generation may be disabled on this volume) -- skipped.';
+      if (process.env.CI) failures.push(`Check E: ${message} (expected to exist in CI)`);
+      else notExercised.push(`Check E (GIT~1/config refusal): ${message}`);
+    } else {
+      const shortNameDiffAttempt = await cdp.evaluate(
+        `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, 'GIT~1/config', false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
+      );
+      if (shortNameDiffAttempt.ok) failures.push(`GIT~1/config: gitChanges.diff SUCCEEDED (patch=${JSON.stringify(shortNameDiffAttempt.patch)}) -- must always be refused.`);
+      else if (shortNameDiffAttempt.code !== 'outside-worktree') failures.push(`GIT~1/config: refused, but with code "${shortNameDiffAttempt.code}" (expected "outside-worktree") -- message: ${shortNameDiffAttempt.message}`);
+      else findings.push(`GIT~1/config: refused with code "outside-worktree" (${shortNameDiffAttempt.message}), the real .git/config content was never read.`);
+      const shortNameLeaked = Boolean(shortNameDiffAttempt.message?.includes(GIT_SHORT_NAME_SECRET_MARKER)) || Boolean(shortNameDiffAttempt.patch?.includes(GIT_SHORT_NAME_SECRET_MARKER));
+      assertEqual(shortNameLeaked, false, '.git/config content (reached via its 8.3 short name) never appears in the diff response', findings, failures);
+    }
+
+    const report = {
+      gitHead: gitHeadSha,
+      dirty,
+      exeSha256: exeHash,
+      sessionId,
+      worktreePath,
+      findings,
+      failures,
+      notExercised,
+      screenshots: citeScreenshots(SHOTS_DIR, screenshotNames),
+      exitCode: failures.length > 0 ? 1 : 0
+    };
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    console.log('\n=== verify-1111: FAILURES (always fail the run) ===');
+    if (failures.length === 0) console.log('(none)');
+    for (const f of failures) console.log(`- ${f}`);
+    console.log('\n=== verify-1111: FINDINGS ===');
+    for (const f of findings) console.log(`- ${f}`);
+    console.log('\n=== verify-1111: NOT EXERCISED (genuine skips only) ===');
+    if (notExercised.length === 0) console.log('(none)');
+    for (const n of notExercised) console.log(`- ${n}`);
+    console.log(`\nScreenshots and report.json: ${SHOTS_DIR}`);
+    console.log(`verify-1111: ${failures.length > 0 ? 'FAILED' : 'DONE'}.`);
+    process.exitCode = failures.length > 0 ? 1 : 0;
+  } catch (err) {
+    try {
+      writeFileSync(
+        path.join(SHOTS_DIR, 'report.json'),
+        JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
+      );
+    } catch {
+      // best-effort only
+    }
+    console.error('verify-1111: FAILED:', err?.stack ?? err);
+    process.exitCode = 1;
+  } finally {
+    if (cdp) cdp.close();
+    if (child) await stopLauncher(child).catch(() => {});
+    await safeRmSync(dataDir);
+    await safeRmSync(importSourceDir);
+    await safeRmSync(repoDir);
+    await safeRmSync(exeDir);
+    await safeRmSync(launcherDir);
+  }
+}
+
+main().catch((err) => {
+  console.error('verify-1111: unhandled error:', err?.stack ?? err);
+  process.exitCode = 1;
+});

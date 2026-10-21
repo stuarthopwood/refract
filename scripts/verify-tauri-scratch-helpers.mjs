@@ -26,6 +26,16 @@ export function gitHead(repoRoot) {
   return result.status === 0 ? result.stdout.trim() : `<git rev-parse failed: ${result.stderr}>`;
 }
 
+/** `report.json`'s own `dirty` field (#1111 Low item: `verify-464-git-changes.mjs`'s own report
+ * was missing this, unlike `verify-1101-git-polish.mjs`'s near-identical inline computation --
+ * shared here once rather than copied a third time). `'unknown'` (never a silent `false`) if
+ * `git status` itself could not be read at all. */
+export function computeDirty(repoRoot) {
+  const result = spawnSync_('git', ['-C', repoRoot, 'status', '--porcelain']);
+  const lines = result.status === 0 ? result.stdout.split('\n').filter(Boolean) : null;
+  return lines === null ? 'unknown' : lines.length > 0;
+}
+
 export function buildLauncher(dir) {
   mkdirSync(dir, { recursive: true });
   const src = path.join(__dirname, 'verify-tauri-launcher.rs');
