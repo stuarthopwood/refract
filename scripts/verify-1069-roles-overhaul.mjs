@@ -388,11 +388,21 @@ async function main() {
     notExercised.push(
       'Keyboard re-selection of a second reasoning-radio item (High, after Medium) could not be driven via this harness\u2019s synthetic CDP input: four mechanisms (ArrowRight alone, ArrowRight+Space, focus+Space, focus+Space+settle) each fired zero additional `config set` calls, confirmed via a persisted fake-omp-invocations.log. The provider switch above (the same underlying Radix roving-focus-group primitive family) IS proven keyboard-operable live; structural proof for the radios themselves (named radiogroup, real RadioGroupItem elements, correct disabled/aria-describedby wiring) is covered above instead.'
     );
+    const HIGH_RADIO_DUMP = `(() => { const el = document.getElementById('model-role-default-reasoning-high'); return el ? { exists: true, disabled: el.disabled, state: el.getAttribute('data-state') } : { exists: false }; })()`;
+    findings.push(`High radio before click: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
     await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
-    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
-      timeoutMs: 8_000,
-      label: 'Picking High writes :high (modelRoles.list() IPC)'
-    });
+    await sleep(300);
+    findings.push(`High radio after click: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
+    try {
+      await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
+        timeoutMs: 8_000,
+        label: 'Picking High writes :high (modelRoles.list() IPC)'
+      });
+    } catch (err) {
+      findings.push(`High radio final dump: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
+      findings.push(`modelRoles.list() after the failed wait: ${JSON.stringify(await readModelRolesViaIpc())}`);
+      throw err;
+    }
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Picking High writes the :high suffix (read back via modelRoles.list())', findings, failures);
 
