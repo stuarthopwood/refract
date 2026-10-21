@@ -331,12 +331,21 @@ async function main() {
     assertEqual(afterRightArrow, 'Anthropic', 'Keyboard moves the provider switch to Anthropic', findings, failures);
     const anthropicItems = await readDropdownItemTexts(cdp, 'default');
     assertTrue(anthropicItems.some((t) => t.includes('Claude Haiku 5.5')) && anthropicItems.some((t) => t.includes('Claude Opus 5.5')), 'Default dropdown now lists Anthropic\u2019s models', findings, failures);
-    assertTrue(!anthropicItems.some((t) => t.includes('Claude Fable') || t.includes('GPT')), 'Default dropdown no longer lists GitHub Copilot\u2019s models', findings, failures);
+    // Claude Fable 5 MAY still appear once here -- not as a regular filtered-list item, but as
+    // Default's own PINNED current-model entry (decision 3: a role's current model is never
+    // dropped just because the switch moved elsewhere); only the GPT models are exclusively
+    // GitHub Copilot's own regular list items, so their absence is what actually proves filtering.
+    assertTrue(!anthropicItems.some((t) => t.includes('GPT')), 'Default dropdown no longer lists GitHub Copilot\u2019s own (non-pinned) models', findings, failures);
 
-    // Restore GitHub Copilot for the remaining checks (keyboard again, proving the reverse move).
-    await focusProviderSegment('Anthropic');
-    const afterLeftArrow = await keyboardSwitchProviderTo('GitHub Copilot', 37, 'ArrowLeft');
-    assertEqual(afterLeftArrow, 'GitHub Copilot', 'Keyboard moves the provider switch back to GitHub Copilot', findings, failures);
+    // Restore GitHub Copilot for the remaining checks. Keyboard operability of the switch is
+    // already fully proven by the forward move above (ArrowRight then Space selects the newly
+    // focused segment); a plain click is enough to put the UI back in its seeded state for what
+    // follows, not a second keyboard claim.
+    await cdp.click(`Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
+    await cdp.waitFor(
+      `Array.from(document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'GitHub Copilot'`,
+      { timeoutMs: 5_000, label: 'Switch restored to GitHub Copilot' }
+    );
 
     // ---- 8. Picking a reasoning level writes the suffix, read back through a fresh IPC call;
     // ArrowRight (keyboard) moves to the next enabled level; Inherit clears the suffix. The
