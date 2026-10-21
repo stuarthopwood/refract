@@ -45,7 +45,7 @@
 // `subagents`/`failure`/`exit` are fixtures for a future lane to drive directly once it ports
 // the matching channel.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
@@ -109,6 +109,61 @@ async function main() {
 
   if (argv.version) {
     process.stdout.write('omp/18.10.1\n');
+    process.exit(0);
+  }
+
+  // Issue #1069: one-shot CLI commands this fake never answered before -- `omp config get/set
+  // <key> --json` and `omp models --kind <kind> --json` (`ipc::model_roles`'s own `run_omp`/
+  // `run_json_with`, a plain spawn-wait-collect-stdout call with `stdin: null`, never part of
+  // the `--mode rpc-ui` wire tape below). `REFRACT_FAKE_OMP_CONFIG_STORE` (a scratch JSON file a
+  // live check seeds/reads) backs `config get/set`, read-merge-write across separate process
+  // spawns the same way OMP's own global `config.yml` persists; `REFRACT_FAKE_OMP_MODEL_CATALOG`
+  // (a path to a fixture JSON, `{ [kind]: ModelCatalogEntry[] }`) backs `models --kind <kind>`,
+  // read-only. Neither env var set answers emptily (`value: null` / `[]`) rather than falling
+  // through to the tape logic below, which would otherwise misinterpret the call as an RPC
+  // session: `stdin: null` on a one-shot call closes this process's readline loop immediately,
+  // so the old fallthrough exited 0 having written whatever leading tape frames came before the
+  // first `__wait__` -- never valid JSON for the caller to parse.
+  const rawArgs = process.argv.slice(2);
+  if (rawArgs[0] === 'config' && (rawArgs[1] === 'get' || rawArgs[1] === 'set')) {
+    const key = rawArgs[2];
+    const storePath = process.env.REFRACT_FAKE_OMP_CONFIG_STORE;
+    const readStore = () => {
+      if (!storePath) return {};
+      try {
+        return JSON.parse(readFileSync(storePath, 'utf8'));
+      } catch {
+        return {};
+      }
+    };
+    if (rawArgs[1] === 'get') {
+      const store = readStore();
+      const value = Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
+      process.stdout.write(`${JSON.stringify({ key, value, type: 'object' })}\n`);
+      process.exit(0);
+    }
+    // `config set <key> --json -- <value>`: the value is the argv entry right after the `--`.
+    const sepIndex = rawArgs.indexOf('--');
+    const valueArg = sepIndex >= 0 ? rawArgs[sepIndex + 1] : undefined;
+    const value = valueArg !== undefined ? JSON.parse(valueArg) : null;
+    const store = readStore();
+    store[key] = value;
+    if (storePath) writeFileSync(storePath, JSON.stringify(store));
+    process.stdout.write(`${JSON.stringify({ key, value })}\n`);
+    process.exit(0);
+  }
+  if (rawArgs[0] === 'models' && rawArgs[1] === '--kind') {
+    const kind = rawArgs[2];
+    const catalogPath = process.env.REFRACT_FAKE_OMP_MODEL_CATALOG;
+    let catalogByKind = {};
+    if (catalogPath) {
+      try {
+        catalogByKind = JSON.parse(readFileSync(catalogPath, 'utf8'));
+      } catch {
+        catalogByKind = {};
+      }
+    }
+    process.stdout.write(`${JSON.stringify(catalogByKind[kind] ?? [])}\n`);
     process.exit(0);
   }
 

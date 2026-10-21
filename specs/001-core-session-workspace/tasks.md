@@ -5138,6 +5138,9 @@ commands" and "Markdown supported" hints unchanged beside it, in both themes.
 This phase was written retroactively after the implementation above, in the same session that
 built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #1069). T360/T361's own
 checks (`cargo test`, `pnpm typecheck`) were run as each landed; T362's non-build checks were run
-and are green (see above); the live-verify script and its final pass are not yet written --
-Main's "ready for build slot" instruction gates that part of this phase, so the row stays open
-until the build slot is granted and the script runs.
+and are green (see above), and `scripts/verify-1069-roles-overhaul.mjs` plus its
+`scripts/fixtures/model-catalogs/chat-1069.json` fixture and the `verify-tauri-fake-omp.mjs`
+one-shot `config`/`models` handling it needs are written and syntax-checked (`node --check`), but
+NOT yet run against a built exe -- Main's "ready for build slot" instruction gates that (no
+`verify-*.mjs` run by this worker); T362 stays open until the build slot is granted, the Tauri
+debug build runs, and the script's own pass (and its `report.json`) is recorded here.
