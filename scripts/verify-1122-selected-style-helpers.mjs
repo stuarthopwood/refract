@@ -16,12 +16,17 @@ export const ACTIVE_INDICATOR_BAR_CLASS =
   'absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator forced-color-adjust-none forced-colors:bg-[Highlight]';
 
 /** Reads a site's own selected row/button: real computed `border-radius` (square-corner proof),
- * whether a child span's className is the exact shared bar, and that child's own real computed
+ * whether a child span's className is the exact shared bar, that child's own real computed
  * `background-color`/`width`/vertical inset (flush-full-height proof -- `inset-y-0` alone is a
  * class name; this confirms the rendered box actually touches the row's own top and bottom
- * edges, not merely carries the class). `rowFinder` must evaluate to the OUTER element whose
- * `border-radius` is the one the square-choice selector governs. */
-export async function readSelectedSite(cdp, rowFinder) {
+ * edges, not merely carries the class), the bar's own real `background-color`, and the real
+ * fill `background-color` -- read off `fillFinder` when the fill paints on a DIFFERENT element
+ * than the one the square-choice selector governs (e.g. `SessionRow.tsx`: `data-choice-item`
+ * sits on the outer `<li>`, but `bg-sidebar-accent` paints on its inner content `<div>`;
+ * defaults to `rowFinder` everywhere the fill and the shape share one element). `rowFinder` must
+ * evaluate to the OUTER element whose `border-radius` is the one the square-choice selector
+ * governs. */
+export async function readSelectedSite(cdp, rowFinder, fillFinder = rowFinder) {
   return cdp.evaluate(`(() => {
     const row = ${rowFinder};
     if (!row) return null;
@@ -36,29 +41,36 @@ export async function readSelectedSite(cdp, rowFinder) {
     const borderBottom = parseFloat(rowStyle.borderBottomWidth) || 0;
     const bar = Array.from(row.querySelectorAll('span[aria-hidden]')).find((s) => s.className === ${JSON.stringify(ACTIVE_INDICATOR_BAR_CLASS)});
     const barRect = bar ? bar.getBoundingClientRect() : null;
+    const fillEl = ${fillFinder};
     return {
       rowBorderRadius: rowStyle.borderRadius,
-      rowBackgroundColor: rowStyle.backgroundColor,
       barClassExactMatch: !!bar,
       barFlushTop: barRect ? Math.abs(barRect.top - (rowRect.top + borderTop)) < 1 : null,
       barFlushBottom: barRect ? Math.abs(barRect.bottom - (rowRect.bottom - borderBottom)) < 1 : null,
-      barWidthPx: barRect ? barRect.width : null
+      barWidthPx: barRect ? barRect.width : null,
+      barBackgroundColor: bar ? getComputedStyle(bar).backgroundColor : null,
+      fillBackgroundColor: fillEl ? getComputedStyle(fillEl).backgroundColor : null
     };
   })()`);
 }
 
-/** Issue #1119: a tree row's name span and its leading icon wrapper, real computed `color`
+/** Issue #1119: a tree row's name span and its leading folder/file glyph, real computed `color`
  * (never the raw `className` string -- Tailwind's arbitrary/token classes only PROVE intent,
- * the computed value proves the browser actually painted it). */
+ * the computed value proves the browser actually painted it). Gate round 1 fix (two reviewers):
+ * the chevron WRAPPER span (\`span[aria-hidden].flex\`) is empty on a FILE row (the chevron only
+ * renders for folders, \`TreeNodeRow\`'s own JSX) -- reading its own computed colour measured the
+ * wrapper's class, never the actual glyph a user sees. The folder/file icon itself
+ * (\`FolderIcon\`/\`FileIcon\`/etc.) is a direct \`<svg>\` CHILD of the row, a sibling of that
+ * wrapper, never nested inside it -- \`:scope > svg\` selects it directly. */
 export async function readExplorerRowTone(cdp, rowFinder) {
   return cdp.evaluate(`(() => {
     const row = ${rowFinder};
     if (!row) return null;
     const nameSpan = row.querySelector('span.truncate');
-    const iconWrapper = row.querySelector('span[aria-hidden].flex');
+    const iconSvg = row.querySelector(':scope > svg');
     return {
       nameColor: nameSpan ? getComputedStyle(nameSpan).color : null,
-      iconColor: iconWrapper ? getComputedStyle(iconWrapper).color : null
+      iconColor: iconSvg ? getComputedStyle(iconSvg).color : null
     };
   })()`);
 }

@@ -109,11 +109,18 @@ export function SettingsScreen() {
                   // Issue #1122: `relative` anchors the new shared bar below; `data-choice-item`
                   // joins the square-choice selector (globals.css) -- the unlayered rule there
                   // overrides this button's own `rounded-md` regardless of source order.
+                  // Gate round 1 fix (code/a11y, two reviewers, pixel-measured in dark-03): the
+                  // native button's own `border border-transparent` defaults to
+                  // `background-clip: border-box`, which left a 1px band between the fill and
+                  // the bar at the row's own top/bottom edges -- `bg-clip-padding` clips the
+                  // fill to the padding box instead, flush with the bar. Fill is now the shared
+                  // `bg-accent`/`text-accent-foreground` (not `bg-muted`), matching every other
+                  // main-content selected row (components.md).
                   data-choice-item
                   className={cn(
-                    'relative block w-full rounded-md border border-transparent px-2 py-1.5 text-left text-sm outline-none',
+                    'relative block w-full rounded-md border border-transparent bg-clip-padding px-2 py-1.5 text-left text-sm outline-none',
                     'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
-                    section.id === settingsSection ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                    section.id === settingsSection ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   )}
                 >
                   {/* Issue #1122: every other persistent selected surface gets this bar -- the

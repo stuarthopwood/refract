@@ -68,6 +68,7 @@ import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { pressKey } from './verify-tauri-session-list-helpers.mjs';
 import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 import { readSelectedSite, readExplorerRowTone, tokenColor, forcedColorsRuleCompiledFor } from './verify-1122-selected-style-helpers.mjs';
+import { hasVisibleShadow } from './contrast-math.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -168,6 +169,11 @@ async function main() {
       throw new Error(`${LOG}: CDP target on port ${port} is not owned by the process this run launched (pid ${launched.targetPid})`);
     }
     assertExeUnchanged(exePath, exeHash, 'post-launch', LOG);
+    // Gate round 1 fix (two reviewers): without this, a scratch window that never actually has
+    // OS foreground focus never satisfies `:focus-visible` on a real Tab/Shift+Tab move -- the
+    // same emulation `verify-tauri-569.mjs`/`verify-1043-theme-radio.mjs`/`verify-558-blocker-
+    // callout.mjs` already use before any keyboard-focus assertion.
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
@@ -209,9 +215,21 @@ async function main() {
         await switchTheme(cdp, theme.id, theme.name);
         await sleep(250);
 
-        // ---- Session row (SessionRow.tsx) ----
-        const sessionRow = await readSelectedSite(cdp, `document.querySelector('nav[aria-label="Sessions"] li[data-choice-item]')`);
-        assertSite(failures, findings, theme.name, 'Session row', sessionRow);
+        // Gate round 1 fix (two reviewers): real per-theme token colours, fetched once, so
+        // every site below can assert its own fill/bar colour against the ACTUAL resolved
+        // value for this theme, not just a className/shape match.
+        const barBg = await tokenColor(cdp, '--active-indicator', 'background-color');
+        const accentBg = await tokenColor(cdp, '--accent', 'background-color');
+        const sidebarAccentBg = await tokenColor(cdp, '--sidebar-accent', 'background-color');
+
+        // ---- Session row (SessionRow.tsx) -- the square-choice `data-choice-item` sits on the
+        // outer <li>, but the sidebar-accent fill paints on its inner content <div>. ----
+        const sessionRow = await readSelectedSite(
+          cdp,
+          `document.querySelector('nav[aria-label="Sessions"] li[data-choice-item]')`,
+          `document.querySelector('nav[aria-label="Sessions"] li[data-choice-item] div[class*="min-h-11"]')`
+        );
+        assertSite(failures, findings, theme.name, 'Session row', sessionRow, { barBg, fillBg: sidebarAccentBg, fillTokenName: '--sidebar-accent' });
         await settleForScreenshot(cdp);
         pushShot(shotNames, `${theme.id}-01-session-row-selected.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
@@ -223,7 +241,7 @@ async function main() {
           label: `${theme.name}: Pull requests nav selected`
         });
         const prNav = await readSelectedSite(cdp, `document.querySelector('[aria-label="Pull requests"]')`);
-        assertSite(failures, findings, theme.name, 'Pull requests nav entry', prNav);
+        assertSite(failures, findings, theme.name, 'Pull requests nav entry', prNav, { barBg, fillBg: sidebarAccentBg, fillTokenName: '--sidebar-accent' });
         await settleForScreenshot(cdp);
         pushShot(shotNames, `${theme.id}-02-pull-requests-nav-selected.png`);
         await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
@@ -240,7 +258,7 @@ async function main() {
           await cdp.click(`document.querySelector('[data-pr-row]')`);
           await sleep(200);
           const prRow = await readSelectedSite(cdp, `document.querySelector('[data-pr-row]')`);
-          assertSite(failures, findings, theme.name, 'PR list row', prRow);
+          assertSite(failures, findings, theme.name, 'PR list row', prRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
         } else if (theme === THEMES[0]) {
           notExercised.push(
             'Every live PR-data check (PullRequestRow.tsx selected square/bar/fill): real GitHub PR data was not reachable this run (no GitHub account in this scratch profile) -- the same gap verify-tauri-499-930.mjs/verify-tauri-568.mjs already record; code-verified only (the className is identical ActiveIndicatorBar markup to every real-data-verified site above, see the PR diff).'
@@ -254,10 +272,10 @@ async function main() {
         await cdp.click(`document.querySelector('[data-repository-id] .session-open-button, li[data-choice-item] .session-open-button')`);
         await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 15_000, label: `${theme.name}: back in chat` });
 
-        await runSettingsChecks(cdp, theme, { failures, findings, shotNames });
-        await runExplorerChecks(cdp, theme, { failures, findings, shotNames });
-        await runSubagentChecks(cdp, theme, { failures, findings, shotNames });
-        await runManageSessionsChecks(cdp, theme, { failures, findings, shotNames });
+        await runSettingsChecks(cdp, theme, { failures, findings, notExercised, shotNames, barBg, accentBg });
+        await runExplorerChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg });
+        await runSubagentChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg });
+        await runManageSessionsChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg });
 
         findings.push(`${theme.name}: screenshots captured for all 6 built sites plus the PR-row attempt.`);
       } catch (err) {
@@ -324,7 +342,7 @@ function pushShot(shotNames, name) {
 /** Asserts the three #1122 facts every converted site must show: a square row (`border-radius:
  * 0px`), the shared bar (exact-className match, not a loose substring), and that bar genuinely
  * flush against the row's own top AND bottom edges (`inset-y-0`, not the old `inset-y-1` inset). */
-function assertSite(failures, findings, themeName, label, read) {
+function assertSite(failures, findings, themeName, label, read, expected = {}) {
   if (!read) {
     failures.push(`${themeName}: ${label} -- row not found at all.`);
     return;
@@ -341,20 +359,36 @@ function assertSite(failures, findings, themeName, label, read) {
     if (typeof read.barWidthPx === 'number' && Math.abs(read.barWidthPx - 2) > 0.5) {
       failures.push(`${themeName}: ${label} -- bar width measured ${read.barWidthPx}px, expected 2px.`);
     }
+    // Gate round 1 fix (two reviewers): the bar's own real background colour must equal
+    // `--active-indicator`'s own resolved value at every site -- a className match alone (above)
+    // cannot catch a token typo/override that still happens to render SOME colour.
+    if (expected.barBg && read.barBackgroundColor !== expected.barBg) {
+      failures.push(`${themeName}: ${label} -- bar background measures ${read.barBackgroundColor}, expected --active-indicator (${expected.barBg}).`);
+    }
   }
-  if (read.rowBorderRadius === '0px' && read.barClassExactMatch && read.barFlushTop && read.barFlushBottom) {
-    findings.push(`${themeName}: ${label} -- square, flush full-height 2px bar (shared ActiveIndicatorBar), confirmed.`);
+  if (expected.fillBg && read.fillBackgroundColor !== expected.fillBg) {
+    failures.push(`${themeName}: ${label} -- selected fill measures ${read.fillBackgroundColor}, expected ${expected.fillTokenName ?? 'its accent token'} (${expected.fillBg}).`);
+  }
+  if (
+    read.rowBorderRadius === '0px' &&
+    read.barClassExactMatch &&
+    read.barFlushTop &&
+    read.barFlushBottom &&
+    (!expected.barBg || read.barBackgroundColor === expected.barBg) &&
+    (!expected.fillBg || read.fillBackgroundColor === expected.fillBg)
+  ) {
+    findings.push(`${themeName}: ${label} -- square, flush full-height 2px bar (shared ActiveIndicatorBar, real bar/fill colours confirmed), confirmed.`);
   }
 }
 
-async function runSettingsChecks(cdp, theme, { failures, findings, shotNames }) {
+async function runSettingsChecks(cdp, theme, { failures, findings, notExercised, shotNames, barBg, accentBg }) {
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: `${theme.name}: Settings screen opened` });
   const defaultSection = await readSelectedSite(
     cdp,
     `Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.getAttribute('aria-current') === 'page')`
   );
-  assertSite(failures, findings, theme.name, 'Settings nav (default: Session readout)', defaultSection);
+  assertSite(failures, findings, theme.name, 'Settings nav (default: Session readout)', defaultSection, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
   await settleForScreenshot(cdp);
   shotNames.push(`${theme.id}-03-settings-session-readout-selected.png`);
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
@@ -396,20 +430,31 @@ async function runSettingsChecks(cdp, theme, { failures, findings, shotNames }) 
       // focus-visible:ring-ring/50\`, a box-shadow ring plus a border-colour change, never an
       // \`outline-*\` utility -- checking \`outline-width\`/\`outline-style\` here would always
       // read "no outline" regardless of whether the real ring painted.
+      matchesFocusVisible: !!(sessionReadout && sessionReadout.matches(':focus-visible')),
       sessionReadoutBoxShadow: style ? style.boxShadow : null,
       sessionReadoutBorderColor: style ? style.borderColor : null
     };
   })()`);
+  // Gate round 1 fix (two reviewers): Tailwind v4's `ring-*` utilities always compose a
+  // 5-layer `box-shadow` even when every layer is a transparent/zero-geometry no-op, so a bare
+  // `!== 'none'` check (the round-1 version here) passes unconditionally -- `hasVisibleShadow`
+  // (`contrast-math.mjs`, the same helper `verify-927-928-quiet-composer.mjs` uses) measures
+  // each layer's real blur/spread radius and colour alpha instead.
+  const realRingVisible = hasVisibleShadow(focusState.sessionReadoutBoxShadow);
   if (!focusState.focusedIsSessionReadout) {
     failures.push(`${theme.name}: the bounded Shift+Tab search never landed on Session readout within 20 presses.`);
   } else if (focusState.sessionReadoutSelected) {
     failures.push(`${theme.name}: Session readout is focused but also reports selected (aria-current=page) -- the keyboard-focus-vs-selection distinction this check exists to prove did not hold.`);
-  } else if (!focusState.sessionReadoutBoxShadow || focusState.sessionReadoutBoxShadow === 'none') {
-    failures.push(`${theme.name}: Session readout is focused but paints no visible focus ring (box-shadow: ${focusState.sessionReadoutBoxShadow}, border-color: ${focusState.sessionReadoutBorderColor}).`);
+  } else if (!focusState.matchesFocusVisible) {
+    notExercised.push(`${theme.name}: Session readout keyboard focus did not match :focus-visible in this scratch WebView2 window even with Emulation.setFocusEmulationEnabled(true) (box-shadow: ${focusState.sessionReadoutBoxShadow}) -- the selected-vs-focus distinction for this theme is Not verified rather than claimed.`);
+  } else if (!realRingVisible) {
+    notExercised.push(`${theme.name}: Session readout matched :focus-visible but its box-shadow measured no real visible layer (${focusState.sessionReadoutBoxShadow}) once Tailwind's always-present zero-geometry layers are discounted -- Not verified rather than claimed.`);
   } else {
-    findings.push(`${theme.name}: keyboard focus (Session readout, real bounded Shift+Tab, a visible ring box-shadow plus border-colour change) is visually distinct from selection (Appearance, square+bar+fill) -- two different rows, each its own real state.`);
+    findings.push(`${theme.name}: keyboard focus (Session readout, real bounded Shift+Tab, :focus-visible matched, a REAL visible ring box-shadow measured) is distinct from selection (Appearance, square+bar+fill) -- two different rows, each its own real state.`);
   }
-  await settleForScreenshot(cdp);
+  // Gate round 1 fix: screenshot taken WITHOUT `settleForScreenshot`'s own pointer-move/blur
+  // (which would blur this exact focus away before the shot fires) -- captured immediately,
+  // while the real keyboard focus from the Shift+Tab search above is still live.
   shotNames.push(`${theme.id}-04-settings-appearance-selected-focus-on-session-readout.png`);
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 
@@ -417,14 +462,14 @@ async function runSettingsChecks(cdp, theme, { failures, findings, shotNames }) 
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 10_000, label: `${theme.name}: back in chat from Settings` });
 }
 
-async function runExplorerChecks(cdp, theme, { failures, findings, shotNames }) {
+async function runExplorerChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg }) {
   await cdp.click(`document.querySelector('[data-rail-button="file-explorer"]')`);
   await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Files"]')`, { timeoutMs: 15_000, label: `${theme.name}: Explorer tree mounted` });
   await cdp.waitFor(`document.querySelectorAll('[data-tree-row-path]').length > 0`, { timeoutMs: 15_000, label: `${theme.name}: Explorer rows rendered` });
   await cdp.click(`document.querySelector('[data-tree-row-path]')`);
   await sleep(200);
   const explorerRow = await readSelectedSite(cdp, `document.querySelector('[data-tree-row-path][aria-selected="true"]')`);
-  assertSite(failures, findings, theme.name, 'Explorer row', explorerRow);
+  assertSite(failures, findings, theme.name, 'Explorer row', explorerRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
 
   const tone = await readExplorerRowTone(cdp, `document.querySelector('[data-tree-row-path][aria-selected="true"]')`);
   const expectedChat = await tokenColor(cdp, '--chat-foreground', 'color');
@@ -444,7 +489,7 @@ async function runExplorerChecks(cdp, theme, { failures, findings, shotNames }) 
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 }
 
-async function runSubagentChecks(cdp, theme, { failures, findings, shotNames }) {
+async function runSubagentChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg }) {
   const chipFound = await cdp.evaluate(
     `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('Open subagents panel'))`
   );
@@ -458,13 +503,13 @@ async function runSubagentChecks(cdp, theme, { failures, findings, shotNames }) 
   await cdp.click(`Array.from(document.querySelectorAll('[role="tree"][aria-label="Subagents"] [role="treeitem"]')).find((el) => el.getAttribute('aria-selected') !== null)`);
   await sleep(200);
   const subagentRow = await readSelectedSite(cdp, `document.querySelector('[role="tree"][aria-label="Subagents"] [role="treeitem"][aria-selected="true"]')`);
-  assertSite(failures, findings, theme.name, 'Subagent panel row', subagentRow);
+  assertSite(failures, findings, theme.name, 'Subagent panel row', subagentRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
   await settleForScreenshot(cdp);
   shotNames.push(`${theme.id}-06-subagent-row-selected.png`);
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));
 }
 
-async function runManageSessionsChecks(cdp, theme, { failures, findings, shotNames }) {
+async function runManageSessionsChecks(cdp, theme, { failures, findings, shotNames, barBg, accentBg }) {
   await cdp.click(`document.querySelector('[data-profile-name-button]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menu"][data-state="open"]')).find((el) => el.textContent.includes('Manage sessions'))`, {
     timeoutMs: 10_000,
@@ -474,7 +519,7 @@ async function runManageSessionsChecks(cdp, theme, { failures, findings, shotNam
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: `${theme.name}: Manage sessions screen opened` });
   await cdp.waitFor(`!!document.querySelector('li[class*="bg-accent"]')`, { timeoutMs: 15_000, label: `${theme.name}: the open session's own row is visible-selected` });
   const manageRow = await readSelectedSite(cdp, `document.querySelector('li[class*="bg-accent"]')`);
-  assertSite(failures, findings, theme.name, 'Manage sessions row', manageRow);
+  assertSite(failures, findings, theme.name, 'Manage sessions row', manageRow, { barBg, fillBg: accentBg, fillTokenName: '--accent' });
   await settleForScreenshot(cdp);
   shotNames.push(`${theme.id}-07-manage-sessions-row-selected.png`);
   await cdp.screenshot(path.join(SHOTS_DIR, shotNames[shotNames.length - 1]));

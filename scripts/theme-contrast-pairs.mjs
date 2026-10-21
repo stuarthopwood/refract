@@ -58,12 +58,18 @@ export const PAIRS = [
   { fg: 'ring', bg: 'background', min: 3 },
   { fg: 'scrollbar-thumb', bg: 'background', min: 3 },
   { fg: 'active-indicator', bg: 'background', min: 3 },
-  // Gate round 5 (#564 follow-up): `dropdown-menu.tsx`'s own active-row inset shadow now uses
-  // this token (was `--ring`), rendered on `bg-popover` (`DropdownMenuContent`'s own fill),
-  // never checked against that specific surface before.
+  // Gate round 5 (#564 follow-up): dropdown-menu.tsx's active-row inset shadow now uses this token (was --ring), rendered on bg-popover.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
   { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
-  { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: ...and the Settings nav's bg-muted selected fill
+  { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: a transient-focus/other bar-on-muted combination already covered elsewhere
+  { fg: 'ring', bg: 'accent', min: 3 }, // #1122: focus-visible:ring-ring now paints while focused on an accent-filled selected row
+  { fg: 'severity-success', bg: 'accent', min: 3 },
+  { fg: 'severity-error', bg: 'accent', min: 3 },
+  { fg: 'destructive', bg: 'accent', min: 3 },
+  { fg: 'state-idle', bg: 'accent', min: 3 },
+  { fg: 'state-needs-you', bg: 'accent', min: 3 },
+  { fg: 'state-stopped', bg: 'accent', min: 3 },
+  { fg: 'state-working', bg: 'accent', min: 4.5 }, // #1122/#700: real body text ("In progress") on the new accent-filled selected row
   { fg: 'destructive', bg: 'background', min: 3 },
   { fg: 'state-working', bg: 'background', min: 4.5 }, // #700: also real BODY TEXT ("In progress"), not just icon-only -- 4.5 subsumes the old 3:1 icon floor
   { fg: 'state-idle', bg: 'background', min: 3 },
@@ -116,7 +122,6 @@ export const PAIRS = [
   // (`radio-group.tsx`) -- `foreground`/`popover` above already covers the resting case;
   // `foreground`/`accent` below covers the row's own `focus:bg-accent` fill (a focused AND
   // checked row sits on `--accent`, never `--popover`, while focused).
-  { fg: 'foreground', bg: 'accent', min: 3 },
   { fg: 'foreground', bg: 'accent', min: 4.5 }, // #1122: PR/Manage sessions/Subagent rows' unstyled title span, real body text
   // Gate round 4 (#564 follow-up) pair REMOVED by #927 (quiet composer): the Approval mode pill's own `badgeVariants({variant: 'outline'})` border moved to `variant: 'ghost'` (`pickerShared.tsx`'s `PICKER_TRIGGER_CLASS`), which has no border in any theme, so nothing renders this pair any more.
   { fg: 'border-strong', bg: 'background', min: 3 },
@@ -158,20 +163,14 @@ export const PAIRS = [
   { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
   { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
   { fg: 'chat-foreground', bg: 'accent', min: 4.5 }, // #1119: Explorer name span vs its own aria-selected:bg-accent fill
-  // Issue #630: `DiffView.tsx`'s new +N added-line count sits as real `text-xs` body text on
-  // the diff box's own `bg-muted` header (the same token the diff gutter's own insert tint
-  // already uses, chosen over a raw Tailwind palette colour precisely so it is gated here).
+  // Issue #630: `DiffView.tsx`'s new +N added-line count sits as real `text-xs` body text on the diff box's own `bg-muted` header (chosen over a raw palette colour precisely so it is gated here).
   { fg: 'state-working', bg: 'muted', min: 4.5 },
   // Subagent status icons on `--muted` (#563 remediation, decision 26): finished/failed icons.
   { fg: 'state-idle', bg: 'muted', min: 3 },
   { fg: 'severity-error', bg: 'muted', min: 3 },
   // #565 decision 32: a node icon, and a notice's own coloured summary text, must keep their
   // floor on the hover tint too (`CollapsedLine`'s own `hover:bg-muted`, decision 18).
-  // `state-working/muted` and `ring/muted` are already gated at the stricter 4.5/3 floors above
-  // and below (lines 117, 152) -- only `destructive`/`muted` and `state-needs-you`/`muted` were
-  // genuinely missing. Both are real rendered text today: a long error/warning `NoticeRow`'s own
-  // `summaryClassName` (`text-destructive`/`text-state-needs-you`) sits directly on this tint
-  // once hovered.
+  // `state-working/muted` and `ring/muted` already gated at stricter floors above; only `destructive`/`muted` and `state-needs-you`/`muted` were missing -- both real rendered text (a long error/warning `NoticeRow`'s own summaryClassName) sitting on this tint once hovered.
   { fg: 'destructive', bg: 'muted', min: 4.5 },
   { fg: 'state-needs-you', bg: 'muted', min: 4.5 },
   // Issue #570, gate round 1 (accessibility-auditor/test-reviewer Low): `ToolGroupRow`'s own
