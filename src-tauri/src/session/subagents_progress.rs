@@ -309,6 +309,12 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                         .expect("summary entry serialises to a JSON object")
                         .insert("durationMs".to_string(), json!(duration));
                 }
+                // Gate round 1 fix 6 (#700/#701 slice b): the Agents card's own row header.
+                if let Some(name) = &e.name {
+                    obj.as_object_mut()
+                        .expect("summary entry serialises to a JSON object")
+                        .insert("name".to_string(), json!(name));
+                }
                 // Issue #700/#701 slice (b): the Agents hover-focus card's own one-line summary.
                 if let Some(task_summary) = &e.task_summary {
                     obj.as_object_mut()

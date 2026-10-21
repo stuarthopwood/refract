@@ -40,19 +40,26 @@ export function TodoPhaseGroup({
   phase,
   phaseIndex,
   showHeader,
-  currentTaskKey
+  currentTaskKey,
+  foldFinished = true
 }: {
   phase: TodoPhase
   phaseIndex: number
   showHeader: boolean
   currentTaskKey: string | null
+  /** Gate round 1 fix 7 (#700/#701 slice b): the pinned panel (slice a) folds a finished phase
+   * to one line; the Todo hover-focus card instead keeps every phase fully expanded at all
+   * times (a momentary glance has no persistent collapsed state to restore), so it passes
+   * `false` here. Defaults `true`, preserving the pinned panel's own existing behaviour
+   * unchanged. */
+  foldFinished?: boolean
 }) {
   // Decision item 5: "Finished phases fold to one line and the current phase stays open. A
   // single phase gets no header" -- `showHeader` is `false` for the single-phase case, so
   // `finished` folding never applies there either (nothing to fold a header line DOWN to). A
   // phase WITH the current `in_progress` task can never be "finished" (an in-progress task is
   // neither done nor abandoned), so it never folds, with no extra check needed here.
-  const folded = showHeader && isPhaseFinished(phase)
+  const folded = foldFinished && showHeader && isPhaseFinished(phase)
   const phaseTotals = derivePhaseTotals(phase)
   return (
     <div className="py-1">

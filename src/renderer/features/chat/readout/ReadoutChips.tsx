@@ -225,13 +225,32 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // Issue #700/#701 slice (b): the Agents hover-focus card, same `useReadoutCard` controller
+  // the Todo pill below uses -- never a Radix `Tooltip`/`HoverCard` (decision item 1). Gate
+  // round 1 fix 2: disabled whenever no subagent is currently running this turn (AC: "No card
+  // appears when there is no todo list or no running agent") -- a finished/failed/cancelled-only
+  // turn still shows its quiet settled phrase on the pill itself, just never opens the card.
+  const card = useReadoutCard({ disabled: (subagentCount?.running ?? 0) === 0 })
   // Issue #563, FR-027: records the chip itself as the opener when it is the control that
   // opened the panel this time, so closing it returns focus here instead of always falling back
   // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
-  const onActivate = (event: MouseEvent<HTMLButtonElement>) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
-  // Issue #700/#701 slice (b): the Agents hover-focus card, same `useReadoutCard` controller
-  // the Todo pill below uses -- never a Radix `Tooltip`/`HoverCard` (decision item 1).
-  const card = useReadoutCard()
+  // Gate round 1 fix 10: also cancels any still-pending hover-open timer first, so a click that
+  // opens (or re-focuses) the Subagents panel can never have the card pop up over it a moment later.
+  const onActivate = (event: MouseEvent<HTMLButtonElement>) => {
+    card.close()
+    openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
+  }
+  // Gate round 1 fix 4: the card's own "Open subagents panel" link is pointer-only (nothing
+  // else inside the card is ever keyboard-focused, decision record "inert text"; a keyboard
+  // user's own route is the pill itself, already open-panel on Enter/Space via `onActivate`
+  // above) -- closes the card and returns focus to the pill it came from BEFORE opening the
+  // panel, so a click here never strands focus on `<body>` while the panel is already open
+  // (previously a no-op re-open left nothing to move focus anywhere at all).
+  const onOpenPanelFromCard = () => {
+    card.close()
+    card.anchorRef.current?.focus({ preventScroll: true })
+    openHostedPanel('subagents', sessionId, { opener: card.anchorRef.current })
+  }
   if (subagentCount === null) return null
   const phrase = deriveSubagentPhrase(subagentCount)
   return (
@@ -243,6 +262,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
     >
       <PopoverAnchor asChild>
         <ReadoutChip
+          ref={card.anchorRef}
           icon={UsersIcon}
           // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
           // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
@@ -275,7 +295,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onActivate} />
+        <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onOpenPanelFromCard} />
       </PopoverContent>
     </Popover>
   )
@@ -298,6 +318,12 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
   // Decision item 1: "The card never opens while pinned" -- `disabled` forces `card.open` false
   // and ignores every hover/focus trigger regardless of what the task list looks like.
   const card = useReadoutCard({ disabled: pinned })
+  // Gate round 1 fix 10: cancels any still-pending hover-open timer before toggling the pin, so
+  // the card can never pop up over the pinned panel the click just mounted.
+  const onActivate = () => {
+    card.close()
+    togglePinned(sessionId)
+  }
   if (!hasTodoPlan(todoTree)) return null
   const totals = deriveTodoTotals(todoTree)
   if (!totals) return null // unreachable given hasTodoPlan above; keeps TS narrowed without a cast
@@ -310,8 +336,9 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
     >
       <PopoverAnchor asChild>
         <ReadoutChip
+          ref={card.anchorRef}
           icon={pinned ? PinIcon : ListTodoIcon}
-          onActivate={() => togglePinned(sessionId)}
+          onActivate={onActivate}
           accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
           pressed={pinned}
           controls={`todo-panel-${sessionId}`}

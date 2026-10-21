@@ -653,21 +653,30 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   Session's todo list is pinned (FR-028/FR-029), the in-transcript Up next list (spec 001 FR-079)
   MUST be hidden for that Session, so the agent's plan is never shown in two places at once;
   unpinning MUST show it again under FR-079's own existing rule.
-- **FR-031** (new, 2026-10-21, issue #700 slice (b)): Both the Todo and Agents readouts MUST show
-  a non-modal card, anchored with a Popover `Anchor` under a controlled `open` state (never a
-  `Trigger`, `Tooltip`, or `HoverCard`), that opens on hover after about 400ms or on genuine
-  keyboard focus-visible, closes on Escape or once neither the readout nor the card itself is
-  hovered or focused, stays open while the pointer moves between the readout and the card, and
-  opens above the readout. The card MUST be hidden whenever its own readout is hidden (FR-021,
-  FR-007), and the Todo card MUST NOT open at all while the todo list is pinned (FR-028). Nothing
-  inside either card is a focusable or announced element; activating or keyboard-operating the
-  readout itself is unaffected by the card's own open state.
-- **FR-032** (new, 2026-10-21, issue #700 slice (b)): The Agents card MUST show, for each
-  currently running subagent, a one-line task summary (the first sentence of its own `task` text,
-  about 100 characters) and its running elapsed time; MUST show a quiet line of the turn's
+- **FR-031** (new, 2026-10-21, issue #700 slice (b); amended same day, gate round 1 findings 2
+  and 4): Both the Todo and Agents readouts MUST show a non-modal card, anchored with a Popover
+  `Anchor` under a controlled `open` state (never a `Trigger`, `Tooltip`, or `HoverCard`), that
+  opens on hover after about 400ms or on genuine keyboard focus-visible, closes on Escape or once
+  neither the readout nor the card itself is hovered or focused, stays open while the pointer
+  moves between the readout and the card, and opens above the readout. The card MUST be hidden
+  whenever its own readout is hidden (FR-021, FR-007); the Todo card MUST NOT open at all while
+  the todo list is pinned (FR-028), and the Agents card MUST NOT open at all while no subagent is
+  currently running, even if some finished, failed, or were cancelled this turn (FR-007's own
+  quiet settled counts still read on the pill itself regardless). The Todo card's content is
+  entirely non-focusable, non-announced inert text; the Agents card's own link to the Subagent
+  panel (FR-032) is its one pointer-only exception -- a keyboard user's own equivalent route is
+  the readout itself, already keyboard-operable (FR-017). Activating or keyboard-operating
+  either readout is unaffected by the card's own open state.
+- **FR-032** (new, 2026-10-21, issue #700 slice (b); amended same day, gate round 1 finding 6):
+  The Agents card MUST show a "<n> running" header, then one row per currently running
+  subagent (capped at six, with a quiet "and N more" line past that), each leading with a status
+  glyph and the subagent's own given name (never falling back to its task text the way the
+  readout's own identity label does), its one-line task summary (the first sentence of its own
+  `task` text, about 100 characters, truncated to one line, never wrapping) in muted text, and
+  its running elapsed time in tabular figures; MUST show a quiet line of the turn's
   finished/exited/failed/cancelled counts when any are non-zero (the same counting rule FR-007
-  uses); and MUST include a control that opens the Subagent panel (FR-017), equivalent to
-  activating the Agents readout itself.
+  uses); and MUST include a pointer-only link that opens the Subagent panel (FR-017), equivalent
+  to activating the Agents readout itself (FR-031).
 
 ### Key Entities
 

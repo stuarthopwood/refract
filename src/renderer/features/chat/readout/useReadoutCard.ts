@@ -17,7 +17,7 @@
 // no focus-trap/restore concern; Escape while open always moves focus back to wherever it
 // already was (the anchor, if this was opened by keyboard; untouched, if opened by hover alone).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FocusEvent } from 'react'
+import type { FocusEvent, RefObject } from 'react'
 
 const OPEN_DELAY_MS = 400
 // Grace window between "pointer left the anchor" and "pointer entered the content": long enough
@@ -53,15 +53,22 @@ export interface ReadoutCardContentHandlers {
 
 export interface ReadoutCard {
   open: boolean
+  /** Attach to the anchor chip's own `ref` (`ReadoutChip` forwards one) -- `scheduleClose`
+   * below reads this to tell a genuinely keyboard-focused anchor apart from one the pointer
+   * merely grazed on its way elsewhere (gate round 1 fix 11). */
+  anchorRef: RefObject<HTMLButtonElement | null>
   anchorHandlers: ReadoutCardAnchorHandlers
   contentHandlers: ReadoutCardContentHandlers
-  /** For `Popover`'s own `onOpenChange` (e.g. a real outside click) and the Escape handler. */
+  /** For `Popover`'s own `onOpenChange` (e.g. a real outside click), the Escape handler, and a
+   * click on the anchor itself (gate round 1 fix 10: cancels a still-pending hover-open timer
+   * so the card never pops up over whatever the click just opened/toggled). */
   close: () => void
 }
 
-/** `disabled` (the Todo card's own "never opens while pinned", decision item 1): forces `open`
- * false and ignores every hover/focus trigger, without the caller needing its own early return
- * before this hook runs (hooks must run unconditionally). */
+/** `disabled` (the Todo card's own "never opens while pinned", the Agents card's own "never
+ * opens with nothing running", decision item 1 plus gate round 1 fix 2): forces `open` false
+ * and ignores every hover/focus trigger, without the caller needing its own early return before
+ * this hook runs (hooks must run unconditionally). */
 export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}): ReadoutCard {
   const [open, setOpen] = useState(false)
   const openTimerRef = useRef<TimerHandle | null>(null)
@@ -70,6 +77,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   // makes the card "hoverable" (decision item 1) rather than closing the instant the pointer
   // leaves the anchor on its way to the content below/above it.
   const hoveringRef = useRef(false)
+  const anchorRef = useRef<HTMLButtonElement | null>(null)
 
   const close = useCallback(() => {
     clearTimer(openTimerRef)
@@ -92,20 +100,39 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   // catches it regardless of whether focus is on the anchor (keyboard-opened) or nowhere in
   // particular (hover-opened). Never moves focus itself: the anchor already has it in the
   // keyboard case, and there is nothing to restore it to in the hover case.
+  //
+  // Gate round 1 fix 3: registered on the CAPTURE phase (the final `true` argument), and both
+  // `preventDefault`/`stopPropagation` are called -- a bubble-phase listener let this SAME
+  // Escape keypress also reach `MessageInput.tsx`'s own composer-clear handler (attached to the
+  // textarea, which keydown events bubble through to `window` regardless of where the card
+  // itself is positioned), silently wiping the draft the instant a hover-opened card closed.
+  // Capturing at `window`, above the textarea in the tree, intercepts the event before it ever
+  // reaches that handler at all; `MessageInput.tsx`'s own matching defensive check
+  // (`event.defaultPrevented`) is the belt to this capture's suspenders.
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close()
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      close()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, close])
 
+  // Gate round 1 fix 11: a keyboard-opened card must survive the pointer merely passing over
+  // the anchor or content on its way elsewhere (the pointer never "arrived" with intent the way
+  // a deliberate hover does) -- skip the close while the anchor itself still carries genuine
+  // keyboard focus, checked fresh at the moment the grace window elapses rather than cached up
+  // front (focus can move during the grace window too).
   const scheduleClose = () => {
     clearTimer(closeTimerRef)
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null
-      if (!hoveringRef.current) setOpen(false)
+      if (hoveringRef.current) return
+      if (anchorRef.current?.matches(':focus-visible')) return
+      setOpen(false)
     }, CLOSE_GRACE_MS)
   }
 
@@ -147,6 +174,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
 
   return {
     open,
+    anchorRef,
     anchorHandlers: { onPointerEnter, onPointerLeave, onFocus, onBlur },
     contentHandlers: { onPointerEnter: onContentPointerEnter, onPointerLeave: onContentPointerLeave },
     close

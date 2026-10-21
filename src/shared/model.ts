@@ -372,12 +372,11 @@ export interface SubagentSummary {
    * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so every surviving `running`
    * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
    * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
-   * have failed, only its process disappeared.
-   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, not
+   * have failed, only its process disappeared. Gate fixes 2 finding 9: that probe exercised two
+   * `omp` processes within one Node script, not
    * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` CAN outlive
    * it on Windows for a window, so "its process disappeared" is not simply assumed:
-   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
-   * process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own process dies (primary defence), `src/main/process/pidRecords.ts`'s `reapStale()` is the
    * fallback for the rarer case Refract itself was killed too abruptly -- run from
    * `src/main/index.ts` at startup, awaited before any Session attaches, so by the time
    * `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for real. */
@@ -385,6 +384,7 @@ export interface SubagentSummary {
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
   taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
+  name?: string; // Gate round 1 fix 6 (#700/#701 slice b): the subagent's own given name (never falls back to `task`, unlike `nameOrTask`); absent when none was given (Agents card row header)
 }
 
 /** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file
