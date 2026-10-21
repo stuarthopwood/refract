@@ -82,39 +82,10 @@ export const ROLE_ICON: Partial<Record<RoleChipRoleId, LucideIcon>> = {
   [FALLBACK_ROLE]: LifeBuoyIcon
 }
 
-/** Friendly provider names (#741 Part 1: "a small map for the known providers... with the raw id
- * as the fallback; no new dependency"). Built from the fields OMP already reports (`provider`),
- * never by splitting a display string on `/` -- an id such as `openrouter/google/gemini` stays
- * untouched by any caller that uses this map correctly. Shared so the Session details card (this
- * issue), and #714/#717/#766's own provider-aware surfaces, show the exact same provider name. */
-const PROVIDER_LABEL: Record<string, string> = {
-  'github-copilot': 'GitHub Copilot',
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  'openai-codex': 'OpenAI Codex',
-  'azure-openai': 'Azure OpenAI',
-  google: 'Google',
-  'google-vertex': 'Google Vertex AI',
-  openrouter: 'OpenRouter',
-  groq: 'Groq',
-  deepseek: 'DeepSeek',
-  ollama: 'Ollama',
-  'llama.cpp': 'llama.cpp',
-  'lm-studio': 'LM Studio',
-  litellm: 'LiteLLM',
-  bedrock: 'Amazon Bedrock',
-  local: 'Local',
-  apple: 'Apple'
-}
-
-/** `provider` -> a friendly display name, or the raw id unchanged when it is not in the map
- * (#741 Part 1: "no name (only an id): show the id as is; do not invent a prettified name" --
- * the same rule applied here to an unrecognised PROVIDER id, not just an unrecognised model
- * name). */
-export function friendlyProviderLabel(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider
-}
-
+// Gate round 1 fix (#1114, Low): the `friendlyProviderLabel` re-export this comment used to sit
+// above was removed -- `ModelPicker.tsx` and `SessionDetailsCard.tsx` (the only two callers
+// outside this file's own former re-export) now import it directly from `@/lib/providerLabels`,
+// the one place it is actually defined, rather than through this file as a side door.
 export interface RoleChipDisplay {
   role: RoleChipRoleId
   label: string
