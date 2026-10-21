@@ -15,10 +15,15 @@ import { derivePhaseTotals, isPhaseFinished } from './todoDerive'
 // since their icon+position already reads clearly for a sighted user. No icon is named for
 // `pending` in the decision record (only in progress/done/abandoned/blocked are); a plain empty
 // `Circle`, muted, is the only one of the five states left needing a shape of its own.
+// Gate round (Stuart 2026-10-21, grilled): a completed task is a named exception to "done is
+// grey" -- both the icon and the task text read `text-severity-success`, the same token
+// Stage/subagent `finished` already uses (`subagentStatus.tsx:29-35`, #941); the icon SHAPE
+// (CheckCircle2Icon) stays the non-colour cue, "Done" stays sr-only. See
+// `docs/design/foundations-icons.md`'s matching exception entry.
 const TASK_STATUS_GLYPH: Record<TodoTaskStatus, { Icon: LucideIcon; className: string; word: string; srOnly: boolean; muteText: boolean }> = {
   pending: { Icon: CircleIcon, className: 'text-muted-foreground', word: 'Pending', srOnly: true, muteText: false },
   in_progress: { Icon: CircleDotIcon, className: 'text-state-working', word: 'In progress', srOnly: false, muteText: false },
-  completed: { Icon: CheckCircle2Icon, className: 'text-muted-foreground', word: 'Done', srOnly: true, muteText: true },
+  completed: { Icon: CheckCircle2Icon, className: 'text-severity-success', word: 'Done', srOnly: true, muteText: false },
   blocked: { Icon: CircleAlertIcon, className: 'text-severity-warning', word: 'Blocked', srOnly: false, muteText: false },
   abandoned: { Icon: CircleSlashIcon, className: 'text-muted-foreground', word: 'Abandoned', srOnly: false, muteText: true }
 }
@@ -98,7 +103,8 @@ export function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: bo
             'block break-words',
             task.status === 'in_progress' && 'font-medium',
             task.status === 'abandoned' && 'text-muted-foreground line-through',
-            muteText && task.status !== 'abandoned' && 'text-muted-foreground'
+            task.status === 'completed' && 'text-severity-success',
+            muteText && 'text-muted-foreground'
           )}
         >
           <span className={srOnly ? 'sr-only' : 'mr-1'}>{word}</span>

@@ -110,6 +110,31 @@ async function assertNoStrayOverlay(cdp, label) {
   assertTrue(stray === false, `No unrelated tooltip/hover-card open before ${label}`);
 }
 
+/** Gate round (Stuart 2026-10-21, grilled): a completed task's icon AND text now read
+ * `text-severity-success` (`TodoTree.tsx`'s `TASK_STATUS_GLYPH.completed`) -- resolves the REAL
+ * rendered colour (a throwaway `text-severity-success` span gives the reference exactly the way
+ * Tailwind resolves it), never the raw CSS custom property, which may be an unresolved
+ * `oklch(...)` expression that never string-matches a computed RGB value. */
+async function completedRowMatchesSeveritySuccess(cdp, cardSelector, rowTextIncludes) {
+  return cdp.evaluate(`(() => {
+    const ref = document.createElement('span');
+    ref.className = 'text-severity-success';
+    document.body.appendChild(ref);
+    const refColor = getComputedStyle(ref).color;
+    ref.remove();
+    const card = ${cardSelector};
+    const row = Array.from(card.querySelectorAll('li')).find((li) => li.textContent.includes(${JSON.stringify(rowTextIncludes)}));
+    const icon = row?.querySelector('svg') ?? null;
+    const text = row?.querySelector('span.block') ?? null;
+    return {
+      found: !!row,
+      refColor,
+      iconColor: icon ? getComputedStyle(icon).color : null,
+      textColor: text ? getComputedStyle(text).color : null
+    };
+  })()`);
+}
+
 async function hoverElement(cdp, selector) {
   const rect = await cdp.evaluate(`(() => { const el = ${selector}; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
@@ -196,23 +221,15 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
 /** Opens a Session row's own "..." actions menu (`${session.name} actions`, `SessionRow.tsx`)
  * and clicks its "Open in split" item (`sessionActions.ts`'s own `{ key: 'open-in-split', label:
  * 'Open in split', onSelect: handlers.onOpenInSplit }`) -- the SAME `openInSplit(session.id)`
- * call a real Ctrl+click on the row's open button makes (`split-store.ts`'s own comment:
- * "Spec 005: same effect as Ctrl+click on the row's open button"). Gate round: neither a real
- * CDP `Input.dispatchMouseEvent` modifiers bitmask (Ctrl = 2, held either side with a real sleep)
- * nor a native `MouseEvent('click', { ctrlKey: true })` dispatched directly on the button ever
- * reached the row's own `onClick` as `event.ctrlKey === true` in this WebView2 build -- confirmed
- * live that the dispatched event's own `ctrlKey`/`getModifierState('Control')` genuinely read
- * `true` at a `document`-level capture listener, yet `replaceFocused` (the `else` branch) ran
- * every time regardless. This menu item needs no modifier key simulation at all, so it sidesteps
- * that gap entirely -- but `TRAILING_MENU_BUTTON_CLASS` (`SessionRow.tsx`) is `opacity-0
- * pointer-events-none` at rest under `@media(hover:hover)`, only becoming interactive on
- * `group-hover` -- confirmed live: a direct click there with no prior hover left `aria-expanded`/
- * `data-state` on the button unchanged ("false"/"closed") and no menu mounted at all, the real
- * click passing straight through the `pointer-events-none` button. Hovering the row first (a real
- * `mouseMoved` to the open button, inside the same `.group` row) reveals it before the click. The
- * final "Open in split" selection uses a native `.click()` on the item scoped strictly to the
- * CURRENTLY open `[role="menu"]` (never a coordinate-based click or a document-wide text search),
- * since every row's menu shares the identical "Open in split" label. */
+ * call a real Ctrl+click on the row's open button makes. Gate round: neither CDP's
+ * `Input.dispatchMouseEvent` modifiers bitmask (held either side with a real sleep) nor a native
+ * `MouseEvent('click', { ctrlKey: true })` dispatched directly ever reached `onClick` as
+ * `event.ctrlKey === true` in this WebView2 build (confirmed live the dispatched event's own
+ * `ctrlKey`/`getModifierState('Control')` genuinely read true at a capture listener regardless)
+ * -- this menu item needs no modifier at all. `TRAILING_MENU_BUTTON_CLASS` (`SessionRow.tsx`) is
+ * `opacity-0 pointer-events-none` until `group-hover`, so the row is hovered first. The final
+ * selection uses a native `.click()` scoped strictly to the open `[role="menu"]`, never a
+ * coordinate-based or document-wide text search (every row's menu shares the same label). */
 async function openSessionInSplitViaMenu(cdp, sessionId) {
   const openBtnSelector = `document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]')`;
   await hoverElement(cdp, openBtnSelector);
@@ -234,7 +251,7 @@ async function main() {
   const dirtyLines = spawnSync('git', ['-C', REPO_ROOT, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true }).stdout.split('\n').filter(Boolean);
   const dirty = dirtyLines.length > 0;
   console.log(`${LOG}: git HEAD ${head}${dirty ? ` (DIRTY: ${dirtyLines.length} path(s))` : ''}`);
-  clearKnownOutputFiles(SHOTS_DIR, 'refract-700-pill-cards-shots', [...THEMES.map((t) => `todo-card-${t.id}.png`), ...THEMES.map((t) => `agents-card-${t.id}.png`), 'todo-card-split-360.png', 'agents-card-split-360.png', 'report.json']);
+  clearKnownOutputFiles(SHOTS_DIR, 'refract-700-pill-cards-shots', [...THEMES.map((t) => `todo-card-${t.id}.png`), ...THEMES.map((t) => `agents-card-${t.id}.png`), 'todo-card-split-360.png', 'agents-card-split-360.png', 'todo-card-completed-green.png', 'pinned-panel-completed-green.png', 'report.json']);
   mkdirSync(SHOTS_DIR, { recursive: true });
 
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-700b-data-'));
@@ -333,6 +350,10 @@ async function main() {
     assertTrue(cleanupRow?.lineThrough === true, 'Todo card shows the abandoned task with a strike-through', cleanupRow);
     const finalizeRow = todoCardRead.rows.find((r) => r.text.includes('Finalize'));
     assertTrue(!!finalizeRow && /In progress/.test(finalizeRow.text), 'Todo card shows the in-progress task\'s visible "In progress" word', finalizeRow);
+    // Gate round (Stuart 2026-10-21, grilled): a completed task reads the same success token a finished Stage/subagent already uses (#941), not neutral grey.
+    const scaffoldColorInCard = await completedRowMatchesSeveritySuccess(cdp, TODO_CARD_SELECTOR, 'Scaffold');
+    assertTrue(scaffoldColorInCard.found && scaffoldColorInCard.iconColor === scaffoldColorInCard.refColor && scaffoldColorInCard.textColor === scaffoldColorInCard.refColor, 'Todo card\'s completed "Scaffold" row -- icon AND text -- renders in text-severity-success, not neutral grey', scaffoldColorInCard);
+    await cdp.screenshot(path.join(SHOTS_DIR, 'todo-card-completed-green.png'));
     await assertCardIsInert(cdp, TODO_CARD_SELECTOR, 'Todo card');
 
     // Pointer leaves the pill but travels into the card itself -- "hoverable": stays open.
@@ -354,6 +375,11 @@ async function main() {
     // ---- Decision item 1: the Todo card never opens while pinned ----
     await clickTodoPill(cdp);
     assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Todo pill is pinned');
+    await cdp.waitFor(`!!document.querySelector('[data-slot="pinned-todo-panel"]')`, { timeoutMs: 2_000, label: 'Pinned todo panel mounts once pinned' });
+    // Gate round (Stuart 2026-10-21, grilled): the panel renders through the SAME TodoTree.tsx module as the card, so its completed row must read the identical success token.
+    const scaffoldColorInPanel = await completedRowMatchesSeveritySuccess(cdp, `document.querySelector('[data-slot="pinned-todo-panel"]')`, 'Scaffold');
+    assertTrue(scaffoldColorInPanel.found && scaffoldColorInPanel.iconColor === scaffoldColorInPanel.refColor && scaffoldColorInPanel.textColor === scaffoldColorInPanel.refColor, 'Pinned todo panel\'s completed "Scaffold" row -- icon AND text -- renders in text-severity-success, not neutral grey', scaffoldColorInPanel);
+    await cdp.screenshot(path.join(SHOTS_DIR, 'pinned-panel-completed-green.png'));
     await assertNoStrayOverlay(cdp, 'the pinned-Todo-card-never-opens test');
     await hoverElement(cdp, TODO_PILL_SELECTOR);
     await sleep(700); // comfortably past the 400ms open delay
@@ -447,24 +473,19 @@ async function main() {
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Session B dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
-    // Creating Session B does NOT switch the pane to it SYNCHRONOUSLY -- confirmed live the sole
-    // pane stays Session A right after this wait -- but a DEFERRED focus-switch to B (once the
-    // backend fully registers the new session) races with everything after this point: by the
-    // time a later click actually runs, the sole pane has sometimes already flipped to B. Opening
+    // Creating Session B does NOT switch the pane to it SYNCHRONOUSLY -- the sole pane stays
+    // Session A right after this wait -- but a DEFERRED focus-switch to B (once the backend
+    // fully registers the new session) races with everything after this point, so this reads
+    // the CURRENT sole pane right before acting and always targets the OTHER session: opening
     // the row whose session is ALREADY the sole pane via "Open in split" is a documented no-op
     // (`targetSession`'s `existing === sessionId` early-return, `split-store.ts` line ~167,
-    // research.md Decision 7: "already the focused pane") -- so this reads the CURRENT sole pane
-    // right before acting and always targets the OTHER session, whichever way that race landed.
-    //
-    // Gate round: the REAL reason "both panes rendered" never landed was never the click at all
-    // -- `App.tsx:41/119/120` (`MIN_SPLIT_WIDTH_PX = 720`, `canShowSplit = chatWidthPx >= 720`,
-    // `showSplit = isSplit && canShowSplit`) means the DOM only ever mounts a SECOND
-    // `[data-session-pane]` once the chat area is already wide enough -- `paneSessionIds` was
-    // reaching length 2 correctly the whole time (confirmed live via `openInSplit`'s own
-    // `targetSession` logic), the narrow default test-window chat area just never rendered it.
-    // Widening the window FIRST (comfortably over the 720px chat-area floor, well before the
-    // later 1000px-then-measure-then-360px dance below even starts) means `canShowSplit` is
-    // already true the moment `paneSessionIds` becomes length 2.
+    // research.md Decision 7). Gate round: the REAL reason "both panes rendered" never landed
+    // was never the click at all -- `App.tsx:41/119/120` (`MIN_SPLIT_WIDTH_PX = 720`,
+    // `canShowSplit`, `showSplit = isSplit && canShowSplit`) means the DOM only ever mounts a
+    // SECOND `[data-session-pane]` once the chat area is already wide enough; `paneSessionIds`
+    // was reaching length 2 correctly the whole time, the narrow default test-window chat area
+    // just never rendered it -- so this widens FIRST, well before the 1000px-then-measure-
+    // then-360px dance below even starts, so `canShowSplit` is already true in time.
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const sessionIdB = await cdp.evaluate(`(() => { const ids = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open')); return ids.find((id) => id !== ${JSON.stringify(sessionIdA)}) ?? null; })()`);
@@ -542,7 +563,7 @@ async function main() {
     report.push({
       step: 'screenshots',
       ok: true,
-      screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `todo-card-${t.id}.png`), ...THEMES.map((t) => `agents-card-${t.id}.png`), 'todo-card-split-360.png', 'agents-card-split-360.png'])
+      screenshots: citeScreenshots(SHOTS_DIR, [...THEMES.map((t) => `todo-card-${t.id}.png`), ...THEMES.map((t) => `agents-card-${t.id}.png`), 'todo-card-split-360.png', 'agents-card-split-360.png', 'todo-card-completed-green.png', 'pinned-panel-completed-green.png'])
     });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });

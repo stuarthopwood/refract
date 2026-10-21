@@ -202,6 +202,19 @@ field whose bottom bar shows the mode, model, and agent.
   `subagentDerive.ts`), and a link that opens the Subagents panel the same way the pill's own
   click already does. Both cards' own content is inert text: nothing inside either is ever
   focused or announced, so keyboard focus never leaves the pill while a card is open.
+- Q: Scope addition from Stuart (2026-10-21, grilled): completed todo items go green. Does the
+  "done is neutral/grey" treatment the Todo card and pinned panel both inherited from the status
+  line's own quiet-finished convention still hold? → A: No -- a completed task is now a named
+  exception, the same one issue #941 already made for a finished Stage/subagent: both the check
+  icon and the task text read `text-severity-success` (`TodoTree.tsx`'s shared
+  `TASK_STATUS_GLYPH.completed`, used identically by the pinned panel and the Todo card, since
+  both render through that one shared module). The icon SHAPE (a filled check-circle) stays the
+  non-colour cue; "Done" stays screen-reader-only (decision item 5, unchanged); abandoned keeps
+  its strike-through; in-progress and blocked are unchanged. Recorded as a named exception in
+  `docs/design/foundations-icons.md` alongside #941's own Stage exception. `severity-success` on
+  `--popover` (the Todo card's own surface) is added to the contrast gate's `READOUT_CARD_PAIRS`
+  at the 4.5:1 body-text floor; `--background` (the pinned panel's own surface) was already
+  gated there by #941.
 
 ## User Scenarios & Testing *(mandatory)*
 

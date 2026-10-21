@@ -308,7 +308,13 @@ const READOUT_CARD_PAIRS = [
   { fg: 'state-working', bg: 'popover', min: 3 },
   // `TodoTree.tsx`'s own "Blocked: <blocker>" line is real BODY TEXT in `text-severity-warning`
   // here, not just the icon the existing 3:1 pair in `PAIRS` covers.
-  { fg: 'severity-warning', bg: 'popover', min: 4.5 }
+  { fg: 'severity-warning', bg: 'popover', min: 4.5 },
+  // Gate round (Stuart 2026-10-21, grilled, #700/#701): a completed task's icon AND text now
+  // read `text-severity-success` (the same "done is green" exception #941 already gated at
+  // 4.5:1 on `background`/`muted` in `theme-contrast-pairs.mjs`) -- the Todo card's own
+  // `PopoverContent` is a new surface for that real body text, not just the existing 3:1
+  // icon-only pair in `PAIRS`.
+  { fg: 'severity-success', bg: 'popover', min: 4.5 }
 ]
 // #1050: `COMMAND_PILL_PAIRS` lives in composer-selection-contrast.mjs, not PAIRS above (that
 // module's own header comment explains why) -- merged into the same per-theme loop here.
