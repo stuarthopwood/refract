@@ -276,7 +276,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   )
 }
 
-type DiffState = 'loading' | { patch: string } | { error: string }
+type DiffState = 'loading' | { patch: string; reason?: string | null } | { error: string }
 
 function GitChangesDiffPane({
   sessionId,
@@ -333,9 +333,14 @@ function GitChangesDiffPane({
           setState({ error: result.error.message })
           return
         }
-        // Keep the current patch mounted (scroll/focus survive) unless the text actually
-        // differs -- a background refetch that resolves to byte-identical text is a no-op.
-        setState((prev) => (typeof prev === 'object' && 'patch' in prev && prev.patch === result.value.patch ? prev : { patch: result.value.patch }))
+        // Keep the current patch mounted (scroll/focus survive) unless the text or its reason
+        // actually differs -- a background refetch that resolves to byte-identical data is a
+        // no-op.
+        setState((prev) =>
+          typeof prev === 'object' && 'patch' in prev && prev.patch === result.value.patch && prev.reason === result.value.reason
+            ? prev
+            : { patch: result.value.patch, reason: result.value.reason }
+        )
       })
       .catch(() => {
         if (!cancelled) setState({ error: "Couldn't load this file's diff" })
@@ -371,23 +376,32 @@ function GitChangesDiffPane({
           (this hosted pane's own inherited base surface, set no closer than the app root) stops
           scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
           `py-1` (was `py-0.5`) -- the Back button's own 3px focus-visible ring needs 1px more
-          clearance than `py-0.5` left it, or the ring clips against the sticky bar's own edge. */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background py-1">
+          clearance than `py-0.5` left it, or the ring clips against the sticky bar's own edge.
+          #1111 item 4/Low "border-b": the arrow and the file name are now ONE ghost button
+          (`title={entry.path}` is the Low item's own actionable hover text, the accessible name
+          comes from the visible "Back to changes from <file>" label below) instead of a
+          separate name span beside an icon-only control -- also fixes the Low "file name shown
+          twice" item, since that separate span was the duplicate. `border-b border-divider`
+          (Low item) separates the bar from the diff without heavy chrome. */}
+      <div className="no-drag-region sticky top-0 z-10 flex items-center gap-2 border-b border-divider bg-background py-1">
         <Button
           ref={backButtonRef}
           variant="ghost"
-          size="icon-sm"
+          size="sm"
+          title={entry.path}
           aria-label={`Back to changes from ${fileName}`}
           onClick={onBack}
+          className="min-w-0 flex-1 justify-start gap-1.5 px-1.5 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
-          <ArrowLeftIcon aria-hidden className="size-3.5" />
+          <ArrowLeftIcon aria-hidden className="size-3.5 shrink-0" />
+          <span aria-hidden className="min-w-0 truncate">
+            {fileName}
+          </span>
         </Button>
-        {/* UI review (#1101 gate round 1): the bar previously showed only "Staged"/"Unstaged",
-            naming nothing -- the open file's own truncated name now sits beside it. */}
-        <span className="min-w-0 flex-1 truncate text-xs font-medium" title={entry.path}>
-          {fileName}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
+        {/* Low item: an untracked file's own group is "Untracked", never "Unstaged" --
+            `staged`/`unstaged` only describes the index/working-tree distinction a TRACKED file
+            has; an untracked file has neither. */}
+        <span className="shrink-0 text-xs text-muted-foreground">{group === 'untracked' ? 'Untracked' : staged ? 'Staged' : 'Unstaged'}</span>
       </div>
       {state === 'loading' ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
@@ -398,7 +412,7 @@ function GitChangesDiffPane({
           {state.error}
         </p>
       ) : (
-        <DiffViewFromPatch path={entry.path} patch={state.patch} additions={entry.additions} deletions={entry.deletions} />
+        <DiffViewFromPatch path={entry.path} patch={state.patch} reason={state.reason} additions={entry.additions} deletions={entry.deletions} hideFileName />
       )}
     </div>
   )

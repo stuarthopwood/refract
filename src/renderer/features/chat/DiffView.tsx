@@ -206,11 +206,24 @@ interface DiffViewFromPatchProps {
    * always has both figures on hand, so they are required, not optional. */
   additions: number
   deletions: number
+  /** #1111 item 5: a binary/over-cap/unreadable/timed-out untracked file's own reason the
+   * backend (`changes_diff.rs::untracked_file_patch`) could not render it as a patch -- shown
+   * below instead of the otherwise-indistinguishable "No changes" fallback. Never set for a
+   * tracked file or a genuinely empty untracked file. `string | null`, not optional: the wire
+   * value (`gitChanges.diff`'s own `reason` field) is always present, `null` when absent --
+   * `Option<&str>`'s own JSON shape on the Rust side, never an omitted key. */
+  reason?: string | null
+  /** #1111 gate round 2 MEDIUM 8 (Decided, Skippy delegated by Stuart 2026-10-21): the Git
+   * changes panel's own sticky Back button already names the open file
+   * (`GitChangesPanel.tsx`'s `aria-label="Back to changes from <file>"`) -- showing it again
+   * here duplicated it (screenshots 02/03). Set ONLY by that panel's own call site; every other
+   * caller (`ChangesTab.tsx`) is unchanged and keeps the path header. */
+  hideFileName?: boolean
 }
 
 /** GitHub's pull request diffs arrive as a ready-made patch body, not an old/new text pair --
  * this is `DiffView`'s sibling for that shape, sharing its rendering but not its diff-building. */
-export function DiffViewFromPatch({ path, patch, additions, deletions }: DiffViewFromPatchProps) {
+export function DiffViewFromPatch({ path, patch, reason, additions, deletions, hideFileName = false }: DiffViewFromPatchProps) {
   // Security remediation (Low): a GitHub file path can contain embedded CR/LF (git itself
   // allows it); interpolated raw into the diff header below, a crafted path could inject extra
   // header or hunk lines into both the parsed diff AND the exact text the Copy button puts on
@@ -227,9 +240,11 @@ ${patch}`
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
-        <span className="min-w-0 truncate" title={path}>
-          {path}
-        </span>
+        {!hideFileName && (
+          <span className="min-w-0 truncate" title={path}>
+            {path}
+          </span>
+        )}
         <span className="flex shrink-0 items-center gap-2">
           <DiffStatCounts added={additions} removed={deletions} accessibleLabel />
           {changedFile && (
@@ -243,7 +258,7 @@ ${patch}`
         </span>
       </div>
       {!changedFile ? (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
+        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{reason ?? 'No changes'}</div>
       ) : (
         <Diff viewType="unified" diffType={changedFile.type} hunks={changedFile.hunks} renderGutter={renderGutter}>
           {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}

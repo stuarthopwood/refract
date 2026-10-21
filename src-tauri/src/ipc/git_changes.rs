@@ -323,10 +323,11 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
 /// `stage`/`unstage` apply to each path in their own list); the real containment rule for the
 /// TRACKED path is git's own `--` argv-literal diff against this Session's worktree. **Gate
 /// round 1 HIGH 1: the UNTRACKED path is different** -- `untracked_file_patch` reads the
-/// filesystem directly (there is no git blob to operate on), so it layers
-/// `fs::resolve::resolve_in_worktree`'s own disk-aware, symlink-walking containment proof on top,
-/// and renders a symlink entry as git's own view (its target text) rather than ever reading
-/// through it.
+/// filesystem directly (there is no git blob to operate on), so it resolves the path's own
+/// PARENT folder through `fs::resolve::resolve_in_worktree`'s disk-aware, symlink-walking
+/// containment proof, then classifies the (never independently resolved) LEAF itself --
+/// rendering a symlink/junction leaf as git's own view (its target text) rather than ever
+/// resolving through it and reading its target's content.
 pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(
@@ -346,10 +347,10 @@ pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
         let untracked = args.get(3).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        let patch = diff_text(&worktree_path, &path, staged, untracked)
+        let (patch, reason) = diff_text(&worktree_path, &path, staged, untracked)
             .await
             .map_err(map_git_error)?;
-        Ok(json!({ "patch": patch }))
+        Ok(json!({ "patch": patch, "reason": reason }))
     })
 }
 

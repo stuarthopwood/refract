@@ -61,7 +61,7 @@ import {
   assertExeUnchanged,
   requireSharedCargoTarget,
   citeScreenshots,
-  switchTheme
+  switchTheme, computeDirty
 } from './verify-tauri-scratch-helpers.mjs';
 import { addRepository, pressEscape } from './verify-tauri-session-list-helpers.mjs';
 import {
@@ -552,7 +552,7 @@ async function main() {
     }
 
     const report = {
-      gitHead: gitHeadSha,
+      gitHead: gitHeadSha, dirty: computeDirty(REPO_ROOT),
       exeSha256: exeHash,
       sessionId,
       worktreePath,
@@ -576,7 +576,7 @@ async function main() {
     process.exitCode = failures.length > 0 ? 1 : 0;
   } catch (err) {
     try {
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
+      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, dirty: computeDirty(REPO_ROOT), exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2));
     } catch {
       // best-effort only
     }
