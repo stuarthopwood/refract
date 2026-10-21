@@ -450,6 +450,10 @@ async function main() {
     const currentPaneId = await cdp.evaluate(`document.querySelector('[data-session-pane]')?.getAttribute('data-session-pane') ?? null`);
     const sessionToSplit = currentPaneId === sessionIdA ? sessionIdB : sessionIdA;
     await openSessionInSplitViaMenu(cdp, sessionToSplit);
+    const panesImmediatelyAfter = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
+    await sleep(500);
+    const panesAfter500ms = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
+    console.error(`${LOG}: DIAG split targeting:`, JSON.stringify({ sessionIdA, sessionIdB, currentPaneId, sessionToSplit, panesImmediatelyAfter, panesAfter500ms }));
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
     // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
     // window's own total width -- one measured correction pass against an arbitrary starting
