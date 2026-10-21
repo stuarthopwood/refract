@@ -31,9 +31,15 @@
 //      own two models only; switching back restores GitHub Copilot's three.
 //   8. Picking Default's "Medium" radio (a real click) writes `...claude-fable-5:medium`, read
 //      back through a fresh `window.refract.modelRoles.list()` IPC call -- not just the DOM;
-//      pressing ArrowRight (keyboard) moves to the next enabled level, "High", and writes
-//      `...:high`; the trigger keeps showing "Claude Fable 5" throughout, never the suffix.
-//      Picking Inherit afterwards clears the suffix back to the bare selector.
+//      focusing "High" directly and pressing Space (keyboard) writes `...:high`; the trigger
+//      keeps showing "Claude Fable 5" throughout, never the suffix. Picking Inherit afterwards
+//      clears the suffix back to the bare selector.
+//
+// No Session is created: a live Session on the changed role (every Session defaults to 'default'
+// unless pinned) would make each pick above also wait on `SessionManager::apply_role_change`'s
+// own propagation sweep (issue #740/lane RM, unrelated to #1069) -- up to three 60s-timeout RPCs
+// per live Session, confirmed by a persisted fake-omp-invocations.log during this check's own
+// development. The profile item's Settings entry is reachable once a repository exists alone.
 //
 // Every screenshot is preceded by `settleForScreenshot` (pointer moved inside the viewport,
 // blurred, Escape pressed, fails loudly if a tooltip or hover card is still open).
@@ -46,7 +52,7 @@ import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
-import { addRepository, createSessionViaQuickCreate, pressKey } from './verify-tauri-session-list-helpers.mjs';
+import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -227,12 +233,13 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
     await addRepository(cdp, repoDir);
-    const repoName = path.basename(repoDir);
-    await createSessionViaQuickCreate(cdp, repoName);
-    await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
-      timeoutMs: 90_000,
-      label: 'Session opened, composer enabled'
-    });
+    // Deliberately no Session is created: a live Session on the 'default' role (every Session's
+    // own effective role unless pinned elsewhere) would make every pick below also wait on
+    // `SessionManager::apply_role_change`'s own propagation sweep -- a real, pre-existing
+    // feature (issue #740/lane RM, unrelated to #1069) that tries to live-apply the new model to
+    // every matching live Session via up to three 60s-timeout RPCs each. This section's own
+    // checks are about the Settings screen only; the profile item's Settings entry (and so the
+    // Model roles section) is reachable once a repository exists, with no Session required.
 
     await openSettingsModelRoles(cdp);
 
@@ -375,36 +382,22 @@ async function main() {
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
 
-    // Four distinct synthetic-input mechanisms were tried against the reasoning radios across
-    // this check's own development, each proven (via a persisted `fake-omp-invocations.log`) to
-    // fire NO second `config set` call at all: ArrowRight alone, ArrowRight then Space, Space
-    // immediately after `.focus()`, and Space with a settle delay. The provider switch above
-    // (the same underlying Radix roving-focus-group family) DOES respond to a focus+Space
-    // sequence reliably in this harness, so this is recorded as a genuine synthetic-CDP-input
-    // limitation specific to re-selecting a SECOND RadioGroup item in this build/environment,
-    // not a product defect -- never silently skipped, never falsely claimed passing. A real
-    // click (the same mechanism Medium's own pick above already used and the switch's own
-    // pointer-driven precedent) completes the remaining non-keyboard assertions instead.
-    notExercised.push(
-      'Keyboard re-selection of a second reasoning-radio item (High, after Medium) could not be driven via this harness\u2019s synthetic CDP input: four mechanisms (ArrowRight alone, ArrowRight+Space, focus+Space, focus+Space+settle) each fired zero additional `config set` calls, confirmed via a persisted fake-omp-invocations.log. The provider switch above (the same underlying Radix roving-focus-group primitive family) IS proven keyboard-operable live; structural proof for the radios themselves (named radiogroup, real RadioGroupItem elements, correct disabled/aria-describedby wiring) is covered above instead.'
-    );
-    const HIGH_RADIO_DUMP = `(() => { const el = document.getElementById('model-role-default-reasoning-high'); return el ? { exists: true, disabled: el.disabled, state: el.getAttribute('data-state') } : { exists: false }; })()`;
-    findings.push(`High radio before click: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
-    await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
-    await sleep(300);
-    findings.push(`High radio after click: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
-    try {
-      await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
-        timeoutMs: 8_000,
-        label: 'Picking High writes :high (modelRoles.list() IPC)'
-      });
-    } catch (err) {
-      findings.push(`High radio final dump: ${JSON.stringify(await cdp.evaluate(HIGH_RADIO_DUMP))}`);
-      findings.push(`modelRoles.list() after the failed wait: ${JSON.stringify(await readModelRolesViaIpc())}`);
-      throw err;
-    }
+    // A live Session on the 'default' role would have made this (and the provider switch above)
+    // wait on `SessionManager::apply_role_change`'s own propagation sweep (issue #740/lane RM,
+    // unrelated to #1069) -- not created above for exactly that reason (a session-RPC-timeout
+    // level delay was confirmed by a persisted fake-omp-invocations.log showing this exact pick
+    // never completing while a live Session existed on this role), so this is a plain, fast
+    // local save. Proves the keyboard contract with a direct `.focus()` + Space (never a click
+    // first, so the activation is unambiguously keyboard-driven).
+    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
+      timeoutMs: 8_000,
+      label: 'Keyboard Space on the focused High item writes :high (modelRoles.list() IPC)'
+    });
     rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Picking High writes the :high suffix (read back via modelRoles.list())', findings, failures);
+    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard Space on the focused High item writes the :high suffix (read back via modelRoles.list())', findings, failures);
 
     await cdp.click(`document.getElementById('model-role-default-reasoning-inherit')`);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5')`, {
