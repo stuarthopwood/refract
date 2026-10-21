@@ -240,6 +240,13 @@ async function main() {
           timeoutMs: 10_000,
           label: `${theme.name}: Pull requests nav selected`
         });
+        // The shared Button carries `transition-all`: reading the fill straight after
+        // `aria-current` flips measured the background mid-transition (~70% alpha). Wait for
+        // every running transition on the entry to finish before measuring.
+        await cdp.waitFor(`document.querySelector('[aria-label="Pull requests"]')?.getAnimations().length === 0`, {
+          timeoutMs: 5_000,
+          label: `${theme.name}: Pull requests nav transitions settled`
+        });
         const prNav = await readSelectedSite(cdp, `document.querySelector('[aria-label="Pull requests"]')`);
         assertSite(failures, findings, theme.name, 'Pull requests nav entry', prNav, { barBg, fillBg: sidebarAccentBg, fillTokenName: '--sidebar-accent' });
         await settleForScreenshot(cdp);
