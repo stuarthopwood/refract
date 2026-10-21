@@ -254,3 +254,38 @@ unstage per-file and in bulk.
 
 - No task writes a test file, per AGENTS.md's hard prototyping rule.
 - Every task names a real, concrete file path; none is a placeholder.
+
+---
+
+## Phase 7: Convergence -- #1101 UI polish (issue #1101, append-only, `/speckit.converge`)
+
+**Goal**: Stuart's 2026-10-20 screenshot feedback on the shipped panel (#464 slice 1, PR #1076):
+an unlabelled subject counter, commit inputs that don't match the composer, no feedback during
+in-flight stage/unstage, an untracked file's diff rendering as an empty box, a wordy outline Back
+button, and a Back button that scrolls out of view. Amends FR-008 and adds FR-027 to FR-031.
+
+- [X] T034 [P] Hide the commit subject counter on an empty field, show `n/72` once typing
+      starts, muted at rest and switching to a warning colour past 50 and an error colour past
+      72, with an `sr-only` "Subject length" label (`GitCommitBox.tsx`, FR-027).
+- [X] T035 [P] Apply the composer's own surface/border/focus classes (ADR 0003) to the commit
+      subject `Input` and body `Textarea`, via a new shared `COMPOSER_INPUT_SURFACE_CLASS`
+      constant (`pickerShared.tsx`, `GitCommitBox.tsx`, FR-028).
+- [X] T036 Add a per-row in-flight flag to `GitChangesFileRow.tsx` (stage/unstage/mark-as-
+      resolved): spinner on the row's own status icon, `aria-busy` on the row, the kebab trigger
+      disabled against a double click while pending, announced through the existing app-level
+      `chatAreaAnnouncer` (FR-029).
+- [X] T037 Add the same in-flight pattern to `GitChangesGroup.tsx`'s bulk Stage-all/Unstage-all
+      button: spinner replacing its icon, `aria-busy`, disabled while pending, announced through
+      `chatAreaAnnouncer` (FR-029).
+- [X] T038 Synthesise an untracked file's whole content as an all-additions patch in
+      `changes_diff.rs` (new `untracked_file_patch`, capped/binary-checked the same way
+      `changes_score.rs::score_untracked_file` already caps that file's additions count), threaded
+      through a new `untracked` parameter on `gitChanges.diff` end to end (`ipc/git_changes.rs`,
+      `ipc-git-changes.ts`, `tauri-bridge/index.ts`, `GitChangesPanel.tsx`) (FR-008 amendment).
+- [X] T039 [P] Replace the diff pane's labelled outline Back button with a ghost icon-only
+      `ArrowLeftIcon` button, `aria-label` naming the file, and make its wrapper `sticky top-0`
+      so it stays visible while the diff scrolls (`GitChangesPanel.tsx`, FR-030, FR-031).
+
+**Checkpoint**: all six #1101 items built; `scripts/verify-1101-git-polish.mjs` (or an extended
+`verify-464-git-changes.mjs`) exercises the counter, input classes, in-flight state, untracked
+diff content, and Back button/stickiness live.

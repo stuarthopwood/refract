@@ -314,30 +314,39 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `gitChanges.diff(sessionId, path, staged)` (FR-008): one file's diff body, by whether it is
-/// currently staged -- `git diff --cached` vs the plain worktree `git diff`. `path` is checked
-/// only for length here (the same bound `stage`/`unstage` apply to each path in their own list);
-/// the real containment rule is git's own `--` argv-literal diff against this Session's worktree,
-/// never a filesystem read outside it.
+/// `gitChanges.diff(sessionId, path, staged, untracked)` (FR-008): one file's diff body, by
+/// whether it is currently staged -- `git diff --cached` vs the plain worktree `git diff`.
+/// `untracked` (#1101, item 4): true for a file with no index/HEAD side to diff against at all
+/// (re-confirmed server-side, `changes_diff.rs::confirm_untracked`, gate round 1 HIGH 1(e) --
+/// never the renderer's own flag alone) -- the Rust side then synthesises the whole file as
+/// added lines instead of an empty patch. `path` is checked only for length here (the same bound
+/// `stage`/`unstage` apply to each path in their own list); the real containment rule for the
+/// TRACKED path is git's own `--` argv-literal diff against this Session's worktree. **Gate
+/// round 1 HIGH 1: the UNTRACKED path is different** -- `untracked_file_patch` reads the
+/// filesystem directly (there is no git blob to operate on), so it layers
+/// `fs::resolve::resolve_in_worktree`'s own disk-aware, symlink-walking containment proof on top,
+/// and renders a symlink entry as git's own view (its target text) rather than ever reading
+/// through it.
 pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let session_id = require_str(
             &args,
             0,
             MAX_SESSION_ID_LENGTH,
-            "gitChanges.diff expects a string sessionId, a string path and a boolean staged",
+            "gitChanges.diff expects a string sessionId, a string path, a boolean staged and a boolean untracked",
             "gitChanges.diff rejected an oversized sessionId",
         )?;
         let path = require_str(
             &args,
             1,
             MAX_PATH_LENGTH,
-            "gitChanges.diff expects a string sessionId, a string path and a boolean staged",
+            "gitChanges.diff expects a string sessionId, a string path, a boolean staged and a boolean untracked",
             "gitChanges.diff rejected an oversized path",
         )?;
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
+        let untracked = args.get(3).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        let patch = diff_text(&worktree_path, &path, staged)
+        let patch = diff_text(&worktree_path, &path, staged, untracked)
             .await
             .map_err(map_git_error)?;
         Ok(json!({ "patch": patch }))
