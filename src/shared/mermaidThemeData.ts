@@ -400,12 +400,17 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // live-verify harness every other check in this story uses does not provide (issue #1106,
   // filed round 3: port to the CDP/Tauri harness or pure `contrast-math.mjs`). Separately
   // (issue #1108, filed round 3, amended round 3): every Gantt task-text token in this file
-  // (`taskTextOutsideColor`/`taskTextClickableColor`/`critBkgColor`/`sectionBkgColor`-family) is
-  // still measured by `contrast-math.mjs` arithmetic against Mermaid's own documented CSS
-  // template strings only, not a real rendered Gantt diagram -- #1108's scope narrowed to just
-  // Gantt once Journey gained its own fence (`997-notice-severity.jsonl`, same round); `taskTextColor`
-  // itself IS now live-verified there (Journey shares the identical renderer/CSS-class path a
-  // Gantt task bar would use for this one token).
+  // (`taskTextOutsideColor`/`taskTextClickableColor`/`critBkgColor`/`sectionBkgColor`-family,
+  // INCLUDING `taskTextColor`'s own Gantt role) is still measured by `contrast-math.mjs`
+  // arithmetic against Mermaid's own documented CSS template strings only, not a real rendered
+  // Gantt diagram -- #1108's scope stays Gantt-only. `taskTextColor` IS separately
+  // live-verified for Journey specifically (this round, `997-notice-severity.jsonl`'s extended
+  // fence): Gantt uses it as an SVG `fill` (Mermaid's own `.taskText { fill: taskTextColor }`
+  // rule, a rendered `<text>`/`<tspan>`), while Journey uses the round-3 CSS override's
+  // `color` property on an HTML foreignObject `<div class="label">` (`mermaidTheme.ts`'s own
+  // comment on that fix) -- two different properties on two different element types, NOT "the
+  // identical renderer/CSS-class path" this comment previously (wrongly) claimed. Gantt's own
+  // use of `taskTextColor` remains unverified, still under #1108.
   'nordic-frost': {
     ...DARK_FAMILY,
     background: '#060f1e', // `--background`

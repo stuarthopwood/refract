@@ -436,13 +436,16 @@ export interface MermaidThemeVariables {
  gitBranchLabel5: string
  gitBranchLabel6: string
  gitBranchLabel7: string
- /** Cluster/subgraph title text colour (flowchart `.cluster text`, sits on `clusterBkg` ==
-  * `tertiaryColor`, a neutral dark surface comparable to `--card`/`--popover`, not a coloured
-  * fill). Gate round 3 fix (Main, #1074 follow-up): Mermaid's own `theme-dark.js` hardcodes
-  * this to a literal `#F9FFFE`, independent of every theme-specific field above -- this file
-  * never set it before, so every preset fell through to that one fixed near-white regardless
-  * of its own palette. FR-023's 0.9 tier, same methodology as `primaryTextColor` above: white
-  * at 90% alpha composited over `--card`. */
+ /** Cluster/subgraph title text colour (flowchart `.cluster text`). Gate round 3 fix (Main,
+  * #1074 follow-up): Mermaid's own `theme-dark.js` hardcodes BOTH this field (previously
+  * `#F9FFFE`, independent of every theme-specific field above) AND its real `clusterBkg`
+  * backdrop to a literal `#474949` -- NOT `tertiaryColor` (same hardcode-over-override pattern
+  * `primaryTextColor`'s own comment documents for `mainBkg`/`nodeBkg`), confirmed by reading
+  * that source directly. This file never set `titleColor` before, so every preset fell through
+  * to the one fixed near-white default regardless of its own palette. FR-023's 0.9 tier, same
+  * methodology as `primaryTextColor` above: white at 90% alpha composited over this REAL
+  * `#474949` backdrop measures 7.39:1 -- not the `--card` ratio this comment previously
+  * (wrongly) cited; still clears 4.5:1, so no value change, documentation only. */
  titleColor: string
 }
 
@@ -509,6 +512,28 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
  const clickableSelectors = ['doneText', 'activeText', 'activeCritText']
   .flatMap((state) => [0, 1, 2, 3].map((n) => `.taskText.clickable.${state}${n}`))
   .join(',\n  ')
+ // Gate round 3 fix (Main, #1074 follow-up, HIGH): Journey task and section labels render via
+ // Mermaid's own default `textPlacement: 'fo'` path -- a foreignObject `<div class="label">`
+ // sibling of the coloured `.task-type-N`/`.section-type-N` rect (confirmed by reading
+ // node_modules/mermaid's own journeyDiagram/svgDraw source directly: `byFo` appends the
+ // switch/foreignObject/div.label as a SIBLING of the rect inside the same `<g>`, so `~`
+ // reliably selects it). Mermaid's own `.label { color: textColor }` rule therefore paints
+ // these labels with this file's SOFTENED `textColor` (#1074's alpha tier), composited
+ // against Journey's own coloured `fillType0`-`fillType7` fills -- FIXED, independent literal
+ // hex values (NOT derived from `primaryColor`/`secondaryColor`, see that interface comment)
+ // -- measured as low as 4.06:1, below the 4.5:1 floor. These labels sit on a genuine
+ // coloured, non-neutral fill, the same solid-text exception Gantt's own task bars already
+ // carry -- reusing `taskTextColor` (already solid, already tuned for exactly this "light text
+ // on a coloured task-bar fill" role) rather than inventing a new token.
+ // Timeline uses the identical renderer code path: its own `textPlacement` also defaults to
+ // `'fo'` and its svgDraw source emits the identical `task`/`journey-section` class names
+ // (confirmed by reading node_modules/mermaid's own timeline-definition source directly), so
+ // this selector likely reaches it too -- NOT separately verified: this story's fixture has no
+ // Timeline fence and #1108 stays Gantt-only scope, so Timeline coverage here is an inferred
+ // likelihood, not a proven fact.
+ // Kept OUTSIDE the template literal below (gate round 3, UI-review fix): a comment INSIDE the
+ // return statement ships verbatim inside every Mermaid SVG's own embedded `<style>` block, not
+ // only the compiled JS bundle.
  return `
   ${overflowSelectors} {
     fill: ${t.taskTextOutsideColor} !important;
@@ -530,20 +555,6 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .commit-label-bkg {
     opacity: 1 !important;
   }
-  /* Gate round 3 fix (Main, #1074 follow-up, HIGH): Journey (and Timeline, which shares the
-     identical renderer code) task and section labels render via Mermaid's own default
-     \`textPlacement: 'fo'\` path -- a foreignObject \`<div class="label">\` sibling to the
-     coloured \`.task-type-N\`/\`.section-type-N\` rect (confirmed by reading
-     node_modules/mermaid's own journeyDiagram/svgDraw source directly: \`byFo\` appends the
-     switch/foreignObject/div.label as a SIBLING of the rect inside the same \`<g>\`, so \`~\`
-     reliably selects it). Mermaid's own \`.label { color: textColor }\` rule therefore paints
-     these labels with this file's SOFTENED \`textColor\` (#1074's alpha tier), composited
-     against journey's own coloured \`fillType0-7\` fills (derived from this theme's
-     primaryColor/secondaryColor) -- measured as low as 4.06:1, below the 4.5:1 floor. These
-     labels sit on a genuine coloured, non-neutral fill, the same solid-text exception Gantt's own
-     task bars already carry -- reusing \`taskTextColor\` (already solid, already tuned for
-     exactly this "light text on a coloured task-bar fill" role) rather than inventing a new
-     token. */
   .task ~ switch .label,
   .journey-section ~ switch .label {
     color: ${t.taskTextColor} !important;

@@ -401,10 +401,13 @@ side panel and confirm both show the same theme.
   `sidebar-accent-foreground`) MUST resolve to it via `var()` so it inherits the same alpha. A
   foreground token that sits on a coloured, non-neutral fill (`primary-foreground`,
   `send-foreground`, `destructive-foreground`, `sidebar-primary-foreground`,
-  `active-indicator-foreground` (gate round 3, the "Focused" session badge), the
-  `state-*-foreground` and `pr-*-foreground` tokens) MUST stay a fully opaque literal. The
-  dedicated high-contrast theme (FR-010) MUST keep every one of these tokens solid, per its
-  existing 7:1 text target (FR-008, #552).
+  `active-indicator-foreground` (gate round 3, the "Focused" session badge),
+  `composer-selection-fg` (gate round 2, the composer's own command-pill foreground on its own
+  selection tint), the `state-*-foreground` and `pr-*-foreground` tokens, and Mermaid's
+  `taskTextColor`/`taskTextClickableColor` (Gantt/Journey task-bar text, the identical
+  coloured-fill role) MUST stay a fully opaque literal. The dedicated high-contrast theme
+  (FR-010) MUST keep every one of these tokens solid, per its existing 7:1 text target
+  (FR-008, #552).
 
 ### Key Entities
 

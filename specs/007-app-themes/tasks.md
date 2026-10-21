@@ -1266,8 +1266,45 @@ one genuinely new pair per theme (872 -> 877, see that task's own entry).
   #1074-specific behaviours -- Journey labels, composer-selection -- actually passed, not
   merely assumed). Journey diagram screenshot viewed directly (Dark): "My day" journey with
   blue/green coloured section/task bars, crisp solid white labels legible against every
-  coloured fill, no washout. Composer-selection screenshot viewed directly (Dark): a real
-  `/btw hi` draft, Ctrl+A-selected, both pill and plain text legible under the highlight.
+  coloured fill, no washout. **Correction (gate round 3, part 3, Test HIGH -- evidence
+  honesty): the composer-selection screenshot viewed directly (Dark) did NOT show a selection
+  at all** -- `settleForScreenshot`'s own blur+Escape ran AFTER Ctrl+A and cleared it before
+  the shot fired every time, every theme; see T054 for the fix (reordered, not yet
+  live-verified) and the honest evidence this shot was never standing in for
+  (`--composer-selection-fg` legibility is proven statically by `composerSelectionContrastRows`
+  and live, for Dark, by #1050's own `assertSelectionHighlightVisible` check).
   PR #1104 body updated with the full round-3 evidence; PLAN.md row updated. `notExercised`
   (5, all genuine, unchanged from T052).
+
+- [X] T054 Gate round 3, part 3 (reviewer fixes, no rebuild, 2026-10-21): three reviewer
+  findings on PR #1104, applied as docs-and-comment/script fixes with no rerun (depends on
+  T053). **Test HIGH (evidence honesty):** the composer-selection shot never showed a real
+  selection (T053's own correction above) -- fixed by moving the single `settleForScreenshot`
+  call in `verify-1074-text-opacity.mjs` to run BEFORE `clearAndType`/Ctrl+A only, so nothing
+  clears the highlight before the screenshot; reworded the PR body, this file's T053 entry and
+  the script's own comments to stop claiming the shot proves legibility (that's
+  `composerSelectionContrastRows` + #1050's own live check, not this screenshot) and to mark
+  the reorder unrun. Narrowed the Journey SVG assertion from "this rgb string appears somewhere
+  in the SVG" to the actual CSS rule text (`.task~switch .label{color:rgb(...)`), and added an
+  explicit Dark (high contrast) caveat: its own `textColor`/`taskTextColor` are both the
+  identical solid `#ffffff`, so that one theme's pass can't discriminate whether the override
+  fired. Fixed three stale comments the same audit found: Journey's `fillType0-7` fills are
+  fixed literal hex values, not derived from `primaryColor`/`secondaryColor`; Timeline shares
+  the identical renderer/class names and `textPlacement:'fo'` default but is NOT separately
+  verified (no Timeline fence in this fixture, #1108 stays Gantt-only); `titleColor` sits on
+  Mermaid's own hardcoded `clusterBkg` literal `#474949`, not `tertiaryColor`/`--card`, measuring
+  7.39:1 (still clears 4.5:1, no value change). Extended the fixture README's own
+  `997-notice-severity.jsonl` row with the round-3 Journey-fence addition it was missing.
+  **UI review PASS, 2 items:** moved the `getMermaidThemeCSS` Journey comment from INSIDE the
+  template literal (where it shipped verbatim inside every Mermaid SVG's own embedded `<style>`
+  block) to a plain JS comment above the `return`. FR-023's exception list (`spec.md`) now
+  names `composer-selection-fg` and Mermaid's `taskTextColor`/`taskTextClickableColor`
+  explicitly, alongside the already-present `active-indicator-foreground`.
+  **Code review, 1 item:** `mermaidThemeData.ts`'s own comment wrongly claimed `taskTextColor`
+  was live-verified "via a shared Gantt path" -- Gantt actually uses it as an SVG `fill`
+  (`.taskText { fill }`), never through Journey's `color`-based CSS override; corrected to say
+  only Journey's foreignObject-label use is live-verified this round, Gantt's own use stays
+  unverified under #1108. No build run this task (docs/comments/script-reorder only, explicitly
+  deferred per Main); the `settleForScreenshot` reorder and the narrowed Journey assertion are
+  both unrun, next build slot.
 

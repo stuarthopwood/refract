@@ -48,9 +48,15 @@
 //
 // Screenshots per theme: chat (chat prose plus the header and Send button all visible), a
 // popover menu (the Profile dropdown), selected chat-prose text, a composer-selection shot (a
-// real `/btw` command pill, Ctrl+A-selected -- round 3, Main's follow-up: proves
-// `--composer-selection-fg` stays legible under a real native selection highlight in every
-// preset, not only Dark), Manage sessions (the full Session list), Settings Appearance, and an
+// real `/btw` command pill, Ctrl+A-selected -- round 3, Main's follow-up, VISUAL ONLY: does
+// NOT by itself prove `--composer-selection-fg` stays legible under the highlight -- that is
+// proven statically by `composerSelectionContrastRows` (5.82-8.29:1,
+// `composer-selection-contrast.mjs`) and live, for Dark, by #1050's own
+// `assertSelectionHighlightVisible` check. Gate-fix (caught live, round 3, Test HIGH --
+// evidence honesty): the shot previously showed the bare pill with NO visible selection at
+// all, since `settleForScreenshot`'s own blur+Escape ran AFTER Ctrl+A and cleared it before
+// the screenshot fired every time; fixed by reordering -- NOT yet live-verified, next build
+// slot), Manage sessions (the full Session list), Settings Appearance, and an
 // Off switch (the Appearance section's own watermark toggle, clicked off then restored --
 // gate round 1, Low item 7), and the Journey diagram itself scrolled into view (round 3, item
 // 1: visible evidence for the solid task/section labels the assertion above already proved).
@@ -426,15 +432,33 @@ async function main() {
         // foreignObject path (confirmed by reading node_modules/mermaid's own journeyDiagram
         // source directly -- see mermaidTheme.ts's own comment on the fix), so the embedded
         // `<style>` block this file's getMermaidThemeCSS generates is what actually governs
-        // them. Asserts the real rendered SVG's own decoded text contains this theme's solid
-        // `taskTextColor`, proving the override genuinely reached the page, not only the CSS
-        // source. Gate-fix (live debug, this run): Mermaid's own per-mount stylesheet scoping
-        // re-serializes every colour value to `rgb(r, g, b)` notation (confirmed live: a real
-        // decoded SVG showed `color:rgb(250, 250, 250)!important` for Dark's `#fafafa`, with the
-        // exact selector `.task~switch .label` present and correct) -- searching for the plain
-        // hex literal verbatim, as the gitGraph/flowchart checks elsewhere in this file do
-        // against THEIR OWN already-hex `themeVariables` strings, never matches here; this one
-        // checks the `rgb()` form instead. ----
+        // them. Journey's own task/section fills (`fillType0`-`fillType7`) are fixed literal
+        // hex values (NOT derived from `primaryColor`/`secondaryColor` -- see that interface
+        // comment's own correction), so the expected colour below is this theme's own solid
+        // `taskTextColor` literal, not a computed one.
+        // Narrowed (gate round 3, Test review: evidence-honesty HIGH) to match the actual CSS
+        // RULE TEXT this file's own sibling-selector override emits -- `.task~switch
+        // .label{color:rgb(...)` -- not merely "this rgb string appears somewhere in the SVG",
+        // which could coincidentally match an unrelated element. Gate-fix (live debug, prior
+        // run): Mermaid's own per-mount stylesheet scoping re-serializes every colour value to
+        // `rgb(r, g, b)` notation and strips the space around `~` (confirmed live: a real
+        // decoded SVG showed the exact rule `.task~switch .label{color:rgb(250, 250, 250)
+        // !important}` for Dark's `#fafafa`) -- searching for the plain hex literal verbatim,
+        // as the gitGraph/flowchart checks elsewhere in this file do against THEIR OWN
+        // already-hex `themeVariables` strings, never matches here; this one checks the
+        // narrowed `rgb()` rule-text form instead.
+        // Dark (high contrast) CANNOT be discriminated by this assertion: FR-023's "stays
+        // solid" exception means its own `textColor` and `taskTextColor` are both the
+        // identical literal `#ffffff`, so the expected rule text is present whether the
+        // sibling-selector override fired or Mermaid's unmodified default `.label` rule simply
+        // matched by coincidence -- handled explicitly below, not claimed as proof there.
+        // Timeline shares the identical renderer code path (its own `textPlacement` also
+        // defaults to `'fo'`, and its svgDraw source emits the identical `task`/
+        // `journey-section` class names -- confirmed by reading node_modules/mermaid's own
+        // timeline-definition source directly), so this selector likely reaches it too -- NOT
+        // separately verified: this fixture has no Timeline fence, and #1108's scope stays
+        // Gantt-only, so Timeline coverage here is an inferred likelihood, not a proven fact.
+        // ----
         const mermaidImgs = await cdp.evaluate(`Array.from(document.querySelectorAll('img[role="img"]')).map((el) => el.getAttribute('src'))`);
         if (!Array.isArray(mermaidImgs) || mermaidImgs.length < 2 || !mermaidImgs[1]) {
           failures.push(`${theme.name}: expected 2 real rendered Mermaid diagrams (flowchart then journey), found ${Array.isArray(mermaidImgs) ? mermaidImgs.length : 0}.`);
@@ -445,10 +469,13 @@ async function main() {
           } else {
             const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
             const expectedTaskRgb = hexToRgbString(JOURNEY_TASK_TEXT_COLOUR[theme.id]);
-            if (!journeySvgText.includes(expectedTaskRgb)) {
-              failures.push(`${theme.name}: real rendered Journey SVG is missing the solid taskTextColor ${expectedTaskRgb} (${JOURNEY_TASK_TEXT_COLOUR[theme.id]}) -- labels may still be using the softened textColor.`);
+            const expectedRule = `.task~switch .label{color:${expectedTaskRgb}`;
+            if (!journeySvgText.includes(expectedRule)) {
+              failures.push(`${theme.name}: real rendered Journey SVG is missing the narrow rule \`${expectedRule}\` -- labels may still be using the softened textColor, or the selector/declaration format drifted from the confirmed-live shape.`);
+            } else if (theme.id === 'dark-high-contrast') {
+              findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- but this theme's own \`textColor\`/\`taskTextColor\` are BOTH the identical solid #ffffff (FR-023's "stays solid" exception), so this assertion cannot discriminate whether the sibling-selector override actually fired here or Mermaid's unmodified default \`.label\` rule already matched by coincidence -- not meaningful live proof for this one theme.`);
             } else {
-              findings.push(`${theme.name}: real rendered Journey SVG contains the solid taskTextColor ${expectedTaskRgb} (${JOURNEY_TASK_TEXT_COLOUR[theme.id]}) -- task/section labels stay solid on their coloured fillType fill.`);
+              findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- task/section labels stay solid on their coloured fillType fill, proving the override genuinely fired, not merely a coincidental default match.`);
             }
           }
         }
@@ -508,17 +535,23 @@ async function main() {
           await cdp.evaluate(`window.getSelection()?.removeAllRanges()`);
         }
 
-        // Composer-selection text (round 3, Main's follow-up): the composer's own command-pill
-        // foreground (`--composer-selection-fg`, FR-023 DECIDED solid per the coloured-fill
-        // rule) under a REAL native selection highlight -- the same evidence
-        // `assertSelectionHighlightVisible` already captures for #1050, reused here per-theme so
-        // every preset's own pill-under-selection composite gets its own screenshot, not just
-        // Dark's (the #1050 script only ever runs against Dark).
+        // Composer-selection screenshot (round 3, Main's follow-up; gate round 3 fix, caught
+        // live, Test HIGH -- evidence honesty): the composer's own command-pill rendered
+        // per-theme, Ctrl+A-selected. `settleForScreenshot` (`verify-700-todo-pin-helpers.mjs`'s
+        // own doc) blurs the active element and presses Escape -- calling it AFTER Ctrl+A,
+        // right before the shot, cleared the selection before the screenshot fired, so every
+        // theme's shot previously showed the bare pill with NO visible selection at all. Fixed
+        // by moving the one `settleForScreenshot` call to run before `clearAndType` only, so
+        // nothing runs between Ctrl+A and the screenshot -- NOT YET live-verified (no rerun
+        // this change), next build slot. This shot is visual-only: `--composer-selection-fg`
+        // staying legible under a real native selection highlight is proven statically by
+        // `composerSelectionContrastRows` (5.82-8.29:1, `composer-selection-contrast.mjs`) and
+        // live, for Dark, by #1050's own `assertSelectionHighlightVisible` check -- not by
+        // this screenshot.
         await settleForScreenshot(cdp);
         await clearAndType(cdp, pressKey, '/btw hi');
         await cdp.waitFor(`${PILL} !== null`, { timeoutMs: 5_000, label: `${theme.name}: command pill appears` });
         await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select the whole draft, pill included
-        await settleForScreenshot(cdp);
         const composerSelectionShot = `${theme.id}-07-composer-selection.png`;
         await cdp.screenshot(path.join(SHOTS_DIR, composerSelectionShot));
         shotNames.push(composerSelectionShot);
