@@ -447,7 +447,11 @@ async function main() {
     else if (escapingDiffAttempt.code !== 'outside-worktree') failures.push(`Untracked escaping symlink: refused, but with code "${escapingDiffAttempt.code}" (expected "outside-worktree") -- message: ${escapingDiffAttempt.message}`);
     else findings.push(`Untracked escaping symlink: refused with code "outside-worktree" (${escapingDiffAttempt.message}), the secret content on the other side of the link was never read.`);
     const leakedInMessage = Boolean(escapingDiffAttempt.message && escapingDiffAttempt.message.includes(secretMarker)) || Boolean(escapingDiffAttempt.patch && escapingDiffAttempt.patch.includes(secretMarker));
-    assertEqual(leakedInMessage, false, 'Outside-worktree secret content never appears in the diff response (patch OR error message)', findings, failures);
+    // Low item (#1111): `assertEqual(leakedInMessage, false, ...)` would print a passing line
+    // ending in a bare "`: false`", reading like a hidden failure on a quick skim -- phrased as
+    // an explicit pass/fail pair instead, so the passing case names what was actually confirmed.
+    if (leakedInMessage) failures.push('Outside-worktree secret content LEAKED into the diff response (patch or error message) -- must never happen.');
+    else findings.push('Outside-worktree secret content never appears in the diff response (patch OR error message): confirmed absent.');
     rmSync(escapingSymlinkPath, { force: true });
     rmSync(outsideSecretDir, { recursive: true, force: true });
     await cdp.waitFor(
@@ -494,7 +498,9 @@ async function main() {
     const coveredByOther = await cdp.evaluate(
       `(() => { const btn = (${BACK_TO_CHANGES_FINDER}); const r = btn.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!hit && !btn.contains(hit) && hit !== btn; })()`
     );
-    assertEqual(coveredByOther, false, 'Back button is still genuinely hit-testable at its own position after scrolling (nothing scrolled over it)', findings, failures);
+    // Low item (#1111): same relabel as `leakedInMessage` above.
+    if (coveredByOther) failures.push('Back button is covered by another element after scrolling (no longer genuinely hit-testable at its own position).');
+    else findings.push('Back button is still genuinely hit-testable at its own position after scrolling (nothing scrolled over it): confirmed, no covering element.');
     await cdp.click(BACK_TO_CHANGES_FINDER);
     await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the sticky-back check' });
 
