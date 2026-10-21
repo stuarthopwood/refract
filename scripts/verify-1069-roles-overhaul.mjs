@@ -388,18 +388,14 @@ async function main() {
       timeoutMs: 5_000,
       label: 'Tab from the trigger reaches the checked Medium radio (never `.focus()`)'
     });
-    // HARNESS FIX: a zero-latency `keyDown` immediately followed by `keyUp` raced Radix's own
-    // `isArrowKeyPressedRef` (`@radix-ui/react-radio-group/dist/index.mjs:338-345`, set on
-    // keydown/cleared on keyup by a RAW `document.addEventListener`, outside React) against the
-    // roving-focus-group's effect-driven focus move + `.click()` (the thing that actually
-    // SELECTS, gate round 1) -- the synthetic keyup could clear the flag before that effect ever
-    // read it. Proven: one burst left `active` medium -> high -> high (2 of 3 presses lost)
-    // while `checked` never left 'medium'. Holding the key down until `aria-checked` confirms
-    // the select landed, then releasing, is NECESSARY -- but gate round 3 review is right that
-    // it is not SUFFICIENT: a genuine main-thread stall could still in principle lose a Radix
-    // select even with a real, physical keypress (this is upstream of this app, rare in
-    // practice, and the user's own recourse -- pressing Space on the focused item -- recovers it
-    // same as any other missed arrow-key selection would).
+    // HARNESS FIX: a zero-latency `keyDown`+`keyUp` raced Radix's `isArrowKeyPressedRef`
+    // (`@radix-ui/react-radio-group/dist/index.mjs:338-345`, set/cleared outside React) against
+    // the roving-focus-group's effect-driven `.click()` select (gate round 1) -- the synthetic
+    // keyup could clear the flag first. Proven: one burst left `active` medium -> high -> high
+    // (2 of 3 presses lost) while `checked` never left 'medium'. Holding the key down until
+    // `aria-checked` confirms the select is NECESSARY but not SUFFICIENT (round 3 review): a
+    // main-thread stall could still lose a real keypress's select (upstream, rare, recovered
+    // with Space).
     const configSetBeforeArrows = countConfigSetCalls(debugLogPath);
     const arrowSequence = [
       'model-role-default-reasoning-high',
@@ -448,6 +444,8 @@ async function main() {
     const highCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('aria-checked')`);
     assertEqual(highCheckedWhileRefused, 'false', 'A pick made during a Select model save is refused outright: the dot does not move', findings, failures);
     await shot('04-pending-save-in-row.png');
+    // `shot()` deliberately blurs (its own `settleForScreenshot`) -- restore focus before checking it survives the save landing.
+    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5')`, {
       timeoutMs: 8_000,
       label: 'The Claude Opus 5.5 model save lands bare -- the refused "High" pick never applied'
@@ -522,12 +520,20 @@ async function main() {
     assertEqual(focusedAfterAutoArrowBack, 'model-role-plan-reasoning-auto', 'Arrowing off Auto (ArrowRight) and back (ArrowLeft) keeps focus reachable on the Auto radio', findings, failures);
     const autoCheckedAfterArrowBack = await cdp.evaluate(`document.getElementById('model-role-plan-reasoning-auto')?.getAttribute('data-state') === 'checked'`);
     assertTrue(autoCheckedAfterArrowBack, 'Auto radio reads checked again immediately after arrowing off and back', findings, failures);
-    const configSetDuringAutoArrows = countConfigSetCalls(debugLogPath) - configSetBeforeAutoArrows;
-    assertTrue(configSetDuringAutoArrows >= 1, `At least one config-set call landed for the arrow-off-and-back (a real write happened, not a harness no-op; got ${configSetDuringAutoArrows})`, findings, failures);
+    // Gate round 3 fix (falsified against the log, not a product bug): checking right after the
+    // dot-flip raced the async writes -- Plan was ALREADY `:auto`, so a plain `:auto` wait could
+    // pass VACUOUSLY before either write landed. Waits for bare first (ArrowRight), then `:auto`
+    // again (the held ArrowLeft flush).
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/claude-fable-5')`, {
+      timeoutMs: 8_000,
+      label: 'Plan\u2019s own ArrowRight write (to bare/Inherit) lands first'
+    });
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/claude-fable-5:auto')`, {
       timeoutMs: 8_000,
-      label: 'Plan settles back on :auto after the arrow-off-and-back (latest pick wins)'
+      label: 'Plan settles back on :auto after the held ArrowLeft pick\u2019s flush lands'
     });
+    const configSetDuringAutoArrows = countConfigSetCalls(debugLogPath) - configSetBeforeAutoArrows;
+    assertTrue(configSetDuringAutoArrows >= 1, `At least one config-set call landed for the arrow-off-and-back (a real write happened, not a harness no-op; got ${configSetDuringAutoArrows})`, findings, failures);
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.plan, 'github-copilot/claude-fable-5:auto', 'Plan ends on :auto again after arrowing off and back, read via modelRoles.list()', findings, failures);
 
