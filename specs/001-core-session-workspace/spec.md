@@ -1179,6 +1179,41 @@
   while a background path/drop image read for this session is pending, the draft is not blank
   either, matching `handleSend`'s own existing refusal for that race.
 
+### Session 2026-10-20 (Model roles overhaul, #1069)
+
+- Q: Issue #1069 (Stuart, UI Polish, grilled 2026-10-20, all resolved, none deferred): every chat
+  role's model dropdown lists every provider's models with no filter, items repeat their own
+  provider in parens, and a suffixed or off-provider current value falls back to a raw, truncated
+  selector string; there is also no reasoning-level control at all. How should the Model roles
+  section work? -> A: One provider `ToggleGroup` row (ADR 0003, extending
+  `ManageSessionsToolbar.tsx`'s own segmented-filter pattern) sits above the chat-role list, one
+  segment per provider present in the loaded `chat` catalog; every chat role's own model dropdown
+  then lists only the selected provider's models, each item showing the model's name alone (no
+  provider in parens, since the list is already filtered to one). There is no "All" segment: the
+  switch starts selected on the provider of the Default role's current model (falling back to the
+  first provider in catalog order when Default is unset or unresolved -- the issue's own
+  documented fallback for that open technical note). A role whose current model belongs to a
+  different provider keeps showing that model's real name with a small muted "via {provider}" tag
+  beside it, never blanked or shown as a raw selector; picking a new model for that role still only
+  offers the selected provider's own list. Model-kind roles (Image, Web, Speech, Dictation, Judge)
+  are unaffected by the switch and keep their own unfiltered catalog and item labels (decision 6).
+- Q: How is the reasoning level chosen, and which levels are offered? -> A: Each of the 10 chat
+  roles (not the 5 model-kind roles) gets its own named `radiogroup` (`aria-labelledby` the role's
+  own label, `RadioGroup`/`RadioGroupItem`/`RadioGroupIndicator` plus the shared
+  `RADIO_RING_CLASS`/`RADIO_DOT_CLASS` from #1043/PR #1057, never `AskCard.tsx`/`MergeDialog.tsx`'s
+  own older inline ring) with seven options: Inherit, Off, Minimal, Low, Medium, High, Extra high.
+  Inherit is always enabled and writes no `:level` suffix; every other option is enabled only when
+  the role's CURRENT model itself supports it -- confirmed present in `omp models --kind chat
+  --json`'s own `reasoning`/`thinking` fields, previously dropped at the `ModelCatalogEntry`
+  type/struct boundary (`src/shared/model.ts`, `src-tauri/src/ipc/model_roles.rs`) and now threaded
+  through: Off whenever the model is `reasoning:true`; Minimal/Low/Medium/High/Extra high only when
+  present in that model's own `thinking` array. A disabled option states why (`aria-describedby`,
+  "Not supported by {model name}", or "Pick a model first" when the role has no resolvable current
+  model). Picking a level writes it as the role's existing `:level` suffix via `modelRoleSuffix.ts`'s
+  existing helpers; picking Inherit clears it. The trigger itself shows the model's display name
+  only -- no provider prefix, no `:level` suffix -- the chosen level shows only in the role's own
+  radio group.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1853,6 +1888,42 @@ The developer types a slash command and finds the ones the agent offers. If a se
   through the textarea's `aria-describedby`, and sending this way MUST announce "Sending now…"
   exactly as the chip's own button does. The Send button's own `aria-keyshortcuts` and tooltip
   MUST NOT claim Enter sends the (empty) draft while the rule applies. Shift+Enter is unaffected.
+- **FR-095** (new, 2026-10-20, issue #1069, Stuart's own `grill-with-docs` session, 2026-10-20):
+  The Model roles section of Settings MUST show one provider segmented control above the
+  chat-role list, built from the shared `ToggleGroup` (ADR 0003, the same segmented-filter pattern
+  `ManageSessionsToolbar.tsx` already uses), with one segment per provider present in the loaded
+  chat model catalog and no "All" segment. The switch MUST start selected on the provider of the
+  Default role's current model, or the first provider in catalog order when Default's model is
+  unset or not found in the catalog. Changing the selected provider MUST re-filter every chat
+  role's own model dropdown (FR-096) to that provider's models only; it MUST NOT affect the five
+  model-kind roles (Image, Web, Speech, Dictation, Judge), whose own dropdowns are unfiltered and
+  unchanged (FR-099).
+- **FR-096** (new, 2026-10-20, issue #1069): A chat role's model dropdown MUST list only the
+  selected provider's models (FR-095), each item showing the model's display name alone, with no
+  provider shown in parentheses, since the list is already filtered to one provider.
+- **FR-097** (new, 2026-10-20, issue #1069): A chat role whose current model belongs to a provider
+  other than the one selected on the switch (FR-095) MUST keep showing that model's real display
+  name, with a small muted "via {provider}" tag beside it; it MUST NOT be blanked, and MUST NOT
+  fall back to a raw, unresolved selector string the way an unrecognised value does today, whenever
+  that model can be resolved in the full (unfiltered) catalog. Picking a new model for that role
+  still only offers the selected provider's own list (FR-096).
+- **FR-098** (new, 2026-10-20, issue #1069; amends FR-041/FR-064's trigger text, Model roles
+  section only): Each chat role's model-picker trigger MUST show the model's display name only --
+  no provider prefix (superseding today's raw `provider/model:level` fallback for this section) and
+  no trailing `:level` suffix; the role's chosen reasoning level is shown only by its own radio
+  group (FR-099), never glued onto the trigger text.
+- **FR-099** (new, 2026-10-20, issue #1069): Each of the 10 chat roles (Default, Smol, Slow,
+  Vision, Plan, Commit, Tiny, Memory, Task, Advisor) -- never the 5 model-kind roles (Image, Web,
+  Speech, Dictation, Judge) -- MUST show its own named radiogroup (`aria-labelledby` the role's own
+  label) offering seven reasoning levels: Inherit, Off, Minimal, Low, Medium, High, Extra high.
+  Inherit MUST always be enabled and MUST write no `:level` suffix; every other level MUST be
+  enabled only when the role's current model itself supports it (`reasoning`/`thinking` fields read
+  from `omp models --kind chat --json`, threaded through `ModelCatalogEntry`): Off whenever the
+  model is `reasoning:true`, and each of Minimal/Low/Medium/High/Extra high only when that model's
+  own `thinking` array lists it. A disabled option MUST state why (`aria-describedby`), never a
+  silently-greyed control with no explanation. Picking an enabled level MUST write it as the role's
+  existing `:level` suffix via the existing suffix helpers (`modelRoleSuffix.ts`); picking Inherit
+  MUST clear it.
 
 ### Key Entities
 

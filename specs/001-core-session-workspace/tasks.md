@@ -5089,3 +5089,58 @@ all 14 assertions PASS**. Screenshots viewed directly (`hint-dark.png`, `hint-ob
 both queued follow-up chips show with their own "Send now" buttons, and the composer's hint
 overlay reads "Enter sends the next queued message" in place of "Message the agent", the "/ for
 commands" and "Markdown supported" hints unchanged beside it, in both themes.
+
+## Phase 74: Model roles overhaul (#1069, FR-095 to FR-099)
+
+- [X] T360 [US1] Docs convergence: amend `specs/001-core-session-workspace/spec.md` with the
+  `### Session 2026-10-20 (Model roles overhaul, #1069)` Clarifications entry and FR-095 to
+  FR-099 (provider switch, filtered dropdown, off-provider display, trigger text, reasoning
+  radios). Thread `reasoning: boolean`/`thinking: string[] | null` through `ModelCatalogEntry`
+  (`src/shared/model.ts`; `src-tauri/src/ipc/model_roles.rs`'s struct and
+  `parse_catalog_response`), updating that file's two existing parse tests to the now-true "six
+  needed fields" shape (no new tests, prototyping-phase rule) rather than leaving them asserting
+  a superseded premise. `cargo test --lib ipc::model_roles`: 18/18 passed.
+- [X] T361 [US1] Build the provider switch and reasoning radios as new components, not inlined
+  into the 469-line `ModelRolesSection.tsx` (#806 file-size cap): `modelProviderFilter.ts` (pure
+  helpers -- provider list, provider-filtered catalog, current-value catalog resolution, default
+  provider), `ProviderSwitch.tsx` (the `ToggleGroup` row, ADR 0003, extending
+  `ManageSessionsToolbar.tsx`'s own segmented-filter pattern), `RoleReasoningRadios.tsx` (the
+  seven-option radio group per chat role, `RadioGroup`/`RadioGroupItem`/`RadioGroupIndicator` plus
+  `RADIO_RING_CLASS`/`RADIO_DOT_CLASS` from #1043/PR #1057). Wired `ModelRolesSection.tsx` to:
+  track the selected provider (initialised once from the Default role's current model, falling
+  back to the first catalog provider); filter each chat role's `SelectContent` to the selected
+  provider and drop the provider from its item labels; resolve a role's current value against the
+  FULL catalog to render its trigger as the model's display name, with a muted "via {provider}"
+  tag when it is on a different provider than the one selected; render `RoleReasoningRadios` under
+  each of the 10 chat roles only, writing/clearing the role's `:level` suffix through
+  `modelRoleSuffix.ts`'s existing helpers (FR-095 to FR-099). Extracted `friendlyProviderLabel`
+  out of `lib/modelRoles.ts` into a new leaf module, `lib/providerLabels.ts` (re-exported from
+  `modelRoles.ts` unchanged for its existing callers), because `ModelRolesSection.tsx` importing
+  `ProviderSwitch.tsx` importing `lib/modelRoles.ts` would otherwise be a real circular import --
+  that file reads this section's own `CHAT_ROLE_DESCRIPTORS` at its module top level.
+- [ ] T362 Non-build checks and the live check: `pnpm typecheck`, `pnpm test` (148/148, unchanged),
+  `pnpm check:indent` (0/468), `pnpm check:file-size` (0 violations -- `src/shared/model.ts`'s
+  doc comment trimmed to land exactly on its 656-line baseline, not past it),
+  `pnpm check:theme-contrast` (892/892, no new token), `pnpm check:parity` (115/115 requests,
+  25/25 events, unaffected), `pnpm check:drag-regions` (0/155); `cargo fmt --check`, `cargo
+  clippy --all-targets -- -D warnings` (`src-tauri`) all clean. Write
+  `scripts/verify-1069-roles-overhaul.mjs` (new, modelled on an existing Settings CDP check,
+  teaching the shared `verify-tauri-fake-omp.mjs` harness the one-shot `omp config get/set
+  modelRoles --json` and `omp models --kind <kind> --json` CLI calls it never answered before --
+  neither is part of the `--mode rpc-ui` wire tape, and no earlier live check drove the Model
+  roles section this deep) proving the switch starts on Default's provider and filters every
+  dropdown, items carry no provider prefix, an off-provider role shows "via {provider}", the
+  radios exist only on chat roles with unsupported levels disabled and a reason, picking a level
+  writes the suffix (read back through a fresh `modelRoles.list()` IPC call) and Inherit clears
+  it, triggers show the name only, and the switch/radios are keyboard-operable. Gated on the
+  build slot (no `verify-*.mjs` run by this worker); run and reported once granted.
+
+This phase was written retroactively after the implementation above, in the same session that
+built it (no prior `/speckit.plan`/`/speckit.tasks` pass covered issue #1069). T360/T361's own
+checks (`cargo test`, `pnpm typecheck`) were run as each landed; T362's non-build checks were run
+and are green (see above), and `scripts/verify-1069-roles-overhaul.mjs` plus its
+`scripts/fixtures/model-catalogs/chat-1069.json` fixture and the `verify-tauri-fake-omp.mjs`
+one-shot `config`/`models` handling it needs are written and syntax-checked (`node --check`), but
+NOT yet run against a built exe -- Main's "ready for build slot" instruction gates that (no
+`verify-*.mjs` run by this worker); T362 stays open until the build slot is granted, the Tauri
+debug build runs, and the script's own pass (and its `report.json`) is recorded here.

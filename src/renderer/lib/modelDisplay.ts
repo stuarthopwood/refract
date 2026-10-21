@@ -32,12 +32,12 @@ export const THINKING_LEVELS: readonly ThinkingLevel[] = ['inherit', 'off', 'min
 
 /** The display NAME ONLY for a Session's last known model (#741 Part 1: the provider moves to a
  * place that doesn't need it at a glance -- the details card's own muted "via <Provider>" second
- * line, `@/lib/modelRoles`' `friendlyProviderLabel`, and (unchanged by this issue) `ModelPicker.tsx`'s
- * own Tooltip/accessible-name parenthetical, which builds its OWN `provider/name` string locally
- * rather than through this function now that this function's own return shape dropped the
- * provider). `null` before any `get_state` has ever reported a model (T063). Built from the
- * FIELDS (`name`/`id`), never by splitting a combined string on `/` -- an id such as
- * `openrouter/google/gemini` stays untouched either way. */
+ * line, `@/lib/providerLabels`' `friendlyProviderLabel`, and (unchanged by this issue)
+ * `ModelPicker.tsx`'s own Tooltip/accessible-name parenthetical, which builds its OWN
+ * `provider/name` string locally rather than through this function now that this function's own
+ * return shape dropped the provider). `null` before any `get_state` has ever reported a model
+ * (T063). Built from the FIELDS (`name`/`id`), never by splitting a combined string on `/` -- an
+ * id such as `openrouter/google/gemini` stays untouched either way. */
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
   if (!session.lastModel) return null
   const { id, name } = session.lastModel

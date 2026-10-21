@@ -110,14 +110,9 @@ import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { ROLE_FALLBACK_LABEL } from '../settings/ModelRolesSection'
-import { friendlyProviderLabel, ROLE_LABEL } from '@/lib/modelRoles'
-import {
-  PICKER_OPTION_ACTIVE_CLASS,
-  PICKER_OPTION_CLASS,
-  PICKER_TRIGGER_CLASS,
-  usePickerDisabled,
-  usePickerOpenState
-} from './pickerShared'
+import { ROLE_LABEL } from '@/lib/modelRoles'
+import { friendlyProviderLabel } from '@/lib/providerLabels'
+import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS, PICKER_TRIGGER_CLASS, usePickerDisabled, usePickerOpenState } from './pickerShared'
 
 // Gate round 6 fix (`agent://Arch877` Flow L-N1): `smol`/`slow`'s "Default" fallback now lives
 // IN the shared `ROLE_FALLBACK_LABEL` itself (`ModelRolesSection.tsx`), not merged in locally --
@@ -132,8 +127,8 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const { disabled, notIdle, stopped } = usePickerDisabled(sessionId)
   // Gate round 1 fix (MEDIUM): a friendly display name is not code-shaped data -- monospace is
   // reserved for a raw `provider/id` fallback. Gate round 1 fix (LOW #11): the Tooltip's
-  // provider now reads through the shared `friendlyProviderLabel` map (`modelRoles.ts`), not
-  // OMP's raw provider id (`SessionDetailsCard.tsx` already does the same).
+  // provider now reads through the shared `friendlyProviderLabel` map (`@/lib/providerLabels`),
+  // not OMP's raw provider id (`SessionDetailsCard.tsx` already does the same).
   const modelFullLabel = session?.lastModel ? `${friendlyProviderLabel(session.lastModel.provider)}/${session.lastModel.name?.trim() || session.lastModel.id}` : null
   const modelLabelIsRaw = Boolean(session?.lastModel && !session.lastModel.name)
   // Gate round 5 fix (Layout/Flow/Visual Medium #3): the VISIBLE trigger text is the bare model

@@ -206,14 +206,14 @@ export function isModelRoleId(value: unknown): value is ModelRoleId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ROLE_CATALOG_KIND, value);
 }
 
-/** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
- * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the
- * exact `provider/modelId` string usable as a `modelRoles` value. */
+/** One `omp models --kind <kind> --json` row (fields this feature needs; `selector` is the exact
+ * `provider/modelId` string; `reasoning`/`thinking`, issue #1069, feed the reasoning radios). */
 export interface ModelCatalogEntry {
   provider: string;
   id: string;
   selector: string;
   name: string;
+  reasoning: boolean; thinking: string[] | null;
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
