@@ -136,6 +136,18 @@ pub(super) async fn resolve_untracked_entry(
         Err(_) => return Ok(UntrackedEntry::Missing),
     };
     if link_metadata.file_type().is_symlink() {
+        // #1111 gate round 3 HIGH (falsified live, verify-1101 Check 4b): classifying the leaf
+        // via `symlink_metadata` above without ever resolving THROUGH it is what fixes the
+        // #1110/#1101-gate-round-1 dead-code bug (resolving the full path first made this branch
+        // unreachable) -- but on its own it stops proving the symlink's OWN target stays inside
+        // the worktree, so an escaping symlink's target text would otherwise render
+        // unconditionally instead of being refused. A SECOND, full-chain resolution of the WHOLE
+        // token (parent *and* leaf, walking through the symlink as `resolve_in_worktree` always
+        // does) re-proves that containment; its resolved value is used ONLY for this proof, never
+        // for reading -- `target_text` below always comes from the single-hop, unresolved
+        // `read_link` instead (git's own view of the symlink, never the far end of a multi-hop
+        // chain).
+        resolve_in_worktree_with_root(&root_real, worktree_path, path).await?;
         return Ok(match tokio::fs::read_link(&resolved).await {
             Ok(target) => UntrackedEntry::Symlink {
                 target_text: target.to_string_lossy().replace('\\', "/"),

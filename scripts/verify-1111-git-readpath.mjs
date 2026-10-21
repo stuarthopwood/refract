@@ -289,6 +289,7 @@ async function main() {
     const nonAsciiDiffText = await openUntrackedDiff(cdp, NON_ASCII_FILE);
     const nonAsciiShowsContent = Boolean(nonAsciiDiffText && nonAsciiDiffText.includes(NON_ASCII_CONTENT.trim()));
     assertEqual(nonAsciiShowsContent, true, `The non-ASCII-named untracked file's diff shows its real content (got ${JSON.stringify(nonAsciiDiffText)})`, findings, failures);
+    await shot('06-non-ascii-content.png');
     await backToChanges(cdp, 'Back to changes after the non-ASCII-name check');
 
     // =========================================================================================
@@ -296,6 +297,7 @@ async function main() {
     // =========================================================================================
     const pngDiffText = await openUntrackedDiff(cdp, PNG_FILE);
     assertEqual(pngDiffText?.includes('Image file') ?? false, true, `Untracked PNG's diff shows "Image file" (got ${JSON.stringify(pngDiffText)})`, findings, failures);
+    await shot('07-png-image-file.png');
     await backToChanges(cdp, 'Back to changes after the PNG check');
 
     // =========================================================================================
