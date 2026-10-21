@@ -206,8 +206,13 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
  * every time regardless. This menu item needs no modifier key simulation at all, so it sidesteps
  * that gap entirely while still exercising the real `openInSplit` call. */
 async function openSessionInSplitViaMenu(cdp, sessionId) {
-  await cdp.click(`(() => { const openBtn = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]'); const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`);
-  await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Session row actions menu open' });
+  const finder = `(() => { const openBtn = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]'); const row = openBtn?.closest('li'); return row?.querySelector('button[aria-label$=" actions"]') ?? null; })()`;
+  const preClickDiag = await cdp.evaluate(`(() => { const el = ${finder}; return { found: !!el, ariaLabel: el?.getAttribute('aria-label') ?? null, ariaExpanded: el?.getAttribute('aria-expanded') ?? null, dataState: el?.getAttribute('data-state') ?? null }; })()`);
+  console.error(`${LOG}: DIAG ellipsis button before click:`, JSON.stringify(preClickDiag));
+  await cdp.click(finder);
+  await sleep(300);
+  const postClickDiag = await cdp.evaluate(`(() => { const el = ${finder}; const anyMenuRole = Array.from(document.querySelectorAll('[role]')).map((n) => n.getAttribute('role')).filter((r) => /menu/i.test(r ?? '')); return { ariaExpanded: el?.getAttribute('aria-expanded') ?? null, dataState: el?.getAttribute('data-state') ?? null, anyMenuRole, activeElementLabel: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null }; })()`);
+  console.error(`${LOG}: DIAG after ellipsis click:`, JSON.stringify(postClickDiag));
   await cdp.clickByText('Open in split', { tag: '[role="menuitem"]' });
 }
 
