@@ -375,34 +375,21 @@ async function main() {
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
 
-    // Radix's roving-focus-group primitive (shared by RadioGroup and ToggleGroup) turned out
-    // the same way above: arrow keys alone only move focus, never select -- Space commits the
-    // move. Sent only when the arrow move alone did not already write the level, same guard as
-    // the provider switch above. Explicitly `.focus()`s Medium first (never assumes the earlier
-    // mouse click left Radix's own roving-tabindex ref pointing at it): a pointer click can
-    // select a radio without updating that ref the same way a keyboard-driven move does, which
-    // left an EARLIER cut of this check pressing ArrowRight from the wrong starting point.
-    const RADIO_GROUP_DUMP = `Array.from(document.querySelectorAll('[id^="model-role-default-reasoning-"]')).map((el) => ({ id: el.id, state: el.getAttribute('data-state'), disabled: el.disabled }))`;
+    // Radix's RadioGroup (unlike the ToggleGroup above) follows true native radiogroup semantics:
+    // ArrowRight alone both moves focus AND fires `onValueChange` immediately -- confirmed by a
+    // diagnostic dump showing every item in the group (including Inherit) `disabled:true` within
+    // 200ms of the arrow press, which only happens while THIS role's own save is in flight. A
+    // fixed 200ms sleep was not long enough for the async store+fake-omp round trip, and a
+    // follow-up Space on the already-selected item risked firing a second, redundant write
+    // racing the first -- removed; this just polls the real IPC value directly, patiently.
+    // `.focus()`s Medium first (never assumes the earlier mouse click left Radix's own
+    // roving-tabindex ref pointing at it, which a pointer selection need not update the way a
+    // keyboard-driven move does).
     await cdp.evaluate(`document.getElementById('model-role-default-reasoning-medium')?.focus()`);
-    findings.push(`Reasoning radios: active element after focus(Medium) = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
     await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
-    await sleep(200);
-    findings.push(`Reasoning radios: active element after ArrowRight = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
-    findings.push(`Reasoning radios: group state after ArrowRight = ${JSON.stringify(await cdp.evaluate(RADIO_GROUP_DUMP))}`);
-    let highRoles = await readModelRolesViaIpc();
-    findings.push(`Reasoning radios: after ArrowRight alone, default = ${JSON.stringify(highRoles?.default)}`);
-    if (highRoles?.default !== 'github-copilot/claude-fable-5:high') {
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
-      await sleep(300);
-      findings.push(`Reasoning radios: active element after Space = ${JSON.stringify(await cdp.evaluate(`document.activeElement?.id ?? null`))}`);
-      findings.push(`Reasoning radios: group state after Space = ${JSON.stringify(await cdp.evaluate(RADIO_GROUP_DUMP))}`);
-      highRoles = await readModelRolesViaIpc();
-      findings.push(`Reasoning radios: after Space, default = ${JSON.stringify(highRoles?.default)}`);
-    }
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
       timeoutMs: 8_000,
-      label: 'Keyboard ArrowRight(+Space) writes :high (modelRoles.list() IPC)'
+      label: 'Keyboard ArrowRight writes :high (modelRoles.list() IPC)'
     });
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard ArrowRight writes the :high suffix (read back via modelRoles.list())', findings, failures);
