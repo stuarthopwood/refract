@@ -378,7 +378,11 @@ async function main() {
     // Radix's roving-focus-group primitive (shared by RadioGroup and ToggleGroup) turned out
     // the same way above: arrow keys alone only move focus, never select -- Space commits the
     // move. Sent only when the arrow move alone did not already write the level, same guard as
-    // the provider switch above.
+    // the provider switch above. Explicitly `.focus()`s Medium first (never assumes the earlier
+    // mouse click left Radix's own roving-tabindex ref pointing at it): a pointer click can
+    // select a radio without updating that ref the same way a keyboard-driven move does, which
+    // left an EARLIER cut of this check pressing ArrowRight from the wrong starting point.
+    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-medium')?.focus()`);
     await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
     await sleep(200);
     let highRoles = await readModelRolesViaIpc();
