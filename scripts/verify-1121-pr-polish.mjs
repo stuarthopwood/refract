@@ -32,7 +32,8 @@
 //   - #1120: the State select's own rendered height equals the SearchField's, both exactly
 //     32px, once the Filters disclosure is open.
 //   - #1121: a passed/failed/pending/none row each colours its check icon AND word
-//     (text-severity-success/error/warning/none, pending's icon still spins), both in the list
+//     (text-severity-success/error/warning, text-muted-foreground for none; pending's icon still
+//     spins), both in the list
 //     row and the detail header; State=All brings closed/merged rows into view too.
 //   - #1131: draft, closed and merged each hide the visible reason line (the already-visible
 //     StatePill is the reason) while the Review/Merge buttons' own tooltips still carry it and
@@ -127,7 +128,8 @@ async function launchWithFakeGh(launcherExe, exePath, { port, dataDir, importSou
     REFRACT_IMPORT_SOURCE_DIR: importSourceDir
   };
   // The scratch app must never see a real GitHub credential or host, even though `gh` is faked.
-  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GH_HOST']) delete env[key];
+  const strip = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST'];
+  for (const key of Object.keys(env).filter((k) => strip.includes(k.toUpperCase()))) delete env[key];
   const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
   if (logFile) {
     const stream = createWriteStream(logFile);
@@ -302,7 +304,7 @@ async function main() {
       [1, 'text-severity-success', false, 'Checks passed'],
       [2, 'text-severity-error', false, 'Checks failed'],
       [3, 'text-severity-warning', true, 'Checks running'],
-      [4, null, false, 'No checks']
+      [4, 'text-muted-foreground', false, 'No checks']
     ];
     for (const [number, expectedClass, expectSpin, expectedLabel] of rowChecks) {
       const shape = await rowCheckClass(number);
@@ -311,7 +313,8 @@ async function main() {
         checkFail(name, 'row or check span not found');
         continue;
       }
-      const hasExpectedClass = expectedClass ? shape.className.includes(expectedClass) : !/text-severity-/.test(shape.className);
+      const tokens = shape.className.split(/\s+/);
+      const hasExpectedClass = tokens.includes(expectedClass) && tokens.filter((c) => c.startsWith('text-severity-')).every((c) => c === expectedClass);
       const spinOk = shape.spinning === expectSpin;
       const labelOk = shape.label === expectedLabel;
       if (hasExpectedClass && spinOk && labelOk) checkPass(name, JSON.stringify(shape));
@@ -430,19 +433,23 @@ async function main() {
       checkFail('Mouse hover on Open on GitHub shows its tooltip', JSON.stringify({ linkRect, hoverTooltip, visible: await cdp.evaluate(VISIBLE_TOOLTIP_TEXTS) }));
     }
 
-    // Keyboard focus: Tab from the Refresh button lands on the link next; tooltip shows. Clicking
-    // Refresh moves the pointer off the link, so the hover tooltip above closes first.
-    await cdp.click(`document.querySelector('button[aria-label="Refresh this pull request"]')`);
-    await cdp.waitFor(`!${VISIBLE_TOOLTIP_TEXTS}.includes(${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)})`, { timeoutMs: 5_000, label: 'hover tooltip closed before the keyboard check' }).catch(() => null);
-    await pressTab(cdp);
-    const focusedIsLink = await cdp.waitFor(`!!document.activeElement && document.activeElement.hasAttribute('data-open-on-github')`, { timeoutMs: 5_000, label: 'Tab from Refresh lands on Open on GitHub' }).catch(() => false);
-    const tooltipText = focusedIsLink
-      ? await cdp.waitFor(`${VISIBLE_TOOLTIP_TEXTS}.find((t) => t === ${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)}) ?? null`, { timeoutMs: 5_000, label: 'tooltip shows on keyboard focus' }).catch(() => null)
-      : null;
-    if (focusedIsLink && tooltipText === OPEN_ON_GITHUB_TOOLTIP) {
-      checkPass('Keyboard Tab from Refresh reaches Open on GitHub, tooltip shows on focus', tooltipText);
+    // Keyboard focus: Tab from the Refresh button lands on the link next; tooltip shows. Move the
+    // real pointer to a neutral corner first and require the hover tooltip to close, so the focus
+    // check below can only pass on a tooltip opened by keyboard focus.
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    const hoverClosed = await cdp.waitFor(`!${VISIBLE_TOOLTIP_TEXTS}.includes(${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)})`, { timeoutMs: 5_000, label: 'hover tooltip closed before the keyboard check' }).catch(() => false);
+    const focusCheckName = 'Keyboard Tab from Refresh reaches Open on GitHub, tooltip shows on focus';
+    if (!hoverClosed) {
+      checkFail(focusCheckName, `hover tooltip still open after moving the pointer away, focus check not run: ${JSON.stringify(await cdp.evaluate(VISIBLE_TOOLTIP_TEXTS))}`);
     } else {
-      checkFail('Keyboard Tab from Refresh reaches Open on GitHub, tooltip shows on focus', JSON.stringify({ focusedIsLink, tooltipText }));
+      await cdp.click(`document.querySelector('button[aria-label="Refresh this pull request"]')`);
+      await pressTab(cdp);
+      const focusedIsLink = await cdp.waitFor(`!!document.activeElement && document.activeElement.hasAttribute('data-open-on-github')`, { timeoutMs: 5_000, label: 'Tab from Refresh lands on Open on GitHub' }).catch(() => false);
+      const tooltipText = focusedIsLink
+        ? await cdp.waitFor(`${VISIBLE_TOOLTIP_TEXTS}.find((t) => t === ${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)}) ?? null`, { timeoutMs: 5_000, label: 'tooltip shows on keyboard focus' }).catch(() => null)
+        : null;
+      if (focusedIsLink && tooltipText === OPEN_ON_GITHUB_TOOLTIP) checkPass(focusCheckName, tooltipText);
+      else checkFail(focusCheckName, JSON.stringify({ focusedIsLink, tooltipText }));
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '01-dark-open-on-github-focused.png'));
 
@@ -462,8 +469,11 @@ async function main() {
       const patched = function (input, init) {
         const url = typeof input === 'string' ? input : input && input.url;
         if (url === openerUrl || url === probeUrl) {
-          if (url === openerUrl) window.__verify1121OpenerCalls.push(JSON.parse(init.body));
-          else window.__verify1121ProbeCalls += 1;
+          if (url === openerUrl) {
+            let call;
+            try { call = JSON.parse(init.body); } catch { call = { rawBody: String(init && init.body) }; }
+            window.__verify1121OpenerCalls.push(call);
+          } else window.__verify1121ProbeCalls += 1;
           return Promise.resolve(new Response('null', { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } }));
         }
         return original.apply(this, arguments);
@@ -471,8 +481,11 @@ async function main() {
       window.fetch = patched;
       if (window.fetch !== patched) return { ok: false, why: 'window.fetch is not writable' };
       // Never reaches Rust: the hook answers it. Proves the hook sits on the live invoke path.
-      await Promise.race([internals.invoke('verify1121|probe', {}), new Promise((resolve) => setTimeout(resolve, 2000))]);
-      if (window.__verify1121ProbeCalls !== 1) return { ok: false, why: 'probe invoke bypassed the fetch hook', probeCalls: window.__verify1121ProbeCalls };
+      const probeResult = await Promise.race([
+        internals.invoke('verify1121|probe', {}).catch(() => 'rejected'),
+        new Promise((resolve) => setTimeout(() => resolve('timed-out'), 2000))
+      ]);
+      if (probeResult !== null || window.__verify1121ProbeCalls !== 1) return { ok: false, why: 'probe invoke did not go through the fetch hook', probeResult, probeCalls: window.__verify1121ProbeCalls };
       const link = ${OPEN_ON_GITHUB_LINK};
       if (link) link.focus();
       return { ok: true, openerUrl, focused: !!link && document.activeElement === link };
@@ -482,7 +495,8 @@ async function main() {
     } else {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter', text: '\r' });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 13, key: 'Enter', code: 'Enter' });
-      await sleep(300);
+      await cdp.waitFor(`(window.__verify1121OpenerCalls || []).length >= 1`, { timeoutMs: 5_000, label: 'opener call recorded' }).catch(() => false);
+      await sleep(200); // catch a duplicate call, if any
       const openerCalls = await cdp.evaluate(`window.__verify1121OpenerCalls ?? []`);
       if (Array.isArray(openerCalls) && openerCalls.length === 1 && openerCalls[0]?.url === expectedHref) {
         checkPass(openerCheckName, JSON.stringify({ openerCalls, openerUrl: hook.openerUrl }));
