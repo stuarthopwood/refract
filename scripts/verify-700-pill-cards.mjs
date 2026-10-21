@@ -193,30 +193,25 @@ async function settleCardScreenshot(cdp, { anchorSelector }) {
   await cdp.evaluate(`document.getAnimations().forEach((a) => { try { a.finish() } catch (e) {} })`);
 }
 
-/** Real Ctrl+click (`Input.dispatchMouseEvent` modifiers bitmask: Ctrl = 2, bracketed by a real
- * `Input.dispatchKeyEvent` Control keydown/keyup) on a Session row's own open button
- * (`data-session-open`, `SessionRow.tsx`) -- the exact DOM node and modifier combination
- * `onClick`'s own `event.ctrlKey` branch checks, calling the real `openInSplit(session.id)`, the
- * same technique `verify-980-toast-send.mjs`'s own local copy already uses. */
+/** Ctrl+click on a Session row's own open button (`data-session-open`, `SessionRow.tsx`) -- the
+ * exact DOM node and modifier combination `onClick`'s own `event.ctrlKey` branch checks, calling
+ * the real `openInSplit(session.id)`. Gate round: CDP's `Input.dispatchMouseEvent` modifiers
+ * bitmask (Ctrl = 2), bracketed by a real `Input.dispatchKeyEvent` Control keydown/keyup and held
+ * either side with a real sleep, still never landed as a `ctrlKey: true` click in this WebView2
+ * build (confirmed live, twice, against both the already-open and the newly-created session's own
+ * row) -- so this dispatches a genuine native `MouseEvent('click', { ctrlKey: true })` directly on
+ * the button instead. React's `SyntheticEvent` reads `ctrlKey` straight off the native event it
+ * wraps, so this exercises the SAME `onClick` branch a real Ctrl+click would, without depending on
+ * CDP's own modifier-key state machine landing in time. */
 async function ctrlClickSessionRow(cdp, sessionId) {
-  const info = await cdp.evaluate(`(() => {
+  const clicked = await cdp.evaluate(`(() => {
     const el = document.querySelector('[data-session-open=${JSON.stringify(sessionId)}]');
-    if (!el) return { found: false };
+    if (!el) return false;
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
-    const r = el.getBoundingClientRect();
-    return { found: true, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ctrlKey: true }));
+    return true;
   })()`);
-  if (!info.found) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
-  // Gate round: Main's own finding on a sibling lane -- a zero-latency synthetic keydown/
-  // mouse-event/keyup sequence can beat the browser's own modifier-key state landing before
-  // the click's `event.ctrlKey` is read, so the Control key is genuinely HELD across the click
-  // (a real sleep either side), not released the instant after dispatch.
-  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 });
-  await sleep(100);
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.x, y: info.y, button: 'left', clickCount: 1, modifiers: 2 });
-  await sleep(100);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
+  if (!clicked) throw new Error(`ctrlClickSessionRow(${sessionId}): no [data-session-open] row found.`);
 }
 
 async function main() {
