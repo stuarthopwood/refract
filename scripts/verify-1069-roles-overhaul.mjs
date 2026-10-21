@@ -375,10 +375,21 @@ async function main() {
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
 
+    // Radix's roving-focus-group primitive (shared by RadioGroup and ToggleGroup) turned out
+    // the same way above: arrow keys alone only move focus, never select -- Space commits the
+    // move. Sent only when the arrow move alone did not already write the level, same guard as
+    // the provider switch above.
     await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
+    await sleep(200);
+    let highRoles = await readModelRolesViaIpc();
+    findings.push(`Reasoning radios: after ArrowRight alone, default = ${JSON.stringify(highRoles?.default)}`);
+    if (highRoles?.default !== 'github-copilot/claude-fable-5:high') {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+    }
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
       timeoutMs: 8_000,
-      label: 'Keyboard ArrowRight writes :high (modelRoles.list() IPC)'
+      label: 'Keyboard ArrowRight(+Space) writes :high (modelRoles.list() IPC)'
     });
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard ArrowRight writes the :high suffix (read back via modelRoles.list())', findings, failures);
