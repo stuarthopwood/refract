@@ -175,16 +175,19 @@ export function hexToRgbString(hex) {
 // comment's own correction), so the expected colour below is this theme's own solid
 // `taskTextColor` literal, not a computed one.
 // Narrowed (gate round 3, Test review: evidence-honesty HIGH) to match the actual CSS
-// RULE TEXT this file's own sibling-selector override emits -- `.task~switch
-// .label{color:rgb(...)` -- not merely "this rgb string appears somewhere in the SVG",
-// which could coincidentally match an unrelated element. Gate-fix (live debug, prior
-// run): Mermaid's own per-mount stylesheet scoping re-serializes every colour value to
-// `rgb(r, g, b)` notation and strips the space around `~` (confirmed live: a real
-// decoded SVG showed the exact rule `.task~switch .label{color:rgb(250, 250, 250)
-// !important}` for Dark's `#fafafa`) -- searching for the plain hex literal verbatim,
-// as the gitGraph/flowchart checks elsewhere in this file do against THEIR OWN
-// already-hex `themeVariables` strings, never matches here; this one checks the
-// narrowed `rgb()` rule-text form instead.
+// RULE TEXT this file's own sibling-selector override emits -- not merely "this rgb string
+// appears somewhere in the SVG", which could coincidentally match an unrelated element.
+// Gate-fix (live debug, this run): the previous narrowing assumed the bare selector
+// `.task~switch .label{color:rgb(...)`, with no scoping prefix -- wrong; a real decoded SVG
+// showed Mermaid's per-mount scoping prepends EVERY selector in the comma group with its own
+// `#mermaid-<reactId> ` descendant-combinator prefix (a React `useId()`-shaped token, e.g.
+// `_r_6q_`, different every render -- confirmed live, cannot be hardcoded): the real rule is
+// `#mermaid-_r_6q_ .task~switch .label,#mermaid-_r_6q_ .journey-section~switch
+// .label{color:rgb(250, 250, 250)!important;}` for Dark's `#fafafa` -- the SECOND selector's
+// `.label`, not the first, sits directly against `{color:`, since the comma-joined pair
+// shares one declaration block. Matched here via a regex covering the full two-selector
+// sequence (any scoping id accepted, everything else literal), so this stays a rule-text
+// match, not a bare substring search.
 // Dark (high contrast) CANNOT be discriminated by this assertion: FR-023's "stays
 // solid" exception means its own `textColor` and `taskTextColor` are both the
 // identical literal `#ffffff`, so the expected rule text is present whether the
@@ -210,12 +213,16 @@ export async function assertJourneyLabelsSolid(cdp, theme, findings, failures) {
   }
   const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
   const expectedTaskRgb = hexToRgbString(JOURNEY_TASK_TEXT_COLOUR[theme.id]);
-  const expectedRule = `.task~switch .label{color:${expectedTaskRgb}`;
-  if (!journeySvgText.includes(expectedRule)) {
-    failures.push(`${theme.name}: real rendered Journey SVG is missing the narrow rule \`${expectedRule}\` -- labels may still be using the softened textColor, or the selector/declaration format drifted from the confirmed-live shape.`);
+  const escapedRgb = expectedTaskRgb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Both comma-joined selectors share ONE declaration block (confirmed live): `{color:...}`
+  // follows only the SECOND (`.journey-section~switch .label`) selector, not the first.
+  const rulePattern = new RegExp(`#mermaid-\\S+ \\.task~switch \\.label,#mermaid-\\S+ \\.journey-section~switch \\.label\\{color:${escapedRgb}`);
+  const expectedRuleDescription = `#mermaid-<id> .task~switch .label,#mermaid-<id> .journey-section~switch .label{color:${expectedTaskRgb}`;
+  if (!rulePattern.test(journeySvgText)) {
+    failures.push(`${theme.name}: real rendered Journey SVG is missing the narrow rule \`${expectedRuleDescription}\` -- labels may still be using the softened textColor, or the selector/declaration format drifted from the confirmed-live shape.`);
   } else if (theme.id === 'dark-high-contrast') {
-    findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- but this theme's own \`textColor\`/\`taskTextColor\` are BOTH the identical solid #ffffff (FR-023's "stays solid" exception), so this assertion cannot discriminate whether the sibling-selector override actually fired here or Mermaid's unmodified default \`.label\` rule already matched by coincidence -- not meaningful live proof for this one theme.`);
+    findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRuleDescription}\` -- but this theme's own \`textColor\`/\`taskTextColor\` are BOTH the identical solid #ffffff (FR-023's "stays solid" exception), so this assertion cannot discriminate whether the sibling-selector override actually fired here or Mermaid's unmodified default \`.label\` rule already matched by coincidence -- not meaningful live proof for this one theme.`);
   } else {
-    findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- task/section labels stay solid on their coloured fillType fill, proving the override genuinely fired, not merely a coincidental default match.`);
+    findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRuleDescription}\` -- task/section labels stay solid on their coloured fillType fill, proving the override genuinely fired, not merely a coincidental default match.`);
   }
 }
