@@ -71,6 +71,10 @@ use subagents_progress::{
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
+/// Issue #700/#701 slice (b) decision record item 1: "first sentence of `task`, about 100
+/// characters" -- the Agents card's own per-row figure, a SEPARATE budget from
+/// `NAME_OR_TASK_MAX_CHARS` above (the panel's own identity label).
+const TASK_SUMMARY_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SummaryStatus {
@@ -101,6 +105,11 @@ pub(super) struct SummaryEntry {
     tool_call_id: String,
     spec_index: u32,
     name_or_task: String,
+    /// Issue #700/#701 slice (b): the Agents hover-focus card's own one-line summary (`model.ts`'s
+    /// `SubagentSummary.taskSummary`) -- `subagent_task_summary`'s own first-sentence read of the
+    /// FULL `task` text, independent of whether this spec also gave a `name` (unlike
+    /// `name_or_task` above, which prefers `name` and falls back to `task` only when absent).
+    task_summary: Option<String>,
     status: SummaryStatus,
     started_at: i64,
     duration_ms: Option<i64>,
@@ -479,6 +488,29 @@ fn subagent_name_or_task(spec: &Value) -> String {
     }
 }
 
+/// Issue #700/#701 slice (b), decision record item 1: "running agents, each with a one-line
+/// task summary (first sentence of `task`, about 100 characters, inert text)". Stops at the
+/// first `.`/`!`/`?` (inclusive), else the whole string, before applying the character cap --
+/// a long multi-sentence prompt reads as one short sentence, never a mid-word cut partway
+/// through the second one. `None` when `task` is empty (nothing to summarise).
+fn subagent_task_summary(spec: &Value) -> Option<String> {
+    let task = spec.get("task").and_then(Value::as_str).unwrap_or("");
+    if task.is_empty() {
+        return None;
+    }
+    let first_sentence = task
+        .find(|c: char| c == '.' || c == '!' || c == '?')
+        .map(|end| &task[..=end])
+        .unwrap_or(task);
+    let chars: Vec<char> = first_sentence.chars().collect();
+    Some(if chars.len() > TASK_SUMMARY_MAX_CHARS {
+        let truncated: String = chars[..TASK_SUMMARY_MAX_CHARS].iter().collect();
+        format!("{truncated}...")
+    } else {
+        first_sentence.to_string()
+    })
+}
+
 /// `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec (port of
 /// `handleTaskStart`, minus the persisted `currentTurnSubagents` durable-turn marker -- this
 /// build never clears the list at the next turn start, so that marker's own purpose, telling
@@ -513,6 +545,7 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             tool_call_id: tool_call_id.to_string(),
             spec_index: index as u32,
             name_or_task: subagent_name_or_task(spec),
+            task_summary: subagent_task_summary(spec),
             status: SummaryStatus::Running,
             started_at,
             duration_ms: None,

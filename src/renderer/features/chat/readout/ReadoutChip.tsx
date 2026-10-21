@@ -13,16 +13,18 @@
 // (13px, docs/design/foundations-typography-spacing.md "Status line type", globals.css) and
 // every icon is `size-3.5` (14px) -- up from the original `text-xs`/`size-3` (12px/12px), Stuart's
 // own choice over a 14px TEXT step, which would read "as loud as the chat".
-import type { ComponentType, MouseEvent, ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { ComponentType, FocusEvent, MouseEvent, ReactNode, Ref } from 'react'
 import { cn } from '@/lib/utils'
 
-// Issue #937 gate round 1 fix: exported so `ReadoutChips.tsx`'s `AdvisorChip` can render its own
-// raw `<button>` (not this component) and still share the exact same classes -- it needs a real
-// Radix `TooltipTrigger asChild` composition (ref + hover/focus event props merged straight onto
-// the DOM node), which a hand-rolled, non-forwardRef component like this one cannot support
-// without a much larger generic-prop-spreading change; a plain DOM element composes with Radix
-// `Slot` for free. One source of truth for the classes either way -- this component below still
-// uses the SAME two constants, never a second copy of the literal strings.
+// Issue #937 gate round 1 fix note (superseded 2026-10-21, issue #700/#701 slice (b)): this
+// component now forwards a ref and spreads hover/focus handlers (`onPointerEnter`/
+// `onPointerLeave`/`onFocus`/`onBlur`), so a Radix `PopoverAnchor asChild`/`TooltipTrigger
+// asChild` composition works directly against it -- the Todo and Agents hover-focus cards below
+// anchor their own Popover straight onto this component. `AdvisorChip` still renders its own raw
+// `<button>` rather than retrofitting onto this change, which only ever reached ReadoutChip's
+// own three render branches. One source of truth for the classes either way -- this component
+// below still uses the SAME two constants, never a second copy of the literal strings.
 export const READOUT_CHIP_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-1.5 text-readout text-muted-foreground'
 // Gate round 1 fix (MEDIUM): the plain-text restyle above dropped `badgeVariants`' own
 // `focus-visible:border-ring ring-[3px]` ring entirely -- an interactive Readout had no
@@ -61,10 +63,20 @@ export interface ReadoutChipProps {
    * time its OWN `pinned` has already flipped and `aria-controls` is already gone -- `controls`
    * alone cannot survive that moment. */
   pinHookId?: string
+  /** Issue #700/#701 slice (b): wired by `useReadoutCard` so this chip is a valid hover/focus
+   * Popover anchor -- opens the card on hover (after a delay) or genuine keyboard focus-visible,
+   * never a plain mouse-driven focus. */
+  onPointerEnter?: () => void
+  onPointerLeave?: () => void
+  onFocus?: (event: FocusEvent<HTMLElement>) => void
+  onBlur?: (event: FocusEvent<HTMLElement>) => void
   className?: string
 }
 
-export function ReadoutChip({ icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId }: ReadoutChipProps) {
+export const ReadoutChip = forwardRef<HTMLButtonElement | HTMLAnchorElement | HTMLSpanElement, ReadoutChipProps>(function ReadoutChip(
+  { icon: Icon, children, onActivate, href, accessibleName, className, pressed, controls, pinHookId, onPointerEnter, onPointerLeave, onFocus, onBlur },
+  ref
+) {
   const baseClasses = cn(READOUT_CHIP_BASE_CLASS, className)
   const interactiveClasses = cn(baseClasses, READOUT_CHIP_INTERACTIVE_ADDITIONS)
 
@@ -74,7 +86,19 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
   // (as #928's own `cn` tailwind-merge bug did) without any selector ever reporting it missing.
   if (href) {
     return (
-      <a data-slot="readout-chip" href={href} target="_blank" rel="noreferrer noopener" aria-label={accessibleName} className={interactiveClasses}>
+      <a
+        ref={ref as Ref<HTMLAnchorElement>}
+        data-slot="readout-chip"
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label={accessibleName}
+        className={interactiveClasses}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      >
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </a>
@@ -83,7 +107,21 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
 
   if (onActivate) {
     return (
-      <button data-slot="readout-chip" type="button" onClick={onActivate} aria-label={accessibleName} aria-pressed={pressed} aria-controls={pressed ? controls : undefined} data-todo-pin-hook={pinHookId} className={interactiveClasses}>
+      <button
+        ref={ref as Ref<HTMLButtonElement>}
+        data-slot="readout-chip"
+        type="button"
+        onClick={onActivate}
+        aria-label={accessibleName}
+        aria-pressed={pressed}
+        aria-controls={pressed ? controls : undefined}
+        data-todo-pin-hook={pinHookId}
+        className={interactiveClasses}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      >
         {Icon && <Icon aria-hidden className="size-3.5" />}
         {children}
       </button>
@@ -91,9 +129,9 @@ export function ReadoutChip({ icon: Icon, children, onActivate, href, accessible
   }
 
   return (
-    <span data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
+    <span ref={ref as Ref<HTMLSpanElement>} data-slot="readout-chip" className={baseClasses} aria-label={accessibleName}>
       {Icon && <Icon aria-hidden className="size-3.5" />}
       {children}
     </span>
   )
-}
+})

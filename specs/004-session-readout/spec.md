@@ -180,6 +180,29 @@ field whose bottom bar shows the mode, model, and agent.
   (`get_state`) staying the authoritative resync, matching every other readout field's own
   "live updates, settle reconciles" rule (FR-008).
 
+### Session 2026-10-21 (hover/focus cards, taskSummary, issue #700 slice (b))
+
+- Q: Slice (a) (2026-10-19) built the Todo readout's pin-toggle click and the pinned panel; the
+  #700/#701 decision record's own slice (b) is "the Todo and Agents hover/focus cards plus the
+  Rust `taskSummary` field, closes #700" (full text on issue #700's own latest comment, dated
+  2026-10-19). Does anything in that record change for this slice, and what exactly ships? → A:
+  Nothing changes; this slice builds exactly its own described scope. A non-modal Popover, built
+  on `PopoverAnchor` with a controlled `open` state (never `PopoverTrigger`, `Tooltip`, or
+  `HoverCard`, per the decision record), opens on hover after about 400ms or genuine keyboard
+  focus-visible, closes on Escape or on losing both hover and focus, stays open while the pointer
+  travels from the pill into the card ("hoverable"), opens upward (`side="top"`), and is hidden
+  whenever its own readout is (no task list / no subagents this turn). The Todo card never opens
+  while the todo list is pinned (decision item 1). One shared `useReadoutCard` controller drives
+  both cards so neither drifts onto a different timing. The Todo card renders the identical
+  phase/task rows the pinned panel already uses (extracted to `TodoTree.tsx`, never a second row
+  renderer). The Agents card shows each running agent's own one-line `taskSummary` (Rust, first
+  sentence of `task`, about 100 characters -- a SEPARATE field from the existing `nameOrTask`,
+  which prefers a given `name`) and elapsed time, a quiet settled-counts line
+  (`finished`/`exited`/`failed`/`cancelled`, reusing the chip's own counting rule via
+  `subagentDerive.ts`), and a link that opens the Subagents panel the same way the pill's own
+  click already does. Both cards' own content is inert text: nothing inside either is ever
+  focused or announced, so keyboard focus never leaves the pill while a card is open.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -240,6 +263,14 @@ and that the row updates as the turn progresses.
     reappears. **Given** the panel is pinned and every task becomes done, **Then** it collapses
     to "All N done"; **Given** the agent's task list is cleared entirely while pinned, **Then**
     the panel disappears but stays pinned for the next task list (issue #700/#701).
+13. **Given** the agent keeps a task list or has started subagents this turn, **When** the
+    developer hovers or keyboard-focuses the Todo or Agents readout, **Then** a card opens
+    (after a short hover delay, or immediately on keyboard focus) showing, for Todo, the full
+    phase/task tree, and for Agents, each running agent's one-line task summary and elapsed time
+    plus a quiet finished/failed total and a link to the Subagents panel; **When** the developer
+    moves the pointer away, blurs the readout, or presses Escape, **Then** the card closes and
+    keyboard focus stays on the readout; **Given** the todo list is pinned, **Then** the Todo
+    card never opens (issue #700 slice (b)).
 
 ---
 
@@ -435,6 +466,13 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   strike-through and is excluded from both `done` and `total` (decision record item 4).
 - The pinned panel is open at a 360px pane width: task text wraps in full rather than clipping,
   and opening or closing the panel does not shift the transcript's own scroll position.
+- The Todo readout is pinned: hovering or focusing it never opens the hover/focus card (decision
+  item 1); only the Agents readout's own card can still open at the same time.
+- A running subagent's own `task` text has no sentence-ending punctuation at all: its Agents card
+  summary is the whole `task` text (truncated to about 100 characters), never an empty string.
+- Nothing inside either hover/focus card is ever focused or read by assistive technology as part
+  of a linear or keyboard traversal: both cards are purely visual, inert text (issue #700 slice
+  (b)).
 
 ## Requirements *(mandatory)*
 
@@ -491,7 +529,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   finished-only total (gate round 5, Layout/Visual Medium fix: the chip's own base style is
   already the quiet muted colour every readout uses at rest, so a running-vs-finished
   distinction needs the RUNNING state to go brighter, not the finished state to go quieter
-  still, which a literal reading of "quiet" above could otherwise be misread as).
+  still, which a literal reading of "quiet" above could otherwise be misread as). (Amended
+  2026-10-21, issue #700 slice (b): the chip's own hover/focus card, FR-032, shows a one-line
+  summary and elapsed time per running agent, built from this same count data.)
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.
@@ -534,7 +574,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   replaces the chat's own task-list rows, which are hidden (spec 001 FR-052), so the agent's plan
   progress stays visible. (Amended 2026-10-19, issue #700/#701 slice (a): this readout's own
   click behaviour is superseded by FR-028; its done/total figure is computed by the shared
-  `deriveTodoTotals` (FR-029), never duplicated here.)
+  `deriveTodoTotals` (FR-029), never duplicated here. Further amended 2026-10-21, issue #700
+  slice (b): this readout also gains a hover/focus card, FR-031, showing the full phase/task
+  tree.)
 - **FR-022**: The subagent panel's content (stream text, paragraphs, tool call summaries) MUST
   wrap within the panel's own width at every panel width Refract supports, MUST NOT clip text or
   grow the panel wider to fit it, and MUST use the same horizontal padding on the subagent list and
@@ -611,6 +653,21 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   Session's todo list is pinned (FR-028/FR-029), the in-transcript Up next list (spec 001 FR-079)
   MUST be hidden for that Session, so the agent's plan is never shown in two places at once;
   unpinning MUST show it again under FR-079's own existing rule.
+- **FR-031** (new, 2026-10-21, issue #700 slice (b)): Both the Todo and Agents readouts MUST show
+  a non-modal card, anchored with a Popover `Anchor` under a controlled `open` state (never a
+  `Trigger`, `Tooltip`, or `HoverCard`), that opens on hover after about 400ms or on genuine
+  keyboard focus-visible, closes on Escape or once neither the readout nor the card itself is
+  hovered or focused, stays open while the pointer moves between the readout and the card, and
+  opens above the readout. The card MUST be hidden whenever its own readout is hidden (FR-021,
+  FR-007), and the Todo card MUST NOT open at all while the todo list is pinned (FR-028). Nothing
+  inside either card is a focusable or announced element; activating or keyboard-operating the
+  readout itself is unaffected by the card's own open state.
+- **FR-032** (new, 2026-10-21, issue #700 slice (b)): The Agents card MUST show, for each
+  currently running subagent, a one-line task summary (the first sentence of its own `task` text,
+  about 100 characters) and its running elapsed time; MUST show a quiet line of the turn's
+  finished/exited/failed/cancelled counts when any are non-zero (the same counting rule FR-007
+  uses); and MUST include a control that opens the Subagent panel (FR-017), equivalent to
+  activating the Agents readout itself.
 
 ### Key Entities
 
@@ -635,6 +692,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   expanded choice persists per Session separately from the pin itself, and neither is persisted
   across an app restart (#701 slice (c)'s `pinTodoByDefault` setting, not built here, is the only
   planned persistence).
+- **Todo card** (new, issue #700 slice (b)): the Todo readout's own hover/focus card -- the SAME
+  phase/task tree the pinned todo panel renders, read-only, shown only while the readout is not
+  pinned.
+- **Agents card** (new, issue #700 slice (b)): the Agents (Subagents) readout's own hover/focus
+  card -- each running subagent's one-line task summary and elapsed time, the turn's quiet
+  settled counts, and a link to the Subagent panel.
 
 ## Success Criteria *(mandatory)*
 
@@ -704,8 +767,7 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   filed #489 (what crashed, Refract or `omp`, and whether a process was left running) is unconfirmed
   and logged as PLAN.md's open question 9, not assumed here.
 - Issue #700's own hover/focus summary cards on the Todo and Agents readouts, and the Rust
-  `taskSummary` field they need, are **deferred to a separate story (slice (b), closes #700)**:
-  FR-028 through FR-030 above build only the pin-toggle click path and the pinned panel. Issue
-  #701's `pinTodoByDefault` Settings, Appearance toggle is likewise **deferred to a separate
-  story (slice (c), after #1048, closes #701)**: until it ships, every Session starts unpinned,
-  with no way to change that default.
+  `taskSummary` field they need, shipped as **slice (b)** (2026-10-21, FR-031/FR-032, Closes
+  #700). Issue #701's `pinTodoByDefault` Settings, Appearance toggle remains **deferred to a
+  separate story (slice (c), after #1048, closes #701)**: until it ships, every Session starts
+  unpinned, with no way to change that default.

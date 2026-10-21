@@ -361,8 +361,7 @@ export interface SubagentSummary {
    * transcript's own `kind: 'subagent'` row (`subagent:<toolCallId>:<specIndex>`, transcript.ts)
    * derive from the SAME source array in the SAME order -- their respective `id` strings use
    * unrelated schemes and must never be compared directly, so `reconcileSubagentsOnAttach`
-   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex`
-   * instead. */
+   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex` instead. */
   specIndex: number;
   nameOrTask: string;
   /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
@@ -385,6 +384,7 @@ export interface SubagentSummary {
   status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited';
   startedAt: number;
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
+  taskSummary?: string; // Issue #700/#701 slice (b): first sentence of `task`, ~100 chars, inert text (Agents card) -- absent when the task had no text at all (subagents.rs's `subagent_task_summary`)
 }
 
 /** #926: one file or folder attached via the Attach button, drag-and-drop, or a clipboard file

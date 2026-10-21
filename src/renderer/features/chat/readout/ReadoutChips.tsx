@@ -24,11 +24,16 @@ import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { compactNumber } from '@/lib/compactNumber'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
+import { AgentsCard } from './AgentsCard'
 import { READOUT_CHIP_BASE_CLASS, READOUT_CHIP_INTERACTIVE_ADDITIONS, ReadoutChip } from './ReadoutChip'
-import { deriveTodoTotals } from './todoDerive'
+import { TodoCard } from './TodoCard'
+import { deriveSubagentPhrase } from './subagentDerive'
+import { deriveTodoTotals, hasTodoPlan } from './todoDerive'
+import { useReadoutCard } from './useReadoutCard'
 
 // Full, un-abbreviated figures for `ContextUsageChip`'s own `sr-only` phrase below (gate round
 // 4, #437 LOW): the visible text abbreviates past 1,000 via `compactNumber` (issue #437), but a
@@ -219,38 +224,59 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
+  const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   // Issue #563, FR-027: records the chip itself as the opener when it is the control that
   // opened the panel this time, so closing it returns focus here instead of always falling back
   // to the generic rail/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies.
   const onActivate = (event: MouseEvent<HTMLButtonElement>) => openHostedPanel('subagents', sessionId, { opener: event.currentTarget })
+  // Issue #700/#701 slice (b): the Agents hover-focus card, same `useReadoutCard` controller
+  // the Todo pill below uses -- never a Radix `Tooltip`/`HoverCard` (decision item 1).
+  const card = useReadoutCard()
   if (subagentCount === null) return null
-  const { running, finished, exited, failed, cancelled } = subagentCount
-  const phrase = (() => {
-    if (running > 0) return `${running} subagent${running === 1 ? '' : 's'} running`
-    const parts: string[] = []
-    if (finished > 0) parts.push(`${finished} finished`)
-    if (exited > 0) parts.push(`${exited} exited`)
-    if (failed > 0) parts.push(`${failed} failed`)
-    if (cancelled > 0) parts.push(`${cancelled} cancelled`)
-    return parts.join(', ')
-  })()
+  const phrase = deriveSubagentPhrase(subagentCount)
   return (
-    <ReadoutChip
-      icon={UsersIcon}
-      // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
-      // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
-      // focus-move retarget (research.md Decision 10).
-      onActivate={onActivate}
-      accessibleName={`Open subagents panel (${phrase})`}
-      // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
-      // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
-      // was a no-op in the finished-only case and never actually emphasised the running state,
-      // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
-      // RUNNING state is the one that stands out instead.
-      className={running > 0 ? 'text-foreground' : undefined}
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
     >
-      <span aria-hidden>{phrase}</span>
-    </ReadoutChip>
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          icon={UsersIcon}
+          // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
+          // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
+          // focus-move retarget (research.md Decision 10).
+          onActivate={onActivate}
+          accessibleName={`Open subagents panel (${phrase})`}
+          // Gate round 5 fix (Layout/Visual Medium): `ReadoutChip`'s own base class already carries
+          // `text-muted-foreground` -- the old `running === 0 ? 'text-muted-foreground' : undefined`
+          // was a no-op in the finished-only case and never actually emphasised the running state,
+          // which FR-007's "quiet" wording for the finished total assumes exists. Flipped so the
+          // RUNNING state is the one that stands out instead.
+          className={subagentCount.running > 0 ? 'text-foreground' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          <span aria-hidden>{phrase}</span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      {/* Decision item 1: content is inert text, nothing inside is ever focused -- both
+          auto-focus hooks are suppressed so keyboard focus stays on the pill the whole time. */}
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onActivate} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -268,25 +294,53 @@ export function TodoProgressChip({ sessionId }: { sessionId: string }) {
   const todoTree = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoTree)
   const pinned = useTodoPinStore((s) => s.pinnedBySession[sessionId] ?? false)
   const togglePinned = useTodoPinStore((s) => s.togglePinned)
+  // Decision item 1: "The card never opens while pinned" -- `disabled` forces `card.open` false
+  // and ignores every hover/focus trigger regardless of what the task list looks like.
+  const card = useReadoutCard({ disabled: pinned })
+  if (!hasTodoPlan(todoTree)) return null
   const totals = deriveTodoTotals(todoTree)
-  if (totals === null) return null
+  if (!totals) return null // unreachable given hasTodoPlan above; keeps TS narrowed without a cast
   return (
-    <ReadoutChip
-      icon={pinned ? PinIcon : ListTodoIcon}
-      onActivate={() => togglePinned(sessionId)}
-      accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
-      pressed={pinned}
-      controls={`todo-panel-${sessionId}`}
-      pinHookId={sessionId}
-      className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
+    <Popover
+      open={card.open}
+      onOpenChange={(next) => {
+        if (!next) card.close()
+      }}
     >
-      {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
-          sr-only fix. */}
-      <span className="sr-only">{`Todo: ${totals.done} of ${totals.total} tasks done`}</span>
-      <span aria-hidden>
-        Todo {totals.done}/{totals.total}
-      </span>
-    </ReadoutChip>
+      <PopoverAnchor asChild>
+        <ReadoutChip
+          icon={pinned ? PinIcon : ListTodoIcon}
+          onActivate={() => togglePinned(sessionId)}
+          accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
+          pressed={pinned}
+          controls={`todo-panel-${sessionId}`}
+          pinHookId={sessionId}
+          className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
+          onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerLeave={card.anchorHandlers.onPointerLeave}
+          onFocus={card.anchorHandlers.onFocus}
+          onBlur={card.anchorHandlers.onBlur}
+        >
+          {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
+              sr-only fix. */}
+          <span className="sr-only">{`Todo: ${totals.done} of ${totals.total} tasks done`}</span>
+          <span aria-hidden>
+            Todo {totals.done}/{totals.total}
+          </span>
+        </ReadoutChip>
+      </PopoverAnchor>
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-auto p-3"
+        onPointerEnter={card.contentHandlers.onPointerEnter}
+        onPointerLeave={card.contentHandlers.onPointerLeave}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <TodoCard todoTree={todoTree} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
