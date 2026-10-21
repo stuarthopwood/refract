@@ -376,9 +376,9 @@ async function main() {
     await clickTodoPill(cdp);
     assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Todo pill is pinned');
     await cdp.waitFor(`!!document.querySelector('[data-slot="pinned-todo-panel"]')`, { timeoutMs: 2_000, label: 'Pinned todo panel mounts once pinned' });
-    // Gate round (Stuart 2026-10-21, grilled): the panel renders through the SAME TodoTree.tsx module as the card, so its completed row must read the identical success token.
-    const scaffoldColorInPanel = await completedRowMatchesSeveritySuccess(cdp, `document.querySelector('[data-slot="pinned-todo-panel"]')`, 'Scaffold');
-    assertTrue(scaffoldColorInPanel.found && scaffoldColorInPanel.iconColor === scaffoldColorInPanel.refColor && scaffoldColorInPanel.textColor === scaffoldColorInPanel.refColor, 'Pinned todo panel\'s completed "Scaffold" row -- icon AND text -- renders in text-severity-success, not neutral grey', scaffoldColorInPanel);
+    // Gate round (Stuart 2026-10-21, grilled): the panel renders through the SAME TodoTree.tsx module as the card, so its completed row must read the identical success token. Script bug fix (this run): "Scaffold" lives in the "Setup" phase, which is fully completed and therefore folded to one line in the PINNED PANEL ONLY (decision item 5/gate round 1 fix 7's `foldFinished` default, `TodoTree.tsx`) -- its row never renders there at all, unlike the Todo card (`foldFinished={false}`) where the original assertion above correctly checks "Scaffold". "Write tests" is also completed but sits in the still-open "Work" phase (not fully finished: it has blocked/pending/in-progress siblings), so it stays unfolded and visible in the panel too -- same shared component, same assertion intent, a row the panel actually renders.
+    const writeTestsColorInPanel = await completedRowMatchesSeveritySuccess(cdp, `document.querySelector('[data-slot="pinned-todo-panel"]')`, 'Write tests');
+    assertTrue(writeTestsColorInPanel.found && writeTestsColorInPanel.iconColor === writeTestsColorInPanel.refColor && writeTestsColorInPanel.textColor === writeTestsColorInPanel.refColor, 'Pinned todo panel\'s completed "Write tests" row -- icon AND text -- renders in text-severity-success, not neutral grey', writeTestsColorInPanel);
     await cdp.screenshot(path.join(SHOTS_DIR, 'pinned-panel-completed-green.png'));
     await assertNoStrayOverlay(cdp, 'the pinned-Todo-card-never-opens test');
     await hoverElement(cdp, TODO_PILL_SELECTOR);
@@ -465,6 +465,21 @@ async function main() {
     await cdp.waitFor(`!(${AGENTS_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Escape closes the Agents card' });
     assertTrue(await cdp.evaluate(`document.activeElement === (${AGENTS_PILL_SELECTOR})`), 'Focus stays on the Agents pill after Escape closes the card');
 
+    // Script bug fix (this run, confirmed live via the earlier throwaway diagnostic): the
+    // Subagents panel (right pane, opened above for the Agents-card-link and decision-record
+    // "click still opens it" checks, never closed again since) is still mounted here, and
+    // `session-list`/`chat`/`right-pane` are all percentage-sized siblings in the SAME
+    // `ResizablePanelGroup` -- its ~320-350px share comes straight out of the chat area's own
+    // percentage, which is exactly what the window-width arithmetic below (both the initial
+    // widen and the later 1000px-then-measure-then-360px dance) assumes is free for `chat`
+    // alone. Those decision-record checks are already done; closing it now (its own real Close
+    // control, same as the earlier close) frees that share for the rest of this split-view
+    // section, independent of this run's own widen-amount fix above.
+    if (await cdp.evaluate(`!!(${SUBAGENTS_PANEL_SELECTOR})`)) {
+      await cdp.click(`document.querySelector('[data-panel-close]')`);
+      await cdp.waitFor(`!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Subagents panel closed before the split-view section' });
+    }
+
     // ---- #700 AC: "checked live in a split view and at 360px pane width" (gate round 1 fix 5) ----
     const sessionIdA = await cdp.evaluate(`document.querySelector('[data-session-pane]')?.getAttribute('data-session-pane') ?? null`);
     assertTrue(typeof sessionIdA === 'string' && sessionIdA.length > 0, 'Session A\'s own id read from its pane');
@@ -479,14 +494,25 @@ async function main() {
     // the CURRENT sole pane right before acting and always targets the OTHER session: opening
     // the row whose session is ALREADY the sole pane via "Open in split" is a documented no-op
     // (`targetSession`'s `existing === sessionId` early-return, `split-store.ts` line ~167,
-    // research.md Decision 7). Gate round: the REAL reason "both panes rendered" never landed
-    // was never the click at all -- `App.tsx:41/119/120` (`MIN_SPLIT_WIDTH_PX = 720`,
+    // research.md Decision 7: "already the focused pane") -- so this reads the CURRENT sole pane
+    // right before acting and always targets the OTHER session. Gate round: the REAL reason
+    // "both panes rendered" never landed was never the click at all -- `App.tsx:41/119/120`
+    // (`MIN_SPLIT_WIDTH_PX = 720`,
     // `canShowSplit`, `showSplit = isSplit && canShowSplit`) means the DOM only ever mounts a
     // SECOND `[data-session-pane]` once the chat area is already wide enough; `paneSessionIds`
     // was reaching length 2 correctly the whole time, the narrow default test-window chat area
     // just never rendered it -- so this widens FIRST, well before the 1000px-then-measure-
     // then-360px dance below even starts, so `canShowSplit` is already true in time.
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+    //
+    // Script bug fix (this run, confirmed live via a throwaway diagnostic): 1400px was NOT
+    // enough margin. `session-list`/`chat`/`right-pane` are all percentage-sized panels in the
+    // SAME `ResizablePanelGroup` (only `minSize`/`maxSize` are fixed pixels) -- widening the
+    // window grows all three proportionally, not just `chat`, so at 1400px the chat area
+    // measured only 699.84px, still short of the 720px floor (confirmed: `session-list`
+    // 307.14px, `chat` 699.84px, `right-pane` 351.02px, rail 40px, paneCount stuck at 1). 1800px
+    // gives the same three panels comfortable headroom (chat area >= ~890px at this ratio),
+    // with plenty of margin rather than a knife-edge value.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1800, height: 900, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const sessionIdB = await cdp.evaluate(`(() => { const ids = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open')); return ids.find((id) => id !== ${JSON.stringify(sessionIdA)}) ?? null; })()`);
     assertTrue(typeof sessionIdB === 'string' && sessionIdB.length > 0 && sessionIdB !== sessionIdA, 'Session B\'s own id read from its row (distinct from Session A)', { sessionIdA, sessionIdB });
@@ -494,16 +520,28 @@ async function main() {
     const sessionToSplit = currentPaneId === sessionIdA ? sessionIdB : sessionIdA;
     await openSessionInSplitViaMenu(cdp, sessionToSplit);
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
-    // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
-    // window's own total width -- one measured correction pass against an arbitrary starting
-    // width is enough to land close to the target, never needing to hardcode that fixed amount.
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 900, deviceScaleFactor: 1, mobile: false });
-    await sleep(300);
-    const firstPassWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
-    const targetWindowWidth = Math.max(500, Math.round(1000 + (360 - firstPassWidth) * 2));
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: targetWindowWidth, height: 900, deviceScaleFactor: 1, mobile: false });
-    await sleep(300);
-    const paneWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
+    // Script bug fix (this run, confirmed live via an earlier throwaway diagnostic): the
+    // original single-measurement extrapolation assumed "two equal-width panes share the
+    // window minus a FIXED sidebar/rail amount" -- false for this app's own
+    // `ResizablePanelGroup` (`session-list`/`chat`/`right-pane` are all percentage-sized
+    // siblings; only `minSize`/`maxSize` are fixed pixels), so dropping straight to 1000px put
+    // the chat area back under `MIN_SPLIT_WIDTH_PX` (720px), silently collapsing back to ONE
+    // rendered pane and crashing the old extrapolation's own `getBoundingClientRect()` on a
+    // null element. Steps down from the already-confirmed-open 1800px in bounded decrements
+    // instead of computing a single guessed target, stopping at the first (widest) width that
+    // already reads <=420px -- and re-confirming the split is STILL genuinely open (never
+    // trusting an assumed slope) before each measurement, so a width that collapses it is
+    // detected and simply not used, rather than guessed around.
+    let paneWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
+    let targetWindowWidth = 1800;
+    for (const candidateWidth of [1600, 1450, 1300, 1150, 1050]) {
+      if (paneWidth <= 420) break;
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: candidateWidth, height: 900, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      if ((await cdp.evaluate(`document.querySelectorAll('[data-session-pane]').length`)) !== 2) break; // narrower would only collapse it further; stop at the last good width/measurement
+      targetWindowWidth = candidateWidth;
+      paneWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
+    }
     assertTrue(paneWidth <= 420, `Session A's own split pane is narrowed to roughly 360px (actual ${Math.round(paneWidth)}px)`, { paneWidth, targetWindowWidth });
 
     await settleCardScreenshot(cdp, { anchorSelector: TODO_PILL_SELECTOR });
@@ -555,7 +593,14 @@ async function main() {
     await sleep(700); // comfortably past the 400ms open delay
     assertTrue(!(await cdp.evaluate(`!!(${AGENTS_CARD_SELECTOR})`)), 'Agents card does not open on hover once no subagent is running, even with finished/failed counts non-zero');
     await moveToNeutralPoint(cdp);
-    await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR);
+    // Script bug fix (this run, confirmed live via a throwaway diagnostic that bumped the cap
+    // and logged the real stop count): the default 40-tab budget was tuned against a
+    // single-session baseline -- by THIS point in the script, Session B (created earlier for
+    // the split-view section) still persists in the session list, adding its own row's own tab
+    // stops ahead of the Agents pill in document order. Confirmed live this now needs 44 tabs,
+    // not 40; every earlier `tabUntilFocused` call in this file still lands well inside the
+    // original 40 (31-38 tabs), so only this one call gets the wider budget.
+    await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR, { maxTabs: 60 });
     await sleep(100);
     assertTrue(!(await cdp.evaluate(`!!(${AGENTS_CARD_SELECTOR})`)), 'Agents card does not open on keyboard focus-visible once no subagent is running');
     await moveToNeutralPoint(cdp);
