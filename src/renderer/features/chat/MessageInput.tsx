@@ -861,13 +861,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     if (event.key === 'Escape') {
+      // Gate round 1 fix 3 (#700/#701 slice b): belt to `useReadoutCard.ts`'s own capture-phase Escape handler, which already calls `preventDefault`/`stopPropagation` on this exact keypress when a hover-focus card is open -- without this, a `defaultPrevented` Escape that somehow still reached this far would wipe the whole draft instead of only closing the card.
+      if (event.defaultPrevented) return
       event.preventDefault()
       clearGhostState()
       useDraftStore.getState().setText(sessionId, '')
-      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above --
-      // plain Esc-clear calls `setText` directly too, skipping onChange's own
-      // `pruneDanglingChips`. Every chip's label is gone from the (now-empty) draft, so this
-      // simply drops them all, with the same silent-removal announcement any other drop gets.
+      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above -- plain Esc-clear calls `setText` directly too, skipping onChange's own `pruneDanglingChips`.
+      // Every chip's label is gone from the (now-empty) draft, so this simply drops them all, with the same silent-removal announcement any other drop gets.
       const prunedChips = pruneDanglingChips('', attachments.textChips)
       if (prunedChips.length !== attachments.textChips.length) {
         announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))

@@ -752,3 +752,69 @@ needed); `cargo fmt --check` clean on both touched Rust files. Not independently
 round: `cargo check`/`clippy`/`test`, `pnpm build`, and the live CDP verify script
 (`scripts/verify-700-todo-pin.mjs`) -- left for the build-slot pass (one heavy build at a time
 across the concurrently-running lanes this session).
+
+## Phase 39: Convergence
+
+- [X] T140 [US1] FR-010/FR-031: `ReadoutChip.tsx` now forwards a ref and accepts
+  `onPointerEnter`/`onPointerLeave`/`onFocus`/`onBlur`, spread onto whichever of its three render
+  branches (button/anchor/span) is active -- the ref lets a Radix `PopoverAnchor asChild`
+  composition measure the chip directly, which the component could not support before (noted as
+  a known gap on `AdvisorChip`'s own comment, now closed). (#700)
+- [X] T141 [US1] FR-031: a new `useReadoutCard.ts` (`features/chat/readout/`) -- the one shared
+  hover/focus-open controller both cards below use: opens after a 400ms hover delay or on
+  `:focus-visible`, stays open while the pointer is over the anchor OR the content ("hoverable",
+  a 150ms grace window covers the travel between them), closes on Escape (a `window` keydown
+  listener, since the content holds no focusable element of its own to attach a React handler
+  to) or on losing both hover and focus, and accepts a `disabled` flag (the Todo card's own
+  "never opens while pinned"). (#700)
+- [X] T142 [US1] FR-031: the pinned panel's own row renderer (`TASK_STATUS_GLYPH`/
+  `statusGlyph`/`currentTaskKeyOf`/`TodoPhaseGroup`/`TodoTaskRow`) is extracted out of
+  `PinnedTodoPanel.tsx` into a new shared `TodoTree.tsx`, so the new `TodoCard.tsx` (the Todo
+  hover/focus card's own content -- every phase expanded, no scroll-follow/collapse/Unpin, a
+  plain capped scroll) renders the identical tree, never a second implementation of one task
+  row. (#700)
+- [X] T143 [US1] FR-032: a new `subagentDerive.ts` (`deriveSubagentPhrase`/
+  `deriveSubagentSettledPhrase`) extracts `SubagentsChip`'s own running/settled counting wording
+  so the new `AgentsCard.tsx` (one row per running agent -- its own `taskSummary` falling back to
+  `nameOrTask`, plus a ticking elapsed time -- a quiet settled-counts line, and an "Open
+  subagents panel" link reusing the chip's own `openHostedPanel` call) never counts a batch's
+  subagents a second, different way. (#700)
+- [X] T144 [US1] FR-031/FR-032: `ReadoutChips.tsx`'s `TodoProgressChip` and `SubagentsChip` each
+  wrap their existing `ReadoutChip` in a controlled `Popover`/`PopoverAnchor asChild`/
+  `PopoverContent side="top"`, wired to `useReadoutCard`'s own handlers and `TodoCard`/
+  `AgentsCard` as the content; `onOpenAutoFocus`/`onCloseAutoFocus` are both suppressed (the
+  content has nothing focusable, so focus must stay on the pill throughout); the Todo Popover's
+  `useReadoutCard({ disabled: pinned })` keeps the card closed while pinned (decision item 1).
+  (#700)
+- [X] T145 [US1] FR-032: Rust -- `subagents.rs`'s `SummaryEntry` gains `task_summary: Option<
+  String>`, computed by a new `subagent_task_summary` (first `.`/`!`/`?`-delimited sentence of
+  the spec's own `task` text, inclusive, else the whole string, capped at 100 chars with `...`),
+  set in `handle_task_start` alongside the existing `name_or_task`; `subagents_progress.rs`'s
+  `summaries_to_value` serialises it as `taskSummary` when present (the same conditional-insert
+  pattern `durationMs` already uses). `model.ts`'s `SubagentSummary` gains the matching
+  `taskSummary?: string` field, added at net-zero line cost against the file's own 656-line
+  baseline (a two-line doc comment reflowed to one elsewhere in the same interface). (#700)
+- [X] T146 [US1] Docs: `specs/004-session-readout/spec.md` gains a 2026-10-21 Clarifications
+  entry, FR-031/FR-032, a 13th User Story 1 acceptance scenario, three Edge Cases, two Key
+  Entities (Todo card, Agents card), and an Assumptions update recording slice (b) as shipped
+  (slice (c) still deferred); this Phase. (#700)
+
+Built against the issue's own decision record (full text on issue #700's latest comment,
+2026-10-19) as the no-build prep lane for slice (b) (Rust/TS code only, no spawned live agent,
+no new tests per the project's prototyping-phase rule). `pnpm typecheck` (both
+`tsconfig.node.json` and `tsconfig.web.json`) clean; `pnpm test` (148 tests, 11 files) all
+passing; `node scripts/check-indent.mjs` (0 odd-indent lines across 470 files); `node
+scripts/check-file-size.mjs` (0 cap violations across 535 files -- `model.ts` held at its own
+656/656 baseline, `ReadoutChips.tsx` 571/600, `PinnedTodoPanel.tsx` 286/600, `subagents.rs`
+567/600, all comfortably under or within their recorded baselines); `node
+scripts/check-theme-contrast.mjs` (all 892 pairs across 5 themes PASS -- every status icon/word
+and the Agents card's own plain text reuse EXISTING checked tokens, so no new
+`theme-contrast-pairs.mjs` entry was needed); `pnpm check:parity` (115/115 requests, 25/25
+events); `pnpm check:drag-regions` (0 violations across 156 files). Rust: `cargo check` clean;
+`cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` caught one real
+`manual_char_comparison` lint in the new `subagent_task_summary` (fixed: `task.find(['.', '!',
+'?'])` replaces the `|c: char| c == '.' || ...` closure), clean on the rerun. Not independently
+driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
+(`scripts/verify-700-pill-cards.mjs`, not yet written) -- left for the build-slot pass.
+
+
