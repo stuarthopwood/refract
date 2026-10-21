@@ -321,7 +321,10 @@ async function main() {
     // ---- Screenshots: Dark (default) and Obsidian, card genuinely open in both ----
     for (const theme of THEMES) {
       if (theme.id !== 'dark') await switchTheme(cdp, theme.id, theme.name);
-      else await settleForScreenshot(cdp); // clears any stray overlay left by the theme switcher itself
+      // Settling theme, not just a one-off: `switchTheme` drives real clicks through the
+      // Settings UI (a theme swatch/button can leave its own tooltip mid-close-animation when
+      // the dialog itself closes) -- this must run every iteration, not only the first.
+      await settleForScreenshot(cdp);
       await settleCardScreenshot(cdp, { anchorSelector: TODO_PILL_SELECTOR });
       await cdp.screenshot(path.join(SHOTS_DIR, `todo-card-${theme.id}.png`));
       await moveToNeutralPoint(cdp);
