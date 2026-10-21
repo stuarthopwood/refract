@@ -305,7 +305,11 @@ async function main() {
     // ToggleGroup "single" mode deselects an ALREADY-selected item on a second activation
     // (`ManageSessionsToolbar.tsx`'s own header comment), so if arrow navigation itself already
     // moves the selection (radiogroup-style), a further Space/Enter on the now-selected item
-    // would wrongly deselect it -- Space is sent only when the arrow move alone did not select. ----
+    // would wrongly deselect it -- Space is sent only when the arrow move alone did not select.
+    // Every read polls (`cdp.waitFor`) rather than reading once immediately after dispatching a
+    // key: a one-shot read raced React's own re-render in earlier runs of this exact check
+    // (non-deterministic pass/fail against identical actions), confirmed by comparing two runs'
+    // `report.json` side by side -- a real script bug, not a product one. ----
     const PROVIDER_SEGMENT_FINDER = `document.querySelectorAll('[aria-label="Provider"] [data-slot="toggle-group-item"]')`;
     async function selectedProviderSegment() {
       return cdp.evaluate(`Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() ?? null`);
@@ -315,11 +319,20 @@ async function main() {
     }
     async function keyboardSwitchProviderTo(targetText, arrowCode, arrowKey) {
       await pressKey(cdp, arrowCode, arrowKey, arrowKey);
+      await sleep(200);
       let selected = await selectedProviderSegment();
       findings.push(`Provider switch: after ${arrowKey} alone, selected = ${JSON.stringify(selected)}`);
       if (selected !== targetText) {
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+        try {
+          await cdp.waitFor(
+            `Array.from(${PROVIDER_SEGMENT_FINDER}).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === ${JSON.stringify(targetText)}`,
+            { timeoutMs: 3_000, label: `Provider switch moves to ${targetText} after ${arrowKey}+Space` }
+          );
+        } catch {
+          // Fall through: the assertion below reports whatever was actually observed.
+        }
         selected = await selectedProviderSegment();
         findings.push(`Provider switch: after ${arrowKey}+Space, selected = ${JSON.stringify(selected)}`);
       }
@@ -349,23 +362,32 @@ async function main() {
 
     // ---- 8. Picking a reasoning level writes the suffix, read back through a fresh IPC call;
     // ArrowRight (keyboard) moves to the next enabled level; Inherit clears the suffix. The
-    // trigger keeps showing the bare model name throughout (decision 5). ----
+    // trigger keeps showing the bare model name throughout (decision 5). Polls the real IPC value
+    // directly (`window.refract.modelRoles.list()`), not the DOM `data-state`: the write is an
+    // async round trip through the store and the fake-omp config file (get, set, get again), and
+    // this is the actual ground truth the claim is about, not a proxy for it. ----
     await cdp.click(`document.getElementById('model-role-default-reasoning-medium')`);
-    await cdp.waitFor(`document.getElementById('model-role-default-reasoning-medium')?.getAttribute('data-state') === 'checked'`, { timeoutMs: 5_000, label: 'Medium radio checked' });
-    await sleep(300); // lets the pending save settle before the IPC read below
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:medium')`, {
+      timeoutMs: 8_000,
+      label: 'Picking Medium writes :medium (modelRoles.list() IPC)'
+    });
     let rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
 
     await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
-    await cdp.waitFor(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('data-state') === 'checked'`, { timeoutMs: 5_000, label: 'Keyboard ArrowRight moved to High' });
-    await sleep(300);
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
+      timeoutMs: 8_000,
+      label: 'Keyboard ArrowRight writes :high (modelRoles.list() IPC)'
+    });
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard ArrowRight writes the :high suffix (read back via modelRoles.list())', findings, failures);
 
     await cdp.click(`document.getElementById('model-role-default-reasoning-inherit')`);
-    await cdp.waitFor(`document.getElementById('model-role-default-reasoning-inherit')?.getAttribute('data-state') === 'checked'`, { timeoutMs: 5_000, label: 'Inherit radio checked' });
-    await sleep(300);
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5')`, {
+      timeoutMs: 8_000,
+      label: 'Picking Inherit clears the suffix (modelRoles.list() IPC)'
+    });
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5', 'Picking Inherit clears the suffix back to the bare selector', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger unchanged after clearing the suffix', findings, failures);
