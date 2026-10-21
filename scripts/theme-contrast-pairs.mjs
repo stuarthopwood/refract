@@ -377,7 +377,10 @@ export function searchFieldContrastRows(themes) {
       continue
     }
     const fieldLinear = resolvedLinear({ raw: 'input*0.3', alpha: input.alpha * 0.3, linear: input.linear }, sidebar)
-    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fieldLinear))
+    // Gate-fix (#1074 round 1, Code/Test HIGH): `muted-foreground` is translucent -- `.linear`
+    // alone scores it as opaque; `resolvedLinear` composites it over the real field backdrop.
+    const fgLinear = resolvedLinear(mutedForeground, { raw: 'search-field', alpha: 1, linear: fieldLinear })
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(fieldLinear))
     rows.push({
       themeId,
       fg: 'muted-foreground',
@@ -385,43 +388,40 @@ export function searchFieldContrastRows(themes) {
       min: 4.5,
       ratio,
       pass: ratio >= 4.5,
-      fgHex: linearToHex(mutedForeground.linear),
+      fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(fieldLinear),
     })
   }
   return rows
 }
 
-// ---- issue #610 (hyperlinks): a link/file-link rendered inside a user message composites
-// `--accent-text` (Markdown.tsx's `linkClassName`) over the user bubble's own translucent fill
-// (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
-// `--background` -- the plain-background/card/popover PAIRS entries above never actually
-// exercise this composited case. Checked the same way the destructive-footer block above
-// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
-// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
-// `--accent-text` against that blended result.
-export function userBubbleLinkContrastRows(themes) {
+// ---- issue #610 (hyperlinks) and #1074 (chat text opacity): both a link/file-link AND the
+// chat prose itself composite over the user bubble's own translucent fill (`bg-accent/50`,
+// `UserMessageRow.tsx`'s `MessageContent`), not flat `--background` -- the plain-background/
+// card/popover PAIRS entries never exercise this composited case, and `--chat-foreground` is
+// now itself translucent (#1074), so its own alpha composites a SECOND time on top of the
+// bubble's. Checked the same way the destructive-footer block above checks its own composited
+// backdrop: gamma-blend the bubble fill over the chat area's own `--background`, then gamma-
+// blend each foreground (itself translucent or not) over THAT blended result, then WCAG-
+// contrast.
+export function userBubbleContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {
     const accent = props['accent']
     const background = props['background']
     const accentText = props['accent-text']
-    if (!accent || !background || !accentText) {
-      rows.push({ themeId, fg: 'accent-text', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    const chatForeground = props['chat-foreground']
+    if (!accent || !background || !accentText || !chatForeground) {
+      rows.push({ themeId, fg: 'accent-text/chat-foreground', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background)
-    const ratio = contrastRatio(relativeLuminance(accentText.linear), relativeLuminance(bubbleLinear))
-    rows.push({
-      themeId,
-      fg: 'accent-text',
-      bg: 'user-bubble (accent/50 on background)',
-      min: 4.5,
-      ratio,
-      pass: ratio >= 4.5,
-      fgHex: linearToHex(accentText.linear),
-      bgHex: linearToHex(bubbleLinear),
-    })
+    const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background) }
+    const bubbleLum = relativeLuminance(bubble.linear)
+    for (const [fg, entry] of [['accent-text', accentText], ['chat-foreground', chatForeground]]) {
+      const fgLinear = resolvedLinear(entry, bubble)
+      const ratio = contrastRatio(relativeLuminance(fgLinear), bubbleLum)
+      rows.push({ themeId, fg, bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
+    }
   }
   return rows
 }
@@ -435,13 +435,11 @@ export function userBubbleLinkContrastRows(themes) {
 // ever measures for a preset whose `--sidebar-border` literally aliases `--divider` (Obsidian).
 // Dark, Dark high contrast, Nordic Frost and Cyber Amber all have an INDEPENDENT `--sidebar-
 // border` value and were never checked against this real fill at all before now.
-//
 // Informational only (never fails the run): adding this as a genuine PAIRS entry would newly
 // fail Dark (high contrast) (`muted-foreground` on its own `--sidebar-border`/`--sidebar`
 // composite measures only ~2.50:1, a real, pre-existing gap unrelated to this story's own
-// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1
-// with margin (Dark 5.22:1, Obsidian 4.91:1, Nordic Frost 5.19:1, Cyber Amber 5.24:1 -- #1039
-// retuned this preset's `--sidebar`/`--muted-foreground`, 2026-10-20; was 5.39:1 before).
+// scope -- recorded on #552/flagged to Main, not fixed here). Every other theme clears 4.5:1 with
+// margin (Dark/Cyber Amber 5.93:1, Obsidian 5.64:1, Nordic Frost 6.00:1 -- gate-fix round 1, #1074: real alpha composited, not scored as solid).
 export function sidebarBorderContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {
@@ -453,7 +451,9 @@ export function sidebarBorderContrastRows(themes) {
       continue
     }
     const fillLinear = resolvedLinear(sidebarBorder, sidebar)
-    const ratio = contrastRatio(relativeLuminance(mutedForeground.linear), relativeLuminance(fillLinear))
+    // Gate-fix (#1074 round 1, Code/Test HIGH): same translucent-as-solid bug as above.
+    const fgLinear = resolvedLinear(mutedForeground, { raw: 'sidebar-border-hover', alpha: 1, linear: fillLinear })
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(fillLinear))
     rows.push({
       themeId,
       fg: 'muted-foreground',
@@ -461,7 +461,7 @@ export function sidebarBorderContrastRows(themes) {
       min: 4.5,
       ratio,
       pass: true,
-      fgHex: linearToHex(mutedForeground.linear),
+      fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(fillLinear),
       note: ratio >= 4.5 ? 'informational, real rendered hover fill' : 'informational -- below 4.5:1, a real pre-existing gap, not enforced (#551 gate round 1, flagged not fixed)',
     })
@@ -556,11 +556,13 @@ export async function shikiTokenContrastRows(themes, themeMetadata) {
 
 // #1043 (swatchPrimary vs --primary drift check), moved out of check-theme-contrast.mjs for the
 // same #806 file-size reason the composited checks above already were. Confirms
-// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color` literals never
-// silently drift from the preset's REAL resolved `--background`/`--primary` CSS tokens -- the
-// exact bug class that caused this PR's first two gate failures. Returns `{ checkedCount,
-// failCount, rows }`, not a plain row array, to match the caller's own pre-extraction counting
-// (one `checkedCount` per theme regardless of pass/fail, a row pushed only on failure).
+// `src/shared/themes.ts`'s own `swatch`/`swatchPrimary`/`titleBarOverlay.color`/
+// `titleBarOverlay.symbolColor` literals never silently drift from the preset's REAL resolved
+// `--background`/`--primary`/`--foreground` CSS tokens. #1074: `symbolColor` is now a
+// composited check (`--foreground` alpha-blended over `--background`, `resolvedLinear`, a
+// pass-through when alpha is 1) rather than byte-equality, since `--foreground` is translucent
+// in every non-HC preset while `setTitleBarOverlay` takes an opaque hex. Returns
+// `{ checkedCount, failCount, rows }` (one count per theme, a row only on failure).
 export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds) {
   let checkedCount = 0
   let failCount = 0
@@ -575,25 +577,23 @@ export function swatchMetadataDriftCheck(themes, themeMetadata, declaredThemeIds
     const meta = themeMetadata[id]
     const bgTag = `.theme-${id} --background`
     if (!meta) {
-      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse 'swatch'/'titleBarOverlay.color' for '${id}' out of src/shared/themes.ts`)
+      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `could not parse swatch/titleBarOverlay fields for '${id}' out of src/shared/themes.ts`)
       continue
     }
-    const bg = themes[id].background
-    if (!bg) {
-      fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, `'${id}' has no --background token in globals.css to compare against`)
-      continue
-    }
-    const primary = themes[id].primary
-    if (!primary) {
-      fail(id, 'themes.ts swatchPrimary', `.theme-${id} --primary`, `'${id}' has no --primary token in globals.css to compare against`)
+    const { background: bg, primary, foreground } = themes[id]
+    const missing = ['background', 'primary', 'foreground'].find((name) => !themes[id][name])
+    if (missing) {
+      fail(id, `themes.ts (needs --${missing})`, bgTag, `'${id}' has no --${missing} token in globals.css to compare against`)
       continue
     }
     const actualBgHex = linearToHex(bg.linear)
     const actualPrimaryHex = linearToHex(primary.linear)
+    const actualSymbolColorHex = linearToHex(resolvedLinear(foreground, bg))
     const mismatches = []
     if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
     if (meta.swatchPrimary !== actualPrimaryHex) mismatches.push(`swatchPrimary '${meta.swatchPrimary}' != --primary '${actualPrimaryHex}'`)
     if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
+    if (meta.symbolColor !== actualSymbolColorHex) mismatches.push(`titleBarOverlay.symbolColor '${meta.symbolColor}' != --foreground composited over --background '${actualSymbolColorHex}'`)
     if (mismatches.length > 0) fail(id, 'themes.ts swatch/titleBarOverlay', bgTag, mismatches.join('; '))
   }
   return { checkedCount, failCount, rows }
