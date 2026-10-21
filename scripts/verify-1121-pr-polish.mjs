@@ -296,6 +296,12 @@ async function main() {
 
     // ---- #1131: detail-view reason line, per PR ----
     async function openDetail(number) {
+      // Gate-fix (self-caught): 10 fixture rows do not all fit in the list panel's visible
+      // scrollable area at the default window size -- a raw coordinate click on a row below the
+      // fold landed on whatever (if anything) was actually rendered at that screen position,
+      // silently leaving the PREVIOUSLY selected row's detail showing, never the one this call
+      // asked for. Scrolled into view first so the click always lands on the real row.
+      await cdp.evaluate(`(() => { const el = document.querySelector('[data-pr-row][data-pr-number="${number}"]'); if (el) el.scrollIntoView({ block: 'center' }); return !!el; })()`);
       await cdp.click(`document.querySelector('[data-pr-row][data-pr-number="${number}"]')`);
       await cdp.waitFor(`(() => { const h2 = document.querySelector('h2.line-clamp-2'); return h2 && h2.textContent.includes('#${number}'); })()`, { timeoutMs: 15_000, label: `detail view for #${number} loaded` });
     }
