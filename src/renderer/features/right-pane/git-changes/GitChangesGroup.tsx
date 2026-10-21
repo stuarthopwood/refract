@@ -13,7 +13,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2Icon, MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -114,14 +113,25 @@ export function GitChangesGroup({
           <GroupHeaderTrigger label={label} count={entries.length} triggerRef={triggerRef} />
           {bulk && (
             <Tooltip>
-              <TooltipTrigger asChild>
+              {/* Low item (#1111): `aria-describedby={undefined}` stops Radix pointing the
+                  trigger at this tooltip's own content -- `aria-label` below already is the
+                  full accessible name, so without this a screen reader reads it twice (repo
+                  convention, e.g. `RefreshButton.tsx`). */}
+              <TooltipTrigger asChild aria-describedby={undefined}>
                 <Button
                   variant="ghost"
                   size="icon-xs"
                   aria-label={bulkAccessibleName ?? undefined}
                   aria-busy={bulkPending}
                   aria-disabled={bulkPending || undefined}
-                  className={cn('shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none', bulkPending && 'opacity-100')}
+                  // Low item (#1111): `aria-disabled:opacity-50` -- every other busy control in
+                  // this panel dims while pending (`GitChangesFileRow.tsx`'s kebab trigger, the
+                  // Commit button); this one didn't. Gate round 2 LOW: the conditional
+                  // `bulkPending && 'opacity-100'` class this file used to also carry here was
+                  // dead weight -- `aria-disabled:opacity-50`'s own attribute-selector
+                  // specificity always wins over a plain `.opacity-100` class regardless of
+                  // source order, so it never had any visual effect.
+                  className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   onClick={() => void runBulkAction()}
                 >
                   {bulkPending ? <Loader2Icon aria-hidden className="size-3.5 animate-spin" /> : <bulk.icon aria-hidden className="size-3.5" />}

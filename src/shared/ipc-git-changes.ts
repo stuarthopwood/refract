@@ -37,8 +37,13 @@ export interface GitChangesApi {
    * (#1101, item 4): true for a file with no index/HEAD side to diff against at all -- the
    * whole file is synthesised as added lines instead of an empty patch, capped/binary-checked
    * by the same rules `changes_status.rs`'s own numstat/size-cap logic already applies
-   * elsewhere in this panel. */
-  diff(sessionId: string, path: string, staged: boolean, untracked: boolean): Promise<Result<{ patch: string }>>;
+   * elsewhere in this panel. `reason` (#1111 item 5): set when `patch` comes back empty for an
+   * untracked file because it is binary, an image, over the 1 MiB cap, unreadable, or the read
+   * timed out -- `DiffViewFromPatch` shows this text instead of its own "No changes" fallback,
+   * which would otherwise be indistinguishable from a genuinely empty file. `string | null`,
+   * not optional: the wire value is always present, `null` when absent (`Option<&str>`'s own
+   * JSON shape on the Rust side), never an omitted key. */
+  diff(sessionId: string, path: string, staged: boolean, untracked: boolean): Promise<Result<{ patch: string; reason: string | null }>>;
   /** FR-011: `git commit -F -`, the composed message piped on stdin (never `-m`). Rejected
    * locally with `invalid-argument` for a blank (after trimming) message before ever reaching
    * git. FR-013: any failure (including an `index.lock` collision) is a typed `git-failed`
