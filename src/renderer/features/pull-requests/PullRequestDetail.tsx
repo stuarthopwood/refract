@@ -8,6 +8,7 @@
 // requests show `reviewDisabledReason`/`mergeDisabledReason` next to each disabled action
 // (FR-019), and a not-mergeable pull request shows that reason instead of offering Merge (FR-020).
 import { useEffect, useRef, useState } from 'react'
+import { ExternalLinkIcon } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,8 +22,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { Markdown } from '@/features/chat/Markdown'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
@@ -201,6 +204,13 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
   const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
   const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
+  // Issue #1131 (2026-10-21 decision): a state-only disable (draft, closed, merged) already
+  // shows its reason via the solid StatePill above this line -- a separate muted reason line
+  // would just repeat it. Keep the line only while the pull request is actually open
+  // (`reviewDisabledReason === null`) but blocked by a real conflict, a blocked merge, or GitHub
+  // still computing mergeability; the Merge/Review buttons' own tooltips keep every reason
+  // regardless (decision 3), unchanged.
+  const showMergeReasonLine = detail.reviewDisabledReason === null && mergeDisabledReason !== null
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -221,21 +231,29 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                 was never visibly conveyed in the detail header at all. Issue #568 decision 5:
                 solid StatePill (not the outline Badge this used to be). */}
             <StatePill state={detail.state} />
-            {/* Issue #568 decision 5: check status stays a plain icon+word (no pill chrome),
-                turning red only on failure -- reusing #570's "colour signals failure only"
-                policy, same treatment `PullRequestRow.tsx`'s own metadata line just adopted. */}
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <CheckIcon
-                aria-hidden
-                className={cn(
-                  'size-3.5',
-                  detail.checkState === 'pending' && 'animate-spin',
-                  detail.checkState === 'failed' && 'text-severity-error'
-                )}
-              />
+            {/* Issue #1121 (2026-10-21 decision): check status now carries its own severity
+                colour, on both the icon and the word -- supersedes #568 decision 5's "turning
+                red only on failure" for PR checks only (`CHECK_STATE_DISPLAY.colorClass`, shared
+                with `PullRequestRow.tsx` so the two surfaces can't drift apart). */}
+            <span className={cn('flex items-center gap-1 text-xs', check.colorClass || 'text-muted-foreground')}>
+              <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
             </span>
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
+            {/* Issue #1132 (2026-10-21 decision): ghost icon-only link beside Refresh, reusing
+                the existing `detail.url` and `Button asChild` as a real anchor (correct link
+                role) so it opens in the system browser, matching `ChangesTab.tsx`'s own
+                plain-external-link pattern -- no new IPC. */}
+            <Tooltip>
+              <TooltipTrigger asChild aria-describedby={undefined}>
+                <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub" className={COMPOSER_BUTTON_FOCUS_CLASS}>
+                  <a href={detail.url} target="_blank" rel="noreferrer noopener">
+                    <ExternalLinkIcon aria-hidden className="size-4" />
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open on GitHub</TooltipContent>
+            </Tooltip>
             <Button
               ref={newSessionButtonRef}
               size="sm"
@@ -267,7 +285,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </Button>
           </div>
         </div>
-        {mergeDisabledReason && <p className="mt-1 text-xs text-muted-foreground">{mergeDisabledReason}</p>}
+        {showMergeReasonLine && <p className="mt-1 text-xs text-muted-foreground">{mergeDisabledReason}</p>}
         {newSessionError && (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {newSessionError}

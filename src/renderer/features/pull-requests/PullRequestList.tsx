@@ -268,7 +268,7 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
             inputRef={searchInputRef}
           />
           <Select value={state.state} onValueChange={(value) => setStateFilter(repositoryId, value as PullRequestStateFilter)}>
-            <SelectTrigger size="sm" aria-label="State" className="h-8 w-28 shrink-0">
+            <SelectTrigger aria-label="State" className="w-28 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper">

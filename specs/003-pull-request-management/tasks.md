@@ -312,6 +312,27 @@ all pass. `check:ui-text` needs a built bundle (not run). `cargo build`/`test`/`
 run (no-build prep lane) -- the Rust changes above are code-reviewed only, not compiled. Full
 live check (T047) left to the build lane.
 
+## Phase 11: Convergence -- #1131 reason line hidden for a state-only disable (issue #1131)
+
+- [X] T048 (FR-019 amended) `PullRequestDetail.tsx`: `showMergeReasonLine` derived from
+  `detail.reviewDisabledReason === null && mergeDisabledReason !== null` -- the visible reason
+  line under the header renders only while the pull request is open but blocked by a conflict,
+  a blocked merge, or GitHub still computing mergeability; hidden for draft, closed, or merged
+  (the state pill already shown there is the reason). The Merge and Review buttons' own
+  tooltips (`title`) are unchanged and keep every reason regardless.
+  -- Implemented (pending commit sha, this PR).
+- [X] T049 Update `specs/003-pull-request-management/spec.md` (Acceptance Scenario 6 amended,
+  Edge Cases amended, FR-019 amended, Clarifications Session 2026-10-21).
+  -- Implemented (pending commit sha, this PR).
+- [ ] T050 Live verification per the issue's own decision record (draft/closed/merged hide the
+  line, a conflict/blocked/still-checking merge keeps it, Merge/Review tooltips keep every
+  reason regardless) -- covered by `scripts/verify-1121-pr-polish.mjs`, which also covers
+  issues #1120, #1121 and #1132 landing in the same PR.
+
+**Checkpoint**: `pnpm typecheck`, `pnpm test`, `node scripts/check-indent.mjs`,
+`check-file-size.mjs`, `check-drag-regions.mjs`, `check-theme-contrast.mjs` and
+`check-parity.mjs` (ci-local) all pass. Live check (T050) left to the build lane.
+
 ---
 
 ## Dependencies & Execution Order
