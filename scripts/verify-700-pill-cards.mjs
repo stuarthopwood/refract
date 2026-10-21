@@ -297,10 +297,12 @@ async function main() {
     assertTrue(subagentRows.length >= 3, 'Subagents panel lists all three subagents (alpha, beta, gamma)', subagentRows);
     notExercised.push('gamma\'s own taskSummary (no sentence-ending punctuation at all in its `task` text, so Rust falls back to the whole string) has no live DOM surface to assert against once it is `failed`: the Agents card only ever renders a row for a RUNNING agent, and the Subagents panel shows `nameOrTask`, never `taskSummary`.');
 
-    // Close the panel (clicking its own opener again is the established toggle) before the
-    // pill-click assertion below, so that assertion observes a genuine closed -> open transition.
-    await cdp.click(AGENTS_PILL_SELECTOR);
-    await cdp.waitFor(`!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Subagents panel closes' });
+    // Close the panel via its own real Close control (`data-panel-close`, `PanelTabBar.tsx`) --
+    // `openHostedPanel` (the pill's own `onActivate`) only ever OPENS/re-focuses a panel, it is
+    // never a toggle (that is `toggleHostedPanelFromRail`'s own, separate job, not wired to this
+    // chip), confirmed by reading `hosted-panel-actions.ts` directly rather than assuming.
+    await cdp.click(`document.querySelector('[data-panel-close]')`);
+    await cdp.waitFor(`!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Subagents panel closes via its own Close control' });
 
     // ---- Decision record: "click still opens it" -- the Agents pill's own click is unaffected
     // by the hover/focus card work ----
