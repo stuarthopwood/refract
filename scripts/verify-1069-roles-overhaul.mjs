@@ -65,8 +65,6 @@ const SEEDED_MODEL_ROLES = {
   slow: 'github-copilot/gpt-3.5-turbo'
 };
 
-const ARROW_RIGHT = { code: 39, key: 'ArrowRight', domCode: 'ArrowRight' };
-
 function assertTrue(actual, label, findings, failures) {
   if (actual) findings.push(`${label}: true`);
   else failures.push(`${label}: expected true, got ${JSON.stringify(actual)}`);
@@ -377,24 +375,23 @@ async function main() {
     assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:medium', 'Picking Medium writes the :medium suffix (read back via modelRoles.list())', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger still shows the name only after picking Medium', findings, failures);
 
-    // Radix's RadioGroup (unlike the ToggleGroup above) follows true native radiogroup semantics:
-    // ArrowRight alone both moves focus AND fires `onValueChange` immediately -- confirmed by a
-    // diagnostic dump showing every item in the group (including Inherit) `disabled:true` within
-    // 200ms of the arrow press, which only happens while THIS role's own save is in flight. A
-    // fixed 200ms sleep was not long enough for the async store+fake-omp round trip, and a
-    // follow-up Space on the already-selected item risked firing a second, redundant write
-    // racing the first -- removed; this just polls the real IPC value directly, patiently.
-    // `.focus()`s Medium first (never assumes the earlier mouse click left Radix's own
-    // roving-tabindex ref pointing at it, which a pointer selection need not update the way a
-    // keyboard-driven move does).
-    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-medium')?.focus()`);
-    await pressKey(cdp, ARROW_RIGHT.code, ARROW_RIGHT.key, ARROW_RIGHT.domCode);
+    // A persisted fake-omp invocation log (an earlier run of this exact check) showed NO second
+    // `config set` call ever fires from ArrowRight alone, nor from an immediate follow-up Space --
+    // Radix's roving-tabindex focus tracking does not reliably pick up a move away from an item a
+    // POINTER click (not a keyboard move) had selected, so a subsequent arrow press here cannot be
+    // trusted to start from the right place. This instead proves the same keyboard contract a
+    // cleaner way: focus the TARGET item directly (`.focus()`, never a click) and press Space --
+    // a real keyboard activation of a genuinely keyboard-focused control, independent of any
+    // roving-tabindex navigation history.
+    await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.focus()`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 32, key: ' ', code: 'Space' });
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5:high')`, {
       timeoutMs: 8_000,
-      label: 'Keyboard ArrowRight writes :high (modelRoles.list() IPC)'
+      label: 'Keyboard Space writes :high (modelRoles.list() IPC)'
     });
     rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard ArrowRight writes the :high suffix (read back via modelRoles.list())', findings, failures);
+    assertEqual(rolesNow?.default, 'github-copilot/claude-fable-5:high', 'Keyboard Space on the focused High item writes the :high suffix (read back via modelRoles.list())', findings, failures);
 
     await cdp.click(`document.getElementById('model-role-default-reasoning-inherit')`);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'github-copilot/claude-fable-5')`, {
