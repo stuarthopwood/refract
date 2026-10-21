@@ -208,12 +208,19 @@ export function isModelRoleId(value: unknown): value is ModelRoleId {
 
 /** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
  * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the
- * exact `provider/modelId` string usable as a `modelRoles` value. */
+ * exact `provider/modelId` string usable as a `modelRoles` value. `reasoning`/`thinking` (issue
+ * #1069): confirmed present on every real row (87 chat rows probed) but previously dropped at
+ * this type/struct boundary -- `reasoning` is whether the model supports a thinking budget at
+ * all, `thinking` is the subset of minimal/low/medium/high/xhigh it reports supporting (`null`
+ * for a non-reasoning model, never an empty array when `reasoning` is true). Drives the Model
+ * roles section's reasoning-level radios (`RoleReasoningRadios.tsx`). */
 export interface ModelCatalogEntry {
   provider: string;
   id: string;
   selector: string;
   name: string;
+  reasoning: boolean;
+  thinking: string[] | null;
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the

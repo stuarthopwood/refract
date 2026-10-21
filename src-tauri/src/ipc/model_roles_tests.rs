@@ -137,6 +137,9 @@ fn parse_catalog_response_accepts_both_shapes_and_drops_bad_rows() {
         id: "claude-sonnet-4-5".into(),
         selector: "anthropic/claude-sonnet-4-5".into(),
         name: "Claude Sonnet 4.5".into(),
+        // Issue #1069: `valid` carries neither field, so both parse to their absent defaults.
+        reasoning: false,
+        thinking: None,
     }];
     assert_eq!(
         parse_catalog_response(&serde_json::json!([valid.clone()])).unwrap(),
@@ -171,11 +174,11 @@ fn parse_catalog_response_accepts_both_shapes_and_drops_bad_rows() {
 }
 
 #[test]
-fn parse_catalog_response_keeps_only_the_four_needed_fields() {
+fn parse_catalog_response_keeps_only_the_six_needed_fields() {
     let rich = serde_json::json!({
         "provider": "github-copilot", "kind": "chat", "id": "claude-fable-5",
         "selector": "github-copilot/claude-fable-5", "name": "Claude Fable 5",
-        "contextWindow": 1_000_000, "reasoning": true,
+        "contextWindow": 1_000_000, "reasoning": true, "thinking": ["low", "high"],
     });
     let result = parse_catalog_response(&serde_json::json!({ "models": [rich] })).unwrap();
     assert_eq!(
@@ -185,6 +188,8 @@ fn parse_catalog_response_keeps_only_the_four_needed_fields() {
             id: "claude-fable-5".into(),
             selector: "github-copilot/claude-fable-5".into(),
             name: "Claude Fable 5".into(),
+            reasoning: true,
+            thinking: Some(vec!["low".into(), "high".into()]),
         }]
     );
 }

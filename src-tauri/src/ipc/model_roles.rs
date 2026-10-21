@@ -80,6 +80,14 @@ pub struct ModelCatalogEntry {
     pub id: String,
     pub selector: String,
     pub name: String,
+    /// Issue #1069: whether this model supports a reasoning/thinking budget at all -- drives the
+    /// reasoning radios' "Off" option. Confirmed present on every real `omp models --kind chat
+    /// --json` row.
+    pub reasoning: bool,
+    /// Issue #1069: the subset of minimal/low/medium/high/xhigh this model itself reports
+    /// supporting; `None` for a non-reasoning model, never `Some(vec![])` when `reasoning` is
+    /// true (confirmed live across 87 chat rows).
+    pub thinking: Option<Vec<String>>,
 }
 
 /// Security-audit finding (unconfirmed-but-defended, FINDINGS item 48's "env override probe"):
@@ -350,11 +358,23 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
         if let (Some(provider), Some(id), Some(selector), Some(name)) =
             (provider, id, selector, name)
         {
+            // Issue #1069: `reasoning` defaults to `false` when absent (a defensive fallback --
+            // every real row confirmed to carry it); `thinking` is `None` for a missing/non-array
+            // field, matching a genuine `"thinking": null` on a non-reasoning row.
+            let reasoning = object.get("reasoning").and_then(Value::as_bool).unwrap_or(false);
+            let thinking = object.get("thinking").and_then(Value::as_array).map(|levels| {
+                levels
+                    .iter()
+                    .filter_map(|level| level.as_str().map(str::to_string))
+                    .collect()
+            });
             entries.push(ModelCatalogEntry {
                 provider: provider.to_string(),
                 id: id.to_string(),
                 selector: selector.to_string(),
                 name: name.to_string(),
+                reasoning,
+                thinking,
             });
         }
     }
