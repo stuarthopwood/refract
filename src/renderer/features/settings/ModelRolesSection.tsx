@@ -47,10 +47,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
+// `@/lib/providerLabels`, never `@/lib/modelRoles` -- see `ProviderSwitch.tsx`'s own import
+// comment for why (that file imports this one's `CHAT_ROLE_DESCRIPTORS` at its module top level).
+import { friendlyProviderLabel } from '@/lib/providerLabels'
 import { useModelRolesStore } from '@/state'
 import { CHAT_MODEL_ROLES, MODEL_KIND_ROLES, ROLE_CATALOG_KIND } from '../../../shared/model'
-import type { CatalogKind, ModelRoleId } from '../../../shared/model'
+import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
 import { applyThinkingSuffixCarryOver } from './modelRoleSuffix'
+import { defaultProvider, filterCatalogByProvider, providersInCatalog, resolveCatalogEntry } from './modelProviderFilter'
+import { ProviderSwitch } from './ProviderSwitch'
+import { RoleReasoningRadios } from './RoleReasoningRadios'
 
 export interface RoleDescriptor {
   role: ModelRoleId
@@ -147,6 +153,13 @@ export function ModelRolesSection() {
   const wasLoadErrorRef = useRef(false)
   const [retryingLoad, setRetryingLoad] = useState(false)
   const [retryingKinds, setRetryingKinds] = useState<ReadonlySet<CatalogKind>>(new Set())
+  // Issue #1069 decision 2: the provider switch's own selection, lifted here so it can filter
+  // every chat role's dropdown below. Initialised once (`providerInitializedRef`) from the
+  // Default role's current model's provider, or the catalog's first provider as a fallback --
+  // never re-derived afterward, so picking a different segment is never silently overridden by a
+  // later `roles`/`catalogs` update (a save, a catalog retry).
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
+  const providerInitializedRef = useRef(false)
   // Quality-gate remediation (accessibility-auditor HIGH): saving/saved/failed was previously
   // announced nowhere -- the spinner was `aria-hidden` and a failure went only to an
   // auto-dismissing toast. Two regions, matching this app's existing `ManageAccountsDialog`/
@@ -168,6 +181,16 @@ export function ModelRolesSection() {
     // `AppearanceSection.tsx`'s own mount-time effects use.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (providerInitializedRef.current) return
+    const chatCatalog = catalogs.chat
+    if (!loaded || !chatCatalog) return
+    const initial = defaultProvider(roles.default, chatCatalog)
+    if (initial === null) return // catalog loaded but empty: nothing to select yet
+    setSelectedProvider(initial)
+    providerInitializedRef.current = true
+  }, [loaded, catalogs.chat, roles.default])
 
   // Quality-gate remediation (code-reviewer MEDIUM): focus the Retry button the moment a load
   // failure first appears (unchanged), AND focus the section heading when a retry SUCCEEDS (the
@@ -308,6 +331,7 @@ export function ModelRolesSection() {
     const saveError = saveErrors[role]
     const overrideNote = overrideNotes[role]
     const selectId = `model-role-${role}`
+    const labelId = `${selectId}-label`
     const descriptionId = `${selectId}-description`
     const saveErrorId = `${selectId}-save-error`
     const overrideNoteId = `${selectId}-override-note`
@@ -316,19 +340,31 @@ export function ModelRolesSection() {
       .filter(Boolean)
       .join(' ')
 
-    // The catalog may not list a role's current selector verbatim (a comma-list, an `@alias`, or
-    // a selector from a provider the catalog fetch temporarily missed, or one carrying a
-    // `:thinking` suffix) -- render it as its own option so the picker never silently shows the
-    // wrong thing for a value it does not recognise.
-    const knownSelectors = new Set((catalog ?? []).map((entry) => entry.selector))
+    // Issue #1069 decision 1: a chat role's own dropdown lists only the selected provider's
+    // models (decision 6: the five model-kind roles are unaffected and keep today's unfiltered
+    // list and `{name} ({provider})` item labels).
+    const isChat = kind === 'chat'
+    const displayCatalog = isChat ? filterCatalogByProvider(catalog, selectedProvider) : (catalog ?? [])
+
+    // The displayed list may not list a role's current selector verbatim (a comma-list, an
+    // `@alias`, a selector from a provider the catalog fetch temporarily missed, one carrying a
+    // `:thinking` suffix, or -- for a chat role -- simply a different provider than the one
+    // selected) -- render it as its own pinned option so the picker never silently shows the
+    // wrong thing for a value the displayed list does not contain verbatim.
+    const knownSelectors = new Set(displayCatalog.map((entry) => entry.selector))
     const hasUnknownCurrent = currentValue !== undefined && !knownSelectors.has(currentValue)
     const inheritedLabel = ROLE_FALLBACK_LABEL[role] ? `Inherited (${ROLE_FALLBACK_LABEL[role]})` : 'Inherited'
+    // Decisions 3 and 5: resolved against the FULL (unfiltered) catalog, never `displayCatalog`,
+    // so a role on a different provider is still identified by its real model, and the reasoning
+    // radios below read the model's own `reasoning`/`thinking` fields regardless of which
+    // provider is currently selected on the switch.
+    const resolvedCurrentEntry: ModelCatalogEntry | undefined = isChat ? resolveCatalogEntry(currentValue, catalog) : undefined
 
     return (
       <div key={role} className="py-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex flex-col gap-0.5">
-            <label htmlFor={selectId} className="text-sm font-medium">
+            <label id={labelId} htmlFor={selectId} className="text-sm font-medium">
               {label}
             </label>
             <span id={descriptionId} className="text-xs text-muted-foreground">
@@ -373,10 +409,23 @@ export function ModelRolesSection() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={INHERITED_VALUE}>{inheritedLabel}</SelectItem>
-                {hasUnknownCurrent && <SelectItem value={currentValue as string}>{currentValue}</SelectItem>}
-                {(catalog ?? []).map((entry) => (
+                {hasUnknownCurrent && (
+                  <SelectItem value={currentValue as string}>
+                    {resolvedCurrentEntry ? (
+                      <span className="flex items-center gap-1.5">
+                        {resolvedCurrentEntry.name}
+                        {resolvedCurrentEntry.provider !== selectedProvider && (
+                          <span className="text-xs text-muted-foreground">via {friendlyProviderLabel(resolvedCurrentEntry.provider)}</span>
+                        )}
+                      </span>
+                    ) : (
+                      currentValue
+                    )}
+                  </SelectItem>
+                )}
+                {displayCatalog.map((entry) => (
                   <SelectItem key={entry.selector} value={entry.selector}>
-                    {entry.name} ({entry.provider})
+                    {isChat ? entry.name : `${entry.name} (${entry.provider})`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -393,6 +442,16 @@ export function ModelRolesSection() {
           <p id={overrideNoteId} className="mt-1 text-xs text-muted-foreground">
             Saved, but {overrideNote} still controls the effective model for this role.
           </p>
+        )}
+        {isChat && (
+          <RoleReasoningRadios
+            role={role}
+            labelId={labelId}
+            currentValue={currentValue}
+            catalogEntry={resolvedCurrentEntry}
+            disabled={isPending}
+            onPick={(nextValue) => void handleRoleChange(role, label, nextValue)}
+          />
         )}
       </div>
     )
@@ -453,6 +512,7 @@ export function ModelRolesSection() {
           <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-semibold">
             Chat roles
           </h3>
+          <ProviderSwitch providers={providersInCatalog(catalogs.chat)} selected={selectedProvider} onSelect={setSelectedProvider} />
           <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6">
             {renderGroup(CHAT_ROLE_DESCRIPTORS)}
           </div>

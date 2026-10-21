@@ -37,9 +37,10 @@ export function resolveCatalogEntry(value: string | undefined, catalog: ModelCat
  * catalog itself has no providers yet (nothing to select). */
 export function defaultProvider(defaultRoleValue: string | undefined, catalog: ModelCatalogEntry[] | undefined): string | null {
   const providers = providersInCatalog(catalog)
-  if (providers.length === 0) return null
+  const firstProvider = providers[0]
+  if (firstProvider === undefined) return null
   const entry = resolveCatalogEntry(defaultRoleValue, catalog)
-  return entry ? entry.provider : providers[0]
+  return entry ? entry.provider : firstProvider
 }
 
 /** The selected provider's own models only, in catalog order -- decision 1's "every chat role's

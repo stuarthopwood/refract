@@ -2,7 +2,10 @@
 // extending `ManageSessionsToolbar.tsx`'s own archive-filter `ToggleGroup` pattern rather than a
 // new one-off segmented control (ADR 0003 "Reusable UI components only").
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { friendlyProviderLabel } from '@/lib/modelRoles'
+// Imported from the leaf `providerLabels.ts`, never `@/lib/modelRoles` (that file imports this
+// section's own `CHAT_ROLE_DESCRIPTORS` at its own module top level -- importing it back from
+// here, a module `ModelRolesSection.tsx` itself imports, would be a real circular import).
+import { friendlyProviderLabel } from '@/lib/providerLabels'
 
 // Same treatment as `ManageSessionsToolbar.tsx`'s own `SELECTED_SEGMENT_CLASS` (DESIGN.md's
 // "Active/selected indicator" rule: a 2px left-edge bar, overriding `toggle.tsx`'s own default

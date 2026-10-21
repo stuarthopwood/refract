@@ -361,13 +361,19 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
             // Issue #1069: `reasoning` defaults to `false` when absent (a defensive fallback --
             // every real row confirmed to carry it); `thinking` is `None` for a missing/non-array
             // field, matching a genuine `"thinking": null` on a non-reasoning row.
-            let reasoning = object.get("reasoning").and_then(Value::as_bool).unwrap_or(false);
-            let thinking = object.get("thinking").and_then(Value::as_array).map(|levels| {
-                levels
-                    .iter()
-                    .filter_map(|level| level.as_str().map(str::to_string))
-                    .collect()
-            });
+            let reasoning = object
+                .get("reasoning")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let thinking = object
+                .get("thinking")
+                .and_then(Value::as_array)
+                .map(|levels| {
+                    levels
+                        .iter()
+                        .filter_map(|level| level.as_str().map(str::to_string))
+                        .collect()
+                });
             entries.push(ModelCatalogEntry {
                 provider: provider.to_string(),
                 id: id.to_string(),

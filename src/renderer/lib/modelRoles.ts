@@ -82,38 +82,12 @@ export const ROLE_ICON: Partial<Record<RoleChipRoleId, LucideIcon>> = {
   [FALLBACK_ROLE]: LifeBuoyIcon
 }
 
-/** Friendly provider names (#741 Part 1: "a small map for the known providers... with the raw id
- * as the fallback; no new dependency"). Built from the fields OMP already reports (`provider`),
- * never by splitting a display string on `/` -- an id such as `openrouter/google/gemini` stays
- * untouched by any caller that uses this map correctly. Shared so the Session details card (this
- * issue), and #714/#717/#766's own provider-aware surfaces, show the exact same provider name. */
-const PROVIDER_LABEL: Record<string, string> = {
-  'github-copilot': 'GitHub Copilot',
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  'openai-codex': 'OpenAI Codex',
-  'azure-openai': 'Azure OpenAI',
-  google: 'Google',
-  'google-vertex': 'Google Vertex AI',
-  openrouter: 'OpenRouter',
-  groq: 'Groq',
-  deepseek: 'DeepSeek',
-  ollama: 'Ollama',
-  'llama.cpp': 'llama.cpp',
-  'lm-studio': 'LM Studio',
-  litellm: 'LiteLLM',
-  bedrock: 'Amazon Bedrock',
-  local: 'Local',
-  apple: 'Apple'
-}
-
-/** `provider` -> a friendly display name, or the raw id unchanged when it is not in the map
- * (#741 Part 1: "no name (only an id): show the id as is; do not invent a prettified name" --
- * the same rule applied here to an unrecognised PROVIDER id, not just an unrecognised model
- * name). */
-export function friendlyProviderLabel(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider
-}
+/** Friendly provider names (#741 Part 1): extracted to `providerLabels.ts` (issue #1069, that
+ * file's own header explains why -- a Model roles component needs this map without pulling in
+ * this file's own top-level `CHAT_ROLE_DESCRIPTORS` import and risking a circular import back
+ * into `ModelRolesSection.tsx`); re-exported here so every existing `@/lib/modelRoles` import
+ * site is unchanged. */
+export { friendlyProviderLabel } from './providerLabels'
 
 export interface RoleChipDisplay {
   role: RoleChipRoleId
