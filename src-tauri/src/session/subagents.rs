@@ -499,7 +499,7 @@ fn subagent_task_summary(spec: &Value) -> Option<String> {
         return None;
     }
     let first_sentence = task
-        .find(|c: char| c == '.' || c == '!' || c == '?')
+        .find(['.', '!', '?'])
         .map(|end| &task[..=end])
         .unwrap_or(task);
     let chars: Vec<char> = first_sentence.chars().collect();

@@ -799,3 +799,22 @@ across the concurrently-running lanes this session).
   Entities (Todo card, Agents card), and an Assumptions update recording slice (b) as shipped
   (slice (c) still deferred); this Phase. (#700)
 
+Built against the issue's own decision record (full text on issue #700's latest comment,
+2026-10-19) as the no-build prep lane for slice (b) (Rust/TS code only, no spawned live agent,
+no new tests per the project's prototyping-phase rule). `pnpm typecheck` (both
+`tsconfig.node.json` and `tsconfig.web.json`) clean; `pnpm test` (148 tests, 11 files) all
+passing; `node scripts/check-indent.mjs` (0 odd-indent lines across 470 files); `node
+scripts/check-file-size.mjs` (0 cap violations across 535 files -- `model.ts` held at its own
+656/656 baseline, `ReadoutChips.tsx` 571/600, `PinnedTodoPanel.tsx` 286/600, `subagents.rs`
+567/600, all comfortably under or within their recorded baselines); `node
+scripts/check-theme-contrast.mjs` (all 892 pairs across 5 themes PASS -- every status icon/word
+and the Agents card's own plain text reuse EXISTING checked tokens, so no new
+`theme-contrast-pairs.mjs` entry was needed); `pnpm check:parity` (115/115 requests, 25/25
+events); `pnpm check:drag-regions` (0 violations across 156 files). Rust: `cargo check` clean;
+`cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` caught one real
+`manual_char_comparison` lint in the new `subagent_task_summary` (fixed: `task.find(['.', '!',
+'?'])` replaces the `|c: char| c == '.' || ...` closure), clean on the rerun. Not independently
+driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
+(`scripts/verify-700-pill-cards.mjs`, not yet written) -- left for the build-slot pass.
+
+
