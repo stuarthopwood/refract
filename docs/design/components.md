@@ -55,7 +55,7 @@ Decided (Stuart, 2026-10-21, #1144): one rule for the space between a control's 
 | Pills, chips and badges up to 24 px tall, and `xs` buttons | 8 px |
 | Text buttons 28 px and taller (`sm`, `default`, `lg`) | 10 px |
 
-- The side next to a leading or trailing icon is 2 px tighter; `Button` and `Badge` already do this through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`.
+- The side next to a leading or trailing icon is 2 px tighter, through `has-data-[icon=inline-start]` and `has-data-[icon=inline-end]`. `Badge` and `Button` `xs`, `default` and `lg` already do this; `Button` `sm` does not yet (its icon side is 6 px, 4 px tighter than its 10 px) and moves to 8 px under #1144.
 - Use the primitive's own padding. A call-site `px-*`, `pl-*` or `pr-*` that breaks this table is a defect.
 - Composer text tokens sit in a mirror layer under the masked textarea, so their padding is drawn with `box-shadow`, never real `padding` (real padding would move the caret off the text).
 - Exceptions: icon-only buttons stay square (their padding comes from their fixed size), and inline code in prose keeps 4 px.
