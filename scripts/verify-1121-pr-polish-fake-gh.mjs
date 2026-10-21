@@ -20,7 +20,7 @@ export const FAKE_REPO = 'fake-repo-1121';
 export const FAKE_REMOTE_URL = `https://github.com/${FAKE_OWNER}/${FAKE_REPO}.git`;
 
 const AUTHOR = { login: 'octocat', name: 'The Octocat' };
-const NOW = new Date().toISOString();
+const NOW = '2026-10-21T12:00:00.000Z';
 
 // One row per state this lane's four issues need distinguished: #1121's four check colours
 // (passed/failed/pending/none), #1131's three disable shapes (state-only -- draft/closed/merged

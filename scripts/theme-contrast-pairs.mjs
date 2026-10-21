@@ -199,10 +199,10 @@ export const PAIRS = [
   // floor by their own design.
   { fg: 'severity-error', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   // Gate round 1 (#997, Low): the matching HC 7:1 pair above only ever covered
-  // `severity-error`/`muted` -- `severity-warning` renders real body text in the identical role
-  // (`NoticeRow.tsx`'s warning summary, same `muted` hover tint) and was never held to the same
-  // 7:1 target this theme declares.
+  // `severity-error`/`muted` -- `severity-warning` (`NoticeRow.tsx`'s warning summary) and, since
+  // #1121, `severity-success` ("Checks passed") render real body text in the identical role.
   { fg: 'severity-warning', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'severity-success', bg: 'muted', min: 7, onlyThemes: ['dark-high-contrast'] },
   // #558 gate round 1 (Low): `severity-warning` label/summary text now renders in this role
   // (decision 11) and was previously gated only at the 3:1 non-text floor, passing today purely
   // because it aliases `state-needs-you` (already gated at 4.5) -- the same "check the token

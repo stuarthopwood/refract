@@ -25,19 +25,22 @@ interface PullRequestRowProps {
 export interface CheckDisplay {
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   label: string
+}
+
+export interface CheckStateDisplay extends CheckDisplay {
   /** Issue #1121 (2026-10-21 decision): every non-`none` check state now carries its own
    * severity colour, on both the icon and the label word -- supersedes #568 decision 5 ("check
    * status stays a plain icon+word, turning red only on failure") for PR checks only; tool-call
-   * rows elsewhere keep #570's own failure-only colour rule, unaffected. `''` for `none` leaves
-   * today's ambient `text-muted-foreground` untouched. */
-  colorClass?: string
+   * rows elsewhere keep #570's own failure-only colour rule, unaffected. `none` keeps
+   * `text-muted-foreground`, the same colour both surfaces already showed. */
+  colorClass: string
 }
 
-export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckDisplay> = {
+export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {
   passed: { icon: CheckCircle2Icon, label: 'Checks passed', colorClass: 'text-severity-success' },
   failed: { icon: XCircleIcon, label: 'Checks failed', colorClass: 'text-severity-error' },
   pending: { icon: LoaderCircleIcon, label: 'Checks running', colorClass: 'text-severity-warning' },
-  none: { icon: CircleDashedIcon, label: 'No checks', colorClass: '' }
+  none: { icon: CircleDashedIcon, label: 'No checks', colorClass: 'text-muted-foreground' }
 }
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never

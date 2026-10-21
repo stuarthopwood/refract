@@ -328,6 +328,17 @@ live check (T047) left to the build lane.
   line, a conflict/blocked/still-checking merge keeps it, Merge/Review tooltips keep every
   reason regardless) -- covered by `scripts/verify-1121-pr-polish.mjs`, which also covers
   issues #1120, #1121 and #1132 landing in the same PR.
+- [X] T051 (#1120) `PullRequestList.tsx`: the State `SelectTrigger` drops `size="sm"` and its dead
+  `h-8` override, rendering at the default 32px height like the adjacent SearchField.
+  -- Implemented (7a48ca41).
+- [X] T052 (#1121) `PullRequestRow.tsx` `CHECK_STATE_DISPLAY.colorClass`: passed/failed/pending
+  colour the check icon AND word `text-severity-success`/`error`/`warning`; none stays
+  `text-muted-foreground`. Shared by the list row and the `PullRequestDetail.tsx` header.
+  -- Implemented (7a48ca41).
+- [X] T053 (#1132) `PullRequestDetail.tsx`: ghost icon-only "Open on GitHub" link (`Button
+  asChild` around a real `<a href={detail.url} target="_blank">`, accessible name "Open on GitHub
+  (opens in browser)", tooltip "Open on GitHub") placed right after Refresh in Tab order.
+  -- Implemented (7a48ca41).
 
 **Checkpoint**: `pnpm typecheck`, `pnpm test`, `node scripts/check-indent.mjs`,
 `check-file-size.mjs`, `check-drag-regions.mjs`, `check-theme-contrast.mjs` and

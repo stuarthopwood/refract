@@ -235,7 +235,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                 colour, on both the icon and the word -- supersedes #568 decision 5's "turning
                 red only on failure" for PR checks only (`CHECK_STATE_DISPLAY.colorClass`, shared
                 with `PullRequestRow.tsx` so the two surfaces can't drift apart). */}
-            <span className={cn('flex items-center gap-1 text-xs', check.colorClass || 'text-muted-foreground')}>
+            <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
               <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
             </span>
@@ -246,8 +246,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
                 plain-external-link pattern -- no new IPC. */}
             <Tooltip>
               <TooltipTrigger asChild aria-describedby={undefined}>
-                <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub" className={COMPOSER_BUTTON_FOCUS_CLASS}>
-                  <a href={detail.url} target="_blank" rel="noreferrer noopener">
+                <Button asChild variant="ghost" size="icon-sm" aria-label="Open on GitHub (opens in browser)" className={COMPOSER_BUTTON_FOCUS_CLASS}>
+                  <a href={detail.url} target="_blank" rel="noreferrer noopener" data-open-on-github>
                     <ExternalLinkIcon aria-hidden className="size-4" />
                   </a>
                 </Button>
@@ -285,7 +285,11 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </Button>
           </div>
         </div>
-        {showMergeReasonLine && <p className="mt-1 text-xs text-muted-foreground">{mergeDisabledReason}</p>}
+        {showMergeReasonLine && (
+          <p data-merge-reason className="mt-1 text-xs text-muted-foreground">
+            {mergeDisabledReason}
+          </p>
+        )}
         {newSessionError && (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {newSessionError}
