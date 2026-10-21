@@ -185,6 +185,21 @@ not re-litigated.
   320px remembered across restarts (one width for every Project). The header's Project selector
   shrinks and truncates to the column's own current width instead of the whole window's.
 
+### Session 2026-10-21 (#1131 reason line hidden for a state-only disable)
+
+Grilled (Stuart, grill-with-docs), recorded here to converge the spec, not re-litigated:
+
+- Decided: the muted reason line under the detail header is hidden when the pull request is
+  draft, closed, or merged -- its reason is already shown by the solid state pill above the
+  line, so a second copy of the same reason in plain text added nothing. The line stays visible
+  for a merge conflict, a blocked merge, or GitHub still computing mergeability (the three cases
+  the pill does not already explain).
+- Decided: the Merge and Review buttons' own tooltips keep showing every reason, unchanged --
+  only the separate visible line is affected.
+- Decided: the renderer decides from `detail.reviewDisabledReason === null` (open) rather than a
+  new Rust field, so the tooltip text and `MergeDialog.tsx`'s own use of the reason stay
+  untouched.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Browse pull requests (Priority: P1)
@@ -289,7 +304,9 @@ the corresponding actions with a reason.
    confirms, **Then** the app shows a confirmation naming the pull request and the chosen merge
    method, then merges it and reports the result.
 6. **Given** a draft, closed, or merged pull request, **When** the developer looks at the
-   available actions, **Then** merge and review actions are disabled, each with the reason shown.
+   available actions, **Then** merge and review actions are disabled, each with the reason in
+   its tooltip; no separate reason line repeats it below the header, since the state pill
+   already shown there is the reason for a state-only disable (amended 2026-10-21, issue #1131).
 7. **Given** a pull request with merge conflicts or failing required checks, **When** the
    developer attempts to merge it, **Then** the merge is refused and the reason is shown.
 8. **Given** a pull request open in the detail view, **When** it changes on GitHub before the
@@ -328,8 +345,12 @@ creation rules from spec 001.
   actionable message instead of an empty or broken list.
 - A pull request or its diff is too large to show in full: the view shows what it can, says so,
   and offers opening it in the browser.
-- The pull request is a draft, closed, or merged: review and merge actions are disabled, each
-  with the reason shown.
+- The pull request is a draft, closed, or merged: review and merge actions are disabled with the
+  reason in each button's tooltip; no separate reason line is shown below the header, since the
+  state pill already shown there is the reason (amended 2026-10-21, issue #1131).
+- The pull request is open but has merge conflicts, a blocked merge, or GitHub is still
+  computing mergeability: a visible reason line stays below the header, in addition to the
+  Merge button's own tooltip (issue #1131).
 - The pull request has merge conflicts or a failing required check: a merge attempt is refused
   with the reason shown.
 - The pull request changes on GitHub while it is open in the app: the view says it is out of date
@@ -399,8 +420,12 @@ creation rules from spec 001.
   report success or the exact failure, and MUST NOT leave the view showing state that no longer
   matches the action's outcome.
 - **FR-019**: Draft, closed, and merged pull requests MUST have their Approve, Request changes,
-  and Merge actions disabled, each with the reason shown. The comment composer and each review
-  thread's Reply/Resolve/Unresolve controls remain available regardless of pull request state.
+  and Merge actions disabled, each with the reason in its tooltip. For these three state-only
+  reasons the view MUST NOT also show a separate reason line below the header -- the state pill
+  already shown there is the reason (amended 2026-10-21, issue #1131); a merge conflict, a
+  blocked merge, or GitHub still computing mergeability keeps that visible reason line. The
+  comment composer and each review thread's Reply/Resolve/Unresolve controls remain available
+  regardless of pull request state.
 - **FR-020**: A merge attempt MUST be refused, with the reason shown, when the pull request has
   merge conflicts or a failing required check.
 - **FR-021**: Before any action acts on a pull request that has changed since it was loaded, the

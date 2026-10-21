@@ -28,11 +28,20 @@ export interface CheckDisplay {
   label: string
 }
 
-export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckDisplay> = {
-  passed: { icon: CheckCircle2Icon, label: 'Checks passed' },
-  failed: { icon: XCircleIcon, label: 'Checks failed' },
-  pending: { icon: LoaderCircleIcon, label: 'Checks running' },
-  none: { icon: CircleDashedIcon, label: 'No checks' }
+export interface CheckStateDisplay extends CheckDisplay {
+  /** Issue #1121 (2026-10-21 decision): every non-`none` check state now carries its own
+   * severity colour, on both the icon and the label word -- supersedes #568 decision 5 ("check
+   * status stays a plain icon+word, turning red only on failure") for PR checks only; tool-call
+   * rows elsewhere keep #570's own failure-only colour rule, unaffected. `none` keeps
+   * `text-muted-foreground`, the same colour both surfaces already showed. */
+  colorClass: string
+}
+
+export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {
+  passed: { icon: CheckCircle2Icon, label: 'Checks passed', colorClass: 'text-severity-success' },
+  failed: { icon: XCircleIcon, label: 'Checks failed', colorClass: 'text-severity-error' },
+  pending: { icon: LoaderCircleIcon, label: 'Checks running', colorClass: 'text-severity-warning' },
+  none: { icon: CircleDashedIcon, label: 'No checks', colorClass: 'text-muted-foreground' }
 }
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never
@@ -85,15 +94,8 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
           {state.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
-        <span className="flex items-center gap-1">
-          <CheckIcon
-            aria-hidden
-            className={cn(
-              'size-3.5',
-              pullRequest.checkState === 'pending' && 'animate-spin',
-              pullRequest.checkState === 'failed' && 'text-severity-error'
-            )}
-          />
+        <span className={cn('flex items-center gap-1', check.colorClass)}>
+          <CheckIcon aria-hidden className={cn('size-3.5', pullRequest.checkState === 'pending' && 'animate-spin')} />
           {check.label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
