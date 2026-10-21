@@ -12,22 +12,26 @@
 // first had even settled. Native `disabled` is now reserved for a genuinely UNSUPPORTED level
 // (`reason !== null`) -- Inherit is never disabled, and a save in flight no longer disables
 // anything natively. Instead: `aria-busy` on the GROUP (informational only, never blocks
-// activation), a local OPTIMISTIC `pendingLevel` so the checked dot moves the instant the user
-// picks (rather than waiting out the write, which can include the unrelated #740 propagation
-// sweep), and latest-pick-wins coalescing -- a second pick made while the first write is still in
-// flight is held and sent once that write settles, rather than starting a second concurrent write
-// or being silently dropped.
+// activation) and a local OPTIMISTIC `pendingLevel` so the checked dot moves the instant the
+// user picks (rather than waiting out the write, which can include the unrelated #740
+// propagation sweep).
 //
-// Gate round 2 fix (High #1, N1): the coalesced write used to hold the FULL `${base}:${level}`
-// value built at PICK time -- if a Select model change for the SAME role was still saving when
-// the level was picked, `base` was the OLD model, so the held write silently reverted a model
-// change that had already landed. The held pick now carries the LEVEL ONLY; `sendHeldLevel`
-// rebuilds the value from `latestRef` (synced on every render, so the settle effect and the
-// unmount flush below both always read the model/value THIS SAME COMMIT just settled on, never a
-// stale closure), re-checks support against that fresh model, and skips the write entirely when
-// the rebuilt value already matches what is already stored (also closes N5's redundant sweep). A
-// held pick that survives to unmount (N2, the Settings section unmounting mid-save) is flushed
-// through the same path rather than silently lost.
+// Gate round 3 fix (Decided Skippy/Stuart 2026-10-21, removes a whole class of bugs rounds 1/2
+// kept patching instead of removing): a radio pick is held ONLY while THIS COMPONENT'S OWN write
+// (`ownWriteInFlightRef`) is in flight -- never while some OTHER save for the same role (a
+// Select model change) is pending. While a model change is saving, a radio pick is REFUSED
+// outright: focus stays, the dot doesn't move, nothing is held, one announcement per save. This
+// removes, at the root rather than by patching each symptom: the held-pick-reverts-a-landed-
+// model-change class (round 2's N1), the drop-and-disable-focus class, the failed-model-save
+// class (a held level landing against the OLD model once an errored save clears), and the wrong
+// "reset to Inherit" drop announcement -- none of these can happen if a pick is never held
+// against a save the radios didn't themselves start. Because a held pick can now ONLY ever be
+// held against the SAME model this component is already showing, `sendHeldLevel` never needs a
+// carryability check: the model cannot have changed out from under the radios' own write. On
+// unmount (the Settings section itself unmounting mid-save, `SettingsScreen.tsx`), any held
+// level is DROPPED -- no write, no announcement; round 2's flush-on-unmount effect is deleted
+// (it was the mechanism that let a stale held level write itself after a Select save had already
+// landed on a different model -- N1/N2's actual root cause).
 import { useEffect, useRef, useState } from 'react'
 import { Loader2Icon } from 'lucide-react'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
@@ -134,73 +138,80 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   // is genuinely "Unknown model".
   const unresolvedModel = hasValue && !catalogEntry && catalogStatus === 'loaded'
 
-  // Gate round 1 fix (High #1), rebuilt gate round 2 (High #1, N1/N2): a local optimistic level
-  // (so the dot moves at once) plus latest-pick-wins coalescing. The held pick now carries the
-  // LEVEL ONLY -- `sendHeldLevel` rebuilds the value to send from `latestRef`, which is kept in
-  // sync on every render (never only inside an effect), so whichever model/value THIS component
-  // last rendered with is what a held pick is checked and built against, never a stale one
-  // captured back when the pick was originally made.
+  // Gate round 1 fix (High #1): a local optimistic level (so the dot moves at once). Gate round
+  // 3 rewrite: `heldLevelRef` only ever holds a pick made while THIS component's own write
+  // (`ownWriteInFlightRef`) is in flight -- never against some other pending save for the same
+  // role, which is refused outright in `pick` below instead of being queued.
   const [pendingLevel, setPendingLevel] = useState<string | null>(null)
-  const pendingWriteRef = useRef<string | null>(null)
+  const heldLevelRef = useRef<string | null>(null)
+  const ownWriteInFlightRef = useRef(false)
   const wasDisabledRef = useRef(disabled)
-  const latestRef = useRef({ base, currentValue, catalogEntry })
-  latestRef.current = { base, currentValue, catalogEntry }
+  const queuedAnnouncedRef = useRef(false)
+  const latestRef = useRef({ base, currentValue })
+  latestRef.current = { base, currentValue }
 
+  // Only ever called to flush a level held against THIS component's OWN write settling -- the
+  // model cannot have changed out from under that write (it is the SAME role, same write), so
+  // unlike round 2's version this never needs a carryability re-check.
   function sendHeldLevel(level: string): void {
-    const { base: latestBase, currentValue: latestCurrentValue, catalogEntry: latestEntry } = latestRef.current
+    const { base: latestBase, currentValue: latestCurrentValue } = latestRef.current
     const built = level === INHERIT_VALUE ? latestBase : `${latestBase}:${level}`
-    if (!isLevelCarryable(level, latestEntry)) {
-      setPendingLevel(null)
-      announcePolite(`${roleLabel} reasoning reset to Inherit`)
-      return
-    }
-    // Gate round 2 fix (N1/N5): the model this role is on may have changed (a Select save that
-    // was still in flight when the level was picked) by the time this held pick is actually sent
-    // -- skip the write entirely when the rebuilt value already matches what is already stored,
-    // rather than firing a redundant (or actively reverting) sweep.
     if (built === (latestCurrentValue ?? '')) {
       setPendingLevel(null)
       return
     }
     setPendingLevel(level)
+    ownWriteInFlightRef.current = true
     onPick(built)
   }
 
   useEffect(() => {
     if (wasDisabledRef.current && !disabled) {
-      const level = pendingWriteRef.current
-      pendingWriteRef.current = null
-      if (level !== null) sendHeldLevel(level)
-      else setPendingLevel(null)
+      // A save just settled. Only flush a held level if it was OUR OWN write that was pending --
+      // if some OTHER save (a Select model change) was pending instead, every pick made during
+      // it was REFUSED outright below, so there is nothing held to flush.
+      if (ownWriteInFlightRef.current) {
+        ownWriteInFlightRef.current = false
+        const level = heldLevelRef.current
+        heldLevelRef.current = null
+        if (level !== null) sendHeldLevel(level)
+        else setPendingLevel(null)
+      }
     }
+    if (!wasDisabledRef.current && disabled) queuedAnnouncedRef.current = false
     wasDisabledRef.current = disabled
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled])
 
-  useEffect(() => {
-    // Gate round 2 fix (N2): a held pick that survives to unmount (the Settings section itself
-    // unmounting mid-save, `SettingsScreen.tsx`) is flushed through the SAME rebuild-and-check
-    // path, rather than the user's own pick silently vanishing.
-    return () => {
-      const level = pendingWriteRef.current
-      pendingWriteRef.current = null
-      if (level !== null) sendHeldLevel(level)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Gate round 3 fix (decision 2): no flush-on-unmount effect. A held level that survives to
+  // unmount (the Settings section itself unmounting mid-save) is simply DROPPED -- no write, no
+  // announcement -- rather than firing after the user has already navigated away.
 
   const currentLevel = pendingLevel ?? storedLevel
 
   function pick(level: string): void {
     if (disabled) {
-      pendingWriteRef.current = level
-      setPendingLevel(level)
-      // Gate round 2 fix (Medium #4): distinct wording from the Select's own "{label} is still
-      // saving" (a DROPPED pick) -- this pick is accepted and QUEUED, not dropped.
-      announcePolite(`${roleLabel} reasoning: your pick will apply when the save finishes`)
+      if (ownWriteInFlightRef.current) {
+        heldLevelRef.current = level
+        setPendingLevel(level)
+        if (!queuedAnnouncedRef.current) {
+          queuedAnnouncedRef.current = true
+          // Gate round 2 fix (Medium #4): distinct wording from the Select's own "{label} is
+          // still saving" (a DROPPED pick) -- this pick is accepted and QUEUED, not dropped.
+          announcePolite(`${roleLabel} reasoning: your pick will apply when the save finishes`)
+        }
+        return
+      }
+      // Gate round 3 fix (decision 1): some OTHER save for this role (a Select model change) is
+      // in flight -- REFUSE outright. Focus stays, the dot doesn't move, nothing is held.
+      if (!queuedAnnouncedRef.current) {
+        queuedAnnouncedRef.current = true
+        announcePolite(`${roleLabel} model is still saving; choose a level when it finishes`)
+      }
       return
     }
     setPendingLevel(level)
+    ownWriteInFlightRef.current = true
     onPick(level === INHERIT_VALUE ? base : `${base}:${level}`)
   }
 
@@ -231,10 +242,14 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   const caption = reasonCaption()
   const captionId = caption ? `${labelId}-reasoning-reason` : undefined
   const reasoningLabelId = `${labelId}-reasoning-label`
-  // Gate round 2 fix (Medium #3): judged against the STORED level, never the (possibly pending,
-  // not yet saved) `currentLevel` -- arrowing to a different level while this one is still in
-  // flight must not make the Auto/Max item disappear before that pick actually lands.
+  // Gate round 2 fix (Medium #3) + gate round 3 fix (decision 4, N-A): rendered while EITHER the
+  // STORED value or the CURRENT (possibly pending) one carries an unknown token -- judging the
+  // stored value alone let the focused item unmount out from under the user the instant a
+  // pending pick to a KNOWN level actually SAVED, since the focused DOM node disappears before
+  // Radix's own roving tabindex has anywhere else to send focus.
   const isStoredUnknownLevel = storedLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(storedLevel)
+  const isCurrentUnknownLevel = currentLevel !== INHERIT_VALUE && !KNOWN_LEVELS.has(currentLevel)
+  const unknownLevelToShow = isStoredUnknownLevel ? storedLevel : isCurrentUnknownLevel ? currentLevel : null
 
   return (
     <>
@@ -263,13 +278,13 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
             pending={disabled && currentLevel === value}
           />
         ))}
-        {isStoredUnknownLevel && (
+        {unknownLevelToShow !== null && (
           <ReasoningRadioItem
-            id={`model-role-${role}-reasoning-${storedLevel}`}
-            value={storedLevel}
-            label={UNKNOWN_LEVEL_LABEL[storedLevel] ?? storedLevel}
+            id={`model-role-${role}-reasoning-${unknownLevelToShow}`}
+            value={unknownLevelToShow}
+            label={UNKNOWN_LEVEL_LABEL[unknownLevelToShow] ?? unknownLevelToShow}
             disabled={false}
-            pending={disabled && currentLevel === storedLevel}
+            pending={disabled && currentLevel === unknownLevelToShow}
           />
         )}
       </RadioGroup>
@@ -311,11 +326,15 @@ function ReasoningRadioItem({
       value={value}
       disabled={disabled}
       className={cn(
-        'min-h-6 w-auto flex-row items-center gap-1.5 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none data-[state=checked]:bg-transparent disabled:cursor-not-allowed disabled:opacity-50',
-        // Gate round 2 fix (Visual Medium #2): `opacity-80` read too close to the disabled
-        // `opacity-50` treatment -- a filled background makes the pending item unmistakable
-        // instead of merely a little less faded.
-        pending && 'rounded bg-accent/70'
+        'min-h-6 w-auto flex-row items-center gap-1.5 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
+        // Gate round 2 fix (Visual Medium #2): a filled background makes the pending item
+        // unmistakable. Gate round 3 fix (Medium #6): the base `data-[state=checked]:bg-
+        // transparent` and a plain `bg-accent/70` have the SAME specificity once checked (the
+        // `[data-state="checked"]` attribute selector always wins a tie against a bare class),
+        // so the fill never drew on a checked (i.e. actually pending) item -- moved to its own
+        // mutually-exclusive `data-[state=checked]:bg-accent/70`, never present alongside the
+        // transparent one on the same element.
+        pending ? 'rounded bg-accent/70 data-[state=checked]:bg-accent/70' : 'data-[state=checked]:bg-transparent'
       )}
     >
       <span aria-hidden className={RADIO_RING_CLASS}>

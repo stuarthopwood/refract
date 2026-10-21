@@ -104,3 +104,32 @@ export async function readRadioState(cdp, role, level) {
     return { exists: true, disabled: el.disabled === true, checked: el.getAttribute('data-state') === 'checked' };
   })()`);
 }
+
+/** Gate round 3 fix (decision 2/3): a level held during the radios' OWN write survives that
+ * write settling, but is DROPPED -- no write, no announcement -- if the Settings section
+ * unmounts mid-save. Picks Medium for Default (starts the radios' own write), waits for it to
+ * be genuinely in flight, holds a SECOND pick (Low) by clicking it mid-save, then leaves the
+ * Model roles section entirely (navigating to Appearance, unmounting `RoleReasoningRadios`)
+ * before that first write even lands -- then navigates back for the caller's own remaining
+ * checks. `assertEqual`/`assertTrue` are passed in (not imported) to avoid a reverse dependency
+ * on the main script, which already imports from this file. */
+export async function runUnmountDropsHeldLevelCase(cdp, findings, failures, debugLogPath, defaultBusyExpr, assertEqual, assertTrue) {
+  const configSetBeforeMediumClick = countConfigSetCalls(debugLogPath);
+  await cdp.click(`document.getElementById('model-role-default-reasoning-medium')`);
+  await cdp.waitFor(defaultBusyExpr, { timeoutMs: 2_000, label: 'Default radiogroup busy: the radios\u2019 OWN Medium write is in flight (unmount case)' });
+  await cdp.click(`document.getElementById('model-role-default-reasoning-low')`);
+  await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Appearance')`);
+  await cdp.waitFor(`!document.getElementById('model-role-default')`, { timeoutMs: 5_000, label: 'Model roles section unmounted (navigated to Appearance mid-save)' });
+  await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5:medium')`, {
+    timeoutMs: 8_000,
+    label: 'The first (own) write -- Medium -- lands normally even after the section unmounts'
+  });
+  const rolesNow = await cdp.evaluate(`window.refract.modelRoles.list().then((r) => (r.ok ? r.value : null))`);
+  assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:medium', 'Gate round 3: unmount drops the HELD level (Low) -- only the first write (Medium) ever lands', findings, failures);
+  const configSetLogAfterUnmount = readFileSync(debugLogPath, 'utf8');
+  assertTrue(!configSetLogAfterUnmount.includes('claude-opus-5.5:low'), 'No stale-model write for the dropped held level (:low) appears in fake-omp-invocations.log', findings, failures);
+  const configSetDuringUnmountCase = countConfigSetCalls(debugLogPath) - configSetBeforeMediumClick;
+  assertEqual(configSetDuringUnmountCase, 1, 'Exactly one config-set call (Medium) landed; the held Low pick never fired a second write after the unmount', findings, failures);
+  await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Model roles')`);
+  await cdp.waitFor(`!!document.getElementById('model-role-default')`, { timeoutMs: 10_000, label: 'Back in Model roles section after the unmount case' });
+}

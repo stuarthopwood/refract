@@ -70,7 +70,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState } from './verify-1069-roles-overhaul-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -388,17 +388,18 @@ async function main() {
       timeoutMs: 5_000,
       label: 'Tab from the trigger reaches the checked Medium radio (never `.focus()`)'
     });
-    // HARNESS FIX (not a product bug -- proven live via `document.activeElement`/`aria-checked`
-    // probes): a zero-latency `keyDown` immediately followed by `keyUp` raced Radix's own
+    // HARNESS FIX: a zero-latency `keyDown` immediately followed by `keyUp` raced Radix's own
     // `isArrowKeyPressedRef` (`@radix-ui/react-radio-group/dist/index.mjs:338-345`, set on
     // keydown/cleared on keyup by a RAW `document.addEventListener`, outside React) against the
     // roving-focus-group's effect-driven focus move + `.click()` (the thing that actually
     // SELECTS, gate round 1) -- the synthetic keyup could clear the flag before that effect ever
     // read it. Proven: one burst left `active` medium -> high -> high (2 of 3 presses lost)
-    // while `checked` never left 'medium'. Real keystrokes always have nonzero keydown-to-keyup
-    // duration; this dispatch did not. Fix: hold each key down until `aria-checked` confirms the
-    // select landed, then release -- still far faster than the fake-omp 600ms write-settle, so
-    // the writes still race and the coalescing assertions below still exercise the same path.
+    // while `checked` never left 'medium'. Holding the key down until `aria-checked` confirms
+    // the select landed, then releasing, is NECESSARY -- but gate round 3 review is right that
+    // it is not SUFFICIENT: a genuine main-thread stall could still in principle lose a Radix
+    // select even with a real, physical keypress (this is upstream of this app, rare in
+    // practice, and the user's own recourse -- pressing Space on the focused item -- recovers it
+    // same as any other missed arrow-key selection would).
     const configSetBeforeArrows = countConfigSetCalls(debugLogPath);
     const arrowSequence = [
       'model-role-default-reasoning-high',
@@ -426,51 +427,48 @@ async function main() {
     assertTrue(configSetDuringArrows >= 1 && configSetDuringArrows <= 2, `At most 2 config-set writes landed for 3 rapid ArrowRight presses, latest-pick-wins coalesced (got ${configSetDuringArrows})`, findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Fable 5', 'Default trigger unchanged after the ArrowRight burst (never the suffix)', findings, failures);
 
-    // ---- N1 regression (gate round 2, High #1): a reasoning-radio pick HELD during a Select
-    // model save must be checked and built against the NEW model once that save lands, never
-    // the stale one captured when the pick was made. Switches to Anthropic (needed to reach
-    // Claude Opus 5.5/Claude Haiku 5.5 in Default's own dropdown), picks a new model, waits for
-    // the radiogroup to be genuinely `aria-busy` (deterministic, not a race), THEN clicks a
-    // level radio while that save is still in flight (the 600ms fake delay above makes this
-    // reliable). Case A: Claude Opus 5.5 supports "High" -- the held pick must land AGAINST
-    // Opus 5.5. Case B: Claude Haiku 5.5 does NOT support "Extra high" -- the held pick must be
-    // DROPPED, leaving the model save alone (Inherit), never silently applied to the wrong
-    // model either way. ----
+    // ---- Gate round 3 fix (decision 1, removes gate round 2's N1 bug class at the root): a
+    // radio pick made while a SELECT model save (never the radios' own write) is in flight is
+    // REFUSED outright -- focus stays, the dot doesn't move, nothing is held. Switches to
+    // Anthropic (needed to reach Claude Opus 5.5 in Default's own dropdown), picks a new model,
+    // waits for the radiogroup to be genuinely `aria-busy` (deterministic, not a race) -- this
+    // busy state belongs to the SELECT's save, not the radios', so clicking "High" here must do
+    // nothing until that model save lands. ----
     await cdp.click(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'Anthropic')`);
     await cdp.waitFor(
       `Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.getAttribute('data-state') === 'on')?.textContent.trim() === 'Anthropic'`,
-      { timeoutMs: 5_000, label: 'Switch moved to Anthropic for the N1 regression' }
+      { timeoutMs: 5_000, label: 'Switch moved to Anthropic for the refuse-while-saving check' }
     );
     const defaultBusy = `document.getElementById('model-role-default-reasoning-inherit')?.closest('[role="radiogroup"]')?.getAttribute('aria-busy') === 'true'`;
-
-    // Case A: Claude Opus 5.5 (reasoning, supports High).
     await cdp.click(`document.getElementById('model-role-default')`);
-    await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Default dropdown opened (N1 case A)' });
+    await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Default dropdown opened (refuse-while-saving check)' });
     await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Opus 5.5'))`);
-    await cdp.waitFor(defaultBusy, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Opus 5.5 model save is in flight (N1 case A)' });
+    await cdp.waitFor(defaultBusy, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Opus 5.5 model save is in flight' });
     await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
+    const highCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-high')?.getAttribute('aria-checked')`);
+    assertEqual(highCheckedWhileRefused, 'false', 'A pick made during a Select model save is refused outright: the dot does not move', findings, failures);
     await shot('04-pending-save-in-row.png');
+    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5')`, {
+      timeoutMs: 8_000,
+      label: 'The Claude Opus 5.5 model save lands bare -- the refused "High" pick never applied'
+    });
+    rolesNow = await readModelRolesViaIpc();
+    assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5', 'Gate round 3: a pick refused during a Select save never changes the stored value -- the model save alone lands, bare', findings, failures);
+    const focusedAfterRefusedPick = await cdp.evaluate(`document.activeElement?.id ?? null`);
+    assertEqual(focusedAfterRefusedPick, 'model-role-default-reasoning-high', 'Focus stays on the radio the user picked, even though the pick itself was refused', findings, failures);
+
+    // Picking the SAME level again now that the Select's save has landed (disabled is false)
+    // works normally -- closes the loop on the refuse-then-retry flow.
+    await cdp.click(`document.getElementById('model-role-default-reasoning-high')`);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-opus-5.5:high')`, {
       timeoutMs: 8_000,
-      label: 'N1 case A: the held "High" pick lands against Claude Opus 5.5 (the NEW model), never the old one'
+      label: 'Picking High again after the model save lands writes normally'
     });
     rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:high', 'N1 regression: a radio pick held during a model save rebuilds against the NEW model once it lands', findings, failures);
-    assertEqual(await readTriggerText(cdp, 'default'), 'Claude Opus 5.5', 'Default trigger shows the new model\u2019s own name after the held pick lands', findings, failures);
+    assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:high', 'Gate round 3: the SAME pick, retried once the save has landed, writes :high against the new model', findings, failures);
+    assertEqual(await readTriggerText(cdp, 'default'), 'Claude Opus 5.5', 'Default trigger shows the new model\u2019s own name after the retried pick lands', findings, failures);
 
-    // Case B: Claude Haiku 5.5 (reasoning, does NOT support Extra high) -- the held pick must be
-    // dropped, leaving the model save alone.
-    await cdp.click(`document.getElementById('model-role-default')`);
-    await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Default dropdown opened (N1 case B)' });
-    await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Haiku 5.5'))`);
-    await cdp.waitFor(defaultBusy, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Haiku 5.5 model save is in flight (N1 case B)' });
-    await cdp.click(`document.getElementById('model-role-default-reasoning-xhigh')`);
-    await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-haiku-5.5')`, {
-      timeoutMs: 8_000,
-      label: 'N1 case B: the held "Extra high" pick is dropped (unsupported by Claude Haiku 5.5); the model save alone lands'
-    });
-    rolesNow = await readModelRolesViaIpc();
-    assertEqual(rolesNow?.default, 'anthropic/claude-haiku-5.5', 'N1 regression: an unsupported held pick is dropped, leaving the new model bare (Inherit)', findings, failures);
+    await runUnmountDropsHeldLevelCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
 
     // Restore GitHub Copilot: Plan's own real model (`:auto`) lives there.
     await cdp.click(`Array.from(document.querySelectorAll('${PROVIDER_SWITCH_SELECTOR} [data-slot="toggle-group-item"]')).find((el) => el.textContent.trim() === 'GitHub Copilot')`);
@@ -494,26 +492,41 @@ async function main() {
     const planAutoAfterCarryOver = await readRadioState(cdp, 'plan', 'auto');
     assertTrue(planAutoAfterCarryOver?.checked === true, 'Plan\u2019s Auto radio is still checked after the model change carries :auto over', findings, failures);
 
-    // ---- Gate round 2, Medium #3: arrowing off a stored Auto/Max level and back keeps it
-    // reachable -- it must not disappear from the roving tabindex just because a DIFFERENT
-    // level is momentarily pending, only once a different level is actually SAVED. ----
+    // ---- Gate round 2, Medium #3 + gate round 3 fix (decision 5, harness): arrowing off a
+    // stored Auto/Max level and back keeps it reachable. Held-key dispatch, same as the Default
+    // burst above -- the original zero-latency keyDown+keyUp here never actually registered a
+    // select at all (confirmed the same way: a fake-omp-invocations.log with no config-set call
+    // for this step before this fix), so neither arrow direction ever really moved anything. The
+    // radiogroup's DOM order is Inherit, Off..Extra high, then Auto last -- ArrowRight from Auto
+    // (the last item) wraps to Inherit (the first); ArrowLeft from there wraps back to Auto. ----
     await cdp.click(`document.getElementById('model-role-plan')`);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
     await cdp.waitFor(`!document.querySelector('[role="listbox"]')`, { timeoutMs: 5_000, label: 'Plan dropdown closed before Tab' });
     await pressKey(cdp, 9, 'Tab', 'Tab');
     await cdp.waitFor(`document.activeElement?.id === 'model-role-plan-reasoning-auto'`, { timeoutMs: 5_000, label: 'Tab from the Plan trigger reaches the checked Auto radio' });
+    const configSetBeforeAutoArrows = countConfigSetCalls(debugLogPath);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
+    await cdp.waitFor(`document.getElementById('model-role-plan-reasoning-inherit')?.getAttribute('aria-checked') === 'true'`, {
+      timeoutMs: 2_000,
+      label: 'ArrowRight off Auto wraps to Inherit (checked) while the key is still down'
+    });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 39, key: 'ArrowRight', code: 'ArrowRight' });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 37, key: 'ArrowLeft', code: 'ArrowLeft' });
+    await cdp.waitFor(`document.getElementById('model-role-plan-reasoning-auto')?.getAttribute('aria-checked') === 'true'`, {
+      timeoutMs: 2_000,
+      label: 'ArrowLeft back to Auto wraps and selects it (checked) while the key is still down'
+    });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 37, key: 'ArrowLeft', code: 'ArrowLeft' });
     const focusedAfterAutoArrowBack = await cdp.evaluate(`document.activeElement?.id ?? null`);
     assertEqual(focusedAfterAutoArrowBack, 'model-role-plan-reasoning-auto', 'Arrowing off Auto (ArrowRight) and back (ArrowLeft) keeps focus reachable on the Auto radio', findings, failures);
     const autoCheckedAfterArrowBack = await cdp.evaluate(`document.getElementById('model-role-plan-reasoning-auto')?.getAttribute('data-state') === 'checked'`);
     assertTrue(autoCheckedAfterArrowBack, 'Auto radio reads checked again immediately after arrowing off and back', findings, failures);
+    const configSetDuringAutoArrows = countConfigSetCalls(debugLogPath) - configSetBeforeAutoArrows;
+    assertTrue(configSetDuringAutoArrows >= 1, `At least one config-set call landed for the arrow-off-and-back (a real write happened, not a harness no-op; got ${configSetDuringAutoArrows})`, findings, failures);
     await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.plan === 'github-copilot/claude-fable-5:auto')`, {
       timeoutMs: 8_000,
-      label: 'Plan settles back on :auto after the rapid arrow-off-and-back (latest pick wins)'
+      label: 'Plan settles back on :auto after the arrow-off-and-back (latest pick wins)'
     });
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.plan, 'github-copilot/claude-fable-5:auto', 'Plan ends on :auto again after arrowing off and back, read via modelRoles.list()', findings, failures);

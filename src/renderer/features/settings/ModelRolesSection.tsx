@@ -383,7 +383,7 @@ export function ModelRolesSection() {
 
     return (
       <div key={role} className="py-3">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-col gap-0.5">
             <label id={labelId} htmlFor={selectId} className="text-sm font-medium">
               {label}
