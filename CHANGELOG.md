@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.8.0 (2026-10-21)
+
+### Features
+
+- feat(chat): Enter sends oldest queued follow-up on a blank composer (#1067) (https://github.com/stuarthopwood/refract/pull/1100)
+- feat(1069): Model roles overhaul -- one provider switch, reasoning-level radios (https://github.com/stuarthopwood/refract/pull/1114)
+- feat(700): Todo and Agents hover/focus cards, Rust taskSummary (Closes #700, Refs #701) (https://github.com/stuarthopwood/refract/pull/1118)
+
+### Fixes
+
+- fix(1101): Git changes panel UI polish (counter, composer inputs, busy state, untracked diff, sticky back) (https://github.com/stuarthopwood/refract/pull/1109)
+- fix(1111): Git changes panel read-path hardening + polish (Closes #1111, Closes #1110) (https://github.com/stuarthopwood/refract/pull/1113)
+
+### Other
+
+- docs(plan): file Git changes panel feedback (#1101, #1102), amend #730 and #1060 (https://github.com/stuarthopwood/refract/pull/1103)
+- App-wide softer text via opacity (#1074) (https://github.com/stuarthopwood/refract/pull/1104)
+- docs(plan): #1113 gate follow-ups (#1115, #1116) (https://github.com/stuarthopwood/refract/pull/1117)
+- docs: place #1119-#1122 in the plan, amend #756's row (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1123)
+- docs: place #1124-#1127 in the plan (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1128)
+- docs: place #1129-#1132 and the #471 amendment in the plan (2026-10-21) (https://github.com/stuarthopwood/refract/pull/1133)
+- docs: record the 2026-10-21 backlog triage and epics #1134-#1137 in the plan (https://github.com/stuarthopwood/refract/pull/1138)
+- docs: record #1085 over #1098, dotted OMP keys (#691) and fold comments in the plan (https://github.com/stuarthopwood/refract/pull/1139)
+- docs: place the OMP 18.12.5 review, #1140 and #1141 in the plan (https://github.com/stuarthopwood/refract/pull/1142)
+- docs: close Phase R in the plan and qualify the Approve Once trap (https://github.com/stuarthopwood/refract/pull/1143)
+- docs: place #1144 and #1145 in the plan (https://github.com/stuarthopwood/refract/pull/1146)
+- docs: record the app-wide whitespace rule (#1144) in components.md and the plan (https://github.com/stuarthopwood/refract/pull/1147)
+- docs: correct the whitespace rule: Button sm icon side is not yet compliant (#1144) (https://github.com/stuarthopwood/refract/pull/1148)
+- docs: place #1149 and record the quiet placeholder contrast departure (https://github.com/stuarthopwood/refract/pull/1150)
+- docs(plan): #1069 and #700 slice (b) done, file #1151 follow-ups (https://github.com/stuarthopwood/refract/pull/1152)
+
 ## v0.7.0 (2026-10-20)
 
 ### Features
