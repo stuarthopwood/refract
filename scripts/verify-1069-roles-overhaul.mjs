@@ -70,7 +70,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, makeScratchRepo, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget, assertExeUnchanged } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim, launchBuiltExeWithEnv } from './verify-941-stage-naming-helpers.mjs';
 import { addRepository, pressKey } from './verify-tauri-session-list-helpers.mjs';
-import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase } from './verify-1069-roles-overhaul-helpers.mjs';
+import { PROVIDER_SWITCH_SELECTOR, keyboardSwitchProviderTo, readReasonCaption, countConfigSetCalls, readProviderSegments, readTriggerText, readDropdownItemTexts, readRadioState, runUnmountDropsHeldLevelCase, runFocusRecoveryOnUnsupportedTransitionCase } from './verify-1069-roles-overhaul-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -465,7 +465,7 @@ async function main() {
     rolesNow = await readModelRolesViaIpc();
     assertEqual(rolesNow?.default, 'anthropic/claude-opus-5.5:high', 'Gate round 3: the SAME pick, retried once the save has landed, writes :high against the new model', findings, failures);
     assertEqual(await readTriggerText(cdp, 'default'), 'Claude Opus 5.5', 'Default trigger shows the new model\u2019s own name after the retried pick lands', findings, failures);
-
+    await runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
     await runUnmountDropsHeldLevelCase(cdp, findings, failures, debugLogPath, defaultBusy, assertEqual, assertTrue);
 
     // Restore GitHub Copilot: Plan's own real model (`:auto`) lives there.

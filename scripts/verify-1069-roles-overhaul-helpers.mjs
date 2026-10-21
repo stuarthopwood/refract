@@ -133,3 +133,37 @@ export async function runUnmountDropsHeldLevelCase(cdp, findings, failures, debu
   await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Model roles')`);
   await cdp.waitFor(`!!document.getElementById('model-role-default')`, { timeoutMs: 10_000, label: 'Back in Model roles section after the unmount case' });
 }
+
+/** Fix (Main, post-review of gate round 3): a REFUSED click still focuses the radio it hit, even
+ * though no state changes. If that level is supported by the OLD model but NOT the new one once
+ * the Select's save lands, the focused item goes from enabled to natively disabled, and a naive
+ * implementation lets the browser blur it to `<body>` (WCAG 2.4.3). Switches Default to Claude
+ * Haiku 5.5 (thinking: minimal, low only -- no Extra high), clicks Extra high while the OLD model
+ * (Opus 5.5, which DOES support it) is still showing, so the click is refused but still focuses
+ * it; once Haiku lands, Extra high is natively disabled and focus must have already moved to the
+ * checked item (Inherit, since High isn't carryable to Haiku either), never `<body>`. */
+export async function runFocusRecoveryOnUnsupportedTransitionCase(cdp, findings, failures, debugLogPath, defaultBusyExpr, assertEqual, assertTrue) {
+  const configSetBeforeHaikuSwitch = countConfigSetCalls(debugLogPath);
+  await cdp.click(`document.getElementById('model-role-default')`);
+  await cdp.waitFor(`!!document.querySelector('[role="listbox"]')`, { timeoutMs: 10_000, label: 'Default dropdown opened (unsupported-transition focus check)' });
+  await cdp.click(`Array.from(document.querySelectorAll('[role="option"]')).find((el) => el.textContent.includes('Claude Haiku 5.5'))`);
+  await cdp.waitFor(defaultBusyExpr, { timeoutMs: 2_000, label: 'Default radiogroup busy: the Claude Haiku 5.5 model save is in flight (unsupported-transition check)' });
+  await cdp.click(`document.getElementById('model-role-default-reasoning-xhigh')`);
+  const xhighCheckedWhileRefused = await cdp.evaluate(`document.getElementById('model-role-default-reasoning-xhigh')?.getAttribute('aria-checked')`);
+  assertEqual(xhighCheckedWhileRefused, 'false', 'A pick made during the Haiku save is refused too: the dot does not move', findings, failures);
+  await cdp.waitFor(`window.refract.modelRoles.list().then((r) => r.ok && r.value.default === 'anthropic/claude-haiku-5.5')`, {
+    timeoutMs: 8_000,
+    label: 'The Claude Haiku 5.5 model save lands bare (High is not carryable) -- the refused Extra high pick never applied'
+  });
+  const focusedAfterUnsupportedTransition = await cdp.evaluate(`document.activeElement?.id ?? null`);
+  assertEqual(
+    focusedAfterUnsupportedTransition,
+    'model-role-default-reasoning-inherit',
+    'Focus moves to the checked Inherit radio, never <body>, once the focused item (Extra high) goes natively disabled under the new model',
+    findings,
+    failures
+  );
+  const logAfterHaikuSwitch = readFileSync(debugLogPath, 'utf8');
+  assertTrue(!logAfterHaikuSwitch.includes('claude-haiku-5.5:xhigh'), 'No :xhigh write for Claude Haiku 5.5 appears in fake-omp-invocations.log -- the refused pick never reached the backend', findings, failures);
+  assertEqual(countConfigSetCalls(debugLogPath) - configSetBeforeHaikuSwitch, 1, 'Exactly one config-set call (the Haiku model switch) landed; the refused Extra high pick fired no write', findings, failures);
+}

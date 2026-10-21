@@ -32,7 +32,7 @@
 // level is DROPPED -- no write, no announcement; round 2's flush-on-unmount effect is deleted
 // (it was the mechanism that let a stale held level write itself after a Select save had already
 // landed on a different model -- N1/N2's actual root cause).
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Loader2Icon } from 'lucide-react'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
@@ -188,6 +188,24 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
   // announcement -- rather than firing after the user has already navigated away.
 
   const currentLevel = pendingLevel ?? storedLevel
+
+  // Gate round 3 fix (Main, post-review): a REFUSED pick still focuses the radio the user
+  // clicked (native button click behaviour) even though no state changes -- if that level is
+  // supported by the OLD model but not the NEW one once a Select model save lands, the focused
+  // item goes from enabled to natively `disabled`, and the browser blurs a disabled element to
+  // `<body>` synchronously, as part of React applying that attribute. A layout effect (runs
+  // after every commit, still before paint) can't stop that blur, but moves focus back to the
+  // group's own CHECKED item (always enabled by definition) before the user perceives it,
+  // falling back to Inherit (never disabled) on the rare chance even that fails.
+  useLayoutEffect(() => {
+    const active = document.activeElement
+    if (!(active instanceof HTMLButtonElement)) return
+    if (!active.id.startsWith(`model-role-${role}-reasoning-`)) return
+    if (!active.disabled) return
+    const checkedEl = document.getElementById(`model-role-${role}-reasoning-${currentLevel}`)
+    if (checkedEl instanceof HTMLButtonElement && !checkedEl.disabled) checkedEl.focus()
+    else document.getElementById(`model-role-${role}-reasoning-inherit`)?.focus()
+  })
 
   function pick(level: string): void {
     if (disabled) {
