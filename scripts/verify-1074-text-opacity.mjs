@@ -105,7 +105,8 @@ import {
   capturePngBase64,
   decodePixelRegion,
   brightestPixel,
-  scrollTranscriptToShow
+  scrollTranscriptToShow,
+  assertJourneyLabelsSolid
 } from './verify-1074-text-opacity-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -131,29 +132,6 @@ const ALPHA_EPSILON = 0.01;
 // chat prose actually sits inside -- `userBubbleContrastRows`' own bubble math, below). Now that
 // the prediction composites over that real bubble fill, 4 is font antialiasing/hinting slack only.
 const PIXEL_TOLERANCE = 4; // per sRGB byte channel, 0-255.
-// `taskTextColor` per theme (`src/shared/mermaidThemeData.ts`) -- Journey/Gantt's own "solid on
-// a coloured task-bar fill" FR-023 exception token. Hardcoded here, not imported, the same way
-// verify-1039-amber-retune.mjs's own `MERMAID_NODE_TEXT` is (no cross-file TS import from a
-// plain .mjs script). Gate round 3 fix (Main, #1074 follow-up, item 1): Mermaid's own per-mount
-// stylesheet scoping re-serializes every colour value in our custom `themeCSS` string to
-// `rgb(r, g, b)` notation before embedding it (confirmed live: a real decoded Journey SVG), so
-// the real check below converts this hex literal to that form first, rather than searching for
-// the hex text verbatim (which never matches post-scoping).
-const JOURNEY_TASK_TEXT_COLOUR = {
-  dark: '#fafafa',
-  'dark-high-contrast': '#ffffff',
-  obsidian: '#F8FAFC',
-  'nordic-frost': '#eff7fb',
-  'cyber-amber': '#fafafa'
-};
-function hexToRgbString(hex) {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 function spawnSync_(cmd, args) {
   return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
 }
@@ -426,59 +404,12 @@ async function main() {
           }
         }
 
-        // ---- Journey diagram labels stay solid (gate round 3 fix, Main's follow-up, item 1):
-        // the fixture's second mermaid fence (`997-notice-severity.jsonl`, extended this round)
-        // renders a Journey diagram; its task/section labels render via Mermaid's own default
-        // foreignObject path (confirmed by reading node_modules/mermaid's own journeyDiagram
-        // source directly -- see mermaidTheme.ts's own comment on the fix), so the embedded
-        // `<style>` block this file's getMermaidThemeCSS generates is what actually governs
-        // them. Journey's own task/section fills (`fillType0`-`fillType7`) are fixed literal
-        // hex values (NOT derived from `primaryColor`/`secondaryColor` -- see that interface
-        // comment's own correction), so the expected colour below is this theme's own solid
-        // `taskTextColor` literal, not a computed one.
-        // Narrowed (gate round 3, Test review: evidence-honesty HIGH) to match the actual CSS
-        // RULE TEXT this file's own sibling-selector override emits -- `.task~switch
-        // .label{color:rgb(...)` -- not merely "this rgb string appears somewhere in the SVG",
-        // which could coincidentally match an unrelated element. Gate-fix (live debug, prior
-        // run): Mermaid's own per-mount stylesheet scoping re-serializes every colour value to
-        // `rgb(r, g, b)` notation and strips the space around `~` (confirmed live: a real
-        // decoded SVG showed the exact rule `.task~switch .label{color:rgb(250, 250, 250)
-        // !important}` for Dark's `#fafafa`) -- searching for the plain hex literal verbatim,
-        // as the gitGraph/flowchart checks elsewhere in this file do against THEIR OWN
-        // already-hex `themeVariables` strings, never matches here; this one checks the
-        // narrowed `rgb()` rule-text form instead.
-        // Dark (high contrast) CANNOT be discriminated by this assertion: FR-023's "stays
-        // solid" exception means its own `textColor` and `taskTextColor` are both the
-        // identical literal `#ffffff`, so the expected rule text is present whether the
-        // sibling-selector override fired or Mermaid's unmodified default `.label` rule simply
-        // matched by coincidence -- handled explicitly below, not claimed as proof there.
-        // Timeline shares the identical renderer code path (its own `textPlacement` also
-        // defaults to `'fo'`, and its svgDraw source emits the identical `task`/
-        // `journey-section` class names -- confirmed by reading node_modules/mermaid's own
-        // timeline-definition source directly), so this selector likely reaches it too -- NOT
-        // separately verified: this fixture has no Timeline fence, and #1108's scope stays
-        // Gantt-only, so Timeline coverage here is an inferred likelihood, not a proven fact.
-        // ----
-        const mermaidImgs = await cdp.evaluate(`Array.from(document.querySelectorAll('img[role="img"]')).map((el) => el.getAttribute('src'))`);
-        if (!Array.isArray(mermaidImgs) || mermaidImgs.length < 2 || !mermaidImgs[1]) {
-          failures.push(`${theme.name}: expected 2 real rendered Mermaid diagrams (flowchart then journey), found ${Array.isArray(mermaidImgs) ? mermaidImgs.length : 0}.`);
-        } else {
-          const journeySrc = mermaidImgs[1];
-          if (!journeySrc.startsWith('data:image/svg+xml')) {
-            failures.push(`${theme.name}: second Mermaid diagram (journey) has no real data: URI src (got ${JSON.stringify(journeySrc)}).`);
-          } else {
-            const journeySvgText = decodeURIComponent(journeySrc.slice(journeySrc.indexOf(',') + 1));
-            const expectedTaskRgb = hexToRgbString(JOURNEY_TASK_TEXT_COLOUR[theme.id]);
-            const expectedRule = `.task~switch .label{color:${expectedTaskRgb}`;
-            if (!journeySvgText.includes(expectedRule)) {
-              failures.push(`${theme.name}: real rendered Journey SVG is missing the narrow rule \`${expectedRule}\` -- labels may still be using the softened textColor, or the selector/declaration format drifted from the confirmed-live shape.`);
-            } else if (theme.id === 'dark-high-contrast') {
-              findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- but this theme's own \`textColor\`/\`taskTextColor\` are BOTH the identical solid #ffffff (FR-023's "stays solid" exception), so this assertion cannot discriminate whether the sibling-selector override actually fired here or Mermaid's unmodified default \`.label\` rule already matched by coincidence -- not meaningful live proof for this one theme.`);
-            } else {
-              findings.push(`${theme.name}: real rendered Journey SVG contains the exact rule \`${expectedRule}\` -- task/section labels stay solid on their coloured fillType fill, proving the override genuinely fired, not merely a coincidental default match.`);
-            }
-          }
-        }
+        // Journey diagram labels stay solid (gate round 3 fix, Main's follow-up, item 1; split
+        // out to `assertJourneyLabelsSolid` in `verify-1074-text-opacity-helpers.mjs` -- see
+        // its own doc comment for the full citation chain: fixture provenance, the fixed
+        // literal `fillType0-7` fills, the narrowed CSS-rule-text match, the Dark-HC
+        // can't-discriminate caveat, and Timeline's unverified-but-likely coverage).
+        await assertJourneyLabelsSolid(cdp, theme, findings, failures);
 
         // Journey diagram screenshot (Main's request, this round): scrolls the second
         // rendered Mermaid diagram (the Journey fence) into view and captures it directly, so
