@@ -437,21 +437,19 @@ async function main() {
     await cdp.clickByText('Create session', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Session B dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
-    // Creating Session B does NOT switch the pane to it (`split-store.ts`'s own `create` path
-    // never calls `replaceFocused`/`openInSplit` here -- confirmed live: the sole pane stayed
-    // Session A). Opening Session A's own row menu and picking "Open in split" there would be a
-    // documented no-op (`targetSession`'s `existing === sessionId` early-return, `split-store.ts`
-    // line ~167, research.md Decision 7: "already the focused pane"), so Session B's own row is
-    // the one to target -- the one NOT already the sole open pane -- which correctly places it in
-    // the unfocused slot alongside A.
+    // Creating Session B does NOT switch the pane to it SYNCHRONOUSLY -- confirmed live the sole
+    // pane stays Session A right after this wait -- but a DEFERRED focus-switch to B (once the
+    // backend fully registers the new session) races with everything after this point: by the
+    // time a later click actually runs, the sole pane has sometimes already flipped to B. Opening
+    // the row whose session is ALREADY the sole pane via "Open in split" is a documented no-op
+    // (`targetSession`'s `existing === sessionId` early-return, `split-store.ts` line ~167,
+    // research.md Decision 7: "already the focused pane") -- so this reads the CURRENT sole pane
+    // right before acting and always targets the OTHER session, whichever way that race landed.
     const sessionIdB = await cdp.evaluate(`(() => { const ids = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open')); return ids.find((id) => id !== ${JSON.stringify(sessionIdA)}) ?? null; })()`);
     assertTrue(typeof sessionIdB === 'string' && sessionIdB.length > 0 && sessionIdB !== sessionIdA, 'Session B\'s own id read from its row (distinct from Session A)', { sessionIdA, sessionIdB });
-    const panesBefore = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    await openSessionInSplitViaMenu(cdp, sessionIdB);
-    const panesImmediatelyAfter = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    await sleep(300);
-    const panesAfter300ms = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'))`);
-    console.error(`${LOG}: DIAG panes before/immediately-after/300ms-after Open-in-split menu click:`, JSON.stringify({ sessionIdA, sessionIdB, panesBefore, panesImmediatelyAfter, panesAfter300ms }));
+    const currentPaneId = await cdp.evaluate(`document.querySelector('[data-session-pane]')?.getAttribute('data-session-pane') ?? null`);
+    const sessionToSplit = currentPaneId === sessionIdA ? sessionIdB : sessionIdA;
+    await openSessionInSplitViaMenu(cdp, sessionToSplit);
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
     // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
     // window's own total width -- one measured correction pass against an arbitrary starting
