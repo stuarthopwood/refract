@@ -92,6 +92,16 @@ export function GitChangesFileRow({
   // (#1076 MEDIUM b, UI review): gated on the action's own directly-returned result -- a FAILED
   // stage/unstage must never move focus away from the control the developer just activated
   // (the kebab item stays in place, same as the group's own bulk-action already did).
+  // #1111 gate round 2 MEDIUM 7: a failed stage/unstage's own round trip can take long enough
+  // that the developer has ALREADY moved focus elsewhere (e.g. typing in the Commit subject
+  // field) by the time it settles -- unconditionally refocusing the kebab here would steal it
+  // back. Only restores focus if it's still sitting on `<body>` (nothing else claimed it) or
+  // already on this SAME kebab trigger (a no-op either way).
+  function restoreKebabFocusIfStillOwed(): void {
+    const active = document.activeElement
+    if (active === document.body || active === kebabTriggerRef.current) kebabTriggerRef.current?.focus()
+  }
+
   async function handleStage(): Promise<void> {
     if (actionPending) return
     setActionPending(true)
@@ -110,7 +120,7 @@ export function GitChangesFileRow({
         // Radix's own close-autofocus (which now succeeds too, since the trigger below is
         // never natively `disabled` anymore, but this is the belt-and-braces restore the fix
         // calls for).
-        kebabTriggerRef.current?.focus()
+        restoreKebabFocusIfStillOwed()
       }
     } finally {
       setActionPending(false)
@@ -127,7 +137,7 @@ export function GitChangesFileRow({
         useChatAreaAnnouncer.getState().announce(`Unstaged ${fileName}`)
         if (!focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
       } else {
-        kebabTriggerRef.current?.focus()
+        restoreKebabFocusIfStillOwed()
       }
     } finally {
       setActionPending(false)
@@ -185,15 +195,19 @@ export function GitChangesFileRow({
             // -- both this control's own close-autofocus AND the explicit restores above used
             // to land on a disabled, unfocusable button and fall through to `<body>` (a WCAG
             // 2.4.3 regression this comment used to wrongly claim never happened). Fixed: the
-            // trigger stays natively focusable always; `onKeyDown`/`onPointerDown` below call
-            // `preventDefault()` while pending instead, which Radix's own `composeEventHandlers`
-            // honours by skipping its internal toggle on a default-prevented event -- so the
-            // menu still never opens mid-flight, without ever disabling the element itself.
+            // trigger stays natively focusable always; `onKeyDown` below calls
+            // `preventDefault()` on only the keys Radix itself treats as "activate/open this
+            // trigger" (Enter, Space, ArrowDown, ArrowUp) while pending, which Radix's own
+            // `composeEventHandlers` honours by skipping its internal toggle on a
+            // default-prevented event -- so the menu still never opens mid-flight, without ever
+            // disabling the element itself. Gate round 2 HIGH 4 fix: the round-1 version called
+            // `preventDefault()` on EVERY key while pending, including Tab/Shift+Tab -- a WCAG
+            // 2.1.2 keyboard trap (focus could never leave this control by keyboard while a
+            // stage/unstage was in flight). No `onPointerDown` guard is needed: `aria-disabled:
+            // pointer-events-none` in the className below already stops the browser from
+            // dispatching any pointer event to this element at all while pending.
             onKeyDown={(event) => {
-              if (actionPending) event.preventDefault()
-            }}
-            onPointerDown={(event) => {
-              if (actionPending) event.preventDefault()
+              if (actionPending && (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp')) event.preventDefault()
             }}
             className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 aria-expanded:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
           >

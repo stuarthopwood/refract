@@ -13,7 +13,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2Icon, MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -127,11 +126,12 @@ export function GitChangesGroup({
                   aria-disabled={bulkPending || undefined}
                   // Low item (#1111): `aria-disabled:opacity-50` -- every other busy control in
                   // this panel dims while pending (`GitChangesFileRow.tsx`'s kebab trigger, the
-                  // Commit button); this one didn't.
-                  className={cn(
-                    'shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50',
-                    bulkPending && 'opacity-100'
-                  )}
+                  // Commit button); this one didn't. Gate round 2 LOW: the conditional
+                  // `bulkPending && 'opacity-100'` class this file used to also carry here was
+                  // dead weight -- `aria-disabled:opacity-50`'s own attribute-selector
+                  // specificity always wins over a plain `.opacity-100` class regardless of
+                  // source order, so it never had any visual effect.
+                  className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:pointer-events-none aria-disabled:opacity-50"
                   onClick={() => void runBulkAction()}
                 >
                   {bulkPending ? <Loader2Icon aria-hidden className="size-3.5 animate-spin" /> : <bulk.icon aria-hidden className="size-3.5" />}

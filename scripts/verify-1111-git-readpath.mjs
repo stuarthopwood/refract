@@ -18,13 +18,23 @@
 //
 // Checks:
 //   A. An escaping JUNCTION in a PARENT folder (not a leaf symlink -- `verify-1101-git-polish.mjs`
-//      Check 4b already covers that) is refused the same way, never read through.
+//      Check 4b already covers that) is refused the same way, never read through; its own badge
+//      scores 0 additions (#1110 evidence: the escape is never read to produce a real count).
+//   A2. An IN-WORKTREE (never escaping) symlink's diff shows ONLY its own target text, never the
+//      target file's real content, and its badge scores exactly +1 (gate round 2 HIGH 1: the
+//      symlink branch that round-1 never actually reached).
 //   B. A binary untracked file's diff shows "Binary file", never the indistinguishable "No
 //      changes" fallback.
+//   B2. A non-ASCII-named untracked file (`café.txt`) still shows its real content (gate round 2
+//      HIGH 2: `confirm_untracked`'s own `-z` fix for git's default C-quoting).
+//   B3. An untracked PNG shows "Image file" (gate round 2 HIGH 3).
 //   C. A long diff grows no window-level scrollbar (horizontal or vertical) -- the `.diff-view`
 //      CSS containment fix.
 //   D. A stage forced to fail (a real `index.lock` collision, not a deleted file racing the
-//      watcher) leaves focus on the SAME row's kebab trigger, never `<body>`.
+//      watcher) leaves focus on the SAME row's kebab trigger, never `<body>` -- driven entirely
+//      by the keyboard (Enter opens the menu, Enter selects Stage), with a genuine keyboard-trap
+//      check: Tab, while the stage is still pending, moves focus OFF the kebab (gate round 2
+//      HIGH 4's own fix, proven live, not just read from source).
 //   E. (Destructive to this Session's own git linkage -- run LAST.) `.git` as a Windows 8.3 short
 //      name (`GIT~1/config`) is refused post-resolution, never just as the raw typed token.
 //      Requires `.git` to be a real DIRECTORY (an attached worktree's own `.git` is always a
@@ -52,8 +62,8 @@ import {
   citeScreenshots,
   computeDirty
 } from './verify-tauri-scratch-helpers.mjs';
-import { addRepository } from './verify-tauri-session-list-helpers.mjs';
-import { commitRepoBaseline, SUBJECT_FINDER, assertEqual, fileRowActionsFinder } from './verify-464-git-changes-helpers.mjs';
+import { addRepository, pressTab } from './verify-tauri-session-list-helpers.mjs';
+import { commitRepoBaseline, SUBJECT_FINDER, assertEqual, fileRowActionsFinder, readRowDiffStatAccessibleText } from './verify-464-git-changes-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -63,8 +73,15 @@ const SHOTS_DIR =
 
 const BINARY_FILE = 'untracked-binary-for-verify-1111.bin';
 const LONG_DIFF_FILE = 'untracked-long-diff-for-verify-1111.txt';
-const LONG_DIFF_LINE_COUNT = 400;
 const FAIL_STAGE_FILE = 'untracked-fail-stage-for-verify-1111.txt';
+const SYMLINK_TARGET_FILE = 'untracked-symlink-target-for-verify-1111.txt';
+const SYMLINK_TARGET_CONTENT = 'target file content -- must NEVER appear in the symlink row\'s own diff, verify-1111\n';
+const SYMLINK_NAME = 'untracked-symlink-for-verify-1111.txt';
+const NON_ASCII_FILE = 'caf\u00e9-for-verify-1111.txt';
+const NON_ASCII_CONTENT = 'content for the non-ASCII-named untracked file, verify-1111\n';
+const PNG_FILE = 'untracked-image-for-verify-1111.png';
+const UNTRACKED_FIXTURE_COUNT = 7; // binary, long-diff, fail-stage, symlink target, symlink, non-ASCII, PNG
+const LONG_DIFF_LINE_COUNT = 400;
 const JUNCTION_NAME = 'escaping-junction-for-verify-1111';
 const JUNCTION_SECRET_FILE = 'secret.txt';
 const JUNCTION_SECRET_MARKER = 'OUTSIDE-WORKTREE-JUNCTION-SECRET-MUST-NEVER-LEAK-1111';
@@ -77,6 +94,19 @@ async function settleForScreenshot(cdp) {
   await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
   await cdp.waitFor(`document.querySelectorAll('[role="tooltip"]').length === 0`, { timeoutMs: 5_000, label: 'No stray tooltip before screenshot' });
   await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'No stray open menu before screenshot' });
+}
+
+/** Opens the diff for one untracked row (by its own filename span) via a real click, returning
+ * its full `.diff-view` textContent. */
+async function openUntrackedDiff(cdp, fileName) {
+  await cdp.click(`Array.from(document.querySelectorAll('span[title=${JSON.stringify(fileName)}]')).map((el) => el.closest('button')).find(Boolean)`);
+  await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: `Diff view rendered for ${fileName}` });
+  return cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
+}
+
+async function backToChanges(cdp, label) {
+  await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
+  await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label });
 }
 
 async function main() {
@@ -96,7 +126,10 @@ async function main() {
     screenshotNames.push(name);
   }
 
-  const dirty = computeDirty(REPO_ROOT);
+  // #1111 gate round 2 LOW: `dirty` is computed FRESH at each point it's actually reported (the
+  // console log line below, and each `report.json` write) rather than cached once here before
+  // the build/live-check run even starts -- a script run takes minutes, long enough for the
+  // repo's own dirty state to genuinely change mid-run.
 
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-data-'));
@@ -107,8 +140,7 @@ async function main() {
     mkdirSync(SHOTS_DIR, { recursive: true });
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
-    console.log(`verify-1111: git HEAD ${gitHeadSha}${dirty ? ' (DIRTY)' : ''}`);
-    console.log(`verify-1111: shots dir ${SHOTS_DIR}`);
+    console.log(`verify-1111: git HEAD ${gitHeadSha}${computeDirty(REPO_ROOT) ? ' (DIRTY)' : ''}`);
 
     commitRepoBaseline(repoDir);
 
@@ -160,14 +192,20 @@ async function main() {
       `${Array.from({ length: LONG_DIFF_LINE_COUNT }, (_, i) => `line ${i + 1} of a long diff for verify-1111, padded to force real wrapping and scroll height`).join('\n')}\n`
     );
     writeFileSync(path.join(worktreePath, FAIL_STAGE_FILE), 'content for the forced-stage-failure fixture, verify-1111\n');
-    findings.push(`Fixtures built: ${BINARY_FILE} (binary), ${LONG_DIFF_FILE} (${LONG_DIFF_LINE_COUNT} lines), ${FAIL_STAGE_FILE}.`);
+    writeFileSync(path.join(worktreePath, SYMLINK_TARGET_FILE), SYMLINK_TARGET_CONTENT);
+    symlinkSync(path.join(worktreePath, SYMLINK_TARGET_FILE), path.join(worktreePath, SYMLINK_NAME), 'file');
+    writeFileSync(path.join(worktreePath, NON_ASCII_FILE), NON_ASCII_CONTENT);
+    // Minimal PNG: `read_preview.rs::sniff_image_mime_type` only ever inspects the leading
+    // 8-byte signature for PNG, so this is deliberately not a real, fully-decodable image.
+    writeFileSync(path.join(worktreePath, PNG_FILE), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]));
+    findings.push(`Fixtures built: ${BINARY_FILE} (binary), ${LONG_DIFF_FILE} (${LONG_DIFF_LINE_COUNT} lines), ${FAIL_STAGE_FILE}, ${SYMLINK_TARGET_FILE} + ${SYMLINK_NAME} (in-worktree symlink), ${NON_ASCII_FILE} (non-ASCII name), ${PNG_FILE} (PNG).`);
 
     // ---- Open the Git changes panel. ----
     await cdp.click(`document.querySelector('[data-rail-button="git-changes"]')`);
     await cdp.waitFor(`!!(${SUBJECT_FINDER})`, { timeoutMs: 20_000, label: 'Git changes panel loaded (commit box rendered)' });
     await cdp.waitFor(
-      `(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Untracked, ')); return !!b && b.getAttribute('aria-label') === 'Untracked, 3'; })()`,
-      { timeoutMs: 20_000, label: 'Untracked group shows all three fixture files' }
+      `(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((el) => (el.getAttribute('aria-label')||'').startsWith('Untracked, ')); return !!b && b.getAttribute('aria-label') === ${JSON.stringify(`Untracked, ${UNTRACKED_FIXTURE_COUNT}`)}; })()`,
+      { timeoutMs: 20_000, label: `Untracked group shows all ${UNTRACKED_FIXTURE_COUNT} fixture entries` }
     );
     await shot('01-initial-panel.png');
 
@@ -177,8 +215,8 @@ async function main() {
     // real-IPC-bridge precedent that check and `runContainmentRefusalCheck` already use): git's
     // own untracked-file walk does not recognise a junction's own reparse tag as a symlink, so it
     // recurses straight through it and reports the secret file inside as an ordinary untracked
-    // path -- exactly the shape `untracked_file_patch`'s own `resolve_in_worktree` call must
-    // still catch and refuse.
+    // path -- exactly the shape `untracked_file_patch`'s own resolver must still catch and
+    // refuse.
     // =========================================================================================
     const outsideJunctionDir = mkdtempSync(path.join(tmpdir(), 'refract-1111-outside-junction-'));
     writeFileSync(path.join(outsideJunctionDir, JUNCTION_SECRET_FILE), `${JUNCTION_SECRET_MARKER}\n`);
@@ -189,6 +227,11 @@ async function main() {
       `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); return !!ul && Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(junctionRelPath)}); })()`,
       { timeoutMs: 15_000, label: 'File inside the escaping junction rendered as its own Untracked row (proves git walked straight through the junction)' }
     );
+    // #1111 gate round 2 MEDIUM 11 (#1110 evidence): the row's own badge, scored by
+    // `changes_score.rs::score_untracked_file`, must read 0 additions -- the escape is refused
+    // before anything is ever read to produce a real line count.
+    const junctionBadge = await readRowDiffStatAccessibleText(cdp, 'Untracked', junctionRelPath);
+    assertEqual(junctionBadge, '0 additions, 0 deletions', "The escaping junction's own row badge scores 0 additions (never read to produce a real count)", findings, failures);
     const junctionDiffAttempt = await cdp.evaluate(
       `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(junctionRelPath)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message, patch: r.ok ? r.value.patch : null }))`
     );
@@ -206,66 +249,128 @@ async function main() {
     );
 
     // =========================================================================================
+    // Check A2 (#1111 gate round 2 HIGH 1): an IN-WORKTREE symlink -- never escaping, so
+    // containment alone would happily allow reading through it -- still renders ONLY its own
+    // target text, never the target file's real content, and its own badge scores exactly +1
+    // (git's own view: an untracked symlink's blob IS its target string, one line). This is the
+    // exact branch round 1's own `resolve_in_worktree`-then-`symlink_metadata` combination could
+    // never reach (that function's own walk already resolves THROUGH the symlink, so its result
+    // is never itself a link) -- fixed by resolving only the PARENT and classifying the
+    // (never-resolved) leaf directly.
+    // =========================================================================================
+    const symlinkBadge = await readRowDiffStatAccessibleText(cdp, 'Untracked', SYMLINK_NAME);
+    assertEqual(symlinkBadge, '1 addition, 0 deletions', "The in-worktree symlink's own row badge scores exactly +1 (git's own view: its target string is one line)", findings, failures);
+    const symlinkDiffText = await openUntrackedDiff(cdp, SYMLINK_NAME);
+    const symlinkShowsTargetPath = Boolean(symlinkDiffText && symlinkDiffText.replaceAll('\\', '/').includes(SYMLINK_TARGET_FILE));
+    assertEqual(symlinkShowsTargetPath, true, `The in-worktree symlink's diff shows its own target path (got ${JSON.stringify(symlinkDiffText)})`, findings, failures);
+    const symlinkLeakedTargetContent = Boolean(symlinkDiffText && symlinkDiffText.includes(SYMLINK_TARGET_CONTENT.trim()));
+    if (symlinkLeakedTargetContent) failures.push(`The in-worktree symlink's diff read THROUGH to its target file's real content -- must never happen: ${JSON.stringify(symlinkDiffText)}`);
+    else findings.push("The in-worktree symlink's diff never reads through to its target file's real content: confirmed absent.");
+    await shot('02-in-worktree-symlink-target-text.png');
+    await backToChanges(cdp, 'Back to changes after the in-worktree symlink check');
+
+    // =========================================================================================
     // Check B (#1111 item 5): a binary untracked file's diff names the reason instead of the
     // indistinguishable "No changes" fallback.
     // =========================================================================================
-    await cdp.click(`Array.from(document.querySelectorAll('span[title=${JSON.stringify(BINARY_FILE)}]')).map((el) => el.closest('button')).find(Boolean)`);
-    await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the binary untracked file' });
-    const binaryDiffText = await cdp.evaluate(`document.querySelector('.diff-view')?.textContent ?? null`);
+    const binaryDiffText = await openUntrackedDiff(cdp, BINARY_FILE);
     assertEqual(binaryDiffText?.includes('Binary file') ?? false, true, `Binary untracked file's diff shows "Binary file" (got ${JSON.stringify(binaryDiffText)})`, findings, failures);
     const binaryFallsBackToNoChanges = binaryDiffText?.includes('No changes') ?? true;
     if (binaryFallsBackToNoChanges) failures.push(`Binary untracked file's diff fell back to the indistinguishable "No changes" text instead of naming the reason: ${JSON.stringify(binaryDiffText)}`);
     else findings.push('Binary untracked file never falls back to the indistinguishable "No changes" text: confirmed, "Binary file" names the reason instead.');
-    await shot('02-binary-untracked-reason.png');
-    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
-    await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the binary-file check' });
+    await shot('03-binary-untracked-reason.png');
+    await backToChanges(cdp, 'Back to changes after the binary-file check');
+
+    // =========================================================================================
+    // Check B2 (#1111 gate round 2 HIGH 2): a non-ASCII-named untracked file still shows its
+    // real content through the real UI end to end -- `confirm_untracked`'s own `-z` fix for
+    // git's default C-quoting of non-ASCII bytes in its newline-delimited output.
+    // =========================================================================================
+    const nonAsciiDiffText = await openUntrackedDiff(cdp, NON_ASCII_FILE);
+    const nonAsciiShowsContent = Boolean(nonAsciiDiffText && nonAsciiDiffText.includes(NON_ASCII_CONTENT.trim()));
+    assertEqual(nonAsciiShowsContent, true, `The non-ASCII-named untracked file's diff shows its real content (got ${JSON.stringify(nonAsciiDiffText)})`, findings, failures);
+    await backToChanges(cdp, 'Back to changes after the non-ASCII-name check');
+
+    // =========================================================================================
+    // Check B3 (#1111 gate round 2 HIGH 3): an untracked PNG shows "Image file".
+    // =========================================================================================
+    const pngDiffText = await openUntrackedDiff(cdp, PNG_FILE);
+    assertEqual(pngDiffText?.includes('Image file') ?? false, true, `Untracked PNG's diff shows "Image file" (got ${JSON.stringify(pngDiffText)})`, findings, failures);
+    await backToChanges(cdp, 'Back to changes after the PNG check');
 
     // =========================================================================================
     // Check C (#1111 item 3): a long diff grows no window-level scrollbar, horizontal or
     // vertical -- the `.diff-view` CSS containment fix for its own `sr-only` gutter labels.
     // =========================================================================================
-    await cdp.click(`Array.from(document.querySelectorAll('span[title=${JSON.stringify(LONG_DIFF_FILE)}]')).map((el) => el.closest('button')).find(Boolean)`);
-    await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for the long-diff fixture' });
+    await openUntrackedDiff(cdp, LONG_DIFF_FILE);
     await sleep(300);
     const windowScroll = await cdp.evaluate(
       `({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight })`
     );
     assertEqual(windowScroll.scrollWidth <= windowScroll.innerWidth, true, `No window-level HORIZONTAL scrollbar on a long diff (scrollWidth=${windowScroll.scrollWidth}, innerWidth=${windowScroll.innerWidth})`, findings, failures);
     assertEqual(windowScroll.scrollHeight <= windowScroll.innerHeight, true, `No window-level VERTICAL scrollbar on a long diff (scrollHeight=${windowScroll.scrollHeight}, innerHeight=${windowScroll.innerHeight})`, findings, failures);
-    await shot('03-long-diff-no-window-scrollbar.png');
-    await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => (el.getAttribute('aria-label') || '').startsWith('Back to changes from '))`);
-    await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the long-diff check' });
+    await shot('04-long-diff-no-window-scrollbar.png');
+    await backToChanges(cdp, 'Back to changes after the long-diff check');
 
     // =========================================================================================
-    // Check D (#1111 item 2): a stage forced to fail by a real `.git/index.lock` collision
-    // (never a deleted fixture file, which would race the file watcher's own debounce) leaves
-    // focus on the SAME row's kebab trigger, not `<body>`.
+    // Check D (#1111 item 2, extended gate round 2 HIGH 4): a stage forced to fail by a real
+    // `.git/index.lock` collision (never a deleted fixture file, which would race the watcher's
+    // own debounce) -- driven ENTIRELY by the keyboard (Enter opens the kebab menu, Enter selects
+    // "Stage"), with a genuine keyboard-trap check: WHILE the stage is still pending, Tab must
+    // move focus OFF the kebab (the live complement to gate round 2 HIGH 4's own fix -- only
+    // Enter/Space/ArrowDown/ArrowUp are blocked while pending, never Tab/Shift+Tab). Focus
+    // returning to the kebab is checked separately, on its OWN un-tabbed-away attempt, since
+    // #1111 gate round 2 MEDIUM 7's own fix deliberately does NOT steal focus back once the
+    // developer has tabbed elsewhere -- the two properties are not simultaneously provable on
+    // the same attempt.
     // =========================================================================================
     const realGitDir = execFileSync('git', ['-C', worktreePath, 'rev-parse', '--git-dir'], { encoding: 'utf8', windowsHide: true }).trim();
     const absoluteGitDir = path.isAbsolute(realGitDir) ? realGitDir : path.join(worktreePath, realGitDir);
     const indexLockPath = path.join(absoluteGitDir, 'index.lock');
-    writeFileSync(indexLockPath, '');
     const kebabFinder = fileRowActionsFinder(FAIL_STAGE_FILE);
-    await cdp.click(kebabFinder);
-    await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Row actions menu open for the fail-stage fixture' });
-    const stageItemFinder = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === ${JSON.stringify(`Stage ${FAIL_STAGE_FILE}`)})`;
-    await cdp.waitFor(`!!(${stageItemFinder})`, { timeoutMs: 10_000, label: 'Stage menu item present for the fail-stage fixture' });
-    await cdp.click(stageItemFinder);
-    await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Row actions menu closed after selecting Stage' });
+
+    async function keyboardTriggerStage() {
+      await cdp.evaluate(`(() => { (${kebabFinder}).focus(); })()`);
+      await cdp.pressEnter();
+      await cdp.waitFor(`!!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 10_000, label: 'Row actions menu opened via keyboard Enter' });
+      await sleep(100); // lets Radix settle its own default first-item focus before the next Enter
+      await cdp.pressEnter();
+      await cdp.waitFor(`!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 10_000, label: 'Row actions menu closed after keyboard-selecting Stage' });
+    }
+
+    // D1: no Tab-away -- focus naturally lands back on the kebab once the failure settles.
+    writeFileSync(indexLockPath, '');
+    await keyboardTriggerStage();
     await cdp.waitFor(`(() => { const el = (${kebabFinder}); return !!el && el.getAttribute('aria-disabled') !== 'true'; })()`, {
       timeoutMs: 15_000,
-      label: 'Forced stage failure settled (kebab no longer aria-disabled)'
+      label: 'D1: forced stage failure settled (kebab no longer aria-disabled)'
     });
     rmSync(indexLockPath, { force: true });
-    const focusAfterFailure = await cdp.evaluate(
-      `(() => { const kebab = (${kebabFinder}); return document.activeElement === kebab; })()`
+    const focusAfterFailure = await cdp.evaluate(`(() => { const kebab = (${kebabFinder}); return document.activeElement === kebab; })()`);
+    assertEqual(focusAfterFailure, true, "D1: focus lands back on the SAME row's kebab trigger after a failed stage (never <body>)", findings, failures);
+    await shot('05-focus-after-failed-stage.png');
+
+    // D2: Tab WHILE pending moves focus OFF the kebab -- never a keyboard trap.
+    writeFileSync(indexLockPath, '');
+    await keyboardTriggerStage();
+    const pendingBeforeTab = await cdp.waitFor(
+      `(() => { const kebab = (${kebabFinder}); if (!kebab || kebab.getAttribute('aria-disabled') !== 'true') return null; return document.activeElement === kebab; })()`,
+      { timeoutMs: 5_000, intervalMs: 15, label: 'D2: kebab aria-disabled="true" and still focused, observed mid-flight' }
     );
-    assertEqual(focusAfterFailure, true, "Focus lands back on the SAME row's kebab trigger after a failed stage (never <body>)", findings, failures);
+    assertEqual(pendingBeforeTab, true, 'D2: the pending kebab still has focus just before pressing Tab', findings, failures);
+    await pressTab(cdp);
+    await sleep(50);
+    const focusAfterTabWhilePending = await cdp.evaluate(`(() => { const kebab = (${kebabFinder}); return document.activeElement === kebab; })()`);
+    assertEqual(focusAfterTabWhilePending, false, 'D2: Tab moves focus OFF the pending kebab trigger (never a keyboard trap while a stage is in flight)', findings, failures);
+    await cdp.waitFor(`(() => { const el = (${kebabFinder}); return !!el && el.getAttribute('aria-disabled') !== 'true'; })()`, {
+      timeoutMs: 15_000,
+      label: 'D2: forced stage failure settled (kebab no longer aria-disabled)'
+    });
+    rmSync(indexLockPath, { force: true });
     const stillUntracked = await cdp.evaluate(
       `(() => { const ul = document.querySelector('[aria-label="Untracked files"]'); return !!ul && Array.from(ul.querySelectorAll('li span[title]')).some((el) => el.getAttribute('title') === ${JSON.stringify(FAIL_STAGE_FILE)}); })()`
     );
-    assertEqual(stillUntracked, true, 'The forced-failure fixture is still in Untracked (the stage genuinely failed, not a flake)', findings, failures);
-    await shot('04-focus-after-failed-stage.png');
+    assertEqual(stillUntracked, true, 'The forced-failure fixture is still in Untracked after both D1 and D2 (the stage genuinely failed both times, not a flake)', findings, failures);
 
     // =========================================================================================
     // Check E (#1111 item 1, destructive -- LAST): `.git` reached via its Windows 8.3 short name
@@ -326,7 +431,7 @@ async function main() {
 
     const report = {
       gitHead: gitHeadSha,
-      dirty,
+      dirty: computeDirty(REPO_ROOT),
       exeSha256: exeHash,
       sessionId,
       worktreePath,
@@ -352,7 +457,7 @@ async function main() {
     try {
       writeFileSync(
         path.join(SHOTS_DIR, 'report.json'),
-        JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
+        JSON.stringify({ gitHead: gitHeadSha, dirty: computeDirty(REPO_ROOT), exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
       );
     } catch {
       // best-effort only

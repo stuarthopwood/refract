@@ -183,7 +183,11 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
             )}
           </div>
         </div>
-        {subject.length > 72 && <p className="text-xs text-severity-error">Over 72 characters — the commit still goes through.</p>}
+        {/* #1111 gate round 2 LOW: `text-muted-foreground`, not `text-severity-error` -- this
+            note is advisory (the commit still goes through), never a blocking error; the
+            counter's OWN digits above still use the error tier colour for the over-72 figure
+            itself, unchanged. */}
+        {subject.length > 72 && <p className="text-xs text-muted-foreground">Over 72 characters — the commit still goes through.</p>}
       </div>
       <label htmlFor={bodyId} className="sr-only">
         Commit description

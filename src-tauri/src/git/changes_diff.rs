@@ -7,13 +7,11 @@
 use std::path::Path;
 use std::time::Duration;
 
+use super::changes_score::{resolve_untracked_entry, UntrackedEntry};
 use super::git::{git_raw, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
-use crate::fs::paths::contains_git_segment;
 use crate::fs::read_preview::{read_preview, FilePreviewKind};
-use crate::fs::resolve::{
-    canonicalize_root, resolve_in_worktree, resolve_reason_message, ResolveReason,
-};
+use crate::fs::resolve::{resolve_reason_message, ResolveReason};
 
 /// Mirrors `changes_status.rs`'s own `DIFF_TIMEOUT`: re-declared rather than imported, since that
 /// constant is a private `const` in its own file (same reasoning that file's header comment gives
@@ -26,6 +24,7 @@ const DIFF_TIMEOUT: Duration = Duration::from_secs(5);
 /// changes" fallback whenever `patch` comes back empty for one of these reasons rather than a
 /// genuinely empty (0-byte) file.
 const REASON_BINARY: &str = "Binary file";
+const REASON_IMAGE: &str = "Image file";
 const REASON_TOO_LARGE: &str = "Too large to preview (over 1 MiB)";
 const REASON_READ_ERROR: &str = "Couldn't read this file";
 
@@ -33,15 +32,18 @@ const REASON_READ_ERROR: &str = "Couldn't read this file";
 /// independent `git ls-files` read checks the path appears in git's own untracked list before
 /// `untracked_file_patch` below ever reads the filesystem directly. #1111 item 1 correction: a
 /// match here is advisory, never a containment proof -- that proof is
-/// `fs::resolve::resolve_in_worktree`'s own job, run unconditionally inside that function
-/// regardless of what this check returns. Low item (#1111): used to accept ANY non-empty
-/// output (a folder path, or a path with `.`/backslash variants, also matched that way) --
-/// `git ls-files` prints one normalised (forward-slash, repo-root-relative) path per line, so
-/// this now requires an EXACT line match against the caller's own path (backslash-normalised),
-/// narrowing what counts as "confirmed" from "git said something" to "git named exactly this
-/// path". A `false` result (no exact match) falls through to the ordinary tracked-file
-/// `git diff` path in `diff_text` below -- the correct degrade for a client that raced or simply
-/// lied, never a hard refusal.
+/// `resolve_untracked_entry`'s own job, run unconditionally inside `untracked_file_patch`
+/// regardless of what this check returns. Low item (#1111, round 1): used to accept ANY
+/// non-empty output (a folder path, or a path with `.`/backslash variants, also matched that
+/// way) -- narrowed to an EXACT line match. Gate round 2 HIGH 2: that line-based exact match
+/// itself broke on any non-ASCII path (`café.txt`) -- git's default `core.quotepath` C-quotes
+/// anything outside the printable-ASCII range in its own newline-delimited output (`"caf\303\251.
+/// txt"`, octal-escaped UTF-8 bytes, never matching a plain `café.txt` string comparison). `-z`
+/// disables that quoting entirely and NUL-delimits each record instead of newline-delimiting it
+/// -- the exact same fix `changes_score.rs::parse_numstat_map`'s own doc comment already
+/// documents for the identical git quoting behaviour, applied here too. A `false` result (no
+/// exact match) falls through to the ordinary tracked-file `git diff` path in `diff_text` below
+/// -- the correct degrade for a client that raced or simply lied, never a hard refusal.
 async fn confirm_untracked(worktree_path: &Path, path: &str) -> bool {
     let result = git_raw(
         worktree_path,
@@ -51,6 +53,7 @@ async fn confirm_untracked(worktree_path: &Path, path: &str) -> bool {
             "core.fsmonitor=false",
             "--no-optional-locks",
             "ls-files",
+            "-z",
             "--others",
             "--exclude-standard",
             "--",
@@ -63,7 +66,10 @@ async fn confirm_untracked(worktree_path: &Path, path: &str) -> bool {
         return false;
     }
     let normalized = path.replace('\\', "/");
-    result.stdout.lines().any(|line| line == normalized)
+    result
+        .stdout
+        .split('\0')
+        .any(|record| !record.is_empty() && record == normalized)
 }
 
 /// Maps a `fs::resolve::ResolveReason` into this module's own `GitError` shape. `OutsideWorktree`
@@ -129,84 +135,60 @@ fn build_added_patch(content: &str) -> String {
 /// file-as-additions hunk directly from the file's own content instead, wrapped in ONE
 /// `DIFF_TIMEOUT` for the whole read (item d).
 ///
-/// #1111 item 1 hardening (gate round 2 on PR #1109): the earlier form resolved through
-/// `fs::resolve::resolve_in_worktree` purely to prove containment, then DISCARDED its result and
-/// re-opened the UNRESOLVED, lexically-joined `worktree_path.join(path)` -- violating
-/// `read_preview`'s own documented precondition (an already-validated, realpath'd absolute path)
-/// and leaving a TOCTOU window between the resolve check and the open. Fixed: the resolved path
-/// IS what `symlink_metadata`/`read_link`/`read_preview` now all operate on, the same way
-/// `ipc::file_explorer::file_explorer_read_preview` does. `.git` is refused both as the raw,
-/// as-typed token (the same early-exit `fs::list_directory::resolve_list_target` applies before
-/// ever resolving) AND again on the resolved path relative to the canonicalized worktree root
-/// (catches a Windows 8.3 short name or trailing-dot alias that only resolves to `.git` after the
-/// fact) -- `resolve_list_target`'s own two-step check, mirrored here rather than imported (that
-/// function also special-cases an empty `relative_path` as "list the root", which does not apply
-/// to a single-file read).
-/// (a) `resolve_in_worktree` proves the whole chain is safely contained (an escape anywhere along
-/// it returns `Err`, mapped to a refusal, before this function ever touches the filesystem).
-/// (b) `symlink_metadata` on the RESOLVED path: a symlink is rendered the way `git` itself would
-/// store it (an untracked symlink's blob IS its own target string) -- the link's target text as a
-/// single added line, NEVER the target's contents, regardless of what (a) proved about that
-/// target. Requires `is_file()` on anything else (a directory or other special node scores an
-/// empty patch, the same "nothing to show" degrade as a vanished file).
-/// (c) Reads through `fs::read_preview::read_preview` -- the SAME bounded (1 MiB cap, matching
-/// `changes_score.rs::score_untracked_file`'s own cap), single-file-handle, binary-safe reader
-/// `FilePreviewPane.tsx` already uses, instead of a fourth hand-rolled copy of that exact logic.
-/// #1111 item 5: a binary, over-cap, or unreadable file (or the whole read timing out) now
-/// returns its own reason string alongside the empty patch, instead of an empty patch
-/// indistinguishable from a genuinely empty file -- `diff_text` and the IPC handler both thread
-/// it straight through to the renderer.
+/// #1111 gate round 2 HIGH 1 + MEDIUM 6: containment proof and leaf classification (symlink vs
+/// regular file vs missing vs the post-resolution `.git` check) are now `changes_score.rs::
+/// resolve_untracked_entry`'s own job, shared verbatim with `score_untracked_file` -- see that
+/// function's own doc comment for the full "parent resolved, leaf never independently resolved"
+/// reasoning and the fail-closed `strip_prefix` fix. A symlink/junction leaf renders the way
+/// `git` itself would store it (an untracked symlink's blob IS its own target string) -- the
+/// link's target text as a single added line, NEVER the target's contents. A directory or other
+/// special node at the leaf scores an empty patch, the same "nothing to show" degrade as a
+/// vanished file.
+/// Reads a genuine file through `fs::read_preview::read_preview` -- the SAME bounded (1 MiB cap,
+/// matching `changes_score.rs::score_untracked_file`'s own cap), single-file-handle, binary-safe
+/// reader `FilePreviewPane.tsx` already uses, instead of a fourth hand-rolled copy of that exact
+/// logic. #1111 item 5 / gate round 2 HIGH 3: a binary, image, over-cap, or unreadable file (or
+/// the whole read timing out) returns its own reason string alongside the empty patch, instead of
+/// an empty patch indistinguishable from a genuinely empty file -- `diff_text` and the IPC
+/// handler both thread it straight through to the renderer.
+///
+/// Gate round 2 MEDIUM 10: the gap between `resolve_untracked_entry`'s own final
+/// `symlink_metadata` check and `read_preview`'s subsequent `File::open` is NARROWED (never
+/// fully closed, and never claimed to be) compared to the pre-#1111 form, which opened the
+/// UNRESOLVED, lexically-joined path directly with no containment proof at all -- reviewers
+/// judged the remaining window acceptable for this threat model (a same-user local writer, on
+/// the order of 1 ms, bounded to at most 1 MiB by `read_preview`'s own cap, and surfaced only as
+/// rendered diff text in this UI, never written anywhere or otherwise exfiltrated).
 async fn untracked_file_patch(
     worktree_path: &Path,
     path: &str,
 ) -> Result<(String, Option<&'static str>), GitError> {
     let read = async {
-        if contains_git_segment(path) {
-            return Err(map_resolve_reason(ResolveReason::OutsideWorktree));
-        }
-        let resolved = match resolve_in_worktree(worktree_path, path).await {
-            Ok(resolved) => resolved,
+        let entry = match resolve_untracked_entry(worktree_path, path).await {
+            Ok(entry) => entry,
             Err(reason) => return Err(map_resolve_reason(reason)),
         };
-        let root_real = canonicalize_root(worktree_path)
-            .await
-            .unwrap_or_else(|_| worktree_path.to_path_buf());
-        let rel_from_root = resolved
-            .strip_prefix(&root_real)
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-        if contains_git_segment(&rel_from_root) {
-            return Err(map_resolve_reason(ResolveReason::OutsideWorktree));
-        }
-        let link_metadata = match tokio::fs::symlink_metadata(&resolved).await {
-            Ok(metadata) => metadata,
-            Err(_) => return Ok((String::new(), None)),
-        };
-        if link_metadata.file_type().is_symlink() {
-            let target = match tokio::fs::read_link(&resolved).await {
-                Ok(target) => target,
-                Err(_) => return Ok((String::new(), None)),
-            };
-            let target_text = target.to_string_lossy().replace('\\', "/");
-            return Ok((format!("@@ -0,0 +1,1 @@\n+{target_text}\n"), None));
-        }
-        if !link_metadata.is_file() {
-            return Ok((String::new(), None));
-        }
-        let preview = read_preview(&resolved, path).await;
-        match preview.kind {
-            FilePreviewKind::Text | FilePreviewKind::Markdown => Ok((
-                build_added_patch(&preview.content.unwrap_or_default()),
-                None,
-            )),
-            FilePreviewKind::Binary => Ok((String::new(), Some(REASON_BINARY))),
-            FilePreviewKind::TooLarge => Ok((String::new(), Some(REASON_TOO_LARGE))),
-            FilePreviewKind::ReadError => Ok((String::new(), Some(REASON_READ_ERROR))),
-            // `Deleted`/`Image`: a vanished-between-stat-and-open race degrades the same as the
-            // symlink-target-vanished/directory cases above (no reason -- it's a race, not a
-            // real refusal), and an image has no text representation here; out of this issue's
-            // scope.
-            FilePreviewKind::Deleted | FilePreviewKind::Image => Ok((String::new(), None)),
+        match entry {
+            UntrackedEntry::Missing | UntrackedEntry::NotAFile => Ok((String::new(), None)),
+            UntrackedEntry::Symlink { target_text } => {
+                Ok((format!("@@ -0,0 +1,1 @@\n+{target_text}\n"), None))
+            }
+            UntrackedEntry::File { resolved } => {
+                let preview = read_preview(&resolved, path).await;
+                match preview.kind {
+                    FilePreviewKind::Text | FilePreviewKind::Markdown => Ok((
+                        build_added_patch(&preview.content.unwrap_or_default()),
+                        None,
+                    )),
+                    FilePreviewKind::Binary => Ok((String::new(), Some(REASON_BINARY))),
+                    FilePreviewKind::Image => Ok((String::new(), Some(REASON_IMAGE))),
+                    FilePreviewKind::TooLarge => Ok((String::new(), Some(REASON_TOO_LARGE))),
+                    FilePreviewKind::ReadError => Ok((String::new(), Some(REASON_READ_ERROR))),
+                    // A vanished-mid-read race degrades the same as the symlink-target-vanished/
+                    // directory cases above (no reason -- it's a race, not a real refusal).
+                    FilePreviewKind::Deleted => Ok((String::new(), None)),
+                }
+            }
         }
     };
     tokio::time::timeout(DIFF_TIMEOUT, read)

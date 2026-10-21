@@ -276,7 +276,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   )
 }
 
-type DiffState = 'loading' | { patch: string; reason?: string } | { error: string }
+type DiffState = 'loading' | { patch: string; reason?: string | null } | { error: string }
 
 function GitChangesDiffPane({
   sessionId,
@@ -391,7 +391,7 @@ function GitChangesDiffPane({
           title={entry.path}
           aria-label={`Back to changes from ${fileName}`}
           onClick={onBack}
-          className="min-w-0 flex-1 justify-start gap-1.5 px-1.5"
+          className="min-w-0 flex-1 justify-start gap-1.5 px-1.5 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         >
           <ArrowLeftIcon aria-hidden className="size-3.5 shrink-0" />
           <span aria-hidden className="min-w-0 truncate">
@@ -412,7 +412,7 @@ function GitChangesDiffPane({
           {state.error}
         </p>
       ) : (
-        <DiffViewFromPatch path={entry.path} patch={state.patch} reason={state.reason} additions={entry.additions} deletions={entry.deletions} />
+        <DiffViewFromPatch path={entry.path} patch={state.patch} reason={state.reason} additions={entry.additions} deletions={entry.deletions} hideFileName />
       )}
     </div>
   )

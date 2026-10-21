@@ -65,6 +65,7 @@ import {
   commitPaths,
   commitRepoBaseline,
   fileRowOpenButtonFinder,
+  fileRowActionsFinder,
   readGroupFileTitles,
   diffViewText,
   BACK_TO_CHANGES_FINDER,
@@ -200,7 +201,9 @@ async function main() {
     screenshotNames.push(name);
   }
 
-  const dirty = computeDirty(REPO_ROOT);
+  // #1111 gate round 2 LOW: `dirty` is computed FRESH at each report site (the console log
+  // below, and each `report.json` write) rather than cached once here before the run starts --
+  // a run takes minutes, long enough for the repo's own dirty state to genuinely change.
 
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1101-data-'));
@@ -211,7 +214,7 @@ async function main() {
     mkdirSync(SHOTS_DIR, { recursive: true });
     const port = await getFreePort();
     gitHeadSha = gitHead(REPO_ROOT);
-    console.log(`verify-1101: git HEAD ${gitHeadSha}${dirty ? ' (DIRTY)' : ''}`);
+    console.log(`verify-1101: git HEAD ${gitHeadSha}${computeDirty(REPO_ROOT) ? ' (DIRTY)' : ''}`);
     console.log(`verify-1101: shots dir ${SHOTS_DIR}`);
 
     commitRepoBaseline(repoDir);
@@ -344,9 +347,23 @@ async function main() {
     // Check 3 (item 3): stage/unstage in-progress state -- per-row, then per-group bulk.
     // =========================================================================================
     const rowBusyFinder = `document.querySelector('span[title=${JSON.stringify(FIXTURE.bigUntracked)}]')?.closest('[aria-busy]')`;
+    const bigFileKebabFinder = fileRowActionsFinder(FIXTURE.bigUntracked);
+
+    // #1111 gate round 2 HIGH 5, CONTROL (falsified-and-fixed): BEFORE staging starts (kebab
+    // not busy yet), a keyboard Enter on this SAME trigger genuinely opens its menu -- proves
+    // the dispatch-then-settle-then-query technique below can actually detect a real open, so
+    // the busy-case assertion that follows is genuinely falsifiable, not a check that passes
+    // either way regardless of whether the product fix is present.
+    await cdp.evaluate(`(() => { const kebab = (${bigFileKebabFinder}); kebab.focus(); kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); })()`);
+    await sleep(150);
+    const controlMenuOpened = await cdp.evaluate(`!!document.querySelector('[role="menu"][data-state="open"]')`);
+    assertEqual(controlMenuOpened, true, 'CONTROL: a keyboard Enter on a NON-busy kebab trigger opens its menu (proves the settle-then-query technique can detect a real open)', findings, failures);
+    await cdp.click(`document.body`);
+    await cdp.waitFor(`!document.querySelector('[role="menu"][data-state="open"]')`, { timeoutMs: 5_000, label: 'Control menu dismissed (outside click) before staging starts' });
+
     await clickRowMenuItem(cdp, FIXTURE.bigUntracked, `Stage ${FIXTURE.bigUntracked}`);
     const rowBusySnapshot = await cdp.waitFor(
-      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); if (!kebab) return null; kebab.focus(); const opened = kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab.getAttribute('aria-disabled') === 'true', kebabNativeDisabled: kebab.disabled, kebabFocusable: document.activeElement === kebab, keydownDefaultPrevented: !opened, menuOpenedOnEnter: !!document.querySelector('[role="menu"][data-state="open"]') }; })()`,
+      `(() => { const row = (${rowBusyFinder}); if (!row || row.getAttribute('aria-busy') !== 'true') return null; const kebab = row.querySelector('[aria-label^="More actions for"]'); if (!kebab) return null; return { spinner: !!row.querySelector('svg.animate-spin'), kebabAriaDisabled: kebab.getAttribute('aria-disabled') === 'true', kebabNativeDisabled: kebab.disabled }; })()`,
       { timeoutMs: 5_000, intervalMs: 15, label: 'Row aria-busy="true" observed mid-flight while staging a 100 MB file' }
     );
     assertEqual(rowBusySnapshot?.spinner, true, 'Row shows a spinner icon while its own stage is in flight', findings, failures);
@@ -354,20 +371,41 @@ async function main() {
     // #1111 item 2 fix (round-2 gate on PR #1109): a NATIVE `disabled` forces a browser blur
     // the instant React applies it, which left the round-1 build unable to restore focus to a
     // just-closed menu's own trigger (WCAG 2.4.3 regression) -- the trigger now stays natively
-    // ENABLED and focusable throughout, with `onKeyDown`'s own `preventDefault()` (observed via
-    // `dispatchEvent`'s own return value, and a real check that no `[role="menu"]` opened)
-    // blocking the keyboard-driven reopen instead.
+    // ENABLED throughout.
     assertEqual(rowBusySnapshot?.kebabNativeDisabled, false, "Row's own kebab trigger stays natively enabled (never `disabled`) while its stage is in flight", findings, failures);
-    assertEqual(rowBusySnapshot?.kebabFocusable, true, "Row's own kebab trigger is focusable while its stage is in flight", findings, failures);
-    assertEqual(rowBusySnapshot?.keydownDefaultPrevented, true, 'A keyboard Enter on the busy kebab trigger has its default action prevented', findings, failures);
-    // Falsified-and-fixed (first live run): `[role="menu"]`'s bare DOM presence false-positived
-    // here -- Radix keeps the PREVIOUS "Stage" selection's own menu present with
-    // `data-state="closed"` for its own brief exit animation, which can still be in the DOM at
-    // the exact instant `aria-busy` flips (that happens on the very next tick). Requiring
-    // `data-state="open"` specifically (the query above) is what actually proves a NEW open,
-    // never a stale closing one.
-    assertEqual(rowBusySnapshot?.menuOpenedOnEnter, false, 'A keyboard Enter on the busy kebab trigger does not open its menu', findings, failures);
     await shot('04-busy-staging-big-file.png');
+
+    // #1111 gate round 2 HIGH 5 (falsified-and-fixed): the round-1 version of this check queried
+    // `[role="menu"]` SYNCHRONOUSLY right after `dispatchEvent`, before React's own (possibly
+    // batched) commit had painted anything -- an assertion that could never fail regardless of
+    // whether the product fix was present, and it treated `dispatchEvent`'s own return value as
+    // proof of "our guard fired", which it is NOT: Radix's `DropdownMenuTrigger` already calls
+    // `preventDefault()` unconditionally on a keyboard Enter as part of its normal activation
+    // handling, busy or not, so that boolean alone can never distinguish "our `actionPending`
+    // guard blocked it" from "Radix's own always-on Enter handling did". Fixed: a real settle
+    // delay before the menu-open query (the only assertion that CAN tell the two apart, proven
+    // capable of it by the CONTROL case above); a capturing `keydown` listener attached directly
+    // on the trigger (native capture phase, which -- because React's own root-delegated
+    // dispatch for a plain `onKeyDown` only runs during the BUBBLE leg once the event reaches
+    // the root -- fires strictly before either our component's or Radix's own handler ever runs)
+    // confirms the event reaches the busy trigger with `defaultPrevented` still false at that
+    // point, i.e. nothing pre-empted it earlier in the capture phase.
+    const busyKebabDispatch = await cdp.evaluate(`(() => {
+      const row = (${rowBusyFinder});
+      const kebab = row ? row.querySelector('[aria-label^="More actions for"]') : null;
+      if (!kebab) return null;
+      kebab.focus();
+      let sawUnpreventedAtCapture = null;
+      const onCapture = (event) => { sawUnpreventedAtCapture = !event.defaultPrevented; };
+      kebab.addEventListener('keydown', onCapture, { capture: true });
+      kebab.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      kebab.removeEventListener('keydown', onCapture, { capture: true });
+      return { sawUnpreventedAtCapture };
+    })()`);
+    assertEqual(busyKebabDispatch?.sawUnpreventedAtCapture, true, 'The keydown reaches the busy kebab trigger with defaultPrevented still false at the native capture phase (nothing pre-empted it before the component/Radix handlers ran)', findings, failures);
+    await sleep(150);
+    const menuOpenedOnBusyEnter = await cdp.evaluate(`!!document.querySelector('[role="menu"][data-state="open"]')`);
+    assertEqual(menuOpenedOnBusyEnter, false, 'A keyboard Enter on the busy kebab trigger does not open its menu (checked after a real settle delay, not synchronously)', findings, failures);
     await cdp.waitFor(`(() => { const row = (${rowBusyFinder}); return !!row && row.getAttribute('aria-busy') !== 'true'; })()`, {
       timeoutMs: 30_000,
       label: 'Row aria-busy cleared once the big-file stage settles'
@@ -512,7 +550,7 @@ async function main() {
 
     const report = {
       gitHead: gitHeadSha,
-      dirty,
+      dirty: computeDirty(REPO_ROOT),
       exeSha256: exeHash,
       sessionId,
       worktreePath,
@@ -538,7 +576,7 @@ async function main() {
     try {
       writeFileSync(
         path.join(SHOTS_DIR, 'report.json'),
-        JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
+        JSON.stringify({ gitHead: gitHeadSha, dirty: computeDirty(REPO_ROOT), exeSha256: exeHash, findings, failures, notExercised, error: String(err?.stack ?? err), exitCode: 1 }, null, 2)
       );
     } catch {
       // best-effort only
