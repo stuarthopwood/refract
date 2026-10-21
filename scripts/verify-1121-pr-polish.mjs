@@ -436,7 +436,11 @@ async function main() {
     // Keyboard focus: Tab from the Refresh button lands on the link next; tooltip shows. Move the
     // real pointer to a neutral corner first and require the hover tooltip to close, so the focus
     // check below can only pass on a tooltip opened by keyboard focus.
+    // Radix Tooltip closes a hover-opened tooltip from a document `pointermove` checked against
+    // its grace area, not from the trigger's `pointerleave` alone, so one CDP jump leaves it open:
+    // send two moves outside the grace area.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3 });
     const hoverClosed = await cdp.waitFor(`!${VISIBLE_TOOLTIP_TEXTS}.includes(${JSON.stringify(OPEN_ON_GITHUB_TOOLTIP)})`, { timeoutMs: 5_000, label: 'hover tooltip closed before the keyboard check' }).catch(() => false);
     const focusCheckName = 'Keyboard Tab from Refresh reaches Open on GitHub, tooltip shows on focus';
     if (!hoverClosed) {
