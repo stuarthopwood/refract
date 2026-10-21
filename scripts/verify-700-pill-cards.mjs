@@ -438,6 +438,19 @@ async function main() {
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Session B dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Session B composer enabled' });
     await ctrlClickSessionRow(cdp, sessionIdA);
+    // DIAG: one-shot rich snapshot if the split never opens, to replace guessing with evidence
+    // before changing anything else here.
+    const splitDiag = await cdp.evaluate(`(() => {
+      const rowBtn = document.querySelector('[data-session-open]');
+      const allOpenButtons = Array.from(document.querySelectorAll('[data-session-open]')).map((el) => el.getAttribute('data-session-open'));
+      const panes = Array.from(document.querySelectorAll('[data-session-pane]')).map((el) => el.getAttribute('data-session-pane'));
+      const dialogOpen = !!document.querySelector('[role="dialog"]');
+      const sidebarVisible = !!document.querySelector('[data-slot="sidebar"]') || !!document.querySelector('nav');
+      return { rowBtnFound: !!rowBtn, allOpenButtons, panes, dialogOpen, sidebarVisible, bodyTextSnippet: document.body.innerText.slice(0, 400) };
+    })()`);
+    if (splitDiag.panes.length !== 2) {
+      console.error(`${LOG}: DIAG split-view pre-wait snapshot:`, JSON.stringify(splitDiag, null, 2));
+    }
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
     // Two equal-width panes share the window minus a fixed sidebar/rail amount regardless of the
     // window's own total width -- one measured correction pass against an arbitrary starting
