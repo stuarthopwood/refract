@@ -296,7 +296,7 @@ async function main() {
         lineThrough: !!li.querySelector('.line-through'),
         hasBlockedLine: /Blocked:/.test(li.textContent)
       }));
-      const phaseHeaders = Array.from(card.querySelectorAll('div')).map((d) => d.textContent.trim()).filter((t) => /^(Setup|Work) \d+\/\d+$/.test(t));
+      const phaseHeaders = Array.from(card.querySelectorAll('div')).map((d) => d.textContent.trim()).filter((t) => /^(Setup|Work) \\d+\\/\\d+$/.test(t));
       const headerText = (${TODO_CARD_HEADER_SELECTOR})?.textContent?.trim() ?? null;
       return { tagName: card.tagName, rows, phaseHeaders, headerText };
     })()`);
