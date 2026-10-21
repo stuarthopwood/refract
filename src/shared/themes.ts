@@ -49,7 +49,12 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
+    // #1074 (app-wide text-opacity softening): `--foreground` is now translucent
+    // (`oklch(1 0 0 / 90%)`, globals.css), but `setTitleBarOverlay` takes an opaque hex with no
+    // alpha channel, so this is hand-recomputed to the real composited colour -- white at 90%
+    // alpha over this theme's own `--background` -- not the raw pre-alpha value. Verified
+    // against `check-theme-contrast.mjs`'s own `symbolColor` drift check.
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e7e7e7' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
@@ -75,7 +80,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // #975: was `github-dark` -- see the `nordic-frost`/`cyber-amber` comment below for why
     // every `github-dark`-based preset moved to `github-dark-default`.
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0F1014', symbolColor: '#F8FAFC' }
+    // #1074: see `dark`'s own `titleBarOverlay` comment above -- same rationale, this preset's
+    // own composited colour (white at 90% alpha over `#0F1014`).
+    titleBarOverlay: { color: '#0F1014', symbolColor: '#e7e7e7' }
   },
   // #551 (Nordic Frost / Cyber Amber dark presets): two further additive dark presets, built
   // out in full the same way #550 built Obsidian. Shiki theme choice (one of #551's own open
@@ -119,7 +126,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#060f1e',
     swatchPrimary: '#007a7c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#060f1e', symbolColor: '#eff7fb' }
+    // #1074: see `dark`'s own `titleBarOverlay` comment above -- this preset's own composited
+    // colour (white at 90% alpha over `#060f1e`).
+    titleBarOverlay: { color: '#060f1e', symbolColor: '#e6e7e8' }
   },
   'cyber-amber': {
     id: 'cyber-amber',
@@ -127,12 +136,13 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     // Matches `.theme-cyber-amber`'s own `--background` (globals.css): byte-identical to
     // `.theme-dark`'s own near-black canvas (#1039, 2026-10-20: every surface is pure neutral,
     // chroma 0, no warm tint anywhere; text was retuned softer then fully reverted the same
-    // day -- Stuart moved text softening to a separate, app-wide issue -- so `--foreground`/
-    // `symbolColor` below are back to byte-identical with Dark's own, unretuned by #1039).
+    // day -- Stuart moved text softening to a separate, app-wide issue, #1074, which landed it
+    // here instead -- so `--foreground`/`symbolColor` below are byte-identical with Dark's own
+    // again, just at #1074's new alpha/composited values rather than #1039's original ones).
     swatch: '#0a0a0a',
     swatchPrimary: '#c2410c',
     syntaxTheme: 'github-dark-default',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e7e7e7' }
   }
 }
 

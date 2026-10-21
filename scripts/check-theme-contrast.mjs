@@ -16,8 +16,10 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, searchFieldContrastRows, userBubbleLinkContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
+import { PAIRS, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows, swatchMetadataDriftCheck } from './theme-contrast-pairs.mjs'
+import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
+import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -204,19 +206,23 @@ if (declaredThemeIds.length === 0) {
 }
 const missingThemeBlocks = declaredThemeIds.filter((id) => !(id in themes))
 
-// Parses every entry's `id`, `swatch`, `swatchPrimary`, `syntaxTheme` and `titleBarOverlay.color`
-// out of the same `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?`
-// gaps (not a plain `[\s\S]*?`) stop each entry's own match at the next `id:`, so a theme entry
-// missing any one of these cannot silently read the NEXT entry's values instead -- it just fails
-// to match, which the count check below turns into a hard failure. `syntaxTheme` (#975: feeds
-// `shikiTokenContrastRows` below, checking every Shiki token colour that theme ships against
-// this preset's own `--card`) is captured between `swatchPrimary` and `titleBarOverlay`, the
-// same declaration order every entry in `src/shared/themes.ts` already uses. `swatchMetadata
-// DriftCheck` (`theme-contrast-pairs.mjs`) below confirms every one of these parsed literals
-// never silently drifts from the preset's real resolved CSS tokens -- the exact bug class that
-// caused this PR's first two gate failures, only ever caught before by a human re-reading two
-// files side by side.
-const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?swatchPrimary:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?syntaxTheme:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
+// Parses every entry's `id`, `swatch`, `swatchPrimary`, `syntaxTheme`, `titleBarOverlay.color`
+// and `titleBarOverlay.symbolColor` out of the same `themesTs` source text already read above.
+// The tempered `(?:(?!id:)[\s\S])*?` gaps (not a plain `[\s\S]*?`) stop each entry's own match
+// at the next `id:`, so a theme entry missing any one of these cannot silently read the NEXT
+// entry's values instead -- it just fails to match, which the count check below turns into a
+// hard failure. `syntaxTheme` (#975: feeds `shikiTokenContrastRows` below, checking every Shiki
+// token colour that theme ships against this preset's own `--card`) is captured between
+// `swatchPrimary` and `titleBarOverlay`, the same declaration order every entry in
+// `src/shared/themes.ts` already uses. `symbolColor` (#1074: Electron's own
+// `BrowserWindow.setTitleBarOverlay` API takes an opaque hex, no alpha channel, so every
+// preset's own literal is hand-recomputed to the real composited `--foreground`-over-
+// `--background` colour, never a `var()` reference) is captured straight after `color` on the
+// same `titleBarOverlay` line. `swatchMetadataDriftCheck` (`theme-contrast-pairs.mjs`) below
+// confirms every one of these parsed literals never silently drifts from the preset's real
+// resolved CSS tokens -- the exact bug class that caused this PR's first two gate failures,
+// only ever caught before by a human re-reading two files side by side.
+const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?swatchPrimary:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?syntaxTheme:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'\s*,\s*symbolColor:\s*'(#[0-9a-fA-F]{3,8})'/g
 const themeMetadata = Object.create(null)
 for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
   themeMetadata[m[1]] = {
@@ -224,6 +230,7 @@ for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
     swatchPrimary: m[3].toLowerCase(),
     syntaxTheme: m[4],
     titleBarOverlayColor: m[5].toLowerCase(),
+    symbolColor: m[6].toLowerCase(),
   }
 }
 if (Object.keys(themeMetadata).length !== declaredThemeIds.length) {
@@ -563,7 +570,11 @@ if (watermarkOpacity === null) {
       rows.push({ themeId, fg: 'muted-foreground', bg: 'background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const markEntry = { raw: 'mark', alpha: watermarkOpacity, linear: mutedFg.linear }
+    // Gate-fix (#1074 round 1, Code/Test HIGH): `--muted-foreground` is now itself translucent
+    // (60% alpha) -- the real painted mark's alpha is `mutedFg.alpha * watermarkOpacity` (CSS
+    // `opacity` multiplies with an already-translucent `color`, it does not replace its alpha),
+    // not `watermarkOpacity` alone (the old code here silently dropped the 60% factor).
+    const markEntry = { raw: 'mark', alpha: mutedFg.alpha * watermarkOpacity, linear: mutedFg.linear }
     const markBackdropLinear = resolvedLinear(markEntry, background)
     const markBackdropEntry = { raw: 'mark-on-background', alpha: 1, linear: markBackdropLinear }
     for (const fg of ['muted-foreground', 'chat-foreground']) {
@@ -673,7 +684,8 @@ for (const [themeId, props] of Object.entries(themes)) {
 // baseline; merged into one loop for the same reason.
 // Gate round 5 (#1050, test review): `composerSelectionContrastRows` lives in its own module
 // (composer-selection-contrast.mjs's own comment explains why), merged into this same loop.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleLinkContrastRows(themes), ...sidebarBorderContrastRows(themes), ...composerSelectionContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+// Gate round 3 (#1074, Main's follow-up, item 4): `focusedBadgeContrastRows` merged the same way.
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)

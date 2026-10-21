@@ -14,6 +14,14 @@
 // SVG is byte-identical between Default Dark and Cyber Amber (a round-trip through Obsidian
 // first proves a genuine re-render, not a stale cached image) (AGENTS.md "no new fixtures":
 // extending this already-committed, already-reused tape, not adding a new one).
+// EXTENDED AGAIN (#1074 gate round 3, Main's follow-up, 2026-10-20): a second `journey` fence
+// appended to the SAME assistant message's text (verify-1039's own `querySelector('img[role=
+// "img"]')`/button `.find()` calls are first-match, so this stays harmless to that check --
+// confirmed by reading its own selectors directly), so `verify-1074-text-opacity.mjs` can assert
+// the real rendered Journey task/section labels stay solid (`taskTextColor`) against Mermaid's
+// own coloured `fillType0-7` task-bar fills, closing part of #1108 (Journey task-text tokens
+// were previously measured by `contrast-math.mjs` arithmetic only, never a real rendered
+// diagram; #1108 is amended to its narrower remaining Gantt-only scope).
 // `verify-997-notice-severity.mjs`'s own assertions are unaffected: it only reads NoticeRow
 // styling, never asserts message content or count.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
@@ -32,8 +40,8 @@
 {"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
-{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n"}],"timestamp":0}}}
-{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n"}],"timestamp":0}}
+{"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
