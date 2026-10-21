@@ -23,9 +23,14 @@ use super::git::{GitError, GitErrorCode};
 /// `worktree_path` confirming the result is a STRICT descendant of the worktree root -- no disk
 /// access (unlike `fs::remove_tree::checked_canonical_path`'s `dunce::canonicalize`): a path here
 /// may legitimately not exist yet (a deleted-but-staged file, or one about to be restored), so
-/// requiring it to resolve on disk would wrongly refuse a real, in-scope operation. A tracked
-/// symlink pointing outside the worktree is not a threat this check needs to cover either way --
-/// `git add`/`restore`/`diff` all operate on the symlink's own blob, never read through it.
+/// requiring it to resolve on disk would wrongly refuse a real, in-scope operation. A TRACKED
+/// symlink pointing outside the worktree is not a threat this check needs to cover -- `git add`/
+/// `restore`/`diff` all operate on the symlink's own blob, never read through it. **Exception
+/// (#1101 gate round 1 HIGH 1): `changes_diff.rs::untracked_file_patch` reads an UNTRACKED
+/// file's raw bytes directly (there is no git blob for it to operate on instead), so it layers
+/// `fs::resolve::resolve_in_worktree`'s own disk-aware, symlink-walking containment proof on top
+/// of this lexical check before ever touching the filesystem -- the one caller in this module
+/// this purely-lexical check alone does not fully cover.**
 pub(super) fn validate_pathspec(worktree_path: &Path, path: &str) -> Result<(), GitError> {
     let refuse = || {
         GitError::new(

@@ -88,7 +88,7 @@ import {
   assertArrayEqual,
   assertEqual,
   activeElementIs,
-  activeElementText,
+  activeElementAriaLabel,
   activeElementRowPath,
   activeElementGroupTrigger,
   readCommitAnnouncementText,
@@ -281,7 +281,7 @@ async function main() {
     await cdp.click(fileRowOpenButtonFinder(FIXTURE.readme));
     await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for README.md' });
     // Item 7 focus restoration: opening a diff focuses the "Back to changes" button.
-    assertEqual(await activeElementText(cdp), 'Back to changes', 'Focus after opening README.md diff: the "Back to changes" button', findings, failures);
+    assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from README.md', 'Focus after opening README.md diff: the Back button', findings, failures);
     const readmeDiffText = await diffViewText(cdp);
     if (!readmeDiffText || !readmeDiffText.includes(FIXTURE.readmeEditedLine)) {
       failures.push(`Diff view for README.md did not show the real added line "${FIXTURE.readmeEditedLine}": ${JSON.stringify(readmeDiffText)}`);
@@ -300,7 +300,7 @@ async function main() {
     // the `staged` flag genuinely reached `diff_text`, not just that SOME diff rendered. ----
     await clickRowMenuItem(cdp, FIXTURE.stagedNew, `Open diff for ${FIXTURE.stagedNew}`);
     await cdp.waitFor(`!!document.querySelector('.diff-view')`, { timeoutMs: 15_000, label: 'Diff view rendered for staged-new-file.txt' });
-    assertEqual(await activeElementText(cdp), 'Back to changes', 'Focus after opening staged-new-file.txt diff: the "Back to changes" button', findings, failures);
+    assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from staged-new-file.txt', 'Focus after opening staged-new-file.txt diff: the Back button', findings, failures);
     const stagedDiffText = await diffViewText(cdp);
     if (!stagedDiffText || !stagedDiffText.includes(FIXTURE.stagedNewContentLine) || stagedDiffText.includes('No changes')) {
       failures.push(`Diff view for staged-new-file.txt (staged=true) did not show its real added content: ${JSON.stringify(stagedDiffText)}`);

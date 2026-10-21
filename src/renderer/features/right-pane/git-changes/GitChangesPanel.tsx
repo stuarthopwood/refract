@@ -299,6 +299,11 @@ function GitChangesDiffPane({
   // additions/deletions badge then simply shows the last known values, a reasonable degrade).
   const liveEntry = useGitChangesStore((s) => s.bySession[sessionId]?.snapshot?.groups[group].find((candidate) => candidate.path === initialEntry.path) ?? null)
   const entry = liveEntry ?? initialEntry
+  // Item 5 (#1101): names the file in the icon-only Back button's own `aria-label`, now that
+  // there is no longer a visible "Back to changes" label to give it an accessible name --
+  // mirrors `GitChangesFileRow.tsx`'s own identical `fileName` derivation (path minus its own
+  // containing folder prefix).
+  const fileName = entry.path.slice(entry.folder ? entry.folder.length + 1 : 0)
   const signature = `${entry.mark}:${entry.additions}:${entry.deletions}:${entry.partial}`
   // Tracks the (path, staged) this effect last genuinely fetched FOR -- distinguishes "a
   // genuinely new diff was opened" (show `'loading'`, same as before) from "the SAME diff's own
@@ -318,7 +323,10 @@ function GitChangesDiffPane({
     identityRef.current = { path: initialEntry.path, staged }
     if (isNewDiff) setState('loading')
     window.refract.gitChanges
-      .diff(sessionId, initialEntry.path, staged)
+      // Item 4 (#1101): an untracked file has no index/HEAD side for `git diff` to compare
+      // against at all -- `group === 'untracked'` tells the Rust side to synthesise the whole
+      // file as added lines instead of scoring an empty patch (`changes_diff.rs::diff_text`).
+      .diff(sessionId, initialEntry.path, staged, group === 'untracked')
       .then((result) => {
         if (cancelled) return
         if (!result.ok) {
@@ -356,12 +364,30 @@ function GitChangesDiffPane({
         }
       }}
     >
-      <div className="flex items-center gap-2">
-        <Button ref={backButtonRef} variant="outline" size="sm" className="self-start" onClick={onBack}>
+      {/* Item 6 (#1101): `sticky top-0` keeps the Back button visible while the diff below it
+          scrolls (the panel's own scroll region is the parent `overflow-auto` div in the main
+          component above) -- a stop-gap until #732-dependent "Git diff opens in a main-area
+          tab" ships and this whole diff pane (Back button included) is removed. `bg-background`
+          (this hosted pane's own inherited base surface, set no closer than the app root) stops
+          scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
+          `py-1` (was `py-0.5`) -- the Back button's own 3px focus-visible ring needs 1px more
+          clearance than `py-0.5` left it, or the ring clips against the sticky bar's own edge. */}
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-background py-1">
+        <Button
+          ref={backButtonRef}
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Back to changes from ${fileName}`}
+          onClick={onBack}
+        >
           <ArrowLeftIcon aria-hidden className="size-3.5" />
-          Back to changes
         </Button>
-        <span className="text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
+        {/* UI review (#1101 gate round 1): the bar previously showed only "Staged"/"Unstaged",
+            naming nothing -- the open file's own truncated name now sits beside it. */}
+        <span className="min-w-0 flex-1 truncate text-xs font-medium" title={entry.path}>
+          {fileName}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{staged ? 'Staged' : 'Unstaged'}</span>
       </div>
       {state === 'loading' ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">

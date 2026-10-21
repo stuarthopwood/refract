@@ -74,6 +74,37 @@ delegated by Stuart); none is re-litigated here.
     (decisions 12, 13, and all of slice 3) are explicitly out of scope for this spec -- noted only
     as boundaries in Edge Cases/Assumptions below.
 
+### #1101 UI polish (2026-10-20, Stuart's screenshot feedback; Skippy, delegated by Stuart, all
+resolved, none deferred)
+
+1. **Subject counter** (item 1): `n/72` shown only once the subject has at least one character
+   (hiding the bare `0` on an empty field), muted `text-muted-foreground`, switching to a warning
+   colour past 50 characters and an error colour past 72 (over-limit is visual only -- FR-024
+   still enforces no format and never blocks Commit on subject length). An `sr-only` "Subject
+   length" label names the value for a screen reader, since nothing previously did.
+2. **Commit inputs** (item 2): both the subject and body fields reuse the composer's own surface,
+   border and focus classes (ADR 0003), not the bare `Input`/`Textarea` defaults they used
+   before. **Decided (gate round 1, 2026-10-20):** since the commit fields now draw the SAME
+   quiet, below-3:1-in-Dark/Obsidian tokens the composer's own text field already does, the
+   "Quiet composer" accepted departure (`docs/design/accessibility.md` "Accepted departures") is
+   extended to name them explicitly rather than leaving them an unscoped side effect.
+3. **Stage/unstage in-progress state** (item 4): a stage/unstage/stage-all/unstage-all round trip
+   in flight shows a spinner on the row or group button that triggered it, sets `aria-busy`, and
+   disables that control against a double click; the existing app-level `role="status"`
+   announcement region (`chatAreaAnnouncer.ts`) covers the screen-reader side, no new live region.
+4. **Untracked file content** (item 5): an untracked file's diff shows the whole file as added
+   (green) lines, not an empty box -- synthesised directly from the file's own content (`git diff`
+   has no index/HEAD side to compare an untracked path against), capped and binary-checked by the
+   same size/binary logic this panel's own additions/deletions count already applies to that same
+   file.
+5. **Back button** (item 6): the labelled outline "Back to changes" control becomes a ghost
+   icon-only button (`lucide-react` `ArrowLeftIcon`), with an `aria-label` naming the file (for
+   example "Back to changes from README.md") since the visible label is gone.
+6. **Sticky back** (item 7): the Back button stays visible at the top of the diff pane while its
+   content scrolls -- a stop-gap, simple `sticky` positioning only, **superseded once #732-
+   dependent "Git diff opens in a main-area tab" (issue #1102) ships**, at which point this whole
+   diff pane (Back button included) is removed.
+
 ### Layout rulings (ui-architect-v3 consult, already run, applied as given)
 
 - Single scrollable column (header -> groups -> rows), not a list+diff split.
@@ -280,7 +311,11 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   round 1 item 14, issue #464, 2026-10-20)**: the open diff MUST show whether it is Staged or
   Unstaged, MUST refetch whenever the panel's own snapshot refreshes underneath it (the three
   FR-015 triggers), and Escape MUST return to the groups list, the same as the explicit Back
-  control.
+  control. **Amended (#1101 item 4, 2026-10-20)**: an Untracked-group file (no index/HEAD side to
+  diff against) MUST show its whole content as added (green) lines instead of an empty patch,
+  capped and binary-checked by the same size/binary logic FR-019's own additions/deletions count
+  already applies to that same file -- an oversized or binary untracked file degrades to the
+  existing "No changes" display, never a second, uncapped read path.
 - **FR-009**: The system MUST show a fixed, non-scrolling commit box under the scrollable groups/
   rows region, containing a subject-line field with a live character counter, a body field, and a
   Commit button.
@@ -348,6 +383,25 @@ stage/unstage/commit action and confirm the panel refetches afterward too.
   Opening a diff MUST focus its own Back control; returning from it (Back or Escape) MUST focus
   the row that opened it. A successful commit MUST focus the subject field and announce what was
   committed once (`role="status"`).
+- **FR-027** (#1101 item 1): The subject field's character counter MUST be hidden on an empty
+  field and show `n/72` once the subject has at least one character, muted at rest, switching to
+  a warning colour past 50 characters and an error colour past 72 -- visual only, never enforced
+  (FR-024 unchanged) -- with an `sr-only` "Subject length" label giving the value an accessible
+  name.
+- **FR-028** (#1101 item 2): The commit subject and body fields MUST reuse the composer's own
+  surface, border and focus-visible classes (ADR 0003, `MessageInput.tsx`'s composer wrapper),
+  not the shared `Input`/`Textarea` primitives' generic default look.
+- **FR-029** (#1101 item 3): While a stage, unstage, stage-all, or unstage-all call is in flight,
+  the row or group control that triggered it MUST show a spinner and `aria-busy="true"`, and MUST
+  be disabled against a repeat click until that call settles; the existing app-level
+  `role="status"` announcement region (`chatAreaAnnouncer.ts`) covers the screen-reader side, with
+  no second, newly-added live region.
+- **FR-030** (#1101 item 6): The diff pane's Back control MUST be a ghost, icon-only button
+  (`ArrowLeftIcon`) with an `aria-label` naming the file (for example "Back to changes from
+  README.md"), replacing the previous labelled outline button.
+- **FR-031** (#1101 item 7): The Back button MUST stay visible at the top of the diff pane while
+  its content scrolls (`sticky` positioning) -- a stop-gap removed entirely once #1102's
+  main-area-tab diff view ships, never a tab-order or focus change.
 
 ### Key Entities *(include if feature involves data)*
 

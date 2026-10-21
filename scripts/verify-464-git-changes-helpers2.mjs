@@ -14,7 +14,7 @@ import {
   readGroupFileTitles,
   diffViewText,
   BACK_TO_CHANGES_FINDER,
-  activeElementText,
+  activeElementAriaLabel,
   assertArrayEqual,
   assertEqual,
   gitStatusPorcelain,
@@ -75,7 +75,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   if (!diffTextBefore || !diffTextBefore.includes(FIXTURE.readmeEditedLine)) {
     failures.push(`Item 2 setup: README.md's own reopened diff did not show its real added line before the external write: ${JSON.stringify(diffTextBefore)}`);
   }
-  assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2 setup: focus is on Back to changes before an unrelated external write', findings, failures);
+  assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from README.md', 'Item 2 setup: focus is on Back to changes before an unrelated external write', findings, failures);
 
   writeFileSync(path.join(worktreePath, unrelatedFileName), "an unrelated change while README.md's own diff is open, for verify-464\n");
 
@@ -101,7 +101,7 @@ export async function runDiffStabilityDuringExternalWriteCheck(cdp, worktreePath
   assertEqual(await cdp.evaluate(`!!document.querySelector('.diff-view')`), true, 'Item 2: the diff view is still mounted immediately after that direct backend check', findings, failures);
   const diffTextAfter = await diffViewText(cdp);
   assertEqual(diffTextAfter, diffTextBefore, "Item 2: README.md's own diff text is still mounted, byte-identical, after the unrelated external write", findings, failures);
-  assertEqual(await activeElementText(cdp), 'Back to changes', 'Item 2: focus is still on Back to changes after the unrelated external write (never stolen by the background refresh)', findings, failures);
+  assertEqual(await activeElementAriaLabel(cdp), 'Back to changes from README.md', 'Item 2: focus is still on Back to changes after the unrelated external write (never stolen by the background refresh)', findings, failures);
 
   await cdp.click(BACK_TO_CHANGES_FINDER);
   await cdp.waitFor(`!document.querySelector('.diff-view')`, { timeoutMs: 10_000, label: 'Back to changes after the item-2 stability check' });
@@ -182,6 +182,17 @@ export async function runContainmentRefusalCheck(cdp, sessionId, outsideMarkerFi
   if (diffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
   else if (diffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff refused the outside-worktree path, but with code "${diffAttempt.code}" (expected "outside-worktree", the Rust-side validate_pathspec gate) -- message: ${diffAttempt.message}`);
   else findings.push(`Containment refusal (gitChanges.diff): refused with code "outside-worktree" (${diffAttempt.message}).`);
+  // Gate round 1 item (c) (#1101, Main's UI review): the call above leaves `untracked` at its
+  // default (`false`), so it only ever exercises the TRACKED path's pre-existing
+  // `validate_pathspec` backstop. `untracked_file_patch` (`changes_diff.rs`) is a SEPARATE code
+  // path that reads the filesystem directly rather than asking `git` to diff an already-
+  // contained blob, so it needs its own explicit proof, not an inference from the tracked case.
+  const untrackedDiffAttempt = await cdp.evaluate(
+    `window.refract.gitChanges.diff(${JSON.stringify(sessionId)}, ${JSON.stringify(outsideMarkerFile)}, false, true).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
+  );
+  if (untrackedDiffAttempt.ok) failures.push(`Containment refusal: gitChanges.diff(untracked=true) against an absolute path outside the worktree (${outsideMarkerFile}) SUCCEEDED -- must always be refused.`);
+  else if (untrackedDiffAttempt.code !== 'outside-worktree') failures.push(`Containment refusal: gitChanges.diff(untracked=true) refused the outside-worktree path, but with code "${untrackedDiffAttempt.code}" (expected "outside-worktree") -- message: ${untrackedDiffAttempt.message}`);
+  else findings.push(`Containment refusal (gitChanges.diff, untracked=true): refused with code "outside-worktree" (${untrackedDiffAttempt.message}).`);
   const stageAttempt = await cdp.evaluate(
     `window.refract.gitChanges.stage(${JSON.stringify(sessionId)}, [${JSON.stringify(outsideMarkerFile)}]).then((r) => ({ ok: r.ok, code: r.ok ? null : r.error.code, message: r.ok ? null : r.error.message }))`
   );
