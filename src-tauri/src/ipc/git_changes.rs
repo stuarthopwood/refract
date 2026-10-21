@@ -346,10 +346,10 @@ pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
         let untracked = args.get(3).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        let patch = diff_text(&worktree_path, &path, staged, untracked)
+        let (patch, reason) = diff_text(&worktree_path, &path, staged, untracked)
             .await
             .map_err(map_git_error)?;
-        Ok(json!({ "patch": patch }))
+        Ok(json!({ "patch": patch, "reason": reason }))
     })
 }
 

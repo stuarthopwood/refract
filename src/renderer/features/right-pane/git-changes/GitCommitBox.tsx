@@ -132,43 +132,58 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
           Agent is working — review before committing
         </p>
       )}
-      <div className="flex items-center gap-1.5">
-        <label htmlFor={subjectId} className="sr-only">
-          Commit subject
-        </label>
-        {/* Gate round 1 UI review (#1101): the counter used to be a flex SIBLING of the input,
-            narrowing it by its own width (~37px) the instant typing started. It now sits
-            absolutely positioned INSIDE the input's own box (over its `pr-12` right padding),
-            so the field's own width never changes. */}
-        <div className="relative flex-1">
-          <Input
-            id={subjectId}
-            value={subject}
-            onChange={(event) => updateDraft({ subject: event.target.value })}
-            onKeyDown={handleKeyDown}
-            placeholder="Commit subject"
-            aria-describedby={subject.length > 0 ? counterId : undefined}
-            className={cn('pr-12', COMPOSER_INPUT_SURFACE_CLASS)}
-          />
-          {/* Item 1 (#1101): hidden on an empty field (no bare "0"), `n/72` once typing starts,
-              muted until past 50 (warning colour) and past 72 (error colour, visual only --
-              FR-024/FR-009 still never block Commit on subject length). The sr-only "Subject
-              length" prefix shares this SAME element's accessible text with the visible count,
-              and the input's own `aria-describedby` above links to it too (gate round 1 LOW 5)
-              -- nothing else needs to read it separately. */}
-          {subject.length > 0 && (
-            <span
-              id={counterId}
-              className={cn(
-                'pointer-events-none absolute right-2 top-1/2 shrink-0 -translate-y-1/2 text-xs tabular-nums',
-                subject.length > 72 ? 'text-severity-error' : subject.length > 50 ? 'text-severity-warning' : 'text-muted-foreground'
-              )}
-            >
-              <span className="sr-only">Subject length </span>
-              {subject.length}/72
-            </span>
-          )}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={subjectId} className="sr-only">
+            Commit subject
+          </label>
+          {/* Gate round 1 UI review (#1101): the counter used to be a flex SIBLING of the input,
+              narrowing it by its own width (~37px) the instant typing started. It now sits
+              absolutely positioned INSIDE the input's own box (over its `pr-12` right padding),
+              so the field's own width never changes. */}
+          <div className="relative flex-1">
+            <Input
+              id={subjectId}
+              value={subject}
+              onChange={(event) => updateDraft({ subject: event.target.value })}
+              onKeyDown={handleKeyDown}
+              placeholder="Commit subject"
+              aria-describedby={subject.length > 0 ? counterId : undefined}
+              className={cn('pr-12', COMPOSER_INPUT_SURFACE_CLASS)}
+            />
+            {/* Item 1 (#1101): hidden on an empty field (no bare "0"), `n/72` once typing
+                starts, muted until past 50 (warning colour) and past 72 (error colour, visual
+                only -- FR-024/FR-009 still never block Commit on subject length). The sr-only
+                "Subject length" prefix shares this SAME element's accessible text with the
+                visible count, and the input's own `aria-describedby` above links to it too
+                (gate round 1 LOW 5) -- nothing else needs to read it separately. Low items
+                (#1111): the two tiers used to be colour alone -- the sr-only prefix now names
+                each tier in words too (so a screen reader is never left with only "72/72"), and
+                a visible line below the field (not inside this absolutely-positioned counter,
+                so it never narrows the input) spells out the over-72 tier for a sighted,
+                non-colour-distinguishing user. */}
+            {subject.length > 0 && (
+              <span
+                id={counterId}
+                className={cn(
+                  'pointer-events-none absolute right-2 top-1/2 shrink-0 -translate-y-1/2 text-xs tabular-nums',
+                  subject.length > 72 ? 'text-severity-error' : subject.length > 50 ? 'text-severity-warning' : 'text-muted-foreground'
+                )}
+              >
+                <span className="sr-only">
+                  Subject length{' '}
+                  {subject.length > 72
+                    ? '(over the recommended limit — the commit still goes through) '
+                    : subject.length > 50
+                      ? '(approaching the recommended limit) '
+                      : ''}
+                </span>
+                {subject.length}/72
+              </span>
+            )}
+          </div>
         </div>
+        {subject.length > 72 && <p className="text-xs text-severity-error">Over 72 characters — the commit still goes through.</p>}
       </div>
       <label htmlFor={bodyId} className="sr-only">
         Commit description

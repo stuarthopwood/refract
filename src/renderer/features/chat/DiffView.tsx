@@ -196,21 +196,18 @@ interface DiffViewFromPatchProps {
    * it is wrapped with the same `diff --git a/<path> b/<path>` header `parseDiff` needs and
    * rendered through the identical `Diff`/`Hunk`/`renderGutter` pipeline. */
   patch: string
-  /** Issue #919: the pull request's own per-file additions/deletions (`ChangedFile.additions`/
-   * `.deletions`), rendered next to the Copy button -- the mock's own per-file +/- acceptance
-   * criterion from #568, never delivered until now. Issue #925 colours it the same way
-   * `DiffStatCounts` colours every other change count in the app, visually `aria-hidden` and
-   * paired with its own `sr-only` "N additions M deletions" phrase (`DiffStatCounts`'s own
-   * `accessibleLabel` prop, gate round 1 L1) -- not real plain accessible text itself, the
-   * header's own path next to it is. `ChangesTab.tsx` is this component's only caller and
-   * always has both figures on hand, so they are required, not optional. */
   additions: number
   deletions: number
+  /** #1111 item 5: a binary/over-cap/unreadable/timed-out untracked file's own reason the
+   * backend (`changes_diff.rs::untracked_file_patch`) could not render it as a patch --
+   * shown below instead of the otherwise-indistinguishable "No changes" fallback. Never set
+   * for a tracked file or a genuinely empty untracked file. */
+  reason?: string
 }
 
 /** GitHub's pull request diffs arrive as a ready-made patch body, not an old/new text pair --
  * this is `DiffView`'s sibling for that shape, sharing its rendering but not its diff-building. */
-export function DiffViewFromPatch({ path, patch, additions, deletions }: DiffViewFromPatchProps) {
+export function DiffViewFromPatch({ path, patch, reason, additions, deletions }: DiffViewFromPatchProps) {
   // Security remediation (Low): a GitHub file path can contain embedded CR/LF (git itself
   // allows it); interpolated raw into the diff header below, a crafted path could inject extra
   // header or hunk lines into both the parsed diff AND the exact text the Copy button puts on
@@ -243,7 +240,7 @@ ${patch}`
         </span>
       </div>
       {!changedFile ? (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
+        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{reason ?? 'No changes'}</div>
       ) : (
         <Diff viewType="unified" diffType={changedFile.type} hunks={changedFile.hunks} renderGutter={renderGutter}>
           {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}

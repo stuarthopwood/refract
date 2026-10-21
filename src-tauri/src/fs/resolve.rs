@@ -408,7 +408,9 @@ pub fn resolve_reason_message(reason: ResolveReason, noun: &str) -> String {
             format!("Couldn't find that {noun} in this Session's worktree")
         }
         ResolveReason::OutsideWorktree => {
-            "That path is outside this Session's worktree".to_string()
+            // #1111 Low item: used to be "That path is outside this Session's worktree" --
+            // true, but gave the user nothing to DO about it. Named the fix directly.
+            "That path is outside this Session's worktree. Choose a file inside the worktree instead.".to_string()
         }
     }
 }

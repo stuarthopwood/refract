@@ -6,17 +6,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Mirrors `diff_stat.rs`'s own `MAX_FILE_BYTES`.
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
-/// Mirrors `diff_stat.rs`'s own `BINARY_SNIFF_BYTES`.
-const BINARY_SNIFF_BYTES: usize = 8000;
-
-/// Port of `diff_stat.rs`'s own `is_binary` (re-declared, see `changes_status.rs`'s own header
-/// comment on why this module's constants are re-declared rather than imported across files).
-fn is_binary(buf: &[u8]) -> bool {
-    let len = buf.len().min(BINARY_SNIFF_BYTES);
-    buf[..len].contains(&0)
-}
+use crate::fs::paths::contains_git_segment;
+use crate::fs::read_preview::{read_preview, FilePreviewKind};
+use crate::fs::resolve::{canonicalize_root, resolve_in_worktree};
 
 /// Port of `diff_stat.rs`'s own `count_lines`.
 fn count_lines(text: &str) -> i64 {
@@ -75,29 +67,67 @@ pub(super) fn parse_numstat_map(stdout: &str) -> HashMap<String, (i64, i64)> {
 
 /// Scores one untracked file directly from its own content (there is no index/HEAD side to diff
 /// against): every line counts as an addition, 0 deletions, `partial: true` instead of reading
-/// the content at all once its size exceeds `MAX_FILE_BYTES` -- mirrors `diff_stat.rs`'s own
-/// `score_untracked_file`, adapted to read straight from disk (this module has no existing
-/// `ls-files`-sourced byte buffer to score against).
-pub(super) async fn score_untracked_file(
-    worktree_path: &Path,
-    relative_path: &str,
-) -> (i64, i64, bool) {
-    let absolute_path = worktree_path.join(relative_path);
-    let metadata = match tokio::fs::metadata(&absolute_path).await {
-        Ok(metadata) => metadata,
-        // Vanished between the status read and this scoring pass; 0/0, not partial -- the row
-        // itself still came from a real status entry and stays operable.
-        Err(_) => return (0, 0, false),
-    };
-    if metadata.len() > MAX_FILE_BYTES {
-        return (0, 0, true);
-    }
-    let content = match tokio::fs::read(&absolute_path).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (0, 0, false),
-    };
-    if is_binary(&content) {
+/// the content at all once its size exceeds the shared 1 MiB cap. Called on EVERY status
+/// refresh (file-watcher-triggered, not just when a diff is opened), unlike
+/// `changes_diff.rs::untracked_file_patch` (only called when a diff is actually opened) -- issue
+/// #1110: this used to be the one read path in the Git changes panel `untracked_file_patch`'s own
+/// #1101 gate-round-1 containment fix never touched, so `tokio::fs::metadata`/`::read` here still
+/// followed a symlink/junction straight through with no containment check at all, on every single
+/// refresh, purely to compute a `+N` line-count badge (a real risk on Windows: an untracked
+/// symlink's target can be a UNC path, triggering an SMB/NTLM round trip against whatever host it
+/// names, just to paint a badge). Fixed to mirror `untracked_file_patch`'s own containment proof
+/// exactly: `.git` refused both as the raw token and on the resolved path (same two-step check
+/// `fs::list_directory::resolve_list_target` uses), `fs::resolve::resolve_in_worktree` proves the
+/// whole chain never escapes the worktree before anything is opened, `symlink_metadata` (never
+/// `metadata`) detects a symlink and scores it as a single line -- git's own view of an untracked
+/// symlink IS its target string -- without ever reading through it to whatever that target names,
+/// local or remote. A genuine file is then read through the SAME shared, bounded
+/// `fs::read_preview::read_preview` reader `changes_diff.rs::untracked_file_patch` uses, instead
+/// of this module's own now-removed second hand-rolled `is_binary`/`MAX_FILE_BYTES` copy of that
+/// exact logic.
+pub(super) async fn score_untracked_file(worktree_path: &Path, relative_path: &str) -> (i64, i64, bool) {
+    if contains_git_segment(relative_path) {
         return (0, 0, false);
     }
-    (count_lines(&String::from_utf8_lossy(&content)), 0, false)
+    // A resolve failure (vanished between the status read and this scoring pass, OR an escaping
+    // symlink/junction) degrades the same way either way: 0/0, not partial -- the row itself
+    // still came from a real status entry and stays operable, and an escape is never read to
+    // produce a real count regardless of why resolution failed.
+    let resolved = match resolve_in_worktree(worktree_path, relative_path).await {
+        Ok(resolved) => resolved,
+        Err(_) => return (0, 0, false),
+    };
+    let root_real = canonicalize_root(worktree_path)
+        .await
+        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let rel_from_root = resolved
+        .strip_prefix(&root_real)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    if contains_git_segment(&rel_from_root) {
+        return (0, 0, false);
+    }
+    let link_metadata = match tokio::fs::symlink_metadata(&resolved).await {
+        Ok(metadata) => metadata,
+        Err(_) => return (0, 0, false),
+    };
+    if link_metadata.file_type().is_symlink() {
+        return (1, 0, false);
+    }
+    if !link_metadata.is_file() {
+        return (0, 0, false);
+    }
+    let preview = read_preview(&resolved, relative_path).await;
+    match preview.kind {
+        FilePreviewKind::Text | FilePreviewKind::Markdown => {
+            (count_lines(&preview.content.unwrap_or_default()), 0, false)
+        }
+        FilePreviewKind::TooLarge => (0, 0, true),
+        // Binary, a vanished-mid-read race, a read error, or an image: scores 0/0/not-partial,
+        // the same "nothing countable" degrade the pre-existing binary/vanished cases already
+        // used -- this is a badge count, not the diff-reason surface `changes_diff.rs` exposes.
+        FilePreviewKind::Binary | FilePreviewKind::Deleted | FilePreviewKind::ReadError | FilePreviewKind::Image => {
+            (0, 0, false)
+        }
+    }
 }
