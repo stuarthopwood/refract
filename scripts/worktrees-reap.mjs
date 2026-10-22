@@ -234,6 +234,26 @@ function evaluate(wt, ctx) {
   return ['reap', `PR${merged[0].number ? ` #${merged[0].number}` : ''} merged, clean, tip equals PR head`]
 }
 
+// True when every file left in a deregistered worktree is allow-listed build output, so a
+// file written after the eligibility check is never deleted. Links are not followed.
+function onlyBuildOutput(dir) {
+  const stack = ['']
+  while (stack.length) {
+    const rel = stack.pop()
+    for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isSymbolicLink()) {
+        if (!IGNORED_ALLOWED.test(`${r}/`)) return false
+      } else if (e.isDirectory()) {
+        if (!IGNORED_ALLOWED.test(`${r}/`)) stack.push(r)
+      } else if (!IGNORED_ALLOWED.test(r)) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
 // A husk is what a worktree removal leaves behind: no `.git`, only node_modules.
 function huskReason(dir, registered) {
   if (registered.has(norm(dir))) return null
@@ -347,9 +367,9 @@ function main() {
       }
       const r = git(repo, ['worktree', 'remove', '--', target])
       if (r.status !== 0) {
-        // Git may deregister the worktree and then fail on leftovers; finish with the guarded deleter.
+        // Git may deregister the worktree and then fail on leftovers; delete the rest only if it is all build output.
         const deregistered = !listWorktrees().some((w) => norm(w.path) === norm(target))
-        if (!deregistered || !deleteHusk(target)) {
+        if (!deregistered || !onlyBuildOutput(target) || !deleteHusk(target)) {
           failures++
           console.log(`  FAILED, busy or locked: ${(r.stderr || '').trim().split('\n')[0]}`)
           continue
